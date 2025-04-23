@@ -43,7 +43,7 @@ try:
     from portfolio_logic import (
         calculate_portfolio_summary,
         fetch_index_quotes_yfinance,
-        CASH_SYMBOL_CSV_PERFORM,
+        CASH_SYMBOL_CSV,
         calculate_historical_performance # v10 with include_accounts (but maybe not exclude_accounts yet)
     )
     LOGIC_AVAILABLE = True
@@ -59,7 +59,7 @@ except ImportError as import_err:
     print("Ensure portfolio_logic.py contains the v10 calculate_historical_performance with include_accounts.")
     LOGIC_AVAILABLE = False
     HISTORICAL_FN_SUPPORTS_EXCLUDE = False # Assume false if import fails
-    CASH_SYMBOL_CSV_PERFORM = "__CASH__"
+    CASH_SYMBOL_CSV = "__CASH__"
     def calculate_portfolio_summary(*args, **kwargs): return {}, pd.DataFrame(), pd.DataFrame(), {}, "Error: Logic missing"
     def fetch_index_quotes_yfinance(*args, **kwargs): return {}
     def calculate_historical_performance(*args, **kwargs):
@@ -71,20 +71,20 @@ except ImportError as import_err:
             for sym in kwargs['benchmark_symbols_yf']:
                 dummy_cols.extend([f'{sym} Price', f'{sym} Accumulated Gain'])
         return pd.DataFrame(columns=dummy_cols), "Error: Logic missing"
-    print(f"Warning: Using fallback CASH_SYMBOL_CSV_PERFORM: {CASH_SYMBOL_CSV_PERFORM}")
+    print(f"Warning: Using fallback CASH_SYMBOL_CSV: {CASH_SYMBOL_CSV}")
 except Exception as import_err:
     print(f"ERROR: Unexpected error importing from portfolio_logic.py: {import_err}")
     traceback.print_exc()
     LOGIC_AVAILABLE = False
     HISTORICAL_FN_SUPPORTS_EXCLUDE = False # Assume false on error
-    CASH_SYMBOL_CSV_PERFORM = "__CASH__"
+    CASH_SYMBOL_CSV = "__CASH__"
     def calculate_portfolio_summary(*args, **kwargs): return {}, pd.DataFrame(), pd.DataFrame(), {}, "Error: Logic import failed"
     def fetch_index_quotes_yfinance(*args, **kwargs): return {}
     def calculate_historical_performance(*args, **kwargs):
         # Remove unexpected arg if present in dummy function call
         kwargs.pop('exclude_accounts', None)
         return pd.DataFrame(), "Error: Logic import failed"
-    print(f"Warning: Using fallback CASH_SYMBOL_CSV_PERFORM: {CASH_SYMBOL_CSV_PERFORM}")
+    print(f"Warning: Using fallback CASH_SYMBOL_CSV: {CASH_SYMBOL_CSV}")
 
 # --- Constants ---
 DEFAULT_CSV = 'my_transactions.csv' # Default transaction file name
@@ -104,12 +104,6 @@ DEFAULT_GRAPH_INTERVAL = 'W' # Default interval Weekly
 DEFAULT_GRAPH_BENCHMARKS = ['SPY'] # Default to a list with SPY benchmark
 # --- Benchmark Options ---
 BENCHMARK_OPTIONS = ["SPY", "QQQ", "DIA", "^SP500TR", "^GSPC", "VT", "IWM", "EFA", "TLT", "AGG"] # Available benchmark choices
-
-# --- Theme Colors ---
-# Define color palette for styling the UI
-# COLOR_BG_DARK="#303F9F"; COLOR_BG_HEADER_LIGHT="#C5CAE9"; COLOR_BG_HEADER_ORIGINAL="#3F51B5"; COLOR_BG_CONTROLS="#FFFFFF"; COLOR_BG_SUMMARY="#f8f8fA"; COLOR_BG_CONTENT="#E8EAF6"; COLOR_TEXT_LIGHT="#FFFFFF"; COLOR_TEXT_DARK="#212121"; COLOR_TEXT_SECONDARY="#757575"; COLOR_ACCENT_TEAL="#009688"; COLOR_ACCENT_TEAL_LIGHT="#B2DFDB"; COLOR_ACCENT_AMBER="#FFC107"; COLOR_ACCENT_AMBER_DARK="#FFA000"; COLOR_GAIN="#006400"; COLOR_LOSS="#B22222"; COLOR_BORDER_LIGHT="#D1D9E6"; COLOR_BORDER_DARK="#B0BEC5";
-# Convert hex colors to QColor objects for easier use in Qt palettes
-# QCOLOR_GAIN=QColor(COLOR_GAIN); QCOLOR_LOSS=QColor(COLOR_LOSS); QCOLOR_TEXT_DARK=QColor(COLOR_TEXT_DARK); QCOLOR_TEXT_SECONDARY=QColor(COLOR_TEXT_SECONDARY)
 
 # --- Theme Colors ---
 # Define color palette for styling the UI (Minimal Theme)
@@ -384,10 +378,10 @@ class PandasModel(QAbstractTableModel):
                 try:
                     symbol_col_idx = self._data.columns.get_loc('Symbol')
                     symbol_value = self._data.iloc[row, symbol_col_idx]
-                    if col_name == 'Total Ret %' and symbol_value == CASH_SYMBOL_CSV_PERFORM: return "-"
+                    if col_name == 'Total Ret %' and symbol_value == CASH_SYMBOL_CSV: return "-"
                     # Specific handling for IRR % for cash: It should be N/A
-                    if col_name == 'IRR (%)' and symbol_value == CASH_SYMBOL_CSV_PERFORM: return "-" # Display '-' for cash IRR
-                    if col_name == 'Symbol' and symbol_value == CASH_SYMBOL_CSV_PERFORM:
+                    if col_name == 'IRR (%)' and symbol_value == CASH_SYMBOL_CSV: return "-" # Display '-' for cash IRR
+                    if col_name == 'Symbol' and symbol_value == CASH_SYMBOL_CSV:
                         display_currency_name = self._parent._get_currency_symbol(get_name=True) if self._parent else "CUR"
                         return f"Cash ({display_currency_name})"
                 except (KeyError, IndexError): pass
@@ -505,7 +499,7 @@ class PandasModel(QAbstractTableModel):
             if 'Symbol' in self._data.columns:
                 try:
                     # Use the globally defined cash symbol
-                    cash_mask = self._data['Symbol'].astype(str) == CASH_SYMBOL_CSV_PERFORM
+                    cash_mask = self._data['Symbol'].astype(str) == CASH_SYMBOL_CSV
                     if cash_mask.any():
                         cash_rows = self._data[cash_mask].copy()
                         non_cash_rows = self._data[~cash_mask].copy() # Update non_cash_rows
@@ -700,7 +694,7 @@ class AddTransactionDialog(QDialog):
         is_split = (tx_type == "split")
         is_fee = (tx_type == "fees")
         # Check symbol text directly, case-insensitive compare
-        is_cash_flow = (tx_type in ["deposit", "withdrawal"]) and (self.symbol_edit.text().strip().upper() == CASH_SYMBOL_CSV_PERFORM)
+        is_cash_flow = (tx_type in ["deposit", "withdrawal"]) and (self.symbol_edit.text().strip().upper() == CASH_SYMBOL_CSV)
         is_dividend = (tx_type == "dividend")
 
         # Enable/disable based on type
@@ -719,7 +713,7 @@ class AddTransactionDialog(QDialog):
         # Symbol handling for cash flow
         if is_cash_flow:
             # Don't force symbol if user might be changing type *from* cash flow
-            # self.symbol_edit.setText(CASH_SYMBOL_CSV_PERFORM)
+            # self.symbol_edit.setText(CASH_SYMBOL_CSV)
             self.price_edit.clear()
             self.price_edit.setEnabled(False)
         else:
@@ -756,7 +750,7 @@ class AddTransactionDialog(QDialog):
             if qty <= 0: QMessageBox.warning(self, "Input Error", "Quantity must be positive for buy/sell."); return None
             if price <= 0: QMessageBox.warning(self, "Input Error", "Price/Unit must be positive for buy/sell."); return None
         elif tx_type in ["deposit", "withdrawal"]:
-            if symbol != CASH_SYMBOL_CSV_PERFORM:
+            if symbol != CASH_SYMBOL_CSV:
                  if not qty_str or not price_str: QMessageBox.warning(self, "Input Error", f"Quantity and Price/Unit (cost basis) are required for stock '{tx_type}'."); return None
                  try: qty = float(qty_str)
                  except ValueError: QMessageBox.warning(self, "Input Error", "Quantity must be a valid number."); return None
@@ -1871,7 +1865,7 @@ class PortfolioApp(QMainWindow):
             holdings_values = holdings_values.sort_values(ascending=False)
             labels_internal = holdings_values.index.tolist()
             values = holdings_values.values
-            labels_display = [f"Cash ({display_currency})" if symbol == CASH_SYMBOL_CSV_PERFORM else str(symbol) for symbol in labels_internal]
+            labels_display = [f"Cash ({display_currency})" if symbol == CASH_SYMBOL_CSV else str(symbol) for symbol in labels_internal]
 
             if len(values) > CHART_MAX_SLICES:
                 top_v = values[:CHART_MAX_SLICES-1]
@@ -2089,7 +2083,7 @@ class PortfolioApp(QMainWindow):
                 try:
                     # Filter holdings_data based on selected accounts before summing cash
                     df_filtered_for_cash = self._get_filtered_data() # Use existing filter logic
-                    cash_mask = df_filtered_for_cash['Symbol'] == CASH_SYMBOL_CSV_PERFORM
+                    cash_mask = df_filtered_for_cash['Symbol'] == CASH_SYMBOL_CSV
                     overall_cash_value = pd.to_numeric(df_filtered_for_cash.loc[cash_mask, cash_val_col_actual], errors='coerce').fillna(0.0).sum() if cash_mask.any() else 0.0
                 except Exception: overall_cash_value = None
             # --- End Cash Calc Update ---
@@ -2275,7 +2269,7 @@ class PortfolioApp(QMainWindow):
             if not show_closed and 'Quantity' in df_filtered.columns and 'Symbol' in df_filtered.columns:
                 try:
                     numeric_quantity = pd.to_numeric(df_filtered['Quantity'], errors='coerce').fillna(0);
-                    keep_mask = (numeric_quantity.abs() > 1e-9) | (df_filtered['Symbol'] == CASH_SYMBOL_CSV_PERFORM);
+                    keep_mask = (numeric_quantity.abs() > 1e-9) | (df_filtered['Symbol'] == CASH_SYMBOL_CSV);
                     df_filtered = df_filtered[keep_mask]
                 except Exception as e: print(f"Warning: Error filtering 'Show Closed': {e}")
         return df_filtered
