@@ -1817,16 +1817,19 @@ def calculate_historical_performance(
         excluded_accounts_list_sorted = [] # Empty list for cache key
     else:
         # Remove accounts specified in exclude_accounts
-        valid_exclude_accounts = [acc for acc in exclude_accounts if acc in available_accounts]
+        valid_exclude_accounts = [acc for acc in exclude_accounts if acc in available_accounts] # Use available_accounts derived from *all* transactions
         if not valid_exclude_accounts:
             # No valid accounts to exclude, effective set is the included set
             transactions_df_effective = transactions_df_included.copy()
             excluded_accounts_list_sorted = []
         else:
+            # --- START MODIFICATION ---
             print(f"Hist ({CURRENT_HIST_VERSION}): Further filtering transactions, EXCLUDING accounts: {', '.join(sorted(valid_exclude_accounts))}")
+            # Filter the already included dataframe
             transactions_df_effective = transactions_df_included[~transactions_df_included['Account'].isin(valid_exclude_accounts)].copy()
             excluded_accounts_list_sorted = sorted(valid_exclude_accounts)
-
+            # --- END MODIFICATION ---
+            
     # Check if any transactions remain after all filtering
     if transactions_df_effective.empty:
         msg = f"Hist WARN ({CURRENT_HIST_VERSION}): No transactions remain after applying inclusion/exclusion filters."

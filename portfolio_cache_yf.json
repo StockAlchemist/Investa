@@ -1,0 +1,132 @@
+{
+    "timestamp": "2025-04-23T20:32:13.633192",
+    "stock_data_internal": {
+        "AMZN": {
+            "price": 184.57,
+            "change": 11.390015,
+            "changesPercentage": 6.5769806,
+            "previousClose": 173.18
+        },
+        "PLTR": {
+            "price": 99.0725,
+            "change": 5.0825043,
+            "changesPercentage": 5.407495,
+            "previousClose": 93.99
+        },
+        "DAL": {
+            "price": 43.66,
+            "change": 3.3199997,
+            "changesPercentage": 8.232084,
+            "previousClose": 40.34
+        },
+        "BLV": {
+            "price": 68.968,
+            "change": 1.6380005,
+            "changesPercentage": 2.4327943,
+            "previousClose": 67.33
+        },
+        "VTI": {
+            "price": 266.21,
+            "change": 7.1799927,
+            "changesPercentage": 2.7718768,
+            "previousClose": 259.03
+        },
+        "ASML": {
+            "price": 663.245,
+            "change": 24.554993,
+            "changesPercentage": 3.844587,
+            "previousClose": 638.69
+        },
+        "GOOGL": {
+            "price": 156.255,
+            "change": 4.7850037,
+            "changesPercentage": 3.158356,
+            "previousClose": 151.47
+        },
+        "BRK.B": {
+            "price": 526.12,
+            "change": 5.330017,
+            "changesPercentage": 1.0234485,
+            "previousClose": 520.79
+        },
+        "NKE": {
+            "price": 58.62,
+            "change": 1.5599976,
+            "changesPercentage": 2.73396,
+            "previousClose": 57.06
+        },
+        "GOOG": {
+            "price": 158.6468,
+            "change": 4.746811,
+            "changesPercentage": 3.0843477,
+            "previousClose": 153.9
+        },
+        "VZ": {
+            "price": 42.59,
+            "change": -0.5999985,
+            "changesPercentage": -1.3888855,
+            "previousClose": 43.19
+        },
+        "DPZ": {
+            "price": 491.95,
+            "change": 5.8099976,
+            "changesPercentage": 1.1951284,
+            "previousClose": 486.14
+        },
+        "AXP": {
+            "price": 261.87,
+            "change": 9.449997,
+            "changesPercentage": 3.7437592,
+            "previousClose": 252.42
+        },
+        "NVDA": {
+            "price": 104.09,
+            "change": 5.199997,
+            "changesPercentage": 5.2583647,
+            "previousClose": 98.89
+        },
+        "IBM": {
+            "price": 247.745,
+            "change": 6.845001,
+            "changesPercentage": 2.8414285,
+            "previousClose": 240.9
+        },
+        "AAPL": {
+            "price": 206.29,
+            "change": 6.549988,
+            "changesPercentage": 3.2792568,
+            "previousClose": 199.74
+        },
+        "BAC": {
+            "price": 39.6619,
+            "change": 1.3418999,
+            "changesPercentage": 3.5018265,
+            "previousClose": 38.32
+        },
+        "KO": {
+            "price": 73.342,
+            "change": -0.55799866,
+            "changesPercentage": -0.7550726,
+            "previousClose": 73.9
+        },
+        "BND": {
+            "price": 73.015,
+            "change": 0.63500214,
+            "changesPercentage": 0.87731713,
+            "previousClose": 72.38
+        },
+        "QSR": {
+            "price": 64.365,
+            "change": 0.49499893,
+            "changesPercentage": 0.7750101,
+            "previousClose": 63.87
+        },
+        "C": {
+            "price": 66.94,
+            "change": 2.3899994,
+            "changesPercentage": 3.702555,
+            "previousClose": 64.55
+        }
+    },
+    "fx_rates_standard": {}
+}

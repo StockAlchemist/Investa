@@ -1,0 +1,25 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0", // This line might already exist
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Python: Investa GUI",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/main_gui.py", // Adjust path if needed
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+        // Add other configurations here if needed later
+    ]
+}
