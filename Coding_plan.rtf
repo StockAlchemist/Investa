@@ -1,0 +1,616 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fnil\fcharset0 HelveticaNeue-Bold;\f1\fnil\fcharset0 HelveticaNeue;\f2\fmodern\fcharset0 Courier;
+\f3\fmodern\fcharset0 Courier-Bold;\f4\fnil\fcharset0 HelveticaNeue-Italic;}
+{\colortbl;\red255\green255\blue255;\red20\green21\blue23;\red255\green255\blue255;}
+{\*\expandedcolortbl;;\cssrgb\c10196\c10980\c11765;\cssrgb\c100000\c100000\c100000;}
+{\*\listtable{\list\listtemplateid1\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid1\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{circle\}}{\leveltext\leveltemplateid2\'01\uc0\u9702 ;}{\levelnumbers;}\fi-360\li1440\lin1440 }{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{square\}}{\leveltext\leveltemplateid3\'01\uc0\u9642 ;}{\levelnumbers;}\fi-360\li2160\lin2160 }{\listname ;}\listid1}
+{\list\listtemplateid2\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid101\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{circle\}}{\leveltext\leveltemplateid102\'01\uc0\u9702 ;}{\levelnumbers;}\fi-360\li1440\lin1440 }{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{square\}}{\leveltext\leveltemplateid103\'01\uc0\u9642 ;}{\levelnumbers;}\fi-360\li2160\lin2160 }{\listname ;}\listid2}
+{\list\listtemplateid3\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid201\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{circle\}}{\leveltext\leveltemplateid202\'01\uc0\u9702 ;}{\levelnumbers;}\fi-360\li1440\lin1440 }{\listname ;}\listid3}
+{\list\listtemplateid4\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid301\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{circle\}}{\leveltext\leveltemplateid302\'01\uc0\u9702 ;}{\levelnumbers;}\fi-360\li1440\lin1440 }{\listname ;}\listid4}
+{\list\listtemplateid5\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid401\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{circle\}}{\leveltext\leveltemplateid402\'01\uc0\u9702 ;}{\levelnumbers;}\fi-360\li1440\lin1440 }{\listname ;}\listid5}
+{\list\listtemplateid6\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid501\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listname ;}\listid6}}
+{\*\listoverridetable{\listoverride\listid1\listoverridecount0\ls1}{\listoverride\listid2\listoverridecount0\ls2}{\listoverride\listid3\listoverridecount0\ls3}{\listoverride\listid4\listoverridecount0\ls4}{\listoverride\listid5\listoverridecount0\ls5}{\listoverride\listid6\listoverridecount0\ls6}}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\deftab720
+\pard\pardeftab720\sa360\partightenfactor0
+
+\f0\b\fs28 \cf2 \cb3 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Overall Strategy:
+\f1\b0 \'a0Prioritize basic setup and critical bug fixes, followed by core calculation debugging. Then, refactor the logic with unit tests, integrate/debug the GUI, refactor the GUI, and finish with polishing.\
+\pard\pardeftab720\partightenfactor0
+\cf2 \
+\pard\pardeftab720\sa360\partightenfactor0
+
+\f0\b \cf2 Phase 1: Foundational Setup & Cleanup (Immediate Priority)
+\f1\b0 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls1\ilvl0
+\f0\b \cf2 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	1	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Initialize Git Repository:
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls1\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Open project folder in VS Code.\cb1 \
+\ls1\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Use Source Control panel: Initialize Repository, stage files, commit ("Initial commit").\cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls1\ilvl1
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Commit frequently after completing subsequent steps.
+\f1\b0 \cb1 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls1\ilvl0
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	2	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Configure VS Code Environment:
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls1\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Ensure Python Extension is installed.\cb1 \
+\ls1\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Create/activate virtual environment (
+\f2\fs26 .venv
+\f1\fs28 ).\cb1 \
+\ls1\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Install dependencies:\'a0
+\f2\fs26 pip install yfinance pandas numpy scipy matplotlib PySide6 flake8 black pytest
+\f1\fs28 .\cb1 \
+\ls1\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Select the\'a0
+\f2\fs26 .venv
+\f1\fs28 \'a0interpreter in VS Code (
+\f2\fs26 Ctrl+Shift+P
+\f1\fs28 \'a0> "Python: Select Interpreter").\cb1 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls1\ilvl0
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	3	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Configure & Apply Linting/Formatting:
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls1\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Open Settings (
+\f2\fs26 Ctrl+,
+\f1\fs28 ).\cb1 \
+\ls1\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Enable\'a0
+\f2\fs26 python.linting.flake8Enabled
+\f1\fs28 .\cb1 \
+\ls1\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Set\'a0
+\f2\fs26 python.formatting.provider
+\f1\fs28 \'a0to "black".\cb1 \
+\ls1\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Enable\'a0
+\f2\fs26 editor.formatOnSave
+\f1\fs28 .\cb1 \
+\ls1\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Open\'a0
+\f2\fs26 main_gui.py
+\f1\fs28 \'a0and\'a0
+\f2\fs26 portfolio_logic.py
+\f1\fs28 , save both (
+\f2\fs26 Ctrl+S
+\f1\fs28 ) to apply\'a0
+\f2\fs26 black
+\f1\fs28 .\cb1 \
+\ls1\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Review "Problems" panel (
+\f2\fs26 Ctrl+Shift+M
+\f1\fs28 ) and fix reported\'a0
+\f2\fs26 flake8
+\f1\fs28 \'a0issues.\cb1 \
+\ls1\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Commit changes: "Apply initial linting and formatting".\cb1 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls1\ilvl0
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	4	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Rename Program References to "Investa":
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls1\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 In\'a0
+\f2\fs26 main_gui.py
+\f1\fs28 , update\'a0
+\f2\fs26 self.base_window_title
+\f1\fs28 \'a0and\'a0
+\f2\fs26 self.main_title_label
+\f1\fs28 .\cb1 \
+\ls1\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Use Find/Replace (
+\f2\fs26 Ctrl+H
+\f1\fs28 ) if necessary for other placeholders.\cb1 \
+\ls1\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Commit changes: "Rename program references to Investa".\cb1 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls1\ilvl0
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	5	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Review Constants:
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls1\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Review constants sections in both files for clarity, relevance, and basic organization. Update\'a0
+\f2\fs26 YFINANCE_EXCLUDED_SYMBOLS
+\f1\fs28 \'a0if needed.\cb1 \
+\ls1\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Commit changes: "Review and organize constants".\cb1 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls1\ilvl0
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	6	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Setup Debug Configuration:
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls1\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Go to "Run and Debug" panel.\cb1 \
+\ls1\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Create/ensure\'a0
+\f2\fs26 launch.json
+\f1\fs28 \'a0exists. Have configurations for:\cb1 \
+\pard\tx1660\tx2160\pardeftab720\li2160\fi-2160\sa60\partightenfactor0
+\ls1\ilvl2\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9642 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 "Python: Current File" (for\'a0
+\f2\fs26 portfolio_logic.py
+\f1\fs28 \'a0tests).\cb1 \
+\ls1\ilvl2\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9642 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 "Python: Investa GUI" (targeting\'a0
+\f2\fs26 main_gui.py
+\f1\fs28 ).\cb1 \
+\pard\pardeftab720\sa360\partightenfactor0
+
+\f0\b \cf2 \cb3 Phase 2: Critical Bug Fixes & Core Logic Debugging (High Priority)
+\f1\b0 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls2\ilvl0
+\f0\b \cf2 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	1	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Implement & Debug\'a0
+\f3\fs26 exclude_accounts
+\f0\fs28 \'a0Logic (
+\f3\fs26 portfolio_logic.py
+\f0\fs28 ):
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls2\ilvl1
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 File:
+\f1\b0 \'a0
+\f2\fs26 portfolio_logic.py
+\f1\fs28 \'a0->\'a0
+\f2\fs26 calculate_historical_performance
+\f1\fs28 \cb1 \
+\ls2\ilvl1
+\f0\b \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Action:
+\f1\b0 \'a0Implement filtering logic for\'a0
+\f2\fs26 transactions_df_effective
+\f1\fs28 \'a0using\'a0
+\f4\i both
+\f1\i0 \'a0
+\f2\fs26 include_accounts
+\f1\fs28 \'a0and\'a0
+\f2\fs26 exclude_accounts
+\f1\fs28 . Update\'a0
+\f2\fs26 daily_results_cache_key
+\f1\fs28 \'a0generation to include\'a0
+\f2\fs26 excluded_accounts_list_sorted
+\f1\fs28 . Verify\'a0
+\f2\fs26 filter_desc
+\f1\fs28 .\cb1 \
+\ls2\ilvl1
+\f0\b \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Debugging (VS Code):
+\f1\b0 \'a0Set breakpoints. Run\'a0
+\f2\fs26 if __name__ == '__main__':
+\f1\fs28 \'a0with exclude scenario. Use Debugger Variables/Watch panes to inspect filtering steps and cache key.\cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls2\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Commit changes: "Implement exclude_accounts filter and update cache key in historical logic".\cb1 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls2\ilvl0
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	2	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Verify & Debug Core Currency Handling (
+\f3\fs26 portfolio_logic.py
+\f0\fs28 ):
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls2\ilvl1
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Files:
+\f1\b0 \'a0
+\f2\fs26 portfolio_logic.py
+\f1\fs28 \cb1 \
+\ls2\ilvl1
+\f0\b \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Functions:
+\f1\b0 \'a0
+\f2\fs26 _load_and_clean_transactions
+\f1\fs28 ,\'a0
+\f2\fs26 get_cash_flows_*
+\f1\fs28 ,\'a0
+\f2\fs26 get_conversion_rate
+\f1\fs28 ,\'a0
+\f2\fs26 get_historical_fx_rate
+\f1\fs28 ,\'a0
+\f2\fs26 calculate_portfolio_summary
+\f1\fs28 ,\'a0
+\f2\fs26 _calculate_portfolio_value_at_date_unadjusted
+\f1\fs28 ,\'a0
+\f2\fs26 _calculate_daily_net_cash_flow
+\f1\fs28 .\cb1 \
+\ls2\ilvl1
+\f0\b \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Debugging (VS Code):
+\f1\b0 \'a0Set breakpoints. Run tests/GUI involving multi-currency accounts. Use Watch pane for currency variables (
+\f2\fs26 local_currency
+\f1\fs28 ,\'a0
+\f2\fs26 target_currency
+\f1\fs28 , etc.) and rates (
+\f2\fs26 fx_rate
+\f1\fs28 ). Step into (
+\f2\fs26 F11
+\f1\fs28 ) conversion helpers. Inspect\'a0
+\f2\fs26 fx_rates
+\f1\fs28 \'a0dictionaries.\cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls2\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Commit changes: "Debug and verify currency handling logic".\cb1 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls2\ilvl0
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	3	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Verify & Debug IRR/MWR Calculation (
+\f3\fs26 portfolio_logic.py
+\f0\fs28 ):
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls2\ilvl1
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Files:
+\f1\b0 \'a0
+\f2\fs26 portfolio_logic.py
+\f1\fs28 \cb1 \
+\ls2\ilvl1
+\f0\b \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Functions:
+\f1\b0 \'a0
+\f2\fs26 get_cash_flows_*
+\f1\fs28 ,\'a0
+\f2\fs26 calculate_irr
+\f1\fs28 ,\'a0
+\f2\fs26 calculate_npv
+\f1\fs28 .\cb1 \
+\ls2\ilvl1
+\f0\b \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Debugging (VS Code):
+\f1\b0 \'a0Set breakpoints in cash flow loops. Inspect\'a0
+\f2\fs26 row
+\f1\fs28 , intermediate flows,\'a0
+\f2\fs26 dates_flows
+\f1\fs28 . Step into (
+\f2\fs26 F11
+\f1\fs28 )\'a0
+\f2\fs26 calculate_irr
+\f1\fs28 /
+\f2\fs26 calculate_npv
+\f1\fs28 . Use the IRR debug prints/breakpoints for specific troublesome symbols.\cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls2\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Commit changes: "Debug IRR/MWR cash flow generation and calculation".\cb1 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls2\ilvl0
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	4	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Verify & Debug Historical TWR Calculation (
+\f3\fs26 portfolio_logic.py
+\f0\fs28 ):
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls2\ilvl1
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Files:
+\f1\b0 \'a0
+\f2\fs26 portfolio_logic.py
+\f1\fs28 \cb1 \
+\ls2\ilvl1
+\f0\b \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Functions:
+\f1\b0 \'a0
+\f2\fs26 calculate_historical_performance
+\f1\fs28 ,\'a0
+\f2\fs26 _calculate_daily_metrics_worker
+\f1\fs28 ,\'a0
+\f2\fs26 _calculate_portfolio_value_at_date_unadjusted
+\f1\fs28 ,\'a0
+\f2\fs26 _calculate_daily_net_cash_flow
+\f1\fs28 .\cb1 \
+\ls2\ilvl1
+\f0\b \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Debugging (VS Code):
+\f1\b0 \cb1 \
+\pard\tx1660\tx2160\pardeftab720\li2160\fi-2160\sa60\partightenfactor0
+\ls2\ilvl2\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9642 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Debug worker\'a0
+\f2\fs26 _calculate_daily_metrics_worker
+\f1\fs28 \'a0individually first (modify\'a0
+\f2\fs26 if __name__ == '__main__':
+\f1\fs28 \'a0temporarily or use a separate test script). Inspect value/flow calculations for specific dates.\cb1 \
+\ls2\ilvl2\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9642 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Debug\'a0
+\f2\fs26 calculate_historical_performance
+\f1\fs28 \'a0after the parallel pool finishes. Inspect\'a0
+\f2\fs26 daily_df
+\f1\fs28 . Step through (
+\f2\fs26 F10
+\f1\fs28 ) gain/return/cumprod calculations. Verify final TWR factor.\cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls2\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Commit changes: "Debug historical TWR calculation logic".\cb1 \
+\pard\pardeftab720\sa360\partightenfactor0
+
+\f0\b \cf2 \cb3 Phase 3: Logic Refactoring & Testing (
+\f3\fs26 portfolio_logic.py
+\f0\fs28 )
+\f1\b0 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls3\ilvl0
+\f0\b \cf2 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	1	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Decompose Large Functions:
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls3\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Refactor\'a0
+\f2\fs26 calculate_portfolio_summary
+\f1\fs28 \'a0and\'a0
+\f2\fs26 calculate_historical_performance
+\f1\fs28 \'a0into smaller, focused helper functions using VS Code editor ("Extract method/function" or manually).\cb1 \
+\ls3\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Commit changes incrementally (e.g., "Refactor summary calculation helpers").\cb1 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls3\ilvl0
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	2	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Refactor Caching Logic (Optional):
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls3\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Consider creating a\'a0
+\f2\fs26 CacheManager
+\f1\fs28 \'a0class. Move cache loading/saving/validation/key logic into it.\cb1 \
+\ls3\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Commit changes: "Refactor caching logic into CacheManager".\cb1 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls3\ilvl0
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	3	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Implement Logging:
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls3\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Add\'a0
+\f2\fs26 import logging
+\f1\fs28 . Configure\'a0
+\f2\fs26 logging.basicConfig
+\f1\fs28 .\cb1 \
+\ls3\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Replace\'a0
+\f2\fs26 print
+\f1\fs28 \'a0with\'a0
+\f2\fs26 logging.info
+\f1\fs28 ,\'a0
+\f2\fs26 warning
+\f1\fs28 ,\'a0
+\f2\fs26 error
+\f1\fs28 ,\'a0
+\f2\fs26 debug
+\f1\fs28 ,\'a0
+\f2\fs26 exception
+\f1\fs28 .\cb1 \
+\ls3\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Commit changes: "Implement logging module".\cb1 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls3\ilvl0
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	4	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Write Unit Tests:
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls3\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Create\'a0
+\f2\fs26 test_portfolio_logic.py
+\f1\fs28 .\cb1 \
+\ls3\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Write\'a0
+\f2\fs26 pytest
+\f1\fs28 \'a0functions (
+\f2\fs26 def test_...(): assert ...
+\f1\fs28 ).\cb1 \
+\ls3\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Use VS Code Testing panel (Beaker icon) to discover, run, and debug tests. Cover core calculations, cash flows, and currency conversion.\cb1 \
+\ls3\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Commit changes: "Add unit tests for core logic".\cb1 \
+\pard\pardeftab720\sa360\partightenfactor0
+
+\f0\b \cf2 \cb3 Phase 4: GUI Integration & Debugging (
+\f3\fs26 main_gui.py
+\f0\fs28 )
+\f1\b0 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls4\ilvl0
+\f0\b \cf2 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	1	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Verify Account Filter UI -> Logic Flow:
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls4\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Set breakpoints in GUI event handlers (
+\f2\fs26 toggle_account_selection
+\f1\fs28 ),\'a0
+\f2\fs26 refresh_data
+\f1\fs28 , and\'a0
+\f2\fs26 PortfolioCalculatorWorker.__init__
+\f1\fs28 .\cb1 \
+\ls4\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Run GUI (
+\f2\fs26 F5
+\f1\fs28 ). Interact with Accounts menu/button. Click "Update Accounts".\cb1 \
+\ls4\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Debug: Inspect\'a0
+\f2\fs26 self.selected_accounts
+\f1\fs28 \'a0and arguments passed to the worker.\cb1 \
+\ls4\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Commit changes: "Verify account filter UI-to-logic connection".\cb1 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls4\ilvl0
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	2	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Verify Data Display Accuracy (Post-Logic Debug):
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls4\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Set breakpoints in\'a0
+\f2\fs26 handle_results
+\f1\fs28 \'a0and UI update methods (
+\f2\fs26 update_dashboard_summary
+\f1\fs28 , etc.).\cb1 \
+\ls4\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Run GUI. Select different account scopes, refresh.\cb1 \
+\ls4\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Debug: Inspect dataframes (
+\f2\fs26 df_display_filtered
+\f1\fs28 ,\'a0
+\f2\fs26 self.historical_data
+\f1\fs28 ) and metrics (
+\f2\fs26 self.summary_metrics_data
+\f1\fs28 ) used by UI update methods. Ensure displayed values, table contents, and graph titles/data match the selected scope.\cb1 \
+\ls4\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Commit changes: "Debug GUI data display for account filtering".\cb1 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls4\ilvl0
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	3	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Verify Worker Communication:
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls4\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Set breakpoints in\'a0
+\f2\fs26 handle_results
+\f1\fs28 ,\'a0
+\f2\fs26 handle_error
+\f1\fs28 ,\'a0
+\f2\fs26 calculation_finished
+\f1\fs28 .\cb1 \
+\ls4\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Debug: Check arguments from worker signals and verify status bar updates (
+\f2\fs26 self.status_label
+\f1\fs28 ).\cb1 \
+\ls4\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Commit changes: "Verify worker communication and status updates".\cb1 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls4\ilvl0
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	4	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Verify Currency Change UI:
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls4\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Set breakpoints in\'a0
+\f2\fs26 filter_changed_refresh
+\f1\fs28 \'a0(for\'a0
+\f2\fs26 currency_combo
+\f1\fs28 ) and\'a0
+\f2\fs26 _update_fx_rate_display
+\f1\fs28 .\cb1 \
+\ls4\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Run GUI. Change currency.\cb1 \
+\ls4\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Debug: Step through refresh, inspect displayed values and FX rate label.\cb1 \
+\ls4\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Commit changes: "Verify currency display updates".\cb1 \
+\pard\pardeftab720\sa360\partightenfactor0
+
+\f0\b \cf2 \cb3 Phase 5: GUI Refactoring (
+\f3\fs26 main_gui.py
+\f0\fs28 )
+\f1\b0 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls5\ilvl0
+\f0\b \cf2 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	1	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Decompose\'a0
+\f3\fs26 PortfolioApp
+\f0\fs28 \'a0Class (Optional):
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls5\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Create separate panel classes (e.g.,\'a0
+\f2\fs26 SummaryPanel(QWidget)
+\f1\fs28 ) in new files.\cb1 \
+\ls5\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Move relevant widget creation/layout/update logic.\cb1 \
+\ls5\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Instantiate panels in\'a0
+\f2\fs26 PortfolioApp
+\f1\fs28 . Manage data flow via methods/signals.\cb1 \
+\ls5\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Commit incrementally (e.g., "Refactor Summary Panel class").\cb1 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls5\ilvl0
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	2	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Refactor\'a0
+\f3\fs26 initUI
+\f0\fs28 :
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls5\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Create private helper methods (
+\f2\fs26 _create_header_widget
+\f1\fs28 , etc.).\cb1 \
+\ls5\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Move widget creation/layout code into helpers.\'a0
+\f2\fs26 initUI
+\f1\fs28 \'a0calls helpers.\cb1 \
+\ls5\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Commit changes: "Refactor initUI into helper methods".\cb1 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls5\ilvl0
+\f0\b \cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	3	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 External Stylesheet:
+\f1\b0 \cb1 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa60\partightenfactor0
+\ls5\ilvl1\cf2 \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Create\'a0
+\f2\fs26 style.qss
+\f1\fs28 . Cut/paste stylesheet string into it.\cb1 \
+\ls5\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Modify\'a0
+\f2\fs26 apply_styles
+\f1\fs28 \'a0to read from\'a0
+\f2\fs26 style.qss
+\f1\fs28 .\cb1 \
+\ls5\ilvl1\cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Commit changes: "Move stylesheet to external style.qss".\cb1 \
+\pard\pardeftab720\sa360\partightenfactor0
+
+\f0\b \cf2 \cb3 Phase 6: Final Polish & Documentation
+\f1\b0 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa60\partightenfactor0
+\ls6\ilvl0
+\f0\b \cf2 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	1	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Add/Improve Docstrings & Comments:
+\f1\b0 \'a0Use VS Code editor. Ensure clarity for classes, functions, complex logic.\cb1 \
+\ls6\ilvl0
+\f0\b \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	2	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Create/Update README.md:
+\f1\b0 \'a0Use VS Code Markdown preview. Include name "Investa", purpose, setup, run instructions, CSV format.\cb1 \
+\ls6\ilvl0
+\f0\b \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	3	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Perform Thorough End-to-End Testing:
+\f1\b0 \'a0Run the application (
+\f2\fs26 F5
+\f1\fs28 \'a0and\'a0
+\f2\fs26 python main_gui.py
+\f1\fs28 ). Test all features, various inputs, edge cases.\cb1 \
+\ls6\ilvl0
+\f0\b \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	4	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Final Code Cleanup:
+\f1\b0 \'a0Remove debug\'a0
+\f2\fs26 print
+\f1\fs28 s, commented code. Ensure imports are used. Run\'a0
+\f2\fs26 flake8
+\f1\fs28 \'a0and\'a0
+\f2\fs26 black
+\f1\fs28 \'a0one last time.\cb1 \
+\ls6\ilvl0
+\f0\b \cb3 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	5	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Final Commit:
+\f1\b0 \'a0"Final polish, documentation, and cleanup".\cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 This plan provides a clear, iterative path combining debugging and refactoring, optimized for the VS Code environment. Remember to commit your changes regularly at each step.\
+}
