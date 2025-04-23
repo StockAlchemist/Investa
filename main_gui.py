@@ -816,7 +816,7 @@ class AddTransactionDialog(QDialog):
 
 # --- Main Application Window ---
 class PortfolioApp(QMainWindow):
-    """Main application window for the Portfolio Dashboard."""
+    """Main application window for the Investa Portfolio Dashboard."""
 
     # --- Helper Methods (Define BEFORE they are called in __init__) ---
 
@@ -985,7 +985,7 @@ class PortfolioApp(QMainWindow):
     # --- Initialization Method ---
     def __init__(self):
         super().__init__()
-        self.base_window_title = "Portfolio Dashboard"; self.index_quote_data: Dict[str, Dict[str, Any]] = {}; self.setWindowTitle(self.base_window_title)
+        self.base_window_title = "Investa Portfolio Dashboard"; self.index_quote_data: Dict[str, Dict[str, Any]] = {}; self.setWindowTitle(self.base_window_title)
         self.config = self.load_config()
         self.transactions_file = self.config.get("transactions_file", DEFAULT_CSV)
         self.fmp_api_key = self.config.get("fmp_api_key", DEFAULT_API_KEY)
@@ -1343,7 +1343,7 @@ class PortfolioApp(QMainWindow):
         # --- Header Frame Setup (unchanged) ---
         header_layout = QHBoxLayout(header_frame)
         header_layout.setContentsMargins(15, 8, 15, 8)
-        self.main_title_label = QLabel("📈 <b>Portfolio Dashboard (v10)</b> ✨") # Updated Title
+        self.main_title_label = QLabel("📈 <b>Investa Portfolio Dashboard (v10)</b> ✨") # Updated Title
         self.main_title_label.setObjectName("MainTitleLabel"); self.main_title_label.setTextFormat(Qt.RichText)
         self.header_info_label = QLabel("<i>Initializing...</i>")
         self.header_info_label.setObjectName("HeaderInfoLabel"); self.header_info_label.setTextFormat(Qt.RichText)
