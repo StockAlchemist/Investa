@@ -533,194 +533,316 @@ def fetch_index_quotes_yfinance(query_symbols: List[str] = DEFAULT_INDEX_QUERY_S
         if q_sym not in results: results[q_sym] = None
     return results
 
-def get_cached_or_fetch_yfinance_data( internal_stock_symbols: List[str], required_currencies: Set[str], cache_file: str = DEFAULT_CURRENT_CACHE_FILE_PATH, cache_duration_hours: int = YFINANCE_CACHE_DURATION_HOURS) -> Tuple[Optional[Dict[str, Dict[str, Optional[float]]]], Optional[Dict[str, float]]]:
-    """ Gets stock/ETF price, change, prev close, and FX rates using yfinance, leveraging a cache. """
-    stock_data_internal: Optional[Dict[str, Dict[str, Optional[float]]]] = None; fx_rates_standard: Optional[Dict[str, float]] = None; cache_needs_update = True; cached_data = {}; now = datetime.now()
+# In portfolio_logic.py
 
-    # --- FIX: Check cache_file validity before reading ---
+# Replace the ENTIRE get_cached_or_fetch_yfinance_data function with this:
+
+def get_cached_or_fetch_yfinance_data(
+    internal_stock_symbols: List[str],
+    required_currencies: Set[str], # Currencies needed (incl. display_currency, default_currency, local currencies)
+    cache_file: str = DEFAULT_CURRENT_CACHE_FILE_PATH,
+    cache_duration_hours: int = YFINANCE_CACHE_DURATION_HOURS
+) -> Tuple[Optional[Dict[str, Dict[str, Optional[float]]]], Optional[Dict[str, float]]]:
+    """
+    Gets stock/ETF price/change data and FX rates relative to USD using yfinance, leveraging a cache.
+    Args:
+        internal_stock_symbols: List of internal stock/ETF symbols.
+        required_currencies: Set of currency codes (e.g., {'USD', 'EUR', 'THB'}) that need rates vs USD.
+        cache_file: Path to the JSON cache file.
+        cache_duration_hours: How long the cache is considered valid.
+    Returns:
+        Tuple containing:
+        - Stock Data Dict: {internal_symbol: {'price': float, 'change': float, 'changesPercentage': float, 'previousClose': float}} or None on failure.
+        - FX Rates vs USD Dict: {currency_code: rate_per_USD} (e.g., {'JPY': 143.5, 'EUR': 0.85}) or None on failure.
+          Note: USD key will have value 1.0.
+    """
+    stock_data_internal: Optional[Dict[str, Dict[str, Optional[float]]]] = None
+    # --- MODIFIED: This dictionary now ONLY stores rates relative to USD ---
+    fx_rates_vs_usd: Optional[Dict[str, float]] = {'USD': 1.0} # Initialize with USD base
+    # --- END MODIFICATION ---
+
+    cache_needs_update = True
+    cached_data = {}
+    now = datetime.now()
+
+    # --- Cache Loading Logic ---
     if not cache_file:
         print(f"Warning: Invalid cache file path provided ('{cache_file}'). Cache read skipped.")
-        cache_needs_update = True # Force fetch if path is bad
+        cache_needs_update = True
     elif os.path.exists(cache_file):
         try:
             with open(cache_file, 'r') as f: cached_data = json.load(f)
-            cache_timestamp_str = cached_data.get('timestamp'); cached_stocks = cached_data.get('stock_data_internal'); cached_fx = cached_data.get('fx_rates_standard')
-            if cache_timestamp_str and isinstance(cached_stocks, dict) and isinstance(cached_fx, dict):
-                cache_timestamp = datetime.fromisoformat(cache_timestamp_str); cache_age = now - cache_timestamp
+            cache_timestamp_str = cached_data.get('timestamp')
+            cached_stocks = cached_data.get('stock_data_internal')
+            # --- MODIFIED: Load fx_rates_vs_usd from cache ---
+            cached_fx_vs_usd = cached_data.get('fx_rates_vs_usd')
+            # --- END MODIFICATION ---
+
+            if cache_timestamp_str and isinstance(cached_stocks, dict) and isinstance(cached_fx_vs_usd, dict):
+                cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
+                cache_age = now - cache_timestamp
                 if cache_age <= timedelta(hours=cache_duration_hours):
+                    # Check if all required stocks and currencies are present
                     all_stocks_present = all(s in cached_stocks for s in internal_stock_symbols if s not in YFINANCE_EXCLUDED_SYMBOLS and s != CASH_SYMBOL_CSV)
                     stock_format_ok = all(isinstance(v, dict) and 'price' in v for v in cached_stocks.values()) if cached_stocks else True
-                    all_fx_derivable = True
-                    if required_currencies:
-                        cached_currencies = set(['USD']);
-                        for pair in cached_fx.keys(): cached_currencies.add(pair[:3]); cached_currencies.add(pair[3:])
-                        if not required_currencies.issubset(cached_currencies): all_fx_derivable = False
-                    if all_stocks_present and stock_format_ok and all_fx_derivable: print(f"Yahoo Finance cache is valid (age: {cache_age}). Using cached data."); stock_data_internal = cached_stocks; fx_rates_standard = cached_fx; cache_needs_update = False
-                    else: print(f"Yahoo Finance cache is recent but incomplete/invalid. Will fetch/update."); stock_data_internal = cached_stocks if stock_format_ok else {}; fx_rates_standard = cached_fx; cache_needs_update = True
-                else: print(f"Yahoo Finance cache is outdated (age: {cache_age}). Will fetch fresh data."); cache_needs_update = True
-            else: print("Yahoo Finance cache is invalid or missing data. Will fetch fresh data."); cache_needs_update = True
-        except Exception as e: print(f"Error reading Yahoo Finance cache file {cache_file}: {e}. Will fetch fresh data."); cache_needs_update = True
-    else: print(f"Yahoo Finance cache file {cache_file} not found. Will fetch fresh data."); cache_needs_update = True
+                    # --- MODIFIED: Check required currencies in cached_fx_vs_usd ---
+                    all_fx_present = required_currencies.issubset(cached_fx_vs_usd.keys())
+                    # --- END MODIFICATION ---
 
+                    if all_stocks_present and stock_format_ok and all_fx_present:
+                        print(f"Yahoo Finance cache is valid (age: {cache_age}). Using cached data.")
+                        stock_data_internal = cached_stocks
+                        fx_rates_vs_usd = cached_fx_vs_usd
+                        cache_needs_update = False
+                    else:
+                        missing_reason = []
+                        if not all_stocks_present: missing_reason.append("stocks")
+                        if not stock_format_ok: missing_reason.append("stock_format")
+                        if not all_fx_present: missing_reason.append("currencies")
+                        print(f"Yahoo Finance cache is recent but incomplete/invalid ({', '.join(missing_reason)}). Will fetch/update.")
+                        # Start with cached data but mark for update
+                        stock_data_internal = cached_stocks if stock_format_ok else {}
+                        fx_rates_vs_usd = cached_fx_vs_usd if isinstance(cached_fx_vs_usd, dict) else {'USD': 1.0}
+                        cache_needs_update = True
+                else:
+                    print(f"Yahoo Finance cache is outdated (age: {cache_age}). Will fetch fresh data.")
+                    cache_needs_update = True
+            else:
+                print("Yahoo Finance cache is invalid or missing data. Will fetch fresh data.")
+                cache_needs_update = True
+        except Exception as e:
+            print(f"Error reading Yahoo Finance cache file {cache_file}: {e}. Will fetch fresh data.")
+            cache_needs_update = True
+            # Reset to defaults on error
+            stock_data_internal = {}
+            fx_rates_vs_usd = {'USD': 1.0}
+    else:
+        print(f"Yahoo Finance cache file {cache_file} not found. Will fetch fresh data.")
+        cache_needs_update = True
+
+    # --- Data Fetching Logic ---
     if cache_needs_update:
-        print("Fetching/Updating data from Yahoo Finance (Stocks & FX)...")
+        print("Fetching/Updating data from Yahoo Finance (Stocks & FX vs USD)...")
+        # Initialize from cache if available, otherwise empty/default
         fetched_stocks = stock_data_internal if stock_data_internal is not None else {}
-        fx_rates_vs_usd = {'USD': 1.0};
-        if fx_rates_standard:
-             for pair, rate in fx_rates_standard.items():
-                 if pair.startswith("USD/"): curr = pair[4:]; fx_rates_vs_usd[curr] = 1.0 / rate if pd.notna(rate) and rate != 0 else np.nan
-                 elif pair.endswith("/USD"): curr = pair[:3]; fx_rates_vs_usd[curr] = rate if pd.notna(rate) else np.nan
-        yf_tickers_to_fetch = set(); internal_to_yf_map = {}; yf_to_internal_map = {}; missing_stock_symbols = []; explicitly_excluded_count = 0
+        # fx_rates_vs_usd is already initialized above (from cache or default {'USD': 1.0})
+
+        # --- Determine symbols/tickers to fetch ---
+        yf_tickers_to_fetch = set()
+        internal_to_yf_map = {}
+        yf_to_internal_map = {}
+        missing_stock_symbols = []
+        explicitly_excluded_count = 0
+
+        # Stocks/ETFs
         for internal_sym in internal_stock_symbols:
             if internal_sym == CASH_SYMBOL_CSV: continue
             if internal_sym in YFINANCE_EXCLUDED_SYMBOLS:
-                if internal_sym not in fetched_stocks: explicitly_excluded_count += 1; fetched_stocks[internal_sym] = {'price': np.nan, 'change': np.nan, 'changesPercentage': np.nan, 'previousClose': np.nan}
+                if internal_sym not in fetched_stocks:
+                    explicitly_excluded_count += 1
+                    fetched_stocks[internal_sym] = {'price': np.nan, 'change': np.nan, 'changesPercentage': np.nan, 'previousClose': np.nan}
                 continue
-            yf_ticker = SYMBOL_MAP_TO_YFINANCE.get(internal_sym)
-            if yf_ticker:
-                should_fetch = True
+
+            yf_ticker = SYMBOL_MAP_TO_YFINANCE.get(internal_sym, internal_sym.upper()) # Default to upper if not in map
+            # --- MODIFICATION: Check if yf_ticker is potentially invalid BEFORE adding ---
+            # Simple check: Avoid symbols with spaces or likely invalid chars if not mapped
+            if yf_ticker and ' ' not in yf_ticker and ':' not in yf_ticker:
+                should_fetch_stock = True
                 if internal_sym in fetched_stocks:
                     cached_entry = fetched_stocks[internal_sym]
-                    if isinstance(cached_entry, dict) and pd.notna(cached_entry.get('price')): should_fetch = False
-                if should_fetch: yf_tickers_to_fetch.add(yf_ticker); internal_to_yf_map[internal_sym] = yf_ticker; yf_to_internal_map[yf_ticker] = internal_sym
+                    # Only skip fetch if price is valid in cache
+                    if isinstance(cached_entry, dict) and pd.notna(cached_entry.get('price')) and cached_entry.get('price') > 1e-9:
+                        should_fetch_stock = False
+
+                if should_fetch_stock:
+                    yf_tickers_to_fetch.add(yf_ticker)
+                    internal_to_yf_map[internal_sym] = yf_ticker
+                    yf_to_internal_map[yf_ticker] = internal_sym
+            # --- END MODIFICATION ---
             else:
                 missing_stock_symbols.append(internal_sym)
-                if internal_sym not in fetched_stocks: print(f"Warning: No Yahoo Finance ticker mapping for: {internal_sym}."); fetched_stocks[internal_sym] = {'price': np.nan, 'change': np.nan, 'changesPercentage': np.nan, 'previousClose': np.nan}
-        if explicitly_excluded_count > 0: print(f"Info: Explicitly excluded {explicitly_excluded_count} symbols.")
-        fx_tickers_to_fetch = set(); currencies_to_fetch_vs_usd = required_currencies - set(fx_rates_vs_usd.keys())
+                if internal_sym not in fetched_stocks:
+                    print(f"Warning: No valid Yahoo Finance ticker mapping for: {internal_sym}.")
+                    fetched_stocks[internal_sym] = {'price': np.nan, 'change': np.nan, 'changesPercentage': np.nan, 'previousClose': np.nan}
+
+        if explicitly_excluded_count > 0: print(f"Info: Explicitly excluded {explicitly_excluded_count} stock symbols.")
+
+        # FX Rates vs USD
+        fx_tickers_to_fetch = set()
+        # --- MODIFIED: Determine which *USD based* rates are missing ---
+        currencies_to_fetch_vs_usd = required_currencies - set(fx_rates_vs_usd.keys())
         for currency in currencies_to_fetch_vs_usd:
-             if currency != 'USD': fx_ticker = f"{currency}=X"; fx_tickers_to_fetch.add(fx_ticker); yf_tickers_to_fetch.add(fx_ticker)
-        if not yf_tickers_to_fetch: print("No new Stock/FX tickers need fetching.");
+            if currency != 'USD' and currency and isinstance(currency, str): # Basic validation
+                 # Fetch OTHERCURRENCY=X ticker which gives OTHERCURRENCY per 1 USD
+                 fx_ticker = f"{currency}=X"
+                 fx_tickers_to_fetch.add(fx_ticker)
+                 yf_tickers_to_fetch.add(fx_ticker)
+        # --- END MODIFICATION ---
+
+        # --- Fetching using yfinance ---
+        if not yf_tickers_to_fetch:
+            print("No new Stock/FX tickers need fetching.")
         else:
             print(f"Fetching/Updating {len(yf_tickers_to_fetch)} tickers from Yahoo: {list(yf_tickers_to_fetch)}")
             fetch_success = True; all_fetched_data = {}
             try:
-                # Fetch data in batches to potentially improve reliability
                 yf_ticker_list = list(yf_tickers_to_fetch)
-                fetch_batch_size = 50
+                fetch_batch_size = 50 # Adjust batch size if needed
                 for i in range(0, len(yf_ticker_list), fetch_batch_size):
                     batch = yf_ticker_list[i:i+fetch_batch_size]
                     print(f"  Fetching batch {i//fetch_batch_size + 1} ({len(batch)} tickers)...")
-                    # Increased robustness around yfinance call
                     try:
+                        # Use yf.Tickers for batch fetching info
                         tickers_data = yf.Tickers(" ".join(batch))
-                    except requests.exceptions.HTTPError as http_err:
-                        print(f"  HTTP ERROR fetching batch (potential server issue): {http_err}")
-                        fetch_success = False
-                        continue # Skip processing this batch
-                    except Exception as yf_err:
-                        print(f"  UNEXPECTED YFINANCE ERROR fetching batch: {yf_err}")
-                        fetch_success = False
-                        continue # Skip processing this batch
-
-                    # Process results IF fetch was successful for the batch
-                    for yf_ticker, ticker_obj in tickers_data.tickers.items():
-                        ticker_info = getattr(ticker_obj, 'info', None); price, change, pct_change, prev_close = np.nan, np.nan, np.nan, np.nan
-                        if ticker_info:
-                            price_raw = ticker_info.get('regularMarketPrice', ticker_info.get('currentPrice')); change_raw = ticker_info.get('regularMarketChange'); pct_change_raw = ticker_info.get('regularMarketChangePercent'); prev_close_raw = ticker_info.get('previousClose')
-                            try: price = float(price_raw) if price_raw is not None else np.nan
-                            except (ValueError, TypeError): price = np.nan
-                            try: change = float(change_raw) if change_raw is not None else np.nan
-                            except (ValueError, TypeError): change = np.nan
-                            try: pct_change = float(pct_change_raw) if pct_change_raw is not None else np.nan # Convert fraction to %
-                            except (ValueError, TypeError): pct_change = np.nan
-                            try: prev_close = float(prev_close_raw) if prev_close_raw is not None else np.nan
-                            except (ValueError, TypeError): prev_close = np.nan
-                            # Ensure price is positive, otherwise treat as NaN
-                            if not (pd.notna(price) and price > 1e-9): price = np.nan
-                        else:
-                            # Don't print warning if fetch failed above
-                            if fetch_success: print(f"Warning: No yfinance info for ticker: {yf_ticker}")
-                        all_fetched_data[yf_ticker] = {'price': price, 'change': change, 'changesPercentage': pct_change, 'previousClose': prev_close }
-                    time.sleep(0.1) # Small delay between batches
-            except Exception as e: # Catch errors outside the inner yfinance call
-                print(f"ERROR during Yahoo Finance fetch loop: {e}"); traceback.print_exc(); fetch_success = False;
+                        for yf_ticker, ticker_obj in tickers_data.tickers.items():
+                             ticker_info = getattr(ticker_obj, 'info', None)
+                             price, change, pct_change, prev_close = np.nan, np.nan, np.nan, np.nan
+                             if ticker_info:
+                                 price_raw = ticker_info.get('regularMarketPrice', ticker_info.get('currentPrice')); change_raw = ticker_info.get('regularMarketChange'); pct_change_raw = ticker_info.get('regularMarketChangePercent'); prev_close_raw = ticker_info.get('previousClose')
+                                 try: price = float(price_raw) if price_raw is not None else np.nan
+                                 except (ValueError, TypeError): price = np.nan
+                                 try: change = float(change_raw) if change_raw is not None else np.nan
+                                 except (ValueError, TypeError): change = np.nan
+                                 try: pct_change = float(pct_change_raw) if pct_change_raw is not None else np.nan # Already % from info? No, usually fraction.
+                                 except (ValueError, TypeError): pct_change = np.nan
+                                 try: prev_close = float(prev_close_raw) if prev_close_raw is not None else np.nan
+                                 except (ValueError, TypeError): prev_close = np.nan
+                                 # Ensure price is positive, otherwise treat as NaN
+                                 if not (pd.notna(price) and price > 1e-9): price = np.nan
+                                 # --- Convert pct_change fraction to percentage ---
+                                 if pd.notna(pct_change): pct_change *= 100.0
+                                 # --- END Convert ---
+                             # Store whatever we got, even if incomplete
+                             all_fetched_data[yf_ticker] = {'price': price, 'change': change, 'changesPercentage': pct_change, 'previousClose': prev_close }
+                    except requests.exceptions.HTTPError as http_err: print(f"  HTTP ERROR fetching batch: {http_err}"); fetch_success = False;
+                    except Exception as yf_err: print(f"  YFINANCE ERROR fetching batch info: {yf_err}"); fetch_success = False;
+                    time.sleep(0.1) # Small delay
+            except Exception as e: print(f"ERROR during Yahoo Finance fetch loop: {e}"); traceback.print_exc(); fetch_success = False;
 
             # --- Process fetched data ---
+            # Stocks
             for yf_ticker, data_dict in all_fetched_data.items():
                 internal_sym = yf_to_internal_map.get(yf_ticker)
-                if internal_sym: fetched_stocks[internal_sym] = data_dict
+                if internal_sym: fetched_stocks[internal_sym] = data_dict # Overwrite or add fetched data
+
+            # Ensure all requested internal symbols have an entry (even if NaN)
             for sym in internal_stock_symbols:
                  if sym != CASH_SYMBOL_CSV and sym not in YFINANCE_EXCLUDED_SYMBOLS and sym not in fetched_stocks:
-                     if sym not in missing_stock_symbols: print(f"Warning: Data for {sym} not found after fetch.")
+                     if sym not in missing_stock_symbols: print(f"Warning: Data for {sym} still not found after fetch.")
                      fetched_stocks[sym] = {'price': np.nan, 'change': np.nan, 'changesPercentage': np.nan, 'previousClose': np.nan}
-            for currency in currencies_to_fetch_vs_usd:
-                 if currency == 'USD': continue
-                 fx_ticker = f"{currency}=X"; fx_data_dict = all_fetched_data.get(fx_ticker); price = fx_data_dict.get('price') if isinstance(fx_data_dict, dict) else np.nan
-                 if pd.notna(price): fx_rates_vs_usd[currency] = price
-                 else: print(f"Warning: Failed to fetch FX rate for {fx_ticker}.")
-            # --- Calculate Cross Rates ---
-            calculated_fx_rates = {}; available_currencies = set(fx_rates_vs_usd.keys())
-            if 'USD' not in available_currencies: available_currencies.add('USD'); fx_rates_vs_usd['USD'] = 1.0
-            for from_curr in required_currencies:
-                for to_curr in required_currencies:
-                    if from_curr == to_curr: continue
-                    pair_key = f"{from_curr}/{to_curr}"
-                    if from_curr in available_currencies and to_curr in available_currencies:
-                        rate_usd_per_from = fx_rates_vs_usd[from_curr]; rate_usd_per_to = fx_rates_vs_usd[to_curr]
-                        if pd.notna(rate_usd_per_from) and pd.notna(rate_usd_per_to) and abs(rate_usd_per_from) > 1e-9: # Use abs for safety
-                             try: cross_rate = rate_usd_per_to / rate_usd_per_from; calculated_fx_rates[pair_key] = cross_rate
-                             except ZeroDivisionError: calculated_fx_rates[pair_key] = np.nan
-                        else: calculated_fx_rates[pair_key] = np.nan
-                    else: calculated_fx_rates[pair_key] = np.nan
-            stock_data_internal = fetched_stocks; fx_rates_standard = calculated_fx_rates
 
-            # --- Save Cache ---
-            # --- FIX: Check cache_file validity BEFORE trying to write ---
+            # FX Rates vs USD
+            for currency in currencies_to_fetch_vs_usd: # Iterate over currencies we TRIED to fetch
+                 if currency == 'USD': continue
+                 fx_ticker = f"{currency}=X"; # Ticker we fetched (e.g., JPY=X)
+                 fx_data_dict = all_fetched_data.get(fx_ticker);
+                 price = fx_data_dict.get('price') if isinstance(fx_data_dict, dict) else np.nan
+                 if pd.notna(price):
+                      # Store the rate: Units of 'currency' per 1 USD
+                      fx_rates_vs_usd[currency] = price
+                 else:
+                      print(f"Warning: Failed to fetch/update FX rate for {fx_ticker}. Previous value (if any) retained.")
+                      # Ensure key exists even if fetch failed, maybe keep old value or set NaN?
+                      if currency not in fx_rates_vs_usd:
+                           fx_rates_vs_usd[currency] = np.nan
+
+        # Assign final results after potential fetch/update
+        stock_data_internal = fetched_stocks
+        # fx_rates_vs_usd is updated in place
+
+        # --- MODIFIED: Save Cache - ONLY store stock_data_internal and fx_rates_vs_usd ---
+        if cache_needs_update: # Save only if we attempted an update
             if not cache_file:
                 print(f"ERROR: Cache file path is invalid ('{cache_file}'). Cannot save cache.")
             else:
-                print(f"Saving updated Yahoo Finance data to cache: {cache_file}")
-                content = { 'timestamp': now.isoformat(), 'stock_data_internal': stock_data_internal, 'fx_rates_standard': fx_rates_standard }
+                print(f"Saving updated Yahoo Finance data (Stocks, FX vs USD) to cache: {cache_file}")
+                # Ensure USD rate is present
+                if 'USD' not in fx_rates_vs_usd: fx_rates_vs_usd['USD'] = 1.0
+                # Prepare content
+                content = {
+                    'timestamp': now.isoformat(),
+                    'stock_data_internal': stock_data_internal,
+                    'fx_rates_vs_usd': fx_rates_vs_usd # Save the dictionary directly
+                }
                 try:
-                    # Ensure directory exists (useful if path includes folders)
                     cache_dir = os.path.dirname(cache_file)
-                    if cache_dir and not os.path.exists(cache_dir):
-                        os.makedirs(cache_dir)
-                        print(f"Created cache directory: {cache_dir}")
-
+                    if cache_dir and not os.path.exists(cache_dir): os.makedirs(cache_dir)
                     with open(cache_file, 'w') as f:
+                        # Use NaN-aware encoder
                         class NpEncoder(json.JSONEncoder):
                             def default(self, obj):
                                 if isinstance(obj, np.integer): return int(obj)
-                                # Check for NaN before converting float
-                                if isinstance(obj, np.floating): return float(obj) if np.isfinite(obj) else None
+                                if isinstance(obj, np.floating): return float(obj) if np.isfinite(obj) else None # Convert NaN to None for JSON
                                 if isinstance(obj, np.ndarray): return obj.tolist()
                                 return super(NpEncoder, self).default(obj)
                         json.dump(content, f, indent=4, cls=NpEncoder)
                 except Exception as e:
-                     # --- FIX: Include path in error message ---
                      print(f"Error writing Yahoo Finance cache ('{cache_file}'): {e}")
+        # --- END MODIFICATION ---
 
     # --- Final Checks ---
-    # (Rest of the function remains the same)
-    # ...
     if not isinstance(stock_data_internal, dict): stock_data_internal = None
-    if not isinstance(fx_rates_standard, dict): fx_rates_standard = None
+    if not isinstance(fx_rates_vs_usd, dict): fx_rates_vs_usd = None
+
+    # Ensure USD is always in the returned FX dict if it's not None
+    if isinstance(fx_rates_vs_usd, dict) and 'USD' not in fx_rates_vs_usd:
+        fx_rates_vs_usd['USD'] = 1.0
+
+    # Ensure all requested internal stock symbols have an entry, even if NaN
     if stock_data_internal is not None:
         for sym in internal_stock_symbols:
             if sym != CASH_SYMBOL_CSV and sym not in YFINANCE_EXCLUDED_SYMBOLS and sym not in stock_data_internal:
                  stock_data_internal[sym] = {'price': np.nan, 'change': np.nan, 'changesPercentage': np.nan, 'previousClose': np.nan}
-    return stock_data_internal, fx_rates_standard
+
+    # --- MODIFIED: Return fx_rates_vs_usd ---
+    return stock_data_internal, fx_rates_vs_usd
+    # --- END MODIFICATION ---
+
+# --- FINAL Version: Simple lookup assuming consistent dictionary ---
+# Use this version of get_conversion_rate
 
 def get_conversion_rate(from_curr: str, to_curr: str, fx_rates: Optional[Dict[str, float]]) -> float:
-    """Gets FX conversion rate from the standard 'FROM/TO' dictionary."""
-    if from_curr == to_curr: return 1.0
-    if not isinstance(fx_rates, dict): return 1.0 # Fallback if rates not available
+    """
+    Gets CURRENT FX conversion rate (units of to_curr per 1 unit of from_curr).
+    Calculates cross rates via USD using the provided fx_rates_vs_usd dictionary.
+    Assumes fx_rates dictionary contains OTHER_CURRENCY per 1 USD.
+    Returns 1.0 on failure.
+    """
+    if from_curr == to_curr:
+        return 1.0
+    if not isinstance(fx_rates, dict):
+        # print(f"Warning: get_conversion_rate received invalid fx_rates type. Returning 1.0") # Optional
+        return 1.0 # Fallback
 
-    pair_direct = f"{from_curr}/{to_curr}"
-    rate = fx_rates.get(pair_direct)
-    if rate is not None and pd.notna(rate) and rate > 0: return rate
+    from_curr_upper = from_curr.upper()
+    to_curr_upper = to_curr.upper()
 
-    pair_inverse = f"{to_curr}/{from_curr}"
-    inverse_rate = fx_rates.get(pair_inverse)
-    if inverse_rate is not None and pd.notna(inverse_rate) and inverse_rate > 0:
-        try: return 1.0 / inverse_rate
-        except ZeroDivisionError: pass # Fall through
+    # fx_rates now holds {CURRENCY: rate_per_USD} e.g., {'JPY': 143.3, 'THB': 33.5}
 
-    # Don't print error every time, fallback silently to 1.0
-    return 1.0
+    # Get intermediate rates: Currency per 1 USD
+    rate_A_per_USD = fx_rates.get(from_curr_upper) # e.g., THB per USD
+    if from_curr_upper == 'USD': rate_A_per_USD = 1.0
 
+    rate_B_per_USD = fx_rates.get(to_curr_upper)   # e.g., JPY per USD
+    if to_curr_upper == 'USD': rate_B_per_USD = 1.0
+
+    rate_B_per_A = np.nan # Initialize rate for B per A (TO / FROM)
+
+    # Formula: TO / FROM = (TO / USD) / (FROM / USD)
+    if pd.notna(rate_A_per_USD) and pd.notna(rate_B_per_USD):
+        if abs(rate_A_per_USD) > 1e-9: # Check denominator (FROM/USD) is not zero
+            try:
+                rate_B_per_A = rate_B_per_USD / rate_A_per_USD
+                # print(f"DEBUG get_conv_rate: {to_curr}/{from_curr} = {rate_B_per_USD} / {rate_A_per_USD} = {rate_B_per_A}") # DEBUG
+            except (ZeroDivisionError, TypeError): pass # Keep NaN
+        # else: Denominator is zero/invalid
+
+    # Final check and fallback
+    if pd.isna(rate_B_per_A):
+        # print(f"Warning: Current FX rate lookup failed for {from_curr}->{to_curr}. Returning 1.0") # Optional Warning
+        return 1.0
+    else:
+        return float(rate_B_per_A)
 # --- Main Calculation Function (Current Portfolio Summary) ---
 # (ensure it uses CASH_SYMBOL_CSV)
 def calculate_portfolio_summary(
@@ -929,12 +1051,13 @@ def calculate_portfolio_summary(
     for data in holdings.values(): required_currencies.add(data.get('local_currency', default_currency))
     for data in cash_summary.values(): required_currencies.add(data.get('currency', default_currency)) # Use 'currency' key for cash
 
-    current_stock_data_internal, current_fx_rates_standard = get_cached_or_fetch_yfinance_data(
+    current_stock_data_internal, current_fx_rates_vs_usd = get_cached_or_fetch_yfinance_data(
         internal_stock_symbols=all_stock_symbols_internal,
         required_currencies=required_currencies,
         cache_file=cache_file_path
     )
-    if current_stock_data_internal is None or current_fx_rates_standard is None:
+    # And update the subsequent check:
+    if current_stock_data_internal is None or current_fx_rates_vs_usd is None: # Check the new variable
         print("FATAL: Failed to fetch critical Stock/FX data from Yahoo Finance and/or cache. Cannot proceed.")
         ignored_df = original_transactions_df.loc[sorted(list(ignored_indices))].copy() if ignored_indices and original_transactions_df is not None else pd.DataFrame(); # Add reason if possible...
         return None, None, ignored_df, None, "Error: Price/FX/Change fetch failed via Yahoo Finance."
@@ -973,7 +1096,7 @@ def calculate_portfolio_summary(
             except (ValueError, TypeError): current_price_local = 0.0
 
         # --- Use get_conversion_rate helper ---
-        fx_rate = get_conversion_rate(local_currency, display_currency, current_fx_rates_standard)
+        fx_rate = get_conversion_rate(local_currency, display_currency, current_fx_rates_vs_usd)
         # --- Continue with calculations using fx_rate ---
         market_value_local = current_qty * current_price_local if pd.notna(current_price_local) else 0.0; market_value_display = market_value_local * fx_rate; account_market_values_local[account] += market_value_local; day_change_value_local = 0.0
         if price_source == "Yahoo API/Cache" and pd.notna(day_change_local): day_change_value_local = current_qty * day_change_local
@@ -1056,7 +1179,7 @@ def calculate_portfolio_summary(
             symbol = CASH_SYMBOL_CSV; current_qty = cash_data.get('qty', 0.0); local_currency = cash_data.get('currency', default_currency); realized_gain_local = cash_data.get('realized', 0.0); dividends_local = cash_data.get('dividends', 0.0); commissions_local = cash_data.get('commissions', 0.0)
             account_market_values_local[account] += current_qty; account_local_currency_map[account] = local_currency
             # --- Use get_conversion_rate helper ---
-            fx_rate = get_conversion_rate(local_currency, display_currency, current_fx_rates_standard)
+            fx_rate = get_conversion_rate(local_currency, display_currency, current_fx_rates_vs_usd)
             # --- Continue with calculations using fx_rate ---
             current_price_local = 1.0; current_price_display = current_price_local * fx_rate; market_value_display = current_qty * current_price_display; cost_basis_display = market_value_display; avg_cost_price_display = current_price_display; realized_gain_display = realized_gain_local * fx_rate; dividends_display = dividends_local * fx_rate; commissions_display = commissions_local * fx_rate; total_gain_display = realized_gain_display + 0.0 + dividends_display - commissions_display; cash_cumulative_investment_display = max(0.0, market_value_display); total_return_pct_cash = np.nan; cash_denominator_for_pct = cash_cumulative_investment_display
             if abs(cash_denominator_for_pct) > 1e-9: total_return_pct_cash = (total_gain_display / cash_denominator_for_pct) * 100.0
@@ -1096,7 +1219,7 @@ def calculate_portfolio_summary(
             mwr = np.nan
             try:
                 # Pass the account_mv_display (already converted)
-                cf_dates_mwr, cf_values_mwr = get_cash_flows_for_mwr( account_tx, account_mv_display, report_date, display_currency, current_fx_rates_standard, display_currency ) # Target currency is display_currency
+                cf_dates_mwr, cf_values_mwr = get_cash_flows_for_mwr( account_tx, account_mv_display, report_date, display_currency, current_fx_rates_vs_usd, display_currency ) # Target currency is display_currency
                 if cf_dates_mwr and cf_values_mwr: mwr = calculate_irr(cf_dates_mwr, cf_values_mwr)
                 metrics_entry['mwr'] = mwr * 100.0 if pd.notna(mwr) else np.nan
             except Exception as e_mwr: metrics_entry['mwr'] = np.nan # Suppress detailed print
@@ -1123,7 +1246,7 @@ def calculate_portfolio_summary(
         overall_cumulative_investment_display = pd.to_numeric(full_summary_df[f'Cumulative Investment ({display_currency})'], errors='coerce').fillna(0.0).sum()
         try:
             # Pass the FILTERED transactions_df for overall MWR
-            cf_dates_overall, cf_values_overall = get_cash_flows_for_mwr( transactions_df, overall_market_value_display, report_date, display_currency, current_fx_rates_standard, display_currency )
+            cf_dates_overall, cf_values_overall = get_cash_flows_for_mwr( transactions_df, overall_market_value_display, report_date, display_currency, current_fx_rates_vs_usd, display_currency )
             if cf_dates_overall and cf_values_overall: overall_portfolio_mwr = calculate_irr(cf_dates_overall, cf_values_overall)
         except Exception as e_mwr_overall: overall_portfolio_mwr = np.nan
         overall_day_change_display = full_summary_df[f'Day Change ({display_currency})'].sum(); overall_prev_close_mv_display = overall_market_value_display - overall_day_change_display; overall_day_change_percent = np.nan
@@ -1141,7 +1264,7 @@ def calculate_portfolio_summary(
         overall_summary_metrics['_available_accounts'] = all_available_accounts_list
         # Add exchange rate if needed
         if display_currency != default_currency:
-            base_to_display_rate = get_conversion_rate(default_currency, display_currency, current_fx_rates_standard)
+            base_to_display_rate = get_conversion_rate(default_currency, display_currency, current_fx_rates_vs_usd)
             if base_to_display_rate != 1.0 and np.isfinite(base_to_display_rate):
                  overall_summary_metrics['exchange_rate_to_display'] = base_to_display_rate
 
@@ -1164,7 +1287,7 @@ def calculate_portfolio_summary(
          non_cash_holdings = full_summary_df[full_summary_df['Symbol'] != CASH_SYMBOL_CSV]
          price_source_warnings = non_cash_holdings['Price Source'].str.contains("Fallback|Excluded|Yahoo Invalid", na=False).any()
     warnings = any("WARN" in r.upper() for r in ignored_reasons.values()) or any("WARN" in s.upper() for s in status_messages) or any("MISSING" in r.upper() for r in ignored_reasons.values()) or price_source_warnings
-    errors = any("ERROR" in r.upper() for r in ignored_reasons.values()) or any("FAIL" in r.upper() for r in ignored_reasons.values()) or any("ERROR" in s.upper() for s in status_messages) or (current_stock_data_internal is None or current_fx_rates_standard is None)
+    errors = any("ERROR" in r.upper() for r in ignored_reasons.values()) or any("FAIL" in r.upper() for r in ignored_reasons.values()) or any("ERROR" in s.upper() for s in status_messages) or (current_stock_data_internal is None or current_fx_rates_vs_usd is None)
     critical_warnings = any("CRITICAL" in r.upper() for r in ignored_reasons.values()) or any("CRITICAL" in s.upper() for s in status_messages)
     if critical_warnings: final_status = f"Success with Critical Warnings ({filter_desc})"
     elif errors: final_status = f"Success with Errors ({filter_desc})"
@@ -1340,64 +1463,69 @@ def get_historical_price(symbol_key: str, target_date: date, prices_dict: Dict[s
         # print(f"ERROR getting historical price for {symbol_key} on {target_date}: {e}") # Reduced verbosity
         return None
 
+
+# --- Revised: Calculates historical rate TO/FROM via USD bridge ---
+# --- FINAL Version: Calculates historical rate TO/FROM via USD bridge ---
 def get_historical_fx_rate(from_curr: str, to_curr: str, target_date: date, fx_dict: Dict[str, pd.DataFrame]) -> float:
     """
-    Gets the historical FX rate using Yahoo Finance pairs (e.g., EURUSD=X).
-    Prioritizes standard pairs (relative to USD) and calculates inverses correctly.
-    Returns np.nan if the rate cannot be found or derived.
+    Gets the historical FX rate (units of to_curr per 1 unit of from_curr)
+    using Yahoo Finance pairs (e.g., EURUSD=X means USD per 1 EUR).
+    Calculates cross rates via USD. Returns np.nan if rate cannot be found/derived.
     """
-    if from_curr == to_curr: return 1.0
-    if not from_curr or not to_curr or from_curr == 'N/A' or to_curr == 'N/A': return np.nan
+    if from_curr == to_curr:
+        return 1.0 # Rate is 1 if currencies are the same
+    if not from_curr or not to_curr or from_curr == 'N/A' or to_curr == 'N/A' or not isinstance(target_date, date):
+        return np.nan # Invalid input
 
-    from_curr_upper = from_curr.upper(); to_curr_upper = to_curr.upper()
-    rate_found = np.nan # Default to NaN
+    from_curr_upper = from_curr.upper()
+    to_curr_upper = to_curr.upper()
+    rate_found = np.nan
 
-    # Strategy:
-    # 1. Try direct pair (e.g., THBUSD=X)
-    # 2. Try inverse pair (e.g., USDTHB=X) and calculate 1/rate
-    # 3. Try via USD (e.g., for THB/EUR, get THBUSD=X and EURUSD=X, calculate THBUSD / EURUSD) - **More robust**
+    # --- Calculate via USD: Target Rate = TO / FROM ---
+    # Formula derived: TO / FROM = value(USD per FROM) / value(USD per TO)
 
-    # --- Revised Strategy (via USD) ---
-    rate_usd_per_from = 1.0 if from_curr_upper == 'USD' else np.nan
-    rate_usd_per_to = 1.0 if to_curr_upper == 'USD' else np.nan
+    # Get value for USD per 1 FROM currency (e.g., USD/THB)
+    # Yahoo pair needed: FROMUSD=X (e.g., THBUSD=X -> gives USD per 1 THB)
+    val_usd_per_from = np.nan
+    if from_curr_upper == 'USD':
+        val_usd_per_from = 1.0
+    else:
+        pair_from_usd_yahoo = f"{from_curr_upper}USD=X" # e.g., THBUSD=X
+        price = get_historical_price(pair_from_usd_yahoo, target_date, fx_dict)
+        if price is not None and pd.notna(price):
+            # Check for potentially zero rate from source before assigning
+            if abs(price) > 1e-9:
+                 val_usd_per_from = price # This directly gives USD / FROM
+            # else: Treat zero rate as invalid -> Keep NaN
 
-    # Get From -> USD rate
-    if from_curr_upper != 'USD':
-        pair_from_usd = f"{from_curr_upper}USD=X"
-        pair_usd_from = f"USD{from_curr_upper}=X"
-        # Prefer FromUSD=X
-        val = get_historical_price(pair_from_usd, target_date, fx_dict)
-        if val is not None and pd.notna(val) and val > 1e-9:
-            rate_usd_per_from = 1.0 / val # We want USD per From
-        else: # Try USDFrom=X
-            val_inv = get_historical_price(pair_usd_from, target_date, fx_dict)
-            if val_inv is not None and pd.notna(val_inv) and val_inv > 1e-9:
-                rate_usd_per_from = val_inv
+    # Get value for USD per 1 TO currency (e.g., USD/JPY)
+    # Yahoo pair needed: TOUSD=X (e.g., JPYUSD=X -> gives USD per 1 JPY)
+    val_usd_per_to = np.nan
+    if to_curr_upper == 'USD':
+        val_usd_per_to = 1.0
+    else:
+        pair_to_usd_yahoo = f"{to_curr_upper}USD=X" # e.g., JPYUSD=X
+        price = get_historical_price(pair_to_usd_yahoo, target_date, fx_dict)
+        if price is not None and pd.notna(price):
+             # Check for potentially zero rate from source before assigning
+             if abs(price) > 1e-9:
+                  val_usd_per_to = price # This directly gives USD / TO
+             # else: Treat zero rate as invalid -> Keep NaN
 
-    # Get To -> USD rate
-    if to_curr_upper != 'USD':
-        pair_to_usd = f"{to_curr_upper}USD=X"
-        pair_usd_to = f"USD{to_curr_upper}=X"
-        # Prefer ToUSD=X
-        val = get_historical_price(pair_to_usd, target_date, fx_dict)
-        if val is not None and pd.notna(val) and val > 1e-9:
-            rate_usd_per_to = 1.0 / val # We want USD per To
-        else: # Try USDTo=X
-             val_inv = get_historical_price(pair_usd_to, target_date, fx_dict)
-             if val_inv is not None and pd.notna(val_inv) and val_inv > 1e-9:
-                 rate_usd_per_to = val_inv
-
-    # Calculate cross rate (To / From, relative to USD)
-    if pd.notna(rate_usd_per_from) and pd.notna(rate_usd_per_to):
-        if abs(rate_usd_per_from) > 1e-9:
+    # Calculate final rate TO / FROM = val_usd_per_from / val_usd_per_to
+    # Calculation: (USD / FROM) / (USD / TO) = (USD/FROM) * (TO/USD) = TO / FROM
+    if pd.notna(val_usd_per_from) and pd.notna(val_usd_per_to):
+        if abs(val_usd_per_to) > 1e-9: # Check denominator is not effectively zero
             try:
-                rate_found = rate_usd_per_to / rate_usd_per_from
+                rate_found = val_usd_per_from / val_usd_per_to # Correctly yields TO / FROM
             except ZeroDivisionError:
                 rate_found = np.nan
-        else: rate_found = np.nan
+        else:
+            rate_found = np.nan # Denominator is zero/invalid
     else:
-        rate_found = np.nan # Failed to get one of the USD rates
+        rate_found = np.nan # Failed to get intermediate rates
 
+    # Return NaN on failure, allows calling function to know lookup failed
     return float(rate_found) if pd.notna(rate_found) else np.nan
 
 # --- Function to Calculate Daily Net External Cash Flow ---
@@ -2174,7 +2302,7 @@ if __name__ == '__main__':
     print("\nRunning portfolio_logic.py as main script for testing (v10 - Account/Currency)...")
     # --- Configuration for Test Run ---
     test_csv_file = 'my_transactions.csv' # Needs to exist
-    test_display_currency = 'USD'
+    test_display_currency = 'EUR'
     # --- Define Test Account Currency Map ---
     test_account_currency_map = {
         'SET': 'THB',
@@ -2192,12 +2320,13 @@ if __name__ == '__main__':
     print("\n--- Testing Historical Performance Calculation (v10 - Account/Currency) ---")
     test_start = date(2023, 1, 1); test_end = date(2024, 6, 30); test_interval = 'M'; test_benchmarks = ['SPY', 'QQQ']
     test_use_raw_cache_flag = True; test_use_daily_results_cache_flag = True; test_num_processes = None
-    test_accounts_all = None; test_accounts_subset1 = ['IBKR', 'E*TRADE']; test_exclude_set = ['SET']
+    test_accounts_all = None; test_accounts_subset1 = ['SET', 'IBKR']; test_exclude_set = ['SET']
 
     test_scenarios = {
-        "All": {"include": test_accounts_all, "exclude": None},
-        "All_Exclude_SET": {"include": test_accounts_all, "exclude": test_exclude_set},
-        "IBKR_E*TRADE": {"include": test_accounts_subset1, "exclude": None},
+        # "All": {"include": test_accounts_all, "exclude": None},
+        # "All_Exclude_SET": {"include": test_accounts_all, "exclude": test_exclude_set},
+        "SET_Only": {"include": ['SET'], "exclude": None},
+        # "IBKR_E*TRADE": {"include": test_accounts_subset1, "exclude": None},
     }
 
     if not os.path.exists(test_csv_file):

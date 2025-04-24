@@ -1,6 +1,6 @@
 {
     "transactions_file": "my_transactions.csv",
-    "display_currency": "USD",
+    "display_currency": "GBP",
     "show_closed": false,
     "selected_accounts": [],
     "load_on_startup": true,
