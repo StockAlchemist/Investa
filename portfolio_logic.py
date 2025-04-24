@@ -1766,7 +1766,6 @@ def _calculate_aggregate_metrics(
     # Convert defaultdict back to dict for return
     return overall_summary_metrics, dict(account_level_metrics)
 
-
 # --- Main Calculation Function (Current Portfolio Summary) ---
 # Assume helper functions (_load_and_clean_transactions, _process_transactions_to_holdings,
 # _calculate_cash_balances, _build_summary_rows, _calculate_aggregate_metrics, safe_sum,
@@ -2206,7 +2205,6 @@ def get_historical_price(symbol_key: str, target_date: date, prices_dict: Dict[s
         # print(f"ERROR getting historical price for {symbol_key} on {target_date}: {e}") # Reduced verbosity
         return None
 
-
 # --- Revised: Calculates historical rate TO/FROM via USD bridge ---
 # --- FINAL Version: Calculates historical rate TO/FROM via USD bridge ---
 def get_historical_fx_rate(from_curr: str, to_curr: str, target_date: date, fx_dict: Dict[str, pd.DataFrame]) -> float:
@@ -2269,67 +2267,6 @@ def get_historical_fx_rate(from_curr: str, to_curr: str, target_date: date, fx_d
         rate_found = np.nan # Failed to get intermediate rates
 
     # Return NaN on failure, allows calling function to know lookup failed
-    return float(rate_found) if pd.notna(rate_found) else np.nan
-
-# --- Function to Calculate Daily Net External Cash Flow ---
-def get_historical_fx_rate(from_curr: str, to_curr: str, target_date: date, fx_dict: Dict[str, pd.DataFrame]) -> float:
-    """
-    Gets the historical FX rate using Yahoo Finance pairs (e.g., EURUSD=X).
-    Prioritizes standard pairs (relative to USD) and calculates inverses correctly.
-    Returns np.nan if the rate cannot be found or derived.
-    """
-    if from_curr == to_curr: return 1.0
-    if not from_curr or not to_curr or from_curr == 'N/A' or to_curr == 'N/A': return np.nan
-
-    from_curr_upper = from_curr.upper(); to_curr_upper = to_curr.upper()
-    rate_found = np.nan # Default to NaN
-
-    # Strategy:
-    # 1. Try direct pair (e.g., THBUSD=X)
-    # 2. Try inverse pair (e.g., USDTHB=X) and calculate 1/rate
-    # 3. Try via USD (e.g., for THB/EUR, get THBUSD=X and EURUSD=X, calculate THBUSD / EURUSD) - **More robust**
-
-    # --- Revised Strategy (via USD) ---
-    rate_usd_per_from = 1.0 if from_curr_upper == 'USD' else np.nan
-    rate_usd_per_to = 1.0 if to_curr_upper == 'USD' else np.nan
-
-    # Get From -> USD rate
-    if from_curr_upper != 'USD':
-        pair_from_usd = f"{from_curr_upper}USD=X"
-        pair_usd_from = f"USD{from_curr_upper}=X"
-        # Prefer FromUSD=X
-        val = get_historical_price(pair_from_usd, target_date, fx_dict)
-        if val is not None and pd.notna(val) and val > 1e-9:
-            rate_usd_per_from = 1.0 / val # We want USD per From
-        else: # Try USDFrom=X
-            val_inv = get_historical_price(pair_usd_from, target_date, fx_dict)
-            if val_inv is not None and pd.notna(val_inv) and val_inv > 1e-9:
-                rate_usd_per_from = val_inv
-
-    # Get To -> USD rate
-    if to_curr_upper != 'USD':
-        pair_to_usd = f"{to_curr_upper}USD=X"
-        pair_usd_to = f"USD{to_curr_upper}=X"
-        # Prefer ToUSD=X
-        val = get_historical_price(pair_to_usd, target_date, fx_dict)
-        if val is not None and pd.notna(val) and val > 1e-9:
-            rate_usd_per_to = 1.0 / val # We want USD per To
-        else: # Try USDTo=X
-             val_inv = get_historical_price(pair_usd_to, target_date, fx_dict)
-             if val_inv is not None and pd.notna(val_inv) and val_inv > 1e-9:
-                 rate_usd_per_to = val_inv
-
-    # Calculate cross rate (To / From, relative to USD)
-    if pd.notna(rate_usd_per_from) and pd.notna(rate_usd_per_to):
-        if abs(rate_usd_per_from) > 1e-9:
-            try:
-                rate_found = rate_usd_per_to / rate_usd_per_from
-            except ZeroDivisionError:
-                rate_found = np.nan
-        else: rate_found = np.nan
-    else:
-        rate_found = np.nan # Failed to get one of the USD rates
-
     return float(rate_found) if pd.notna(rate_found) else np.nan
 
 def _calculate_daily_net_cash_flow(
@@ -2570,473 +2507,367 @@ def _calculate_daily_metrics_worker(
         failed_row['value_lookup_failed'] = True; failed_row['flow_lookup_failed'] = True; failed_row['bench_lookup_failed'] = True; failed_row['worker_error'] = True
         return failed_row
 
+def _prepare_historical_inputs(
+    transactions_csv_file: str,
+    account_currency_map: Dict,
+    default_currency: str,
+    include_accounts: Optional[List[str]],
+    exclude_accounts: Optional[List[str]],
+    start_date: date,
+    end_date: date,
+    benchmark_symbols_yf: List[str], # Cleaned list
+    display_currency: str,
+    current_hist_version: str = "v10", # Pass version for cache keys
+    raw_cache_prefix: str = HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX, # Pass prefixes
+    daily_cache_prefix: str = DAILY_RESULTS_CACHE_PATH_PREFIX
+) -> Tuple[
+        Optional[pd.DataFrame], # transactions_df_effective
+        Optional[pd.DataFrame], # original_transactions_df
+        Set[int], Dict[int, str], # ignored_indices, ignored_reasons
+        List[str], # all_available_accounts_list
+        List[str], # included_accounts_list_sorted
+        List[str], # excluded_accounts_list_sorted
+        List[str], # symbols_for_stocks_and_benchmarks_yf
+        List[str], # fx_pairs_for_api_yf
+        Dict[str, str], # internal_to_yf_map
+        Dict[str, str], # yf_to_internal_map_hist
+        Dict[str, List[Dict]], # splits_by_internal_symbol
+        str, # raw_data_cache_file
+        str, # raw_data_cache_key
+        Optional[str], # daily_results_cache_file
+        Optional[str], # daily_results_cache_key
+        str # filter_desc
+    ]:
+    """
+    Loads, cleans, filters transactions, determines required symbols/currencies/FX pairs,
+    extracts splits, and generates cache keys/filenames for historical analysis.
+    """
+    print("Preparing inputs for historical calculation...")
+
+    # Initialize return values for failure cases
+    empty_tuple_return = (None, None, set(), {}, [], [], [], [], [], {}, {}, {}, "", "", None, None, "")
+
+    # --- 1. Load & Clean ALL Transactions ---
+    all_transactions_df, original_transactions_df, ignored_indices, ignored_reasons = _load_and_clean_transactions(
+        transactions_csv_file, account_currency_map, default_currency
+    )
+    if all_transactions_df is None:
+        print("ERROR in _prepare_historical_inputs: Failed to load/clean transactions.")
+        return empty_tuple_return # Return empties/None on failure
+
+    # --- Get available accounts ---
+    all_available_accounts_list = []
+    if 'Account' in all_transactions_df.columns:
+        all_available_accounts_list = sorted(all_transactions_df['Account'].unique().tolist())
+
+    # --- 1b. Filter Transactions ---
+    transactions_df_effective = pd.DataFrame()
+    available_accounts_set = set(all_available_accounts_list)
+    included_accounts_list_sorted = []
+    excluded_accounts_list_sorted = []
+    filter_desc = "All Accounts" # Default description
+
+    # Apply inclusion filter
+    if not include_accounts:
+        transactions_df_included = all_transactions_df.copy()
+        included_accounts_list_sorted = sorted(list(available_accounts_set))
+    else:
+        valid_include_accounts = [acc for acc in include_accounts if acc in available_accounts_set]
+        if not valid_include_accounts:
+            print("WARN in _prepare_historical_inputs: No valid accounts to include.")
+            return empty_tuple_return # Or maybe return partial data? For now, return empty.
+        transactions_df_included = all_transactions_df[all_transactions_df['Account'].isin(valid_include_accounts)].copy()
+        included_accounts_list_sorted = sorted(valid_include_accounts)
+        filter_desc = f"Included: {', '.join(included_accounts_list_sorted)}"
+
+    # Apply exclusion filter
+    if not exclude_accounts or not isinstance(exclude_accounts, list):
+        transactions_df_effective = transactions_df_included.copy()
+    else:
+        valid_exclude_accounts = [acc for acc in exclude_accounts if acc in available_accounts_set]
+        if valid_exclude_accounts:
+            print(f"Hist Prep: Excluding accounts: {', '.join(sorted(valid_exclude_accounts))}")
+            transactions_df_effective = transactions_df_included[~transactions_df_included['Account'].isin(valid_exclude_accounts)].copy()
+            excluded_accounts_list_sorted = sorted(valid_exclude_accounts)
+            # Update description
+            if include_accounts: filter_desc += f" (Excluding: {', '.join(excluded_accounts_list_sorted)})"
+            else: filter_desc = f"All Accounts (Excluding: {', '.join(excluded_accounts_list_sorted)})"
+        else: # No valid exclusions
+            transactions_df_effective = transactions_df_included.copy()
+
+    if transactions_df_effective.empty:
+        print("WARN in _prepare_historical_inputs: No transactions remain after filtering.")
+        # Return effective df as empty, but provide other info if possible
+        return (transactions_df_effective, original_transactions_df, ignored_indices, ignored_reasons,
+                all_available_accounts_list, included_accounts_list_sorted, excluded_accounts_list_sorted,
+                [], [], {}, {}, {}, "", "", None, None, filter_desc)
+
+    # --- Extract Split Information (use original full df for splits) ---
+    split_transactions = all_transactions_df[all_transactions_df['Type'].str.lower().isin(['split', 'stock split']) & all_transactions_df['Split Ratio'].notna() & (all_transactions_df['Split Ratio'] > 0)].sort_values(by='Date', ascending=True)
+    splits_by_internal_symbol = {
+        symbol: group[['Date', 'Split Ratio']].apply(lambda r: {'Date': r['Date'].date(), 'Split Ratio': float(r['Split Ratio'])}, axis=1).tolist()
+        for symbol, group in split_transactions.groupby('Symbol')
+    }
+
+    # --- Determine Required Symbols & FX Pairs (use EFFECTIVE df) ---
+    all_symbols_internal = list(set(transactions_df_effective['Symbol'].unique()))
+    symbols_to_fetch_yf_portfolio = []; internal_to_yf_map = {}; yf_to_internal_map_hist = {}
+    for internal_sym in all_symbols_internal:
+        if internal_sym == CASH_SYMBOL_CSV: continue
+        yf_sym = map_to_yf_symbol(internal_sym); # Assumes map_to_yf_symbol helper exists
+        if yf_sym:
+            symbols_to_fetch_yf_portfolio.append(yf_sym);
+            internal_to_yf_map[internal_sym] = yf_sym;
+            yf_to_internal_map_hist[yf_sym] = internal_sym
+    symbols_to_fetch_yf_portfolio = sorted(list(set(symbols_to_fetch_yf_portfolio)))
+    symbols_for_stocks_and_benchmarks_yf = sorted(list(set(symbols_to_fetch_yf_portfolio + benchmark_symbols_yf))) # Use cleaned benchmark list passed in
+
+    all_currencies_in_tx = set(transactions_df_effective['Local Currency'].unique());
+    all_currencies_needed = all_currencies_in_tx.union({display_currency, default_currency}) # Add display and default
+    all_currencies_needed.discard(None) # Remove None if present
+    all_currencies_needed.discard('N/A') # Remove N/A
+
+    # Generate necessary YF FX tickers (CURRENCY=X format)
+    fx_pairs_for_api_yf = set()
+    for curr in all_currencies_needed:
+         if curr != 'USD':
+             fx_pairs_for_api_yf.add(f"{curr}=X")
+    fx_pairs_for_api_yf = sorted(list(fx_pairs_for_api_yf))
+
+    # --- Generate Cache Keys & Filenames ---
+    raw_data_cache_file = f"{raw_cache_prefix}_{start_date.isoformat()}_{end_date.isoformat()}.json"
+    raw_data_cache_key = f"ADJUSTED_v7::{start_date.isoformat()}::{end_date.isoformat()}::{'_'.join(sorted(symbols_for_stocks_and_benchmarks_yf))}::{'_'.join(fx_pairs_for_api_yf)}" # Use correct FX list
+
+    daily_results_cache_file = None
+    daily_results_cache_key = None
+    try:
+        tx_file_hash = _get_file_hash(transactions_csv_file) # Assumes helper exists
+        acc_map_str = json.dumps(account_currency_map, sort_keys=True)
+        included_accounts_str = json.dumps(included_accounts_list_sorted)
+        excluded_accounts_str = json.dumps(excluded_accounts_list_sorted)
+        daily_results_cache_key = f"DAILY_RES_{current_hist_version}::{start_date.isoformat()}::{end_date.isoformat()}::{tx_file_hash}::{'_'.join(sorted(benchmark_symbols_yf))}::{display_currency}::{acc_map_str}::{default_currency}::{included_accounts_str}::{excluded_accounts_str}"
+        cache_key_hash = hashlib.sha256(daily_results_cache_key.encode()).hexdigest()[:16] # Use first 16 chars of hash
+        daily_results_cache_file = f"{daily_cache_prefix}_{cache_key_hash}.json"
+    except Exception as e_key:
+        print(f"Hist Prep WARN: Could not generate daily results cache key/filename: {e_key}.")
+        # Keep them as None
+
+    return (
+        transactions_df_effective, original_transactions_df, ignored_indices, ignored_reasons,
+        all_available_accounts_list, included_accounts_list_sorted, excluded_accounts_list_sorted,
+        symbols_for_stocks_and_benchmarks_yf, fx_pairs_for_api_yf,
+        internal_to_yf_map, yf_to_internal_map_hist, splits_by_internal_symbol,
+        raw_data_cache_file, raw_data_cache_key,
+        daily_results_cache_file, daily_results_cache_key,
+        filter_desc
+    )
+    
 # --- Historical Performance Calculation Wrapper Function (Refactored for Parallelism + Results Cache) ---
 def calculate_historical_performance(
     transactions_csv_file: str,
     start_date: date,
     end_date: date,
     interval: str, # 'D', 'W', 'M'
-    benchmark_symbols_yf: List[str],
+    benchmark_symbols_yf: List[str], # Raw list from caller
     display_currency: str,
     account_currency_map: Dict,
     default_currency: str,
     use_raw_data_cache: bool = True,
     use_daily_results_cache: bool = True,
     num_processes: Optional[int] = None,
-    include_accounts: Optional[List[str]] = None, # <-- NEW Parameter, replaces account_filter
-    exclude_accounts: Optional[List[str]] = None # <-- ADDED exclude_accounts parameter
+    include_accounts: Optional[List[str]] = None,
+    exclude_accounts: Optional[List[str]] = None
 ) -> Tuple[pd.DataFrame, str]:
     """
     Calculates historical portfolio performance (TWR-like accumulated gain)
     and benchmark performance over a date range using parallel daily calculations.
-    Filters calculations based on the `include_accounts` and `exclude_accounts` lists.
-    Caches results based on the effective set of accounts used.
+    Filters calculations based on include/exclude accounts. Orchestrates calls
+    to helper functions for different stages.
 
-    Args:
-       transactions_csv_file (str): Path to the transactions CSV file.
-       start_date (date): Start date for the analysis.
-       end_date (date): End date for the analysis.
-       interval (str): Resampling interval ('D', 'W', 'M').
-       benchmark_symbols_yf (List[str]): List of Yahoo Finance benchmark tickers.
-       display_currency (str): Currency for portfolio value calculation.
-       account_currency_map (Dict): Map of account names to their local currency.
-       default_currency (str): Default currency if account not in map.
-       use_raw_data_cache (bool): Whether to use/save cache for raw historical prices/FX.
-       use_daily_results_cache (bool): Whether to use/save cache for calculated daily results.
-       num_processes (Optional[int]): Number of parallel processes. Defaults to CPU count.
-       include_accounts (Optional[List[str]]): List of account names to include. If None or empty, all accounts are included.
-       exclude_accounts (Optional[List[str]]): List of account names to exclude from the included set.
-
-    Returns:
-        Tuple[pd.DataFrame, str]:
-            - DataFrame index 'Date', columns including 'Portfolio Value', 'Portfolio Daily Gain', 'daily_return',
-              'Portfolio Accumulated Gain', '{Bench} Price' (Adjusted), '{Bench} Accumulated Gain'.
-              The portfolio columns represent the effective accounts scope (included - excluded).
-              Returns an empty DataFrame on critical failure.
-            - Status message string indicating success, warnings, or errors, potentially including final TWR factor.
+    (Keep Args and Returns documentation as before)
     """
-    # --- Versioning and Cache Path (v10) ---
-    CURRENT_HIST_VERSION = "v10"
-    DAILY_RESULTS_CACHE_PATH_PREFIX = f'yf_portfolio_daily_results_{CURRENT_HIST_VERSION}'
-
-    # --- Determine effective filter description ---
-    # --- MODIFICATION: Update filter description based on include/exclude ---
-    filter_desc = "All Accounts"
-    if include_accounts:
-        filter_desc = f"Included: {', '.join(sorted(include_accounts))}"
-    if exclude_accounts:
-        if include_accounts: # If both are specified
-             filter_desc += f" (Excluding: {', '.join(sorted(exclude_accounts))})"
-        else: # Only exclusion specified (means exclude from all)
-             filter_desc = f"All Accounts (Excluding: {', '.join(sorted(exclude_accounts))})"
-    # --- END MODIFICATION ---
-
-    print(f"\n--- Starting Historical Performance Calculation ({CURRENT_HIST_VERSION} - Scope: {filter_desc}) ---")
-    print(f"Params: CSV='{os.path.basename(transactions_csv_file)}', Start={start_date}, End={end_date}, Interval={interval}")
-    print(f"        Benchmarks={benchmark_symbols_yf}, Currency='{display_currency}', RawCache={use_raw_data_cache}, DailyResultsCache={use_daily_results_cache}")
-
+    CURRENT_HIST_VERSION = "v10" # Or manage this globally
     start_time_hist = time.time()
-    status_msg = f"Historical ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): Initializing..."
-    processed_warnings = set()
-    final_twr_factor = np.nan
 
-    # --- 0. Initial Checks (unchanged) ---
+    # --- Initial Checks & Cleaning of Inputs ---
     if not YFINANCE_AVAILABLE: return pd.DataFrame(), "Error: yfinance library not installed."
     if start_date >= end_date: return pd.DataFrame(), "Error: Start date must be before end date."
     if interval not in ['D', 'W', 'M']: return pd.DataFrame(), f"Error: Invalid interval '{interval}'."
+
+    # Clean the benchmark symbols list passed in
     clean_benchmark_symbols_yf = []
     if benchmark_symbols_yf and isinstance(benchmark_symbols_yf, list):
-        clean_benchmark_symbols_yf = [b.upper().strip() for b in benchmark_symbols_yf if isinstance(b, str) and b.strip()]
+        clean_benchmark_symbols_yf = [
+            b.upper().strip() for b in benchmark_symbols_yf if isinstance(b, str) and b.strip()
+        ]
     elif not benchmark_symbols_yf:
         print(f"Hist INFO ({CURRENT_HIST_VERSION}): No benchmark symbols provided.")
     else:
-        return pd.DataFrame(), "Error: Invalid list of benchmark symbols provided."
+        print(f"Hist WARN ({CURRENT_HIST_VERSION}): Invalid benchmark_symbols_yf type provided: {type(benchmark_symbols_yf)}. Ignoring benchmarks.")
 
-    # --- 1. Load & Clean ALL Transactions (unchanged) ---
-    all_transactions_df, original_transactions_df, ignored_indices, ignored_reasons = _load_and_clean_transactions(
-        transactions_csv_file, account_currency_map, default_currency
+    # --- 1. Prepare Inputs (Load, Clean, Filter, Symbols, Keys, Splits) ---
+    (transactions_df_effective, original_transactions_df, ignored_indices, ignored_reasons,
+     all_available_accounts_list, included_accounts_list_sorted, excluded_accounts_list_sorted,
+     symbols_for_stocks_and_benchmarks_yf, fx_pairs_for_api_yf, # Use the correct FX tickers list YF needs (e.g., JPY=X)
+     internal_to_yf_map, yf_to_internal_map_hist, splits_by_internal_symbol,
+     raw_data_cache_file, raw_data_cache_key,
+     daily_results_cache_file, daily_results_cache_key,
+     filter_desc) = _prepare_historical_inputs(
+        transactions_csv_file, account_currency_map, default_currency,
+        include_accounts, exclude_accounts, start_date, end_date,
+        clean_benchmark_symbols_yf, # Pass the cleaned list
+        display_currency,
+        current_hist_version=CURRENT_HIST_VERSION,
+        raw_cache_prefix=HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
+        daily_cache_prefix=DAILY_RESULTS_CACHE_PATH_PREFIX
     )
-    if all_transactions_df is None: return pd.DataFrame(), f"Error: Failed to load/clean transactions from '{transactions_csv_file}'."
-    if ignored_reasons: status_msg += f" Tx loaded ({len(ignored_reasons)} ignored)."
-    else: status_msg += " Tx loaded."
 
-    # --- 1b. Filter Transactions based on include_accounts AND exclude_accounts ---
-    transactions_df_effective = pd.DataFrame() # This will hold the final set of transactions
-    available_accounts = set(all_transactions_df['Account'].unique()) if 'Account' in all_transactions_df.columns else set()
-    included_accounts_list_sorted = [] # For cache key
-    excluded_accounts_list_sorted = [] # For cache key
+    # --- Handle early exit if inputs preparation failed ---
+    if transactions_df_effective is None:
+         status_msg = f"Error: Failed to load/clean transactions from '{transactions_csv_file}' during preparation."
+         # Prepare ignored_df if possible
+         ignored_df = pd.DataFrame()
+         if ignored_indices and original_transactions_df is not None:
+              valid_indices = sorted([idx for idx in ignored_indices if idx in original_transactions_df.index])
+              if valid_indices: ignored_df = original_transactions_df.loc[valid_indices].copy()
+              # Optionally add reasons if ignored_reasons is populated
+         # Consider what to return for other values if needed by caller (though unlikely on error)
+         return pd.DataFrame(), status_msg # Return empty DataFrame on critical input error
 
-    # Step 1: Apply inclusion filter
-    if not include_accounts: # If None or empty list passed, start with all
-        print(f"Hist ({CURRENT_HIST_VERSION}): No specific accounts provided for inclusion, starting with all available accounts.")
-        transactions_df_included = all_transactions_df.copy()
-        included_accounts_list_sorted = sorted(list(available_accounts))
-    else:
-        valid_include_accounts = [acc for acc in include_accounts if acc in available_accounts]
-        if not valid_include_accounts:
-            msg = f"Hist WARN ({CURRENT_HIST_VERSION}): None of the specified accounts to include were found in transactions. No data to process."
-            print(msg)
-            return pd.DataFrame(), f"Historical ({CURRENT_HIST_VERSION}): Success (No data for specified accounts)."
-        print(f"Hist ({CURRENT_HIST_VERSION}): Filtering transactions FOR accounts: {', '.join(sorted(valid_include_accounts))}")
-        transactions_df_included = all_transactions_df[all_transactions_df['Account'].isin(valid_include_accounts)].copy()
-        included_accounts_list_sorted = sorted(valid_include_accounts)
+    # Initialize status message and other variables
+    status_msg = f"Historical ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): Inputs prepared."
+    if ignored_reasons: status_msg += f" ({len(ignored_reasons)} ignored)."
+    processed_warnings = set()
+    final_twr_factor = np.nan
+    daily_df = pd.DataFrame() # Initialize daily results dataframe
 
-    # Step 2: Apply exclusion filter to the included set
-    if not exclude_accounts or not isinstance(exclude_accounts, list):
-        # No exclusion needed, the included set is the effective set
-        transactions_df_effective = transactions_df_included.copy()
-        excluded_accounts_list_sorted = [] # Empty list for cache key
-    else:
-        # Remove accounts specified in exclude_accounts
-        valid_exclude_accounts = [acc for acc in exclude_accounts if acc in available_accounts] # Use available_accounts derived from *all* transactions
-        if not valid_exclude_accounts:
-            # No valid accounts to exclude, effective set is the included set
-            transactions_df_effective = transactions_df_included.copy()
-            excluded_accounts_list_sorted = []
+
+    # --- 3. Load or Fetch ADJUSTED Historical Raw Data ---
+    # (Code for this section will be moved to _load_or_fetch_raw_historical_data helper later)
+    print("Placeholder: Load/Fetch Raw Historical Data")
+    historical_prices_yf_adjusted = {} # Placeholder
+    historical_fx_yf = {} # Placeholder - Should contain DFs keyed by JPY=X, EUR=X etc.
+    # --- Add actual logic here later or call helper ---
+    # Example call structure:
+    # historical_prices_yf_adjusted, historical_fx_yf = _load_or_fetch_raw_historical_data(
+    #     symbols_for_stocks_and_benchmarks_yf, fx_pairs_for_api_yf, start_date, end_date,
+    #     use_raw_data_cache, raw_data_cache_file, raw_data_cache_key
+    # )
+    # --- Check for fetch failure ---
+    if not historical_prices_yf_adjusted and symbols_for_stocks_and_benchmarks_yf:
+        return pd.DataFrame(), status_msg + " Error: Failed to fetch/load historical stock/benchmark prices."
+    if not historical_fx_yf and fx_pairs_for_api_yf:
+         # Allow proceeding without FX if only USD involved? Check required_currencies.
+         # For now, treat missing FX as critical if needed.
+        all_currencies_involved = set(transactions_df_effective['Local Currency'].unique()).union({display_currency, default_currency})
+        if len(all_currencies_involved) > 1: # More than just one currency (e.g., USD) involved
+             return pd.DataFrame(), status_msg + " Error: Failed to fetch/load required historical FX rates."
         else:
-            # --- START MODIFICATION ---
-            print(f"Hist ({CURRENT_HIST_VERSION}): Further filtering transactions, EXCLUDING accounts: {', '.join(sorted(valid_exclude_accounts))}")
-            # Filter the already included dataframe
-            transactions_df_effective = transactions_df_included[~transactions_df_included['Account'].isin(valid_exclude_accounts)].copy()
-            excluded_accounts_list_sorted = sorted(valid_exclude_accounts)
-            # --- END MODIFICATION ---
-            
-    # Check if any transactions remain after all filtering
-    if transactions_df_effective.empty:
-        msg = f"Hist WARN ({CURRENT_HIST_VERSION}): No transactions remain after applying inclusion/exclusion filters."
-        print(msg)
-        return pd.DataFrame(), f"Historical ({CURRENT_HIST_VERSION}): Success (No data after filtering)."
-    # --- END MODIFICATION for include/exclude filtering ---
+             print("Info: No FX rates needed or fetched.")
 
-    # --- Extract Split Information (unchanged - use original full set) ---
-    split_transactions = all_transactions_df[all_transactions_df['Type'].str.lower().isin(['split', 'stock split']) & all_transactions_df['Split Ratio'].notna() & (all_transactions_df['Split Ratio'] > 0)].sort_values(by='Date', ascending=True)
-    splits_by_internal_symbol = {symbol: group[['Date', 'Split Ratio']].apply(lambda r: {'Date': r['Date'].date(), 'Split Ratio': float(r['Split Ratio'])}, axis=1).tolist() for symbol, group in split_transactions.groupby('Symbol') }
 
-    # --- 2. Determine Required Symbols & Build Cache Keys (use EFFECTIVE tx) ---
-    # --- MODIFICATION: Use transactions_df_effective here ---
-    all_symbols_internal = list(set(transactions_df_effective['Symbol'].unique()))
-    symbols_to_fetch_yf_portfolio = []; internal_to_yf_map = {}; yf_to_internal_map_hist = {}
-    for internal_sym in all_symbols_internal:
-        if internal_sym == CASH_SYMBOL_CSV: continue
-        yf_sym = map_to_yf_symbol(internal_sym);
-        if yf_sym: symbols_to_fetch_yf_portfolio.append(yf_sym); internal_to_yf_map[internal_sym] = yf_sym; yf_to_internal_map_hist[yf_sym] = internal_sym
-    symbols_to_fetch_yf_portfolio = sorted(list(set(symbols_to_fetch_yf_portfolio)))
-    symbols_for_stocks_and_benchmarks_yf = sorted(list(set(symbols_to_fetch_yf_portfolio + clean_benchmark_symbols_yf)))
-    all_currencies_in_tx = set(transactions_df_effective['Local Currency'].unique()); all_currencies_needed = all_currencies_in_tx.union({display_currency})
-    # --- END MODIFICATION ---
-    required_fx_pairs_yf = set();
-    for curr1 in all_currencies_needed:
-         for curr2 in all_currencies_needed:
-              if curr1 != curr2 and curr1 != 'N/A' and curr2 != 'N/A' and curr1 and curr2 and curr1.upper() != curr2.upper():
-                  if curr1.upper() == 'USD' and curr2.upper() != 'USD': pair = f"USD{curr2.upper()}=X"
-                  elif curr2.upper() == 'USD' and curr1.upper() != 'USD': pair = f"{curr1.upper()}USD=X"
-                  else: pair = f"{curr1.upper()}{curr2.upper()}=X"
-                  required_fx_pairs_yf.add(pair)
-                  if curr1.upper() == 'USD' and curr2.upper() != 'USD': inv_pair = f"{curr2.upper()}USD=X"
-                  elif curr2.upper() == 'USD' and curr1.upper() != 'USD': inv_pair = f"USD{curr1.upper()}=X"
-                  else: inv_pair = f"{curr2.upper()}{curr1.upper()}=X"
-                  required_fx_pairs_yf.add(inv_pair)
-    fx_pairs_for_api_yf = sorted(list(required_fx_pairs_yf))
-
-    # --- Generate Cache Keys (v10 - Include included_accounts_list_sorted AND excluded_accounts_list_sorted) ---
-    raw_data_cache_file = f"{HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX}_{start_date.isoformat()}_{end_date.isoformat()}.json"
-    raw_data_cache_key = f"ADJUSTED_v7::{start_date.isoformat()}::{end_date.isoformat()}::{'_'.join(sorted(symbols_for_stocks_and_benchmarks_yf))}::{'_'.join(sorted(fx_pairs_for_api_yf))}"
-
-    daily_results_cache_file = None; daily_results_cache_key = None
-    if use_daily_results_cache:
-        try:
-            tx_file_hash = _get_file_hash(transactions_csv_file)
-            acc_map_str = json.dumps(account_currency_map, sort_keys=True)
-            # --- CRITICAL: Include sorted included AND excluded accounts lists in key ---
-            included_accounts_str = json.dumps(included_accounts_list_sorted) # Use sorted list
-            excluded_accounts_str = json.dumps(excluded_accounts_list_sorted) # Use sorted list
-            # -------------------------------------------------------------
-            daily_results_cache_key = f"DAILY_RES_{CURRENT_HIST_VERSION}::{start_date.isoformat()}::{end_date.isoformat()}::{tx_file_hash}::{'_'.join(sorted(clean_benchmark_symbols_yf))}::{display_currency}::{acc_map_str}::{default_currency}::{included_accounts_str}::{excluded_accounts_str}" # <-- Added excluded_accounts_str
-            cache_key_hash = hashlib.sha256(daily_results_cache_key.encode()).hexdigest()[:16]
-            daily_results_cache_file = f"{DAILY_RESULTS_CACHE_PATH_PREFIX}_{cache_key_hash}.json"
-            print(f"Hist ({CURRENT_HIST_VERSION}): Using DAILY results cache file: {daily_results_cache_file}")
-        except Exception as e_key:
-            print(f"Hist WARN ({CURRENT_HIST_VERSION}): Could not generate daily results cache key/filename: {e_key}. Daily caching disabled.")
-            use_daily_results_cache = False
-
-    # --- 3. Load or Fetch ADJUSTED Historical Raw Data (unchanged) ---
-    # ... (Raw data cache logic remains the same) ...
-    historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}
-    historical_fx_yf: Dict[str, pd.DataFrame] = {}
-    cache_valid_raw = False
-    if use_raw_data_cache and os.path.exists(raw_data_cache_file):
-        try:
-            with open(raw_data_cache_file, 'r') as f: cached_data = json.load(f)
-            if cached_data.get('cache_key') == raw_data_cache_key:
-                deserialization_errors = 0
-                cached_prices = cached_data.get('historical_prices', {})
-                for symbol in symbols_for_stocks_and_benchmarks_yf:
-                    data_json = cached_prices.get(symbol); df = None
-                    if data_json:
-                         try: df = pd.read_json(StringIO(data_json), orient='split', dtype={'price': float}); df.index = pd.to_datetime(df.index).date; historical_prices_yf_adjusted[symbol] = df
-                         except Exception: deserialization_errors += 1; historical_prices_yf_adjusted[symbol] = pd.DataFrame()
-                    else: historical_prices_yf_adjusted[symbol] = pd.DataFrame()
-                cached_fx = cached_data.get('historical_fx_rates', {})
-                for pair in fx_pairs_for_api_yf:
-                     data_json = cached_fx.get(pair); df = None
-                     if data_json:
-                          try: df = pd.read_json(StringIO(data_json), orient='split', dtype={'price': float}); df.index = pd.to_datetime(df.index).date; historical_fx_yf[pair] = df
-                          except Exception: deserialization_errors += 1; historical_fx_yf[pair] = pd.DataFrame()
-                     else: historical_fx_yf[pair] = pd.DataFrame()
-                all_symbols_loaded = all(s in historical_prices_yf_adjusted for s in symbols_for_stocks_and_benchmarks_yf)
-                all_fx_loaded = all(p in historical_fx_yf for p in fx_pairs_for_api_yf)
-                if all_symbols_loaded and all_fx_loaded and deserialization_errors == 0: cache_valid_raw = True
-                else: print(f"Hist WARN ({CURRENT_HIST_VERSION}): RAW cache incomplete or errors ({deserialization_errors}). Refetching."); historical_prices_yf_adjusted = {}; historical_fx_yf = {}
-            else: print(f"Hist ({CURRENT_HIST_VERSION}): RAW Cache key mismatch. Refetching.")
-        except Exception as e: print(f"Error reading hist RAW cache {raw_data_cache_file}: {e}. Refetching."); historical_prices_yf_adjusted = {}; historical_fx_yf = {}
-
-    if not cache_valid_raw:
-        fetched_stock_data = fetch_yf_historical(symbols_for_stocks_and_benchmarks_yf, start_date, end_date)
-        fetched_fx_data = fetch_yf_historical(fx_pairs_for_api_yf, start_date, end_date)
-        historical_prices_yf_adjusted = fetched_stock_data
-        historical_fx_yf = fetched_fx_data
-        stock_fetch_ok = bool(symbols_for_stocks_and_benchmarks_yf and historical_prices_yf_adjusted) or not symbols_for_stocks_and_benchmarks_yf
-        fx_fetch_ok = bool(fx_pairs_for_api_yf and historical_fx_yf) or not fx_pairs_for_api_yf
-        if use_raw_data_cache and (stock_fetch_ok or fx_fetch_ok):
-            cache_content = { 'cache_key': raw_data_cache_key, 'timestamp': datetime.now().isoformat(), 'historical_prices': {symbol: df.to_json(orient='split', date_format='iso') for symbol, df in historical_prices_yf_adjusted.items()}, 'historical_fx_rates': {pair: df.to_json(orient='split', date_format='iso') for pair, df in historical_fx_yf.items()} }
-            try:
-                cache_dir_raw = os.path.dirname(raw_data_cache_file)
-                if cache_dir_raw: os.makedirs(cache_dir_raw, exist_ok=True)
-                with open(raw_data_cache_file, 'w') as f: json.dump(cache_content, f, indent=2)
-            except Exception as e: print(f"Error writing hist RAW cache: {e}")
-        elif not use_raw_data_cache: print(f"Hist ({CURRENT_HIST_VERSION}): RAW Caching disabled, skipping save.")
-        else: print(f"Hist WARN ({CURRENT_HIST_VERSION}): Yahoo Finance RAW fetch failed or returned empty results. Cache not updated.")
-
-    if not historical_prices_yf_adjusted and symbols_for_stocks_and_benchmarks_yf: return pd.DataFrame(), "Error: Failed to fetch/load historical stock/benchmark prices."
-    if not historical_fx_yf and fx_pairs_for_api_yf: return pd.DataFrame(), "Error: Failed to fetch/load historical FX rates."
     status_msg += " Raw adjusted data loaded."
 
-    # --- 4. Derive Unadjusted Prices (unchanged) ---
-    historical_prices_yf_unadjusted = _unadjust_prices(
-        historical_prices_yf_adjusted, yf_to_internal_map_hist, splits_by_internal_symbol, processed_warnings
-    )
+
+    # --- 4. Derive Unadjusted Prices ---
+    # (Code for this section can call _unadjust_prices helper)
+    print("Placeholder: Derive Unadjusted Prices")
+    historical_prices_yf_unadjusted = {} # Placeholder
+    # --- Add actual logic here later or call helper ---
+    # Example call structure:
+    # historical_prices_yf_unadjusted = _unadjust_prices(
+    #     historical_prices_yf_adjusted, yf_to_internal_map_hist, splits_by_internal_symbol, processed_warnings
+    # )
     status_msg += " Unadjusted prices derived."
 
-    # --- Initialize daily_df for results ---
-    daily_df = pd.DataFrame()
+
+    # --- 5 & 6. Load Daily Cache or Calculate Daily Results in Parallel ---
+    # (Code for this section will be moved to _load_or_calculate_daily_results helper later)
+    print("Placeholder: Load/Calculate Daily Results")
     cache_valid_daily_results = False
+    # --- Add actual logic here later or call helper ---
+    # Example call structure:
+    # daily_df, cache_valid_daily_results, status_update = _load_or_calculate_daily_results(
+    #    use_daily_results_cache, daily_results_cache_file, daily_results_cache_key,
+    #    start_date, end_date, transactions_df_effective, # Pass necessary data for worker
+    #    historical_prices_yf_unadjusted, historical_prices_yf_adjusted, historical_fx_yf,
+    #    display_currency, internal_to_yf_map, account_currency_map, default_currency,
+    #    clean_benchmark_symbols_yf, num_processes
+    # )
+    # status_msg += status_update
+    # --- Placeholder: Simulate successful calculation for now ---
+    # Create dummy daily_df structure if needed for subsequent steps during refactoring
+    if daily_df.empty: # If placeholder logic didn't run
+         print("WARN: Placeholder daily calculation skipped, creating dummy empty DF.")
+         # This might cause errors in step 7, better to return empty early if needed
+         # return pd.DataFrame(), status_msg + " Daily calculation skipped."
+         pass # Or potentially create a dummy structure
 
-    # --- 5. Check Daily Results Cache (v10 - key includes included_accounts_str AND excluded_accounts_str) ---
-    if use_daily_results_cache and daily_results_cache_file and daily_results_cache_key:
-        if os.path.exists(daily_results_cache_file):
-            try:
-                with open(daily_results_cache_file, 'r') as f:
-                    cached_daily_data = json.load(f)
-                if cached_daily_data.get('cache_key') == daily_results_cache_key:
-                    print(f"Hist ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): Daily results cache MATCH. Loading...")
-                    results_json = cached_daily_data.get('daily_results_json')
-                    if results_json:
-                        try:
-                            daily_df = pd.read_json(StringIO(results_json), orient='split')
-                            daily_df.index = pd.to_datetime(daily_df.index)
-                            daily_df.sort_index(inplace=True)
-                            required_cols = ['value', 'net_flow', 'daily_return', 'daily_gain']
-                            for bm_symbol in clean_benchmark_symbols_yf: required_cols.append(f"{bm_symbol} Price")
-                            missing_cols = [c for c in required_cols if c not in daily_df.columns]
-                            if not missing_cols and not daily_df.empty:
-                                print(f"Hist ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): Loaded {len(daily_df)} daily results from cache.")
-                                cache_valid_daily_results = True; status_msg += " Daily results loaded from cache."
-                            else: print(f"Hist WARN ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): Daily cache invalid. Recalculating."); daily_df = pd.DataFrame()
-                        except Exception as e_load_df: print(f"Hist WARN ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): Error deserializing daily cache DF: {e_load_df}. Recalculating."); daily_df = pd.DataFrame()
-                    else: print(f"Hist WARN ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): Daily cache missing data. Recalculating.")
-                else: print(f"Hist WARN ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): Daily results cache key MISMATCH. Recalculating.")
-            except Exception as e_load_cache: print(f"Hist WARN ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): Error reading daily cache: {e_load_cache}. Recalculating.")
 
-    # --- 6. Execute Daily Calculations in Parallel (if cache invalid) ---
-    if not cache_valid_daily_results:
-        status_msg += " Calculating daily values..."
-        # --- 6a. Determine Dates (use EFFECTIVE df) ---
-        # --- MODIFICATION: Use transactions_df_effective here ---
-        first_tx_date = transactions_df_effective['Date'].min().date() if not transactions_df_effective.empty else start_date
-        # --- END MODIFICATION ---
-        calc_start_date = max(start_date, first_tx_date)
-        calc_end_date = end_date
-        market_day_source_symbol = 'SPY' if 'SPY' in historical_prices_yf_adjusted else (clean_benchmark_symbols_yf[0] if clean_benchmark_symbols_yf else None)
-        market_days_index = pd.Index([], dtype='object')
-        if market_day_source_symbol and market_day_source_symbol in historical_prices_yf_adjusted:
-            bench_df = historical_prices_yf_adjusted[market_day_source_symbol]
-            if not bench_df.empty:
-                 try: market_days_index = pd.Index(pd.to_datetime(bench_df.index, errors='coerce').date); market_days_index = market_days_index.dropna()
-                 except Exception as e_idx: print(f"WARN: Failed converting benchmark index for market days: {e_idx}")
-        if market_days_index.empty:
-            print(f"Hist WARN ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): No market days found. Using date range."); all_dates_to_process = pd.date_range(start=calc_start_date, end=calc_end_date, freq='B').date.tolist()
-        else: all_dates_to_process = market_days_index[(market_days_index >= calc_start_date) & (market_days_index <= calc_end_date)].tolist()
-        if not all_dates_to_process: return pd.DataFrame(), status_msg + " No calculation dates found."
+    # --- Check if daily calculation failed ---
+    if daily_df.empty and not cache_valid_daily_results:
+        return pd.DataFrame(), status_msg + " Failed to calculate or load daily results."
+    elif not daily_df.empty:
+         if not all(col in daily_df.columns for col in ['value', 'daily_return', 'daily_gain']):
+             return pd.DataFrame(), status_msg + " Daily results missing required columns."
 
-        print(f"Hist ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): Calculating {len(all_dates_to_process)} daily metrics parallel...")
 
-        # --- 6b. Setup and Run Pool (pass EFFECTIVE df) ---
-        # --- MODIFICATION: Pass transactions_df_effective to worker ---
-        partial_worker = partial(
-            _calculate_daily_metrics_worker,
-            transactions_df=transactions_df_effective, # Pass EFFECTIVE DF
-            historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,
-            historical_prices_yf_adjusted=historical_prices_yf_adjusted,
-            historical_fx_yf=historical_fx_yf,
-            target_currency=display_currency,
-            internal_to_yf_map=internal_to_yf_map,
-            account_currency_map=account_currency_map,
-            default_currency=default_currency,
-            benchmark_symbols_yf=clean_benchmark_symbols_yf
-        )
-        # --- END MODIFICATION ---
-        daily_results_list = []
-        pool_start_time = time.time()
-        if num_processes is None:
-            try: num_processes = os.cpu_count();
-            except NotImplementedError: num_processes = 1
-        try:
-            with multiprocessing.Pool(processes=num_processes) as pool:
-                results_iterator = pool.imap_unordered(partial_worker, all_dates_to_process, chunksize=max(1, len(all_dates_to_process) // (num_processes * 4)))
-                for result in results_iterator:
-                     if result: daily_results_list.append(result)
-        except Exception as e_pool: print(f"Hist CRITICAL ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): Pool failed: {e_pool}"); return pd.DataFrame(), status_msg + " Multiprocessing failed."
-        pool_end_time = time.time()
-        print(f"Hist ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): Pool finished in {pool_end_time - pool_start_time:.2f}s.")
-
-        # --- 6c. Convert Results to DataFrame & Calculate Daily Gain/Return (unchanged) ---
-        successful_results = [r for r in daily_results_list if not r.get('worker_error', False)]
-        if len(successful_results) != len(all_dates_to_process): status_msg += f" ({len(all_dates_to_process) - len(successful_results)} dates failed)."
-        if not successful_results: return pd.DataFrame(), status_msg + " All daily calculations failed."
-        try:
-            daily_df = pd.DataFrame(successful_results); daily_df['Date'] = pd.to_datetime(daily_df['Date']); daily_df.set_index('Date', inplace=True); daily_df.sort_index(inplace=True)
-            daily_df['value'] = pd.to_numeric(daily_df['value'], errors='coerce'); daily_df['net_flow'] = pd.to_numeric(daily_df['net_flow'], errors='coerce')
-            for bm_symbol in clean_benchmark_symbols_yf:
-                col = f"{bm_symbol} Price";
-                if col in daily_df.columns: daily_df[col] = pd.to_numeric(daily_df[col], errors='coerce')
-            initial_rows_calc = len(daily_df)
-            daily_df.dropna(subset=['value'], inplace=True) # Drop rows where value calc failed
-            if len(daily_df) < initial_rows_calc: status_msg += f" ({initial_rows_calc - len(daily_df)} rows dropped post-calc)."
-            if daily_df.empty: return pd.DataFrame(), status_msg + " All rows dropped due to NaN portfolio value."
-
-            previous_value = daily_df['value'].shift(1)
-            daily_df['daily_gain'] = daily_df['value'] - previous_value - daily_df['net_flow'].fillna(0.0)
-            daily_df['daily_return'] = np.nan
-            valid_prev_value_mask = previous_value.notna() & (abs(previous_value) > 1e-9)
-            daily_df.loc[valid_prev_value_mask, 'daily_return'] = daily_df.loc[valid_prev_value_mask, 'daily_gain'] / previous_value.loc[valid_prev_value_mask]
-            zero_gain_mask = abs(daily_df['daily_gain']) < 1e-9
-            zero_prev_value_mask = previous_value.notna() & (abs(previous_value) <= 1e-9)
-            daily_df.loc[zero_gain_mask & zero_prev_value_mask, 'daily_return'] = 0.0
-            if not daily_df.empty:
-                 daily_df.iloc[0, daily_df.columns.get_loc('daily_gain')] = np.nan
-                 daily_df.iloc[0, daily_df.columns.get_loc('daily_return')] = np.nan
-            if 'daily_gain' not in daily_df.columns or 'daily_return' not in daily_df.columns: return pd.DataFrame(), status_msg + " Failed calc daily gain/return."
-            status_msg += f" {len(daily_df)} days calculated."
-
-        except Exception as e_df_create: print(f"Hist CRITICAL ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): Failed create/process DF: {e_df_create}"); return pd.DataFrame(), status_msg + " Error processing results."
-
-        # --- 6d. Save Enhanced Daily Results Cache (v10 - key includes included_accounts_str AND excluded_accounts_str) ---
-        if use_daily_results_cache and daily_results_cache_file and daily_results_cache_key and not daily_df.empty:
-            print(f"Hist ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): Saving daily results to cache: {daily_results_cache_file}")
-            cache_content = { 'cache_key': daily_results_cache_key, 'timestamp': datetime.now().isoformat(), 'daily_results_json': daily_df.to_json(orient='split', date_format='iso') }
-            try:
-                cache_dir = os.path.dirname(daily_results_cache_file);
-                if cache_dir: os.makedirs(cache_dir, exist_ok=True);
-                with open(daily_results_cache_file, 'w') as f: json.dump(cache_content, f, indent=2)
-            except Exception as e_save_cache: print(f"Hist WARN ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): Error writing daily cache: {e_save_cache}")
-
-    # --- 7. Process Results and Calculate Accumulated Gains (unchanged) ---
-    # ... (Accumulated gain calculation logic remains the same) ...
-    if daily_df.empty: return pd.DataFrame(), status_msg + " No daily data generated."
-    if not all(col in daily_df.columns for col in ['value', 'daily_return', 'daily_gain']): return pd.DataFrame(), status_msg + " Data prep error before final calcs."
-
-    print(f"Hist ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): Calculating accumulated gains...")
-    try:
-        # Portfolio Accumulated Gain (Based on the filtered scope)
-        gain_factors_portfolio = (1 + daily_df['daily_return'].fillna(0.0))
-        daily_df['Portfolio Accumulated Gain'] = gain_factors_portfolio.cumprod()
-        daily_df.loc[daily_df['daily_return'].isna(), 'Portfolio Accumulated Gain'] = np.nan
-        if not daily_df.empty and 'Portfolio Accumulated Gain' in daily_df.columns:
-             final_twr_factor = daily_df['Portfolio Accumulated Gain'].iloc[-1] # Get the last factor
-
-        # Benchmark Accumulated Gain (Remains the same)
+    # --- 7. Process Results and Calculate Accumulated Gains ---
+    # (Code for this section will be moved to _calculate_accumulated_gains_and_resample helper later)
+    print("Placeholder: Calculate Accumulated Gains & Resample")
+    final_df_filtered = pd.DataFrame() # Placeholder
+    # --- Add actual logic here later or call helper ---
+    # Example call structure:
+    # final_df_filtered, final_twr_factor, status_update = _calculate_accumulated_gains_and_resample(
+    #     daily_df, clean_benchmark_symbols_yf, interval
+    # )
+    # status_msg += status_update
+    # --- Placeholder: Copy daily_df for now ---
+    if not daily_df.empty:
+        columns_to_keep = ['value', 'daily_gain', 'daily_return'] # Minimal set
+        # Add portfolio gain if exists
+        if 'Portfolio Accumulated Gain' in daily_df.columns: columns_to_keep.append('Portfolio Accumulated Gain')
+        # Add benchmark columns if they exist
         for bm_symbol in clean_benchmark_symbols_yf:
-            price_col = f"{bm_symbol} Price"; accum_col = f"{bm_symbol} Accumulated Gain"
-            if price_col in daily_df.columns:
-                bench_prices_no_na = daily_df[price_col].dropna()
-                if not bench_prices_no_na.empty:
-                    bench_daily_returns = bench_prices_no_na.pct_change().fillna(0.0)
-                    gain_factors_bench = (1 + bench_daily_returns)
-                    accum_gains_bench = gain_factors_bench.cumprod()
-                    daily_df[accum_col] = accum_gains_bench.reindex(daily_df.index, method='ffill')
-                    if not daily_df.empty and accum_col in daily_df.columns:
-                         first_valid_price_idx = bench_prices_no_na.index.min()
-                         if first_valid_price_idx in daily_df.index: daily_df.loc[first_valid_price_idx, accum_col] = np.nan
-                else: daily_df[accum_col] = np.nan
-            else: daily_df[accum_col] = np.nan
-        status_msg += " Accum gain calc complete."
+            if f"{bm_symbol} Price" in daily_df.columns: columns_to_keep.append(f"{bm_symbol} Price")
+            if f"{bm_symbol} Accumulated Gain" in daily_df.columns: columns_to_keep.append(f"{bm_symbol} Accumulated Gain")
+        columns_to_keep = [col for col in columns_to_keep if col in daily_df.columns]
+        final_df_filtered = daily_df[columns_to_keep].copy()
+        final_df_filtered.rename(columns={'value': 'Portfolio Value', 'daily_gain': 'Portfolio Daily Gain'}, inplace=True)
+        # --- Add basic TWR factor extraction for placeholder ---
+        if 'Portfolio Accumulated Gain' in final_df_filtered.columns and not final_df_filtered.empty:
+            last_valid_twr = final_df_filtered['Portfolio Accumulated Gain'].dropna().iloc[-1:]
+            if not last_valid_twr.empty:
+                 final_twr_factor = last_valid_twr.iloc[0]
 
-    except Exception as e_seq: print(f"Hist CRITICAL ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): Accum gain calc error: {e_seq}"); return pd.DataFrame(), status_msg + " Accum gain calc failed."
+    else: # If daily_df was somehow empty after placeholder logic
+         return pd.DataFrame(), status_msg + " No daily data to process for final results."
 
-    # --- 8. Select Final Columns & Apply Interval (unchanged) ---
-    # ... (Column selection and resampling logic remains the same) ...
-    columns_to_keep = ['value', 'daily_gain', 'daily_return', 'Portfolio Accumulated Gain']
-    for bm_symbol in clean_benchmark_symbols_yf:
-        if f"{bm_symbol} Price" in daily_df.columns: columns_to_keep.append(f"{bm_symbol} Price")
-        if f"{bm_symbol} Accumulated Gain" in daily_df.columns: columns_to_keep.append(f"{bm_symbol} Accumulated Gain")
-    columns_to_keep = [col for col in columns_to_keep if col in daily_df.columns]
-    final_df_filtered = daily_df[columns_to_keep].copy()
-    final_df_filtered.rename(columns={'value': 'Portfolio Value', 'daily_gain': 'Portfolio Daily Gain'}, inplace=True)
 
-    if interval != 'D':
-        try:
-            resample_freq = interval
-            resampling_agg = { 'Portfolio Value': 'last', 'Portfolio Daily Gain': 'sum' }
-            for bm_symbol in clean_benchmark_symbols_yf:
-                 if f"{bm_symbol} Price" in final_df_filtered.columns: resampling_agg[f"{bm_symbol} Price"] = 'last'
-            cols_to_drop_resample = ['daily_return', 'Portfolio Accumulated Gain']
-            for bm in clean_benchmark_symbols_yf:
-                if f"{bm} Accumulated Gain" in final_df_filtered.columns: cols_to_drop_resample.append(f"{bm} Accumulated Gain")
-            cols_to_drop_resample = [c for c in cols_to_drop_resample if c in final_df_filtered.columns]
-            final_df_resampled = final_df_filtered.drop(columns=cols_to_drop_resample, errors='ignore').resample(resample_freq).agg(resampling_agg)
-
-            if not final_df_resampled.empty:
-                if 'Portfolio Value' in final_df_resampled.columns:
-                    resampled_returns = final_df_resampled['Portfolio Value'].pct_change()
-                    if not resampled_returns.empty: resampled_returns.iloc[0] = np.nan
-                    final_df_resampled['Portfolio Accumulated Gain'] = (1 + resampled_returns.fillna(0.0)).cumprod()
-                    if not resampled_returns.empty and pd.isna(resampled_returns.iloc[0]) and 'Portfolio Accumulated Gain' in final_df_resampled.columns:
-                        final_df_resampled.iloc[0, final_df_resampled.columns.get_loc('Portfolio Accumulated Gain')] = np.nan
-                    if 'Portfolio Accumulated Gain' in final_df_resampled.columns:
-                        final_twr_factor = final_df_resampled['Portfolio Accumulated Gain'].iloc[-1]
-                else: final_df_resampled['Portfolio Accumulated Gain'] = np.nan
-
-                for bm_symbol in clean_benchmark_symbols_yf:
-                    price_col = f"{bm_symbol} Price"; accum_col = f"{bm_symbol} Accumulated Gain"
-                    if price_col in final_df_resampled.columns:
-                        resampled_bench_returns = final_df_resampled[price_col].pct_change()
-                        if not resampled_bench_returns.empty: resampled_bench_returns.iloc[0] = np.nan
-                        final_df_resampled[accum_col] = (1 + resampled_bench_returns.fillna(0.0)).cumprod()
-                        if not resampled_bench_returns.empty and pd.isna(resampled_bench_returns.iloc[0]) and accum_col in final_df_resampled.columns:
-                             final_df_resampled.iloc[0, final_df_resampled.columns.get_loc(accum_col)] = np.nan
-                    else: final_df_resampled[accum_col] = np.nan
-                final_df_filtered = final_df_resampled
-        except Exception as e_resample: print(f"Hist WARN ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): Failed resampling: {e_resample}. Returning daily.")
-
-    # --- 9. Return Results ---
+    # --- 8. Final Status and Return ---
     end_time_hist = time.time()
     print(f"--- Historical Performance Calculation Finished ({CURRENT_HIST_VERSION} / Scope: {filter_desc}) ---")
     print(f"Total Historical Calc Time: {end_time_hist - start_time_hist:.2f} seconds")
 
-    # --- Include final TWR factor in status message (unchanged) ---
-    final_status = status_msg
-    if 'failed' in status_msg.lower() or 'error' in status_msg.lower(): pass
+    # Determine final status based on messages/warnings/errors accumulated
+    final_status = status_msg # Start with accumulated status
+    if 'failed' in status_msg.lower() or 'error' in status_msg.lower(): pass # Keep error status
     elif final_df_filtered.empty: final_status += " Success (Empty Result)."
     else: final_status += " Success."
+    # Append TWR factor
     final_status += f"|||TWR_FACTOR:{final_twr_factor:.6f}" if pd.notna(final_twr_factor) else "|||TWR_FACTOR:NaN"
 
-    # --- Final column ordering (unchanged) ---
-    final_cols_order = ['Portfolio Value', 'Portfolio Daily Gain', 'daily_return', 'Portfolio Accumulated Gain']
-    for bm in clean_benchmark_symbols_yf:
-        if f"{bm} Price" in final_df_filtered.columns: final_cols_order.append(f"{bm} Price")
-        if f"{bm} Accumulated Gain" in final_df_filtered.columns: final_cols_order.append(f"{bm} Accumulated Gain")
-    final_cols_order = [c for c in final_cols_order if c in final_df_filtered.columns]
-    final_df_filtered = final_df_filtered[final_cols_order]
+    # Final column ordering (optional, good practice)
+    if not final_df_filtered.empty:
+        final_cols_order = ['Portfolio Value', 'Portfolio Daily Gain', 'daily_return', 'Portfolio Accumulated Gain']
+        for bm in clean_benchmark_symbols_yf:
+            if f"{bm} Price" in final_df_filtered.columns: final_cols_order.append(f"{bm} Price")
+            if f"{bm} Accumulated Gain" in final_df_filtered.columns: final_cols_order.append(f"{bm} Accumulated Gain")
+        final_cols_order = [c for c in final_cols_order if c in final_df_filtered.columns] # Ensure columns exist
+        try:
+             final_df_filtered = final_df_filtered[final_cols_order]
+        except KeyError:
+             print("Warning: Could not reorder final columns.") # Should not happen if list comprehension is correct
 
     return final_df_filtered, final_status
 
