@@ -2661,6 +2661,175 @@ def _prepare_historical_inputs(
         daily_results_cache_file, daily_results_cache_key,
         filter_desc
     )
+
+def _load_or_fetch_raw_historical_data(
+    symbols_to_fetch_yf: List[str], # Combined list of stock, benchmark YF tickers
+    fx_pairs_to_fetch_yf: List[str], # List of YF FX tickers (e.g., ['JPY=X', 'EUR=X'])
+    start_date: date,
+    end_date: date,
+    use_raw_data_cache: bool,
+    raw_data_cache_file: str,
+    raw_data_cache_key: str # Key to validate cache content
+) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], bool]:
+    """
+    Loads adjusted historical price/FX data from cache if valid, otherwise fetches
+    fresh data from Yahoo Finance and updates the cache.
+    FX rates fetched are OTHER CURRENCY per 1 USD (e.g., from JPY=X).
+
+    Args:
+        symbols_to_fetch_yf: List of YF stock/benchmark tickers.
+        fx_pairs_to_fetch_yf: List of YF FX tickers (e.g., 'JPY=X').
+        start_date: Start date for historical data.
+        end_date: End date for historical data.
+        use_raw_data_cache: Flag to enable caching.
+        raw_data_cache_file: Path to the raw historical data cache file.
+        raw_data_cache_key: Cache validation key.
+
+    Returns:
+        A tuple containing:
+        - historical_prices_yf_adjusted: Dict {yf_ticker: DataFrame} for stocks/benchmarks.
+        - historical_fx_yf: Dict {yf_fx_ticker: DataFrame} for FX pairs (e.g., {'JPY=X': df}).
+        - fetch_failed: Boolean indicating if fetching critical data failed.
+    """
+    historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}
+    historical_fx_yf: Dict[str, pd.DataFrame] = {}
+    cache_valid_raw = False
+    fetch_failed = False # Track if essential fetching fails
+
+    # --- 1. Try Loading Cache ---
+    if use_raw_data_cache and raw_data_cache_file and os.path.exists(raw_data_cache_file):
+        print(f"Hist Raw: Attempting to load raw data cache: {raw_data_cache_file}")
+        try:
+            with open(raw_data_cache_file, 'r') as f: cached_data = json.load(f)
+            if cached_data.get('cache_key') == raw_data_cache_key:
+                deserialization_errors = 0
+                # Load Prices
+                cached_prices = cached_data.get('historical_prices', {})
+                for symbol in symbols_to_fetch_yf:
+                    data_json = cached_prices.get(symbol); df = None
+                    if data_json:
+                        try:
+                            df = pd.read_json(StringIO(data_json), orient='split', dtype={'price': float})
+                            df.index = pd.to_datetime(df.index, errors='coerce').date # Convert index to date objects
+                            df = df.dropna(subset=['price']) # Ensure price is valid
+                            df = df[pd.notnull(df.index)] # Drop NaT indices
+                            if not df.empty: historical_prices_yf_adjusted[symbol] = df.sort_index()
+                            else: historical_prices_yf_adjusted[symbol] = pd.DataFrame() # Store empty if no valid data
+                        except Exception as e_deser:
+                            # print(f"DEBUG: Error deserializing cached price for {symbol}: {e_deser}") # Optional
+                            deserialization_errors += 1; historical_prices_yf_adjusted[symbol] = pd.DataFrame()
+                    else: historical_prices_yf_adjusted[symbol] = pd.DataFrame() # Symbol missing from cache
+
+                # Load FX Rates (keyed by JPY=X, etc.)
+                cached_fx = cached_data.get('historical_fx_rates', {})
+                for pair in fx_pairs_to_fetch_yf:
+                    data_json = cached_fx.get(pair); df = None
+                    if data_json:
+                        try:
+                            df = pd.read_json(StringIO(data_json), orient='split', dtype={'price': float})
+                            df.index = pd.to_datetime(df.index, errors='coerce').date # Convert index to date objects
+                            df = df.dropna(subset=['price'])
+                            df = df[pd.notnull(df.index)]
+                            if not df.empty: historical_fx_yf[pair] = df.sort_index()
+                            else: historical_fx_yf[pair] = pd.DataFrame()
+                        except Exception as e_deser_fx:
+                            # print(f"DEBUG: Error deserializing cached FX for {pair}: {e_deser_fx}") # Optional
+                            deserialization_errors += 1; historical_fx_yf[pair] = pd.DataFrame()
+                    else: historical_fx_yf[pair] = pd.DataFrame() # Pair missing
+
+                # Validate Cache Completeness
+                all_symbols_loaded = all(s in historical_prices_yf_adjusted for s in symbols_to_fetch_yf)
+                all_fx_loaded = all(p in historical_fx_yf for p in fx_pairs_to_fetch_yf)
+
+                if all_symbols_loaded and all_fx_loaded and deserialization_errors == 0:
+                    print("Hist Raw: Cache valid and complete.")
+                    cache_valid_raw = True
+                else:
+                    print(f"Hist WARN: RAW cache incomplete or errors ({deserialization_errors}). Will refetch if needed.")
+                    # Keep partially loaded data, fetch might fill gaps
+            else:
+                print(f"Hist Raw: Cache key mismatch. Ignoring cache.")
+        except Exception as e:
+            print(f"Error reading hist RAW cache {raw_data_cache_file}: {e}. Ignoring cache.")
+            historical_prices_yf_adjusted = {} # Clear potentially corrupted data
+            historical_fx_yf = {}
+
+    # --- 2. Fetch Missing Data if Cache Invalid/Incomplete ---
+    if not cache_valid_raw:
+        print("Hist Raw: Fetching data from Yahoo Finance...")
+        # Determine which symbols *still* need fetching (if cache was partial)
+        symbols_needing_fetch = [s for s in symbols_to_fetch_yf if s not in historical_prices_yf_adjusted or historical_prices_yf_adjusted[s].empty]
+        fx_needing_fetch = [p for p in fx_pairs_to_fetch_yf if p not in historical_fx_yf or historical_fx_yf[p].empty]
+
+        if symbols_needing_fetch:
+             print(f"Hist Raw: Fetching {len(symbols_needing_fetch)} stock/benchmark symbols...")
+             fetched_stock_data = fetch_yf_historical(symbols_needing_fetch, start_date, end_date) # Assumes helper exists
+             historical_prices_yf_adjusted.update(fetched_stock_data) # Add fetched data
+        else:
+             print("Hist Raw: All stock/benchmark symbols found in cache or not needed.")
+
+
+        if fx_needing_fetch:
+             print(f"Hist Raw: Fetching {len(fx_needing_fetch)} FX pairs...")
+             # Use the same fetcher, assuming it handles CURRENCY=X tickers
+             fetched_fx_data = fetch_yf_historical(fx_needing_fetch, start_date, end_date)
+             historical_fx_yf.update(fetched_fx_data) # Add fetched data
+        else:
+             print("Hist Raw: All FX pairs found in cache or not needed.")
+
+
+        # --- Validation after fetch ---
+        final_symbols_missing = [s for s in symbols_to_fetch_yf if s not in historical_prices_yf_adjusted or historical_prices_yf_adjusted[s].empty]
+        final_fx_missing = [p for p in fx_pairs_to_fetch_yf if p not in historical_fx_yf or historical_fx_yf[p].empty]
+
+        if final_symbols_missing:
+             print(f"Hist WARN: Failed to fetch/load adjusted prices for: {', '.join(final_symbols_missing)}")
+             # Decide if this is critical - depends if any portfolio holdings use these
+             # For now, let's flag fetch_failed only if essential FX is missing
+        if final_fx_missing:
+             print(f"Hist WARN: Failed to fetch/load FX rates for: {', '.join(final_fx_missing)}")
+             # If ANY required FX pair is missing, mark as failed for safety
+             fetch_failed = True
+
+        # --- 3. Update Cache if Fetch Occurred ---
+        if use_raw_data_cache and (symbols_needing_fetch or fx_needing_fetch): # Only save if we fetched something
+            print(f"Hist Raw: Saving updated raw data to cache: {raw_data_cache_file}")
+            # Prepare JSON-serializable data
+            prices_to_cache = {
+                symbol: df.to_json(orient='split', date_format='iso')
+                for symbol, df in historical_prices_yf_adjusted.items() if not df.empty # Only cache non-empty
+            }
+            fx_to_cache = {
+                pair: df.to_json(orient='split', date_format='iso')
+                for pair, df in historical_fx_yf.items() if not df.empty # Only cache non-empty
+            }
+            cache_content = {
+                'cache_key': raw_data_cache_key,
+                'timestamp': datetime.now().isoformat(),
+                'historical_prices': prices_to_cache,
+                'historical_fx_rates': fx_to_cache
+            }
+            try:
+                cache_dir_raw = os.path.dirname(raw_data_cache_file)
+                if cache_dir_raw: os.makedirs(cache_dir_raw, exist_ok=True)
+                with open(raw_data_cache_file, 'w') as f: json.dump(cache_content, f, indent=2)
+            except Exception as e: print(f"Error writing hist RAW cache: {e}")
+        elif not use_raw_data_cache:
+             print("Hist Raw: Caching disabled, skipping save.")
+
+    # --- 4. Final Check and Return ---
+    # Check again if critical data is missing after cache/fetch attempts
+    if not fetch_failed and fx_pairs_to_fetch_yf: # Re-check FX only if pairs were needed
+         if any(p not in historical_fx_yf or historical_fx_yf[p].empty for p in fx_pairs_to_fetch_yf):
+             print("Hist ERROR: Critical FX data missing after final check.")
+             fetch_failed = True
+
+    if not fetch_failed and symbols_to_fetch_yf: # Re-check stocks
+          if any(s not in historical_prices_yf_adjusted or historical_prices_yf_adjusted[s].empty for s in symbols_to_fetch_yf):
+               # Allow proceeding but maybe warn later if specific symbols are needed and missing
+               print("Hist WARN: Some stock/benchmark data missing after final check.")
+
+    return historical_prices_yf_adjusted, historical_fx_yf, fetch_failed
     
 # --- Historical Performance Calculation Wrapper Function (Refactored for Parallelism + Results Cache) ---
 def calculate_historical_performance(
@@ -2743,30 +2912,23 @@ def calculate_historical_performance(
 
 
     # --- 3. Load or Fetch ADJUSTED Historical Raw Data ---
-    # (Code for this section will be moved to _load_or_fetch_raw_historical_data helper later)
-    print("Placeholder: Load/Fetch Raw Historical Data")
-    historical_prices_yf_adjusted = {} # Placeholder
-    historical_fx_yf = {} # Placeholder - Should contain DFs keyed by JPY=X, EUR=X etc.
-    # --- Add actual logic here later or call helper ---
-    # Example call structure:
-    # historical_prices_yf_adjusted, historical_fx_yf = _load_or_fetch_raw_historical_data(
-    #     symbols_for_stocks_and_benchmarks_yf, fx_pairs_for_api_yf, start_date, end_date,
-    #     use_raw_data_cache, raw_data_cache_file, raw_data_cache_key
-    # )
-    # --- Check for fetch failure ---
-    if not historical_prices_yf_adjusted and symbols_for_stocks_and_benchmarks_yf:
-        return pd.DataFrame(), status_msg + " Error: Failed to fetch/load historical stock/benchmark prices."
-    if not historical_fx_yf and fx_pairs_for_api_yf:
-         # Allow proceeding without FX if only USD involved? Check required_currencies.
-         # For now, treat missing FX as critical if needed.
-        all_currencies_involved = set(transactions_df_effective['Local Currency'].unique()).union({display_currency, default_currency})
-        if len(all_currencies_involved) > 1: # More than just one currency (e.g., USD) involved
-             return pd.DataFrame(), status_msg + " Error: Failed to fetch/load required historical FX rates."
-        else:
-             print("Info: No FX rates needed or fetched.")
+    historical_prices_yf_adjusted, historical_fx_yf, fetch_failed = _load_or_fetch_raw_historical_data(
+        symbols_to_fetch_yf=symbols_for_stocks_and_benchmarks_yf, # Use the correct list from prep
+        fx_pairs_to_fetch_yf=fx_pairs_for_api_yf, # Use the correct FX ticker list from prep
+        start_date=start_date,
+        end_date=end_date,
+        use_raw_data_cache=use_raw_data_cache,
+        raw_data_cache_file=raw_data_cache_file, # From prep
+        raw_data_cache_key=raw_data_cache_key # From prep
+    )
 
+    # --- Check for Fetch Failure ---
+    if fetch_failed:
+         status_msg += " Error: Failed fetching critical historical FX/Price data."
+         # Return empty DataFrame as calculation cannot proceed reliably
+         return pd.DataFrame(), status_msg
 
-    status_msg += " Raw adjusted data loaded."
+    status_msg += " Raw adjusted data loaded/fetched."
 
 
     # --- 4. Derive Unadjusted Prices ---
