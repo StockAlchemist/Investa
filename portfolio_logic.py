@@ -231,42 +231,95 @@ def calculate_npv(rate: float, dates: List[date], cash_flows: List[float]) -> fl
     return npv if np.isfinite(npv) else np.nan
 
 def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
-    """Calculates Internal Rate of Return (IRR/MWR)."""
-    if len(dates) < 2 or len(cash_flows) < 2 or len(dates) != len(cash_flows): return np.nan
-    if any(not isinstance(cf, (int, float)) or not np.isfinite(cf) for cf in cash_flows): return np.nan
-    for i in range(1, len(dates)):
-        if not isinstance(dates[i], date) or not isinstance(dates[i-1], date) or dates[i] < dates[i-1]: return np.nan # Ensure dates are valid and ordered
+    """
+    Calculates Internal Rate of Return (IRR/MWR).
+    Returns np.nan for invalid cases, including non-standard investment patterns
+    (requires first non-zero flow to be negative and at least one later positive flow).
+    """
+    # 1. Basic Input Validation
+    if len(dates) < 2 or len(cash_flows) < 2 or len(dates) != len(cash_flows):
+        # print("DEBUG IRR: Fail - Length mismatch or < 2") # Optional Debug
+        return np.nan
+    if any(not isinstance(cf, (int, float)) or not np.isfinite(cf) for cf in cash_flows):
+        # print("DEBUG IRR: Fail - Non-finite cash flows") # Optional Debug
+        return np.nan
+    # Check dates are valid and sorted
+    try:
+        # Ensure elements are date objects before comparison
+        if not all(isinstance(d, date) for d in dates):
+             raise TypeError("Not all elements in dates are date objects")
+        for i in range(1, len(dates)):
+            if dates[i] < dates[i-1]:
+                raise ValueError("Dates are not sorted")
+    except (TypeError, ValueError) as e:
+        # print(f"DEBUG IRR: Fail - Date validation error: {e}") # Optional Debug
+        return np.nan
 
-    non_zero_cfs = [cf for cf in cash_flows if abs(cf) > 1e-9]
-    if not non_zero_cfs or all(cf >= -1e-9 for cf in non_zero_cfs) or all(cf <= 1e-9 for cf in non_zero_cfs): return np.nan # Need mix of positive/negative flows
+    # 2. Cash Flow Pattern Validation (Stricter)
+    first_non_zero_flow = None
+    first_non_zero_idx = -1
+    non_zero_cfs_list = [] # Also collect non-zero flows
 
+    for idx, cf in enumerate(cash_flows):
+        if abs(cf) > 1e-9:
+            non_zero_cfs_list.append(cf)
+            if first_non_zero_flow is None:
+                first_non_zero_flow = cf
+                first_non_zero_idx = idx
+
+    if first_non_zero_flow is None: # All flows are zero or near-zero
+        # print("DEBUG IRR: Fail - All flows are zero") # Optional Debug
+        return np.nan
+
+    # Stricter Check 1: First non-zero flow MUST be negative (typical investment)
+    if first_non_zero_flow >= -1e-9:
+        # print(f"DEBUG IRR: Fail - First non-zero flow is non-negative: {first_non_zero_flow} in {cash_flows}") # Optional Debug
+        return np.nan
+
+    # Stricter Check 2: Must have at least one positive flow overall
+    has_positive_flow = any(cf > 1e-9 for cf in non_zero_cfs_list)
+    if not has_positive_flow:
+        # print(f"DEBUG IRR: Fail - No positive flows found: {cash_flows}") # Optional Debug
+        return np.nan
+
+    # Check 3 (Redundant but safe): Ensure not ALL flows are negative (covered by check 2)
+    # all_negative = all(cf <= 1e-9 for cf in non_zero_cfs_list)
+    # if all_negative:
+    #     return np.nan
+
+    # 3. Solver Logic (Keep previous robust version)
     irr_result = np.nan
     try:
-        # Initial guess with Newton-Raphson
+        # Newton-Raphson with validation
         irr_result = optimize.newton(calculate_npv, x0=0.1, args=(dates, cash_flows), tol=1e-6, maxiter=100)
-        # Basic sanity check on the result
-        if not (-0.9999 < irr_result < 50.0): # Check if result is within a very wide reasonable range
-            raise RuntimeError("Newton result out of reasonable range")
+        if not np.isfinite(irr_result) or irr_result <= -1.0 or irr_result > 100.0: # Check range
+             raise RuntimeError("Newton result out of reasonable range")
+        npv_check = calculate_npv(irr_result, dates, cash_flows)
+        if not np.isclose(npv_check, 0.0, atol=1e-4): # Check if it finds the root accurately
+             raise RuntimeError("Newton result did not produce zero NPV")
+
     except (RuntimeError, OverflowError):
-        # Fallback to Brentq if Newton fails or result is unreasonable
+        # Brentq fallback
         try:
-            lower_bound, upper_bound = -0.9999, 20.0 # Sensible bounds for most investments
+            lower_bound, upper_bound = -0.9999, 50.0 # Sensible bounds
             npv_low = calculate_npv(lower_bound, dates, cash_flows)
             npv_high = calculate_npv(upper_bound, dates, cash_flows)
-            # Check if a root exists within the bounds
-            if np.isfinite(npv_low) and np.isfinite(npv_high) and npv_low * npv_high < 0:
-                irr_result = optimize.brentq(calculate_npv, a=lower_bound, b=upper_bound, args=(dates, cash_flows), xtol=1e-6, maxiter=100)
-            else:
-                # If Brentq bounds don't bracket the root, try Newton again with 0.0 guess
-                try:
-                    irr_result = optimize.newton(calculate_npv, x0=0.0, args=(dates, cash_flows), tol=1e-6, maxiter=50)
-                    if not (-0.9999 < irr_result < 50.0): irr_result = np.nan # Final check
-                except (RuntimeError, OverflowError): irr_result = np.nan # Give up if Newton(0) fails
+            if pd.notna(npv_low) and pd.notna(npv_high) and npv_low * npv_high < 0: # Check sign change
+                irr_result = optimize.brentq(calculate_npv, a=lower_bound, b=upper_bound, args=(dates, cash_flows), xtol=1e-6, rtol=1e-6, maxiter=100)
+                # Final check on Brentq result
+                if not np.isfinite(irr_result) or irr_result <= -1.0:
+                    irr_result = np.nan
+            else: # Bounds don't bracket
+                irr_result = np.nan
         except (ValueError, RuntimeError, OverflowError, Exception):
-             # Catch potential errors during fallback (e.g., from calculate_npv)
-             irr_result = np.nan
-    # Final validation
-    return irr_result if np.isfinite(irr_result) and irr_result > -1.0 else np.nan
+             irr_result = np.nan # Brentq failed
+
+    # 4. Final Validation and Return
+    if not (isinstance(irr_result, (float, int)) and np.isfinite(irr_result) and irr_result > -1.0):
+         # print(f"DEBUG IRR: Fail - Final result invalid: {irr_result}") # Optional Debug
+         return np.nan
+
+    return irr_result
 
 # --- Cash Flow Helpers ---
 # --- START OF REVISED get_cash_flows_for_symbol_account ---
@@ -2369,5 +2422,35 @@ if __name__ == '__main__':
         if summary_metrics: print(f"Overall Metrics (Subset): {summary_metrics}")
         if holdings_df is not None and not holdings_df.empty: print(f"Holdings DF (Subset) Head:\n{holdings_df.head().to_string()}")
         if account_metrics: print(f"Account Metrics (Subset): {account_metrics}")
+
+# Example test cases (add inside if __name__ == '__main__':)
+print("\n--- IRR/NPV Test Cases ---")
+dates1 = [date(2023, 1, 1), date(2024, 1, 1)]
+flows1 = [-100, 110] # Simple 10% return
+irr1 = calculate_irr(dates1, flows1)
+print(f"Test 1: Flows={flows1}, IRR={irr1*100 if irr1 is not np.nan else 'NaN':.2f}% (Expected ~10%)")
+npv1_at_10pct = calculate_npv(0.10, dates1, flows1)
+print(f"Test 1: NPV @ 10% = {npv1_at_10pct:.2f} (Expected ~0.00)")
+npv1_at_5pct = calculate_npv(0.05, dates1, flows1)
+print(f"Test 1: NPV @ 5% = {npv1_at_5pct:.2f}")
+
+dates2 = [date(2023, 1, 1), date(2023, 7, 1), date(2024, 1, 1)]
+flows2 = [-100, -50, 170] # Multiple flows
+irr2 = calculate_irr(dates2, flows2)
+print(f"Test 2: Flows={flows2}, IRR={irr2*100 if irr2 is not np.nan else 'NaN':.2f}%")
+if pd.notna(irr2):
+     npv2_at_irr = calculate_npv(irr2, dates2, flows2)
+     print(f"Test 2: NPV @ {irr2*100:.2f}% = {npv2_at_irr:.4f} (Expected ~0.00)")
+
+dates3 = [date(2023,1,1), date(2024,1,1)]
+flows3 = [-100, 90] # Negative return
+irr3 = calculate_irr(dates3, flows3)
+print(f"Test 3: Flows={flows3}, IRR={irr3*100 if irr3 is not np.nan else 'NaN':.2f}% (Expected ~-10%)")
+
+dates4 = [date(2023,1,1), date(2024,1,1)]
+flows4 = [100, -110] # Invalid for standard IRR (all positive/negative after sign flip)
+irr4 = calculate_irr(dates4, flows4)
+print(f"Test 4: Flows={flows4}, IRR={irr4*100 if irr4 is not np.nan else 'NaN'} (Expected NaN)")
+# --- END IRR/NPV Test Cases ---
 
 # --- END OF FILE portfolio_logic.py ---
