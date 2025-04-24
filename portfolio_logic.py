@@ -46,7 +46,6 @@ CASH_SYMBOL_CSV = '$CASH' # Standardized cash symbol
 DEFAULT_CURRENT_CACHE_FILE_PATH = 'portfolio_cache_yf.json'
 HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = 'yf_portfolio_hist_raw_adjusted_v7'
 DAILY_RESULTS_CACHE_PATH_PREFIX = 'yf_portfolio_daily_results_v10' # <-- V10 cache with daily_return & daily_gain
-HISTORICAL_RESULTS_CACHE_FILE_PATH = 'historical_results_cache.json' # Legacy cache for summary/IRR results
 YFINANCE_CACHE_DURATION_HOURS = 4 # Keep for CURRENT data
 
 # --- Yahoo Finance Mappings & Configuration ---
@@ -1136,15 +1135,16 @@ def _process_transactions_to_holdings(
 def _calculate_cash_balances(
     transactions_df: pd.DataFrame, # The filtered DataFrame
     default_currency: str         # Fallback currency
-    # No ignored sets needed here as $CASH txns are usually simpler
 ) -> Dict[str, Dict]:
     """
     Calculates final cash balances, dividends, and commissions for $CASH
     symbol transactions within each account, using their local currency.
+    Handles cases where aggregations might return scalar values.
 
     Args:
         transactions_df: DataFrame of transactions filtered for the desired scope.
-                         MUST include 'Local Currency' column.
+                         MUST include 'Local Currency', 'Account', 'Symbol',
+                         'Quantity', 'Commission', 'Type', 'Total Amount', 'Price/Share'.
         default_currency: Default currency string.
 
     Returns:
@@ -1152,85 +1152,100 @@ def _calculate_cash_balances(
         {'qty': balance, 'dividends': divs, 'commissions': fees, 'currency': local_curr}
     """
     cash_summary: Dict[str, Dict] = {}
+    cash_symbol = CASH_SYMBOL_CSV # Use constant
 
-    # --- Start of code to MOVE ---
     try:
         # Filter only $CASH transactions from the input DataFrame
-        cash_transactions = transactions_df[transactions_df['Symbol'] == CASH_SYMBOL_CSV].copy()
+        cash_transactions = transactions_df[transactions_df['Symbol'] == cash_symbol].copy()
 
         if not cash_transactions.empty:
-            # Calculate signed quantity for deposits/withdrawals
+            # Define the aggregation function for signed quantity robustly
             def get_signed_quantity_cash(row):
-                # Ensure 'Type' and 'Quantity' columns exist and handle potential errors
                 type_lower = str(row.get('Type', '')).lower()
                 qty_val = row.get('Quantity')
                 qty = pd.to_numeric(qty_val, errors='coerce')
-                # Return 0 if quantity is NaN
+                # Return 0 if quantity is NaN or not applicable type
                 if pd.isna(qty): return 0.0
-                # Handle transaction types
                 if type_lower in ['buy', 'deposit']: return abs(qty)
                 elif type_lower in ['sell', 'withdrawal']: return -abs(qty)
-                else: return 0.0 # Ignore other types for balance calc
+                else: return 0.0
 
             cash_transactions['SignedQuantity'] = cash_transactions.apply(get_signed_quantity_cash, axis=1)
 
-            # Aggregate quantities and commissions by account
-            cash_qty_agg = cash_transactions.groupby('Account')['SignedQuantity'].sum()
-            # Fill NaN commissions with 0 before summing
-            cash_comm_agg = cash_transactions.groupby('Account')['Commission'].fillna(0.0).sum()
+            # Aggregate first
+            grouped_cash = cash_transactions.groupby('Account')
+            cash_qty_agg = grouped_cash['SignedQuantity'].sum()
+            # Calculate sum of commissions, fill NaN groups with 0 AFTER summing
+            cash_comm_agg = grouped_cash['Commission'].sum(min_count=1).fillna(0.0)
+            cash_currency_map = grouped_cash['Local Currency'].first()
 
-
-            # Calculate net dividends specifically for $CASH transactions
+            # Calculate net dividends separately for $CASH transactions
             cash_dividends_tx = cash_transactions[cash_transactions['Type'] == 'dividend'].copy()
-            cash_div_agg = pd.Series(dtype=float)
+            cash_div_agg = pd.Series(dtype=float) # Default to empty Series
             if not cash_dividends_tx.empty:
-                # Calculate dividend amount (prefer 'Total Amount', fallback to 'Price/Share' or qty*price)
+                # Define helper locally or globally
                 def get_dividend_amount(r):
                     total_amt = pd.to_numeric(r.get('Total Amount'), errors='coerce')
                     price = pd.to_numeric(r.get('Price/Share'), errors='coerce')
                     qty = pd.to_numeric(r.get('Quantity'), errors='coerce')
                     qty_abs = abs(qty) if pd.notna(qty) else 0.0
-
-                    if pd.notna(total_amt) and total_amt != 0: return total_amt
-                    elif pd.notna(price) and price != 0:
-                        # If quantity is meaningful, use qty*price, otherwise assume price is the amount
-                        return (qty_abs * price) if qty_abs > 0 else price
+                    if pd.notna(total_amt) and abs(total_amt) > 1e-9: return total_amt # Use Total Amount if valid
+                    elif pd.notna(price) and abs(price) > 1e-9:
+                        return (qty_abs * price) if qty_abs > 0 else price # Use qty*price or just price
                     else: return 0.0
 
                 cash_dividends_tx['DividendAmount'] = cash_dividends_tx.apply(get_dividend_amount, axis=1)
-                cash_dividends_tx['Commission'] = cash_dividends_tx['Commission'].fillna(0.0) # Ensure commission is numeric
+                cash_dividends_tx['Commission'] = pd.to_numeric(cash_dividends_tx['Commission'], errors='coerce').fillna(0.0)
                 cash_dividends_tx['NetDividend'] = cash_dividends_tx['DividendAmount'] - cash_dividends_tx['Commission']
-                cash_div_agg = cash_dividends_tx.groupby('Account')['NetDividend'].sum()
+                # Group dividends AFTER calculating NetDividend
+                cash_div_agg = cash_dividends_tx.groupby('Account')['NetDividend'].sum() # Result might be Series or scalar
 
-            # Get the local currency for each account from the $CASH transactions
-            # Use .first() assuming currency is consistent per account within $CASH txns
-            cash_currency_map = cash_transactions.groupby('Account')['Local Currency'].first()
+            # Get all unique accounts that had any cash transaction
+            all_cash_accounts = cash_transactions['Account'].unique()
 
-            # Combine aggregations
-            all_cash_accounts = cash_currency_map.index.union(cash_qty_agg.index).union(cash_comm_agg.index).union(cash_div_agg.index)
-
+            # --- Loop through accounts and retrieve values safely ---
             for acc in all_cash_accounts:
-                # Use default_currency if somehow missing from the filtered cash transactions
+                # Get currency (should always be Series if all_cash_accounts is not empty)
                 acc_currency = cash_currency_map.get(acc, default_currency)
-                acc_balance = cash_qty_agg.get(acc, 0.0)
-                acc_commissions = cash_comm_agg.get(acc, 0.0)
-                acc_dividends_only = cash_div_agg.get(acc, 0.0)
 
+                # Get balance: Use .get() if Series, otherwise use scalar value directly
+                acc_balance = 0.0
+                if isinstance(cash_qty_agg, pd.Series):
+                    acc_balance = cash_qty_agg.get(acc, 0.0)
+                elif len(all_cash_accounts) == 1: # Only possible way sum result is scalar
+                    acc_balance = float(cash_qty_agg) if pd.notna(cash_qty_agg) else 0.0
+
+                # Get commissions: Use .get() if Series, otherwise use scalar value
+                acc_commissions = 0.0
+                if isinstance(cash_comm_agg, pd.Series):
+                    acc_commissions = cash_comm_agg.get(acc, 0.0)
+                elif len(all_cash_accounts) == 1: # Only possible way sum result is scalar
+                    acc_commissions = float(cash_comm_agg) if pd.notna(cash_comm_agg) else 0.0
+
+                # Get dividends: Use .get() on the resulting Series (handles empty series)
+                acc_dividends_only = 0.0
+                if isinstance(cash_div_agg, pd.Series):
+                    acc_dividends_only = cash_div_agg.get(acc, 0.0)
+                # No scalar case needed here as empty Series handles missing dividends
+
+                # Populate the summary dictionary for the account
                 cash_summary[acc] = {
                     'qty': acc_balance,
-                    'realized': 0.0, # Realized gains aren't typically tracked for cash itself
-                    'dividends': acc_dividends_only,
-                    'commissions': acc_commissions,
-                    'currency': acc_currency # Store the determined local currency
+                    'realized': 0.0, # Realized gain not tracked for cash balance itself
+                    'dividends': acc_dividends_only, # Interest/Dividends on cash
+                    'commissions': acc_commissions, # Fees associated with cash txns
+                    'currency': acc_currency # The local currency of the cash account
                 }
         else:
-            print("Info: No $CASH transactions found in the filtered set for balance calculation.")
+            # No cash transactions found for any account in the provided transactions_df
+            print("Info in _calculate_cash_balances: No $CASH transactions found.")
+
     except Exception as e:
-        print(f"ERROR calculating $CASH balances separately: {e}");
+        # Log error and return empty dictionary
+        print(f"ERROR in _calculate_cash_balances processing cash transactions: {e}")
         import traceback
-        traceback.print_exc();
-        cash_summary = {} # Return empty on error
-    # --- End of code to MOVE ---
+        traceback.print_exc()
+        cash_summary = {}
 
     return cash_summary
 
@@ -2737,16 +2752,21 @@ def _load_or_fetch_raw_historical_data(
                             deserialization_errors += 1; historical_fx_yf[pair] = pd.DataFrame()
                     else: historical_fx_yf[pair] = pd.DataFrame() # Pair missing
 
-                # Validate Cache Completeness
+                # Validate Cache Completeness and Types
                 all_symbols_loaded = all(s in historical_prices_yf_adjusted for s in symbols_to_fetch_yf)
                 all_fx_loaded = all(p in historical_fx_yf for p in fx_pairs_to_fetch_yf)
+                prices_are_dict = isinstance(historical_prices_yf_adjusted, dict)
+                fx_are_dict = isinstance(historical_fx_yf, dict)
 
-                if all_symbols_loaded and all_fx_loaded and deserialization_errors == 0:
+                if all_symbols_loaded and all_fx_loaded and prices_are_dict and fx_are_dict and deserialization_errors == 0:
                     print("Hist Raw: Cache valid and complete.")
                     cache_valid_raw = True
-                else:
-                    print(f"Hist WARN: RAW cache incomplete or errors ({deserialization_errors}). Will refetch if needed.")
-                    # Keep partially loaded data, fetch might fill gaps
+                else: # If anything failed or is wrong type
+                    print(f"Hist WARN: RAW cache load failed validation (Symbols loaded: {all_symbols_loaded}, FX loaded: {all_fx_loaded}, Price type OK: {prices_are_dict}, FX type OK: {fx_are_dict}, Errors: {deserialization_errors}). Refetching if needed.")
+                    cache_valid_raw = False # Force refetch if validation fails
+                    # Reset dictionaries if types were wrong
+                    if not prices_are_dict: historical_prices_yf_adjusted = {}
+                    if not fx_are_dict: historical_fx_yf = {}
             else:
                 print(f"Hist Raw: Cache key mismatch. Ignoring cache.")
         except Exception as e:
@@ -2871,28 +2891,29 @@ def _load_or_calculate_daily_results(
                     if results_json:
                         try:
                             daily_df = pd.read_json(StringIO(results_json), orient='split')
-                            # --- Cache Validation ---
-                            # Ensure index is DatetimeIndex after loading
+                            # --- Added Cache Validation ---
+                            if not isinstance(daily_df, pd.DataFrame):
+                                raise ValueError("Loaded daily cache is not a DataFrame.")
                             if not isinstance(daily_df.index, pd.DatetimeIndex):
-                                 daily_df.index = pd.to_datetime(daily_df.index, errors='coerce')
-                                 daily_df = daily_df[pd.notnull(daily_df.index)] # Drop NaT
+                                daily_df.index = pd.to_datetime(daily_df.index, errors='coerce')
+                                daily_df = daily_df[pd.notnull(daily_df.index)] # Drop NaT if conversion failed
 
                             daily_df.sort_index(inplace=True)
-                            # Check for essential columns generated by worker AND subsequent calcs
-                            required_cols = ['value', 'net_flow', 'daily_return', 'daily_gain']
-                            for bm_symbol in clean_benchmark_symbols_yf: required_cols.append(f"{bm_symbol} Price")
+                            required_cols = ['value', 'net_flow', 'daily_return', 'daily_gain'] # Check core calculated columns
+                            # No need to check benchmark prices strictly here, worker might have failed for those
                             missing_cols = [c for c in required_cols if c not in daily_df.columns]
 
                             if not missing_cols and not daily_df.empty:
+                            # --- End Added Cache Validation ---
                                 print(f"Hist Daily ({current_hist_version} / Scope: {filter_desc}): Loaded {len(daily_df)} rows from cache.")
                                 cache_valid_daily_results = True
                                 status_update = " Daily results loaded from cache."
                             else:
-                                 print(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): Daily cache missing columns ({missing_cols}) or empty. Recalculating.")
-                                 daily_df = pd.DataFrame() # Reset df
+                                print(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): Daily cache missing columns ({missing_cols}), empty, or failed validation. Recalculating.")
+                                daily_df = pd.DataFrame() # Reset df
                         except Exception as e_load_df:
-                             print(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): Error deserializing daily cache DF: {e_load_df}. Recalculating.")
-                             daily_df = pd.DataFrame() # Reset df
+                            print(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): Error deserializing/validating daily cache DF: {e_load_df}. Recalculating.")
+                            daily_df = pd.DataFrame() # Reset df
                     else: print(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): Daily cache missing result data. Recalculating.")
                 else: print(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): Daily results cache key MISMATCH. Recalculating.")
             except Exception as e_load_cache: print(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): Error reading daily cache: {e_load_cache}. Recalculating.")
