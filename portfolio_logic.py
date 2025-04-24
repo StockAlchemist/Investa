@@ -2453,4 +2453,64 @@ irr4 = calculate_irr(dates4, flows4)
 print(f"Test 4: Flows={flows4}, IRR={irr4*100 if irr4 is not np.nan else 'NaN'} (Expected NaN)")
 # --- END IRR/NPV Test Cases ---
 
+print("\n--- Running SIMPLE Historical Test ---")
+# test_csv_file = 'test_hist_simple.csv' # Point to the simple test file
+test_csv_file = 'test_hist_simple.csv' # Point to the simple test file
+test_start = date(2023, 1, 1)
+test_end = date(2023, 7, 1) # Choose a relevant end date
+test_interval = 'D' # Use Daily interval for detailed checking
+test_display_currency = 'USD' # Or 'THB'
+test_account_currency_map = {'ACC_USD': 'USD', 'ACC_THB': 'THB'}
+test_default_currency = 'USD'
+test_benchmarks = [] # No benchmarks needed for this specific test
+test_use_raw_cache_flag = False # Force fetch
+test_use_daily_results_cache_flag = False # Force calc
+test_num_processes = 1 # Easier to debug single process first
+test_include_accounts = None # Include both accounts
+test_exclude_accounts = None
+if not os.path.exists(test_csv_file):
+    print(f"ERROR: Test file '{test_csv_file}' not found.")
+else:
+    hist_df, hist_status = calculate_historical_performance(
+        transactions_csv_file=test_csv_file,
+        start_date=test_start,
+        end_date=test_end,
+        interval=test_interval,
+        benchmark_symbols_yf=test_benchmarks,
+        display_currency=test_display_currency,
+        account_currency_map=test_account_currency_map,
+        default_currency=test_default_currency,
+        use_raw_data_cache=test_use_raw_cache_flag,
+        use_daily_results_cache=test_use_daily_results_cache_flag,
+        num_processes=test_num_processes,
+        include_accounts=test_include_accounts,
+        exclude_accounts=test_exclude_accounts
+        )
+    print(f"\nSimple Test Status: {hist_status}")
+    if not hist_df.empty:
+        print("\nSimple Test DataFrame (Selected Dates):")
+        # Select specific dates around events to check
+        dates_to_check = [
+            date(2023, 1, 10), # After AAPL buy
+            date(2023, 1, 16), # After BEM buy
+            date(2023, 2, 1),  # Day of USD Deposit
+            date(2023, 2, 2),  # Day after Deposit
+            date(2023, 3, 10), # Day of AAPL Dividend (check if flow reflects?) -> No, cash flow doesn't include divs
+            date(2023, 4, 3),  # Day of AAPL Split (check value calc reflects split)
+            date(2023, 4, 4),  # Day after Split
+            date(2023, 5, 10), # Day of AAPL Sell
+            date(2023, 5, 15), # Day of BEM Sell
+            date(2023, 6, 1),  # Day of USD Withdrawal
+            date(2023, 6, 2),  # Day after Withdrawal
+            date(2023, 6, 30)  # Near end
+            ]
+            # Convert dates to Timestamps for indexing if needed
+        ts_to_check = [pd.Timestamp(d) for d in dates_to_check if pd.Timestamp(d) in hist_df.index]
+        print(hist_df.loc[ts_to_check].to_string())
+
+        # Optional: Verify specific values manually/programmatically
+        # e.g., check value on 2023-04-04 vs 2023-04-03 considering AAPL split
+        # e.g., check net_flow on 2023-02-01 (+500) and 2023-06-01 (-100)
+    else:
+        print("Simple Test Result: Empty DataFrame")
 # --- END OF FILE portfolio_logic.py ---

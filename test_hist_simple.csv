@@ -1,0 +1,9 @@
+"Date (MMM DD, YYYY)",Transaction Type,Stock / ETF Symbol,Quantity of Units,Amount per unit,Total Amount, Fees,Investment Account,Split Ratio (new shares per old share),Note
+"Jan 10, 2023",Buy,AAPL,10,130.00,"",1.00,ACC_USD,,Initial USD Buy
+"Jan 15, 2023",Buy,BEM:BKK,1000,8.00,"",15.00,ACC_THB,,Initial THB Buy
+"Feb 01, 2023",Deposit,$CASH,500.00,1.00,"",0.00,ACC_USD,,USD Deposit
+"Mar 10, 2023",Dividend,AAPL,,,2.30,,ACC_USD,,USD Dividend AAPL
+"Apr 03, 2023",Split,AAPL,,,,,ACC_USD,2.0,AAPL 2:1 Split
+"May 10, 2023",Sell,AAPL,5,75.00,"",1.00,ACC_USD,,Sell Post-Split USD AAPL (Orig 2.5 shares)
+"May 15, 2023",Sell,BEM:BKK,200,9.00,"",4.00,ACC_THB,,Sell THB BEM
+"Jun 01, 2023",Withdrawal,$CASH,100.00,1.00,"",0.00,ACC_USD,,USD Withdrawal
