@@ -30,8 +30,8 @@ try:
     import yfinance as yf # Import yfinance
     YFINANCE_AVAILABLE = True
 except ImportError:
-    print("WARNING: yfinance library not found. Stock/FX fetching and historical data will fail.")
-    print("         Please install it: pip install yfinance")
+    logging.warning("Warning: yfinance library not found. Stock/FX fetching and historical data will fail.")
+    logging.info("         Please install it: pip install yfinance")
     YFINANCE_AVAILABLE = False
     class DummyYFinance:
         def Tickers(self, *args, **kwargs): raise ImportError("yfinance not installed")
@@ -71,10 +71,10 @@ def _get_file_hash(filepath: str) -> str:
                 hasher.update(chunk)
         return hasher.hexdigest()
     except FileNotFoundError:
-        print(f"Warning: File not found for hashing: {filepath}")
+        logging.warning(f"Warning: File not found for hashing: {filepath}")
         return "FILE_NOT_FOUND"
     except Exception as e:
-        print(f"Error hashing file {filepath}: {e}")
+        logging.error(f"Error hashing file {filepath}: {e}")
         return "HASHING_ERROR"
 
 # (_load_and_clean_transactions, calculate_npv, calculate_irr, get_cash_flows_for_symbol_account,
@@ -95,14 +95,14 @@ def _load_and_clean_transactions(
     ignored_row_indices = set()
     ignored_reasons: Dict[int, str] = {}
 
-    print(f"Helper: Attempting to load transactions from: {transactions_csv_file}")
+    logging.info(f"Helper: Attempting to load transactions from: {transactions_csv_file}")
     try:
         # ... (dtype_spec, na_values, pd.read_csv remain the same) ...
         dtype_spec = { "Quantity of Units": str, "Amount per unit": str, "Total Amount": str, "Fees": str, "Split Ratio (new shares per old share)": str }
         na_values = ['', '#N/A', '#N/A N/A', '#NA', '-1.#IND', '-1.#QNAN', '-NaN', '-nan', '1.#IND', '1.#QNAN', '<NA>', 'N/A', 'NA', 'NULL', 'NaN', 'n/a', 'nan', 'null']
         original_transactions_df = pd.read_csv( transactions_csv_file, header=0, skipinitialspace=True, keep_default_na=True, na_values=na_values, dtype=dtype_spec, encoding='utf-8' )
         transactions_df = original_transactions_df.copy()
-        print(f"Helper: Successfully loaded {len(transactions_df)} records.")
+        logging.info(f"Helper: Successfully loaded {len(transactions_df)} records.")
     except FileNotFoundError: return None, None, ignored_row_indices, ignored_reasons
     except UnicodeDecodeError as e: return None, original_transactions_df, ignored_row_indices, ignored_reasons
     except Exception as e: return None, original_transactions_df, ignored_row_indices, ignored_reasons
@@ -134,7 +134,7 @@ def _load_and_clean_transactions(
         transactions_df.loc[transactions_df['Account'] == '', 'Account'] = 'Unknown'
         # Map account to currency using the provided map, fall back to default_currency
         transactions_df['Local Currency'] = transactions_df['Account'].map(account_currency_map).fillna(default_currency)
-        print(f"Helper: Added 'Local Currency' column. Example: {transactions_df[['Account', 'Local Currency']].head().to_string(index=False)}")
+        logging.info(f"Helper: Added 'Local Currency' column. Example: {transactions_df[['Account', 'Local Currency']].head().to_string(index=False)}")
         # --- End Local Currency Addition ---
 
         # --- Date Parsing (unchanged) ---
@@ -157,7 +157,7 @@ def _load_and_clean_transactions(
              ignored_row_indices.update(transactions_df.loc[bad_date_indices, 'original_index'])
              transactions_df.drop(bad_date_indices, inplace=True)
         if transactions_df.empty:
-             print("Helper WARN: All rows dropped due to invalid dates.")
+             logging.warning("Helper WARN: All rows dropped due to invalid dates.")
              return None, original_transactions_df, ignored_row_indices, ignored_reasons
 
         # --- Numeric Conversion (unchanged) ---
@@ -193,14 +193,14 @@ def _load_and_clean_transactions(
             original_indices_to_ignore = transactions_df.loc[rows_to_drop_indices, 'original_index'].tolist(); ignored_row_indices.update(original_indices_to_ignore)
             transactions_df.drop(rows_to_drop_indices, inplace=True);
         if transactions_df.empty:
-             print("Helper WARN: All transactions dropped during cleaning.")
+             logging.info("Helper WARN: All transactions dropped during cleaning.")
              return None, original_transactions_df, ignored_row_indices, ignored_reasons
 
         # --- Sort and Return (unchanged) ---
         transactions_df.sort_values(by=['Date', 'original_index'], inplace=True, ascending=True)
         return transactions_df, original_transactions_df, ignored_row_indices, ignored_reasons
     except Exception as e:
-        print(f"CRITICAL ERROR during data cleaning helper: {e}"); traceback.print_exc()
+        logging.error(f"CRITICAL ERROR during data cleaning helper: {e}"); traceback.print_exc()
         return None, original_transactions_df, ignored_row_indices, ignored_reasons # Propagate error
 
 # --- IRR/MWR Calculation Functions ---
@@ -238,10 +238,10 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
     """
     # 1. Basic Input Validation
     if len(dates) < 2 or len(cash_flows) < 2 or len(dates) != len(cash_flows):
-        # print("DEBUG IRR: Fail - Length mismatch or < 2") # Optional Debug
+        logging.debug("DEBUG IRR: Fail - Length mismatch or < 2") # Optional Debug
         return np.nan
     if any(not isinstance(cf, (int, float)) or not np.isfinite(cf) for cf in cash_flows):
-        # print("DEBUG IRR: Fail - Non-finite cash flows") # Optional Debug
+        logging.debug("DEBUG IRR: Fail - Non-finite cash flows") # Optional Debug
         return np.nan
     # Check dates are valid and sorted
     try:
@@ -252,7 +252,7 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
             if dates[i] < dates[i-1]:
                 raise ValueError("Dates are not sorted")
     except (TypeError, ValueError) as e:
-        # print(f"DEBUG IRR: Fail - Date validation error: {e}") # Optional Debug
+        logging.debug(f"DEBUG IRR: Fail - Date validation error: {e}") # Optional Debug
         return np.nan
 
     # 2. Cash Flow Pattern Validation (Stricter)
@@ -268,18 +268,18 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
                 first_non_zero_idx = idx
 
     if first_non_zero_flow is None: # All flows are zero or near-zero
-        # print("DEBUG IRR: Fail - All flows are zero") # Optional Debug
+        logging.debug("DEBUG IRR: Fail - All flows are zero") # Optional Debug
         return np.nan
 
     # Stricter Check 1: First non-zero flow MUST be negative (typical investment)
     if first_non_zero_flow >= -1e-9:
-        # print(f"DEBUG IRR: Fail - First non-zero flow is non-negative: {first_non_zero_flow} in {cash_flows}") # Optional Debug
+        logging.debug(f"DEBUG IRR: Fail - First non-zero flow is non-negative: {first_non_zero_flow} in {cash_flows}") # Optional Debug
         return np.nan
 
     # Stricter Check 2: Must have at least one positive flow overall
     has_positive_flow = any(cf > 1e-9 for cf in non_zero_cfs_list)
     if not has_positive_flow:
-        # print(f"DEBUG IRR: Fail - No positive flows found: {cash_flows}") # Optional Debug
+        logging.debug(f"DEBUG IRR: Fail - No positive flows found: {cash_flows}") # Optional Debug
         return np.nan
 
     # Check 3 (Redundant but safe): Ensure not ALL flows are negative (covered by check 2)
@@ -316,7 +316,7 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
 
     # 4. Final Validation and Return
     if not (isinstance(irr_result, (float, int)) and np.isfinite(irr_result) and irr_result > -1.0):
-         # print(f"DEBUG IRR: Fail - Final result invalid: {irr_result}") # Optional Debug
+         logging.debug(f"DEBUG IRR: Fail - Final result invalid: {irr_result}") # Optional Debug
          return np.nan
 
     return irr_result
@@ -371,7 +371,7 @@ def get_cash_flows_for_symbol_account(symbol: str, account: str, transactions: p
         # --- Aggregation (unchanged) ---
         if pd.notna(cash_flow_local) and abs(cash_flow_local) > 1e-9:
             try: flow_to_add = float(cash_flow_local); dates_flows[tx_date] += flow_to_add
-            except (ValueError, TypeError): print(f"Warning IRR CF Gen ({symbol}/{account}): Could not convert cash_flow_local {cash_flow_local} to float. Skipping flow.")
+            except (ValueError, TypeError): logging.warning(f"Warning IRR CF Gen ({symbol}/{account}): Could not convert cash_flow_local {cash_flow_local} to float. Skipping flow.")
 
     # --- Final sorting, adding final value, checks (unchanged) ---
     # ... (Rest of the function remains the same) ...
@@ -476,7 +476,7 @@ def get_cash_flows_for_mwr(
                 rate = get_conversion_rate(local_currency, target_currency, fx_rates)
                 # --------------------------------------
                 if rate == 1.0 and local_currency != target_currency: # Rate lookup failed or was 1.0 incorrectly
-                     # print(f"Warning: MWR calc cannot convert flow on {tx_date} from {local_currency} to {target_currency} (FX rate missing/invalid). Skipping flow.") # Reduced verbosity
+                     logging.warning(f"Warning: MWR calc cannot convert flow on {tx_date} from {local_currency} to {target_currency} (FX rate missing/invalid). Skipping flow.") # Reduced verbosity
                      cash_flow_target = 0.0 # Assign 0 instead of NaN to prevent downstream errors
                 else:
                     cash_flow_target = cash_flow_local * rate
@@ -529,10 +529,10 @@ def fetch_index_quotes_yfinance(query_symbols: List[str] = DEFAULT_INDEX_QUERY_S
         if yf_ticker:
             if yf_ticker not in yf_ticker_to_query_symbol_map: yf_tickers_to_fetch.append(yf_ticker)
             yf_ticker_to_query_symbol_map[yf_ticker] = q_sym
-        else: print(f"Warn: No yfinance ticker mapping for index: {q_sym}")
+        else: logging.warning(f"Warn: No yfinance ticker mapping for index: {q_sym}")
     if not yf_tickers_to_fetch: return {q_sym: None for q_sym in query_symbols}
     results: Dict[str, Optional[Dict[str, Any]]] = {}
-    # print(f"Fetching index quotes via yfinance for tickers: {', '.join(yf_tickers_to_fetch)}") # Reduced verbosity
+    logging.info(f"Fetching index quotes via yfinance for tickers: {', '.join(yf_tickers_to_fetch)}") # Reduced verbosity
     try:
         tickers_data = yf.Tickers(" ".join(yf_tickers_to_fetch))
         for yf_ticker, ticker_obj in tickers_data.tickers.items():
@@ -575,13 +575,13 @@ def fetch_index_quotes_yfinance(query_symbols: List[str] = DEFAULT_INDEX_QUERY_S
                             'yf_ticker': yf_ticker
                         }
                     else:
-                        results[original_query_symbol] = None; # print(f"Warn: Index {original_query_symbol} ({yf_ticker}) missing price.") # Reduced verbosity
+                        results[original_query_symbol] = None; logging.warning(f"Warn: Index {original_query_symbol} ({yf_ticker}) missing price.") # Reduced verbosity
                 except (ValueError, TypeError, KeyError, AttributeError) as e:
-                    results[original_query_symbol] = None; print(f"Warn: Error parsing index {original_query_symbol} ({yf_ticker}): {e}")
+                    results[original_query_symbol] = None; logging.warning(f"Warn: Error parsing index {original_query_symbol} ({yf_ticker}): {e}")
             else:
-                results[original_query_symbol] = None; # print(f"Warn: No yfinance info for index: {yf_ticker}") # Reduced verbosity
+                results[original_query_symbol] = None; logging.warning(f"Warn: No yfinance info for index: {yf_ticker}") # Reduced verbosity
 
-    except Exception as e: print(f"Error fetching yfinance index data: {e}"); traceback.print_exc(); results = {q_sym: None for q_sym in query_symbols}
+    except Exception as e: logging.error(f"Error fetching yfinance index data: {e}"); traceback.print_exc(); results = {q_sym: None for q_sym in query_symbols}
     for q_sym in query_symbols:
         if q_sym not in results: results[q_sym] = None
     return results
@@ -620,7 +620,7 @@ def get_cached_or_fetch_yfinance_data(
 
     # --- Cache Loading Logic ---
     if not cache_file:
-        print(f"Warning: Invalid cache file path provided ('{cache_file}'). Cache read skipped.")
+        logging.warning(f"Warning: Invalid cache file path provided ('{cache_file}'). Cache read skipped.")
         cache_needs_update = True
     elif os.path.exists(cache_file):
         try:
@@ -643,7 +643,7 @@ def get_cached_or_fetch_yfinance_data(
                     # --- END MODIFICATION ---
 
                     if all_stocks_present and stock_format_ok and all_fx_present:
-                        print(f"Yahoo Finance cache is valid (age: {cache_age}). Using cached data.")
+                        logging.warning(f"Yahoo Finance cache is valid (age: {cache_age}). Using cached data.")
                         stock_data_internal = cached_stocks
                         fx_rates_vs_usd = cached_fx_vs_usd
                         cache_needs_update = False
@@ -652,30 +652,30 @@ def get_cached_or_fetch_yfinance_data(
                         if not all_stocks_present: missing_reason.append("stocks")
                         if not stock_format_ok: missing_reason.append("stock_format")
                         if not all_fx_present: missing_reason.append("currencies")
-                        print(f"Yahoo Finance cache is recent but incomplete/invalid ({', '.join(missing_reason)}). Will fetch/update.")
+                        logging.warning(f"Yahoo Finance cache is recent but incomplete/invalid ({', '.join(missing_reason)}). Will fetch/update.")
                         # Start with cached data but mark for update
                         stock_data_internal = cached_stocks if stock_format_ok else {}
                         fx_rates_vs_usd = cached_fx_vs_usd if isinstance(cached_fx_vs_usd, dict) else {'USD': 1.0}
                         cache_needs_update = True
                 else:
-                    print(f"Yahoo Finance cache is outdated (age: {cache_age}). Will fetch fresh data.")
+                    logging.warning(f"Yahoo Finance cache is outdated (age: {cache_age}). Will fetch fresh data.")
                     cache_needs_update = True
             else:
-                print("Yahoo Finance cache is invalid or missing data. Will fetch fresh data.")
+                logging.warning("Yahoo Finance cache is invalid or missing data. Will fetch fresh data.")
                 cache_needs_update = True
         except Exception as e:
-            print(f"Error reading Yahoo Finance cache file {cache_file}: {e}. Will fetch fresh data.")
+            logging.warning(f"Error reading Yahoo Finance cache file {cache_file}: {e}. Will fetch fresh data.")
             cache_needs_update = True
             # Reset to defaults on error
             stock_data_internal = {}
             fx_rates_vs_usd = {'USD': 1.0}
     else:
-        print(f"Yahoo Finance cache file {cache_file} not found. Will fetch fresh data.")
+        logging.warning(f"Yahoo Finance cache file {cache_file} not found. Will fetch fresh data.")
         cache_needs_update = True
 
     # --- Data Fetching Logic ---
     if cache_needs_update:
-        print("Fetching/Updating data from Yahoo Finance (Stocks & FX vs USD)...")
+        logging.info("Fetching/Updating data from Yahoo Finance (Stocks & FX vs USD)...")
         # Initialize from cache if available, otherwise empty/default
         fetched_stocks = stock_data_internal if stock_data_internal is not None else {}
         # fx_rates_vs_usd is already initialized above (from cache or default {'USD': 1.0})
@@ -715,10 +715,10 @@ def get_cached_or_fetch_yfinance_data(
             else:
                 missing_stock_symbols.append(internal_sym)
                 if internal_sym not in fetched_stocks:
-                    print(f"Warning: No valid Yahoo Finance ticker mapping for: {internal_sym}.")
+                    logging.warning(f"Warning: No valid Yahoo Finance ticker mapping for: {internal_sym}.")
                     fetched_stocks[internal_sym] = {'price': np.nan, 'change': np.nan, 'changesPercentage': np.nan, 'previousClose': np.nan}
 
-        if explicitly_excluded_count > 0: print(f"Info: Explicitly excluded {explicitly_excluded_count} stock symbols.")
+        if explicitly_excluded_count > 0: logging.info(f"Info: Explicitly excluded {explicitly_excluded_count} stock symbols.")
 
         # FX Rates vs USD
         fx_tickers_to_fetch = set()
@@ -734,16 +734,16 @@ def get_cached_or_fetch_yfinance_data(
 
         # --- Fetching using yfinance ---
         if not yf_tickers_to_fetch:
-            print("No new Stock/FX tickers need fetching.")
+            logging.info("No new Stock/FX tickers need fetching.")
         else:
-            print(f"Fetching/Updating {len(yf_tickers_to_fetch)} tickers from Yahoo: {list(yf_tickers_to_fetch)}")
+            logging.info(f"Fetching/Updating {len(yf_tickers_to_fetch)} tickers from Yahoo: {list(yf_tickers_to_fetch)}")
             fetch_success = True; all_fetched_data = {}
             try:
                 yf_ticker_list = list(yf_tickers_to_fetch)
                 fetch_batch_size = 50 # Adjust batch size if needed
                 for i in range(0, len(yf_ticker_list), fetch_batch_size):
                     batch = yf_ticker_list[i:i+fetch_batch_size]
-                    print(f"  Fetching batch {i//fetch_batch_size + 1} ({len(batch)} tickers)...")
+                    logging.info(f"  Fetching batch {i//fetch_batch_size + 1} ({len(batch)} tickers)...")
                     try:
                         # Use yf.Tickers for batch fetching info
                         tickers_data = yf.Tickers(" ".join(batch))
@@ -767,10 +767,10 @@ def get_cached_or_fetch_yfinance_data(
                                  # --- END Convert ---
                              # Store whatever we got, even if incomplete
                              all_fetched_data[yf_ticker] = {'price': price, 'change': change, 'changesPercentage': pct_change, 'previousClose': prev_close }
-                    except requests.exceptions.HTTPError as http_err: print(f"  HTTP ERROR fetching batch: {http_err}"); fetch_success = False;
-                    except Exception as yf_err: print(f"  YFINANCE ERROR fetching batch info: {yf_err}"); fetch_success = False;
+                    except requests.exceptions.HTTPError as http_err: logging.error(f"  HTTP ERROR fetching batch: {http_err}"); fetch_success = False;
+                    except Exception as yf_err: logging.error(f"  YFINANCE ERROR fetching batch info: {yf_err}"); fetch_success = False;
                     time.sleep(0.1) # Small delay
-            except Exception as e: print(f"ERROR during Yahoo Finance fetch loop: {e}"); traceback.print_exc(); fetch_success = False;
+            except Exception as e: logging.error(f"ERROR during Yahoo Finance fetch loop: {e}"); traceback.print_exc(); fetch_success = False;
 
             # --- Process fetched data ---
             # Stocks
@@ -781,7 +781,7 @@ def get_cached_or_fetch_yfinance_data(
             # Ensure all requested internal symbols have an entry (even if NaN)
             for sym in internal_stock_symbols:
                  if sym != CASH_SYMBOL_CSV and sym not in YFINANCE_EXCLUDED_SYMBOLS and sym not in fetched_stocks:
-                     if sym not in missing_stock_symbols: print(f"Warning: Data for {sym} still not found after fetch.")
+                     if sym not in missing_stock_symbols: logging.warning(f"Warning: Data for {sym} still not found after fetch.")
                      fetched_stocks[sym] = {'price': np.nan, 'change': np.nan, 'changesPercentage': np.nan, 'previousClose': np.nan}
 
             # FX Rates vs USD
@@ -794,7 +794,7 @@ def get_cached_or_fetch_yfinance_data(
                       # Store the rate: Units of 'currency' per 1 USD
                       fx_rates_vs_usd[currency] = price
                  else:
-                      print(f"Warning: Failed to fetch/update FX rate for {fx_ticker}. Previous value (if any) retained.")
+                      logging.warning(f"Warning: Failed to fetch/update FX rate for {fx_ticker}. Previous value (if any) retained.")
                       # Ensure key exists even if fetch failed, maybe keep old value or set NaN?
                       if currency not in fx_rates_vs_usd:
                            fx_rates_vs_usd[currency] = np.nan
@@ -806,9 +806,9 @@ def get_cached_or_fetch_yfinance_data(
         # --- MODIFIED: Save Cache - ONLY store stock_data_internal and fx_rates_vs_usd ---
         if cache_needs_update: # Save only if we attempted an update
             if not cache_file:
-                print(f"ERROR: Cache file path is invalid ('{cache_file}'). Cannot save cache.")
+                logging.error(f"ERROR: Cache file path is invalid ('{cache_file}'). Cannot save cache.")
             else:
-                print(f"Saving updated Yahoo Finance data (Stocks, FX vs USD) to cache: {cache_file}")
+                logging.info(f"Saving updated Yahoo Finance data (Stocks, FX vs USD) to cache: {cache_file}")
                 # Ensure USD rate is present
                 if 'USD' not in fx_rates_vs_usd: fx_rates_vs_usd['USD'] = 1.0
                 # Prepare content
@@ -830,7 +830,7 @@ def get_cached_or_fetch_yfinance_data(
                                 return super(NpEncoder, self).default(obj)
                         json.dump(content, f, indent=4, cls=NpEncoder)
                 except Exception as e:
-                     print(f"Error writing Yahoo Finance cache ('{cache_file}'): {e}")
+                     logging.error(f"Error writing Yahoo Finance cache ('{cache_file}'): {e}")
         # --- END MODIFICATION ---
 
     # --- Final Checks ---
@@ -864,7 +864,7 @@ def get_conversion_rate(from_curr: str, to_curr: str, fx_rates: Optional[Dict[st
     if from_curr == to_curr:
         return 1.0
     if not isinstance(fx_rates, dict):
-        # print(f"Warning: get_conversion_rate received invalid fx_rates type. Returning 1.0") # Optional
+        logging.warning(f"Warning: get_conversion_rate received invalid fx_rates type. Returning 1.0") # Optional
         return 1.0 # Fallback
 
     from_curr_upper = from_curr.upper()
@@ -886,13 +886,13 @@ def get_conversion_rate(from_curr: str, to_curr: str, fx_rates: Optional[Dict[st
         if abs(rate_A_per_USD) > 1e-9: # Check denominator (FROM/USD) is not zero
             try:
                 rate_B_per_A = rate_B_per_USD / rate_A_per_USD
-                # print(f"DEBUG get_conv_rate: {to_curr}/{from_curr} = {rate_B_per_USD} / {rate_A_per_USD} = {rate_B_per_A}") # DEBUG
+                logging.debug(f"DEBUG get_conv_rate: {to_curr}/{from_curr} = {rate_B_per_USD} / {rate_A_per_USD} = {rate_B_per_A}") # DEBUG
             except (ZeroDivisionError, TypeError): pass # Keep NaN
         # else: Denominator is zero/invalid
 
     # Final check and fallback
     if pd.isna(rate_B_per_A):
-        # print(f"Warning: Current FX rate lookup failed for {from_curr}->{to_curr}. Returning 1.0") # Optional Warning
+        logging.warning(f"Warning: Current FX rate lookup failed for {from_curr}->{to_curr}. Returning 1.0") # Optional Warning
         return 1.0
     else:
         return float(rate_B_per_A)    
@@ -931,7 +931,7 @@ def _process_transactions_to_holdings(
     ignored_reasons_local = {}       # Use local dict
 
     # --- Start of code to MOVE from calculate_portfolio_summary ---
-    print("Processing filtered stock/ETF transactions...") # Modify print message
+    logging.info("Processing filtered stock/ETF transactions...") # Modify print message
 
     for index, row in transactions_df.iterrows():
         # Skip $CASH transactions here
@@ -968,7 +968,7 @@ def _process_transactions_to_holdings(
         # Safety check (shouldn't happen if _load_and_clean works)
         elif holdings[holding_key]['local_currency'] != local_currency:
             msg=f"Currency mismatch for {symbol}/{account}";
-            print(f"CRITICAL WARN in _process_transactions: {msg} row {original_index}. Skip.");
+            logging.warning(f"CRITICAL WARN in _process_transactions: {msg} row {original_index}. Skip.");
             ignored_reasons_local[original_index] = msg
             ignored_row_indices_local.add(original_index)
             continue
@@ -1030,7 +1030,7 @@ def _process_transactions_to_holdings(
                 # Can only sell long positions with this logic
                 if held_qty <= 1e-9:
                     msg=f"Sell attempt {symbol}/{account} w/ non-positive long qty ({held_qty:.4f})";
-                    print(f"Warn in _process_transactions: {msg} row {original_index}. Skip.");
+                    logging.warning(f"Warn in _process_transactions: {msg} row {original_index}. Skip.");
                     ignored_reasons_local[original_index]=msg; ignored_row_indices_local.add(original_index);
                     continue # Skip if not holding long shares
                 if qty_abs <= 1e-9: raise ValueError("Sell/Withdrawal qty must be > 0")
@@ -1102,7 +1102,7 @@ def _process_transactions_to_holdings(
             else:
                 # Handle unrecognized transaction types for stocks/ETFs
                 msg=f"Unhandled stock tx type '{tx_type}'";
-                print(f"Warn in _process_transactions: {msg} row {original_index}. Skip.");
+                logging.warning(f"Warn in _process_transactions: {msg} row {original_index}. Skip.");
                 ignored_reasons_local[original_index]=msg; ignored_row_indices_local.add(original_index);
                 commission_for_overall = 0.0; # Don't add commission if tx is skipped
                 continue # Skip to next transaction
@@ -1113,7 +1113,7 @@ def _process_transactions_to_holdings(
 
         except (ValueError, TypeError, ZeroDivisionError, KeyError, Exception) as e:
             error_msg = f"Processing Error: {e}";
-            print(f"ERROR in _process_transactions processing row {original_index} ({symbol}, {tx_type}): {e}. Skipping row.");
+            logging.error(f"ERROR in _process_transactions processing row {original_index} ({symbol}, {tx_type}): {e}. Skipping row.");
             # Optionally add traceback print here for debugging:
             # import traceback
             # traceback.print_exc()
@@ -1238,11 +1238,11 @@ def _calculate_cash_balances(
                 }
         else:
             # No cash transactions found for any account in the provided transactions_df
-            print("Info in _calculate_cash_balances: No $CASH transactions found.")
+            logging.info("Info in _calculate_cash_balances: No $CASH transactions found.")
 
     except Exception as e:
         # Log error and return empty dictionary
-        print(f"ERROR in _calculate_cash_balances processing cash transactions: {e}")
+        logging.error(f"ERROR in _calculate_cash_balances processing cash transactions: {e}")
         import traceback
         traceback.print_exc()
         cash_summary = {}
@@ -1287,7 +1287,7 @@ def _build_summary_rows( # Renamed from _build_summary_dataframe for clarity
     account_market_values_local: Dict[str, float] = defaultdict(float)
     account_local_currency_map: Dict[str, str] = {}
 
-    print(f"Calculating final portfolio summary rows in {display_currency}...") # Update print
+    logging.info(f"Calculating final portfolio summary rows in {display_currency}...") # Update print
 
     # --- Loop 1: Process Stock/ETF Holdings ---
     for holding_key, data in holdings.items():
@@ -1359,7 +1359,7 @@ def _build_summary_rows( # Renamed from _build_summary_dataframe for clarity
                         price_source = "Last TX Fallback"
                     # else: keep current_price_local as 0.0 if last TX price invalid
             except Exception as e_fallback:
-                # print(f"WARN: Fallback price lookup failed for {symbol}/{account}: {e_fallback}") # Optional
+                logging.warning(f"WARN: Fallback price lookup failed for {symbol}/{account}: {e_fallback}") # Optional
                 price_source = "Fallback Zero (Error)"
                 current_price_local = 0.0 # Ensure zero on error
 
@@ -1374,7 +1374,7 @@ def _build_summary_rows( # Renamed from _build_summary_dataframe for clarity
         # Get rate for Local -> Display
         fx_rate = get_conversion_rate(local_currency, display_currency, current_fx_rates_vs_usd)
         if pd.isna(fx_rate): # Handle conversion failure
-             print(f"ERROR: Failed to get FX rate {local_currency}->{display_currency} for {symbol}. Skipping summary row value calcs.")
+             logging.error(f"ERROR: Failed to get FX rate {local_currency}->{display_currency} for {symbol}. Skipping summary row value calcs.")
              # Optionally add a row with NaNs or skip entirely
              # Let's add row with NaNs for now
              fx_rate = np.nan # Ensure it's NaN for calculations below
@@ -1456,7 +1456,7 @@ def _build_summary_rows( # Renamed from _build_summary_dataframe for clarity
             if cf_dates and cf_values:
                 stock_irr = calculate_irr(cf_dates, cf_values)
         except Exception as e_irr:
-            # print(f"WARN: IRR calculation failed for {symbol}/{account}: {e_irr}") # Optional warning
+            logging.warning(f"WARN: IRR calculation failed for {symbol}/{account}: {e_irr}") # Optional warning
             stock_irr = np.nan
 
         irr_value_to_store = stock_irr * 100.0 if pd.notna(stock_irr) else np.nan
@@ -1505,7 +1505,7 @@ def _build_summary_rows( # Renamed from _build_summary_dataframe for clarity
             # --- Currency Conversion ---
             fx_rate = get_conversion_rate(local_currency, display_currency, current_fx_rates_vs_usd)
             if pd.isna(fx_rate):
-                 print(f"ERROR: Failed to get FX rate {local_currency}->{display_currency} for {symbol} in {account}. Skipping summary row value calcs.")
+                 logging.error(f"ERROR: Failed to get FX rate {local_currency}->{display_currency} for {symbol} in {account}. Skipping summary row value calcs.")
                  fx_rate = np.nan # Ensure NaN for calculations
 
             # --- Calculate Display Currency Values for Cash ---
@@ -1579,7 +1579,7 @@ def safe_sum(df, col):
         # Ensure return is a standard float, handle potential lingering NaNs from sum itself
         return float(total) if pd.notna(total) else 0.0
     except Exception as e:
-        # print(f"Error in safe_sum for column {col}: {e}") # Optional debug
+        logging.error(f"Error in safe_sum for column {col}: {e}") # Optional debug
         return 0.0 # Return 0 on any unexpected error during sum
                
 def _calculate_aggregate_metrics(
@@ -1627,7 +1627,7 @@ def _calculate_aggregate_metrics(
     })
     overall_summary_metrics = {} # Initialize
 
-    print("Calculating Account-Level & Overall Metrics...") # Update print
+    logging.info("Calculating Account-Level & Overall Metrics...") # Update print
 
     # --- Start of code to MOVE ---
     unique_accounts_in_summary = full_summary_df['Account'].unique()
@@ -1663,7 +1663,7 @@ def _calculate_aggregate_metrics(
             #     mwr = calculate_irr(cf_dates_mwr, cf_values_mwr)
             metrics_entry['mwr'] = np.nan # Set to NaN for now
         except Exception as e_mwr:
-            # print(f"WARN: Account MWR calc failed for {account}: {e_mwr}") # Optional
+            logging.warning(f"WARN: Account MWR calc failed for {account}: {e_mwr}") # Optional
             metrics_entry['mwr'] = np.nan
 
         # --- Aggregate Account Totals ---
@@ -1823,11 +1823,11 @@ def calculate_portfolio_summary(
             - Dict: Account-level metrics for included accounts (or None).
             - str: Status message string.
     """
-    print(f"\n--- Starting Portfolio Calculation (Yahoo Finance - Current Summary) ---")
+    logging.info(f"\n--- Starting Portfolio Calculation (Yahoo Finance - Current Summary) ---")
     filter_desc = "All Accounts"
     if include_accounts: filter_desc = f"Accounts: {', '.join(sorted(include_accounts))}"
-    print(f"Parameters: CSV='{os.path.basename(transactions_csv_file)}', Currency='{display_currency}', ShowClosed={show_closed_positions}, Scope='{filter_desc}'")
-    print(f"Currency Settings: Default='{default_currency}', Account Map='{account_currency_map}'")
+    logging.info(f"Parameters: CSV='{os.path.basename(transactions_csv_file)}', Currency='{display_currency}', ShowClosed={show_closed_positions}, Scope='{filter_desc}'")
+    logging.info(f"Currency Settings: Default='{default_currency}', Account Map='{account_currency_map}'")
 
     original_transactions_df: Optional[pd.DataFrame] = None
     all_transactions_df: Optional[pd.DataFrame] = None
@@ -1861,23 +1861,23 @@ def calculate_portfolio_summary(
     transactions_df = pd.DataFrame() # This will hold the filtered transactions for processing
     available_accounts_set = set(all_available_accounts_list)
     if not include_accounts: # If None or empty list, use all
-        print("Info: No specific accounts provided, using all available accounts.")
+        logging.info("Info: No specific accounts provided, using all available accounts.")
         transactions_df = all_transactions_df.copy()
         included_accounts_list = sorted(list(available_accounts_set))
     else:
         valid_include_accounts = [acc for acc in include_accounts if acc in available_accounts_set]
         if not valid_include_accounts:
             msg = "Warning: None of the specified accounts to include were found. No data processed."
-            print(msg); status_messages.append(msg)
+            logging.warning(msg); status_messages.append(msg)
             ignored_df_final = original_transactions_df.loc[sorted(list(ignored_row_indices))].copy() if ignored_row_indices and original_transactions_df is not None else pd.DataFrame()
             return {}, pd.DataFrame(), ignored_df_final, {}, msg # Return empty but valid structures
-        print(f"Info: Filtering transactions FOR accounts: {', '.join(sorted(valid_include_accounts))}")
+        logging.info(f"Info: Filtering transactions FOR accounts: {', '.join(sorted(valid_include_accounts))}")
         transactions_df = all_transactions_df[all_transactions_df['Account'].isin(valid_include_accounts)].copy()
         included_accounts_list = sorted(valid_include_accounts) # Use the validated list
 
     if transactions_df.empty:
         msg = f"Warning: No transactions remain after filtering for accounts: {', '.join(sorted(include_accounts if include_accounts else []))}"
-        print(msg); status_messages.append(msg)
+        logging.warning(msg); status_messages.append(msg)
         ignored_df_final = original_transactions_df.loc[sorted(list(ignored_row_indices))].copy() if ignored_row_indices and original_transactions_df is not None else pd.DataFrame()
         # Add available accounts to empty summary for GUI consistency
         empty_summary = {'_available_accounts': all_available_accounts_list}
@@ -1900,7 +1900,7 @@ def calculate_portfolio_summary(
     )
 
     # --- 5. Fetch Current Market Data (Prices, Change, FX vs USD) ---
-    print("Determining required data and fetching from Yahoo Finance...")
+    logging.info("Determining required data and fetching from Yahoo Finance...")
     all_stock_symbols_internal = list(set(key[0] for key in holdings.keys())) # No need for cash symbol here
     # Determine required currencies from holdings, cash summary, display, and default
     required_currencies: Set[str] = set([display_currency, default_currency])
@@ -1917,7 +1917,7 @@ def calculate_portfolio_summary(
 
     if current_stock_data_internal is None or current_fx_rates_vs_usd is None:
         msg = "Error: Price/FX fetch failed via Yahoo Finance. Cannot calculate current values."
-        print(f"FATAL: {msg}")
+        logging.error(f"FATAL: {msg}")
         status_messages.append(msg)
         ignored_df_final = original_transactions_df.loc[sorted(list(ignored_row_indices))].copy() if ignored_row_indices and original_transactions_df is not None else pd.DataFrame()
         # Return None for metrics, DataFrames; include available accounts in empty summary
@@ -1953,7 +1953,7 @@ def calculate_portfolio_summary(
 
     # --- 7. Create DataFrame & Calculate Aggregates ---
     if not portfolio_summary_rows:
-        print("Warning: Portfolio summary list is empty after processing holdings and cash.")
+        logging.warning("Warning: Portfolio summary list is empty after processing holdings and cash.")
         overall_summary_metrics = { # Populate with zeros/NaNs
              "market_value": 0.0, "cost_basis_held": 0.0, "unrealized_gain": 0.0,
              "realized_gain": 0.0, "dividends": 0.0, "commissions": 0.0,
@@ -1982,7 +1982,7 @@ def calculate_portfolio_summary(
         try: # Sorting might fail if essential columns are missing/all NaN
              full_summary_df.sort_values(by=['Account', f'Market Value ({display_currency})'], ascending=[True, False], na_position='last', inplace=True)
         except KeyError:
-             print("Warning: Could not sort summary DataFrame (required columns might be missing).")
+             logging.warning("Warning: Could not sort summary DataFrame (required columns might be missing).")
 
 
         # Calculate Aggregates using the helper
@@ -2028,7 +2028,7 @@ def calculate_portfolio_summary(
                  # Map reasons using the combined ignored_reasons dictionary
                  ignored_df_final['Reason Ignored'] = ignored_df_final.index.map(ignored_reasons).fillna("Unknown Reason")
              except Exception as e_reason:
-                 print(f"Warning: Could not add 'Reason Ignored' column: {e_reason}")
+                 logging.warning(f"Warning: Could not add 'Reason Ignored' column: {e_reason}")
 
 
     # --- 9. Determine Final Status ---
@@ -2049,7 +2049,7 @@ def calculate_portfolio_summary(
     elif errors: final_status = f"Success with Errors ({filter_desc})"
     elif warnings: final_status = f"Success with Warnings ({filter_desc})"
 
-    print(f"--- Portfolio Calculation Finished ({filter_desc}) ---")
+    logging.info(f"--- Portfolio Calculation Finished ({filter_desc}) ---")
     # Convert defaultdict back to dict for account_metrics return
     return overall_summary_metrics, summary_df, ignored_df_final, dict(account_level_metrics), final_status
 
@@ -2065,50 +2065,54 @@ def map_to_yf_symbol(internal_symbol: str) -> Optional[str]:
     if internal_symbol.endswith(':BKK'):
         base_symbol = internal_symbol[:-4];
         if base_symbol in SYMBOL_MAP_TO_YFINANCE: base_symbol = SYMBOL_MAP_TO_YFINANCE[base_symbol]
-        if '.' in base_symbol or len(base_symbol) == 0: print(f"Hist WARN: Skipping potentially invalid BKK conversion: {internal_symbol}"); return None
+        if '.' in base_symbol or len(base_symbol) == 0: logging.warning(f"Hist WARN: Skipping potentially invalid BKK conversion: {internal_symbol}"); return None
         return f"{base_symbol.upper()}.BK"
-    if ' ' in internal_symbol or any(c in internal_symbol for c in [':', ',']): print(f"Hist WARN: Skipping potentially invalid symbol format for YF: {internal_symbol}"); return None
+    if ' ' in internal_symbol or any(c in internal_symbol for c in [':', ',']): logging.warning(f"Hist WARN: Skipping potentially invalid symbol format for YF: {internal_symbol}"); return None
     return internal_symbol.upper()
 
 # --- Yahoo Finance Historical Data Fetching ---
 def fetch_yf_historical(symbols_yf: List[str], start_date: date, end_date: date) -> Dict[str, pd.DataFrame]:
     """ Fetches historical 'Close' data (automatically adjusted for splits AND dividends) for multiple symbols from Yahoo Finance. """
-    if not YFINANCE_AVAILABLE: print("Error: yfinance not available for historical fetch."); return {}
+    if not YFINANCE_AVAILABLE: logging.error("Error: yfinance not available for historical fetch."); return {}
     historical_data: Dict[str, pd.DataFrame] = {}
-    if not symbols_yf: print("Hist Fetch: No symbols provided."); return historical_data
-    print(f"Hist Fetch: Fetching historical data (auto-adjusted) for {len(symbols_yf)} symbols from Yahoo Finance ({start_date} to {end_date})...")
+    if not symbols_yf: logging.warning("Hist Fetch: No symbols provided."); return historical_data
+    logging.info(f"Hist Fetch: Fetching historical data (auto-adjusted) for {len(symbols_yf)} symbols from Yahoo Finance ({start_date} to {end_date})...")
     yf_end_date = max(start_date, end_date) + timedelta(days=1); yf_start_date = min(start_date, end_date)
     fetch_batch_size = 50; symbols_processed = 0
     for i in range(0, len(symbols_yf), fetch_batch_size):
         batch_symbols = symbols_yf[i:i + fetch_batch_size]
         try:
             data = yf.download( tickers=batch_symbols, start=yf_start_date, end=yf_end_date, progress=False, group_by='ticker', auto_adjust=True, actions=False )
-            if data.empty: # print(f"  Hist WARN: No data returned for batch: {', '.join(batch_symbols)}"); # Reduced verbosity
+            if data.empty: 
+                logging.warning(f"  Hist WARN: No data returned for batch: {', '.join(batch_symbols)}"); # Reduced verbosity
                 continue
             for symbol in batch_symbols:
                 df_symbol = None
                 try:
                     if len(batch_symbols) == 1 and not data.columns.nlevels > 1: df_symbol = data if not data.empty else None
                     elif symbol in data.columns.levels[0]: df_symbol = data[symbol]
-                    elif len(batch_symbols) > 1 and not data.columns.nlevels > 1: # print(f"  Hist WARN: Unexpected flat DataFrame structure for multi-ticker batch with auto_adjust=True. Symbol {symbol} might be missing."); # Reduced verbosity
+                    elif len(batch_symbols) > 1 and not data.columns.nlevels > 1: 
+                         logging.warning(f"  Hist WARN: Unexpected flat DataFrame structure for multi-ticker batch with auto_adjust=True. Symbol {symbol} might be missing."); # Reduced verbosity
                          continue
                     else:
                          if isinstance(data, pd.Series) and data.name == symbol: df_symbol = pd.DataFrame(data)
                          elif isinstance(data, pd.DataFrame) and symbol in data.columns: df_symbol = data[[symbol]].rename(columns={symbol:'Close'})
-                         else: # print(f"  Hist WARN: Symbol {symbol} not found in yfinance download results for this batch (Structure: {data.columns})."); # Reduced verbosity
-                              continue
+                         else: 
+                            logging.warning(f"  Hist WARN: Symbol {symbol} not found in yfinance download results for this batch (Structure: {data.columns})."); # Reduced verbosity
+                            continue
                     if df_symbol is None or df_symbol.empty: continue
                     price_col = 'Close'
-                    if price_col not in df_symbol.columns: # print(f"  Hist WARN: Expected 'Close' column not found for {symbol}. Columns: {df_symbol.columns}"); # Reduced verbosity
-                         continue
+                    if price_col not in df_symbol.columns: 
+                        logging.warning(f"  Hist WARN: Expected 'Close' column not found for {symbol}. Columns: {df_symbol.columns}"); # Reduced verbosity
+                        continue
                     df_filtered = df_symbol[[price_col]].copy(); df_filtered.rename(columns={price_col: 'price'}, inplace=True)
                     df_filtered.index = pd.to_datetime(df_filtered.index).date
                     df_filtered['price'] = pd.to_numeric(df_filtered['price'], errors='coerce'); df_filtered = df_filtered.dropna(subset=['price']); df_filtered = df_filtered[df_filtered['price'] > 1e-6]
                     if not df_filtered.empty: historical_data[symbol] = df_filtered.sort_index()
-                except Exception as e_sym: print(f"  Hist ERROR processing symbol {symbol} within batch: {e_sym}")
-        except Exception as e_batch: print(f"  Hist ERROR during yf.download for batch starting with {batch_symbols[0]}: {e_batch}")
+                except Exception as e_sym: logging.warning(f"  Hist ERROR processing symbol {symbol} within batch: {e_sym}")
+        except Exception as e_batch: logging.warning(f"  Hist ERROR during yf.download for batch starting with {batch_symbols[0]}: {e_batch}")
         symbols_processed += len(batch_symbols); time.sleep(0.2)
-    print(f"Hist Fetch: Finished fetching ({len(historical_data)} symbols successful).")
+    logging.info(f"Hist Fetch: Finished fetching ({len(historical_data)} symbols successful).")
     return historical_data
 
 # --- Function to Unadjust Prices based on Splits ---
@@ -2147,7 +2151,7 @@ def _unadjust_prices(
                  unadj_df = unadj_df[pd.notnull(unadj_df.index)] # Drop NaT indices
              except Exception:
                  warn_key = f"unadjust_index_err_{yf_symbol}";
-                 if warn_key not in processed_warnings: print(f"  Hist WARN (Unadjust): Failed to convert index to date for {yf_symbol}. Skipping unadjustment."); processed_warnings.add(warn_key)
+                 if warn_key not in processed_warnings: logging.warning(f"  Hist WARN (Unadjust): Failed to convert index to date for {yf_symbol}. Skipping unadjustment."); processed_warnings.add(warn_key)
                  unadjusted_prices_yf[yf_symbol] = adj_price_df.copy(); continue
 
         if unadj_df.empty: unadjusted_prices_yf[yf_symbol] = unadj_df; continue
@@ -2170,7 +2174,7 @@ def _unadjust_prices(
 
                 if split_ratio <= 0:
                     warn_key = f"invalid_split_ratio_{yf_symbol}_{split_date}";
-                    if warn_key not in processed_warnings: print(f"  Hist WARN (Unadjust): Invalid split ratio ({split_ratio}) for {yf_symbol} on {split_date}. Skipping this split."); processed_warnings.add(warn_key)
+                    if warn_key not in processed_warnings: logging.warning(f"  Hist WARN (Unadjust): Invalid split ratio ({split_ratio}) for {yf_symbol} on {split_date}. Skipping this split."); processed_warnings.add(warn_key)
                     continue
                 # Apply split factor to dates *before* the split date
                 mask = forward_split_factor.index < split_date
@@ -2178,7 +2182,7 @@ def _unadjust_prices(
             except (KeyError, ValueError, TypeError, AttributeError) as e:
                  warn_key = f"split_error_{yf_symbol}_{split_info.get('Date', 'UnknownDate')}"
                  error_detail = f"{type(e).__name__}: {e}"
-                 if warn_key not in processed_warnings: print(f"  Hist WARN (Unadjust): Error processing split for {yf_symbol} around {split_info.get('Date', 'UnknownDate')}: {error_detail}. Skipping."); processed_warnings.add(warn_key)
+                 if warn_key not in processed_warnings: logging.warning(f"  Hist WARN (Unadjust): Error processing split for {yf_symbol} around {split_info.get('Date', 'UnknownDate')}: {error_detail}. Skipping."); processed_warnings.add(warn_key)
                  continue
 
         original_prices = unadj_df['price'].copy()
@@ -2217,7 +2221,7 @@ def get_historical_price(symbol_key: str, target_date: date, prices_dict: Dict[s
         return float(price) if pd.notna(price) else None
     except KeyError: return None
     except Exception as e:
-        # print(f"ERROR getting historical price for {symbol_key} on {target_date}: {e}") # Reduced verbosity
+        logging.error(f"ERROR getting historical price for {symbol_key} on {target_date}: {e}") # Reduced verbosity
         return None
 
 # --- Revised: Calculates historical rate TO/FROM via USD bridge ---
@@ -2516,7 +2520,7 @@ def _calculate_daily_metrics_worker(
         return result_row
     except Exception as e: # Error handling unchanged
         # ... (Error logging and return structure) ...
-        print(f"ERROR in worker process for date {eval_date}: {e}"); traceback.print_exc()
+        logging.error(f"ERROR in worker process for date {eval_date}: {e}"); traceback.print_exc()
         failed_row = { 'Date': eval_date, 'value': np.nan, 'net_flow': np.nan };
         for bm_symbol in benchmark_symbols_yf: failed_row[f"{bm_symbol} Price"] = np.nan
         failed_row['value_lookup_failed'] = True; failed_row['flow_lookup_failed'] = True; failed_row['bench_lookup_failed'] = True; failed_row['worker_error'] = True
@@ -2557,7 +2561,7 @@ def _prepare_historical_inputs(
     Loads, cleans, filters transactions, determines required symbols/currencies/FX pairs,
     extracts splits, and generates cache keys/filenames for historical analysis.
     """
-    print("Preparing inputs for historical calculation...")
+    logging.info("Preparing inputs for historical calculation...")
 
     # Initialize return values for failure cases
     empty_tuple_return = (None, None, set(), {}, [], [], [], [], [], {}, {}, {}, "", "", None, None, "")
@@ -2567,7 +2571,7 @@ def _prepare_historical_inputs(
         transactions_csv_file, account_currency_map, default_currency
     )
     if all_transactions_df is None:
-        print("ERROR in _prepare_historical_inputs: Failed to load/clean transactions.")
+        logging.error("RROR in _prepare_historical_inputs: Failed to load/clean transactions.")
         return empty_tuple_return # Return empties/None on failure
 
     # --- Get available accounts ---
@@ -2589,7 +2593,7 @@ def _prepare_historical_inputs(
     else:
         valid_include_accounts = [acc for acc in include_accounts if acc in available_accounts_set]
         if not valid_include_accounts:
-            print("WARN in _prepare_historical_inputs: No valid accounts to include.")
+            logging.warning("WARN in _prepare_historical_inputs: No valid accounts to include.")
             return empty_tuple_return # Or maybe return partial data? For now, return empty.
         transactions_df_included = all_transactions_df[all_transactions_df['Account'].isin(valid_include_accounts)].copy()
         included_accounts_list_sorted = sorted(valid_include_accounts)
@@ -2601,7 +2605,7 @@ def _prepare_historical_inputs(
     else:
         valid_exclude_accounts = [acc for acc in exclude_accounts if acc in available_accounts_set]
         if valid_exclude_accounts:
-            print(f"Hist Prep: Excluding accounts: {', '.join(sorted(valid_exclude_accounts))}")
+            logging.info(f"Hist Prep: Excluding accounts: {', '.join(sorted(valid_exclude_accounts))}")
             transactions_df_effective = transactions_df_included[~transactions_df_included['Account'].isin(valid_exclude_accounts)].copy()
             excluded_accounts_list_sorted = sorted(valid_exclude_accounts)
             # Update description
@@ -2611,7 +2615,7 @@ def _prepare_historical_inputs(
             transactions_df_effective = transactions_df_included.copy()
 
     if transactions_df_effective.empty:
-        print("WARN in _prepare_historical_inputs: No transactions remain after filtering.")
+        logging.warning("WARN in _prepare_historical_inputs: No transactions remain after filtering.")
         # Return effective df as empty, but provide other info if possible
         return (transactions_df_effective, original_transactions_df, ignored_indices, ignored_reasons,
                 all_available_accounts_list, included_accounts_list_sorted, excluded_accounts_list_sorted,
@@ -2664,7 +2668,7 @@ def _prepare_historical_inputs(
         cache_key_hash = hashlib.sha256(daily_results_cache_key.encode()).hexdigest()[:16] # Use first 16 chars of hash
         daily_results_cache_file = f"{daily_cache_prefix}_{cache_key_hash}.json"
     except Exception as e_key:
-        print(f"Hist Prep WARN: Could not generate daily results cache key/filename: {e_key}.")
+        logging.warning(f"Hist Prep WARN: Could not generate daily results cache key/filename: {e_key}.")
         # Keep them as None
 
     return (
@@ -2713,7 +2717,7 @@ def _load_or_fetch_raw_historical_data(
 
     # --- 1. Try Loading Cache ---
     if use_raw_data_cache and raw_data_cache_file and os.path.exists(raw_data_cache_file):
-        print(f"Hist Raw: Attempting to load raw data cache: {raw_data_cache_file}")
+        logging.info(f"Hist Raw: Attempting to load raw data cache: {raw_data_cache_file}")
         try:
             with open(raw_data_cache_file, 'r') as f: cached_data = json.load(f)
             if cached_data.get('cache_key') == raw_data_cache_key:
@@ -2731,7 +2735,7 @@ def _load_or_fetch_raw_historical_data(
                             if not df.empty: historical_prices_yf_adjusted[symbol] = df.sort_index()
                             else: historical_prices_yf_adjusted[symbol] = pd.DataFrame() # Store empty if no valid data
                         except Exception as e_deser:
-                            # print(f"DEBUG: Error deserializing cached price for {symbol}: {e_deser}") # Optional
+                            logging.debug(f"DEBUG: Error deserializing cached price for {symbol}: {e_deser}") # Optional
                             deserialization_errors += 1; historical_prices_yf_adjusted[symbol] = pd.DataFrame()
                     else: historical_prices_yf_adjusted[symbol] = pd.DataFrame() # Symbol missing from cache
 
@@ -2748,7 +2752,7 @@ def _load_or_fetch_raw_historical_data(
                             if not df.empty: historical_fx_yf[pair] = df.sort_index()
                             else: historical_fx_yf[pair] = pd.DataFrame()
                         except Exception as e_deser_fx:
-                            # print(f"DEBUG: Error deserializing cached FX for {pair}: {e_deser_fx}") # Optional
+                            logging.debug(f"DEBUG: Error deserializing cached FX for {pair}: {e_deser_fx}") # Optional
                             deserialization_errors += 1; historical_fx_yf[pair] = pd.DataFrame()
                     else: historical_fx_yf[pair] = pd.DataFrame() # Pair missing
 
@@ -2759,43 +2763,43 @@ def _load_or_fetch_raw_historical_data(
                 fx_are_dict = isinstance(historical_fx_yf, dict)
 
                 if all_symbols_loaded and all_fx_loaded and prices_are_dict and fx_are_dict and deserialization_errors == 0:
-                    print("Hist Raw: Cache valid and complete.")
+                    logging.info("Hist Raw: Cache valid and complete.")
                     cache_valid_raw = True
                 else: # If anything failed or is wrong type
-                    print(f"Hist WARN: RAW cache load failed validation (Symbols loaded: {all_symbols_loaded}, FX loaded: {all_fx_loaded}, Price type OK: {prices_are_dict}, FX type OK: {fx_are_dict}, Errors: {deserialization_errors}). Refetching if needed.")
+                    logging.warning(f"Hist WARN: RAW cache load failed validation (Symbols loaded: {all_symbols_loaded}, FX loaded: {all_fx_loaded}, Price type OK: {prices_are_dict}, FX type OK: {fx_are_dict}, Errors: {deserialization_errors}). Refetching if needed.")
                     cache_valid_raw = False # Force refetch if validation fails
                     # Reset dictionaries if types were wrong
                     if not prices_are_dict: historical_prices_yf_adjusted = {}
                     if not fx_are_dict: historical_fx_yf = {}
             else:
-                print(f"Hist Raw: Cache key mismatch. Ignoring cache.")
+                logging.warning(f"Hist Raw: Cache key mismatch. Ignoring cache.")
         except Exception as e:
-            print(f"Error reading hist RAW cache {raw_data_cache_file}: {e}. Ignoring cache.")
+            logging.error(f"Error reading hist RAW cache {raw_data_cache_file}: {e}. Ignoring cache.")
             historical_prices_yf_adjusted = {} # Clear potentially corrupted data
             historical_fx_yf = {}
 
     # --- 2. Fetch Missing Data if Cache Invalid/Incomplete ---
     if not cache_valid_raw:
-        print("Hist Raw: Fetching data from Yahoo Finance...")
+        logging.info("Hist Raw: Fetching data from Yahoo Finance...")
         # Determine which symbols *still* need fetching (if cache was partial)
         symbols_needing_fetch = [s for s in symbols_to_fetch_yf if s not in historical_prices_yf_adjusted or historical_prices_yf_adjusted[s].empty]
         fx_needing_fetch = [p for p in fx_pairs_to_fetch_yf if p not in historical_fx_yf or historical_fx_yf[p].empty]
 
         if symbols_needing_fetch:
-             print(f"Hist Raw: Fetching {len(symbols_needing_fetch)} stock/benchmark symbols...")
+             logging.info(f"Hist Raw: Fetching {len(symbols_needing_fetch)} stock/benchmark symbols...")
              fetched_stock_data = fetch_yf_historical(symbols_needing_fetch, start_date, end_date) # Assumes helper exists
              historical_prices_yf_adjusted.update(fetched_stock_data) # Add fetched data
         else:
-             print("Hist Raw: All stock/benchmark symbols found in cache or not needed.")
+             logging.info("Hist Raw: All stock/benchmark symbols found in cache or not needed.")
 
 
         if fx_needing_fetch:
-             print(f"Hist Raw: Fetching {len(fx_needing_fetch)} FX pairs...")
+             logging.info(f"Hist Raw: Fetching {len(fx_needing_fetch)} FX pairs...")
              # Use the same fetcher, assuming it handles CURRENCY=X tickers
              fetched_fx_data = fetch_yf_historical(fx_needing_fetch, start_date, end_date)
              historical_fx_yf.update(fetched_fx_data) # Add fetched data
         else:
-             print("Hist Raw: All FX pairs found in cache or not needed.")
+             logging.info("Hist Raw: All FX pairs found in cache or not needed.")
 
 
         # --- Validation after fetch ---
@@ -2803,17 +2807,17 @@ def _load_or_fetch_raw_historical_data(
         final_fx_missing = [p for p in fx_pairs_to_fetch_yf if p not in historical_fx_yf or historical_fx_yf[p].empty]
 
         if final_symbols_missing:
-             print(f"Hist WARN: Failed to fetch/load adjusted prices for: {', '.join(final_symbols_missing)}")
+             logging.warning(f"Hist WARN: Failed to fetch/load adjusted prices for: {', '.join(final_symbols_missing)}")
              # Decide if this is critical - depends if any portfolio holdings use these
              # For now, let's flag fetch_failed only if essential FX is missing
         if final_fx_missing:
-             print(f"Hist WARN: Failed to fetch/load FX rates for: {', '.join(final_fx_missing)}")
+             logging.warning(f"Hist WARN: Failed to fetch/load FX rates for: {', '.join(final_fx_missing)}")
              # If ANY required FX pair is missing, mark as failed for safety
              fetch_failed = True
 
         # --- 3. Update Cache if Fetch Occurred ---
         if use_raw_data_cache and (symbols_needing_fetch or fx_needing_fetch): # Only save if we fetched something
-            print(f"Hist Raw: Saving updated raw data to cache: {raw_data_cache_file}")
+            logging.info(f"Hist Raw: Saving updated raw data to cache: {raw_data_cache_file}")
             # Prepare JSON-serializable data
             prices_to_cache = {
                 symbol: df.to_json(orient='split', date_format='iso')
@@ -2833,21 +2837,21 @@ def _load_or_fetch_raw_historical_data(
                 cache_dir_raw = os.path.dirname(raw_data_cache_file)
                 if cache_dir_raw: os.makedirs(cache_dir_raw, exist_ok=True)
                 with open(raw_data_cache_file, 'w') as f: json.dump(cache_content, f, indent=2)
-            except Exception as e: print(f"Error writing hist RAW cache: {e}")
+            except Exception as e: logging.error(f"Error writing hist RAW cache: {e}")
         elif not use_raw_data_cache:
-             print("Hist Raw: Caching disabled, skipping save.")
+             logging.info("Hist Raw: Caching disabled, skipping save.")
 
     # --- 4. Final Check and Return ---
     # Check again if critical data is missing after cache/fetch attempts
     if not fetch_failed and fx_pairs_to_fetch_yf: # Re-check FX only if pairs were needed
          if any(p not in historical_fx_yf or historical_fx_yf[p].empty for p in fx_pairs_to_fetch_yf):
-             print("Hist ERROR: Critical FX data missing after final check.")
+             logging.error("Hist ERROR: Critical FX data missing after final check.")
              fetch_failed = True
 
     if not fetch_failed and symbols_to_fetch_yf: # Re-check stocks
           if any(s not in historical_prices_yf_adjusted or historical_prices_yf_adjusted[s].empty for s in symbols_to_fetch_yf):
                # Allow proceeding but maybe warn later if specific symbols are needed and missing
-               print("Hist WARN: Some stock/benchmark data missing after final check.")
+               logging.warning("Hist WARN: Some stock/benchmark data missing after final check.")
 
     return historical_prices_yf_adjusted, historical_fx_yf, fetch_failed
 
@@ -2882,11 +2886,11 @@ def _load_or_calculate_daily_results(
     # --- 1. Check Daily Results Cache ---
     if use_daily_results_cache and daily_results_cache_file and daily_results_cache_key:
         if os.path.exists(daily_results_cache_file):
-            print(f"Hist Daily ({current_hist_version} / Scope: {filter_desc}): Found daily cache file. Checking key...")
+            logging.info(f"Hist Daily ({current_hist_version} / Scope: {filter_desc}): Found daily cache file. Checking key...")
             try:
                 with open(daily_results_cache_file, 'r') as f: cached_daily_data = json.load(f)
                 if cached_daily_data.get('cache_key') == daily_results_cache_key:
-                    print(f"Hist Daily ({current_hist_version} / Scope: {filter_desc}): Cache MATCH. Loading...")
+                    logging.info(f"Hist Daily ({current_hist_version} / Scope: {filter_desc}): Cache MATCH. Loading...")
                     results_json = cached_daily_data.get('daily_results_json')
                     if results_json:
                         try:
@@ -2905,23 +2909,23 @@ def _load_or_calculate_daily_results(
 
                             if not missing_cols and not daily_df.empty:
                             # --- End Added Cache Validation ---
-                                print(f"Hist Daily ({current_hist_version} / Scope: {filter_desc}): Loaded {len(daily_df)} rows from cache.")
+                                logging.info(f"Hist Daily ({current_hist_version} / Scope: {filter_desc}): Loaded {len(daily_df)} rows from cache.")
                                 cache_valid_daily_results = True
                                 status_update = " Daily results loaded from cache."
                             else:
-                                print(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): Daily cache missing columns ({missing_cols}), empty, or failed validation. Recalculating.")
+                                logging.warning(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): Daily cache missing columns ({missing_cols}), empty, or failed validation. Recalculating.")
                                 daily_df = pd.DataFrame() # Reset df
                         except Exception as e_load_df:
-                            print(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): Error deserializing/validating daily cache DF: {e_load_df}. Recalculating.")
+                            logging.warning(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): Error deserializing/validating daily cache DF: {e_load_df}. Recalculating.")
                             daily_df = pd.DataFrame() # Reset df
-                    else: print(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): Daily cache missing result data. Recalculating.")
-                else: print(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): Daily results cache key MISMATCH. Recalculating.")
-            except Exception as e_load_cache: print(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): Error reading daily cache: {e_load_cache}. Recalculating.")
-        else: print(f"Hist Daily ({current_hist_version} / Scope: {filter_desc}): Daily cache file not found. Calculating.")
+                    else: logging.warning(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): Daily cache missing result data. Recalculating.")
+                else: logging.warning(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): Daily results cache key MISMATCH. Recalculating.")
+            except Exception as e_load_cache: logging.warning(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): Error reading daily cache: {e_load_cache}. Recalculating.")
+        else: logging.info(f"Hist Daily ({current_hist_version} / Scope: {filter_desc}): Daily cache file not found. Calculating.")
     elif not use_daily_results_cache:
-         print(f"Hist Daily ({current_hist_version} / Scope: {filter_desc}): Daily results caching disabled. Calculating.")
+         logging.info(f"Hist Daily ({current_hist_version} / Scope: {filter_desc}): Daily results caching disabled. Calculating.")
     else: # Caching enabled but file/key invalid from prep stage
-         print(f"Hist Daily ({current_hist_version} / Scope: {filter_desc}): Daily cache file/key invalid. Calculating.")
+         logging.info(f"Hist Daily ({current_hist_version} / Scope: {filter_desc}): Daily cache file/key invalid. Calculating.")
 
 
     # --- 2. Calculate Daily Metrics if Cache Invalid/Disabled ---
@@ -2943,20 +2947,20 @@ def _load_or_calculate_daily_results(
                      # Convert index to date objects robustly
                      market_days_index = pd.Index(pd.to_datetime(bench_df.index, errors='coerce').date)
                      market_days_index = market_days_index.dropna()
-                 except Exception as e_idx: print(f"WARN: Failed converting benchmark index for market days: {e_idx}")
+                 except Exception as e_idx: logging.warning(f"WARN: Failed converting benchmark index for market days: {e_idx}")
 
         if market_days_index.empty:
-            print(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): No market days found. Using business day range.");
+            logging.warning(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): No market days found. Using business day range.");
             all_dates_to_process = pd.date_range(start=calc_start_date, end=calc_end_date, freq='B').date.tolist()
         else:
              # Filter market days index to be within the required calculation range
              all_dates_to_process = market_days_index[(market_days_index >= calc_start_date) & (market_days_index <= calc_end_date)].tolist()
 
         if not all_dates_to_process:
-             print(f"Hist ERROR ({current_hist_version} / Scope: {filter_desc}): No calculation dates found in range.")
+             logging.error(f"Hist ERROR ({current_hist_version} / Scope: {filter_desc}): No calculation dates found in range.")
              return pd.DataFrame(), False, status_update + " No calculation dates found." # Return empty df
 
-        print(f"Hist Daily ({current_hist_version} / Scope: {filter_desc}): Calculating {len(all_dates_to_process)} daily metrics parallel...")
+        logging.info(f"Hist Daily ({current_hist_version} / Scope: {filter_desc}): Calculating {len(all_dates_to_process)} daily metrics parallel...")
 
         # --- Setup and Run Pool ---
         # Use functools.partial to pass fixed arguments to the worker
@@ -2988,7 +2992,7 @@ def _load_or_calculate_daily_results(
             # Consider using imap_unordered for potentially better performance with uneven task times
             # Chunksize calculation aims for roughly 4 chunks per worker initially
             chunksize = max(1, len(all_dates_to_process) // (num_processes * 4))
-            print(f"Hist Daily: Starting pool with {num_processes} processes, chunksize={chunksize}")
+            logging.info(f"Hist Daily: Starting pool with {num_processes} processes, chunksize={chunksize}")
 
             # Use context manager for the pool
             with multiprocessing.Pool(processes=num_processes) as pool:
@@ -2997,21 +3001,21 @@ def _load_or_calculate_daily_results(
                 # Process results as they complete
                 for i, result in enumerate(results_iterator):
                     if i % 100 == 0 and i > 0: # Print progress occasionally
-                         print(f"  Processed {i}/{len(all_dates_to_process)} days...")
+                         logging.info(f"  Processed {i}/{len(all_dates_to_process)} days...")
                     if result: # Append if worker returned data (not None on error)
                         daily_results_list.append(result)
-                print(f"  Finished processing all {len(all_dates_to_process)} days.")
+                logging.info(f"  Finished processing all {len(all_dates_to_process)} days.")
 
 
         except Exception as e_pool:
-             print(f"Hist CRITICAL ({current_hist_version} / Scope: {filter_desc}): Pool failed: {e_pool}");
+             logging.error(f"Hist CRITICAL ({current_hist_version} / Scope: {filter_desc}): Pool failed: {e_pool}");
              import traceback
              traceback.print_exc()
              # Cannot proceed without daily results
              return pd.DataFrame(), False, status_update + " Multiprocessing failed."
         finally: # Ensure pool timing is printed even if errors occur later
              pool_end_time = time.time()
-             print(f"Hist Daily ({current_hist_version} / Scope: {filter_desc}): Pool finished in {pool_end_time - pool_start_time:.2f}s.")
+             logging.info(f"Hist Daily ({current_hist_version} / Scope: {filter_desc}): Pool finished in {pool_end_time - pool_start_time:.2f}s.")
 
 
         # --- Process Pool Results ---
@@ -3074,14 +3078,14 @@ def _load_or_calculate_daily_results(
             status_update += f" {len(daily_df)} days calculated."
 
         except Exception as e_df_create:
-             print(f"Hist CRITICAL ({current_hist_version} / Scope: {filter_desc}): Failed create/process daily DF from results: {e_df_create}");
+             logging.error(f"Hist CRITICAL ({current_hist_version} / Scope: {filter_desc}): Failed create/process daily DF from results: {e_df_create}");
              import traceback
              traceback.print_exc()
              return pd.DataFrame(), False, status_update + " Error processing results."
 
         # --- 3. Save Daily Results Cache ---
         if use_daily_results_cache and daily_results_cache_file and daily_results_cache_key and not daily_df.empty:
-            print(f"Hist Daily ({current_hist_version} / Scope: {filter_desc}): Saving daily results to cache: {daily_results_cache_file}")
+            logging.info(f"Hist Daily ({current_hist_version} / Scope: {filter_desc}): Saving daily results to cache: {daily_results_cache_file}")
             cache_content = {
                 'cache_key': daily_results_cache_key,
                 'timestamp': datetime.now().isoformat(),
@@ -3092,7 +3096,7 @@ def _load_or_calculate_daily_results(
                 if cache_dir: os.makedirs(cache_dir, exist_ok=True);
                 with open(daily_results_cache_file, 'w') as f: json.dump(cache_content, f, indent=2)
             except Exception as e_save_cache:
-                print(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): Error writing daily cache: {e_save_cache}")
+                logging.warning(f"Hist WARN ({current_hist_version} / Scope: {filter_desc}): Error writing daily cache: {e_save_cache}")
 
 
     return daily_df, cache_valid_daily_results, status_update
@@ -3273,9 +3277,9 @@ def calculate_historical_performance(
             b.upper().strip() for b in benchmark_symbols_yf if isinstance(b, str) and b.strip()
         ]
     elif not benchmark_symbols_yf:
-        print(f"Hist INFO ({CURRENT_HIST_VERSION}): No benchmark symbols provided.")
+        logging.info(f"Hist INFO ({CURRENT_HIST_VERSION}): No benchmark symbols provided.")
     else:
-        print(f"Hist WARN ({CURRENT_HIST_VERSION}): Invalid benchmark_symbols_yf type provided: {type(benchmark_symbols_yf)}. Ignoring benchmarks.")
+        logging.warning(f"Hist WARN ({CURRENT_HIST_VERSION}): Invalid benchmark_symbols_yf type provided: {type(benchmark_symbols_yf)}. Ignoring benchmarks.")
 
     # --- 1. Prepare Inputs (Load, Clean, Filter, Symbols, Keys, Splits) ---
     (transactions_df_effective, original_transactions_df, ignored_indices, ignored_reasons,
@@ -3336,7 +3340,7 @@ def calculate_historical_performance(
 
     # --- 4. Derive Unadjusted Prices ---
     # Uses the existing helper function _unadjust_prices
-    print("Deriving unadjusted prices using split data...") # Add print statement
+    logging.info("Deriving unadjusted prices using split data...") # Add print statement
     historical_prices_yf_unadjusted = _unadjust_prices(
         adjusted_prices_yf=historical_prices_yf_adjusted, # Input the adjusted prices
         yf_to_internal_map=yf_to_internal_map_hist,     # Input the correct map
@@ -3386,8 +3390,8 @@ def calculate_historical_performance(
 
     # --- 8. Final Status and Return ---
     end_time_hist = time.time()
-    print(f"--- Historical Performance Calculation Finished ({CURRENT_HIST_VERSION} / Scope: {filter_desc}) ---")
-    print(f"Total Historical Calc Time: {end_time_hist - start_time_hist:.2f} seconds")
+    logging.info(f"--- Historical Performance Calculation Finished ({CURRENT_HIST_VERSION} / Scope: {filter_desc}) ---")
+    logging.info(f"Total Historical Calc Time: {end_time_hist - start_time_hist:.2f} seconds")
 
     # Determine final status based on messages/warnings/errors accumulated
     final_status = status_msg # Use accumulated status
@@ -3407,14 +3411,28 @@ def calculate_historical_performance(
         try:
              final_df_filtered = final_df_filtered[final_cols_order]
         except KeyError:
-             print("Warning: Could not reorder final columns.") # Should not happen if list comprehension is correct
+             logging.warning("Warning: Could not reorder final columns.") # Should not happen if list comprehension is correct
 
     return final_df_filtered, final_status
 
 # --- Example Usage (Main block for testing this file directly) ---
 if __name__ == '__main__':
-    print("\nRunning portfolio_logic.py as main script for testing (v10 - Account/Currency)...")
-    # --- Configuration for Test Run ---
+    # Configure logging for the test run
+    import logging
+    
+    logging.basicConfig(
+        level=logging.INFO,  # Show INFO, WARNING, ERROR, CRITICAL messages
+        # level=logging.DEBUG, # Uncomment this for maximum detail during debugging
+        format='%(asctime)s [%(levelname)-8s] %(filename)s:%(lineno)d - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+    # Optional: Add freeze_support() if needed for multiprocessing in your environment
+    multiprocessing.freeze_support()
+
+    logging.info("Running portfolio_logic.py tests...") # Example using logging
+    
+        # --- Configuration for Test Run ---
     test_csv_file = 'my_transactions.csv' # Needs to exist
     test_display_currency = 'EUR'
     # --- Define Test Account Currency Map ---
@@ -3431,7 +3449,7 @@ if __name__ == '__main__':
     test_default_currency = 'USD' # Define the default fallback
 
     # --- Test Historical Performance Calculation ---
-    print("\n--- Testing Historical Performance Calculation (v10 - Account/Currency) ---")
+    logging.info("\n--- Testing Historical Performance Calculation (v10 - Account/Currency) ---")
     test_start = date(2023, 1, 1); test_end = date(2024, 6, 30); test_interval = 'M'; test_benchmarks = ['SPY', 'QQQ']
     test_use_raw_cache_flag = True; test_use_daily_results_cache_flag = True; test_num_processes = None
     test_accounts_all = None; test_accounts_subset1 = ['SET', 'IBKR']; test_exclude_set = ['SET']
@@ -3444,10 +3462,10 @@ if __name__ == '__main__':
     }
 
     if not os.path.exists(test_csv_file):
-         print(f"ERROR: Test transactions file '{test_csv_file}' not found. Cannot run tests.")
+         logging.error(f"ERROR: Test transactions file '{test_csv_file}' not found. Cannot run tests.")
     else:
         for name, scenario in test_scenarios.items():
-            print(f"\n--- Running Historical Test: Scenario='{name}', Include={scenario['include']}, Exclude={scenario['exclude']} ---")
+            logging.info(f"\n--- Running Historical Test: Scenario='{name}', Include={scenario['include']}, Exclude={scenario['exclude']} ---")
             start_time_run = time.time()
             hist_df, hist_status = calculate_historical_performance(
                 transactions_csv_file=test_csv_file,
@@ -3465,13 +3483,13 @@ if __name__ == '__main__':
                 exclude_accounts=scenario['exclude']
             )
             end_time_run = time.time()
-            print(f"Test '{name}' Status: {hist_status}")
-            print(f"Test '{name}' Execution Time: {end_time_run - start_time_run:.2f} seconds")
-            if not hist_df.empty: print(f"Test '{name}' DF tail:\n{hist_df.tail().to_string()}")
-            else: print(f"Test '{name}' Result: Empty DataFrame")
+            logging.info(f"Test '{name}' Status: {hist_status}")
+            logging.info(f"Test '{name}' Execution Time: {end_time_run - start_time_run:.2f} seconds")
+            if not hist_df.empty: logging.info(f"Test '{name}' DF tail:\n{hist_df.tail().to_string()}")
+            else: logging.info(f"Test '{name}' Result: Empty DataFrame")
 
         # --- Test Current Portfolio Summary ---
-        print("\n--- Testing Current Portfolio Summary (Account Inclusion/Currency) ---")
+        logging.info("\n--- Testing Current Portfolio Summary (Account Inclusion/Currency) ---")
         summary_metrics, holdings_df, ignored_df, account_metrics, status = calculate_portfolio_summary(
             transactions_csv_file=test_csv_file,
             display_currency=test_display_currency,
@@ -3479,10 +3497,11 @@ if __name__ == '__main__':
             default_currency=test_default_currency,          # <-- Pass default
             include_accounts=test_accounts_subset1 # Test with a subset
         )
-        print(f"Current Summary Status (Subset {test_accounts_subset1}): {status}")
-        if summary_metrics: print(f"Overall Metrics (Subset): {summary_metrics}")
-        if holdings_df is not None and not holdings_df.empty: print(f"Holdings DF (Subset) Head:\n{holdings_df.head().to_string()}")
-        if account_metrics: print(f"Account Metrics (Subset): {account_metrics}")
+        logging.info(f"Current Summary Status (Subset {test_accounts_subset1}): {status}")
+        if summary_metrics: logging.info(f"Overall Metrics (Subset): {summary_metrics}")
+        if holdings_df is not None and not holdings_df.empty: logging.info(f"Holdings DF (Subset) Head:\n{holdings_df.head().to_string()}")
+        if account_metrics: logging.info(f"Account Metrics (Subset): {account_metrics}")
 
+    logging.info("Finished portfolio_logic.py tests.") # Example using logging
 
 # --- END OF FILE portfolio_logic.py ---
