@@ -9,6 +9,7 @@ import csv
 import shutil
 from datetime import datetime, date, timedelta
 from typing import Dict, Any, Optional, List, Set # Added Set
+import logging
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,

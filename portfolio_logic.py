@@ -19,6 +19,7 @@ from functools import partial
 import calendar # Added for potential market day checks
 import hashlib # Added for cache key hashing
 from collections import defaultdict # Ensure defaultdict is imported
+import logging # Added for logging
 
 # ADD THIS near the start of the file for easy toggling
 HISTORICAL_DEBUG_USD_CONVERSION = False # Set to True only when debugging this specific issue
@@ -73,9 +74,17 @@ def _get_file_hash(filepath: str) -> str:
     except FileNotFoundError:
         logging.warning(f"Warning: File not found for hashing: {filepath}")
         return "FILE_NOT_FOUND"
+    # --- Refined Exception Handling ---
+    except PermissionError:
+        logging.error(f"Permission denied accessing file {filepath} for hashing.")
+        return "HASHING_ERROR_PERMISSION"
+    except IOError as e:
+        logging.error(f"I/O error hashing file {filepath}: {e}")
+        return "HASHING_ERROR_IO"
     except Exception as e:
-        logging.error(f"Error hashing file {filepath}: {e}")
-        return "HASHING_ERROR"
+        logging.exception(f"Unexpected error hashing file {filepath}")
+        return "HASHING_ERROR_UNEXPECTED"
+    # --- End Refined Exception Handling ---
 
 # (_load_and_clean_transactions, calculate_npv, calculate_irr, get_cash_flows_for_symbol_account,
 #  get_cash_flows_for_mwr, fetch_index_quotes_yfinance, get_cached_or_fetch_yfinance_data,
@@ -84,7 +93,7 @@ def _load_and_clean_transactions(
     transactions_csv_file: str,
     account_currency_map: Dict, # Now required
     default_currency: str      # Now required
-) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame], Set[int], Dict[int, str]]:
+) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame], Set[int], Dict[int, str], bool, bool]:
     """
     Loads and cleans transactions from CSV, adding a 'Local Currency' column
     based on the provided account_currency_map.
@@ -94,7 +103,9 @@ def _load_and_clean_transactions(
     transactions_df: Optional[pd.DataFrame] = None
     ignored_row_indices = set()
     ignored_reasons: Dict[int, str] = {}
-
+    has_errors = False # Flag for critical loading errors
+    has_warnings = False # Flag for recoverable issues
+    
     logging.info(f"Helper: Attempting to load transactions from: {transactions_csv_file}")
     try:
         # ... (dtype_spec, na_values, pd.read_csv remain the same) ...
@@ -103,132 +114,246 @@ def _load_and_clean_transactions(
         original_transactions_df = pd.read_csv( transactions_csv_file, header=0, skipinitialspace=True, keep_default_na=True, na_values=na_values, dtype=dtype_spec, encoding='utf-8' )
         transactions_df = original_transactions_df.copy()
         logging.info(f"Helper: Successfully loaded {len(transactions_df)} records.")
-    except FileNotFoundError: return None, None, ignored_row_indices, ignored_reasons
-    except UnicodeDecodeError as e: return None, original_transactions_df, ignored_row_indices, ignored_reasons
-    except Exception as e: return None, original_transactions_df, ignored_row_indices, ignored_reasons
-    if transactions_df is None or transactions_df.empty: return None, original_transactions_df, ignored_row_indices, ignored_reasons
+    # --- Refined Exception Handling ---
+    except FileNotFoundError:
+        logging.error(f"Transaction file not found: {transactions_csv_file}")
+        has_errors = True
+        return None, None, ignored_row_indices, ignored_reasons, has_errors, has_warnings
+    except pd.errors.ParserError as e:
+        logging.error(f"Error parsing CSV file {transactions_csv_file}: {e}")
+        has_errors = True
+        return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
+    except UnicodeDecodeError as e:
+        logging.error(f"Encoding error reading CSV file {transactions_csv_file}: {e}. Try saving as UTF-8.")
+        has_errors = True
+        return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
+    except PermissionError:
+        logging.error(f"Permission denied reading CSV file: {transactions_csv_file}")
+        has_errors = True
+        return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
+    except Exception as e:
+        logging.exception(f"Unexpected error loading transactions from {transactions_csv_file}")
+        has_errors = True
+        return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
+    # --- End Refined Exception Handling ---
+
+    if transactions_df is None or transactions_df.empty:
+        logging.warning("Warning: Transactions DataFrame is empty after loading.")
+        has_warnings = True # Not necessarily an error, but worth noting
+        return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
 
     try:
         transactions_df['original_index'] = transactions_df.index
-
-        # --- Column Mapping (unchanged) ---
         column_mapping = { "Date (MMM DD, YYYY)": "Date", "Transaction Type": "Type", "Stock / ETF Symbol": "Symbol", "Quantity of Units": "Quantity", "Amount per unit": "Price/Share", "Total Amount": "Total Amount", "Fees": "Commission", "Split Ratio (new shares per old share)": "Split Ratio", "Investment Account": "Account", "Note": "Note" }
-
-        # --- Column Existence Check and Renaming (unchanged) ---
         required_original_cols = [ "Date (MMM DD, YYYY)", "Transaction Type", "Stock / ETF Symbol", "Investment Account" ]
         actual_columns = [col.strip() for col in transactions_df.columns]
         required_stripped_cols = {col: col.strip() for col in required_original_cols}
         missing_original = [orig_col for orig_col, stripped_col in required_stripped_cols.items() if stripped_col not in actual_columns]
-        if missing_original: raise ValueError(f"Missing essential CSV columns: {missing_original}. Found columns: {transactions_df.columns.tolist()}")
+        if missing_original:
+            msg = f"Missing essential CSV columns: {missing_original}. Found columns: {transactions_df.columns.tolist()}"
+            logging.error(msg)
+            raise ValueError(msg) # Raise error to stop processing
+
         rename_dict = {stripped_csv_header: internal_name for csv_header, internal_name in column_mapping.items() if (stripped_csv_header := csv_header.strip()) in actual_columns}
         transactions_df.columns = actual_columns
         transactions_df.rename(columns=rename_dict, inplace=True)
 
-        # --- Basic Cleaning (Symbol, Type - unchanged) ---
+        # Basic Cleaning
         transactions_df['Symbol'] = transactions_df['Symbol'].fillna('UNKNOWN_SYMBOL').astype(str).str.strip().str.upper(); transactions_df.loc[transactions_df['Symbol'] == '', 'Symbol'] = 'UNKNOWN_SYMBOL'
         transactions_df.loc[transactions_df['Symbol'] == '$CASH', 'Symbol'] = CASH_SYMBOL_CSV
         transactions_df['Type'] = transactions_df['Type'].fillna('UNKNOWN_TYPE').astype(str).str.strip().str.lower(); transactions_df.loc[transactions_df['Type'] == '', 'Type'] = 'UNKNOWN_TYPE'
-
-        # --- Clean Account and ADD Local Currency ---
         transactions_df['Account'] = transactions_df['Account'].fillna('Unknown').astype(str).str.strip()
         transactions_df.loc[transactions_df['Account'] == '', 'Account'] = 'Unknown'
-        # Map account to currency using the provided map, fall back to default_currency
+
+        # ADD Local Currency
         transactions_df['Local Currency'] = transactions_df['Account'].map(account_currency_map).fillna(default_currency)
         logging.info(f"Helper: Added 'Local Currency' column. Example: {transactions_df[['Account', 'Local Currency']].head().to_string(index=False)}")
-        # --- End Local Currency Addition ---
 
-        # --- Date Parsing (unchanged) ---
+        # Date Parsing
+        # Store original dates for potential error reporting
+        original_dates = transactions_df['Date'].copy()
         transactions_df['Date'] = pd.to_datetime(transactions_df['Date'], errors='coerce')
-        # ... (fallback date parsing logic remains the same) ...
+        # Fallback parsing
         if transactions_df['Date'].isnull().any():
-             formats_to_try = ['%b %d, %Y', '%m/%d/%Y', '%Y-%m-%d', '%d-%b-%Y', '%Y%m%d']
-             for fmt in formats_to_try:
-                  if transactions_df['Date'].isnull().any():
-                      nat_mask = transactions_df['Date'].isnull()
-                      try: parsed = pd.to_datetime(transactions_df.loc[nat_mask, 'Date'].astype(str), format=fmt, errors='coerce'); transactions_df.loc[nat_mask, 'Date'] = parsed
-                      except Exception: pass
-             if transactions_df['Date'].isnull().any():
+            formats_to_try = ['%b %d, %Y', '%m/%d/%Y', '%Y-%m-%d', '%d-%b-%Y', '%Y%m%d']
+            for fmt in formats_to_try:
+                if transactions_df['Date'].isnull().any():
+                    nat_mask = transactions_df['Date'].isnull()
+                    try:
+                        parsed = pd.to_datetime(original_dates[nat_mask].astype(str), format=fmt, errors='coerce') # Use original for fallback
+                        transactions_df.loc[nat_mask, 'Date'] = parsed
+                    except (ValueError, TypeError): pass # Ignore errors during fallback attempts
+            # Infer format as last resort
+            if transactions_df['Date'].isnull().any():
                  nat_mask = transactions_df['Date'].isnull()
-                 try: inferred = pd.to_datetime(transactions_df.loc[nat_mask, 'Date'], infer_datetime_format=True, errors='coerce'); transactions_df.loc[nat_mask, 'Date'] = inferred
-                 except Exception: pass
+                 try:
+                     inferred = pd.to_datetime(original_dates[nat_mask], infer_datetime_format=True, errors='coerce')
+                     transactions_df.loc[nat_mask, 'Date'] = inferred
+                 except (ValueError, TypeError): pass
         bad_date_indices = transactions_df[transactions_df['Date'].isnull()].index
         if not bad_date_indices.empty:
+             has_warnings = True
+             logging.warning(f"Warning: {len(bad_date_indices)} rows ignored due to unparseable dates.")
              for idx in transactions_df.loc[bad_date_indices, 'original_index']: ignored_reasons[idx] = "Invalid/Unparseable Date"
              ignored_row_indices.update(transactions_df.loc[bad_date_indices, 'original_index'])
              transactions_df.drop(bad_date_indices, inplace=True)
         if transactions_df.empty:
              logging.warning("Helper WARN: All rows dropped due to invalid dates.")
-             return None, original_transactions_df, ignored_row_indices, ignored_reasons
+             # Keep has_errors=False as loading succeeded, but set has_warnings=True
+             has_warnings = True
+             return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
 
-        # --- Numeric Conversion (unchanged) ---
+        # Inside _load_and_clean_transactions, before the numeric conversion loop
+        logging.debug("Raw numeric column samples before conversion:")
         numeric_cols = ['Quantity', 'Price/Share', 'Total Amount', 'Commission', 'Split Ratio']
         for col in numeric_cols:
             if col in transactions_df.columns:
-                if transactions_df[col].dtype == 'object': transactions_df[col] = transactions_df[col].astype(str).str.replace(',', '', regex=False)
-                transactions_df[col] = pd.to_numeric(transactions_df[col], errors='coerce')
+                try:
+                    # Log unique non-numeric-looking values before coercion
+                    problem_samples = transactions_df[pd.to_numeric(transactions_df[col].astype(str).str.replace(',', '', regex=False), errors='coerce').isna() & transactions_df[col].notna()][col].unique()
+                    if len(problem_samples) > 0:
+                        logging.debug(f"  Potential problematic values in '{col}': {problem_samples[:10]}") # Log first 10 unique issues
+                except Exception as e_log:
+                    logging.debug(f"  Debug logging error for '{col}': {e_log}")
+            
+        # --- Numeric Conversion (with detailed NaN logging) ---
+        numeric_cols = ['Quantity', 'Price/Share', 'Total Amount', 'Commission', 'Split Ratio']
+        for col in numeric_cols:
+            if col in transactions_df.columns:
+                original_col_copy = transactions_df[col].copy() # Keep original values for logging
+                
+                # Attempt conversion
+                if transactions_df[col].dtype == 'object':
+                    # Apply string replacement first if it's an object type
+                    cleaned_strings = transactions_df[col].astype(str).str.replace(',', '', regex=False)
+                    converted_col = pd.to_numeric(cleaned_strings, errors='coerce')
+                else:
+                    # If already numeric, just ensure it's numeric type (coerce won't hurt)
+                    converted_col = pd.to_numeric(transactions_df[col], errors='coerce')
 
-        # --- Flagging Rows to Drop (unchanged) ---
+                # Identify rows where NaN was introduced
+                nan_mask = converted_col.isna() & original_col_copy.notna() # NaN now, but wasn't NaN originally
+
+                if nan_mask.any():
+                    has_warnings = True # Flag that coercion caused issues
+                    problematic_rows = transactions_df[nan_mask]
+                    logging.warning(f"Warning: Coercion to numeric failed for column '{col}' on {nan_mask.sum()} rows.")
+                    for idx, row in problematic_rows.iterrows():
+                        original_value = original_col_copy.loc[idx]
+                        logging.debug(f"  -> Failed coercion for Col='{col}', original_index={row['original_index']}, Account='{row['Account']}', Original Value='{repr(original_value)}' (Type: {type(original_value)})")
+
+                transactions_df[col] = converted_col # Assign the converted column (with NaNs)
+
+        # Flagging Rows to Drop
         initial_row_count = len(transactions_df); rows_to_drop_indices = pd.Index([])
         def flag_for_drop(indices, reason):
+            nonlocal has_warnings # Allow modifying the flag
             if not indices.empty:
+                has_warnings = True # Flagging rows is a warning condition
                 original_indices = transactions_df.loc[indices, 'original_index'].tolist()
                 for orig_idx in original_indices: ignored_reasons[orig_idx] = reason
-            return rows_to_drop_indices.union(indices)
-        # ... (rest of flagging logic remains the same) ...
+                return indices # Return only the new indices to drop
+            return pd.Index([])
+        # Flagging logic...
         is_buy_sell_stock = transactions_df['Type'].isin(['buy', 'sell', 'deposit', 'withdrawal']) & (transactions_df['Symbol'] != CASH_SYMBOL_CSV)
         is_short_stock = transactions_df['Type'].isin(['short sell', 'buy to cover']) & transactions_df['Symbol'].isin(SHORTABLE_SYMBOLS)
         is_split = transactions_df['Type'].isin(['split', 'stock split']); is_dividend = transactions_df['Type'] == 'dividend'; is_fees = transactions_df['Type'] == 'fees'
         is_cash_tx = (transactions_df['Symbol'] == CASH_SYMBOL_CSV) & transactions_df['Type'].isin(['buy', 'sell', 'deposit', 'withdrawal'])
         nan_qty_or_price = transactions_df[['Quantity', 'Price/Share']].isnull().any(axis=1)
-        idx = transactions_df.index[is_buy_sell_stock & nan_qty_or_price]; rows_to_drop_indices = flag_for_drop(idx, "Missing Qty/Price Stock")
-        idx = transactions_df.index[is_short_stock & nan_qty_or_price]; rows_to_drop_indices = flag_for_drop(idx, "Missing Qty/Price Short")
-        idx = transactions_df.index[is_cash_tx & transactions_df['Quantity'].isnull()]; rows_to_drop_indices = flag_for_drop(idx, "Missing $CASH Qty")
-        invalid_split = transactions_df['Split Ratio'].isnull() | (transactions_df['Split Ratio'] <= 0); idx = transactions_df.index[is_split & invalid_split]; rows_to_drop_indices = flag_for_drop(idx, "Missing/Invalid Split Ratio")
-        missing_div = transactions_df['Total Amount'].isnull() & transactions_df['Price/Share'].isnull(); idx = transactions_df.index[is_dividend & missing_div]; rows_to_drop_indices = flag_for_drop(idx, "Missing Dividend Amt/Price")
-        idx = transactions_df.index[is_fees & transactions_df['Commission'].isnull()]; rows_to_drop_indices = flag_for_drop(idx, "Missing Fee Commission")
+        rows_to_drop_indices = rows_to_drop_indices.union(flag_for_drop(transactions_df.index[is_buy_sell_stock & nan_qty_or_price], "Missing Qty/Price Stock"))
+        rows_to_drop_indices = rows_to_drop_indices.union(flag_for_drop(transactions_df.index[is_short_stock & nan_qty_or_price], "Missing Qty/Price Short"))
+        rows_to_drop_indices = rows_to_drop_indices.union(flag_for_drop(transactions_df.index[is_cash_tx & transactions_df['Quantity'].isnull()], "Missing $CASH Qty"))
+        invalid_split = transactions_df['Split Ratio'].isnull() | (transactions_df['Split Ratio'] <= 0); rows_to_drop_indices = rows_to_drop_indices.union(flag_for_drop(transactions_df.index[is_split & invalid_split], "Missing/Invalid Split Ratio"))
+        missing_div = transactions_df['Total Amount'].isnull() & transactions_df['Price/Share'].isnull(); rows_to_drop_indices = rows_to_drop_indices.union(flag_for_drop(transactions_df.index[is_dividend & missing_div], "Missing Dividend Amt/Price"))
+        rows_to_drop_indices = rows_to_drop_indices.union(flag_for_drop(transactions_df.index[is_fees & transactions_df['Commission'].isnull()], "Missing Fee Commission"))
         transactions_df['Commission'] = transactions_df['Commission'].fillna(0.0)
-        is_unknown = (transactions_df['Symbol'] == 'UNKNOWN_SYMBOL') | (transactions_df['Type'] == 'UNKNOWN_TYPE'); idx = transactions_df.index[is_unknown].difference(rows_to_drop_indices); rows_to_drop_indices = flag_for_drop(idx, "Unknown Symbol/Type")
+        is_unknown = (transactions_df['Symbol'] == 'UNKNOWN_SYMBOL') | (transactions_df['Type'] == 'UNKNOWN_TYPE'); rows_to_drop_indices = rows_to_drop_indices.union(flag_for_drop(transactions_df.index[is_unknown].difference(rows_to_drop_indices), "Unknown Symbol/Type"))
 
         if not rows_to_drop_indices.empty:
             original_indices_to_ignore = transactions_df.loc[rows_to_drop_indices, 'original_index'].tolist(); ignored_row_indices.update(original_indices_to_ignore)
+            logging.warning(f"Warning: Dropping {len(rows_to_drop_indices)} rows due to data validation issues.")
             transactions_df.drop(rows_to_drop_indices, inplace=True);
         if transactions_df.empty:
-             logging.info("Helper WARN: All transactions dropped during cleaning.")
-             return None, original_transactions_df, ignored_row_indices, ignored_reasons
+             logging.warning("Helper WARN: All transactions dropped during cleaning validation.")
+             has_warnings = True
+             return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
 
-        # --- Sort and Return (unchanged) ---
+        # Sort and Return
         transactions_df.sort_values(by=['Date', 'original_index'], inplace=True, ascending=True)
-        return transactions_df, original_transactions_df, ignored_row_indices, ignored_reasons
-    except Exception as e:
-        logging.error(f"CRITICAL ERROR during data cleaning helper: {e}"); traceback.print_exc()
-        return None, original_transactions_df, ignored_row_indices, ignored_reasons # Propagate error
+        return transactions_df, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
 
+    # --- Refined Exception Handling ---
+    except ValueError as e: # Catch specific column errors etc.
+        logging.error(f"Data integrity error during cleaning: {e}")
+        has_errors = True
+        return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
+    except KeyError as e:
+        logging.error(f"Missing expected column during cleaning: {e}")
+        has_errors = True
+        return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
+    except Exception as e:
+        logging.exception(f"CRITICAL ERROR during data cleaning helper")
+        has_errors = True
+        return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
+    # --- End Refined Exception Handling ---
+    
 # --- IRR/MWR Calculation Functions ---
 def calculate_npv(rate: float, dates: List[date], cash_flows: List[float]) -> float:
-    if not isinstance(rate, (int, float)) or not np.isfinite(rate): return np.nan
-    if len(dates) != len(cash_flows): raise ValueError("Dates and cash_flows must have the same length.")
+    # Refined Error Handling
+    if not isinstance(rate, (int, float)) or not np.isfinite(rate):
+        logging.debug("NPV Calculation Error: Invalid rate provided.")
+        return np.nan
+    if len(dates) != len(cash_flows):
+        logging.error("NPV Calculation Error: Dates and cash_flows lengths mismatch.")
+        raise ValueError("Dates and cash_flows must have the same length.") # Raise for IRR solver
     if not dates: return 0.0
     base = 1.0 + rate
-    if base <= 1e-9: return np.nan # Avoid issues with rate = -1 or less
-    start_date = dates[0]; npv = 0.0
+    if base <= 1e-9:
+        logging.debug(f"NPV Calculation Warning: Base (1+rate) is <= 1e-9 ({base}). Returning NaN.")
+        return np.nan # Avoid issues with rate = -1 or less
+
+    start_date = dates[0]
+    npv = 0.0
     for i in range(len(cash_flows)):
         try:
-            if not isinstance(dates[i], date) or not isinstance(start_date, date): return np.nan # Basic type check
+            if not isinstance(dates[i], date) or not isinstance(start_date, date):
+                logging.debug(f"NPV Calc Error: Invalid date type at index {i}.")
+                return np.nan
             time_delta_years = (dates[i] - start_date).days / 365.0
-            if not np.isfinite(time_delta_years) or (time_delta_years < -1e-9 and i > 0): return np.nan
-            if not np.isfinite(cash_flows[i]): continue # Skip this flow
-            if abs(base) < 1e-9 and time_delta_years != 0 : return np.nan
-            if base >=0 or time_delta_years == int(time_delta_years):
-                 denominator = base ** time_delta_years
-            elif base < 0: return np.nan
-            else: return np.nan # Should not happen, means time_delta_years is not integer and base is negative
-            if not np.isfinite(denominator) or abs(denominator) < 1e-12: return np.nan # Avoid division by zero or infinity
+            if not np.isfinite(time_delta_years) or (time_delta_years < -1e-9 and i > 0):
+                logging.debug(f"NPV Calc Error: Invalid time delta ({time_delta_years}) at index {i}.")
+                return np.nan
+            if not np.isfinite(cash_flows[i]): continue # Skip non-finite flows silently
+
+            if abs(base) < 1e-9 and time_delta_years != 0 :
+                 logging.debug("NPV Calc Warning: Base is near zero with non-zero time delta. Returning NaN.")
+                 return np.nan
+
+            # Check for negative base with non-integer exponent
+            if base < 0 and time_delta_years != int(time_delta_years):
+                logging.debug(f"NPV Calc Warning: Negative base ({base}) with non-integer exponent ({time_delta_years}). Returning NaN.")
+                return np.nan
+
+            denominator = base ** time_delta_years
+            if not np.isfinite(denominator) or abs(denominator) < 1e-12:
+                logging.debug(f"NPV Calc Warning: Invalid denominator ({denominator}) at index {i}. Returning NaN.")
+                return np.nan
+
             term_value = cash_flows[i] / denominator
-            if not np.isfinite(term_value): return np.nan
+            if not np.isfinite(term_value):
+                 logging.debug(f"NPV Calc Warning: Non-finite term value ({term_value}) at index {i}. Returning NaN.")
+                 return np.nan
             npv += term_value
-        except (TypeError, OverflowError) as e: return np.nan
-        except Exception as e: return np.nan # Catch any other unexpected calculation errors
-    return npv if np.isfinite(npv) else np.nan
+        except OverflowError:
+            logging.warning(f"NPV Calculation OverflowError at index {i} (Rate: {rate}, TimeDelta: {time_delta_years}). Returning NaN.")
+            return np.nan
+        except TypeError as e:
+            logging.warning(f"NPV Calculation TypeError at index {i}: {e}. Returning NaN.")
+            return np.nan
+        except Exception as e:
+            logging.exception(f"Unexpected error in NPV calculation loop at index {i}")
+            return np.nan # Catch any other unexpected calculation errors
+    return float(npv) if np.isfinite(npv) else np.nan
 
 def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
     """
@@ -586,168 +711,133 @@ def fetch_index_quotes_yfinance(query_symbols: List[str] = DEFAULT_INDEX_QUERY_S
         if q_sym not in results: results[q_sym] = None
     return results
 
-# In portfolio_logic.py
-
-# Replace the ENTIRE get_cached_or_fetch_yfinance_data function with this:
-
+# --- Current Price Fetching etc. ---
+# fetch_index_quotes_yfinance: Error handling seems okay, using specific logging.
+# get_cached_or_fetch_yfinance_data: Needs refinement.
 def get_cached_or_fetch_yfinance_data(
     internal_stock_symbols: List[str],
     required_currencies: Set[str], # Currencies needed (incl. display_currency, default_currency, local currencies)
     cache_file: str = DEFAULT_CURRENT_CACHE_FILE_PATH,
     cache_duration_hours: int = YFINANCE_CACHE_DURATION_HOURS
-) -> Tuple[Optional[Dict[str, Dict[str, Optional[float]]]], Optional[Dict[str, float]]]:
+) -> Tuple[Optional[Dict[str, Dict[str, Optional[float]]]], Optional[Dict[str, float]], bool, bool]: # Added has_errors, has_warnings
     """
     Gets stock/ETF price/change data and FX rates relative to USD using yfinance, leveraging a cache.
-    Args:
-        internal_stock_symbols: List of internal stock/ETF symbols.
-        required_currencies: Set of currency codes (e.g., {'USD', 'EUR', 'THB'}) that need rates vs USD.
-        cache_file: Path to the JSON cache file.
-        cache_duration_hours: How long the cache is considered valid.
     Returns:
         Tuple containing:
-        - Stock Data Dict: {internal_symbol: {'price': float, 'change': float, 'changesPercentage': float, 'previousClose': float}} or None on failure.
-        - FX Rates vs USD Dict: {currency_code: rate_per_USD} (e.g., {'JPY': 143.5, 'EUR': 0.85}) or None on failure.
-          Note: USD key will have value 1.0.
+        - Stock Data Dict: {internal_symbol: {...}} or None on failure.
+        - FX Rates vs USD Dict: {currency_code: rate_per_USD} or None on failure.
+        - has_errors: Boolean flag indicating critical fetch/load errors.
+        - has_warnings: Boolean flag indicating recoverable issues (e.g., missing data for *some* symbols).
     """
     stock_data_internal: Optional[Dict[str, Dict[str, Optional[float]]]] = None
-    # --- MODIFIED: This dictionary now ONLY stores rates relative to USD ---
     fx_rates_vs_usd: Optional[Dict[str, float]] = {'USD': 1.0} # Initialize with USD base
-    # --- END MODIFICATION ---
-
     cache_needs_update = True
     cached_data = {}
     now = datetime.now()
+    has_errors = False
+    has_warnings = False
 
     # --- Cache Loading Logic ---
     if not cache_file:
         logging.warning(f"Warning: Invalid cache file path provided ('{cache_file}'). Cache read skipped.")
+        has_warnings = True
         cache_needs_update = True
     elif os.path.exists(cache_file):
         try:
             with open(cache_file, 'r') as f: cached_data = json.load(f)
             cache_timestamp_str = cached_data.get('timestamp')
             cached_stocks = cached_data.get('stock_data_internal')
-            # --- MODIFIED: Load fx_rates_vs_usd from cache ---
             cached_fx_vs_usd = cached_data.get('fx_rates_vs_usd')
-            # --- END MODIFICATION ---
 
             if cache_timestamp_str and isinstance(cached_stocks, dict) and isinstance(cached_fx_vs_usd, dict):
                 cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
                 cache_age = now - cache_timestamp
                 if cache_age <= timedelta(hours=cache_duration_hours):
-                    # Check if all required stocks and currencies are present
                     all_stocks_present = all(s in cached_stocks for s in internal_stock_symbols if s not in YFINANCE_EXCLUDED_SYMBOLS and s != CASH_SYMBOL_CSV)
                     stock_format_ok = all(isinstance(v, dict) and 'price' in v for v in cached_stocks.values()) if cached_stocks else True
-                    # --- MODIFIED: Check required currencies in cached_fx_vs_usd ---
                     all_fx_present = required_currencies.issubset(cached_fx_vs_usd.keys())
-                    # --- END MODIFICATION ---
 
                     if all_stocks_present and stock_format_ok and all_fx_present:
-                        logging.warning(f"Yahoo Finance cache is valid (age: {cache_age}). Using cached data.")
+                        logging.info(f"Yahoo Finance cache is valid (age: {cache_age}). Using cached data.") # Info level
                         stock_data_internal = cached_stocks
                         fx_rates_vs_usd = cached_fx_vs_usd
                         cache_needs_update = False
                     else:
-                        missing_reason = []
-                        if not all_stocks_present: missing_reason.append("stocks")
-                        if not stock_format_ok: missing_reason.append("stock_format")
-                        if not all_fx_present: missing_reason.append("currencies")
-                        logging.warning(f"Yahoo Finance cache is recent but incomplete/invalid ({', '.join(missing_reason)}). Will fetch/update.")
-                        # Start with cached data but mark for update
+                        # ... (existing incomplete cache logic) ...
+                        logging.warning(f"Yahoo Finance cache is recent but incomplete/invalid. Will fetch/update.")
+                        has_warnings = True
                         stock_data_internal = cached_stocks if stock_format_ok else {}
                         fx_rates_vs_usd = cached_fx_vs_usd if isinstance(cached_fx_vs_usd, dict) else {'USD': 1.0}
                         cache_needs_update = True
                 else:
-                    logging.warning(f"Yahoo Finance cache is outdated (age: {cache_age}). Will fetch fresh data.")
+                    logging.info(f"Yahoo Finance cache is outdated (age: {cache_age}). Will fetch fresh data.") # Info level
                     cache_needs_update = True
             else:
                 logging.warning("Yahoo Finance cache is invalid or missing data. Will fetch fresh data.")
+                has_warnings = True
                 cache_needs_update = True
+        # --- Refined Cache Loading Exceptions ---
+        except json.JSONDecodeError as e:
+            logging.warning(f"Error decoding JSON from cache file {cache_file}: {e}. Will fetch fresh data.")
+            has_warnings = True; cache_needs_update = True; stock_data_internal = {}; fx_rates_vs_usd = {'USD': 1.0}
+        except FileNotFoundError: # Should be caught by os.path.exists, but belt-and-suspenders
+             logging.error(f"Cache file {cache_file} disappeared unexpectedly?. Will fetch fresh data.")
+             has_errors = True; cache_needs_update = True; stock_data_internal = {}; fx_rates_vs_usd = {'USD': 1.0}
         except Exception as e:
             logging.warning(f"Error reading Yahoo Finance cache file {cache_file}: {e}. Will fetch fresh data.")
-            cache_needs_update = True
-            # Reset to defaults on error
-            stock_data_internal = {}
-            fx_rates_vs_usd = {'USD': 1.0}
+            has_warnings = True; cache_needs_update = True; stock_data_internal = {}; fx_rates_vs_usd = {'USD': 1.0}
+        # --- End Refined Cache Loading Exceptions ---
     else:
-        logging.warning(f"Yahoo Finance cache file {cache_file} not found. Will fetch fresh data.")
+        logging.info(f"Yahoo Finance cache file {cache_file} not found. Will fetch fresh data.") # Info level
         cache_needs_update = True
 
     # --- Data Fetching Logic ---
     if cache_needs_update:
         logging.info("Fetching/Updating data from Yahoo Finance (Stocks & FX vs USD)...")
-        # Initialize from cache if available, otherwise empty/default
         fetched_stocks = stock_data_internal if stock_data_internal is not None else {}
-        # fx_rates_vs_usd is already initialized above (from cache or default {'USD': 1.0})
+        # fx_rates_vs_usd is already initialized
 
-        # --- Determine symbols/tickers to fetch ---
-        yf_tickers_to_fetch = set()
-        internal_to_yf_map = {}
-        yf_to_internal_map = {}
-        missing_stock_symbols = []
-        explicitly_excluded_count = 0
-
+        # Determine symbols/tickers to fetch
+        yf_tickers_to_fetch = set(); internal_to_yf_map = {}; yf_to_internal_map = {}
+        missing_stock_symbols = []; explicitly_excluded_count = 0
         # Stocks/ETFs
         for internal_sym in internal_stock_symbols:
+            # ... (symbol mapping logic remains the same) ...
             if internal_sym == CASH_SYMBOL_CSV: continue
-            if internal_sym in YFINANCE_EXCLUDED_SYMBOLS:
-                if internal_sym not in fetched_stocks:
-                    explicitly_excluded_count += 1
-                    fetched_stocks[internal_sym] = {'price': np.nan, 'change': np.nan, 'changesPercentage': np.nan, 'previousClose': np.nan}
+            if internal_sym in YFINANCE_EXCLUDED_SYMBOLS: # Skip fetch if excluded
+                if internal_sym not in fetched_stocks: explicitly_excluded_count += 1; fetched_stocks[internal_sym] = {'price': np.nan, 'change': np.nan, 'changesPercentage': np.nan, 'previousClose': np.nan}
                 continue
-
-            yf_ticker = SYMBOL_MAP_TO_YFINANCE.get(internal_sym, internal_sym.upper()) # Default to upper if not in map
-            # --- MODIFICATION: Check if yf_ticker is potentially invalid BEFORE adding ---
-            # Simple check: Avoid symbols with spaces or likely invalid chars if not mapped
+            yf_ticker = SYMBOL_MAP_TO_YFINANCE.get(internal_sym, internal_sym.upper())
             if yf_ticker and ' ' not in yf_ticker and ':' not in yf_ticker:
                 should_fetch_stock = True
                 if internal_sym in fetched_stocks:
-                    cached_entry = fetched_stocks[internal_sym]
-                    # Only skip fetch if price is valid in cache
-                    if isinstance(cached_entry, dict) and pd.notna(cached_entry.get('price')) and cached_entry.get('price') > 1e-9:
-                        should_fetch_stock = False
-
-                if should_fetch_stock:
-                    yf_tickers_to_fetch.add(yf_ticker)
-                    internal_to_yf_map[internal_sym] = yf_ticker
-                    yf_to_internal_map[yf_ticker] = internal_sym
-            # --- END MODIFICATION ---
-            else:
-                missing_stock_symbols.append(internal_sym)
-                if internal_sym not in fetched_stocks:
-                    logging.warning(f"Warning: No valid Yahoo Finance ticker mapping for: {internal_sym}.")
-                    fetched_stocks[internal_sym] = {'price': np.nan, 'change': np.nan, 'changesPercentage': np.nan, 'previousClose': np.nan}
-
+                     cached_entry = fetched_stocks[internal_sym]
+                     if isinstance(cached_entry, dict) and pd.notna(cached_entry.get('price')) and cached_entry.get('price') > 1e-9: should_fetch_stock = False
+                if should_fetch_stock: yf_tickers_to_fetch.add(yf_ticker); internal_to_yf_map[internal_sym] = yf_ticker; yf_to_internal_map[yf_ticker] = internal_sym
+            else: # Invalid mapping/format
+                 missing_stock_symbols.append(internal_sym)
+                 if internal_sym not in fetched_stocks: logging.warning(f"Warning: No valid Yahoo Finance ticker mapping for: {internal_sym}."); has_warnings = True; fetched_stocks[internal_sym] = {'price': np.nan, 'change': np.nan, 'changesPercentage': np.nan, 'previousClose': np.nan}
         if explicitly_excluded_count > 0: logging.info(f"Info: Explicitly excluded {explicitly_excluded_count} stock symbols.")
 
         # FX Rates vs USD
         fx_tickers_to_fetch = set()
-        # --- MODIFIED: Determine which *USD based* rates are missing ---
         currencies_to_fetch_vs_usd = required_currencies - set(fx_rates_vs_usd.keys())
         for currency in currencies_to_fetch_vs_usd:
-            if currency != 'USD' and currency and isinstance(currency, str): # Basic validation
-                 # Fetch OTHERCURRENCY=X ticker which gives OTHERCURRENCY per 1 USD
-                 fx_ticker = f"{currency}=X"
-                 fx_tickers_to_fetch.add(fx_ticker)
-                 yf_tickers_to_fetch.add(fx_ticker)
-        # --- END MODIFICATION ---
+            if currency != 'USD' and currency and isinstance(currency, str): fx_ticker = f"{currency}=X"; fx_tickers_to_fetch.add(fx_ticker); yf_tickers_to_fetch.add(fx_ticker)
 
-        # --- Fetching using yfinance ---
-        if not yf_tickers_to_fetch:
-            logging.info("No new Stock/FX tickers need fetching.")
+        # Fetching using yfinance
+        if not yf_tickers_to_fetch: logging.info("No new Stock/FX tickers need fetching.")
         else:
             logging.info(f"Fetching/Updating {len(yf_tickers_to_fetch)} tickers from Yahoo: {list(yf_tickers_to_fetch)}")
             fetch_success = True; all_fetched_data = {}
             try:
-                yf_ticker_list = list(yf_tickers_to_fetch)
-                fetch_batch_size = 50 # Adjust batch size if needed
+                yf_ticker_list = list(yf_tickers_to_fetch); fetch_batch_size = 50
                 for i in range(0, len(yf_ticker_list), fetch_batch_size):
-                    batch = yf_ticker_list[i:i+fetch_batch_size]
-                    logging.info(f"  Fetching batch {i//fetch_batch_size + 1} ({len(batch)} tickers)...")
+                    batch = yf_ticker_list[i:i+fetch_batch_size]; logging.info(f"  Fetching batch {i//fetch_batch_size + 1} ({len(batch)} tickers)...")
                     try:
-                        # Use yf.Tickers for batch fetching info
                         tickers_data = yf.Tickers(" ".join(batch))
                         for yf_ticker, ticker_obj in tickers_data.tickers.items():
+                             # ... (processing ticker_info remains the same) ...
                              ticker_info = getattr(ticker_obj, 'info', None)
                              price, change, pct_change, prev_close = np.nan, np.nan, np.nan, np.nan
                              if ticker_info:
@@ -756,104 +846,89 @@ def get_cached_or_fetch_yfinance_data(
                                  except (ValueError, TypeError): price = np.nan
                                  try: change = float(change_raw) if change_raw is not None else np.nan
                                  except (ValueError, TypeError): change = np.nan
-                                 try: pct_change = float(pct_change_raw) if pct_change_raw is not None else np.nan # Already % from info? No, usually fraction.
+                                 try: pct_change = float(pct_change_raw) if pct_change_raw is not None else np.nan # Fractional
                                  except (ValueError, TypeError): pct_change = np.nan
                                  try: prev_close = float(prev_close_raw) if prev_close_raw is not None else np.nan
                                  except (ValueError, TypeError): prev_close = np.nan
-                                 # Ensure price is positive, otherwise treat as NaN
                                  if not (pd.notna(price) and price > 1e-9): price = np.nan
-                                 # --- Convert pct_change fraction to percentage ---
-                                 if pd.notna(pct_change): pct_change *= 100.0
-                                 # --- END Convert ---
-                             # Store whatever we got, even if incomplete
+                                 if pd.notna(pct_change): pct_change *= 100.0 # Convert fraction to percent
                              all_fetched_data[yf_ticker] = {'price': price, 'change': change, 'changesPercentage': pct_change, 'previousClose': prev_close }
-                    except requests.exceptions.HTTPError as http_err: logging.error(f"  HTTP ERROR fetching batch: {http_err}"); fetch_success = False;
-                    except Exception as yf_err: logging.error(f"  YFINANCE ERROR fetching batch info: {yf_err}"); fetch_success = False;
-                    time.sleep(0.1) # Small delay
-            except Exception as e: logging.error(f"ERROR during Yahoo Finance fetch loop: {e}"); traceback.print_exc(); fetch_success = False;
+                    # --- Refined Fetching Exceptions ---
+                    except requests.exceptions.ConnectionError as conn_err: logging.error(f"  NETWORK ERROR fetching batch: {conn_err}"); fetch_success = False; has_errors = True; break # Stop batch loop on connection error
+                    except requests.exceptions.Timeout as timeout_err: logging.warning(f"  TIMEOUT ERROR fetching batch: {timeout_err}"); fetch_success = False; has_warnings = True; # Continue if possible? Or break? Let's flag warning and continue for now.
+                    except requests.exceptions.HTTPError as http_err: logging.error(f"  HTTP ERROR fetching batch: {http_err}"); fetch_success = False; has_errors = True; # Treat HTTP error as serious
+                    except Exception as yf_err: logging.error(f"  YFINANCE ERROR fetching batch info: {yf_err}"); fetch_success = False; has_warnings = True # Treat internal yf error as warning for now
+                    # --- End Refined Fetching Exceptions ---
+                    time.sleep(0.1)
+            except Exception as e: # Catch-all for the outer loop
+                logging.exception(f"ERROR during Yahoo Finance fetch loop")
+                fetch_success = False; has_errors = True
 
-            # --- Process fetched data ---
+            # Process fetched data
             # Stocks
             for yf_ticker, data_dict in all_fetched_data.items():
                 internal_sym = yf_to_internal_map.get(yf_ticker)
-                if internal_sym: fetched_stocks[internal_sym] = data_dict # Overwrite or add fetched data
-
-            # Ensure all requested internal symbols have an entry (even if NaN)
+                if internal_sym: fetched_stocks[internal_sym] = data_dict
+            # Ensure entries for all requested symbols
             for sym in internal_stock_symbols:
                  if sym != CASH_SYMBOL_CSV and sym not in YFINANCE_EXCLUDED_SYMBOLS and sym not in fetched_stocks:
-                     if sym not in missing_stock_symbols: logging.warning(f"Warning: Data for {sym} still not found after fetch.")
+                     if sym not in missing_stock_symbols: logging.warning(f"Warning: Data for {sym} still not found after fetch."); has_warnings = True
                      fetched_stocks[sym] = {'price': np.nan, 'change': np.nan, 'changesPercentage': np.nan, 'previousClose': np.nan}
-
             # FX Rates vs USD
-            for currency in currencies_to_fetch_vs_usd: # Iterate over currencies we TRIED to fetch
+            for currency in currencies_to_fetch_vs_usd:
                  if currency == 'USD': continue
-                 fx_ticker = f"{currency}=X"; # Ticker we fetched (e.g., JPY=X)
-                 fx_data_dict = all_fetched_data.get(fx_ticker);
+                 fx_ticker = f"{currency}=X"; fx_data_dict = all_fetched_data.get(fx_ticker);
                  price = fx_data_dict.get('price') if isinstance(fx_data_dict, dict) else np.nan
-                 if pd.notna(price):
-                      # Store the rate: Units of 'currency' per 1 USD
-                      fx_rates_vs_usd[currency] = price
+                 if pd.notna(price): fx_rates_vs_usd[currency] = price
                  else:
-                      logging.warning(f"Warning: Failed to fetch/update FX rate for {fx_ticker}. Previous value (if any) retained.")
-                      # Ensure key exists even if fetch failed, maybe keep old value or set NaN?
-                      if currency not in fx_rates_vs_usd:
-                           fx_rates_vs_usd[currency] = np.nan
+                      logging.warning(f"Warning: Failed to fetch/update FX rate for {fx_ticker}."); has_warnings = True
+                      if currency not in fx_rates_vs_usd: fx_rates_vs_usd[currency] = np.nan
 
-        # Assign final results after potential fetch/update
+        # Assign final results
         stock_data_internal = fetched_stocks
-        # fx_rates_vs_usd is updated in place
 
-        # --- MODIFIED: Save Cache - ONLY store stock_data_internal and fx_rates_vs_usd ---
-        if cache_needs_update: # Save only if we attempted an update
-            if not cache_file:
-                logging.error(f"ERROR: Cache file path is invalid ('{cache_file}'). Cannot save cache.")
+        # Save Cache
+        if cache_needs_update:
+            if not cache_file: logging.error(f"ERROR: Cache file path is invalid ('{cache_file}'). Cannot save cache.")
             else:
-                logging.info(f"Saving updated Yahoo Finance data (Stocks, FX vs USD) to cache: {cache_file}")
-                # Ensure USD rate is present
+                logging.info(f"Saving updated Yahoo Finance data to cache: {cache_file}")
                 if 'USD' not in fx_rates_vs_usd: fx_rates_vs_usd['USD'] = 1.0
-                # Prepare content
-                content = {
-                    'timestamp': now.isoformat(),
-                    'stock_data_internal': stock_data_internal,
-                    'fx_rates_vs_usd': fx_rates_vs_usd # Save the dictionary directly
-                }
+                content = { 'timestamp': now.isoformat(), 'stock_data_internal': stock_data_internal, 'fx_rates_vs_usd': fx_rates_vs_usd }
                 try:
                     cache_dir = os.path.dirname(cache_file)
                     if cache_dir and not os.path.exists(cache_dir): os.makedirs(cache_dir)
                     with open(cache_file, 'w') as f:
-                        # Use NaN-aware encoder
-                        class NpEncoder(json.JSONEncoder):
+                        class NpEncoder(json.JSONEncoder): # Keep NaN encoder
                             def default(self, obj):
                                 if isinstance(obj, np.integer): return int(obj)
-                                if isinstance(obj, np.floating): return float(obj) if np.isfinite(obj) else None # Convert NaN to None for JSON
+                                if isinstance(obj, np.floating): return float(obj) if np.isfinite(obj) else None
                                 if isinstance(obj, np.ndarray): return obj.tolist()
                                 return super(NpEncoder, self).default(obj)
                         json.dump(content, f, indent=4, cls=NpEncoder)
-                except Exception as e:
-                     logging.error(f"Error writing Yahoo Finance cache ('{cache_file}'): {e}")
-        # --- END MODIFICATION ---
+                # --- Refined Cache Saving Exceptions ---
+                except TypeError as e: logging.error(f"TypeError writing cache ('{cache_file}'): {e}")
+                except IOError as e: logging.error(f"IOError writing cache ('{cache_file}'): {e}")
+                except Exception as e: logging.exception(f"Unexpected error writing cache ('{cache_file}')")
+                # --- End Refined Cache Saving Exceptions ---
 
-    # --- Final Checks ---
-    if not isinstance(stock_data_internal, dict): stock_data_internal = None
-    if not isinstance(fx_rates_vs_usd, dict): fx_rates_vs_usd = None
-
-    # Ensure USD is always in the returned FX dict if it's not None
-    if isinstance(fx_rates_vs_usd, dict) and 'USD' not in fx_rates_vs_usd:
-        fx_rates_vs_usd['USD'] = 1.0
-
-    # Ensure all requested internal stock symbols have an entry, even if NaN
+    # Final Checks
+    if not isinstance(stock_data_internal, dict): stock_data_internal = None; has_errors = True
+    if not isinstance(fx_rates_vs_usd, dict): fx_rates_vs_usd = None; has_errors = True
+    if isinstance(fx_rates_vs_usd, dict) and 'USD' not in fx_rates_vs_usd: fx_rates_vs_usd['USD'] = 1.0
     if stock_data_internal is not None:
         for sym in internal_stock_symbols:
             if sym != CASH_SYMBOL_CSV and sym not in YFINANCE_EXCLUDED_SYMBOLS and sym not in stock_data_internal:
                  stock_data_internal[sym] = {'price': np.nan, 'change': np.nan, 'changesPercentage': np.nan, 'previousClose': np.nan}
+                 logging.warning(f"Warning: Data for symbol {sym} missing in final check.") # Add warning if missed
+                 has_warnings = True
 
-    # --- MODIFIED: Return fx_rates_vs_usd ---
-    return stock_data_internal, fx_rates_vs_usd
-    # --- END MODIFICATION ---
+    # If fetch failed for critical data, mark as error
+    if fx_rates_vs_usd is None or stock_data_internal is None: has_errors = True
+
+    return stock_data_internal, fx_rates_vs_usd, has_errors, has_warnings
 
 # --- FINAL Version: Simple lookup assuming consistent dictionary ---
 # Use this version of get_conversion_rate
-
 def get_conversion_rate(from_curr: str, to_curr: str, fx_rates: Optional[Dict[str, float]]) -> float:
     """
     Gets CURRENT FX conversion rate (units of to_curr per 1 unit of from_curr).
@@ -897,101 +972,119 @@ def get_conversion_rate(from_curr: str, to_curr: str, fx_rates: Optional[Dict[st
     else:
         return float(rate_B_per_A)    
 
+# _process_transactions_to_holdings: Error handling within loop seems okay. Add has_warnings return.
+# _calculate_cash_balances: Needs refinement.
+# --- REVISED: _process_transactions_to_holdings (with total_buy_cost) ---
 def _process_transactions_to_holdings(
-    transactions_df: pd.DataFrame,      # The filtered DataFrame to process
-    default_currency: str,              # Needed for initializing holding currency if missing? (Shouldn't happen now)
-    shortable_symbols: Set[str]         # Set of symbols allowed for shorting
-    # Do we need ignored_indices/reasons here? Yes, modify them by reference or return them. Let's return them.
-) -> Tuple[Dict[Tuple[str, str], Dict], Dict[str, float], Dict[str, float], Dict[str, float], Set[int], Dict[int, str]]:
+    transactions_df: pd.DataFrame,
+    default_currency: str,
+    shortable_symbols: Set[str]
+) -> Tuple[Dict[Tuple[str, str], Dict], Dict[str, float], Dict[str, float], Dict[str, float], Set[int], Dict[int, str], bool]: # Added has_warnings
     """
     Processes stock/ETF transactions (excluding $CASH) to calculate holdings,
-    realized gains, dividends, and commissions in their local currencies.
+    realized gains, dividends, commissions, cumulative investment, and TOTAL BUY COST
+    in their local currencies.
 
-    Args:
-        transactions_df: DataFrame of transactions filtered for the desired scope.
-                         MUST include 'Local Currency' column.
-        default_currency: Default currency string.
-        shortable_symbols: Set of symbols allowed for shorting.
-
-
+    (Args and Returns documentation updated slightly)
     Returns:
         A tuple containing:
-        - holdings: Dict keyed by (symbol, account) with holding details (qty, costs, gains etc. in local currency).
-        - overall_realized_gains_local: Dict keyed by currency code summing realized gains.
-        - overall_dividends_local: Dict keyed by currency code summing dividends.
-        - overall_commissions_local: Dict keyed by currency code summing commissions.
-        - ignored_row_indices: Set of original_index values for rows ignored during THIS processing step.
-        - ignored_reasons: Dict mapping original_index to reason for ignoring in THIS step.
+        - holdings: Dict keyed by (symbol, account) with holding details. Includes 'total_buy_cost_local'.
+        - ... (rest of returns are the same) ...
+        - has_warnings: Boolean flag indicating if recoverable issues occurred.
     """
     holdings: Dict[Tuple[str, str], Dict] = {}
     overall_realized_gains_local: Dict[str, float] = defaultdict(float)
     overall_dividends_local: Dict[str, float] = defaultdict(float)
     overall_commissions_local: Dict[str, float] = defaultdict(float)
-    ignored_row_indices_local = set() # Use local set for this function's scope
-    ignored_reasons_local = {}       # Use local dict
+    ignored_row_indices_local = set()
+    ignored_reasons_local = {}
+    has_warnings = False # Flag for recoverable issues during processing
 
-    # --- Start of code to MOVE from calculate_portfolio_summary ---
-    logging.info("Processing filtered stock/ETF transactions...") # Modify print message
+    logging.info("Processing filtered stock/ETF transactions...")
 
+    # --- Data Validation before loop (Optional but good practice) ---
+    required_cols = ['Symbol', 'Account', 'Type', 'Quantity', 'Price/Share', 'Total Amount',
+                     'Commission', 'Split Ratio', 'Local Currency', 'Date', 'original_index']
+    missing_cols = [col for col in required_cols if col not in transactions_df.columns]
+    if missing_cols:
+        logging.error(f"CRITICAL ERROR in _process_transactions: Input DataFrame missing required columns: {missing_cols}. Cannot proceed.")
+        return {}, {}, {}, {}, ignored_row_indices_local, ignored_reasons_local, True # Indicate error state
+
+    # --- Main Processing Loop ---
     for index, row in transactions_df.iterrows():
-        # Skip $CASH transactions here
-        if row['Symbol'] == CASH_SYMBOL_CSV:
-             continue
+        if row['Symbol'] == CASH_SYMBOL_CSV: continue
 
-        original_index = row['original_index'] # Make sure this column exists from _load_and_clean...
-        symbol = row['Symbol']
-        # No need to check for CASH again here
-        account, tx_type = row['Account'], row['Type']
-        qty, price_local, total_amount_local = row['Quantity'], row['Price/Share'], row['Total Amount']
-        commission_local, split_ratio = row['Commission'], row['Split Ratio']
-        # --- Use Local Currency from DataFrame ---
-        local_currency = row['Local Currency'] # Assumes this column exists!
-        tx_date = row['Date'].date() # Added tx_date, might be useful for debugging later
-        # ---------------------------------------
+        # --- Safely get values from row ---
+        try:
+            # ... (Existing safe data extraction logic) ...
+            original_index = row['original_index']
+            symbol = str(row['Symbol']).strip()
+            account = str(row['Account']).strip()
+            tx_type = str(row['Type']).lower().strip()
+            local_currency = str(row['Local Currency']).strip()
+            tx_date = row['Date'].date()
+            qty = pd.to_numeric(row['Quantity'], errors='coerce')
+            price_local = pd.to_numeric(row['Price/Share'], errors='coerce')
+            total_amount_local = pd.to_numeric(row['Total Amount'], errors='coerce')
+            commission_val = row.get('Commission')
+            commission_local_raw = pd.to_numeric(commission_val, errors='coerce')
+            commission_local = 0.0 if pd.isna(commission_local_raw) else float(commission_local_raw)
+            split_ratio = pd.to_numeric(row['Split Ratio'], errors='coerce')
+            if not symbol or not account or not tx_type or not local_currency or pd.isna(tx_date):
+                 raise ValueError("Essential row data (Symbol, Account, Type, Currency, Date) is missing or invalid.")
+        except (KeyError, ValueError, AttributeError, TypeError) as e:
+            error_msg = f"Row Read Error ({type(e).__name__}): {e}";
+            row_repr = row.to_string().replace('\n', ' ')[:150]
+            logging.warning(f"WARN in _process_transactions pre-check row {index} (orig: {row.get('original_index', 'N/A')}): {error_msg}. Data: {row_repr}... Skipping row.");
+            ignored_reasons_local[row.get('original_index', index)] = error_msg; ignored_row_indices_local.add(row.get('original_index', index)); has_warnings = True;
+            continue
 
         holding_key = (symbol, account)
+        log_this_row = (account == 'E*TRADE') # Flag for specific debug logging
 
         # Initialize holding if first time seeing this symbol/account combo
         if holding_key not in holdings:
             holdings[holding_key] = {
-                'qty': 0.0,
-                'total_cost_local': 0.0,
-                'realized_gain_local': 0.0,
-                'dividends_local': 0.0,
-                'commissions_local': 0.0,
-                'local_currency': local_currency, # Store the currency
-                'short_proceeds_local': 0.0,      # For short positions
-                'short_original_qty': 0.0,        # For short positions avg cost
-                'total_cost_invested_local': 0.0, # Tracks invested cost basis over time
-                'cumulative_investment_local': 0.0 # Sum of buys/covers + fees - sell/short proceeds
+                'qty': 0.0, 'total_cost_local': 0.0, 'realized_gain_local': 0.0,
+                'dividends_local': 0.0, 'commissions_local': 0.0, 'local_currency': local_currency,
+                'short_proceeds_local': 0.0, 'short_original_qty': 0.0,
+                'total_cost_invested_local': 0.0, 'cumulative_investment_local': 0.0,
+                'total_buy_cost_local': 0.0 # <<< Initialize New Key
             }
-        # Safety check (shouldn't happen if _load_and_clean works)
         elif holdings[holding_key]['local_currency'] != local_currency:
             msg=f"Currency mismatch for {symbol}/{account}";
             logging.warning(f"CRITICAL WARN in _process_transactions: {msg} row {original_index}. Skip.");
-            ignored_reasons_local[original_index] = msg
-            ignored_row_indices_local.add(original_index)
+            ignored_reasons_local[original_index] = msg; ignored_row_indices_local.add(original_index); has_warnings = True;
             continue
 
         holding = holdings[holding_key]
-        commission_for_overall = commission_local # Assume commission applies unless skipped
+        commission_for_overall = commission_local
 
         # --- Core Transaction Processing Logic ---
         try:
-            # Shorting Logic
+            prev_cum_inv = holding.get('cumulative_investment_local', 0.0) if log_this_row else 0
+
+            # --- Validate Numeric Inputs Specific to Transaction Type ---
+            if tx_type in ['buy', 'sell', 'deposit', 'withdrawal', 'short sell', 'buy to cover']:
+                 if pd.isna(qty): raise ValueError(f"Missing Quantity for {tx_type}")
+                 if pd.isna(price_local): raise ValueError(f"Missing Price/Share for {tx_type}")
+            elif tx_type in ['split', 'stock split']:
+                 if pd.isna(split_ratio): raise ValueError("Missing Split Ratio")
+            elif tx_type == 'dividend':
+                 if pd.isna(total_amount_local) and pd.isna(price_local): raise ValueError("Missing both Total Amount and Price/Share for dividend")
+            elif tx_type == 'fees':
+                 if pd.isna(commission_local_raw): raise ValueError("Missing Commission for fees transaction")
+
+            # --- Shorting Logic (no changes needed for total_buy_cost) ---
             if symbol in shortable_symbols and tx_type in ['short sell', 'buy to cover']:
+                # ... (existing shorting logic - does NOT affect total_buy_cost_local) ...
                 qty_abs = abs(qty);
+                if qty_abs <= 1e-9: raise ValueError(f"{tx_type} qty must be > 0")
                 if tx_type == 'short sell':
-                    if qty_abs <= 1e-9: raise ValueError("Short Sell qty must be > 0")
                     proceeds = (qty_abs * price_local) - commission_local;
-                    holding['qty'] -= qty_abs;
-                    holding['short_proceeds_local'] += proceeds;
-                    holding['short_original_qty'] += qty_abs;
-                    holding['commissions_local'] += commission_local
-                    # Note: cumulative_investment decreases on short sell (like a sell)
-                    holding['cumulative_investment_local'] -= proceeds # Proceeds received reduce net investment
+                    holding['qty'] -= qty_abs; holding['short_proceeds_local'] += proceeds; holding['short_original_qty'] += qty_abs; holding['commissions_local'] += commission_local
+                    holding['cumulative_investment_local'] -= proceeds
                 elif tx_type == 'buy to cover':
-                    if qty_abs <= 1e-9: raise ValueError("Buy Cover qty must be > 0")
                     qty_currently_short = abs(holding['qty']) if holding['qty'] < -1e-9 else 0.0;
                     if qty_currently_short < 1e-9: raise ValueError(f"Not currently short {symbol}/{account} to cover.")
                     qty_covered = min(qty_abs, qty_currently_short);
@@ -999,301 +1092,219 @@ def _process_transactions_to_holdings(
                     if holding['short_original_qty'] <= 1e-9: raise ZeroDivisionError(f"Short original qty is zero/neg for {symbol}/{account}")
                     avg_proceeds_per_share = holding['short_proceeds_local'] / holding['short_original_qty'];
                     proceeds_attributed = qty_covered * avg_proceeds_per_share;
-                    gain = proceeds_attributed - cost # Gain = Proceeds - Cost to Cover
-                    holding['qty'] += qty_covered;
-                    holding['short_proceeds_local'] -= proceeds_attributed;
-                    holding['short_original_qty'] -= qty_covered
-                    holding['commissions_local'] += commission_local;
-                    holding['realized_gain_local'] += gain;
+                    gain = proceeds_attributed - cost
+                    holding['qty'] += qty_covered; holding['short_proceeds_local'] -= proceeds_attributed; holding['short_original_qty'] -= qty_covered
+                    holding['commissions_local'] += commission_local; holding['realized_gain_local'] += gain;
                     overall_realized_gains_local[local_currency] += gain;
-                    # total_cost_invested_local shouldn't decrease here, cost_basis handled by qty change
-                    # Reset short tracking if fully covered
                     if abs(holding['short_original_qty']) < 1e-9: holding['short_proceeds_local'] = 0.0; holding['short_original_qty'] = 0.0
-                    if abs(holding['qty']) < 1e-9: holding['qty'] = 0.0; # Should become zero after covering
-                    holding['cumulative_investment_local'] += cost # Cost to cover increases net investment
-                continue # Skip rest of logic for short types
+                    if abs(holding['qty']) < 1e-9: holding['qty'] = 0.0;
+                    holding['cumulative_investment_local'] += cost
+                continue
 
-            # Standard Buy/Sell/Dividend/Fee/Split
-            if tx_type == 'buy' or tx_type == 'deposit': # Treat deposit of stock like a buy at price
+            # --- Standard Buy/Sell/Dividend/Fee/Split ---
+            if tx_type == 'buy' or tx_type == 'deposit':
                 qty_abs = abs(qty);
                 if qty_abs <= 1e-9: raise ValueError("Buy/Deposit qty must be > 0")
                 cost = (qty_abs * price_local) + commission_local;
-                holding['qty'] += qty_abs;
-                holding['total_cost_local'] += cost;
-                holding['commissions_local'] += commission_local;
-                holding['total_cost_invested_local'] += cost; # Add to invested cost
-                holding['cumulative_investment_local'] += cost # Buy increases net investment
+                holding['qty'] += qty_abs; holding['total_cost_local'] += cost; holding['commissions_local'] += commission_local;
+                holding['total_cost_invested_local'] += cost; holding['cumulative_investment_local'] += cost;
+                holding['total_buy_cost_local'] += cost # <<< ADD cost to total buy cost
 
-            elif tx_type == 'sell' or tx_type == 'withdrawal': # Treat withdrawal like a sell
-                qty_abs = abs(qty);
-                held_qty = holding['qty'];
-                # Can only sell long positions with this logic
+            elif tx_type == 'sell' or tx_type == 'withdrawal':
+                # ... (existing sell logic - DOES NOT affect total_buy_cost_local) ...
+                qty_abs = abs(qty); held_qty = holding['qty'];
                 if held_qty <= 1e-9:
                     msg=f"Sell attempt {symbol}/{account} w/ non-positive long qty ({held_qty:.4f})";
                     logging.warning(f"Warn in _process_transactions: {msg} row {original_index}. Skip.");
-                    ignored_reasons_local[original_index]=msg; ignored_row_indices_local.add(original_index);
-                    continue # Skip if not holding long shares
+                    ignored_reasons_local[original_index]=msg; ignored_row_indices_local.add(original_index); has_warnings = True; continue
                 if qty_abs <= 1e-9: raise ValueError("Sell/Withdrawal qty must be > 0")
-
-                qty_sold = min(qty_abs, held_qty);
-                cost_sold = 0.0
-                # Calculate cost basis of shares sold (pro-rata)
+                qty_sold = min(qty_abs, held_qty); cost_sold = 0.0
                 if held_qty > 1e-9 and abs(holding['total_cost_local']) > 1e-9:
-                    cost_sold = qty_sold * (holding['total_cost_local'] / held_qty)
-
-                proceeds = (qty_sold * price_local) - commission_local;
-                gain = proceeds - cost_sold # Realized Gain = Proceeds - Cost Basis Sold
-
-                holding['qty'] -= qty_sold;
-                holding['total_cost_local'] -= cost_sold; # Reduce cost basis
-                holding['commissions_local'] += commission_local;
-                holding['realized_gain_local'] += gain;
-                overall_realized_gains_local[local_currency] += gain;
-                holding['total_cost_invested_local'] -= cost_sold # Reduce cost basis for invested tracking too
-                # Reset cost basis to 0 if quantity becomes 0
-                if abs(holding['qty']) < 1e-9:
-                    holding['qty'] = 0.0;
-                    holding['total_cost_local'] = 0.0;
-                # Sell reduces net investment
-                holding['cumulative_investment_local'] -= proceeds # Proceeds received reduce net investment
+                    if pd.isna(holding['total_cost_local']): cost_sold = 0.0; has_warnings = True; logging.warning(f"Warning: total_cost_local is NaN for {symbol}/{account} before selling.")
+                    else: cost_sold = qty_sold * (holding['total_cost_local'] / held_qty)
+                proceeds = (qty_sold * price_local) - commission_local; gain = proceeds - cost_sold
+                holding['qty'] -= qty_sold; holding['total_cost_local'] -= cost_sold; holding['commissions_local'] += commission_local;
+                holding['realized_gain_local'] += gain; overall_realized_gains_local[local_currency] += gain;
+                holding['total_cost_invested_local'] -= cost_sold
+                if abs(holding['qty']) < 1e-9: holding['qty'] = 0.0; holding['total_cost_local'] = 0.0;
+                holding['cumulative_investment_local'] -= proceeds
 
             elif tx_type == 'dividend':
-                div_amt_local = 0.0;
-                qty_abs = abs(qty) if pd.notna(qty) else 0
-                # Determine dividend amount (prefer Total Amount if provided)
-                if pd.notna(total_amount_local) and total_amount_local != 0:
-                    div_amt_local = total_amount_local
-                elif pd.notna(price_local) and price_local != 0: # Use price/share if total amount missing
-                    # If quantity is given, use qty*price, otherwise assume price IS the total dividend
-                    div_amt_local = (qty_abs * price_local) if qty_abs > 0 else price_local
-
-                # Dividend effect depends on whether position is long or short
-                # Assume dividend received for long, paid for short (may need adjustment based on broker)
-                div_effect = abs(div_amt_local) if (holding['qty'] >= -1e-9 or symbol not in shortable_symbols) else -abs(div_amt_local)
-                holding['dividends_local'] += div_effect;
-                overall_dividends_local[local_currency] += div_effect;
-                holding['commissions_local'] += commission_local # Fees associated with dividend
-                # Dividends are returns, reduce net investment
-                holding['cumulative_investment_local'] -= div_effect # Dividend received reduces net investment
+                # ... (existing dividend logic - DOES NOT affect total_buy_cost_local) ...
+                div_amt_local = 0.0; qty_abs = abs(qty) if pd.notna(qty) else 0
+                if pd.notna(total_amount_local) and abs(total_amount_local) > 1e-9: div_amt_local = total_amount_local
+                elif pd.notna(price_local) and abs(price_local) > 1e-9: div_amt_local = (qty_abs * price_local) if qty_abs > 0 else price_local
+                else: div_amt_local = 0.0
+                div_effect = abs(div_amt_local) if (holding.get('qty', 0.0) >= -1e-9 or symbol not in shortable_symbols) else -abs(div_amt_local)
+                holding['dividends_local'] += div_effect; overall_dividends_local[local_currency] += div_effect;
+                holding['commissions_local'] += commission_local; holding['cumulative_investment_local'] -= div_effect;
 
             elif tx_type == 'fees':
                  fee_cost = abs(commission_local);
-                 holding['commissions_local'] += fee_cost;
-                 holding['total_cost_invested_local'] += fee_cost; # Fees add to cost basis? Debatable, but consistent here.
-                 holding['cumulative_investment_local'] += fee_cost # Fees increase net investment
+                 holding['commissions_local'] += fee_cost; holding['total_cost_invested_local'] += fee_cost; holding['cumulative_investment_local'] += fee_cost;
+                 # Decide if fees should add to total_buy_cost? Arguably no, they are separate costs. Let's keep it separate.
 
             elif tx_type in ['split', 'stock split']:
-                if pd.isna(split_ratio) or split_ratio <= 0:
-                    raise ValueError(f"Invalid split ratio: {split_ratio}")
+                # ... (existing split logic - DOES NOT affect total_buy_cost_local, only potentially commission part) ...
+                if pd.isna(split_ratio) or split_ratio <= 0: raise ValueError(f"Invalid split ratio: {split_ratio}")
                 old_qty = holding['qty']
-                if abs(old_qty) >= 1e-9: # Apply split only if holding shares
+                if abs(old_qty) >= 1e-9:
                     holding['qty'] *= split_ratio
-                    # Adjust short original quantity if shorting
-                    if old_qty < -1e-9 and symbol in shortable_symbols:
-                         holding['short_original_qty'] *= split_ratio
-                    # Clean up potential near-zero values after split
+                    if old_qty < -1e-9 and symbol in shortable_symbols: holding['short_original_qty'] *= split_ratio
                     if abs(holding['qty']) < 1e-9: holding['qty'] = 0.0
                     if abs(holding['short_original_qty']) < 1e-9: holding['short_original_qty'] = 0.0
-                # Cost basis ('total_cost_local') remains the same during a split
-                holding['commissions_local'] += commission_local; # Add any fees associated with split
-                holding['total_cost_invested_local'] += commission_local; # Track fees
-                holding['cumulative_investment_local'] += commission_local # Fees increase net investment
+                holding['commissions_local'] += commission_local; holding['total_cost_invested_local'] += commission_local; holding['cumulative_investment_local'] += commission_local;
+                # Split fees added to buy cost? Let's say no for now.
 
             else:
-                # Handle unrecognized transaction types for stocks/ETFs
+                # ... (existing unhandled type logic) ...
                 msg=f"Unhandled stock tx type '{tx_type}'";
                 logging.warning(f"Warn in _process_transactions: {msg} row {original_index}. Skip.");
-                ignored_reasons_local[original_index]=msg; ignored_row_indices_local.add(original_index);
-                commission_for_overall = 0.0; # Don't add commission if tx is skipped
-                continue # Skip to next transaction
+                ignored_reasons_local[original_index]=msg; ignored_row_indices_local.add(original_index); has_warnings = True; commission_for_overall = 0.0;
+                continue
+
+            # --- Log AFTER modification if it's E*TRADE ---
+            # --- (Keep existing logging block if desired) ---
+            if log_this_row:
+                 current_cum_inv = holding.get('cumulative_investment_local', 0.0) # Use .get again
+                 cost = 0.0; proceeds = 0.0; div_effect = 0.0; fee_cost = 0.0
+                 if tx_type in ['buy', 'deposit', 'buy to cover']: cost = (abs(qty) * price_local) + commission_local if pd.notna(qty) and pd.notna(price_local) else 0
+                 if tx_type in ['sell', 'withdrawal', 'short sell']: proceeds = (abs(qty) * price_local) - commission_local if pd.notna(qty) and pd.notna(price_local) else 0
+                 if tx_type == 'dividend':
+                     div_amt_local_log = total_amount_local if pd.notna(total_amount_local) else (abs(qty) * price_local if pd.notna(qty) and pd.notna(price_local) else 0)
+                     div_effect = abs(div_amt_local_log) if (holding.get('qty',0) >= -1e-9 or symbol not in shortable_symbols) else -abs(div_amt_local_log)
+                 if tx_type == 'fees': fee_cost = abs(commission_local) if pd.notna(commission_local) else 0
+                 logging.debug(f"TRACE E*TRADE ({symbol}, {tx_type}, Q:{qty:.2f}, P:{price_local:.2f}, Comm:{commission_local:.2f}): CumInv: {prev_cum_inv:.2f} -> {current_cum_inv:.2f} | Cost: {cost:.2f}, Proceeds: {proceeds:.2f}, DivEffect: {div_effect:.2f}, Fee: {fee_cost:.2f}")
 
             # Add commission to overall total if the transaction wasn't skipped
             if commission_for_overall != 0:
                 overall_commissions_local[local_currency] += abs(commission_for_overall)
 
-        except (ValueError, TypeError, ZeroDivisionError, KeyError, Exception) as e:
-            error_msg = f"Processing Error: {e}";
-            logging.error(f"ERROR in _process_transactions processing row {original_index} ({symbol}, {tx_type}): {e}. Skipping row.");
-            # Optionally add traceback print here for debugging:
-            # import traceback
-            # traceback.print_exc()
-            ignored_reasons_local[original_index] = error_msg;
-            ignored_row_indices_local.add(original_index);
-            continue # Skip to next transaction
-
-    # --- End of code to MOVE ---
+        # --- (Keep existing refined exception handling) ---
+        except (ValueError, TypeError, ZeroDivisionError) as e:
+            error_msg = f"Calculation Error ({type(e).__name__}): {e}";
+            logging.warning(f"WARN in _process_transactions row {original_index} ({symbol}, {tx_type}): {error_msg}. Skipping row.");
+            ignored_reasons_local[original_index] = error_msg; ignored_row_indices_local.add(original_index); has_warnings = True;
+            if log_this_row: logging.error(f"ERROR during TRACE E*TRADE ({symbol}, {tx_type}): {e}. PrevCumInv: {prev_cum_inv:.2f}")
+            continue
+        except KeyError as e:
+             error_msg = f"Internal Holding Data Error: {e}"
+             logging.warning(f"WARN in _process_transactions row {original_index} ({symbol}, {tx_type}): {error_msg}. Skipping row.");
+             ignored_reasons_local[original_index] = error_msg; ignored_row_indices_local.add(original_index); has_warnings = True;
+             if log_this_row: logging.error(f"ERROR during TRACE E*TRADE ({symbol}, {tx_type}): {e}. PrevCumInv: {prev_cum_inv:.2f}")
+             continue
+        except Exception as e:
+            logging.exception(f"Unexpected error processing row {original_index} ({symbol}, {tx_type})")
+            ignored_reasons_local[original_index] = "Unexpected Processing Error"; ignored_row_indices_local.add(original_index); has_warnings = True;
+            if log_this_row: logging.error(f"ERROR during TRACE E*TRADE ({symbol}, {tx_type}): {e}. PrevCumInv: {prev_cum_inv:.2f}")
+            continue
 
     return (
         holdings,
-        dict(overall_realized_gains_local), # Convert defaultdict to dict
-        dict(overall_dividends_local),      # Convert defaultdict to dict
-        dict(overall_commissions_local),     # Convert defaultdict to dict
+        dict(overall_realized_gains_local),
+        dict(overall_dividends_local),
+        dict(overall_commissions_local),
         ignored_row_indices_local,
-        ignored_reasons_local
+        ignored_reasons_local,
+        has_warnings # Return the flag
     )
 
 def _calculate_cash_balances(
-    transactions_df: pd.DataFrame, # The filtered DataFrame
-    default_currency: str         # Fallback currency
-) -> Dict[str, Dict]:
-    """
-    Calculates final cash balances, dividends, and commissions for $CASH
-    symbol transactions within each account, using their local currency.
-    Handles cases where aggregations might return scalar values.
-
-    Args:
-        transactions_df: DataFrame of transactions filtered for the desired scope.
-                         MUST include 'Local Currency', 'Account', 'Symbol',
-                         'Quantity', 'Commission', 'Type', 'Total Amount', 'Price/Share'.
-        default_currency: Default currency string.
-
-    Returns:
-        Dict keyed by account name containing $CASH details:
-        {'qty': balance, 'dividends': divs, 'commissions': fees, 'currency': local_curr}
-    """
+    transactions_df: pd.DataFrame,
+    default_currency: str
+) -> Tuple[Dict[str, Dict], bool, bool]: # Added has_errors, has_warnings
+    """Calculates cash balances... Returns cash_summary, has_errors, has_warnings."""
     cash_summary: Dict[str, Dict] = {}
-    cash_symbol = CASH_SYMBOL_CSV # Use constant
+    cash_symbol = CASH_SYMBOL_CSV
+    has_errors = False
+    has_warnings = False
 
     try:
-        # Filter only $CASH transactions from the input DataFrame
         cash_transactions = transactions_df[transactions_df['Symbol'] == cash_symbol].copy()
-
         if not cash_transactions.empty:
-            # Define the aggregation function for signed quantity robustly
+            # Define helper function (moved inside for scope, consider global if reused heavily)
             def get_signed_quantity_cash(row):
-                type_lower = str(row.get('Type', '')).lower()
-                qty_val = row.get('Quantity')
-                qty = pd.to_numeric(qty_val, errors='coerce')
-                # Return 0 if quantity is NaN or not applicable type
-                if pd.isna(qty): return 0.0
-                if type_lower in ['buy', 'deposit']: return abs(qty)
-                elif type_lower in ['sell', 'withdrawal']: return -abs(qty)
-                else: return 0.0
-
+                 type_lower = str(row.get('Type', '')).lower(); qty = pd.to_numeric(row.get('Quantity'), errors='coerce')
+                 if pd.isna(qty): return 0.0 # Treat missing quantity as zero flow
+                 if type_lower in ['buy', 'deposit']: return abs(qty)
+                 elif type_lower in ['sell', 'withdrawal']: return -abs(qty)
+                 else: return 0.0 # Other types don't affect cash quantity directly
             cash_transactions['SignedQuantity'] = cash_transactions.apply(get_signed_quantity_cash, axis=1)
 
-            # Aggregate first
+            # Aggregate (keep existing logic)
             grouped_cash = cash_transactions.groupby('Account')
             cash_qty_agg = grouped_cash['SignedQuantity'].sum()
-            # Calculate sum of commissions, fill NaN groups with 0 AFTER summing
-            cash_comm_agg = grouped_cash['Commission'].sum(min_count=1).fillna(0.0)
+            cash_comm_agg = grouped_cash['Commission'].sum(min_count=1).fillna(0.0) # Sum ignores NaN, fillna handles empty groups
             cash_currency_map = grouped_cash['Local Currency'].first()
 
-            # Calculate net dividends separately for $CASH transactions
+            # Calculate dividends (keep existing logic)
             cash_dividends_tx = cash_transactions[cash_transactions['Type'] == 'dividend'].copy()
-            cash_div_agg = pd.Series(dtype=float) # Default to empty Series
+            cash_div_agg = pd.Series(dtype=float)
             if not cash_dividends_tx.empty:
-                # Define helper locally or globally
-                def get_dividend_amount(r):
-                    total_amt = pd.to_numeric(r.get('Total Amount'), errors='coerce')
-                    price = pd.to_numeric(r.get('Price/Share'), errors='coerce')
-                    qty = pd.to_numeric(r.get('Quantity'), errors='coerce')
-                    qty_abs = abs(qty) if pd.notna(qty) else 0.0
-                    if pd.notna(total_amt) and abs(total_amt) > 1e-9: return total_amt # Use Total Amount if valid
-                    elif pd.notna(price) and abs(price) > 1e-9:
-                        return (qty_abs * price) if qty_abs > 0 else price # Use qty*price or just price
-                    else: return 0.0
-
+                def get_dividend_amount(r): # Inner helper is fine here
+                     total_amt = pd.to_numeric(r.get('Total Amount'), errors='coerce'); price = pd.to_numeric(r.get('Price/Share'), errors='coerce'); qty = pd.to_numeric(r.get('Quantity'), errors='coerce'); qty_abs = abs(qty) if pd.notna(qty) else 0.0
+                     if pd.notna(total_amt) and abs(total_amt) > 1e-9: return total_amt
+                     elif pd.notna(price) and abs(price) > 1e-9: return (qty_abs * price) if qty_abs > 0 else price
+                     else: return 0.0
                 cash_dividends_tx['DividendAmount'] = cash_dividends_tx.apply(get_dividend_amount, axis=1)
                 cash_dividends_tx['Commission'] = pd.to_numeric(cash_dividends_tx['Commission'], errors='coerce').fillna(0.0)
                 cash_dividends_tx['NetDividend'] = cash_dividends_tx['DividendAmount'] - cash_dividends_tx['Commission']
-                # Group dividends AFTER calculating NetDividend
-                cash_div_agg = cash_dividends_tx.groupby('Account')['NetDividend'].sum() # Result might be Series or scalar
+                cash_div_agg = cash_dividends_tx.groupby('Account')['NetDividend'].sum()
 
-            # Get all unique accounts that had any cash transaction
-            all_cash_accounts = cash_transactions['Account'].unique()
+            all_cash_accounts = cash_currency_map.index.union(cash_qty_agg.index).union(cash_div_agg.index)
 
-            # --- Loop through accounts and retrieve values safely ---
+            # Loop and retrieve (keep existing logic)
             for acc in all_cash_accounts:
-                # Get currency (should always be Series if all_cash_accounts is not empty)
                 acc_currency = cash_currency_map.get(acc, default_currency)
+                acc_balance = cash_qty_agg.get(acc, 0.0) if isinstance(cash_qty_agg, pd.Series) else (float(cash_qty_agg) if pd.notna(cash_qty_agg) else 0.0)
+                acc_commissions = cash_comm_agg.get(acc, 0.0) if isinstance(cash_comm_agg, pd.Series) else (float(cash_comm_agg) if pd.notna(cash_comm_agg) else 0.0)
+                acc_dividends_only = cash_div_agg.get(acc, 0.0) if isinstance(cash_div_agg, pd.Series) else 0.0
 
-                # Get balance: Use .get() if Series, otherwise use scalar value directly
-                acc_balance = 0.0
-                if isinstance(cash_qty_agg, pd.Series):
-                    acc_balance = cash_qty_agg.get(acc, 0.0)
-                elif len(all_cash_accounts) == 1: # Only possible way sum result is scalar
-                    acc_balance = float(cash_qty_agg) if pd.notna(cash_qty_agg) else 0.0
-
-                # Get commissions: Use .get() if Series, otherwise use scalar value
-                acc_commissions = 0.0
-                if isinstance(cash_comm_agg, pd.Series):
-                    acc_commissions = cash_comm_agg.get(acc, 0.0)
-                elif len(all_cash_accounts) == 1: # Only possible way sum result is scalar
-                    acc_commissions = float(cash_comm_agg) if pd.notna(cash_comm_agg) else 0.0
-
-                # Get dividends: Use .get() on the resulting Series (handles empty series)
-                acc_dividends_only = 0.0
-                if isinstance(cash_div_agg, pd.Series):
-                    acc_dividends_only = cash_div_agg.get(acc, 0.0)
-                # No scalar case needed here as empty Series handles missing dividends
-
-                # Populate the summary dictionary for the account
-                cash_summary[acc] = {
-                    'qty': acc_balance,
-                    'realized': 0.0, # Realized gain not tracked for cash balance itself
-                    'dividends': acc_dividends_only, # Interest/Dividends on cash
-                    'commissions': acc_commissions, # Fees associated with cash txns
-                    'currency': acc_currency # The local currency of the cash account
-                }
-        else:
-            # No cash transactions found for any account in the provided transactions_df
-            logging.info("Info in _calculate_cash_balances: No $CASH transactions found.")
-
+                cash_summary[acc] = { 'qty': acc_balance, 'realized': 0.0, 'dividends': acc_dividends_only, 'commissions': acc_commissions, 'currency': acc_currency }
+        else: logging.info("Info in _calculate_cash_balances: No $CASH transactions found.")
+    # --- Refined Exception Handling ---
+    except (TypeError, ValueError) as e:
+        logging.error(f"Data type/value error calculating cash balances: {e}")
+        has_errors = True # Treat aggregation errors as critical
+    except KeyError as e:
+        logging.error(f"Missing expected column calculating cash balances: {e}")
+        has_errors = True
     except Exception as e:
-        # Log error and return empty dictionary
-        logging.error(f"ERROR in _calculate_cash_balances processing cash transactions: {e}")
-        import traceback
-        traceback.print_exc()
-        cash_summary = {}
+        logging.exception(f"Unexpected error calculating cash balances")
+        has_errors = True
+    # --- End Refined Exception Handling ---
 
-    return cash_summary
+    return cash_summary, has_errors, has_warnings # Return flags
 
-def _build_summary_rows( # Renamed from _build_summary_dataframe for clarity
+# --- REVISED: _build_summary_rows (with total_buy_cost) ---
+def _build_summary_rows(
     holdings: Dict[Tuple[str, str], Dict],
     cash_summary: Dict[str, Dict],
-    current_stock_data: Dict[str, Dict[str, Optional[float]]], # Price, change etc. keyed by internal symbol
-    current_fx_rates_vs_usd: Dict[str, float], # CURR per USD rates
+    current_stock_data: Dict[str, Dict[str, Optional[float]]],
+    current_fx_rates_vs_usd: Dict[str, float],
     display_currency: str,
     default_currency: str,
-    transactions_df: pd.DataFrame, # Needed for IRR calculation fallback/lookup
+    transactions_df: pd.DataFrame,
     report_date: date,
-    shortable_symbols: Set[str], # Needed for unrealized gain calc for shorts
-    excluded_symbols: Set[str] # Needed for price source fallback logic
-) -> Tuple[List[Dict[str, Any]], Dict[str, float], Dict[str, str]]:
+    shortable_symbols: Set[str],
+    excluded_symbols: Set[str]
+) -> Tuple[List[Dict[str, Any]], Dict[str, float], Dict[str, str], bool, bool]: # Added has_errors, has_warnings
     """
-    Calculates final display values for each holding (stocks and cash),
-    including market value, gains, IRR, etc., in the specified display_currency.
-
-    Args:
-        holdings: Processed stock/ETF holdings keyed by (symbol, account).
-        cash_summary: Processed cash balances keyed by account.
-        current_stock_data: Dictionary with current price/change data from fetcher.
-        current_fx_rates_vs_usd: Dictionary with CURR per USD rates.
-        display_currency: The target currency for output values.
-        default_currency: Default currency for fallbacks.
-        transactions_df: Filtered transaction DataFrame for IRR calculation.
-        report_date: The date for which the summary is being generated.
-        shortable_symbols: Set of symbols allowed for shorting.
-        excluded_symbols: Set of symbols excluded from price fetching.
-
-    Returns:
-        A tuple containing:
-        - portfolio_summary_rows: A list of dictionaries, each representing a row for the final summary DataFrame.
-        - account_market_values_local: Dict keyed by account summing market value in LOCAL currency.
-        - account_local_currency_map: Dict mapping account to its determined local currency.
+    Calculates final display values for each holding, handling potential errors.
+    Returns: portfolio_summary_rows, account_market_values_local, account_local_currency_map, has_errors, has_warnings
     """
-    portfolio_summary_rows: List[Dict[str, Any]] = [] # Changed name for clarity
+    portfolio_summary_rows: List[Dict[str, Any]] = []
     account_market_values_local: Dict[str, float] = defaultdict(float)
     account_local_currency_map: Dict[str, str] = {}
+    has_errors = False # Flag for critical issues preventing accurate summary
+    has_warnings = False # Flag for non-critical issues (e.g., fallback price, missing IRR)
 
-    logging.info(f"Calculating final portfolio summary rows in {display_currency}...") # Update print
+    logging.info(f"Calculating final portfolio summary rows in {display_currency}...")
 
     # --- Loop 1: Process Stock/ETF Holdings ---
     for holding_key, data in holdings.items():
-        # --- Start of code to MOVE (Stock Holding Loop) ---
         symbol, account = holding_key
-        # Get holding details (local currency)
+        # --- Get holding details (local currency) ---
         current_qty = data.get('qty', 0.0)
         realized_gain_local = data.get('realized_gain_local', 0.0)
         dividends_local = data.get('dividends_local', 0.0)
@@ -1301,269 +1312,176 @@ def _build_summary_rows( # Renamed from _build_summary_dataframe for clarity
         local_currency = data.get('local_currency', default_currency)
         current_total_cost_local = data.get('total_cost_local', 0.0)
         short_proceeds_local = data.get('short_proceeds_local', 0.0)
-        # short_original_qty = data.get('short_original_qty', 0.0) # Needed for short gain calc below
         total_cost_invested_local = data.get('total_cost_invested_local', 0.0)
         cumulative_investment_local = data.get('cumulative_investment_local', 0.0)
+        total_buy_cost_local = data.get('total_buy_cost_local', 0.0) # <<< Get new value
 
-        # Store account currency mapping
         account_local_currency_map[account] = local_currency
-
-        # Get current market data for the symbol
         stock_data = current_stock_data.get(symbol, {})
-        current_price_local_raw = stock_data.get('price') # Price is in the stock's native currency (usually USD unless SET/etc)
+        current_price_local_raw = stock_data.get('price')
         day_change_local_raw = stock_data.get('change')
         day_change_pct_raw = stock_data.get('changesPercentage')
-        # prev_close_local_raw = stock_data.get('previousClose') # Not strictly needed for summary row
 
-        # --- Price Source Logic ---
-        # Determine price source and handle fallback
-        price_source = "Unknown"
-        current_price_local = np.nan
-        day_change_local = np.nan
-        day_change_pct = np.nan
-        # prev_close_local = np.nan # Not strictly needed
-
-        is_yahoo_price_valid = pd.notna(current_price_local_raw) and current_price_local_raw > 1e-9
+        # --- Price Determination (existing logic) ---
+        price_source = "Unknown"; current_price_local = np.nan; day_change_local = np.nan; day_change_pct = np.nan
         is_excluded = symbol in excluded_symbols
-
-        if is_excluded:
-            price_source = "Excluded - Fallback"
-            current_price_local = 0.0 # Assume zero value if excluded
-            is_yahoo_price_valid = False
-        elif is_yahoo_price_valid:
-            price_source = "Yahoo API/Cache"
-            current_price_local = float(current_price_local_raw)
-            if pd.notna(day_change_local_raw): day_change_local = float(day_change_local_raw)
-            if pd.notna(day_change_pct_raw): day_change_pct = float(day_change_pct_raw)
-            # if pd.notna(prev_close_local_raw): prev_close_local = float(prev_close_local_raw)
-        else: # Price from Yahoo is invalid or missing
-            price_source = "Yahoo Invalid - Fallback"
-            current_price_local = 0.0 # Default to zero before trying fallback
-            is_yahoo_price_valid = False # Ensure this is false
-
-        # Fallback to last transaction price if Yahoo price invalid/missing (and not excluded)
-        if not is_yahoo_price_valid and not is_excluded:
+        is_yahoo_price_valid = pd.notna(current_price_local_raw) and current_price_local_raw > 1e-9
+        if is_excluded: price_source = "Excluded - Fallback"; current_price_local = 0.0; is_yahoo_price_valid = False; has_warnings = True; logging.debug(f"Debug: Price for {symbol} excluded.")
+        elif is_yahoo_price_valid: price_source = "Yahoo API/Cache"; current_price_local = float(current_price_local_raw); day_change_local = float(day_change_local_raw) if pd.notna(day_change_local_raw) else np.nan; day_change_pct = float(day_change_pct_raw) if pd.notna(day_change_pct_raw) else np.nan
+        else: price_source = "Yahoo Invalid - Fallback"; current_price_local = np.nan; is_yahoo_price_valid = False; has_warnings = True; logging.warning(f"Warning: Yahoo price invalid/missing for {symbol}.")
+        if (pd.isna(current_price_local) or not is_yahoo_price_valid) and not is_excluded:
             try:
-                # Find latest transaction with a valid price for this holding
-                symbol_account_tx = transactions_df[
-                    (transactions_df['Symbol'] == symbol) &
-                    (transactions_df['Account'] == account) &
-                    (transactions_df['Price/Share'].notna()) &
-                    (transactions_df['Price/Share'] > 0)
-                ] # Ensure Date column is datetime before using .loc
+                # ... (fallback logic remains the same) ...
+                symbol_account_tx = transactions_df[(transactions_df['Symbol'] == symbol) & (transactions_df['Account'] == account) & (transactions_df['Price/Share'].notna()) & (transactions_df['Price/Share'] > 0) & (transactions_df['Date'].dt.date <= report_date)].copy()
                 if not symbol_account_tx.empty:
-                    last_tx_row = symbol_account_tx.loc[symbol_account_tx['Date'].idxmax()] # Find row with latest date
+                    last_tx_row = symbol_account_tx.loc[symbol_account_tx['Date'].idxmax()]
                     last_tx_price = pd.to_numeric(last_tx_row['Price/Share'], errors='coerce')
-                    if pd.notna(last_tx_price) and last_tx_price > 0:
-                        current_price_local = float(last_tx_price)
-                        price_source = "Last TX Fallback"
-                    # else: keep current_price_local as 0.0 if last TX price invalid
-            except Exception as e_fallback:
-                logging.warning(f"WARN: Fallback price lookup failed for {symbol}/{account}: {e_fallback}") # Optional
-                price_source = "Fallback Zero (Error)"
-                current_price_local = 0.0 # Ensure zero on error
-
-            # Ensure final price is float
-            try: current_price_local = float(current_price_local)
-            except (ValueError, TypeError): current_price_local = 0.0
-            # Reset day change if using fallback price
-            day_change_local = np.nan
-            day_change_pct = np.nan
+                    if pd.notna(last_tx_price) and last_tx_price > 0: current_price_local = float(last_tx_price); price_source = "Last TX Fallback"; logging.info(f"Info: Used fallback price {current_price_local} ({local_currency}) for {symbol}/{account}")
+                    else: price_source = "Fallback Failed - Using 0"; current_price_local = 0.0
+                else: price_source = "Fallback Failed (No TX) - Using 0"; current_price_local = 0.0
+            except Exception as e_fallback: logging.warning(f"Warning: Fallback price lookup failed for {symbol}/{account}: {e_fallback}"); price_source = "Fallback Zero (Error)"; current_price_local = 0.0
+            day_change_local = np.nan; day_change_pct = np.nan
+        try: current_price_local = float(current_price_local)
+        except (ValueError, TypeError): current_price_local = 0.0
+        if pd.isna(current_price_local): logging.error(f"Error: Could not determine a valid price for {symbol}/{account}. Setting to 0."); current_price_local = 0.0; price_source += " (Forced Zero)"; has_warnings = True
 
         # --- Currency Conversion ---
-        # Get rate for Local -> Display
         fx_rate = get_conversion_rate(local_currency, display_currency, current_fx_rates_vs_usd)
-        if pd.isna(fx_rate): # Handle conversion failure
-             logging.error(f"ERROR: Failed to get FX rate {local_currency}->{display_currency} for {symbol}. Skipping summary row value calcs.")
-             # Optionally add a row with NaNs or skip entirely
-             # Let's add row with NaNs for now
-             fx_rate = np.nan # Ensure it's NaN for calculations below
+        if pd.isna(fx_rate): logging.error(f"CRITICAL ERROR: Failed FX rate {local_currency}->{display_currency} for {symbol}/{account}."); has_errors = True; fx_rate = np.nan
 
         # --- Calculate Display Currency Values ---
         market_value_local = current_qty * current_price_local
-        account_market_values_local[account] += market_value_local # Aggregate local MV
+        if pd.notna(market_value_local): account_market_values_local[account] += market_value_local
 
-        # Convert values to display currency
         market_value_display = market_value_local * fx_rate if pd.notna(fx_rate) else np.nan
         day_change_value_display = (current_qty * day_change_local * fx_rate) if pd.notna(day_change_local) and pd.notna(fx_rate) else np.nan
         current_price_display = current_price_local * fx_rate if pd.notna(current_price_local) and pd.notna(fx_rate) else np.nan
-        cost_basis_display = np.nan
-        avg_cost_price_display = np.nan
-        unrealized_gain_display = np.nan
-        unrealized_gain_pct = np.nan
+        cost_basis_display = np.nan; avg_cost_price_display = np.nan; unrealized_gain_display = np.nan; unrealized_gain_pct = np.nan
 
-        # --- Unrealized Gain/Loss Calculation ---
-        is_long = current_qty > 1e-9
-        is_short = current_qty < -1e-9
-
+        # Unrealized Gain/Loss (existing logic)
+        # ... (no changes needed here) ...
+        is_long = current_qty > 1e-9; is_short = current_qty < -1e-9
         if is_long:
-            cost_basis_display = max(0, current_total_cost_local * fx_rate) if pd.notna(fx_rate) else np.nan # Cost basis cannot be negative for long
+            cost_basis_display_local = max(0, current_total_cost_local) # Local cost basis cannot be negative
+            cost_basis_display = cost_basis_display_local * fx_rate if pd.notna(fx_rate) else np.nan
             if pd.notna(cost_basis_display):
                  avg_cost_price_display = (cost_basis_display / current_qty) if abs(current_qty) > 1e-9 else np.nan
                  if pd.notna(market_value_display):
                      unrealized_gain_display = market_value_display - cost_basis_display
-                     if abs(cost_basis_display) > 1e-9:
-                         unrealized_gain_pct = (unrealized_gain_display / cost_basis_display) * 100.0
-                     # Handle zero cost basis case for percentage
+                     if abs(cost_basis_display) > 1e-9: unrealized_gain_pct = (unrealized_gain_display / cost_basis_display) * 100.0
                      elif abs(market_value_display) > 1e-9: unrealized_gain_pct = np.inf
                      else: unrealized_gain_pct = 0.0
         elif is_short:
-            avg_cost_price_display = np.nan # Avg cost not typical for short
-            cost_basis_display = 0.0 # Cost basis is zero for short sale itself
+            avg_cost_price_display = np.nan; cost_basis_display = 0.0
             short_proceeds_display = short_proceeds_local * fx_rate if pd.notna(fx_rate) else np.nan
             if pd.notna(market_value_display) and pd.notna(short_proceeds_display):
-                # Unrealized Gain = Proceeds Received - Current Cost to Cover
-                current_cost_to_cover_display = abs(market_value_display) # MV is negative, cost to cover is positive
+                current_cost_to_cover_display = abs(market_value_display)
                 unrealized_gain_display = short_proceeds_display - current_cost_to_cover_display
-                if abs(short_proceeds_display) > 1e-9:
-                    unrealized_gain_pct = (unrealized_gain_display / short_proceeds_display) * 100.0
-                # Handle zero proceeds case
-                elif abs(current_cost_to_cover_display) > 1e-9: unrealized_gain_pct = -np.inf # Loss if cost > 0
+                if abs(short_proceeds_display) > 1e-9: unrealized_gain_pct = (unrealized_gain_display / short_proceeds_display) * 100.0
+                elif abs(current_cost_to_cover_display) > 1e-9: unrealized_gain_pct = -np.inf
                 else: unrealized_gain_pct = 0.0
 
-        # --- Other Display Values ---
+        # Other Display Values
         realized_gain_display = realized_gain_local * fx_rate if pd.notna(fx_rate) else np.nan
         dividends_display = dividends_local * fx_rate if pd.notna(fx_rate) else np.nan
         commissions_display = commissions_local * fx_rate if pd.notna(fx_rate) else np.nan
-
-        # Total Gain
-        unrealized_gain_component = unrealized_gain_display if pd.notna(unrealized_gain_display) else 0.0
-        total_gain_display = (realized_gain_display + unrealized_gain_component + dividends_display - commissions_display) \
-                             if all(pd.notna(v) for v in [realized_gain_display, dividends_display, commissions_display]) \
-                             else np.nan
-
-        # Total Return %
         total_cost_invested_display = total_cost_invested_local * fx_rate if pd.notna(fx_rate) else np.nan
         cumulative_investment_display = cumulative_investment_local * fx_rate if pd.notna(fx_rate) else np.nan
+        total_buy_cost_display = total_buy_cost_local * fx_rate if pd.notna(fx_rate) else np.nan # <<< Convert new value
+
+        # Total Gain
+        unrealized_gain_comp = unrealized_gain_display if pd.notna(unrealized_gain_display) else 0.0
+        total_gain_display = (realized_gain_display + unrealized_gain_comp + dividends_display - commissions_display) \
+                             if all(pd.notna(v) for v in [realized_gain_display, dividends_display, commissions_display]) else np.nan
+
+        # --- MODIFIED: Total Return % Calculation ---
+        denominator_for_pct = total_buy_cost_display # <<< USE TOTAL BUY COST
         total_return_pct = np.nan
-        denominator_for_pct = cumulative_investment_display # Use cumulative investment for total return %
         if pd.notna(total_gain_display) and pd.notna(denominator_for_pct):
             if abs(denominator_for_pct) > 1e-9:
                 total_return_pct = (total_gain_display / denominator_for_pct) * 100.0
-            elif abs(total_gain_display) <= 1e-9 : # Gain is zero, cost is zero
-                total_return_pct = 0.0
-            # else: Gain is non-zero, cost is zero -> Inf or -Inf handled implicitly by float division or keep NaN
+            elif abs(total_gain_display) <= 1e-9 : total_return_pct = 0.0
+        # --- End Modification ---
 
-        # --- Calculate IRR ---
-        # Use market value in LOCAL currency for IRR cash flow calculation
-        market_value_local_for_irr = abs(market_value_local) if abs(current_qty) > 1e-9 else 0.0
+        # Calculate IRR (existing logic)
+        # ... (no changes needed here) ...
         stock_irr = np.nan
         try:
-            # Ensure transactions_df has the necessary columns and date format
-            cf_dates, cf_values = get_cash_flows_for_symbol_account(
-                symbol, account, transactions_df, market_value_local_for_irr, report_date
-            )
-            if cf_dates and cf_values:
-                stock_irr = calculate_irr(cf_dates, cf_values)
+            market_value_local_for_irr = abs(market_value_local) if abs(current_qty) > 1e-9 and pd.notna(market_value_local) else 0.0
+            cf_dates, cf_values = get_cash_flows_for_symbol_account(symbol, account, transactions_df, market_value_local_for_irr, report_date)
+            if cf_dates and cf_values: stock_irr = calculate_irr(cf_dates, cf_values)
         except Exception as e_irr:
-            logging.warning(f"WARN: IRR calculation failed for {symbol}/{account}: {e_irr}") # Optional warning
+            logging.warning(f"Warning: IRR calculation failed for {symbol}/{account}: {e_irr}"); has_warnings = True
             stock_irr = np.nan
-
         irr_value_to_store = stock_irr * 100.0 if pd.notna(stock_irr) else np.nan
+        if pd.isna(irr_value_to_store) and current_qty != 0: # Check non-zero qty more strictly
+             logging.debug(f"Debug: IRR is NaN for non-zero holding {symbol}/{account}")
 
         # --- Append row data ---
         portfolio_summary_rows.append({
-            'Account': account,
-            'Symbol': symbol,
-            'Quantity': current_qty,
-            f'Avg Cost ({display_currency})': avg_cost_price_display,
-            f'Price ({display_currency})': current_price_display,
-            f'Cost Basis ({display_currency})': cost_basis_display,
-            f'Market Value ({display_currency})': market_value_display,
-            f'Day Change ({display_currency})': day_change_value_display, # Keep NaN if calc failed
-            'Day Change %': day_change_pct, # Keep NaN if calc failed
-            f'Unreal. Gain ({display_currency})': unrealized_gain_display,
-            'Unreal. Gain %': unrealized_gain_pct,
-            f'Realized Gain ({display_currency})': realized_gain_display,
-            f'Dividends ({display_currency})': dividends_display,
-            f'Commissions ({display_currency})': commissions_display,
-            f'Total Gain ({display_currency})': total_gain_display,
-            f'Total Cost Invested ({display_currency})': total_cost_invested_display, # Usually not shown
-            'Total Return %': total_return_pct,
-            f'Cumulative Investment ({display_currency})': cumulative_investment_display, # Needed for Total Return % calc
+            'Account': account, 'Symbol': symbol, 'Quantity': current_qty,
+            f'Avg Cost ({display_currency})': avg_cost_price_display, f'Price ({display_currency})': current_price_display,
+            f'Cost Basis ({display_currency})': cost_basis_display, f'Market Value ({display_currency})': market_value_display,
+            f'Day Change ({display_currency})': day_change_value_display, 'Day Change %': day_change_pct,
+            f'Unreal. Gain ({display_currency})': unrealized_gain_display, 'Unreal. Gain %': unrealized_gain_pct,
+            f'Realized Gain ({display_currency})': realized_gain_display, f'Dividends ({display_currency})': dividends_display,
+            f'Commissions ({display_currency})': commissions_display, f'Total Gain ({display_currency})': total_gain_display,
+            f'Total Cost Invested ({display_currency})': total_cost_invested_display, # Legacy, maybe remove later
+            'Total Return %': total_return_pct, # <<< Uses new calculation base
+            f'Cumulative Investment ({display_currency})': cumulative_investment_display, # Keep for potential analysis
+            f'Total Buy Cost ({display_currency})': total_buy_cost_display, # <<< Add new value (optional for output df)
             'IRR (%)': irr_value_to_store,
-            'Local Currency': local_currency, # Keep for reference
-            'Price Source': price_source
+            'Local Currency': local_currency, 'Price Source': price_source
         })
-        # --- End of code to MOVE (Stock Holding Loop) ---
+    # --- End Stock/ETF Loop ---
 
-    # --- Loop 2: Process CASH Balances ---
+    # --- Loop 2: Process CASH Balances (Add Total Buy Cost column for consistency) ---
     if cash_summary:
         for account, cash_data in cash_summary.items():
-            # --- Start of code to MOVE (Cash Loop) ---
+            # ... (existing cash setup) ...
             symbol = CASH_SYMBOL_CSV
-            # Get cash details (local currency)
             current_qty = cash_data.get('qty', 0.0)
             local_currency = cash_data.get('currency', default_currency)
-            realized_gain_local = cash_data.get('realized', 0.0) # Usually 0 for cash
-            dividends_local = cash_data.get('dividends', 0.0) # e.g. interest paid?
-            commissions_local = cash_data.get('commissions', 0.0)
+            # ... (other local values) ...
+            realized_gain_local = cash_data.get('realized', 0.0); dividends_local = cash_data.get('dividends', 0.0); commissions_local = cash_data.get('commissions', 0.0)
 
-            # Store account currency mapping (might be redundant but safe)
             account_local_currency_map[account] = local_currency
-
-            # --- Currency Conversion ---
             fx_rate = get_conversion_rate(local_currency, display_currency, current_fx_rates_vs_usd)
-            if pd.isna(fx_rate):
-                 logging.error(f"ERROR: Failed to get FX rate {local_currency}->{display_currency} for {symbol} in {account}. Skipping summary row value calcs.")
-                 fx_rate = np.nan # Ensure NaN for calculations
+            if pd.isna(fx_rate): has_errors = True; fx_rate = np.nan; logging.error(f"CRITICAL ERROR: Failed FX rate {local_currency}->{display_currency} for CASH in {account}.")
 
-            # --- Calculate Display Currency Values for Cash ---
-            current_price_local = 1.0 # Price of cash is 1 in its own currency
-            market_value_local = current_qty * current_price_local
-            account_market_values_local[account] += market_value_local # Aggregate local MV
-
-            current_price_display = current_price_local * fx_rate if pd.notna(fx_rate) else np.nan
+            # Calculate Display Values
+            market_value_local = current_qty * 1.0
+            if pd.notna(market_value_local): account_market_values_local[account] += market_value_local
             market_value_display = market_value_local * fx_rate if pd.notna(fx_rate) else np.nan
-            # Cash specific values
-            cost_basis_display = market_value_display # Cost basis of cash is its value
-            avg_cost_price_display = current_price_display
-            day_change_value_display = 0.0 # Assume no day change for cash
-            day_change_pct = 0.0
-            unrealized_gain_display = 0.0
-            unrealized_gain_pct = 0.0
-            # Convert other local values
+            # ... (other cash display value calculations remain the same) ...
+            current_price_display = 1.0 * fx_rate if pd.notna(fx_rate) else np.nan
+            cost_basis_display = market_value_display; avg_cost_price_display = current_price_display
+            day_change_value_display = 0.0; day_change_pct = 0.0; unrealized_gain_display = 0.0; unrealized_gain_pct = 0.0
             realized_gain_display = realized_gain_local * fx_rate if pd.notna(fx_rate) else np.nan
-            dividends_display = dividends_local * fx_rate if pd.notna(fx_rate) else np.nan # Interest
+            dividends_display = dividends_local * fx_rate if pd.notna(fx_rate) else np.nan
             commissions_display = commissions_local * fx_rate if pd.notna(fx_rate) else np.nan
-
-            # Total Gain for cash (primarily interest - fees)
             total_gain_display = (dividends_display - commissions_display) if pd.notna(dividends_display) and pd.notna(commissions_display) else np.nan
-
-            # Total Return % for Cash (based on interest vs avg balance? Complex, set NaN for now)
-            # Cumulative Investment for cash is just its current value if positive, or relates to deposits/withdrawals.
-            # For simplicity in summary row, let's mirror market value.
             cumulative_investment_display = market_value_display if pd.notna(market_value_display) else np.nan
-            total_return_pct_cash = np.nan # Hard to define simply
-   
-            # --- Append cash row data ---
-            portfolio_summary_rows.append({
-                'Account': account,
-                'Symbol': symbol,
-                'Quantity': current_qty,
-                f'Avg Cost ({display_currency})': avg_cost_price_display,
-                f'Price ({display_currency})': current_price_display,
-                f'Cost Basis ({display_currency})': cost_basis_display,
-                f'Market Value ({display_currency})': market_value_display,
-                f'Day Change ({display_currency})': day_change_value_display,
-                'Day Change %': day_change_pct,
-                f'Unreal. Gain ({display_currency})': unrealized_gain_display,
-                'Unreal. Gain %': unrealized_gain_pct,
-                f'Realized Gain ({display_currency})': realized_gain_display, # Usually 0
-                f'Dividends ({display_currency})': dividends_display, # Interest
-                f'Commissions ({display_currency})': commissions_display,
-                f'Total Gain ({display_currency})': total_gain_display,
-                f'Total Cost Invested ({display_currency})': cost_basis_display, # Use cost basis for cash invested
-                'Total Return %': total_return_pct_cash, # Set to NaN
-                f'Cumulative Investment ({display_currency})': cumulative_investment_display, # For consistency
-                'IRR (%)': np.nan, # IRR not applicable to cash balance itself
-                'Local Currency': local_currency,
-                'Price Source': 'N/A (Cash)'
-            })
-            # --- End of code to MOVE (Cash Loop) ---
+            total_buy_cost_display = market_value_display # For cash, buy cost ~ market value
+            total_return_pct_cash = np.nan; irr_value_to_store_cash = np.nan
 
-    # Convert defaultdicts to dicts before returning
-    return portfolio_summary_rows, dict(account_market_values_local), dict(account_local_currency_map)
+            portfolio_summary_rows.append({
+                'Account': account, 'Symbol': symbol, 'Quantity': current_qty,
+                f'Avg Cost ({display_currency})': avg_cost_price_display, f'Price ({display_currency})': current_price_display,
+                f'Cost Basis ({display_currency})': cost_basis_display, f'Market Value ({display_currency})': market_value_display,
+                f'Day Change ({display_currency})': day_change_value_display, 'Day Change %': day_change_pct,
+                f'Unreal. Gain ({display_currency})': unrealized_gain_display, 'Unreal. Gain %': unrealized_gain_pct,
+                f'Realized Gain ({display_currency})': realized_gain_display, f'Dividends ({display_currency})': dividends_display,
+                f'Commissions ({display_currency})': commissions_display, f'Total Gain ({display_currency})': total_gain_display,
+                f'Total Cost Invested ({display_currency})': cost_basis_display, # Keep legacy name pointing to cost basis
+                'Total Return %': total_return_pct_cash,
+                f'Cumulative Investment ({display_currency})': cumulative_investment_display,
+                f'Total Buy Cost ({display_currency})': total_buy_cost_display, # <<< Add new value
+                'IRR (%)': irr_value_to_store_cash,
+                'Local Currency': local_currency, 'Price Source': 'N/A (Cash)'
+            })
+
+    return portfolio_summary_rows, dict(account_market_values_local), dict(account_local_currency_map), has_errors, has_warnings
 
 # Revised safe_sum - Attempt 3 (Direct Sum on Subset)
 def safe_sum(df, col):
@@ -1581,214 +1499,184 @@ def safe_sum(df, col):
     except Exception as e:
         logging.error(f"Error in safe_sum for column {col}: {e}") # Optional debug
         return 0.0 # Return 0 on any unexpected error during sum
-               
+
+# --- REVISED: _calculate_aggregate_metrics (using total_buy_cost) ---
 def _calculate_aggregate_metrics(
     full_summary_df: pd.DataFrame,
     display_currency: str,
-    transactions_df: pd.DataFrame, # Filtered tx df for MWR
+    transactions_df: pd.DataFrame, # Still passed for potential future MWR
     report_date: date,
-    # Pass the necessary data for MWR's FX lookups - requires historical FX
-    # This is tricky - calculate_portfolio_summary doesn't fetch historical FX.
-    # Let's postpone MWR calculation here and focus on summing totals first.
-    # We can add MWR back later or decide it belongs elsewhere.
-    # ---- OR ----
-    # If MWR *must* be calculated here using CURRENT rates (less accurate):
-    current_fx_rates_vs_usd: Dict[str, float], # If using current rates for MWR
-    account_local_currency_map: Dict[str, str] # Needed for MWR flow conversion if using current rates
-
-) -> Tuple[Dict[str, Any], Dict[str, Dict[str, float]]]:
+    # MWR arguments removed for now
+) -> Tuple[Dict[str, Any], Dict[str, Dict[str, float]], bool, bool]: # Added has_errors, has_warnings
     """
-    Calculates account-level and overall portfolio summary metrics
-    (Totals, Day Change %) from the full summary DataFrame.
-    Note: MWR calculation using current rates might be inaccurate. Consider
-          calculating MWR alongside historical TWR if historical rates are needed.
-
-    Args:
-        full_summary_df: DataFrame containing detailed rows for all holdings/cash.
-        display_currency: The currency used in the DataFrame's monetary columns.
-        transactions_df: The filtered transaction DataFrame (potentially needed for MWR).
-        report_date: The date for which the summary applies.
-        current_fx_rates_vs_usd: Dictionary of CURR per USD rates (for MWR if using current).
-        account_local_currency_map: Map of account to local currency (for MWR if using current).
-
-
-    Returns:
-        A tuple containing:
-        - overall_summary_metrics: Dict of aggregated metrics for the whole scope.
-        - account_level_metrics: Dict keyed by account with account-level aggregates.
+    Calculates account-level and overall portfolio summary metrics.
+    Uses 'Total Buy Cost' as denominator for Total Return %.
+    Returns: overall_summary_metrics, account_level_metrics, has_errors, has_warnings
     """
     account_level_metrics: Dict[str, Dict[str, float]] = defaultdict(lambda: {
         'mwr': np.nan, 'total_return_pct': np.nan, 'total_market_value_display': 0.0,
         'total_realized_gain_display': 0.0, 'total_unrealized_gain_display': 0.0,
         'total_dividends_display': 0.0, 'total_commissions_display': 0.0,
         'total_gain_display': 0.0, 'total_cash_display': 0.0,
-        'total_cost_invested_display': 0.0, 'total_day_change_display': 0.0,
-        'total_day_change_percent': np.nan
+        'total_cost_invested_display': 0.0, # Legacy name, maybe points to total_cost_basis now?
+        'total_buy_cost_display': 0.0, # <<< Add key for new metric
+        'total_day_change_display': 0.0, 'total_day_change_percent': np.nan
     })
     overall_summary_metrics = {} # Initialize
+    has_errors = False
+    has_warnings = False
 
-    logging.info("Calculating Account-Level & Overall Metrics...") # Update print
+    logging.info("Calculating Account-Level & Overall Metrics...")
 
-    # --- Start of code to MOVE ---
+    # --- Input Validation ---
+    required_cols = ['Account', 'Symbol', 'Quantity', f'Market Value ({display_currency})', f'Total Gain ({display_currency})', f'Total Buy Cost ({display_currency})'] # Add Total Buy Cost
+    missing_cols = [col for col in required_cols if col not in full_summary_df.columns]
+    if missing_cols:
+        logging.warning(f"Warning: Aggregate calculation input missing required columns: {missing_cols}. Totals may be inaccurate.")
+        has_warnings = True
+
+    if full_summary_df.empty:
+        logging.warning("Warning: Aggregate calculation input DataFrame is empty.")
+        has_warnings = True
+        overall_summary_metrics = {
+             "market_value": 0.0, "cost_basis_held": 0.0, "unrealized_gain": 0.0, "realized_gain": 0.0,
+             "dividends": 0.0, "commissions": 0.0, "total_gain": 0.0, "total_cost_invested": 0.0,
+             "total_buy_cost": 0.0, # <<< Add default
+             "portfolio_mwr": np.nan, "day_change_display": 0.0, "day_change_percent": np.nan,
+             "report_date": report_date.strftime('%Y-%m-%d'), "display_currency": display_currency,
+             "cumulative_investment": 0.0, "total_return_pct": np.nan
+        }
+        return overall_summary_metrics, dict(account_level_metrics), has_errors, has_warnings
+
+    # --- Account Level Aggregation ---
     unique_accounts_in_summary = full_summary_df['Account'].unique()
     for account in unique_accounts_in_summary:
-        account_full_df = full_summary_df[full_summary_df['Account'] == account]
-        metrics_entry = account_level_metrics[account] # Get the defaultdict entry
-
-        # --- Calculate Account MWR (Using CURRENT Rates - Check if appropriate) ---
-        # Note: Passing current_fx_rates_vs_usd to get_cash_flows_for_mwr assumes we want
-        # MWR based on today's rates, which might differ from historical calculations.
-        # Consider if this MWR calculation is needed here or should use historical data.
-        account_tx = transactions_df[transactions_df['Account'] == account]
-        # Account MV already calculated and stored in account_full_df
-        account_mv_display = safe_sum(account_full_df, f'Market Value ({display_currency})')
-        metrics_entry['total_market_value_display'] = account_mv_display
-        mwr = np.nan
         try:
-            # This needs the standard {A/B: rate} dict, not CURR/USD dict
-            # We need to recalculate the full rates dict if we only have CURR/USD
-            # OR modify get_cash_flows_for_mwr to accept CURR/USD dict.
-            # --> Let's skip Account MWR here for now to simplify refactoring <--
-            # print(f"Skipping Account MWR calculation for {account} in this refactoring step.")
-            # Pass the account_mv_display (already converted)
-            # cf_dates_mwr, cf_values_mwr = get_cash_flows_for_mwr(
-            #     account_tx,
-            #     account_mv_display, # Final value in display currency
-            #     report_date,
-            #     display_currency, # Target currency is display currency
-            #     current_fx_rates_standard, # <<< Needs the standard A/B dict!
-            #     display_currency
-            # )
-            # if cf_dates_mwr and cf_values_mwr:
-            #     mwr = calculate_irr(cf_dates_mwr, cf_values_mwr)
-            metrics_entry['mwr'] = np.nan # Set to NaN for now
-        except Exception as e_mwr:
-            logging.warning(f"WARN: Account MWR calc failed for {account}: {e_mwr}") # Optional
-            metrics_entry['mwr'] = np.nan
+            account_full_df = full_summary_df[full_summary_df['Account'] == account]
+            metrics_entry = account_level_metrics[account]
 
-        # --- Aggregate Account Totals ---
-        metrics_entry['total_realized_gain_display'] = safe_sum(account_full_df, f'Realized Gain ({display_currency})')
-        metrics_entry['total_unrealized_gain_display'] = safe_sum(account_full_df, f'Unreal. Gain ({display_currency})')
-        metrics_entry['total_dividends_display'] = safe_sum(account_full_df, f'Dividends ({display_currency})')
-        metrics_entry['total_commissions_display'] = safe_sum(account_full_df, f'Commissions ({display_currency})')
-        metrics_entry['total_gain_display'] = safe_sum(account_full_df, f'Total Gain ({display_currency})')
-        # Ensure CASH_SYMBOL_CSV is used here
-        cash_symbol = CASH_SYMBOL_CSV
-        metrics_entry['total_cash_display'] = safe_sum(account_full_df[account_full_df['Symbol'] == cash_symbol], f'Market Value ({display_currency})')
-        metrics_entry['total_cost_invested_display'] = safe_sum(account_full_df, f'Total Cost Invested ({display_currency})') # Use safe_sum
-        acc_cumulative_investment_display = safe_sum(account_full_df, f'Cumulative Investment ({display_currency})')
+            metrics_entry['mwr'] = np.nan # MWR Skipped
 
-        # Account Total Return %
-        acc_total_gain = metrics_entry['total_gain_display']
-        acc_denominator = acc_cumulative_investment_display
-        acc_total_return_pct = np.nan
-        if pd.notna(acc_total_gain) and pd.notna(acc_denominator):
-             if abs(acc_denominator) > 1e-9:
-                 acc_total_return_pct = (acc_total_gain / acc_denominator) * 100.0
-             elif abs(acc_total_gain) <= 1e-9:
-                 acc_total_return_pct = 0.0
-             # else leave NaN if gain != 0 and denominator == 0
-        metrics_entry['total_return_pct'] = acc_total_return_pct
+            # --- Aggregate Account Totals (using safe_sum) ---
+            cols_to_sum_display = [f'Market Value ({display_currency})', f'Realized Gain ({display_currency})',
+                                   f'Unreal. Gain ({display_currency})', f'Dividends ({display_currency})',
+                                   f'Commissions ({display_currency})', f'Total Gain ({display_currency})',
+                                   f'Total Cost Invested ({display_currency})', # Legacy name
+                                   f'Total Buy Cost ({display_currency})', # <<< Add new column
+                                   f'Day Change ({display_currency})']
+            for col in cols_to_sum_display:
+                 if col not in account_full_df.columns:
+                     logging.warning(f"Warning: Column '{col}' missing for account '{account}' aggregation.")
+                     has_warnings = True
 
-        # Account Day Change %
-        acc_total_day_change_display = safe_sum(account_full_df, f'Day Change ({display_currency})')
-        metrics_entry['total_day_change_display'] = acc_total_day_change_display
-        acc_current_mv_display = metrics_entry['total_market_value_display'] # Already calculated
-        acc_prev_close_mv_display = np.nan
-        if pd.notna(acc_current_mv_display) and pd.notna(acc_total_day_change_display):
-             acc_prev_close_mv_display = acc_current_mv_display - acc_total_day_change_display
+            metrics_entry['total_market_value_display'] = safe_sum(account_full_df, f'Market Value ({display_currency})')
+            metrics_entry['total_realized_gain_display'] = safe_sum(account_full_df, f'Realized Gain ({display_currency})')
+            metrics_entry['total_unrealized_gain_display'] = safe_sum(account_full_df, f'Unreal. Gain ({display_currency})')
+            metrics_entry['total_dividends_display'] = safe_sum(account_full_df, f'Dividends ({display_currency})')
+            metrics_entry['total_commissions_display'] = safe_sum(account_full_df, f'Commissions ({display_currency})')
+            metrics_entry['total_gain_display'] = safe_sum(account_full_df, f'Total Gain ({display_currency})')
+            cash_mask = account_full_df['Symbol'] == CASH_SYMBOL_CSV if 'Symbol' in account_full_df.columns else pd.Series(False, index=account_full_df.index)
+            metrics_entry['total_cash_display'] = safe_sum(account_full_df[cash_mask], f'Market Value ({display_currency})') if cash_mask.any() else 0.0
+            metrics_entry['total_cost_invested_display'] = safe_sum(account_full_df, f'Total Cost Invested ({display_currency})') # Legacy - might be cost basis?
+            acc_total_buy_cost_display = safe_sum(account_full_df, f'Total Buy Cost ({display_currency})') # <<< Sum new column
+            metrics_entry['total_buy_cost_display'] = acc_total_buy_cost_display # <<< Store it
 
-        metrics_entry['total_day_change_percent'] = np.nan
-        if pd.notna(acc_total_day_change_display) and pd.notna(acc_prev_close_mv_display):
-            if abs(acc_prev_close_mv_display) > 1e-9:
-                 try: metrics_entry['total_day_change_percent'] = (acc_total_day_change_display / acc_prev_close_mv_display) * 100.0
-                 except ZeroDivisionError: pass
-            elif abs(acc_total_day_change_display) > 1e-9: # Change exists but starting value was zero
-                metrics_entry['total_day_change_percent'] = np.inf if acc_total_day_change_display > 0 else -np.inf
-            elif abs(acc_total_day_change_display) < 1e-9 : # Zero change and zero starting value
-                metrics_entry['total_day_change_percent'] = 0.0
+            # --- MODIFIED: Account Total Return % using Total Buy Cost ---
+            acc_total_gain = metrics_entry['total_gain_display']
+            acc_denominator = acc_total_buy_cost_display # <<< Use Total Buy Cost
+            acc_total_return_pct = np.nan
+            if pd.notna(acc_total_gain) and pd.notna(acc_denominator):
+                 if abs(acc_denominator) > 1e-9: acc_total_return_pct = (acc_total_gain / acc_denominator) * 100.0
+                 elif abs(acc_total_gain) <= 1e-9: acc_total_return_pct = 0.0
+            metrics_entry['total_return_pct'] = acc_total_return_pct
+            # --- End Modification ---
+
+            # Account Day Change % (no changes needed)
+            acc_total_day_change_display = safe_sum(account_full_df, f'Day Change ({display_currency})')
+            metrics_entry['total_day_change_display'] = acc_total_day_change_display
+            acc_current_mv_display = metrics_entry['total_market_value_display']
+            acc_prev_close_mv_display = np.nan
+            if pd.notna(acc_current_mv_display) and pd.notna(acc_total_day_change_display): acc_prev_close_mv_display = acc_current_mv_display - acc_total_day_change_display
+            metrics_entry['total_day_change_percent'] = np.nan
+            if pd.notna(acc_total_day_change_display) and pd.notna(acc_prev_close_mv_display):
+                if abs(acc_prev_close_mv_display) > 1e-9: metrics_entry['total_day_change_percent'] = (acc_total_day_change_display / acc_prev_close_mv_display) * 100.0
+                elif abs(acc_total_day_change_display) > 1e-9: metrics_entry['total_day_change_percent'] = np.inf if acc_total_day_change_display > 0 else -np.inf
+                elif abs(acc_total_day_change_display) < 1e-9 : metrics_entry['total_day_change_percent'] = 0.0
+
+        except Exception as e_acc_agg:
+             logging.exception(f"Error aggregating metrics for account '{account}'")
+             has_warnings = True
 
     # --- Overall metrics ---
-    # Use safe_sum on the full DataFrame columns
+    for col in cols_to_sum_display: # Check overall availability
+         if col not in full_summary_df.columns:
+             logging.warning(f"Warning: Column '{col}' missing for overall aggregation.")
+             has_warnings = True
+
     overall_market_value_display = safe_sum(full_summary_df, f'Market Value ({display_currency})')
-    # Cost basis only for currently held positions (non-zero qty or cash)
-    held_mask = (full_summary_df['Quantity'].abs() > 1e-9) | (full_summary_df['Symbol'] == CASH_SYMBOL_CSV)
-    overall_cost_basis_display = safe_sum(full_summary_df.loc[held_mask], f'Cost Basis ({display_currency})')
+    held_mask = pd.Series(False, index=full_summary_df.index)
+    if 'Quantity' in full_summary_df.columns and 'Symbol' in full_summary_df.columns: held_mask = (full_summary_df['Quantity'].abs() > 1e-9) | (full_summary_df['Symbol'] == CASH_SYMBOL_CSV)
+    overall_cost_basis_display = safe_sum(full_summary_df.loc[held_mask], f'Cost Basis ({display_currency})') if held_mask.any() else 0.0
     overall_unrealized_gain_display = safe_sum(full_summary_df, f'Unreal. Gain ({display_currency})')
     overall_realized_gain_display_agg = safe_sum(full_summary_df, f'Realized Gain ({display_currency})')
     overall_dividends_display_agg = safe_sum(full_summary_df, f'Dividends ({display_currency})')
     overall_commissions_display_agg = safe_sum(full_summary_df, f'Commissions ({display_currency})')
     overall_total_gain_display = safe_sum(full_summary_df, f'Total Gain ({display_currency})')
-    overall_total_cost_invested_display = safe_sum(full_summary_df, f'Total Cost Invested ({display_currency})')
+    overall_total_cost_invested_display = safe_sum(full_summary_df, f'Total Cost Invested ({display_currency})') # Legacy
     overall_cumulative_investment_display = safe_sum(full_summary_df, f'Cumulative Investment ({display_currency})')
+    overall_total_buy_cost_display = safe_sum(full_summary_df, f'Total Buy Cost ({display_currency})') # <<< Sum new column
 
-    # Overall MWR - Skipping for now in this refactoring step (same FX rate issue as account MWR)
+    # Overall MWR Skipped
     overall_portfolio_mwr = np.nan
-    # try:
-    #     cf_dates_overall, cf_values_overall = get_cash_flows_for_mwr(
-    #          transactions_df, # Use the filtered transaction df for the scope
-    #          overall_market_value_display, report_date, display_currency,
-    #          current_fx_rates_standard, # <<< Needs the standard A/B dict!
-    #          display_currency
-    #     )
-    #     if cf_dates_overall and cf_values_overall:
-    #          overall_portfolio_mwr = calculate_irr(cf_dates_overall, cf_values_overall)
-    # except Exception as e_mwr_overall: overall_portfolio_mwr = np.nan
 
-    # Overall Day Change %
+    # Overall Day Change % (no changes needed)
     overall_day_change_display = safe_sum(full_summary_df, f'Day Change ({display_currency})')
     overall_prev_close_mv_display = np.nan
-    if pd.notna(overall_market_value_display) and pd.notna(overall_day_change_display):
-         overall_prev_close_mv_display = overall_market_value_display - overall_day_change_display
-
+    if pd.notna(overall_market_value_display) and pd.notna(overall_day_change_display): overall_prev_close_mv_display = overall_market_value_display - overall_day_change_display
     overall_day_change_percent = np.nan
     if pd.notna(overall_day_change_display) and pd.notna(overall_prev_close_mv_display):
-        if abs(overall_prev_close_mv_display) > 1e-9:
-             try: overall_day_change_percent = (overall_day_change_display / overall_prev_close_mv_display) * 100.0
-             except ZeroDivisionError: pass
-        elif abs(overall_day_change_display) > 1e-9:
-            overall_day_change_percent = np.inf if overall_day_change_display > 0 else -np.inf
-        elif abs(overall_day_change_display) < 1e-9 :
-            overall_day_change_percent = 0.0
+        if abs(overall_prev_close_mv_display) > 1e-9: overall_day_change_percent = (overall_day_change_display / overall_prev_close_mv_display) * 100.0
+        elif abs(overall_day_change_display) > 1e-9: overall_day_change_percent = np.inf if overall_day_change_display > 0 else -np.inf
+        elif abs(overall_day_change_display) < 1e-9 : overall_day_change_percent = 0.0
 
-    # Overall Total Return %
+    # --- MODIFIED: Overall Total Return % using Total Buy Cost ---
     overall_total_return_pct = np.nan
-    if pd.notna(overall_total_gain_display) and pd.notna(overall_cumulative_investment_display):
-        if abs(overall_cumulative_investment_display) > 1e-9:
-            overall_total_return_pct = (overall_total_gain_display / overall_cumulative_investment_display) * 100.0
-        elif abs(overall_total_gain_display) <= 1e-9:
-            overall_total_return_pct = 0.0
+    overall_denominator = overall_total_buy_cost_display # <<< Use Total Buy Cost
+    if pd.notna(overall_total_gain_display) and pd.notna(overall_denominator):
+        if abs(overall_denominator) > 1e-9: overall_total_return_pct = (overall_total_gain_display / overall_denominator) * 100.0
+        elif abs(overall_total_gain_display) <= 1e-9: overall_total_return_pct = 0.0
+    # --- End Modification ---
+
+    # Final Check for NaN
+    critical_overall_metrics = [overall_market_value_display, overall_total_gain_display]
+    if any(pd.isna(m) for m in critical_overall_metrics):
+        logging.warning("Warning: Critical overall metrics calculated as NaN.")
+        has_warnings = True
 
     overall_summary_metrics = {
-        "market_value": overall_market_value_display,
-        "cost_basis_held": overall_cost_basis_display,
-        "unrealized_gain": overall_unrealized_gain_display,
-        "realized_gain": overall_realized_gain_display_agg,
-        "dividends": overall_dividends_display_agg,
-        "commissions": overall_commissions_display_agg,
+        "market_value": overall_market_value_display, "cost_basis_held": overall_cost_basis_display,
+        "unrealized_gain": overall_unrealized_gain_display, "realized_gain": overall_realized_gain_display_agg,
+        "dividends": overall_dividends_display_agg, "commissions": overall_commissions_display_agg,
         "total_gain": overall_total_gain_display,
-        "total_cost_invested": overall_total_cost_invested_display, # Maybe less useful?
-        "portfolio_mwr": np.nan, # Set MWR to NaN for now
-        "day_change_display": overall_day_change_display,
-        "day_change_percent": overall_day_change_percent,
-        "report_date": report_date.strftime('%Y-%m-%d'),
-        "display_currency": display_currency,
-        "cumulative_investment": overall_cumulative_investment_display,
-        "total_return_pct": overall_total_return_pct
+        "total_cost_invested": overall_total_cost_invested_display, # Legacy sum
+        "total_buy_cost": overall_total_buy_cost_display, # <<< Add new value
+        "portfolio_mwr": np.nan,
+        "day_change_display": overall_day_change_display, "day_change_percent": overall_day_change_percent,
+        "report_date": report_date.strftime('%Y-%m-%d'), "display_currency": display_currency,
+        "cumulative_investment": overall_cumulative_investment_display, # Keep for analysis
+        "total_return_pct": overall_total_return_pct # <<< Based on new denominator
     }
-    # --- End of code to MOVE ---
 
-    # Convert defaultdict back to dict for return
-    return overall_summary_metrics, dict(account_level_metrics)
-
+    return overall_summary_metrics, dict(account_level_metrics), has_errors, has_warnings
+               
 # --- Main Calculation Function (Current Portfolio Summary) ---
 # Assume helper functions (_load_and_clean_transactions, _process_transactions_to_holdings,
 # _calculate_cash_balances, _build_summary_rows, _calculate_aggregate_metrics, safe_sum,
 # get_cached_or_fetch_yfinance_data, get_conversion_rate, get_cash_flows_for_mwr,
 # calculate_irr, calculate_npv) are defined above this function.
 
-# Assume constants like CASH_SYMBOL_CSV_PERFORM, SHORTABLE_SYMBOLS, YFINANCE_EXCLUDED_SYMBOLS are defined globally.
-
+# Main function refactoring for status flag propagation
+# --- Assume imports and other parts of the function are correct ---
 def calculate_portfolio_summary(
     transactions_csv_file: str,
     fmp_api_key: Optional[str] = None, # Currently unused but kept for signature
@@ -1806,14 +1694,7 @@ def calculate_portfolio_summary(
     for processing steps.
 
     Args:
-        transactions_csv_file (str): Path to the transactions CSV file.
-        fmp_api_key (Optional[str]): FMP API key (currently unused).
-        display_currency (str): The currency for displaying results.
-        show_closed_positions (bool): Whether to include positions with zero quantity.
-        account_currency_map (Dict): Map of account names to their local currency.
-        default_currency (str): Default currency if account not in map.
-        cache_file_path (str): Path for the Yahoo Finance current data cache.
-        include_accounts (Optional[List[str]]): List of account names to include. If None/empty, all accounts included.
+        (Args documentation...)
 
     Returns:
         Tuple:
@@ -1824,43 +1705,42 @@ def calculate_portfolio_summary(
             - str: Status message string.
     """
     logging.info(f"\n--- Starting Portfolio Calculation (Yahoo Finance - Current Summary) ---")
-    filter_desc = "All Accounts"
-    if include_accounts: filter_desc = f"Accounts: {', '.join(sorted(include_accounts))}"
-    logging.info(f"Parameters: CSV='{os.path.basename(transactions_csv_file)}', Currency='{display_currency}', ShowClosed={show_closed_positions}, Scope='{filter_desc}'")
-    logging.info(f"Currency Settings: Default='{default_currency}', Account Map='{account_currency_map}'")
+    # ... (parameter logging) ...
+    has_errors = False # Overall error flag for the function
+    has_warnings = False # Overall warning flag for the function
+    status_parts = [] # Collect status message parts
 
     original_transactions_df: Optional[pd.DataFrame] = None
     all_transactions_df: Optional[pd.DataFrame] = None
     ignored_row_indices = set()
     ignored_reasons: Dict[int, str] = {}
-    status_messages = []
     report_date = datetime.now().date() # Use current date for summary report
 
     # --- 1. Load & Clean ALL Transactions ---
-    all_transactions_df, original_transactions_df, ignored_indices_load, ignored_reasons_load = _load_and_clean_transactions(
-        transactions_csv_file,
-        account_currency_map,
-        default_currency
+    all_transactions_df, original_transactions_df, ignored_indices_load, ignored_reasons_load, err_load, warn_load = _load_and_clean_transactions(
+        transactions_csv_file, account_currency_map, default_currency
     )
     ignored_row_indices.update(ignored_indices_load)
     ignored_reasons.update(ignored_reasons_load)
+    if err_load: has_errors = True
+    if warn_load: has_warnings = True
+    if ignored_reasons_load: status_parts.append(f"Load/Clean Issues: {len(ignored_reasons_load)}") # Concise msg
 
-    if all_transactions_df is None:
-        msg = f"Error: File not found or failed to load/clean: {transactions_csv_file}"
-        # Attempt to return original if load failed but read occurred
+    if has_errors: # Critical error during load
+        msg = f"Error: File not found or failed critically during load/clean: {transactions_csv_file}"
+        logging.error(msg)
         ignored_df_final = original_transactions_df.loc[sorted(list(ignored_row_indices))].copy() if ignored_row_indices and original_transactions_df is not None else pd.DataFrame()
         return None, None, ignored_df_final, None, msg
-    if ignored_reasons: status_messages.append(f"Info: {len(ignored_reasons)} transactions ignored during load/clean.")
 
-    # Get available accounts from the full dataset
+    # --- (Get available accounts, Filter transactions - logic remains the same) ---
     all_available_accounts_list = []
-    if 'Account' in all_transactions_df.columns:
-        all_available_accounts_list = sorted(all_transactions_df['Account'].unique().tolist())
+    if 'Account' in all_transactions_df.columns: all_available_accounts_list = sorted(all_transactions_df['Account'].unique().tolist())
 
-    # --- 2. Filter Transactions based on include_accounts ---
-    transactions_df = pd.DataFrame() # This will hold the filtered transactions for processing
+    transactions_df = pd.DataFrame()
     available_accounts_set = set(all_available_accounts_list)
-    if not include_accounts: # If None or empty list, use all
+    included_accounts_list = []
+    filter_desc = "All Accounts"
+    if not include_accounts:
         logging.info("Info: No specific accounts provided, using all available accounts.")
         transactions_df = all_transactions_df.copy()
         included_accounts_list = sorted(list(available_accounts_set))
@@ -1868,189 +1748,186 @@ def calculate_portfolio_summary(
         valid_include_accounts = [acc for acc in include_accounts if acc in available_accounts_set]
         if not valid_include_accounts:
             msg = "Warning: None of the specified accounts to include were found. No data processed."
-            logging.warning(msg); status_messages.append(msg)
+            logging.warning(msg); has_warnings = True; status_parts.append("No valid included accounts")
             ignored_df_final = original_transactions_df.loc[sorted(list(ignored_row_indices))].copy() if ignored_row_indices and original_transactions_df is not None else pd.DataFrame()
-            return {}, pd.DataFrame(), ignored_df_final, {}, msg # Return empty but valid structures
+            empty_summary = {'_available_accounts': all_available_accounts_list}
+            final_status = "Finished with Warnings" if has_warnings else "Success" # Final status logic moved here for early exit
+            return empty_summary, pd.DataFrame(), ignored_df_final, {}, f"{final_status} ({msg})"
         logging.info(f"Info: Filtering transactions FOR accounts: {', '.join(sorted(valid_include_accounts))}")
         transactions_df = all_transactions_df[all_transactions_df['Account'].isin(valid_include_accounts)].copy()
-        included_accounts_list = sorted(valid_include_accounts) # Use the validated list
+        included_accounts_list = sorted(valid_include_accounts)
+        filter_desc = f"Accounts: {', '.join(included_accounts_list)}"
 
     if transactions_df.empty:
         msg = f"Warning: No transactions remain after filtering for accounts: {', '.join(sorted(include_accounts if include_accounts else []))}"
-        logging.warning(msg); status_messages.append(msg)
+        logging.warning(msg); has_warnings = True; status_parts.append("No data after filter")
         ignored_df_final = original_transactions_df.loc[sorted(list(ignored_row_indices))].copy() if ignored_row_indices and original_transactions_df is not None else pd.DataFrame()
-        # Add available accounts to empty summary for GUI consistency
         empty_summary = {'_available_accounts': all_available_accounts_list}
-        return empty_summary, pd.DataFrame(), ignored_df_final, {}, msg
+        final_status = "Finished with Warnings" if has_warnings else "Success" # Final status logic moved here
+        return empty_summary, pd.DataFrame(), ignored_df_final, {}, f"{final_status} ({msg})"
+
 
     # --- 3. Process Stock/ETF Transactions ---
-    holdings, overall_realized_gains_local, overall_dividends_local, overall_commissions_local, \
-    ignored_indices_proc, ignored_reasons_proc = _process_transactions_to_holdings(
-        transactions_df=transactions_df,
-        default_currency=default_currency,
-        shortable_symbols=SHORTABLE_SYMBOLS
+    holdings, _, _, _, ignored_indices_proc, ignored_reasons_proc, warn_proc = _process_transactions_to_holdings(
+        transactions_df=transactions_df, default_currency=default_currency, shortable_symbols=SHORTABLE_SYMBOLS
     )
     ignored_row_indices.update(ignored_indices_proc)
     ignored_reasons.update(ignored_reasons_proc)
+    if warn_proc: has_warnings = True # Update overall flag
+    if ignored_reasons_proc: status_parts.append(f"Processing Issues: {len(ignored_reasons_proc)}")
 
     # --- 4. Calculate $CASH Balances ---
-    cash_summary = _calculate_cash_balances(
-        transactions_df=transactions_df,
-        default_currency=default_currency
+    cash_summary, err_cash, warn_cash = _calculate_cash_balances(
+        transactions_df=transactions_df, default_currency=default_currency
     )
+    if err_cash: has_errors = True # Update overall flag
+    # if warn_cash: has_warnings = True # Currently no warnings from cash calc
 
-    # --- 5. Fetch Current Market Data (Prices, Change, FX vs USD) ---
-    logging.info("Determining required data and fetching from Yahoo Finance...")
-    all_stock_symbols_internal = list(set(key[0] for key in holdings.keys())) # No need for cash symbol here
-    # Determine required currencies from holdings, cash summary, display, and default
+    if has_errors: # Check if critical error happened during cash calc
+        msg = "Error: Failed critically during cash balance calculation."
+        logging.error(msg); status_parts.append("Cash Calc Error")
+        ignored_df_final = original_transactions_df.loc[sorted(list(ignored_row_indices))].copy() if ignored_row_indices and original_transactions_df is not None else pd.DataFrame()
+        empty_summary = {'_available_accounts': all_available_accounts_list}
+        final_status = "Finished with Errors" # Final status logic moved here
+        return empty_summary, pd.DataFrame(), ignored_df_final, {}, f"{final_status} ({msg})"
+
+    # --- 5. Fetch Current Market Data ---
+    # ... (logic to determine symbols and currencies remains the same) ...
+    all_stock_symbols_internal = list(set(key[0] for key in holdings.keys()))
     required_currencies: Set[str] = set([display_currency, default_currency])
     for data in holdings.values(): required_currencies.add(data.get('local_currency', default_currency))
     for data in cash_summary.values(): required_currencies.add(data.get('currency', default_currency))
-    required_currencies.discard('N/A') # Remove potential N/A if it sneaks in
-    required_currencies.discard(None)
+    required_currencies.discard(None); required_currencies.discard('N/A')
 
-    current_stock_data_internal, current_fx_rates_vs_usd = get_cached_or_fetch_yfinance_data(
-        internal_stock_symbols=all_stock_symbols_internal,
-        required_currencies=required_currencies,
-        cache_file=cache_file_path
+    # Capture flags from data fetch
+    current_stock_data_internal, current_fx_rates_vs_usd, err_fetch, warn_fetch = get_cached_or_fetch_yfinance_data(
+        internal_stock_symbols=all_stock_symbols_internal, required_currencies=required_currencies, cache_file=cache_file_path
     )
+    if err_fetch: has_errors = True # Update overall flag
+    if warn_fetch: has_warnings = True # Update overall flag
 
-    if current_stock_data_internal is None or current_fx_rates_vs_usd is None:
-        msg = "Error: Price/FX fetch failed via Yahoo Finance. Cannot calculate current values."
-        logging.error(f"FATAL: {msg}")
-        status_messages.append(msg)
+    if has_errors or current_stock_data_internal is None or current_fx_rates_vs_usd is None:
+        msg = "Error: Price/FX fetch failed critically via Yahoo Finance. Cannot calculate current values."
+        logging.error(f"FATAL: {msg}"); status_parts.append("Fetch Failed")
         ignored_df_final = original_transactions_df.loc[sorted(list(ignored_row_indices))].copy() if ignored_row_indices and original_transactions_df is not None else pd.DataFrame()
-        # Return None for metrics, DataFrames; include available accounts in empty summary
         empty_summary = {'_available_accounts': all_available_accounts_list}
-        return empty_summary, pd.DataFrame(), ignored_df_final, {}, msg
+        final_status = "Finished with Errors" # Final status logic moved here
+        return empty_summary, pd.DataFrame(), ignored_df_final, {}, f"{final_status} ({msg})"
+    elif has_warnings: # Check only warnings now, as errors handled above
+         status_parts.append("Fetch Warnings") # Add context
 
-    # --- 6. Build Detailed Summary Rows (in display currency) ---
-    portfolio_summary_rows, account_market_values_local, account_local_currency_map = _build_summary_rows(
-        holdings=holdings,
-        cash_summary=cash_summary,
-        current_stock_data=current_stock_data_internal,
-        current_fx_rates_vs_usd=current_fx_rates_vs_usd, # Pass CURR per USD rates
-        display_currency=display_currency,
-        default_currency=default_currency,
-        transactions_df=transactions_df, # Pass filtered transactions for IRR
-        report_date=report_date,
-        shortable_symbols=SHORTABLE_SYMBOLS,
-        excluded_symbols=YFINANCE_EXCLUDED_SYMBOLS
+
+    # --- 6. Build Detailed Summary Rows ---
+    # Capture flags from build step
+    portfolio_summary_rows, account_market_values_local, account_local_currency_map, err_build, warn_build = _build_summary_rows(
+        holdings=holdings, cash_summary=cash_summary, current_stock_data=current_stock_data_internal,
+        current_fx_rates_vs_usd=current_fx_rates_vs_usd, display_currency=display_currency, default_currency=default_currency,
+        transactions_df=transactions_df, report_date=report_date, shortable_symbols=SHORTABLE_SYMBOLS, excluded_symbols=YFINANCE_EXCLUDED_SYMBOLS
     )
+    if err_build: has_errors = True # Update overall flag
+    if warn_build: has_warnings = True # Update overall flag
 
-    # --- Initialize return values and metrics dicts ---
+    if has_errors: # Check if critical error (like FX failure) happened during build
+         msg = "Error: Failed critically during summary row building (likely FX)."
+         logging.error(msg); status_parts.append("Summary Build Error")
+         ignored_df_final = original_transactions_df.loc[sorted(list(ignored_row_indices))].copy() if ignored_row_indices and original_transactions_df is not None else pd.DataFrame()
+         empty_summary = {'_available_accounts': all_available_accounts_list}
+         final_status = "Finished with Errors" # Final status logic moved here
+         return empty_summary, pd.DataFrame(), ignored_df_final, {}, f"{final_status} ({msg})"
+    elif not portfolio_summary_rows and (holdings or cash_summary): # If no rows generated despite data
+         msg = "Warning: Failed to generate summary rows (FX or other issue)."
+         logging.warning(msg); has_warnings = True; status_parts.append("Summary Build Failed")
+
+
     summary_df = pd.DataFrame()
-    summary_df_for_return = pd.DataFrame() # Initialize here
     overall_summary_metrics = {}
-    account_level_metrics: Dict[str, Dict[str, float]] = defaultdict(lambda: { # Initialize account metrics
-         'mwr': np.nan, 'total_return_pct': np.nan, 'total_market_value_display': 0.0,
-         'total_realized_gain_display': 0.0, 'total_unrealized_gain_display': 0.0,
-         'total_dividends_display': 0.0, 'total_commissions_display': 0.0,
-         'total_gain_display': 0.0, 'total_cash_display': 0.0,
-         'total_cost_invested_display': 0.0, 'total_day_change_display': 0.0,
-         'total_day_change_percent': np.nan
-    })
+    account_level_metrics: Dict[str, Dict[str, float]] = {}
 
     # --- 7. Create DataFrame & Calculate Aggregates ---
     if not portfolio_summary_rows:
-        logging.warning("Warning: Portfolio summary list is empty after processing holdings and cash.")
+        # ... (logic for empty rows remains same, uses has_warnings flag) ...
+        logging.warning("Warning: Portfolio summary list is empty after processing.")
+        # has_warnings should already be true if we got here and build failed
         overall_summary_metrics = { # Populate with zeros/NaNs
-             "market_value": 0.0, "cost_basis_held": 0.0, "unrealized_gain": 0.0,
-             "realized_gain": 0.0, "dividends": 0.0, "commissions": 0.0,
-             "total_gain": 0.0, "total_cost_invested": 0.0, "portfolio_mwr": np.nan,
-             "day_change_display": 0.0, "day_change_percent": np.nan,
-             "report_date": report_date.strftime('%Y-%m-%d'),
-             "display_currency": display_currency, "cumulative_investment": 0.0,
-             "total_return_pct": np.nan
+             "market_value": 0.0, "cost_basis_held": 0.0, "unrealized_gain": 0.0, "realized_gain": 0.0,
+             "dividends": 0.0, "commissions": 0.0, "total_gain": 0.0, "total_cost_invested": 0.0,
+             "portfolio_mwr": np.nan, "day_change_display": 0.0, "day_change_percent": np.nan,
+             "report_date": report_date.strftime('%Y-%m-%d'), "display_currency": display_currency,
+             "cumulative_investment": 0.0, "total_return_pct": np.nan
         }
-        status_messages.append("Warning: No holdings data generated for selected accounts.")
-        # summary_df remains empty, account_level_metrics remains empty defaultdict
+        summary_df = pd.DataFrame()
     else:
         full_summary_df = pd.DataFrame(portfolio_summary_rows)
+        # Convert data types (add try-except)
+        try:
+            # ... (numeric conversion logic) ...
+            money_cols_display = [c for c in full_summary_df.columns if f'({display_currency})' in c]
+            percent_cols = ['Unreal. Gain %', 'Total Return %', 'IRR (%)', 'Day Change %']
+            numeric_cols_to_convert = ['Quantity'] + money_cols_display + percent_cols
+            if f'Cumulative Investment ({display_currency})' not in numeric_cols_to_convert: numeric_cols_to_convert.append(f'Cumulative Investment ({display_currency})')
+            for col in numeric_cols_to_convert:
+                if col in full_summary_df.columns: full_summary_df[col] = pd.to_numeric(full_summary_df[col], errors='coerce')
+        except Exception as e:
+             logging.warning(f"Warning: Error during numeric conversion of summary columns: {e}"); has_warnings = True
 
-        # Convert data types
-        money_cols_display = [c for c in full_summary_df.columns if f'({display_currency})' in c]
-        percent_cols = ['Unreal. Gain %', 'Total Return %', 'IRR (%)', 'Day Change %']
-        numeric_cols_to_convert = ['Quantity'] + money_cols_display + percent_cols
-        if f'Cumulative Investment ({display_currency})' not in numeric_cols_to_convert:
-             numeric_cols_to_convert.append(f'Cumulative Investment ({display_currency})')
-        for col in numeric_cols_to_convert:
-            if col in full_summary_df.columns:
-                full_summary_df[col] = pd.to_numeric(full_summary_df[col], errors='coerce')
-
-        # Sort
-        try: # Sorting might fail if essential columns are missing/all NaN
+        # Sort (add try-except)
+        try:
              full_summary_df.sort_values(by=['Account', f'Market Value ({display_currency})'], ascending=[True, False], na_position='last', inplace=True)
-        except KeyError:
-             logging.warning("Warning: Could not sort summary DataFrame (required columns might be missing).")
+        except KeyError: logging.warning("Warning: Could not sort summary DataFrame."); has_warnings = True # Sorting failure is a warning
 
-
-        # Calculate Aggregates using the helper
-        cash_symbol = CASH_SYMBOL_CSV # Ensure defined
-        overall_summary_metrics, account_level_metrics = _calculate_aggregate_metrics(
-            full_summary_df=full_summary_df,
-            display_currency=display_currency,
-            transactions_df=transactions_df,
-            report_date=report_date,
-            current_fx_rates_vs_usd=current_fx_rates_vs_usd, # Pass if MWR uses current rates
-            account_local_currency_map=account_local_currency_map # Pass if MWR uses current rates
+        # Calculate Aggregates and capture flags
+        overall_summary_metrics, account_level_metrics, err_agg, warn_agg = _calculate_aggregate_metrics(
+            full_summary_df=full_summary_df, display_currency=display_currency, transactions_df=transactions_df,
+            report_date=report_date # Removed MWR args
         )
+        if err_agg: has_errors = True # Update overall flag (though currently not set in helper)
+        if warn_agg: has_warnings = True # Update overall flag
 
-        # Prepare the DataFrame to be returned, potentially filtering closed positions
-        summary_df_for_return = full_summary_df # Start with the full one
+        # Check price source warning (already updates has_warnings)
+        price_source_warnings = False
+        if 'Price Source' in full_summary_df.columns:
+            non_cash_holdings = full_summary_df[full_summary_df['Symbol'] != CASH_SYMBOL_CSV]
+            if not non_cash_holdings.empty and non_cash_holdings['Price Source'].str.contains("Fallback|Excluded|Invalid", na=False).any():
+                price_source_warnings = True # Local flag for message below
+        if price_source_warnings:
+            logging.warning("Warning: Some holdings used fallback prices.")
+            has_warnings = True; status_parts.append("Fallback Prices Used")
+
+        # Filter closed positions
+        summary_df_for_return = full_summary_df
         if not show_closed_positions:
-             held_mask = (full_summary_df['Quantity'].abs() > 1e-9) | (full_summary_df['Symbol'] == cash_symbol)
+             held_mask = (full_summary_df['Quantity'].abs() > 1e-9) | (full_summary_df['Symbol'] == CASH_SYMBOL_CSV)
              summary_df_for_return = full_summary_df[held_mask].copy()
-
-    # --- Final Assignment of DataFrame to Return ---
-    summary_df = summary_df_for_return
+        summary_df = summary_df_for_return
 
     # --- Add Metadata to Overall Summary ---
-    # Ensure overall_summary_metrics exists before adding keys
+    # ... (logic remains the same) ...
     if overall_summary_metrics is None: overall_summary_metrics = {}
     overall_summary_metrics['_available_accounts'] = all_available_accounts_list
-    # Add exchange rate if needed
     if display_currency != default_currency and current_fx_rates_vs_usd:
          base_to_display_rate = get_conversion_rate(default_currency, display_currency, current_fx_rates_vs_usd)
-         # Use isfinite to check for NaN or +/- inf explicitly
-         if base_to_display_rate != 1.0 and np.isfinite(base_to_display_rate):
-              overall_summary_metrics['exchange_rate_to_display'] = base_to_display_rate
+         if base_to_display_rate != 1.0 and np.isfinite(base_to_display_rate): overall_summary_metrics['exchange_rate_to_display'] = base_to_display_rate
 
 
     # --- 8. Prepare Ignored Transactions DataFrame ---
+    # ... (logic remains the same) ...
     ignored_df_final = pd.DataFrame()
     if ignored_row_indices and original_transactions_df is not None:
-        # Filter original_df using valid indices present in its index
         valid_indices = sorted([idx for idx in ignored_row_indices if idx in original_transactions_df.index])
         if valid_indices:
              ignored_df_final = original_transactions_df.loc[valid_indices].copy()
-             try:
-                 # Map reasons using the combined ignored_reasons dictionary
-                 ignored_df_final['Reason Ignored'] = ignored_df_final.index.map(ignored_reasons).fillna("Unknown Reason")
-             except Exception as e_reason:
-                 logging.warning(f"Warning: Could not add 'Reason Ignored' column: {e_reason}")
+             try: ignored_df_final['Reason Ignored'] = ignored_df_final.index.map(ignored_reasons).fillna("Unknown Reason")
+             except Exception as e_reason: logging.warning(f"Warning: Could not add 'Reason Ignored' column: {e_reason}")
 
 
-    # --- 9. Determine Final Status ---
-    final_status = f"Success ({filter_desc})"
-    price_source_warnings = False
-    if not full_summary_df.empty and 'Price Source' in full_summary_df.columns:
-         non_cash_holdings = full_summary_df[full_summary_df['Symbol'] != CASH_SYMBOL_CSV]
-         if not non_cash_holdings.empty:
-             price_source_warnings = non_cash_holdings['Price Source'].str.contains("Fallback|Excluded|Invalid", na=False).any()
-
-    # Combine reasons from different stages
-    all_reasons = list(ignored_reasons.values()) + status_messages
-    warnings = any("WARN" in r.upper() for r in all_reasons) or price_source_warnings or ignored_row_indices
-    errors = any("ERROR" in r.upper() for r in all_reasons) or any("FAIL" in r.upper() for r in all_reasons)
-    critical_warnings = any("CRITICAL" in r.upper() for r in all_reasons)
-
-    if critical_warnings: final_status = f"Success with Critical Warnings ({filter_desc})"
-    elif errors: final_status = f"Success with Errors ({filter_desc})"
-    elif warnings: final_status = f"Success with Warnings ({filter_desc})"
+    # --- 9. Determine Final Status (using flags) ---
+    status_prefix = "Success"
+    if has_errors: status_prefix = "Finished with Errors"
+    elif has_warnings: status_prefix = "Finished with Warnings"
+    final_status = f"{status_prefix} ({filter_desc})"
+    if status_parts: final_status += f" [{'; '.join(status_parts)}]" # Append collected context
 
     logging.info(f"--- Portfolio Calculation Finished ({filter_desc}) ---")
-    # Convert defaultdict back to dict for account_metrics return
     return overall_summary_metrics, summary_df, ignored_df_final, dict(account_level_metrics), final_status
 
 # =======================================================================
@@ -2567,7 +2444,7 @@ def _prepare_historical_inputs(
     empty_tuple_return = (None, None, set(), {}, [], [], [], [], [], {}, {}, {}, "", "", None, None, "")
 
     # --- 1. Load & Clean ALL Transactions ---
-    all_transactions_df, original_transactions_df, ignored_indices, ignored_reasons = _load_and_clean_transactions(
+    all_transactions_df, original_transactions_df, ignored_indices, ignored_reasons, err_load, warn_load = _load_and_clean_transactions(
         transactions_csv_file, account_currency_map, default_currency
     )
     if all_transactions_df is None:
@@ -3238,13 +3115,13 @@ def _calculate_accumulated_gains_and_resample(
 
     return final_df_filtered, final_twr_factor, status_update
     
-# --- Historical Performance Calculation Wrapper Function (Refactored for Parallelism + Results Cache) ---
+# --- Historical Performance Calculation Wrapper Function ---
 def calculate_historical_performance(
     transactions_csv_file: str,
     start_date: date,
     end_date: date,
-    interval: str, # 'D', 'W', 'M'
-    benchmark_symbols_yf: List[str], # Raw list from caller
+    interval: str,
+    benchmark_symbols_yf: List[str],
     display_currency: str,
     account_currency_map: Dict,
     default_currency: str,
@@ -3254,211 +3131,162 @@ def calculate_historical_performance(
     include_accounts: Optional[List[str]] = None,
     exclude_accounts: Optional[List[str]] = None
 ) -> Tuple[pd.DataFrame, str]:
-    """
-    Calculates historical portfolio performance (TWR-like accumulated gain)
-    and benchmark performance over a date range using parallel daily calculations.
-    Filters calculations based on include/exclude accounts. Orchestrates calls
-    to helper functions for different stages.
-
-    (Keep Args and Returns documentation as before)
-    """
-    CURRENT_HIST_VERSION = "v10" # Or manage this globally
+    """ Calculates historical portfolio performance... """
+    CURRENT_HIST_VERSION = "v10"
     start_time_hist = time.time()
+    has_errors = False
+    has_warnings = False
+    status_parts = [] # Collect status parts
 
-    # --- Initial Checks & Cleaning of Inputs ---
+    # --- Initial Checks & Cleaning ---
     if not YFINANCE_AVAILABLE: return pd.DataFrame(), "Error: yfinance library not installed."
     if start_date >= end_date: return pd.DataFrame(), "Error: Start date must be before end date."
     if interval not in ['D', 'W', 'M']: return pd.DataFrame(), f"Error: Invalid interval '{interval}'."
-
-    # Clean the benchmark symbols list passed in
     clean_benchmark_symbols_yf = []
-    if benchmark_symbols_yf and isinstance(benchmark_symbols_yf, list):
-        clean_benchmark_symbols_yf = [
-            b.upper().strip() for b in benchmark_symbols_yf if isinstance(b, str) and b.strip()
-        ]
-    elif not benchmark_symbols_yf:
-        logging.info(f"Hist INFO ({CURRENT_HIST_VERSION}): No benchmark symbols provided.")
-    else:
-        logging.warning(f"Hist WARN ({CURRENT_HIST_VERSION}): Invalid benchmark_symbols_yf type provided: {type(benchmark_symbols_yf)}. Ignoring benchmarks.")
+    if benchmark_symbols_yf and isinstance(benchmark_symbols_yf, list): clean_benchmark_symbols_yf = [b.upper().strip() for b in benchmark_symbols_yf if isinstance(b, str) and b.strip()]
+    elif not benchmark_symbols_yf: logging.info(f"Hist INFO ({CURRENT_HIST_VERSION}): No benchmark symbols provided.")
+    else: logging.warning(f"Hist WARN ({CURRENT_HIST_VERSION}): Invalid benchmark_symbols_yf type provided: {type(benchmark_symbols_yf)}. Ignoring benchmarks."); has_warnings = True
 
-    # --- 1. Prepare Inputs (Load, Clean, Filter, Symbols, Keys, Splits) ---
-    (transactions_df_effective, original_transactions_df, ignored_indices, ignored_reasons,
-     all_available_accounts_list, included_accounts_list_sorted, excluded_accounts_list_sorted,
-     symbols_for_stocks_and_benchmarks_yf, fx_pairs_for_api_yf, # Use the correct FX tickers list YF needs (e.g., JPY=X)
-     internal_to_yf_map, yf_to_internal_map_hist, splits_by_internal_symbol,
-     raw_data_cache_file, raw_data_cache_key,
-     daily_results_cache_file, daily_results_cache_key,
-     filter_desc) = _prepare_historical_inputs(
+    # --- 1. Prepare Inputs ---
+    prep_result = _prepare_historical_inputs(
         transactions_csv_file, account_currency_map, default_currency,
         include_accounts, exclude_accounts, start_date, end_date,
-        clean_benchmark_symbols_yf, # Pass the cleaned list
-        display_currency,
+        clean_benchmark_symbols_yf, display_currency,
         current_hist_version=CURRENT_HIST_VERSION,
         raw_cache_prefix=HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
         daily_cache_prefix=DAILY_RESULTS_CACHE_PATH_PREFIX
     )
+    (transactions_df_effective, original_transactions_df, ignored_indices, ignored_reasons,
+     all_available_accounts_list, included_accounts_list_sorted, excluded_accounts_list_sorted,
+     symbols_for_stocks_and_benchmarks_yf, fx_pairs_for_api_yf,
+     internal_to_yf_map, yf_to_internal_map_hist, splits_by_internal_symbol,
+     raw_data_cache_file, raw_data_cache_key,
+     daily_results_cache_file, daily_results_cache_key,
+     filter_desc) = prep_result
 
-    # --- Handle early exit if inputs preparation failed ---
-    if transactions_df_effective is None:
-         status_msg = f"Error: Failed to load/clean transactions from '{transactions_csv_file}' during preparation."
-         # Prepare ignored_df if possible
-         ignored_df = pd.DataFrame()
-         if ignored_indices and original_transactions_df is not None:
-              valid_indices = sorted([idx for idx in ignored_indices if idx in original_transactions_df.index])
-              if valid_indices: ignored_df = original_transactions_df.loc[valid_indices].copy()
-              # Optionally add reasons if ignored_reasons is populated
-         # Consider what to return for other values if needed by caller (though unlikely on error)
-         return pd.DataFrame(), status_msg # Return empty DataFrame on critical input error
+    if transactions_df_effective is None: # Critical failure during prep
+         status_msg = f"Error: Failed to prepare inputs (load/clean/filter failed)."
+         return pd.DataFrame(), status_msg
+    status_parts.append(f"Inputs prepared ({filter_desc})")
+    if ignored_reasons: status_parts.append(f"{len(ignored_reasons)} tx ignored")
 
-    # Initialize status message and other variables
-    status_msg = f"Historical ({CURRENT_HIST_VERSION} / Scope: {filter_desc}): Inputs prepared."
-    if ignored_reasons: status_msg += f" ({len(ignored_reasons)} ignored)."
-    processed_warnings = set()
+    processed_warnings = set() # Keep this for unadjust warnings
     final_twr_factor = np.nan
-    daily_df = pd.DataFrame() # Initialize daily results dataframe
-
+    daily_df = pd.DataFrame()
 
     # --- 3. Load or Fetch ADJUSTED Historical Raw Data ---
     historical_prices_yf_adjusted, historical_fx_yf, fetch_failed = _load_or_fetch_raw_historical_data(
-        symbols_to_fetch_yf=symbols_for_stocks_and_benchmarks_yf, # Use the correct list from prep
-        fx_pairs_to_fetch_yf=fx_pairs_for_api_yf, # Use the correct FX ticker list from prep
-        start_date=start_date,
-        end_date=end_date,
-        use_raw_data_cache=use_raw_data_cache,
-        raw_data_cache_file=raw_data_cache_file, # From prep
-        raw_data_cache_key=raw_data_cache_key # From prep
+        symbols_to_fetch_yf=symbols_for_stocks_and_benchmarks_yf, fx_pairs_to_fetch_yf=fx_pairs_for_api_yf,
+        start_date=start_date, end_date=end_date, use_raw_data_cache=use_raw_data_cache,
+        raw_data_cache_file=raw_data_cache_file, raw_data_cache_key=raw_data_cache_key
     )
+    if fetch_failed: has_errors = True
+    # Note: _load_or_fetch... logs its own warnings/errors
 
-    # --- Check for Fetch Failure ---
-    if fetch_failed:
-         status_msg += " Error: Failed fetching critical historical FX/Price data."
-         # Return empty DataFrame as calculation cannot proceed reliably
-         return pd.DataFrame(), status_msg
-
-    status_msg += " Raw adjusted data loaded/fetched."
-
+    if has_errors:
+        status_msg = f"Error: Failed fetching critical historical FX/Price data."
+        status_parts.append("Fetch Error")
+        # Construct final status
+        final_status_prefix = "Finished with Errors"
+        final_status = f"{final_status_prefix} ({filter_desc})"
+        if status_parts: final_status += f" [{'; '.join(status_parts)}]"
+        return pd.DataFrame(), final_status
+    status_parts.append("Raw adjusted data loaded/fetched")
 
     # --- 4. Derive Unadjusted Prices ---
-    # Uses the existing helper function _unadjust_prices
-    logging.info("Deriving unadjusted prices using split data...") # Add print statement
+    logging.info("Deriving unadjusted prices using split data...")
     historical_prices_yf_unadjusted = _unadjust_prices(
-        adjusted_prices_yf=historical_prices_yf_adjusted, # Input the adjusted prices
-        yf_to_internal_map=yf_to_internal_map_hist,     # Input the correct map
-        splits_by_internal_symbol=splits_by_internal_symbol, # Input splits dict
-        processed_warnings=processed_warnings              # Pass the set to track warnings
+        adjusted_prices_yf=historical_prices_yf_adjusted, yf_to_internal_map=yf_to_internal_map_hist,
+        splits_by_internal_symbol=splits_by_internal_symbol, processed_warnings=processed_warnings
     )
-    status_msg += " Unadjusted prices derived."
-
+    status_parts.append("Unadjusted prices derived")
+    if processed_warnings: has_warnings = True # If _unadjust logged warnings
 
     # --- 5 & 6. Load or Calculate Daily Results ---
-    daily_df, cache_valid_daily_results, status_update = _load_or_calculate_daily_results(
-        use_daily_results_cache=use_daily_results_cache,
-        daily_results_cache_file=daily_results_cache_file, # from prep
-        daily_results_cache_key=daily_results_cache_key, # from prep
-        start_date=start_date, # Original start date
-        end_date=end_date, # Original end date
-        transactions_df_effective=transactions_df_effective, # from prep
-        historical_prices_yf_unadjusted=historical_prices_yf_unadjusted, # from step 4
-        historical_prices_yf_adjusted=historical_prices_yf_adjusted, # from step 3
-        historical_fx_yf=historical_fx_yf, # from step 3
-        display_currency=display_currency,
-        internal_to_yf_map=internal_to_yf_map, # from prep
-        account_currency_map=account_currency_map, # Original arg
-        default_currency=default_currency, # Original arg
-        clean_benchmark_symbols_yf=clean_benchmark_symbols_yf, # Cleaned list
-        num_processes=num_processes, # Original arg
-        current_hist_version=CURRENT_HIST_VERSION,
-        filter_desc=filter_desc # from prep
+    daily_df, cache_was_valid_daily, status_update_daily = _load_or_calculate_daily_results(
+        use_daily_results_cache=use_daily_results_cache, daily_results_cache_file=daily_results_cache_file, daily_results_cache_key=daily_results_cache_key,
+        start_date=start_date, end_date=end_date, transactions_df_effective=transactions_df_effective,
+        historical_prices_yf_unadjusted=historical_prices_yf_unadjusted, historical_prices_yf_adjusted=historical_prices_yf_adjusted,
+        historical_fx_yf=historical_fx_yf, display_currency=display_currency, internal_to_yf_map=internal_to_yf_map,
+        account_currency_map=account_currency_map, default_currency=default_currency, clean_benchmark_symbols_yf=clean_benchmark_symbols_yf,
+        num_processes=num_processes, current_hist_version=CURRENT_HIST_VERSION, filter_desc=filter_desc
     )
-    status_msg += status_update # Append status from helper
+    if status_update_daily: status_parts.append(status_update_daily.strip())
+    # Check if daily calc failed critically
+    if daily_df is None or daily_df.empty:
+         if "Error" in status_update_daily or "failed" in status_update_daily.lower(): has_errors = True
+         else: has_warnings = True # Empty DF usually indicates a warning or no data
+         status_parts.append("Daily calc failed/empty")
+    if "Error" in status_update_daily or "failed" in status_update_daily.lower(): has_errors = True
+    elif "WARN" in status_update_daily.upper(): has_warnings = True
 
-    # --- Check if daily calculation failed ---
-    if daily_df.empty: # Check if DF is empty after call
-        # Status message should already contain reason if empty
-        return pd.DataFrame(), status_msg
-
-    if daily_df.empty: # Check if DF is empty after call
-        return pd.DataFrame(), status_msg
+    if has_errors or daily_df.empty: # Cannot proceed without daily data
+        final_status_prefix = "Finished with Errors" if has_errors else ("Finished with Warnings" if has_warnings else "Success")
+        final_status = f"{final_status_prefix} ({filter_desc})"
+        if status_parts: final_status += f" [{'; '.join(status_parts)}]"
+        return pd.DataFrame(), final_status
 
     # --- 7. Calculate Accumulated Gains and Resample ---
     final_df_filtered, final_twr_factor, status_update_final = _calculate_accumulated_gains_and_resample(
-        daily_df=daily_df, # Pass the calculated daily results
-        benchmark_symbols_yf=clean_benchmark_symbols_yf, # Pass cleaned benchmarks
-        interval=interval # Pass resampling interval
+        daily_df=daily_df, benchmark_symbols_yf=clean_benchmark_symbols_yf, interval=interval
     )
-    status_msg += status_update_final
+    if status_update_final: status_parts.append(status_update_final.strip())
+    if "Error" in status_update_final or "failed" in status_update_final.lower(): has_errors = True
+    elif "WARN" in status_update_final.upper(): has_warnings = True
 
     # --- 8. Final Status and Return ---
     end_time_hist = time.time()
     logging.info(f"--- Historical Performance Calculation Finished ({CURRENT_HIST_VERSION} / Scope: {filter_desc}) ---")
     logging.info(f"Total Historical Calc Time: {end_time_hist - start_time_hist:.2f} seconds")
 
-    # Determine final status based on messages/warnings/errors accumulated
-    final_status = status_msg # Use accumulated status
-    if 'failed' in status_msg.lower() or 'error' in status_msg.lower(): pass
-    elif final_df_filtered.empty: final_status += " Success (Empty Result)."
-    else: final_status += " Success."
-    # Append TWR factor (now returned by the helper)
+    final_status_prefix = "Success"
+    if has_errors: final_status_prefix = "Finished with Errors"
+    elif has_warnings: final_status_prefix = "Finished with Warnings"
+    final_status = f"{final_status_prefix} ({filter_desc})"
+    if status_parts: final_status += f" [{'; '.join(status_parts)}]"
     final_status += f"|||TWR_FACTOR:{final_twr_factor:.6f}" if pd.notna(final_twr_factor) else "|||TWR_FACTOR:NaN"
 
-    # Final column ordering (optional, good practice)
+    # Final column ordering (optional)
     if not final_df_filtered.empty:
+        # ... (column ordering logic remains the same) ...
         final_cols_order = ['Portfolio Value', 'Portfolio Daily Gain', 'daily_return', 'Portfolio Accumulated Gain']
         for bm in clean_benchmark_symbols_yf:
             if f"{bm} Price" in final_df_filtered.columns: final_cols_order.append(f"{bm} Price")
             if f"{bm} Accumulated Gain" in final_df_filtered.columns: final_cols_order.append(f"{bm} Accumulated Gain")
-        final_cols_order = [c for c in final_cols_order if c in final_df_filtered.columns] # Ensure columns exist
-        try:
-             final_df_filtered = final_df_filtered[final_cols_order]
-        except KeyError:
-             logging.warning("Warning: Could not reorder final columns.") # Should not happen if list comprehension is correct
+        final_cols_order = [c for c in final_cols_order if c in final_df_filtered.columns]
+        try: final_df_filtered = final_df_filtered[final_cols_order]
+        except KeyError: logging.warning("Warning: Could not reorder final columns.")
 
     return final_df_filtered, final_status
 
 # --- Example Usage (Main block for testing this file directly) ---
 if __name__ == '__main__':
     # Configure logging for the test run
-    import logging
-    
     logging.basicConfig(
-        level=logging.INFO,  # Show INFO, WARNING, ERROR, CRITICAL messages
-        # level=logging.DEBUG, # Uncomment this for maximum detail during debugging
-        format='%(asctime)s [%(levelname)-8s] %(filename)s:%(lineno)d - %(message)s',
+        level=logging.DEBUG, # Show INFO, WARNING, ERROR, CRITICAL messages
+        # level=logging.DEBUG, # Uncomment for maximum detail
+        format='%(asctime)s [%(levelname)-8s] %(module)s:%(lineno)d - %(message)s', # Simplified module info
         datefmt='%Y-%m-%d %H:%M:%S'
     )
 
-    # Optional: Add freeze_support() if needed for multiprocessing in your environment
-    multiprocessing.freeze_support()
+    multiprocessing.freeze_support() # Add for safety if creating executables later
+    logging.info("Running portfolio_logic.py tests...")
 
-    logging.info("Running portfolio_logic.py tests...") # Example using logging
-    
-        # --- Configuration for Test Run ---
-    test_csv_file = 'my_transactions.csv' # Needs to exist
+    test_csv_file = 'my_transactions.csv'
     test_display_currency = 'EUR'
-    # --- Define Test Account Currency Map ---
-    test_account_currency_map = {
-        'SET': 'THB',
-        'IBKR': 'USD',
-        'Fidelity': 'USD',
-        'E*TRADE':'USD',
-        'TD Ameritrade': 'USD',
-        'Sharebuilder': 'USD',
-        'Unknown': 'USD', # Specify currency for 'Unknown' if it exists
-        'Dime!': 'USD'    # Specify currency for 'Dime!'
-    }
-    test_default_currency = 'USD' # Define the default fallback
+    test_account_currency_map = {'SET': 'THB', 'IBKR': 'USD', 'Fidelity': 'USD', 'E*TRADE':'USD', 'TD Ameritrade': 'USD', 'Sharebuilder': 'USD', 'Unknown': 'USD', 'Dime!': 'USD', 'ING Direct': 'USD', 'Penson': 'USD'}
+    test_default_currency = 'USD'
 
-    # --- Test Historical Performance Calculation ---
     logging.info("\n--- Testing Historical Performance Calculation (v10 - Account/Currency) ---")
     test_start = date(2023, 1, 1); test_end = date(2024, 6, 30); test_interval = 'M'; test_benchmarks = ['SPY', 'QQQ']
     test_use_raw_cache_flag = True; test_use_daily_results_cache_flag = True; test_num_processes = None
-    test_accounts_all = None; test_accounts_subset1 = ['SET', 'IBKR']; test_exclude_set = ['SET']
+    test_accounts_subset1 = ['IBKR', 'E*TRADE']; test_exclude_set = ['SET']
+    test_accounts_subset2 = ['E*TRADE']
 
     test_scenarios = {
-        # "All": {"include": test_accounts_all, "exclude": None},
-        # "All_Exclude_SET": {"include": test_accounts_all, "exclude": test_exclude_set},
-        # "SET_Only": {"include": ['SET'], "exclude": None},
-        "IBKR_E*TRADE": {"include": test_accounts_subset1, "exclude": None},
+        "E*TRADE": {"include": test_accounts_subset2, "exclude": None},
+        # "IBKR_E*TRADE": {"include": test_accounts_subset1, "exclude": None},
+        # "All_Exclude_SET": {"include": None, "exclude": test_exclude_set}, # Test exclude
     }
 
     if not os.path.exists(test_csv_file):
@@ -3468,19 +3296,11 @@ if __name__ == '__main__':
             logging.info(f"\n--- Running Historical Test: Scenario='{name}', Include={scenario['include']}, Exclude={scenario['exclude']} ---")
             start_time_run = time.time()
             hist_df, hist_status = calculate_historical_performance(
-                transactions_csv_file=test_csv_file,
-                start_date=test_start,
-                end_date=test_end,
-                interval=test_interval,
-                benchmark_symbols_yf=test_benchmarks,
-                display_currency=test_display_currency,
-                account_currency_map=test_account_currency_map, # <-- Pass map
-                default_currency=test_default_currency,          # <-- Pass default
-                use_raw_data_cache=test_use_raw_cache_flag,
-                use_daily_results_cache=test_use_daily_results_cache_flag,
-                num_processes=test_num_processes,
-                include_accounts=scenario['include'],
-                exclude_accounts=scenario['exclude']
+                transactions_csv_file=test_csv_file, start_date=test_start, end_date=test_end, interval=test_interval,
+                benchmark_symbols_yf=test_benchmarks, display_currency=test_display_currency,
+                account_currency_map=test_account_currency_map, default_currency=test_default_currency,
+                use_raw_data_cache=test_use_raw_cache_flag, use_daily_results_cache=test_use_daily_results_cache_flag,
+                num_processes=test_num_processes, include_accounts=scenario['include'], exclude_accounts=scenario['exclude']
             )
             end_time_run = time.time()
             logging.info(f"Test '{name}' Status: {hist_status}")
@@ -3488,20 +3308,35 @@ if __name__ == '__main__':
             if not hist_df.empty: logging.info(f"Test '{name}' DF tail:\n{hist_df.tail().to_string()}")
             else: logging.info(f"Test '{name}' Result: Empty DataFrame")
 
-        # --- Test Current Portfolio Summary ---
         logging.info("\n--- Testing Current Portfolio Summary (Account Inclusion/Currency) ---")
-        summary_metrics, holdings_df, ignored_df, account_metrics, status = calculate_portfolio_summary(
-            transactions_csv_file=test_csv_file,
-            display_currency=test_display_currency,
-            account_currency_map=test_account_currency_map, # <-- Pass map
-            default_currency=test_default_currency,          # <-- Pass default
-            include_accounts=test_accounts_subset1 # Test with a subset
+        summary_metrics, holdings_df, ignored_df_final, account_metrics, status = calculate_portfolio_summary(
+            transactions_csv_file=test_csv_file, display_currency=test_display_currency,
+            account_currency_map=test_account_currency_map, default_currency=test_default_currency,
+            include_accounts=test_accounts_subset1
         )
         logging.info(f"Current Summary Status (Subset {test_accounts_subset1}): {status}")
         if summary_metrics: logging.info(f"Overall Metrics (Subset): {summary_metrics}")
         if holdings_df is not None and not holdings_df.empty: logging.info(f"Holdings DF (Subset) Head:\n{holdings_df.head().to_string()}")
         if account_metrics: logging.info(f"Account Metrics (Subset): {account_metrics}")
+        if ignored_df_final is not None and not ignored_df_final.empty: logging.warning(f"Ignored transactions found:\n{ignored_df_final.to_string()}")
 
-    logging.info("Finished portfolio_logic.py tests.") # Example using logging
-
-# --- END OF FILE portfolio_logic.py ---
+        # ---> ADD THIS CHECK <---
+        if ignored_df_final is not None and not ignored_df_final.empty:
+            logging.warning(f"--- Ignored Transactions ({len(ignored_df_final)}) ---")
+            # Filter specifically for AAPL/ETRADE Buys if needed for clarity
+            ignored_aapl_buys = ignored_df_final[
+                (ignored_df_final['Stock / ETF Symbol'] == 'AAPL') &
+                (ignored_df_final['Investment Account'] == 'E*TRADE') &
+                (ignored_df_final['Transaction Type'] == 'Buy')
+            ]
+            if not ignored_aapl_buys.empty:
+                logging.warning("!!! Found Ignored AAPL/E*TRADE Buy Transactions:")
+                logging.warning(f"\n{ignored_aapl_buys.to_string()}")
+            else:
+                logging.warning("No ignored AAPL/E*TRADE Buy transactions found, showing all ignored:")
+                logging.warning(f"\n{ignored_df_final.to_string()}") # Show all if no specific ones found
+        else:
+            logging.info("No transactions were ignored.")
+    
+    logging.info("Finished portfolio_logic.py tests.")
+# --- END OF REVISED portfolio_logic.py ---

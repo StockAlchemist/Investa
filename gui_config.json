@@ -9,7 +9,7 @@
         "SET": "THB"
     },
     "default_currency": "USD",
-    "graph_start_date": "2010-01-01",
+    "graph_start_date": "2010-01-04",
     "graph_end_date": "2025-04-23",
     "graph_interval": "D",
     "graph_benchmarks": [
