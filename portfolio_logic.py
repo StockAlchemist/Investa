@@ -86,193 +86,212 @@ def _get_file_hash(filepath: str) -> str:
         return "HASHING_ERROR_UNEXPECTED"
     # --- End Refined Exception Handling ---
 
-# (_load_and_clean_transactions, calculate_npv, calculate_irr, get_cash_flows_for_symbol_account,
-#  get_cash_flows_for_mwr, fetch_index_quotes_yfinance, get_cached_or_fetch_yfinance_data,
-#  get_conversion_rate)
+# --- REVISED: _load_and_clean_transactions (Correct na_values Scope) ---
 def _load_and_clean_transactions(
     transactions_csv_file: str,
     account_currency_map: Dict, # Now required
     default_currency: str      # Now required
-) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame], Set[int], Dict[int, str], bool, bool]:
+) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame], Set[int], Dict[int, str], bool, bool]: # Added has_errors, has_warnings
     """
-    Loads and cleans transactions from CSV, adding a 'Local Currency' column
-    based on the provided account_currency_map.
-    Returns cleaned_df, original_df, ignored_indices, ignored_reasons.
+    Loads and cleans transactions from CSV, adding a 'Local Currency' column.
+    Flags rows for dropping based on original index before handling date errors.
+    Returns cleaned_df, original_df, ignored_indices, ignored_reasons, has_errors, has_warnings.
     """
     original_transactions_df: Optional[pd.DataFrame] = None
     transactions_df: Optional[pd.DataFrame] = None
-    ignored_row_indices = set()
-    ignored_reasons: Dict[int, str] = {}
+    ignored_row_indices = set() # Collects ORIGINAL indices of ALL ignored rows
+    ignored_reasons: Dict[int, str] = {} # Maps ORIGINAL index to first reason ignored
     has_errors = False # Flag for critical loading errors
     has_warnings = False # Flag for recoverable issues
-    
+
+    # --- Define na_values at the top level of the function ---
+    na_values_list = ['', '#N/A', '#N/A N/A', '#NA', '-1.#IND', '-1.#QNAN', '-NaN', '-nan', '1.#IND', '1.#QNAN', '<NA>', 'N/A', 'NA', 'NULL', 'NaN', 'n/a', 'nan', 'null']
+
     logging.info(f"Helper: Attempting to load transactions from: {transactions_csv_file}")
     try:
-        # ... (dtype_spec, na_values, pd.read_csv remain the same) ...
         dtype_spec = { "Quantity of Units": str, "Amount per unit": str, "Total Amount": str, "Fees": str, "Split Ratio (new shares per old share)": str }
-        na_values = ['', '#N/A', '#N/A N/A', '#NA', '-1.#IND', '-1.#QNAN', '-NaN', '-nan', '1.#IND', '1.#QNAN', '<NA>', 'N/A', 'NA', 'NULL', 'NaN', 'n/a', 'nan', 'null']
-        original_transactions_df = pd.read_csv( transactions_csv_file, header=0, skipinitialspace=True, keep_default_na=True, na_values=na_values, dtype=dtype_spec, encoding='utf-8' )
+        if isinstance(transactions_csv_file, str): file_source = transactions_csv_file
+        else: file_source = transactions_csv_file
+        original_transactions_df_no_index = pd.read_csv( file_source, header=0, skipinitialspace=True, keep_default_na=True, na_values=na_values_list, dtype=dtype_spec, encoding='utf-8' ) # Use na_values_list
+
+        original_transactions_df = original_transactions_df_no_index.copy()
+        # --- Assign 0-based index as original_index ---
+        original_transactions_df['original_index'] = original_transactions_df.index
         transactions_df = original_transactions_df.copy()
+
         logging.info(f"Helper: Successfully loaded {len(transactions_df)} records.")
-    # --- Refined Exception Handling ---
+    # --- (Exception handling for load) ---
     except FileNotFoundError:
-        logging.error(f"Transaction file not found: {transactions_csv_file}")
-        has_errors = True
+        logging.error(f"Transaction file not found: {transactions_csv_file}"); has_errors = True
         return None, None, ignored_row_indices, ignored_reasons, has_errors, has_warnings
     except pd.errors.ParserError as e:
-        logging.error(f"Error parsing CSV file {transactions_csv_file}: {e}")
-        has_errors = True
+        logging.error(f"Error parsing CSV file {transactions_csv_file}: {e}"); has_errors = True
         return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
     except UnicodeDecodeError as e:
-        logging.error(f"Encoding error reading CSV file {transactions_csv_file}: {e}. Try saving as UTF-8.")
-        has_errors = True
+        logging.error(f"Encoding error reading CSV file {transactions_csv_file}: {e}. Try saving as UTF-8."); has_errors = True
         return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
     except PermissionError:
-        logging.error(f"Permission denied reading CSV file: {transactions_csv_file}")
-        has_errors = True
+        logging.error(f"Permission denied reading CSV file: {transactions_csv_file}"); has_errors = True
         return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
     except Exception as e:
-        logging.exception(f"Unexpected error loading transactions from {transactions_csv_file}")
-        has_errors = True
+        logging.exception(f"Unexpected error loading transactions from {transactions_csv_file}"); has_errors = True
         return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
-    # --- End Refined Exception Handling ---
 
     if transactions_df is None or transactions_df.empty:
-        logging.warning("Warning: Transactions DataFrame is empty after loading.")
-        has_warnings = True # Not necessarily an error, but worth noting
+        logging.warning("Warning: Transactions DataFrame is empty after loading."); has_warnings = True
         return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
 
     try:
-        transactions_df['original_index'] = transactions_df.index
+        # --- Rename Columns ---
         column_mapping = { "Date (MMM DD, YYYY)": "Date", "Transaction Type": "Type", "Stock / ETF Symbol": "Symbol", "Quantity of Units": "Quantity", "Amount per unit": "Price/Share", "Total Amount": "Total Amount", "Fees": "Commission", "Split Ratio (new shares per old share)": "Split Ratio", "Investment Account": "Account", "Note": "Note" }
         required_original_cols = [ "Date (MMM DD, YYYY)", "Transaction Type", "Stock / ETF Symbol", "Investment Account" ]
         actual_columns = [col.strip() for col in transactions_df.columns]
         required_stripped_cols = {col: col.strip() for col in required_original_cols}
         missing_original = [orig_col for orig_col, stripped_col in required_stripped_cols.items() if stripped_col not in actual_columns]
-        if missing_original:
-            msg = f"Missing essential CSV columns: {missing_original}. Found columns: {transactions_df.columns.tolist()}"
-            logging.error(msg)
-            raise ValueError(msg) # Raise error to stop processing
+        if missing_original: raise ValueError(f"Missing essential CSV columns: {missing_original}. Found: {transactions_df.columns.tolist()}")
 
         rename_dict = {stripped_csv_header: internal_name for csv_header, internal_name in column_mapping.items() if (stripped_csv_header := csv_header.strip()) in actual_columns}
         transactions_df.columns = actual_columns
         transactions_df.rename(columns=rename_dict, inplace=True)
 
-        # Basic Cleaning
+        # --- Basic Cleaning ---
         transactions_df['Symbol'] = transactions_df['Symbol'].fillna('UNKNOWN_SYMBOL').astype(str).str.strip().str.upper(); transactions_df.loc[transactions_df['Symbol'] == '', 'Symbol'] = 'UNKNOWN_SYMBOL'
         transactions_df.loc[transactions_df['Symbol'] == '$CASH', 'Symbol'] = CASH_SYMBOL_CSV
         transactions_df['Type'] = transactions_df['Type'].fillna('UNKNOWN_TYPE').astype(str).str.strip().str.lower(); transactions_df.loc[transactions_df['Type'] == '', 'Type'] = 'UNKNOWN_TYPE'
         transactions_df['Account'] = transactions_df['Account'].fillna('Unknown').astype(str).str.strip()
         transactions_df.loc[transactions_df['Account'] == '', 'Account'] = 'Unknown'
-
-        # ADD Local Currency
         transactions_df['Local Currency'] = transactions_df['Account'].map(account_currency_map).fillna(default_currency)
-        logging.info(f"Helper: Added 'Local Currency' column. Example: {transactions_df[['Account', 'Local Currency']].head().to_string(index=False)}")
+        logging.info(f"Helper: Added 'Local Currency' column.")
 
-        # Date Parsing
-        # Store original dates for potential error reporting
-        original_dates = transactions_df['Date'].copy()
-        transactions_df['Date'] = pd.to_datetime(transactions_df['Date'], errors='coerce')
-        # Fallback parsing
+        # Store original date strings before attempting conversion
+        original_date_strings = transactions_df['Date'].copy()
+
+        # --- Numeric Conversion ---
+        numeric_cols = ['Quantity', 'Price/Share', 'Total Amount', 'Commission', 'Split Ratio']
+        for col in numeric_cols:
+            if col in transactions_df.columns:
+                # ... (numeric conversion logic with debug logging remains the same) ...
+                original_col_copy = transactions_df[col].copy()
+                if transactions_df[col].dtype == 'object':
+                    cleaned_strings = transactions_df[col].astype(str).str.replace(',', '', regex=False)
+                    converted_col = pd.to_numeric(cleaned_strings, errors='coerce')
+                else: converted_col = pd.to_numeric(transactions_df[col], errors='coerce')
+                nan_mask = converted_col.isna() & original_col_copy.notna()
+                if nan_mask.any():
+                    has_warnings = True; logging.warning(f"Warning: Coercion to numeric failed for column '{col}' on {nan_mask.sum()} rows.")
+                    # ... (optional detailed debug logging for failed coercion) ...
+                transactions_df[col] = converted_col
+
+        # --- Date Parsing and Dropping (DO THIS FIRST) ---
+        transactions_df['Date'] = pd.to_datetime(original_date_strings, errors='coerce')
         if transactions_df['Date'].isnull().any():
+            # ... (Fallback date parsing logic) ...
             formats_to_try = ['%b %d, %Y', '%m/%d/%Y', '%Y-%m-%d', '%d-%b-%Y', '%Y%m%d']
             for fmt in formats_to_try:
                 if transactions_df['Date'].isnull().any():
                     nat_mask = transactions_df['Date'].isnull()
-                    try:
-                        parsed = pd.to_datetime(original_dates[nat_mask].astype(str), format=fmt, errors='coerce') # Use original for fallback
-                        transactions_df.loc[nat_mask, 'Date'] = parsed
-                    except (ValueError, TypeError): pass # Ignore errors during fallback attempts
-            # Infer format as last resort
+                    try: parsed = pd.to_datetime(original_date_strings[nat_mask].astype(str), format=fmt, errors='coerce'); transactions_df.loc[nat_mask, 'Date'] = parsed
+                    except (ValueError, TypeError): pass
             if transactions_df['Date'].isnull().any():
                  nat_mask = transactions_df['Date'].isnull()
-                 try:
-                     inferred = pd.to_datetime(original_dates[nat_mask], infer_datetime_format=True, errors='coerce')
-                     transactions_df.loc[nat_mask, 'Date'] = inferred
+                 try: inferred = pd.to_datetime(original_date_strings[nat_mask], infer_datetime_format=True, errors='coerce'); transactions_df.loc[nat_mask, 'Date'] = inferred
                  except (ValueError, TypeError): pass
-        bad_date_indices = transactions_df[transactions_df['Date'].isnull()].index
-        if not bad_date_indices.empty:
+
+        bad_date_mask = transactions_df['Date'].isnull()
+        bad_date_df_indices_to_drop = transactions_df.index[bad_date_mask] # Use a distinct name for clarity
+
+        if not bad_date_df_indices_to_drop.empty:
              has_warnings = True
-             logging.warning(f"Warning: {len(bad_date_indices)} rows ignored due to unparseable dates.")
-             for idx in transactions_df.loc[bad_date_indices, 'original_index']: ignored_reasons[idx] = "Invalid/Unparseable Date"
-             ignored_row_indices.update(transactions_df.loc[bad_date_indices, 'original_index'])
-             transactions_df.drop(bad_date_indices, inplace=True)
-        if transactions_df.empty:
-             logging.warning("Helper WARN: All rows dropped due to invalid dates.")
-             # Keep has_errors=False as loading succeeded, but set has_warnings=True
-             has_warnings = True
+             # --- CORRECTED LOGGING ---
+             logging.warning(f"Warning: {len(bad_date_df_indices_to_drop)} rows ignored due to unparseable dates.")
+             # --- END CORRECTION ---
+             orig_indices_bad_date = transactions_df.loc[bad_date_df_indices_to_drop, 'original_index'].tolist()
+             for orig_idx in orig_indices_bad_date:
+                  if orig_idx not in ignored_reasons: ignored_reasons[orig_idx] = "Invalid/Unparseable Date"
+             ignored_row_indices.update(orig_indices_bad_date)
+             transactions_df.drop(bad_date_df_indices_to_drop, inplace=True)
+             transactions_df.reset_index(drop=True, inplace=True)
+             logging.debug(f"DataFrame index reset after date drop.")
+        # --- End Date Parsing ---
+
+        # --- Fill Commission NaNs ---
+        transactions_df['Commission'] = transactions_df['Commission'].fillna(0.0)
+
+
+        # --- Flagging Rows to Drop (Collect DF Indices AFTER Reset) ---
+        initial_row_count = len(transactions_df);
+        df_indices_to_drop = pd.Index([]) # Collect DataFrame indices
+        local_has_warnings_flagging = False
+
+        def flag_for_drop_direct(df_indices, reason):
+            nonlocal local_has_warnings_flagging
+            if not df_indices.empty:
+                valid_df_indices = df_indices.intersection(transactions_df.index)
+                if not valid_df_indices.empty:
+                    local_has_warnings_flagging = True
+                    original_indices = transactions_df.loc[valid_df_indices, 'original_index'].tolist()
+                    logging.debug(f"FLAGGING DF Indices TO DROP: Reason='{reason}', DF Indices={valid_df_indices.tolist()}, Orig Indices={original_indices}")
+                    for orig_idx in original_indices:
+                         if orig_idx not in ignored_reasons:
+                             ignored_row_indices.add(orig_idx)
+                             ignored_reasons[orig_idx] = reason
+                    return valid_df_indices
+            return pd.Index([])
+
+        logging.debug("--- START FLAGGING (AFTER DATE DROP & RESET) ---")
+        try:
+            # Define masks (using the state AFTER date drop and reset)
+            is_buy_sell_stock = transactions_df['Type'].isin(['buy', 'sell', 'deposit', 'withdrawal']) & (transactions_df['Symbol'] != CASH_SYMBOL_CSV)
+            is_short_stock = transactions_df['Type'].isin(['short sell', 'buy to cover']) & transactions_df['Symbol'].isin(SHORTABLE_SYMBOLS)
+            is_split = transactions_df['Type'].isin(['split', 'stock split'])
+            is_dividend = transactions_df['Type'] == 'dividend'
+            is_fees = transactions_df['Type'] == 'fees'
+            is_cash_tx = (transactions_df['Symbol'] == CASH_SYMBOL_CSV) & transactions_df['Type'].isin(['buy', 'sell', 'deposit', 'withdrawal'])
+            nan_qty = transactions_df['Quantity'].isnull()
+            nan_price = transactions_df['Price/Share'].isnull()
+            nan_qty_or_price = nan_qty | nan_price
+            # Robust Split Ratio Check
+            numeric_split_ratio = pd.to_numeric(transactions_df['Split Ratio'], errors='coerce')
+            is_nan_split = numeric_split_ratio.isnull()
+            is_le_zero_split = pd.Series(False, index=transactions_df.index)
+            numeric_mask_split = pd.notna(numeric_split_ratio)
+            if numeric_mask_split.any(): is_le_zero_split.loc[numeric_mask_split] = numeric_split_ratio.loc[numeric_mask_split] <= 0
+            invalid_split = is_nan_split | is_le_zero_split
+            missing_div = transactions_df['Total Amount'].isnull() & nan_price
+            # Check if original commission value was NaN
+            commission_was_nan_mask = pd.Series(False, index=transactions_df.index)
+            if original_transactions_df is not None and 'Commission' in original_transactions_df.columns and 'original_index' in original_transactions_df.columns:
+                 aligned_original_commission = original_transactions_df.set_index('original_index')['Commission'].reindex(transactions_df['original_index'])
+                 # --- Use na_values_list defined at function start ---
+                 commission_was_nan_mask = aligned_original_commission.isnull() | aligned_original_commission.isin(na_values_list)
+            is_unknown = (transactions_df['Symbol'] == 'UNKNOWN_SYMBOL') | (transactions_df['Type'] == 'UNKNOWN_TYPE')
+
+            # Flag DataFrame indices for each reason
+            df_indices_to_drop = df_indices_to_drop.union(flag_for_drop_direct(transactions_df.index[is_buy_sell_stock & nan_qty_or_price], "Missing Qty/Price Stock"))
+            df_indices_to_drop = df_indices_to_drop.union(flag_for_drop_direct(transactions_df.index[is_short_stock & nan_qty_or_price], "Missing Qty/Price Short"))
+            df_indices_to_drop = df_indices_to_drop.union(flag_for_drop_direct(transactions_df.index[is_cash_tx & nan_qty], "Missing $CASH Qty"))
+            df_indices_to_drop = df_indices_to_drop.union(flag_for_drop_direct(transactions_df.index[is_split & invalid_split], "Missing/Invalid Split Ratio"))
+            df_indices_to_drop = df_indices_to_drop.union(flag_for_drop_direct(transactions_df.index[is_dividend & missing_div], "Missing Dividend Amt/Price"))
+            df_indices_to_drop = df_indices_to_drop.union(flag_for_drop_direct(transactions_df.index[is_fees & commission_was_nan_mask], "Missing Fee Commission"))
+            df_indices_to_drop = df_indices_to_drop.union(flag_for_drop_direct(transactions_df.index[is_unknown], "Unknown Symbol/Type"))
+
+            logging.debug(f"--- END FLAGGING --- Final DF Indices to Drop: {sorted(df_indices_to_drop.tolist())}")
+
+        except Exception as e_mask_flag:
+             logging.exception("CRITICAL ERROR during mask creation/flagging after date drop")
+             has_errors = True
              return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
 
-        # Inside _load_and_clean_transactions, before the numeric conversion loop
-        logging.debug("Raw numeric column samples before conversion:")
-        numeric_cols = ['Quantity', 'Price/Share', 'Total Amount', 'Commission', 'Split Ratio']
-        for col in numeric_cols:
-            if col in transactions_df.columns:
-                try:
-                    # Log unique non-numeric-looking values before coercion
-                    problem_samples = transactions_df[pd.to_numeric(transactions_df[col].astype(str).str.replace(',', '', regex=False), errors='coerce').isna() & transactions_df[col].notna()][col].unique()
-                    if len(problem_samples) > 0:
-                        logging.debug(f"  Potential problematic values in '{col}': {problem_samples[:10]}") # Log first 10 unique issues
-                except Exception as e_log:
-                    logging.debug(f"  Debug logging error for '{col}': {e_log}")
-            
-        # --- Numeric Conversion (with detailed NaN logging) ---
-        numeric_cols = ['Quantity', 'Price/Share', 'Total Amount', 'Commission', 'Split Ratio']
-        for col in numeric_cols:
-            if col in transactions_df.columns:
-                original_col_copy = transactions_df[col].copy() # Keep original values for logging
-                
-                # Attempt conversion
-                if transactions_df[col].dtype == 'object':
-                    # Apply string replacement first if it's an object type
-                    cleaned_strings = transactions_df[col].astype(str).str.replace(',', '', regex=False)
-                    converted_col = pd.to_numeric(cleaned_strings, errors='coerce')
-                else:
-                    # If already numeric, just ensure it's numeric type (coerce won't hurt)
-                    converted_col = pd.to_numeric(transactions_df[col], errors='coerce')
+        # --- FINAL Drop rows using the collected DATAFRAME indices ---
+        if not df_indices_to_drop.empty:
+            if local_has_warnings_flagging: has_warnings = True
+            valid_indices_to_drop = df_indices_to_drop.intersection(transactions_df.index)
+            if not valid_indices_to_drop.empty:
+                 original_indices_ignored = sorted(list(transactions_df.loc[valid_indices_to_drop, 'original_index']))
+                 reasons_for_drop = {idx: ignored_reasons.get(idx, "Unknown validation") for idx in original_indices_ignored}
+                 logging.warning(f"Warning: Dropping {len(valid_indices_to_drop)} final rows (Original Indices: {original_indices_ignored}). Reasons: {reasons_for_drop}")
+                 transactions_df.drop(valid_indices_to_drop, inplace=True)
 
-                # Identify rows where NaN was introduced
-                nan_mask = converted_col.isna() & original_col_copy.notna() # NaN now, but wasn't NaN originally
-
-                if nan_mask.any():
-                    has_warnings = True # Flag that coercion caused issues
-                    problematic_rows = transactions_df[nan_mask]
-                    logging.warning(f"Warning: Coercion to numeric failed for column '{col}' on {nan_mask.sum()} rows.")
-                    for idx, row in problematic_rows.iterrows():
-                        original_value = original_col_copy.loc[idx]
-                        logging.debug(f"  -> Failed coercion for Col='{col}', original_index={row['original_index']}, Account='{row['Account']}', Original Value='{repr(original_value)}' (Type: {type(original_value)})")
-
-                transactions_df[col] = converted_col # Assign the converted column (with NaNs)
-
-        # Flagging Rows to Drop
-        initial_row_count = len(transactions_df); rows_to_drop_indices = pd.Index([])
-        def flag_for_drop(indices, reason):
-            nonlocal has_warnings # Allow modifying the flag
-            if not indices.empty:
-                has_warnings = True # Flagging rows is a warning condition
-                original_indices = transactions_df.loc[indices, 'original_index'].tolist()
-                for orig_idx in original_indices: ignored_reasons[orig_idx] = reason
-                return indices # Return only the new indices to drop
-            return pd.Index([])
-        # Flagging logic...
-        is_buy_sell_stock = transactions_df['Type'].isin(['buy', 'sell', 'deposit', 'withdrawal']) & (transactions_df['Symbol'] != CASH_SYMBOL_CSV)
-        is_short_stock = transactions_df['Type'].isin(['short sell', 'buy to cover']) & transactions_df['Symbol'].isin(SHORTABLE_SYMBOLS)
-        is_split = transactions_df['Type'].isin(['split', 'stock split']); is_dividend = transactions_df['Type'] == 'dividend'; is_fees = transactions_df['Type'] == 'fees'
-        is_cash_tx = (transactions_df['Symbol'] == CASH_SYMBOL_CSV) & transactions_df['Type'].isin(['buy', 'sell', 'deposit', 'withdrawal'])
-        nan_qty_or_price = transactions_df[['Quantity', 'Price/Share']].isnull().any(axis=1)
-        rows_to_drop_indices = rows_to_drop_indices.union(flag_for_drop(transactions_df.index[is_buy_sell_stock & nan_qty_or_price], "Missing Qty/Price Stock"))
-        rows_to_drop_indices = rows_to_drop_indices.union(flag_for_drop(transactions_df.index[is_short_stock & nan_qty_or_price], "Missing Qty/Price Short"))
-        rows_to_drop_indices = rows_to_drop_indices.union(flag_for_drop(transactions_df.index[is_cash_tx & transactions_df['Quantity'].isnull()], "Missing $CASH Qty"))
-        invalid_split = transactions_df['Split Ratio'].isnull() | (transactions_df['Split Ratio'] <= 0); rows_to_drop_indices = rows_to_drop_indices.union(flag_for_drop(transactions_df.index[is_split & invalid_split], "Missing/Invalid Split Ratio"))
-        missing_div = transactions_df['Total Amount'].isnull() & transactions_df['Price/Share'].isnull(); rows_to_drop_indices = rows_to_drop_indices.union(flag_for_drop(transactions_df.index[is_dividend & missing_div], "Missing Dividend Amt/Price"))
-        rows_to_drop_indices = rows_to_drop_indices.union(flag_for_drop(transactions_df.index[is_fees & transactions_df['Commission'].isnull()], "Missing Fee Commission"))
-        transactions_df['Commission'] = transactions_df['Commission'].fillna(0.0)
-        is_unknown = (transactions_df['Symbol'] == 'UNKNOWN_SYMBOL') | (transactions_df['Type'] == 'UNKNOWN_TYPE'); rows_to_drop_indices = rows_to_drop_indices.union(flag_for_drop(transactions_df.index[is_unknown].difference(rows_to_drop_indices), "Unknown Symbol/Type"))
-
-        if not rows_to_drop_indices.empty:
-            original_indices_to_ignore = transactions_df.loc[rows_to_drop_indices, 'original_index'].tolist(); ignored_row_indices.update(original_indices_to_ignore)
-            logging.warning(f"Warning: Dropping {len(rows_to_drop_indices)} rows due to data validation issues.")
-            transactions_df.drop(rows_to_drop_indices, inplace=True);
         if transactions_df.empty:
              logging.warning("Helper WARN: All transactions dropped during cleaning validation.")
              has_warnings = True
@@ -282,21 +301,21 @@ def _load_and_clean_transactions(
         transactions_df.sort_values(by=['Date', 'original_index'], inplace=True, ascending=True)
         return transactions_df, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
 
-    # --- Refined Exception Handling ---
-    except ValueError as e: # Catch specific column errors etc.
-        logging.error(f"Data integrity error during cleaning: {e}")
-        has_errors = True
+    # --- (Refined Exception Handling for Cleaning Block remains the same) ---
+    except ValueError as e:
+        logging.error(f"Data integrity error during cleaning: {e}"); has_errors = True
         return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
     except KeyError as e:
-        logging.error(f"Missing expected column during cleaning: {e}")
-        has_errors = True
+        logging.error(f"Missing expected column during cleaning: {e}"); has_errors = True
         return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
+    except TypeError as e:
+         logging.error(f"Type error during cleaning checks: {e}"); has_errors = True
+         return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
     except Exception as e:
-        logging.exception(f"CRITICAL ERROR during data cleaning helper")
-        has_errors = True
+        logging.exception(f"CRITICAL ERROR during data cleaning helper"); has_errors = True
         return None, original_transactions_df, ignored_row_indices, ignored_reasons, has_errors, has_warnings
     # --- End Refined Exception Handling ---
-    
+
 # --- IRR/MWR Calculation Functions ---
 def calculate_npv(rate: float, dates: List[date], cash_flows: List[float]) -> float:
     # Refined Error Handling
@@ -936,6 +955,13 @@ def get_conversion_rate(from_curr: str, to_curr: str, fx_rates: Optional[Dict[st
     Assumes fx_rates dictionary contains OTHER_CURRENCY per 1 USD.
     Returns 1.0 on failure.
     """
+    # --- ADD VALIDATION ---
+    if not from_curr or not isinstance(from_curr, str) or \
+       not to_curr or not isinstance(to_curr, str):
+        logging.debug("get_conversion_rate: Invalid from_curr or to_curr input.")
+        return 1.0 # Return fallback for invalid input types
+    # --- END VALIDATION ---
+    
     if from_curr == to_curr:
         return 1.0
     if not isinstance(fx_rates, dict):
@@ -974,7 +1000,8 @@ def get_conversion_rate(from_curr: str, to_curr: str, fx_rates: Optional[Dict[st
 
 # _process_transactions_to_holdings: Error handling within loop seems okay. Add has_warnings return.
 # _calculate_cash_balances: Needs refinement.
-# --- REVISED: _process_transactions_to_holdings (with total_buy_cost) ---
+# --- REVISED: _process_transactions_to_holdings (Dividend does NOT affect CumInv, Tracks Buy Cost) ---
+# --- REVISED: _process_transactions_to_holdings (Fix Split Logic) ---
 def _process_transactions_to_holdings(
     transactions_df: pd.DataFrame,
     default_currency: str,
@@ -982,8 +1009,8 @@ def _process_transactions_to_holdings(
 ) -> Tuple[Dict[Tuple[str, str], Dict], Dict[str, float], Dict[str, float], Dict[str, float], Set[int], Dict[int, str], bool]: # Added has_warnings
     """
     Processes stock/ETF transactions (excluding $CASH) to calculate holdings,
-    realized gains, dividends, commissions, cumulative investment, and TOTAL BUY COST
-    in their local currencies.
+    realized gains, dividends, commissions, cumulative investment (excluding dividends),
+    and TOTAL BUY COST in their local currencies. Includes corrected split logic.
 
     (Args and Returns documentation updated slightly)
     Returns:
@@ -1002,13 +1029,13 @@ def _process_transactions_to_holdings(
 
     logging.info("Processing filtered stock/ETF transactions...")
 
-    # --- Data Validation before loop (Optional but good practice) ---
+    # --- Data Validation before loop ---
     required_cols = ['Symbol', 'Account', 'Type', 'Quantity', 'Price/Share', 'Total Amount',
                      'Commission', 'Split Ratio', 'Local Currency', 'Date', 'original_index']
     missing_cols = [col for col in required_cols if col not in transactions_df.columns]
     if missing_cols:
         logging.error(f"CRITICAL ERROR in _process_transactions: Input DataFrame missing required columns: {missing_cols}. Cannot proceed.")
-        return {}, {}, {}, {}, ignored_row_indices_local, ignored_reasons_local, True # Indicate error state
+        return {}, {}, {}, {}, ignored_row_indices_local, ignored_reasons_local, True
 
     # --- Main Processing Loop ---
     for index, row in transactions_df.iterrows():
@@ -1016,7 +1043,6 @@ def _process_transactions_to_holdings(
 
         # --- Safely get values from row ---
         try:
-            # ... (Existing safe data extraction logic) ...
             original_index = row['original_index']
             symbol = str(row['Symbol']).strip()
             account = str(row['Account']).strip()
@@ -1040,7 +1066,8 @@ def _process_transactions_to_holdings(
             continue
 
         holding_key = (symbol, account)
-        log_this_row = (account == 'E*TRADE') # Flag for specific debug logging
+        log_this_row = (account == 'E*TRADE') # Flag for general E*TRADE logging
+        log_aapl_qty = (symbol == 'AAPL' and account == 'AccountA') # Flag for specific AAPL qty logging
 
         # Initialize holding if first time seeing this symbol/account combo
         if holding_key not in holdings:
@@ -1049,7 +1076,7 @@ def _process_transactions_to_holdings(
                 'dividends_local': 0.0, 'commissions_local': 0.0, 'local_currency': local_currency,
                 'short_proceeds_local': 0.0, 'short_original_qty': 0.0,
                 'total_cost_invested_local': 0.0, 'cumulative_investment_local': 0.0,
-                'total_buy_cost_local': 0.0 # <<< Initialize New Key
+                'total_buy_cost_local': 0.0
             }
         elif holdings[holding_key]['local_currency'] != local_currency:
             msg=f"Currency mismatch for {symbol}/{account}";
@@ -1063,11 +1090,11 @@ def _process_transactions_to_holdings(
         # --- Core Transaction Processing Logic ---
         try:
             prev_cum_inv = holding.get('cumulative_investment_local', 0.0) if log_this_row else 0
-
             # --- Validate Numeric Inputs Specific to Transaction Type ---
             if tx_type in ['buy', 'sell', 'deposit', 'withdrawal', 'short sell', 'buy to cover']:
                  if pd.isna(qty): raise ValueError(f"Missing Quantity for {tx_type}")
-                 if pd.isna(price_local): raise ValueError(f"Missing Price/Share for {tx_type}")
+                 # Price is not needed for deposit/withdrawal of CASH, but needed otherwise
+                 if pd.isna(price_local) and symbol != CASH_SYMBOL_CSV: raise ValueError(f"Missing Price/Share for {tx_type} {symbol}")
             elif tx_type in ['split', 'stock split']:
                  if pd.isna(split_ratio): raise ValueError("Missing Split Ratio")
             elif tx_type == 'dividend':
@@ -1075,31 +1102,30 @@ def _process_transactions_to_holdings(
             elif tx_type == 'fees':
                  if pd.isna(commission_local_raw): raise ValueError("Missing Commission for fees transaction")
 
-            # --- Shorting Logic (no changes needed for total_buy_cost) ---
+            # --- Shorting Logic ---
             if symbol in shortable_symbols and tx_type in ['short sell', 'buy to cover']:
-                # ... (existing shorting logic - does NOT affect total_buy_cost_local) ...
-                qty_abs = abs(qty);
-                if qty_abs <= 1e-9: raise ValueError(f"{tx_type} qty must be > 0")
-                if tx_type == 'short sell':
-                    proceeds = (qty_abs * price_local) - commission_local;
-                    holding['qty'] -= qty_abs; holding['short_proceeds_local'] += proceeds; holding['short_original_qty'] += qty_abs; holding['commissions_local'] += commission_local
-                    holding['cumulative_investment_local'] -= proceeds
-                elif tx_type == 'buy to cover':
-                    qty_currently_short = abs(holding['qty']) if holding['qty'] < -1e-9 else 0.0;
-                    if qty_currently_short < 1e-9: raise ValueError(f"Not currently short {symbol}/{account} to cover.")
-                    qty_covered = min(qty_abs, qty_currently_short);
-                    cost = (qty_covered * price_local) + commission_local
-                    if holding['short_original_qty'] <= 1e-9: raise ZeroDivisionError(f"Short original qty is zero/neg for {symbol}/{account}")
-                    avg_proceeds_per_share = holding['short_proceeds_local'] / holding['short_original_qty'];
-                    proceeds_attributed = qty_covered * avg_proceeds_per_share;
-                    gain = proceeds_attributed - cost
-                    holding['qty'] += qty_covered; holding['short_proceeds_local'] -= proceeds_attributed; holding['short_original_qty'] -= qty_covered
-                    holding['commissions_local'] += commission_local; holding['realized_gain_local'] += gain;
-                    overall_realized_gains_local[local_currency] += gain;
-                    if abs(holding['short_original_qty']) < 1e-9: holding['short_proceeds_local'] = 0.0; holding['short_original_qty'] = 0.0
-                    if abs(holding['qty']) < 1e-9: holding['qty'] = 0.0;
-                    holding['cumulative_investment_local'] += cost
-                continue
+                 qty_abs = abs(qty);
+                 if qty_abs <= 1e-9: raise ValueError(f"{tx_type} qty must be > 0")
+                 if tx_type == 'short sell':
+                     proceeds = (qty_abs * price_local) - commission_local;
+                     holding['qty'] -= qty_abs; holding['short_proceeds_local'] += proceeds; holding['short_original_qty'] += qty_abs; holding['commissions_local'] += commission_local
+                     holding['cumulative_investment_local'] -= proceeds
+                 elif tx_type == 'buy to cover':
+                     qty_currently_short = abs(holding['qty']) if holding['qty'] < -1e-9 else 0.0;
+                     if qty_currently_short < 1e-9: raise ValueError(f"Not currently short {symbol}/{account} to cover.")
+                     qty_covered = min(qty_abs, qty_currently_short);
+                     cost = (qty_covered * price_local) + commission_local
+                     if holding['short_original_qty'] <= 1e-9: raise ZeroDivisionError(f"Short original qty is zero/neg for {symbol}/{account}")
+                     avg_proceeds_per_share = holding['short_proceeds_local'] / holding['short_original_qty'];
+                     proceeds_attributed = qty_covered * avg_proceeds_per_share;
+                     gain = proceeds_attributed - cost
+                     holding['qty'] += qty_covered; holding['short_proceeds_local'] -= proceeds_attributed; holding['short_original_qty'] -= qty_covered
+                     holding['commissions_local'] += commission_local; holding['realized_gain_local'] += gain;
+                     overall_realized_gains_local[local_currency] += gain;
+                     if abs(holding['short_original_qty']) < 1e-9: holding['short_proceeds_local'] = 0.0; holding['short_original_qty'] = 0.0
+                     if abs(holding['qty']) < 1e-9: holding['qty'] = 0.0;
+                     holding['cumulative_investment_local'] += cost
+                 continue
 
             # --- Standard Buy/Sell/Dividend/Fee/Split ---
             if tx_type == 'buy' or tx_type == 'deposit':
@@ -1108,10 +1134,9 @@ def _process_transactions_to_holdings(
                 cost = (qty_abs * price_local) + commission_local;
                 holding['qty'] += qty_abs; holding['total_cost_local'] += cost; holding['commissions_local'] += commission_local;
                 holding['total_cost_invested_local'] += cost; holding['cumulative_investment_local'] += cost;
-                holding['total_buy_cost_local'] += cost # <<< ADD cost to total buy cost
+                holding['total_buy_cost_local'] += cost
 
             elif tx_type == 'sell' or tx_type == 'withdrawal':
-                # ... (existing sell logic - DOES NOT affect total_buy_cost_local) ...
                 qty_abs = abs(qty); held_qty = holding['qty'];
                 if held_qty <= 1e-9:
                     msg=f"Sell attempt {symbol}/{account} w/ non-positive long qty ({held_qty:.4f})";
@@ -1125,48 +1150,51 @@ def _process_transactions_to_holdings(
                 proceeds = (qty_sold * price_local) - commission_local; gain = proceeds - cost_sold
                 holding['qty'] -= qty_sold; holding['total_cost_local'] -= cost_sold; holding['commissions_local'] += commission_local;
                 holding['realized_gain_local'] += gain; overall_realized_gains_local[local_currency] += gain;
-                holding['total_cost_invested_local'] -= cost_sold
+                holding['total_cost_invested_local'] -= cost_sold # <<< Cost basis tracking adjusted on sell
                 if abs(holding['qty']) < 1e-9: holding['qty'] = 0.0; holding['total_cost_local'] = 0.0;
                 holding['cumulative_investment_local'] -= proceeds
 
             elif tx_type == 'dividend':
-                # ... (existing dividend logic - DOES NOT affect total_buy_cost_local) ...
                 div_amt_local = 0.0; qty_abs = abs(qty) if pd.notna(qty) else 0
                 if pd.notna(total_amount_local) and abs(total_amount_local) > 1e-9: div_amt_local = total_amount_local
                 elif pd.notna(price_local) and abs(price_local) > 1e-9: div_amt_local = (qty_abs * price_local) if qty_abs > 0 else price_local
                 else: div_amt_local = 0.0
                 div_effect = abs(div_amt_local) if (holding.get('qty', 0.0) >= -1e-9 or symbol not in shortable_symbols) else -abs(div_amt_local)
-                holding['dividends_local'] += div_effect; overall_dividends_local[local_currency] += div_effect;
-                holding['commissions_local'] += commission_local; holding['cumulative_investment_local'] -= div_effect;
+                holding['dividends_local'] += div_effect;
+                overall_dividends_local[local_currency] += div_effect;
+                holding['commissions_local'] += commission_local
+                # --- DIVIDEND DOES NOT AFFECT CUMULATIVE INVESTMENT ---
 
             elif tx_type == 'fees':
                  fee_cost = abs(commission_local);
                  holding['commissions_local'] += fee_cost; holding['total_cost_invested_local'] += fee_cost; holding['cumulative_investment_local'] += fee_cost;
-                 # Decide if fees should add to total_buy_cost? Arguably no, they are separate costs. Let's keep it separate.
 
             elif tx_type in ['split', 'stock split']:
-                # ... (existing split logic - DOES NOT affect total_buy_cost_local, only potentially commission part) ...
                 if pd.isna(split_ratio) or split_ratio <= 0: raise ValueError(f"Invalid split ratio: {split_ratio}")
                 old_qty = holding['qty']
                 if abs(old_qty) >= 1e-9:
                     holding['qty'] *= split_ratio
-                    if old_qty < -1e-9 and symbol in shortable_symbols: holding['short_original_qty'] *= split_ratio
-                    if abs(holding['qty']) < 1e-9: holding['qty'] = 0.0
-                    if abs(holding['short_original_qty']) < 1e-9: holding['short_original_qty'] = 0.0
-                holding['commissions_local'] += commission_local; holding['total_cost_invested_local'] += commission_local; holding['cumulative_investment_local'] += commission_local;
-                # Split fees added to buy cost? Let's say no for now.
+                    # --- FIX: Adjust short original qty IF shorting ---
+                    if old_qty < -1e-9 and symbol in shortable_symbols:
+                        holding['short_original_qty'] *= split_ratio
+                        if abs(holding['short_original_qty']) < 1e-9: holding['short_original_qty'] = 0.0
+                    # --- END FIX ---
+                    if abs(holding['qty']) < 1e-9: holding['qty'] = 0.0 # Clean up near-zero
+                else:
+                    if log_aapl_qty: logging.warning(f"  SPLIT: Skipping ratio {split_ratio} because old_qty {old_qty} is near zero")
+                holding['commissions_local'] += commission_local;
+                holding['total_cost_invested_local'] += commission_local; # Add split fee to invested cost
+                holding['cumulative_investment_local'] += commission_local; # Add split fee to cumulative investment
 
             else:
-                # ... (existing unhandled type logic) ...
                 msg=f"Unhandled stock tx type '{tx_type}'";
                 logging.warning(f"Warn in _process_transactions: {msg} row {original_index}. Skip.");
                 ignored_reasons_local[original_index]=msg; ignored_row_indices_local.add(original_index); has_warnings = True; commission_for_overall = 0.0;
                 continue
 
             # --- Log AFTER modification if it's E*TRADE ---
-            # --- (Keep existing logging block if desired) ---
-            if log_this_row:
-                 current_cum_inv = holding.get('cumulative_investment_local', 0.0) # Use .get again
+            if log_this_row and not log_aapl_qty: # General E*TRADE log
+                 current_cum_inv = holding.get('cumulative_investment_local', 0.0)
                  cost = 0.0; proceeds = 0.0; div_effect = 0.0; fee_cost = 0.0
                  if tx_type in ['buy', 'deposit', 'buy to cover']: cost = (abs(qty) * price_local) + commission_local if pd.notna(qty) and pd.notna(price_local) else 0
                  if tx_type in ['sell', 'withdrawal', 'short sell']: proceeds = (abs(qty) * price_local) - commission_local if pd.notna(qty) and pd.notna(price_local) else 0
@@ -1180,7 +1208,7 @@ def _process_transactions_to_holdings(
             if commission_for_overall != 0:
                 overall_commissions_local[local_currency] += abs(commission_for_overall)
 
-        # --- (Keep existing refined exception handling) ---
+        # --- (Exception handling for row processing) ---
         except (ValueError, TypeError, ZeroDivisionError) as e:
             error_msg = f"Calculation Error ({type(e).__name__}): {e}";
             logging.warning(f"WARN in _process_transactions row {original_index} ({symbol}, {tx_type}): {error_msg}. Skipping row.");
@@ -1206,7 +1234,7 @@ def _process_transactions_to_holdings(
         dict(overall_commissions_local),
         ignored_row_indices_local,
         ignored_reasons_local,
-        has_warnings # Return the flag
+        has_warnings
     )
 
 def _calculate_cash_balances(
