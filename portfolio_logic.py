@@ -3180,7 +3180,7 @@ def _calculate_accumulated_gains_and_resample(
 
         # --- Apply Resampling ---
         if interval != 'D' and not final_df_filtered.empty:
-             print(f"Hist Final: Resampling to interval '{interval}'...")
+             logging.info(f"Hist Final: Resampling to interval '{interval}'...")
              try:
                  resample_freq = interval
                  # Define aggregation methods
@@ -3224,12 +3224,12 @@ def _calculate_accumulated_gains_and_resample(
                  status_update += f" Resampled to '{interval}'."
 
              except Exception as e_resample:
-                  print(f"Hist WARN: Failed resampling to interval '{interval}': {e_resample}. Returning daily results.")
+                  logging.warning(f"Hist WARN: Failed resampling to interval '{interval}': {e_resample}. Returning daily results.")
                   status_update += f" Resampling failed ('{interval}')."
                   # Keep final_df_filtered as the daily results
 
     except Exception as e_accum:
-        print(f"Hist CRITICAL: Accum gain/resample calc error: {e_accum}");
+        logging.critical(f"Hist CRITICAL: Accum gain/resample calc error: {e_accum}");
         import traceback
         traceback.print_exc()
         status_update += " Accum gain/resample calc failed."
