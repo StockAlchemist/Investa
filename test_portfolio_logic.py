@@ -72,7 +72,7 @@ def sample_transactions_csv_string():
 "Aug 01, 2023",Deposit,$CASH,1000,,,0.00,AccountA,,Cash Deposit
 "Aug 15, 2023",Withdrawal,$CASH,200,,,0.00,AccountA,,Cash Withdrawal
 "Sep 01, 2023",Buy,GOOGL,5,100.00,,1.00,AccountC,,Buy 5 GOOGL JPY
-"Oct 01, 2023",Split,AAPL,,,,,AccountA,2,"2:1 Split"
+"Oct 01, 2023",Split,AAPL,,,,,,2,"2:1 Split"
 "Nov 01, 2023",Sell,AAPL,6,180.00,,5.00,AccountA,,Sell 6 AAPL Post Split
 "Dec 01, 2023",Fees,$CASH,,,,-10.00,AccountA,,Bank Fee
 "Dec 31, 2023",Buy,BAD_DATE,,,10,10,AccountA,,Invalid Date Row - Should be ignored

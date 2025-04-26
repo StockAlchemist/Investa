@@ -2,15 +2,19 @@
     "transactions_file": "my_transactions.csv",
     "display_currency": "USD",
     "show_closed": false,
-    "selected_accounts": [],
+    "selected_accounts": [
+        "E*TRADE",
+        "IBKR",
+        "SET"
+    ],
     "load_on_startup": true,
     "fmp_api_key": "wWwpekF6q72Ekd3tf0YRT26hkjHPHoPQ",
     "account_currency_map": {
         "SET": "THB"
     },
     "default_currency": "USD",
-    "graph_start_date": "2010-01-04",
-    "graph_end_date": "2025-04-23",
+    "graph_start_date": "2010-01-01",
+    "graph_end_date": "2025-04-25",
     "graph_interval": "D",
     "graph_benchmarks": [
         "SPY",
@@ -19,7 +23,7 @@
         "^SP500TR"
     ],
     "column_visibility": {
-        "Account": true,
+        "Account": false,
         "Symbol": true,
         "Quantity": true,
         "Day Chg": true,

@@ -1,3 +1,5 @@
+# --- START OF FILE main_gui.py ---
+
 # --- START OF MODIFIED main_gui.py ---
 import sys
 import os
@@ -29,7 +31,20 @@ import matplotlib
 matplotlib.use('QtAgg')
 
 # --- Matplotlib Font Configuration (unchanged) ---
-# ... (Font configuration code remains the same)
+try:
+    plt.rcParams.update({
+        'font.size': 8,
+        'font.family': 'Segoe UI', # Or Arial, Tahoma, Verdana
+        'axes.labelcolor': "#333333",
+        'xtick.color': "#666666",
+        'ytick.color': "#666666",
+        'text.color': "#333333",
+    })
+    print("Matplotlib default font configured.")
+except Exception as e:
+    print(f"Warning: Could not configure Matplotlib font: {e}")
+# --- End Matplotlib Font Configuration ---
+
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -370,6 +385,7 @@ class PandasModel(QAbstractTableModel):
 
         # --- Display Text ---
         if role == Qt.DisplayRole or role == Qt.EditRole:
+            original_value = "ERR" # Default in case of early error
             try:
                 original_value = self._data.iloc[row, col]
                 col_name = self._data.columns[col] # UI Column Name
@@ -435,7 +451,7 @@ class PandasModel(QAbstractTableModel):
                 return "FmtErr"
 
         return None # Default return for unhandled roles
-    
+
     def _get_currency_symbol_safe(self):
         """Safely get the currency symbol from the parent PortfolioApp instance."""
         if self._parent and hasattr(self._parent, '_get_currency_symbol'):
@@ -500,7 +516,12 @@ class PandasModel(QAbstractTableModel):
             if 'Symbol' in self._data.columns:
                 try:
                     # Use the globally defined cash symbol
-                    cash_mask = self._data['Symbol'].astype(str) == CASH_SYMBOL_CSV
+                    # Special check for "Cash (CUR)" format after display change
+                    base_cash_symbol = CASH_SYMBOL_CSV
+                    cash_display_symbol = f"Cash ({self._get_currency_symbol_safe(get_name=True)})"
+                    cash_mask = (self._data['Symbol'].astype(str) == base_cash_symbol) | \
+                                (self._data['Symbol'].astype(str) == cash_display_symbol)
+
                     if cash_mask.any():
                         cash_rows = self._data[cash_mask].copy()
                         non_cash_rows = self._data[~cash_mask].copy() # Update non_cash_rows
@@ -600,7 +621,7 @@ class AddTransactionDialog(QDialog):
 
         # --- Set the font for the ENTIRE dialog and its children ---
         # All widgets, including labels created by QFormLayout, will inherit this.
-        dialog_font = QFont("Arial", 20)  # Set desired font and size HERE
+        dialog_font = QFont("Arial", 10)  # Set desired font and size HERE
         self.setFont(dialog_font)
         # --- Removed separate label_font and self.label_font ---
 
@@ -688,7 +709,7 @@ class AddTransactionDialog(QDialog):
         # Connect type change (remains the same)
         self.type_combo.currentTextChanged.connect(self._update_field_states)
         self._update_field_states(self.type_combo.currentText())
-        
+
     def _update_field_states(self, tx_type):
         # ... (logic remains the same) ...
         tx_type = tx_type.lower()
@@ -880,13 +901,31 @@ class PortfolioApp(QMainWindow):
                 print(f"Config loaded from {CONFIG_FILE}")
 
                 # --- Validate Benchmarks (unchanged) ---
-                # ... (Benchmark validation code remains the same) ...
+                if "graph_benchmarks" in config:
+                    if isinstance(config["graph_benchmarks"], list):
+                        valid_benchmarks = [b for b in config["graph_benchmarks"] if isinstance(b, str) and b in BENCHMARK_OPTIONS]
+                        config["graph_benchmarks"] = valid_benchmarks
+                    else:
+                        config["graph_benchmarks"] = DEFAULT_GRAPH_BENCHMARKS
 
                 # --- Validate Selected Accounts (unchanged) ---
-                # ... (Selected accounts validation code remains the same) ...
+                if "selected_accounts" in config and not isinstance(config["selected_accounts"], list):
+                    print("Warn: Invalid 'selected_accounts' type in config. Resetting to empty list.")
+                    config["selected_accounts"] = []
 
                 # --- Validate Column Visibility (unchanged) ---
-                # ... (Column visibility validation code remains the same) ...
+                if "column_visibility" in config and isinstance(config["column_visibility"], dict):
+                    # Ensure keys are strings and values are booleans
+                    validated_visibility = {}
+                    all_cols = get_column_definitions(config.get("display_currency", default_display_currency)).keys()
+                    for col in all_cols:
+                        # Get value from loaded config, default to True if missing or invalid type
+                        val = config["column_visibility"].get(col)
+                        validated_visibility[col] = val if isinstance(val, bool) else True
+                    config["column_visibility"] = validated_visibility
+                else:
+                    config["column_visibility"] = default_column_visibility
+
 
                 # --- Validate Account Currency Map ---
                 if "account_currency_map" in config:
@@ -914,13 +953,12 @@ class PortfolioApp(QMainWindow):
                 config[key] = default_value
             # Type check (allow list for selected_accounts, dict for map)
             elif not isinstance(config[key], type(default_value)):
-                 if key not in ["fmp_api_key", "selected_accounts", "account_currency_map"] or \
+                 if key not in ["fmp_api_key", "selected_accounts", "account_currency_map", "graph_benchmarks"] or \
                     (config[key] is not None and not isinstance(config[key], (str, list, dict))):
                     print(f"Warn: Config type mismatch for '{key}'. Loaded: {type(config[key])}, Default: {type(default_value)}. Using default.")
                     config[key] = default_value
 
         # Final date format validation (unchanged)
-        # ... (Date validation code remains the same) ...
         try: QDate.fromString(config["graph_start_date"], 'yyyy-MM-dd')
         except: config["graph_start_date"] = DEFAULT_GRAPH_START_DATE.strftime('%Y-%m-%d')
         try: QDate.fromString(config["graph_end_date"], 'yyyy-MM-dd')
@@ -946,16 +984,17 @@ class PortfolioApp(QMainWindow):
             if data and isinstance(data, dict):
                 price = data.get('price')
                 change = data.get('change')
-                change_pct = data.get('changesPercentage')
+                # --- FIX: Use 'changesPercentage' which should be decimal/fraction ---
+                change_pct_decimal = data.get('changesPercentage')
                 name = data.get('name', index_symbol).split(" ")[0] # Use short name part
 
                 price_str = f"{price:,.2f}" if pd.notna(price) else "N/A"
                 change_str = "N/A"
                 change_color = COLOR_TEXT_DARK # Default color
 
-                if pd.notna(change) and pd.notna(change_pct):
+                if pd.notna(change) and pd.notna(change_pct_decimal):
                     change_val = float(change)
-                    change_pct_val = float(change_pct)
+                    change_pct_val = float(change_pct_decimal) * 100.0 # Scale to %
                     sign = "+" if change_val >= -1e-9 else "" # Add '+' for positive/zero change
                     change_str = f"{sign}{change_val:,.2f} ({sign}{change_pct_val:.2f}%)"
                     if change_val > 1e-9:
@@ -963,6 +1002,7 @@ class PortfolioApp(QMainWindow):
                     elif change_val < -1e-9:
                         change_color = COLOR_LOSS
                     # else: keep default color for zero change
+                # --- END FIX ---
 
                 # Use HTML for coloring
                 header_parts.append(f"<b>{name}:</b> {price_str} <font color='{change_color}'>{change_str}</font>")
@@ -1049,7 +1089,8 @@ class PortfolioApp(QMainWindow):
             self.selected_benchmarks.sort(key=lambda b: BENCHMARK_OPTIONS.index(b) if b in BENCHMARK_OPTIONS else float('inf'))
         except ValueError: print("Warn: Could not sort benchmarks based on options.")
         self._update_benchmark_button_text()
-        # REMOVED self.refresh_data() call
+        # Inform user to click Update Graphs
+        self.status_label.setText("Benchmark selection changed. Click 'Update Graphs' to apply.")
 
     @Slot() # Add Slot decorator if used with signals/slots consistently
     def show_benchmark_selection_menu(self):
@@ -1131,10 +1172,6 @@ class PortfolioApp(QMainWindow):
         print(f"Selected Accounts: {self.selected_accounts}")
         self._update_account_button_text()
 
-        # --- REMOVED: CRITICAL: Trigger full refresh as data scope changed ---
-        # print("Account selection changed, triggering full data refresh...")
-        # self.refresh_data()
-        # --- END REMOVED ---
         # Inform user to click Update
         self.status_label.setText("Account selection changed. Click 'Update Accounts' to apply.")
 
@@ -1186,15 +1223,13 @@ class PortfolioApp(QMainWindow):
 
         # Update button text
         self._update_account_button_text()
-        # --- REMOVED: and trigger refresh ---
-        # print("Toggling all accounts, triggering full data refresh...")
-        # self.refresh_data()
-        # --- END REMOVED ---
+
         # Inform user to click Update
         self.status_label.setText("Account selection changed. Click 'Update Accounts' to apply.")
 
     # --- End Account Selection Methods ---
 
+    # --- Helper to create summary items (moved from initUI) ---
     def create_summary_item(self, label_text, is_large=False):
         """Helper function to create a label-value pair for the summary grid."""
         label = QLabel(label_text + ":")
@@ -1290,7 +1325,7 @@ class PortfolioApp(QMainWindow):
         # Save list of selected accounts
         if hasattr(self, 'selected_accounts') and isinstance(self.selected_accounts, list):
              if hasattr(self, 'available_accounts') and len(self.selected_accounts) == len(self.available_accounts):
-                 self.config["selected_accounts"] = []
+                 self.config["selected_accounts"] = [] # Save empty list if all are selected
              else:
                  self.config["selected_accounts"] = self.selected_accounts
         else:
@@ -1377,10 +1412,8 @@ class PortfolioApp(QMainWindow):
         self.update_accounts_button.clicked.connect(self.refresh_data) # Connect to refresh_data
         controls_layout.addWidget(self.update_accounts_button)
         # --- END NEW ---
-        
+
         # --- REMOVED Account Filter ComboBox ---
-        # controls_layout.addWidget(QLabel("Filter:"))
-        # self.account_filter_combo = QComboBox() ...
 
         controls_layout.addWidget(QLabel("Currency:"))
         self.currency_combo = QComboBox()
@@ -1522,15 +1555,16 @@ class PortfolioApp(QMainWindow):
         table_header_layout = QHBoxLayout()
         table_header_layout.setContentsMargins(5, 5, 5, 3)
 
+        # Left side title for scope
+        self.table_title_label_left = QLabel("") # Initial text empty
+        self.table_title_label_left.setObjectName("TableScopeLabel") # Ensure object name exists
+        self.table_title_label_left.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        # Right side title for detail
         self.table_title_label_right = QLabel("Holdings Detail") # Initial text
         self.table_title_label_right.setObjectName("TableTitleLabel")
-        self.table_title_label_right.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.table_title_label_right.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
-        # --- MODIFICATION: Ensure object name is set ---
-        self.table_title_label_left = QLabel("") # Initial text empty
-        self.table_title_label_left.setObjectName("TableScopeLabel") # Make sure this name exists
-        self.table_title_label_left.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        # --- END MODIFICATION ---
 
         table_header_layout.addWidget(self.table_title_label_left)
         table_header_layout.addStretch(1)
@@ -1563,12 +1597,16 @@ class PortfolioApp(QMainWindow):
         self.graph_update_button.clicked.connect(self.refresh_data) # Keep this? Yes, useful for date/benchmark changes without full recalc.
         self.currency_combo.currentTextChanged.connect(self.filter_changed_refresh)
         self.show_closed_check.stateChanged.connect(self.filter_changed_refresh)
-        # REMOVED: self.account_filter_combo.currentTextChanged.connect(...)
+        # Connect date/interval/benchmark changes to indicate need for graph update
+        self.graph_start_date_edit.dateChanged.connect(lambda: self.status_label.setText("Graph dates changed. Click 'Update Graphs' to apply."))
+        self.graph_end_date_edit.dateChanged.connect(lambda: self.status_label.setText("Graph dates changed. Click 'Update Graphs' to apply."))
+        self.graph_interval_combo.currentTextChanged.connect(lambda: self.status_label.setText("Graph interval changed. Click 'Update Graphs' to apply."))
+
 
         # --- Initial UI State ---
-        # self.update_table_title()
-        self.update_account_pie_chart() # Will show "No Data" initially
-        self.update_holdings_pie_chart(pd.DataFrame()) # Will show "No Data" initially
+        self._update_table_title() # Call helper to set initial state
+        self.update_account_pie_chart() # Call without data initially
+        self.update_holdings_pie_chart(pd.DataFrame()) # Call without data initially
 
     # --- Styling Method ---
     def apply_styles(self):
@@ -1578,95 +1616,97 @@ class PortfolioApp(QMainWindow):
 
         # Define text sizes based on the base size for better readability control
         text_size_small = base_pt # For status bar, menu items, small labels
-        text_size_normal = base_pt + 2 # For buttons, comboboxes, checkboxes, date edits, line edits
-        text_size_table = base_pt + 1 # Slightly larger for table view data and headers (was +3, try smaller for density)
-        text_size_label_normal = base_pt + 3 # For standard summary labels (was +6, try smaller)
-        text_size_label_large = base_pt + 5 # For large summary labels (was +8, try smaller)
-        # ADD NEW FONT SIZE VARIABLE FOR CHART TITLES
-        text_size_chart_title = base_pt + 4 # Example: base font + 2 points (11pt if base is 9pt)
+        text_size_normal = base_pt + 1 # For buttons, comboboxes, checkboxes, date edits, line edits
+        text_size_table = base_pt + 1 # Slightly larger for table view data and headers
+        text_size_label_normal = base_pt + 2 # For standard summary labels
+        text_size_label_large = base_pt + 4 # For large summary labels
+        text_size_chart_title = base_pt + 2 # Chart titles
+        text_size_table_header = base_pt + 1 # Table headers
+        text_size_table_scope = base_pt # Smaller scope label
 
         # Use the defined colors and calculated font sizes in the stylesheet string
         base_style_sheet = f"""
-            QWidget {{ font-family: "Segoe UI", Arial, sans-serif; font-size: {self.app_font.pointSize()}pt; }}
+            QWidget {{ font-family: "Segoe UI", Arial, sans-serif; font-size: {text_size_normal}pt; }}
             QMainWindow {{ background-color: {COLOR_BG_DARK}; }}
             QFrame#HeaderFrame {{ background-color: {COLOR_BG_HEADER_LIGHT}; border-bottom: 1px solid {COLOR_BORDER_DARK}; }}
-            QLabel#MainTitleLabel {{ font-size: 16pt; font-weight: bold; color: {COLOR_BG_HEADER_ORIGINAL}; padding: 4px 0px 4px 5px; }}
-            QLabel#HeaderInfoLabel {{ font-size: 16pt; font-weight: normal; color: {COLOR_TEXT_DARK}; padding: 5px 5px; min-height: 18px; }}
+            QLabel#MainTitleLabel {{ font-size: 14pt; font-weight: bold; color: {COLOR_BG_HEADER_ORIGINAL}; padding: 4px 0px 4px 5px; }}
+            QLabel#HeaderInfoLabel {{ font-size: 10pt; font-weight: normal; color: {COLOR_TEXT_DARK}; padding: 5px 5px; min-height: 18px; }}
             QLabel#HeaderInfoLabel font {{ }} /* Allow color tags */
 
-            QPushButton#AccountSelectButton {{ padding: 4px 8px; text-align: middle; min-width: 130px; }}
+            QPushButton#AccountSelectButton {{ padding: 4px 8px; text-align: left; min-width: 130px; }} /* Keep left align for consistency */
             QPushButton#AccountSelectButton::menu-indicator {{ image: none; }}
 
             QFrame#ControlsFrame {{ background-color: {COLOR_BG_CONTROLS}; border-bottom: 1px solid {COLOR_BORDER_LIGHT}; }}
-            QFrame#ControlsFrame QLabel {{ color: {COLOR_BG_HEADER_ORIGINAL}; font-weight: bold; padding: 0 3px; font-size: {self.app_font.pointSize()+2}pt; }}
+            QFrame#ControlsFrame QLabel {{ color: {COLOR_BG_HEADER_ORIGINAL}; font-weight: bold; padding: 0 3px; font-size: {text_size_normal}pt; }}
 
             QStatusBar {{ background-color: {COLOR_BG_SUMMARY}; border-top: 1px solid {COLOR_BORDER_LIGHT}; }}
-            /* MODIFIED: Removed min-width from StatusLabel */
             QStatusBar QLabel#StatusLabel {{
-                font-size: {self.app_font.pointSize()}pt;
+                font-size: {text_size_small}pt;
                 color: {COLOR_TEXT_SECONDARY};
                 padding: 1px 8px;
-                /* min-width: 400px; */ /* Removed this line */
             }}
-            /* NEW: Style for Yahoo Attribution Label */
             QStatusBar QLabel#YahooAttributionLabel {{
-                font-size: {self.app_font.pointSize()+2}pt; /* Slightly smaller */
+                font-size: {text_size_small}pt;
                 color: {COLOR_TEXT_SECONDARY};
-                padding: 1px 8px; /* Consistent padding */
-                border-left: 1px solid {COLOR_BORDER_LIGHT}; /* Optional separator */
-                margin-left: 5px; /* Optional spacing */
+                padding: 1px 8px;
+                border-left: 1px solid {COLOR_BORDER_LIGHT};
+                margin-left: 5px;
+            }}
+            QStatusBar QLabel#ExchangeRateLabel {{ /* Renamed from FXRateLabel */
+                font-size: {text_size_small}pt;
+                color: {COLOR_TEXT_SECONDARY};
+                padding: 1px 8px;
+                border-left: 1px solid {COLOR_BORDER_LIGHT};
+                margin-left: 5px;
             }}
 
             QFrame#SummaryAndGraphsFrame {{ background-color: {COLOR_BG_SUMMARY}; border-bottom: 1px solid {COLOR_BORDER_LIGHT}; padding: 5px 10px; }}
             QWidget#PerfGraphsContainer {{ background-color: {COLOR_BG_SUMMARY}; border: 1px solid {COLOR_BORDER_LIGHT}; border-radius: 4px; padding: 5px; }}
-            QLabel#SummaryLabel {{ font-size: {self.app_font.pointSize()+6}pt; color: {COLOR_TEXT_SECONDARY}; padding-right: 5px; }}
-            QLabel#SummaryLabelLarge {{ font-size: {self.app_font.pointSize()+8}pt; color: {COLOR_TEXT_SECONDARY}; padding-right: 5px; }}
-            QLabel#SummaryValue {{ font-size: {self.app_font.pointSize()+6}pt; font-weight: bold; }}
-            QLabel#SummaryValueLarge {{ font-size: {self.app_font.pointSize()+8}pt; font-weight: bold; }}
+            QLabel#SummaryLabel {{ font-size: {text_size_label_normal}pt; color: {COLOR_TEXT_SECONDARY}; padding-right: 5px; }}
+            QLabel#SummaryLabelLarge {{ font-size: {text_size_label_large}pt; color: {COLOR_TEXT_SECONDARY}; padding-right: 5px; }}
+            QLabel#SummaryValue {{ font-size: {text_size_label_normal}pt; font-weight: bold; }}
+            QLabel#SummaryValueLarge {{ font-size: {text_size_label_large}pt; font-weight: bold; }}
 
             FigureCanvas {{ background-color: transparent; }}
             QFrame#ContentFrame {{ background-color: {COLOR_BG_CONTENT}; border: none; padding: 0; }}
             QWidget#PieChartsContainer {{ background-color: transparent; border: none; padding: 0; }}
             QFrame#TablePanel {{ background-color: transparent; border: none; padding: 0; }}
 
-            /* Style specifically for the pie chart titles */
             QLabel#AccountPieTitleLabel, QLabel#HoldingsPieTitleLabel {{
-                font-size: {text_size_chart_title}pt; /* Use the specific font size */
-                font-weight: bold; /* Ensure bold style */
-                color: {COLOR_TEXT_DARK}; /* Use a dark color */
-                padding: 0; /* Adjust padding if needed */
+                font-size: {text_size_chart_title}pt;
+                font-weight: bold;
+                color: {COLOR_TEXT_DARK};
+                padding: 0;
             }}
-            QLabel#TableTitleLabel {{
-                font-size: {self.app_font.pointSize()+3}pt; font-weight: bold;
+            QLabel#TableTitleLabel {{ /* Right side: Detail */
+                font-size: {text_size_table_header}pt; font-weight: bold;
                 color: {COLOR_BG_HEADER_ORIGINAL}; padding: 5px 0px 3px 5px;
             }}
-            /* Style for the right-side scope label */
-            QLabel#TableScopeLabel {{
-                font-size: {self.app_font.pointSize()+6}pt; 
-                font-weight: bold;
-                color: {COLOR_BG_HEADER_ORIGINAL}; 
+            QLabel#TableScopeLabel {{ /* Left side: Scope */
+                font-size: {text_size_table_scope}pt;
+                font-weight: normal; /* Less emphasis */
+                color: {COLOR_TEXT_SECONDARY};
                 padding: 5px 5px 3px 0px;
             }}
             QTableView#HoldingsTable {{
                 background-color: #FFFFFF; border: 1px solid {COLOR_BORDER_LIGHT}; border-radius: 4px;
                 gridline-color: #f0f0f5; alternate-background-color: #fAfBff;
                 selection-background-color: {COLOR_ACCENT_AMBER}; selection-color: {COLOR_TEXT_DARK};
-                /* --- THIS LINE SETS SIZE VIA STYLESHEET --- */
-                font-size: {self.app_font.pointSize()+3}pt;
+                font-size: {text_size_table}pt; /* Use table font size */
             }}
             QTableView#HoldingsTable::item {{ padding: 3px 5px; border: none; background-color: transparent; }}
             QTableView#HoldingsTable::item:selected {{ background-color: {COLOR_ACCENT_AMBER}; color: {COLOR_TEXT_DARK}; }}
             QHeaderView::section {{
                 background-color: {COLOR_ACCENT_TEAL_LIGHT}; color: {COLOR_ACCENT_TEAL};
                 padding: 4px 5px; border: none; border-bottom: 2px solid {COLOR_ACCENT_TEAL};
-                font-weight: bold; font-size: {self.app_font.pointSize()+3}pt;
+                font-weight: bold; font-size: {text_size_table_header}pt; /* Use table header font size */
             }}
             QHeaderView::section:checked {{ background-color: {COLOR_ACCENT_TEAL}; color: {COLOR_TEXT_LIGHT}; }}
 
             QPushButton {{
                 background-color: {COLOR_ACCENT_AMBER}; color: {COLOR_TEXT_DARK}; border: none;
                 padding: 4px 10px; border-radius: 10px; font-weight: bold;
-                min-width: 70px; font-size: {self.app_font.pointSize()+2}pt;
+                min-width: 70px; font-size: {text_size_normal}pt;
             }}
             QPushButton:hover {{ background-color: {COLOR_ACCENT_AMBER_DARK}; }}
             QPushButton:pressed {{ background-color: #FF8F00; }}
@@ -1677,7 +1717,7 @@ class PortfolioApp(QMainWindow):
             QComboBox, QCheckBox, QDateEdit {{
                 border: 1px solid {COLOR_BORDER_DARK}; border-radius: 4px; padding: 2px 4px;
                 background-color: {COLOR_BG_CONTROLS}; color: {COLOR_TEXT_DARK};
-                min-height: 20px; font-size: {self.app_font.pointSize()+2}pt;
+                min-height: 20px; font-size: {text_size_normal}pt;
             }}
             QComboBox {{ padding-right: 15px; }}
             QDateEdit {{ padding-right: 0px; min-width: 90px; }}
@@ -1690,13 +1730,13 @@ class PortfolioApp(QMainWindow):
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #fdfdfd, stop:1 #f0f0f0);
             }}
             QComboBox QAbstractItemView {{
-                font-size: {self.app_font.pointSize()}pt; border: 1px solid {COLOR_BORDER_DARK};
+                font-size: {text_size_normal}pt; border: 1px solid {COLOR_BORDER_DARK};
                 background-color: {COLOR_BG_CONTROLS}; outline: 0px; padding: 3px;
                 selection-background-color: {COLOR_ACCENT_TEAL}; selection-color: {COLOR_TEXT_LIGHT};
             }}
             QMenu {{
                  background-color: #FFFFFF; border: 1px solid {COLOR_BORDER_DARK};
-                 padding: 4px; font-size: {self.app_font.pointSize()}pt;
+                 padding: 4px; font-size: {text_size_normal}pt;
             }}
             QMenu::item {{ padding: 4px 20px 4px 5px; color: {COLOR_TEXT_DARK}; }}
             QMenu::item:selected {{ background-color: {COLOR_ACCENT_TEAL}; color: {COLOR_TEXT_LIGHT}; }}
@@ -1746,31 +1786,33 @@ class PortfolioApp(QMainWindow):
             final_right = sorted(final_right, key=lambda p: p['final_y'] + pos_map[p['index']]['y_nudge'])
         return label_positions
 
-    def update_account_pie_chart(self):
+    # --- Modified update_account_pie_chart to accept data ---
+    def update_account_pie_chart(self, df_account_data=None):
         self.account_ax.clear()
-        # --- Turn axis off by default, only turn on if plotting ---
-        self.account_ax.axis('off')
+        self.account_ax.axis('off') # Turn off by default
 
-        if not isinstance(self.holdings_data, pd.DataFrame) or self.holdings_data.empty:
-            # self.account_ax.text(0.5, 0.5, 'No Data', ha='center', va='center', transform=self.account_ax.transAxes, fontsize=9, color=COLOR_TEXT_SECONDARY)
+        # Use passed data if available, otherwise fallback to self.holdings_data
+        df_to_use = df_account_data if isinstance(df_account_data, pd.DataFrame) else self.holdings_data
+
+        # Check if data is valid BEFORE accessing columns
+        if not isinstance(df_to_use, pd.DataFrame) or df_to_use.empty:
             self.account_canvas.draw()
             return
 
+        # Proceed with column checks and plotting logic...
         display_currency = self.currency_combo.currentText()
         col_defs = get_column_definitions(display_currency)
         value_col_ui = 'Mkt Val'
         value_col_actual = col_defs.get(value_col_ui)
 
-        if not value_col_actual or value_col_actual not in self.holdings_data.columns or 'Account' not in self.holdings_data.columns:
-            # self.account_ax.text(0.5, 0.5, 'Missing Columns', ha='center', va='center', transform=self.account_ax.transAxes, fontsize=9, color=COLOR_TEXT_SECONDARY)
+        if not value_col_actual or value_col_actual not in df_to_use.columns or 'Account' not in df_to_use.columns:
             self.account_canvas.draw()
             return
 
-        account_values = self.holdings_data.groupby('Account')[value_col_actual].sum()
+        account_values = df_to_use.groupby('Account')[value_col_actual].sum()
         account_values = account_values[account_values.abs() > 1e-3] # Filter out near-zero values
 
         if account_values.empty:
-            # self.account_ax.text(0.5, 0.5, 'No Values > 0', ha='center', va='center', transform=self.account_ax.transAxes, fontsize=9, color=COLOR_TEXT_SECONDARY)
             self.account_canvas.draw()
             return
         else:
@@ -1826,10 +1868,9 @@ class PortfolioApp(QMainWindow):
                 kw["arrowprops"].update({"connectionstyle": connectionstyle})
                 self.account_ax.annotate(lbl, xy=(x_e, y_e), xytext=(x_t, y_t), horizontalalignment=horizontalalignment, **kw, fontsize=8, color=COLOR_TEXT_DARK)
 
-            # self.account_ax.axis('equal') # Moved up
-
         self.account_fig.tight_layout(pad=0.1)
         self.account_canvas.draw()
+    # --- End modified update_account_pie_chart ---
 
     def update_holdings_pie_chart(self, df_display):
         self.holdings_ax.clear()
@@ -1915,8 +1956,6 @@ class PortfolioApp(QMainWindow):
                 kw["arrowprops"].update({"connectionstyle": connectionstyle})
                 self.holdings_ax.annotate(lbl, xy=(x_e, y_e), xytext=(x_t, y_t), horizontalalignment=horizontalalignment, **kw, fontsize=8, color=COLOR_TEXT_DARK)
 
-            # self.holdings_ax.axis('equal') # Moved up
-
         self.holdings_fig.tight_layout(pad=0.1)
         self.holdings_canvas.draw()
 
@@ -1925,21 +1964,27 @@ class PortfolioApp(QMainWindow):
         Updates performance graphs (TWR/Value) based on stored self.historical_data.
         Handles dynamic titles based on the selected account filter.
         Adds the final TWR factor annotation to the return graph.
+        Explicitly sets the final x-axis date range and sets y-axis limits
+        based on the min/max of visible data.
         """
         # --- Determine Titles Dynamically ---
+        # ... (scope_label logic remains the same) ...
         num_available = len(self.available_accounts)
         num_selected = len(self.selected_accounts)
         scope_label = "Overall Portfolio"
-        if self.available_accounts and num_selected != num_available:
+        if self.available_accounts and num_selected > 0 and num_selected != num_available:
             if num_selected == 1:
                 scope_label = f"Account: {self.selected_accounts[0]}"
             else:
                 scope_label = f"Selected Accounts ({num_selected}/{num_available})"
+        elif not self.available_accounts:
+             scope_label = "No Accounts Available"
 
         print(f"Updating performance graphs for scope: {scope_label}... Initial: {initial}, Benchmarks: {self.selected_benchmarks}")
         self.perf_return_ax.clear(); self.abs_value_ax.clear()
 
         # --- Base Styling ---
+        # ... (base styling remains the same) ...
         for ax in [self.perf_return_ax, self.abs_value_ax]:
             ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False); ax.spines['bottom'].set_color(COLOR_BORDER_DARK); ax.spines['left'].set_color(COLOR_BORDER_DARK)
             ax.tick_params(axis='x', colors=COLOR_TEXT_SECONDARY, labelsize=8); ax.tick_params(axis='y', colors=COLOR_TEXT_SECONDARY, labelsize=8)
@@ -1949,14 +1994,32 @@ class PortfolioApp(QMainWindow):
         # --- Dynamic Titles and Currency ---
         benchmark_display_name = ", ".join(self.selected_benchmarks) if self.selected_benchmarks else "None"
         display_currency = self._get_currency_symbol(get_name=True); currency_symbol = self._get_currency_symbol()
-        return_graph_title = f"{scope_label} - Accumulated Gain (TWR)" if benchmark_display_name != "None" else f"{scope_label} - Accumulated Gain (TWR)"
+        return_graph_title = f"{scope_label} - Accumulated Gain (TWR)"
         value_graph_title = f"{scope_label} - Value ({display_currency})"
+
+        # --- Get Selected Date Range ---
+        plot_start_date = None
+        plot_end_date = None
+        try:
+            plot_start_date = self.graph_start_date_edit.date().toPython()
+            plot_end_date = self.graph_end_date_edit.date().toPython()
+        except Exception as e_get_date:
+             print(f"Error getting plot dates: {e_get_date}")
+
 
         # --- Handle Initial State or Missing Data ---
         if initial or not isinstance(self.historical_data, pd.DataFrame) or self.historical_data.empty:
             self.perf_return_ax.text(0.5, 0.5, 'No Performance Data', ha='center', va='center', transform=self.perf_return_ax.transAxes, fontsize=10, color=COLOR_TEXT_SECONDARY)
             self.abs_value_ax.text(0.5, 0.5, 'No Value Data', ha='center', va='center', transform=self.abs_value_ax.transAxes, fontsize=10, color=COLOR_TEXT_SECONDARY)
             self.perf_return_ax.set_title(return_graph_title, fontsize=10, weight='bold'); self.abs_value_ax.set_title(value_graph_title, fontsize=10, weight='bold')
+            if plot_start_date and plot_end_date:
+                try:
+                    self.perf_return_ax.set_xlim(plot_start_date, plot_end_date)
+                    self.abs_value_ax.set_xlim(plot_start_date, plot_end_date)
+                    self.perf_return_ax.autoscale(enable=True, axis='y', tight=False)
+                    self.abs_value_ax.autoscale(enable=True, axis='y', tight=False)
+                except Exception as e_lim_init:
+                    print(f"Warn: Could not set initial plot x/y-axis limits: {e_lim_init}")
             self.perf_return_canvas.draw(); self.abs_value_canvas.draw(); return
 
         # --- Data Prep ---
@@ -1964,93 +2027,207 @@ class PortfolioApp(QMainWindow):
         if not isinstance(results_df.index, pd.DatetimeIndex):
              try: results_df.index = pd.to_datetime(results_df.index)
              except Exception as e: print(f"ERROR (Plot): Index conv failed: {e}. Cannot plot."); self.perf_return_ax.text(0.5, 0.5, 'Error: Invalid Date Index', ha='center', va='center', transform=self.perf_return_ax.transAxes, fontsize=10, color=COLOR_LOSS); self.perf_return_canvas.draw(); self.abs_value_canvas.draw(); return
+        results_df.sort_index(inplace=True)
+
+        # --- Filter data to the selected date range BEFORE plotting ---
+        results_visible_df = results_df.copy() # Start with full data
+        if plot_start_date and plot_end_date:
+            try:
+                # Ensure index is compatible (convert python dates to pandas Timestamps for comparison if needed)
+                pd_start = pd.Timestamp(plot_start_date)
+                pd_end = pd.Timestamp(plot_end_date)
+                results_visible_df = results_df[(results_df.index >= pd_start) & (results_df.index <= pd_end)] # <--- THIS LINE FILTERS
+                print(f"[Graph Update] Filtered data from {results_visible_df.index.min()} to {results_visible_df.index.max()} ({len(results_visible_df)} rows)")
+            except Exception as e_filter:
+                 print(f"Error filtering DataFrame by date: {e_filter}")
+                 # Proceed with unfiltered data if filtering fails
+        else:
+             print("[Graph Update] No date range specified for filtering.")
 
         # --- Plotting Setup ---
         prop_cycle = plt.rcParams['axes.prop_cycle']; colors = prop_cycle.by_key()['color']
 
+        # --- CORRECTED: Initialize min/max Y variables ---
+        min_y_return = np.inf
+        max_y_return = -np.inf
+        min_y_value = np.inf
+        max_y_value = -np.inf
+
         # --- Plot 1: Accumulated Gain (TWR %) ---
         self.perf_return_ax.clear()
-        portfolio_plotted = False; port_accum_col = 'Portfolio Accumulated Gain' # This now refers to filtered scope
-        if port_accum_col in results_df.columns:
-             valid_portfolio_gain = results_df[port_accum_col].dropna()
+        portfolio_plotted = False; port_accum_col = 'Portfolio Accumulated Gain'
+        if port_accum_col in results_visible_df.columns:
+             valid_portfolio_gain = results_visible_df[port_accum_col].dropna()
              if not valid_portfolio_gain.empty:
                  portfolio_return_pct = (valid_portfolio_gain - 1) * 100
-                 # Use a more distinct label based on the scope
-                 plot_label = f"{scope_label}" # Use dynamic scope_label
+                 plot_label = f"{scope_label}"
                  self.perf_return_ax.plot(portfolio_return_pct.index, portfolio_return_pct, label=plot_label, linewidth=2.0, color=COLOR_ACCENT_TEAL, zorder=10)
                  portfolio_plotted = True
-        # Plot Benchmarks (unchnaged)
+                 min_y_return = min(min_y_return, portfolio_return_pct.min())
+                 max_y_return = max(max_y_return, portfolio_return_pct.max()) # Now defined
+
+        # Plot Benchmarks
         benchmarks_plotted_count = 0
         for i, benchmark_symbol in enumerate(self.selected_benchmarks):
             bench_accum_col = f'{benchmark_symbol} Accumulated Gain'
-            if bench_accum_col in results_df.columns:
-                valid_benchmark_gain = results_df[bench_accum_col].dropna()
+            if bench_accum_col in results_visible_df.columns:
+                valid_benchmark_gain = results_visible_df[bench_accum_col].dropna()
                 if not valid_benchmark_gain.empty:
                      benchmark_return_pct = (valid_benchmark_gain - 1) * 100
                      color_index = i % len(colors); bench_color = colors[color_index] if colors[color_index] != COLOR_ACCENT_TEAL else colors[(color_index + 1) % len(colors)]
                      self.perf_return_ax.plot(benchmark_return_pct.index, benchmark_return_pct, label=f'{benchmark_symbol}', linewidth=1.5, color=bench_color, alpha=0.8)
                      benchmarks_plotted_count += 1
+                     min_y_return = min(min_y_return, benchmark_return_pct.min())
+                     max_y_return = max(max_y_return, benchmark_return_pct.max()) # Now defined
 
-        # --- Add TWR Factor Annotation ---
+        # Add TWR Factor Annotation
         if hasattr(self, 'last_hist_twr_factor') and pd.notna(self.last_hist_twr_factor):
             try:
                 twr_factor_val = float(self.last_hist_twr_factor)
-                # Format as percentage gain/loss
                 twr_pct_gain = (twr_factor_val - 1) * 100.0
                 twr_text = f"Total TWR: {twr_pct_gain:+.2f}%"
                 twr_color = COLOR_GAIN if twr_pct_gain >= -1e-9 else COLOR_LOSS
-                # Position the text (e.g., bottom-left corner)
+
+                # --- ADJUST POSITION HERE ---
+                # Position near top-left. Adjust y slightly below title/legend if needed.
+                # Values are axes fraction (0=left/bottom, 1=right/top)
+                x_pos = 0.02  # Slightly indented from left edge
+                y_pos = 0.75  # Start near the top, below where title/legend might be
+                # --- END ADJUST POSITION ---
+
                 self.perf_return_ax.text(
-                    0.02, 0.7, # x, y coordinates in axes fraction (0 to 1) - MOVED TO BOTTOM LEFT
+                    x_pos, y_pos,
                     twr_text,
                     transform=self.perf_return_ax.transAxes, # Use axes coordinates
                     fontsize=9,
                     fontweight='bold',
                     color=twr_color,
-                    verticalalignment='bottom', # Changed alignment
-                    bbox=dict(boxstyle='round,pad=0.3', fc='white', alpha=0.7, ec='none') # Optional background box
+                    # Adjust alignment based on position (optional, but good practice)
+                    verticalalignment='top', # Align text top relative to y_pos
+                    horizontalalignment='left', # Align text left relative to x_pos
+                    bbox=dict(boxstyle='round,pad=0.3', fc='white', alpha=0.7, ec='none')
                 )
             except (ValueError, TypeError) as e_twr_text:
                 print(f"Warn: Could not format TWR factor for graph annotation: {e_twr_text}")
         # --- End TWR Factor Annotation ---
 
-        # Finalize Return Plot
+        # Finalize Return Plot (Formatting)
         if portfolio_plotted or benchmarks_plotted_count > 0:
-            self.perf_return_ax.yaxis.set_major_formatter(mtick.PercentFormatter()); num_legend_items = benchmarks_plotted_count + (1 if portfolio_plotted else 0); self.perf_return_ax.legend(fontsize=8, ncol=min(3, num_legend_items))
-            self.perf_return_ax.set_title(return_graph_title, fontsize=10, weight='bold', color=COLOR_TEXT_DARK); self.perf_return_ax.set_ylabel("Accumulated Gain (%)", fontsize=9, color=COLOR_TEXT_DARK)
+            self.perf_return_ax.yaxis.set_major_formatter(mtick.PercentFormatter());
+            num_legend_items = benchmarks_plotted_count + (1 if portfolio_plotted else 0);
+            self.perf_return_ax.legend(fontsize=8, ncol=min(3, num_legend_items))
+            self.perf_return_ax.set_title(return_graph_title, fontsize=10, weight='bold', color=COLOR_TEXT_DARK);
+            self.perf_return_ax.set_ylabel("Accumulated Gain (%)", fontsize=9, color=COLOR_TEXT_DARK)
             self.perf_return_ax.grid(True, which='major', linestyle='--', linewidth=0.5, color=COLOR_BORDER_LIGHT)
-        else: self.perf_return_ax.text(0.5, 0.5, 'Return Data Invalid/Missing', ha='center', va='center', transform=self.perf_return_ax.transAxes, fontsize=10, color=COLOR_TEXT_SECONDARY); self.perf_return_ax.set_title(return_graph_title, fontsize=10, weight='bold', color=COLOR_TEXT_DARK)
-        self.perf_return_fig.tight_layout(pad=0.3); self.perf_return_fig.autofmt_xdate(rotation=15); self.perf_return_canvas.draw()
+
+            # --- SET RETURN Y LIMITS (Now safe to access min/max) ---
+            try:
+                if np.isfinite(min_y_return) and np.isfinite(max_y_return) and max_y_return > min_y_return:
+                    padding = (max_y_return - min_y_return) * 0.05
+                    final_min_y = min_y_return - padding
+                    final_max_y = max_y_return + padding
+                    print(f"[Graph Update] Setting RETURN ylim: {final_min_y:.2f} to {final_max_y:.2f}")
+                    self.perf_return_ax.set_ylim(final_min_y, final_max_y)
+                else:
+                     print("[Graph Update] RETURN ylim min/max failed or no range, using autoscale.")
+                     self.perf_return_ax.autoscale(enable=True, axis='y', tight=False)
+            except Exception as e_ylim_ret:
+                 print(f"Warning: Could not set RETURN plot y-axis limits: {e_ylim_ret}")
+            # --- END SET RETURN Y LIMITS ---
+
+        else: # Case where nothing was plotted
+            self.perf_return_ax.text(0.5, 0.5, 'Return Data Invalid/Missing', ha='center', va='center', transform=self.perf_return_ax.transAxes, fontsize=10, color=COLOR_TEXT_SECONDARY);
+            self.perf_return_ax.set_title(return_graph_title, fontsize=10, weight='bold', color=COLOR_TEXT_DARK)
+
+        self.perf_return_fig.tight_layout(pad=0.3)
+        self.perf_return_fig.autofmt_xdate(rotation=15)
+
+        # --- SET RETURN X LIMITS ---
+        try:
+            if plot_start_date and plot_end_date:
+                # print(f"[Graph Update] Setting RETURN xlim: {plot_start_date} to {plot_end_date}")
+                self.perf_return_ax.set_xlim(plot_start_date, plot_end_date)
+                # xlim_set = self.perf_return_ax.get_xlim()
+                # print(f"[Graph Update] Actual RETURN xlim after set: {xlim_set}")
+        except Exception as e_lim:
+            print(f"Warning: Could not set RETURN plot x-axis limits: {e_lim}")
+        # --- END SET RETURN X LIMITS ---
+
+        self.perf_return_canvas.draw()
 
         # --- Plot 2: Absolute Value ---
         self.abs_value_ax.clear()
-        value_col = 'Portfolio Value' # This now refers to filtered scope
-        valid_portfolio_values = results_df[value_col].dropna() if value_col in results_df.columns else pd.Series(dtype=float)
+        value_col = 'Portfolio Value'
+        value_data_plotted = False # Track if value data was plotted
+        valid_portfolio_values = results_visible_df[value_col].dropna() if value_col in results_visible_df.columns else pd.Series(dtype=float)
         if not valid_portfolio_values.empty:
-            self.abs_value_ax.plot(valid_portfolio_values.index, valid_portfolio_values, label=f'{scope_label} Value ({currency_symbol})', color='green', linewidth=1.5) # Use scope_label
+            self.abs_value_ax.plot(valid_portfolio_values.index, valid_portfolio_values, label=f'{scope_label} Value ({currency_symbol})', color='green', linewidth=1.5)
+            min_y_value = min(min_y_value, valid_portfolio_values.min())
+            max_y_value = max(max_y_value, valid_portfolio_values.max())
+            value_data_plotted = True
+
             def currency_formatter(x, pos):
-                # ... (formatter unchanged) ...
+                # ... (formatter remains the same) ...
                 if pd.isna(x): return "N/A"
                 try:
                     if abs(x) >= 1e6: return f'{currency_symbol}{x/1e6:,.1f}M'
                     if abs(x) >= 1e3: return f'{currency_symbol}{x/1e3:,.0f}K'
                     return f'{currency_symbol}{x:,.0f}'
                 except TypeError: return "Err"
-            formatter = mtick.FuncFormatter(currency_formatter); self.abs_value_ax.yaxis.set_major_formatter(formatter)
-            self.abs_value_ax.set_title(value_graph_title, fontsize=10, weight='bold', color=COLOR_TEXT_DARK); self.abs_value_ax.set_ylabel(f"Value ({currency_symbol})", fontsize=9, color=COLOR_TEXT_DARK)
+            formatter = mtick.FuncFormatter(currency_formatter);
+            self.abs_value_ax.yaxis.set_major_formatter(formatter)
+            self.abs_value_ax.set_title(value_graph_title, fontsize=10, weight='bold', color=COLOR_TEXT_DARK);
+            self.abs_value_ax.set_ylabel(f"Value ({currency_symbol})", fontsize=9, color=COLOR_TEXT_DARK)
             self.abs_value_ax.grid(True, which='major', linestyle='--', linewidth=0.5, color=COLOR_BORDER_LIGHT)
-        else: self.abs_value_ax.text(0.5, 0.5, 'Value Data Invalid/Missing', ha='center', va='center', transform=self.abs_value_ax.transAxes, fontsize=10, color=COLOR_TEXT_SECONDARY); self.abs_value_ax.set_title(value_graph_title, fontsize=10, weight='bold', color=COLOR_TEXT_DARK)
-        self.abs_value_fig.tight_layout(pad=0.3); self.abs_value_fig.autofmt_xdate(rotation=15); self.abs_value_canvas.draw()
 
-        # Re-apply backgrounds (optional)
+            # --- SET VALUE Y LIMITS (Now safe) ---
+            try:
+                if np.isfinite(min_y_value) and np.isfinite(max_y_value) and max_y_value > min_y_value:
+                    padding_val = (max_y_value - min_y_value) * 0.05
+                    final_min_y_val = max(0, min_y_value - padding_val) if min_y_value >= 0 else (min_y_value - padding_val)
+                    final_max_y_val = max_y_value + padding_val
+                    if abs(final_max_y_val - final_min_y_val) < 1e-6:
+                        final_min_y_val -= 1
+                        final_max_y_val += 1
+                    print(f"[Graph Update] Setting VALUE ylim: {final_min_y_val:.2f} to {final_max_y_val:.2f}")
+                    self.abs_value_ax.set_ylim(final_min_y_val, final_max_y_val)
+                else:
+                     print("[Graph Update] VALUE ylim min/max failed or no range, using autoscale.")
+                     self.abs_value_ax.autoscale(enable=True, axis='y', tight=False)
+            except Exception as e_ylim_val:
+                print(f"Warning: Could not set VALUE plot y-axis limits: {e_ylim_val}")
+            # --- END SET VALUE Y LIMITS ---
+
+        else: # Case where no value data was plotted
+            self.abs_value_ax.text(0.5, 0.5, 'Value Data Invalid/Missing', ha='center', va='center', transform=self.abs_value_ax.transAxes, fontsize=10, color=COLOR_TEXT_SECONDARY);
+            self.abs_value_ax.set_title(value_graph_title, fontsize=10, weight='bold', color=COLOR_TEXT_DARK)
+
+        self.abs_value_fig.tight_layout(pad=0.3)
+        self.abs_value_fig.autofmt_xdate(rotation=15)
+
+        # --- SET VALUE X LIMITS ---
         try:
+            if plot_start_date and plot_end_date:
+                # print(f"[Graph Update] Setting VALUE xlim: {plot_start_date} to {plot_end_date}")
+                self.abs_value_ax.set_xlim(plot_start_date, plot_end_date)
+                # xlim_set_val = self.abs_value_ax.get_xlim()
+                # print(f"[Graph Update] Actual VALUE xlim after set: {xlim_set_val}")
+        except Exception as e_lim:
+            print(f"Warning: Could not set VALUE plot x-axis limits: {e_lim}")
+        # --- END SET VALUE X LIMITS ---
+
+        self.abs_value_canvas.draw()
+
+        # Re-apply backgrounds
+        try:
+            # ... (background setting code remains the same) ...
             pie_chart_bg_color = COLOR_BG_CONTENT; perf_chart_bg_color = COLOR_BG_SUMMARY
             for fig in [self.account_fig, self.holdings_fig]: fig.patch.set_facecolor(pie_chart_bg_color)
             for ax in [self.account_ax, self.holdings_ax]: ax.patch.set_facecolor(pie_chart_bg_color)
             for fig in [self.perf_return_fig, self.abs_value_fig]: fig.patch.set_facecolor(perf_chart_bg_color)
             for ax in [self.perf_return_ax, self.abs_value_ax]: ax.patch.set_facecolor(perf_chart_bg_color)
         except Exception as e: print(f"Warning: Failed re-applying chart backgrounds: {e}")
-
+ 
     # --- Data Handling and UI Update Methods ---
 
     def update_dashboard_summary(self):
@@ -2085,6 +2262,10 @@ class PortfolioApp(QMainWindow):
                     # Filter holdings_data based on selected accounts before summing cash
                     df_filtered_for_cash = self._get_filtered_data() # Use existing filter logic
                     cash_mask = df_filtered_for_cash['Symbol'] == CASH_SYMBOL_CSV
+                    # Also handle the display format "Cash (CUR)"
+                    cash_display_symbol = f"Cash ({self._get_currency_symbol(get_name=True)})"
+                    cash_mask |= (df_filtered_for_cash['Symbol'] == cash_display_symbol)
+
                     overall_cash_value = pd.to_numeric(df_filtered_for_cash.loc[cash_mask, cash_val_col_actual], errors='coerce').fillna(0.0).sum() if cash_mask.any() else 0.0
                 except Exception: overall_cash_value = None
             # --- End Cash Calc Update ---
@@ -2093,7 +2274,7 @@ class PortfolioApp(QMainWindow):
 
             # --- FIX: Correctly scale and format day change percentage ---
             day_change_val = data_source_current.get("day_change_display")
-            day_change_pct = data_source_current.get("day_change_percent") # This is likely the decimal value (e.g., 0.01 for 1%)
+            day_change_pct = data_source_current.get("day_change_percent") # This is the % value from backend
             day_change_text_override = "N/A"
 
             if pd.notna(day_change_val):
@@ -2101,18 +2282,18 @@ class PortfolioApp(QMainWindow):
                 day_change_abs_val_str = f"{currency_symbol}{abs(day_change_val):,.2f}"
                 day_change_pct_str = "" # Initialize percentage string
 
-                # Format the percentage change (scale by 100 and add sign)
+                # Format the percentage change (use directly, add sign)
                 if pd.notna(day_change_pct) and np.isfinite(day_change_pct):
-                    scaled_pct_val = day_change_pct # Scale decimal to percentage
-                    sign = "+" if scaled_pct_val >= -1e-9 else "" # Add '+' sign for positive/zero
-                    day_change_pct_str = f" ({sign}{scaled_pct_val:,.2f}%)" # Format with sign
+                    pct_val = day_change_pct # Use the value directly
+                    sign = "+" if pct_val >= -1e-9 else "" # Add '+' sign for positive/zero
+                    day_change_pct_str = f" ({sign}{pct_val:,.2f}%)" # Format with sign
                 elif np.isinf(day_change_pct):
                     day_change_pct_str = " (Inf%)" # Handle infinity
 
                 # Combine the strings
                 day_change_text_override = day_change_abs_val_str + day_change_pct_str
             # --- END FIX ---
-            
+
             self.update_summary_value(self.summary_day_change[1], day_change_val, currency_symbol, True, False, 'day_change', day_change_text_override)
             self.update_summary_value(self.summary_total_gain[1], data_source_current.get("total_gain"), currency_symbol, True, False, 'total_gain')
             self.update_summary_value(self.summary_realized_gain[1], data_source_current.get("realized_gain"), currency_symbol, True, False, 'realized_gain');
@@ -2130,7 +2311,7 @@ class PortfolioApp(QMainWindow):
         if is_all_accounts_selected:
             self.summary_total_return_pct[0].setText("Total Ret %:")
         else:
-            self.summary_total_return_pct[0].setText(f"Sel. Ret % ({num_selected}/{num_available}):")
+            self.summary_total_return_pct[0].setText(f"Sel. Ret %:")
         self.summary_total_return_pct[0].setVisible(True)
         self.summary_total_return_pct[1].setVisible(True)
 
@@ -2142,9 +2323,9 @@ class PortfolioApp(QMainWindow):
         self.update_summary_value(self.summary_annualized_twr[1], annualized_twr_pct, "", False, True, 'annualized_twr')
         # Update Label Text
         if is_all_accounts_selected:
-            self.summary_annualized_twr[0].setText("TWR %:")
+            self.summary_annualized_twr[0].setText("Ann. TWR %:")
         else:
-            self.summary_annualized_twr[0].setText(f"Sel. TWR % ({num_selected}/{num_available}):")
+            self.summary_annualized_twr[0].setText(f"Sel. TWR %:")
         self.summary_annualized_twr[0].setVisible(True)
         self.summary_annualized_twr[1].setVisible(True)
 
@@ -2190,7 +2371,6 @@ class PortfolioApp(QMainWindow):
     @Slot()
     def select_file(self):
         # (Keep implementation as before)
-        # ... (File selection logic remains the same)
         start_dir = os.path.dirname(self.transactions_file) if self.transactions_file and os.path.exists(os.path.dirname(self.transactions_file)) else os.getcwd()
         fname, _ = QFileDialog.getOpenFileName(self, "Open Transactions CSV", start_dir, "CSV Files (*.csv)")
         if fname and fname != self.transactions_file:
@@ -2207,11 +2387,7 @@ class PortfolioApp(QMainWindow):
         # Keep selected_accounts as loaded from config, validation happens on load
         self._update_table_view_with_filtered_columns(pd.DataFrame()); self.apply_column_visibility()
         self.update_dashboard_summary(); self.update_account_pie_chart(); self.update_holdings_pie_chart(pd.DataFrame()); self.update_performance_graphs(initial=True)
-        self.status_label.setText("Ready"); self.update_table_title()
-        # --- ADD: Reset table title ---
-        self.table_title_label_left.setText("Holdings Detail")
-        self.table_title_label_right.setText("")
-        # --- END ADD ---
+        self.status_label.setText("Ready"); self._update_table_title() # Update table title
         self._update_account_button_text() # Update button text
         self._update_fx_rate_display(self.currency_combo.currentText()); self.update_header_info(loading=True)
 
@@ -2224,7 +2400,6 @@ class PortfolioApp(QMainWindow):
             changed_control="Currency"; self._ensure_all_columns_in_visibility()
         elif sender == self.show_closed_check:
             changed_control="'Show Closed' Checkbox"
-        # REMOVED: Account Filter change no longer calls this
         print(f"Filter change ({changed_control}) requires full refresh...")
         self.refresh_data() # Trigger the main refresh function
 
@@ -2259,10 +2434,13 @@ class PortfolioApp(QMainWindow):
             df_to_filter = self.holdings_data.copy()
 
             # --- Filter by selected accounts ---
-            # Use self.selected_accounts. If empty, means all are selected.
-            if self.selected_accounts and 'Account' in df_to_filter.columns:
+            # Use self.selected_accounts. If empty or matches all available, no filtering needed.
+            all_selected_or_empty = (not self.selected_accounts or
+                                     (set(self.selected_accounts) == set(self.available_accounts) if self.available_accounts else True))
+
+            if not all_selected_or_empty and 'Account' in df_to_filter.columns:
                  df_filtered = df_to_filter[df_to_filter['Account'].isin(self.selected_accounts)].copy()
-            else: # Use all accounts if selection is empty or Account column missing
+            else: # Use all accounts if selection is empty/all or Account column missing
                  df_filtered = df_to_filter
             # --- End Account Filter ---
 
@@ -2303,11 +2481,47 @@ class PortfolioApp(QMainWindow):
         self.exchange_rate_display_label.setText(rate_text)
         self.exchange_rate_display_label.setVisible(show_rate)
 
+    # --- New Helper: Update Table Title ---
+    def _update_table_title(self):
+        """Updates the table title labels based on current scope."""
+        title_right_label = getattr(self, 'table_title_label_right', None)
+        title_left_label = getattr(self, 'table_title_label_left', None)
+
+        if not title_right_label or not title_left_label:
+            return
+
+        num_available = len(self.available_accounts)
+        num_selected = len(self.selected_accounts)
+        df_display_filtered = self._get_filtered_data() # Get currently displayed data
+        num_rows_displayed = len(df_display_filtered)
+
+        title_right_text = f"Holdings Detail ({num_rows_displayed} items shown)"
+        scope_text = ""
+
+        if not self.available_accounts:
+            scope_text = "Scope: N/A (Load Data)"
+        elif not self.selected_accounts or num_selected == num_available:
+            scope_text = f"Scope: All Accounts ({num_available})"
+        elif num_selected == 1:
+            scope_text = f"Scope: Account '{self.selected_accounts[0]}'"
+        else:
+            # Limit displayed accounts if list is very long
+            max_accounts_in_title = 4
+            if num_selected <= max_accounts_in_title:
+                scope_text = f"Scope: Accounts ({num_selected}/{num_available})"
+                # scope_text = f"Scope: {', '.join(self.selected_accounts)}" # Alternative: List names
+            else:
+                scope_text = f"Scope: {num_selected} / {num_available} Accounts"
+                # scope_text = f"Scope: {', '.join(self.selected_accounts[:max_accounts_in_title])}, ..." # Alternative
+
+        title_right_label.setText(title_right_text)
+        title_left_label.setText(scope_text)
+    # --- End New Helper ---
+
     # --- Main Data Refresh Logic ---
     @Slot()
     def refresh_data(self):
         """Initiates data refresh (current and HISTORICAL incl. account filter/exclusion) in background."""
-        # ... (sender detection logic remains the same) ...
         sender = self.sender(); trigger_source = "Unknown"
         if sender == self.refresh_button: trigger_source = "'Refresh All' Button"
         elif sender == self.update_accounts_button: trigger_source = "'Update Accounts' Button" # Catch the new button
@@ -2331,19 +2545,23 @@ class PortfolioApp(QMainWindow):
         def_currency = self.config.get('default_currency', 'USD') # Use default if missing
         # ---------------------------------------------------------
 
-        selected_accounts_for_logic = self.selected_accounts if self.selected_accounts else []
+        # Use self.selected_accounts. If it's empty, it means "All", so pass None or empty list to logic
+        # The backend logic handles empty list as "all"
+        selected_accounts_for_logic = self.selected_accounts if self.selected_accounts else None
 
         if start_date >= end_date: QMessageBox.warning(self, "Invalid Date Range", "Graph start date must be before end date."); self.calculation_finished(); return
         if not selected_benchmarks_list: QMessageBox.warning(self, "No Benchmark Selected", "Please select at least one benchmark."); self.calculation_finished(); return
 
+        # Determine accounts to exclude for historical calculation if feature supported
         accounts_to_exclude = []
         if HISTORICAL_FN_SUPPORTS_EXCLUDE:
-            if not selected_accounts_for_logic:
-                accounts_to_exclude = [] # Decide if you want default exclusions for "All" view
-                # Example: accounts_to_exclude = ["SET"]
-                # if accounts_to_exclude: print(f"Info: Excluding account(s) {accounts_to_exclude} from historical TWR calculation (All Accounts view).")
-        else:
-            accounts_to_exclude = []
+            # Example logic: If "All" are selected, exclude 'SET' by default
+            # if not selected_accounts_for_logic: # i.e., All are selected
+            #     accounts_to_exclude = ["SET"] # Replace with your default exclusion logic
+            # else:
+            #     accounts_to_exclude = [] # Don't exclude if specific accounts are selected
+            pass # Keep exclusion logic minimal for now, user doesn't control it via GUI yet
+
 
         print(f"Starting calculation & data fetch:"); print(f"  File='{os.path.basename(self.transactions_file)}', Currency='{display_currency}', ShowClosed={show_closed}, SelectedAccounts={selected_accounts_for_logic if selected_accounts_for_logic else 'All'}")
         print(f"  Default Currency: {def_currency}, Account Map: {account_map}") # Log currency info
@@ -2407,7 +2625,6 @@ class PortfolioApp(QMainWindow):
     @Slot(dict, pd.DataFrame, pd.DataFrame, dict, dict, pd.DataFrame)
     def handle_results(self, summary_metrics, holdings_df, ignored_df, account_metrics, index_quotes, historical_data_df):
         """Processes results and updates UI, including table title."""
-        # ... (Existing code for status, TWR factor, storing data) ...
         portfolio_status = summary_metrics.pop('status_msg', "Status Unknown")
         historical_status = summary_metrics.pop('historical_status_msg', "Status Unknown")
         self.last_calc_status = f"{portfolio_status} | {historical_status}"
@@ -2415,71 +2632,65 @@ class PortfolioApp(QMainWindow):
         if "|||TWR_FACTOR:" in historical_status:
             try: twr_part = historical_status.split("|||TWR_FACTOR:")[1]; self.last_hist_twr_factor = float(twr_part)
             except (IndexError, ValueError, TypeError) as e_twr: print(f"WARN: Could not parse TWR factor from status: {e_twr}")
+
         self.summary_metrics_data = summary_metrics if summary_metrics else {}
-        self.holdings_data = holdings_df if holdings_df is not None else pd.DataFrame()
+        self.holdings_data = holdings_df if holdings_df is not None else pd.DataFrame() # Store unfiltered holdings
         self.ignored_data = ignored_df if ignored_df is not None else pd.DataFrame()
         self.account_metrics_data = account_metrics if account_metrics else {}
         self.index_quote_data = index_quotes if index_quotes else {}
-        self.historical_data = historical_data_df if historical_data_df is not None else pd.DataFrame()
 
-        # --- Update Available Accounts ---
+        # --- STORE THE FULL HISTORICAL DATA ---
+        self.historical_data = historical_data_df if historical_data_df is not None else pd.DataFrame()
+        # --- ADD DEBUG PRINT HERE ---
+        if isinstance(self.historical_data, pd.DataFrame) and not self.historical_data.empty:
+            print(f"[Handle Results] Stored historical data from {self.historical_data.index.min()} to {self.historical_data.index.max()} ({len(self.historical_data)} rows)")
+        else:
+            print("[Handle Results] Stored historical data is EMPTY or None.")
+        # --- END DEBUG PRINT ---
+
+
+        # --- Update Available Accounts & Validate Selection ---
+        # ... (account handling remains the same) ...
         available_accounts_from_backend = self.summary_metrics_data.pop('_available_accounts', None)
         if available_accounts_from_backend and isinstance(available_accounts_from_backend, list):
             self.available_accounts = available_accounts_from_backend
         else:
             if not self.holdings_data.empty and 'Account' in self.holdings_data.columns:
                  self.available_accounts = sorted(self.holdings_data['Account'].unique().tolist())
-            elif self.account_metrics_data:
-                 self.available_accounts = sorted(self.account_metrics_data.keys())
             else:
                  self.available_accounts = []
-        # --- Validate selected accounts against available ---
+
         if self.selected_accounts:
             original_selection = self.selected_accounts.copy()
             self.selected_accounts = [acc for acc in self.selected_accounts if acc in self.available_accounts]
             if len(self.selected_accounts) != len(original_selection):
                 print(f"Warn: Some previously selected accounts are no longer available. Updated selection: {self.selected_accounts}")
-            # If validation left selection empty, default to all
             if not self.selected_accounts and self.available_accounts:
                 print("Warn: Validation resulted in empty selection. Defaulting to all available accounts.")
                 self.selected_accounts = self.available_accounts.copy()
-        self._update_account_button_text() # Update button based on final validated selection
+        elif not self.selected_accounts and self.available_accounts:
+             self.selected_accounts = self.available_accounts.copy()
+        self._update_account_button_text()
 
         print("DEBUG: Updating UI elements...")
         try:
-            # --- Get Filtered Data for Display ---
+            # --- Get Filtered Data for Display (for table/holdings pie) ---
             df_display_filtered = self._get_filtered_data()
-            num_rows_displayed = len(df_display_filtered)
 
             # --- Update Table Title ---
-            num_available = len(self.available_accounts)
-            num_selected = len(self.selected_accounts)
-            title_right_text = f"Holdings Detail ({num_rows_displayed} items)"
-            scope_text = ""
-            if not self.available_accounts:
-                scope_text = "No Accounts Found"
-            elif not self.selected_accounts or num_selected == num_available:
-                scope_text = "All Accounts"
-            elif num_selected == 1:
-                scope_text = f"Account: {self.selected_accounts[0]}"
-            else:
-                # Limit displayed accounts if list is very long
-                max_accounts_in_title = 4
-                if num_selected <= max_accounts_in_title:
-                    scope_text = f"Accounts: {', '.join(self.selected_accounts)}"
-                else:
-                    scope_text = f"Accounts: {', '.join(self.selected_accounts[:max_accounts_in_title])}, ..."
+            self._update_table_title()
 
-            self.table_title_label_right.setText(title_right_text)
-            self.table_title_label_left.setText(scope_text)
-            # --- End Update Table Title ---
-
-            self.update_dashboard_summary() # Update summary based on overall metrics
-            self.update_account_pie_chart() # Uses self.holdings_data (before filtering by show_closed)
-            self.update_holdings_pie_chart(df_display_filtered) # Uses filtered data
-            self._update_table_view_with_filtered_columns(df_display_filtered) # Uses filtered data
+            # --- Update Rest of UI ---
+            self.update_dashboard_summary()
+            account_pie_data = pd.DataFrame()
+            if not self.holdings_data.empty and 'Account' in self.holdings_data.columns:
+                 # Filter holdings_data by selected accounts for the account pie chart
+                 account_pie_data = self.holdings_data[self.holdings_data['Account'].isin(self.selected_accounts)].copy() if self.selected_accounts else self.holdings_data.copy()
+            self.update_account_pie_chart(account_pie_data) # Pass scoped data
+            self.update_holdings_pie_chart(df_display_filtered) # Uses account+closed filtered data
+            self._update_table_view_with_filtered_columns(df_display_filtered)
             self.apply_column_visibility()
-            self.update_performance_graphs() # Uses self.historical_data
+            self.update_performance_graphs() # <--- THIS SHOULD USE THE FULL self.historical_data
             self.update_header_info()
             self._update_fx_rate_display(self.currency_combo.currentText())
 
@@ -2525,9 +2736,6 @@ class PortfolioApp(QMainWindow):
         else:
             self.status_label.setText("Finished (Status Unknown)")
 
-    # --- UI Update Methods (REMOVED DUPLICATE update_dashboard_summary) ---
-    # The correct version is already defined above line 1832
-
     # --- Transaction Dialog Methods ---
     @Slot()
     def open_add_transaction_dialog(self):
@@ -2566,13 +2774,22 @@ class PortfolioApp(QMainWindow):
         # --- END FIX ---
         new_row = [transaction_data.get(h, "") for h in csv_headers]
         try:
+            # Check if file is empty to write header
+            file_exists = os.path.exists(self.transactions_file)
+            is_empty = not file_exists or os.path.getsize(self.transactions_file) == 0
+            # Open in append mode ('a'), it creates if not exists
             with open(self.transactions_file, 'a', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f); writer.writerow(new_row)
+                writer = csv.writer(f)
+                # Write header only if file was empty before opening
+                if is_empty:
+                    writer.writerow(csv_headers)
+                writer.writerow(new_row)
             print("Transaction successfully appended to CSV.")
             QMessageBox.information(self, "Success", "Transaction added successfully.\nRefreshing data...")
             self.refresh_data()
         except IOError as e: print(f"ERROR writing to CSV file: {e}"); QMessageBox.critical(self, "Save Error", f"Failed to write transaction to CSV file:\n{e}")
         except Exception as e: print(f"ERROR saving transaction: {e}"); traceback.print_exc(); QMessageBox.critical(self, "Save Error", f"An unexpected error occurred while saving:\n{e}")
+
 
     # --- Event Handlers ---
     def closeEvent(self, event):
@@ -2605,6 +2822,20 @@ if __name__ == "__main__":
     try: import inspect
     except ImportError: missing_libs.append('inspect') # Should be built-in, but good practice
 
+    # <<< ADD LOGGING CONFIGURATION HERE >>>
+    logging.basicConfig(
+        level=logging.CRITICAL, # Or logging.INFO for less verbose output
+        format='%(asctime)s [%(levelname)-8s] %(module)s:%(lineno)d - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        # Optional: Log to a file as well
+        # handlers=[
+        #     logging.FileHandler("investa_gui.log", mode='w'), # Overwrite log each time
+        #     logging.StreamHandler() # Output to console too
+        # ]
+    )
+    logging.info("--- Investa GUI Application Starting ---")
+    # <<< END LOGGING CONFIGURATION >>>
+    
     if missing_libs:
         print(f"\nERROR: Missing required libraries: {', '.join(missing_libs)}")
         print("Please install dependencies, for example using pip:")
