@@ -298,3 +298,27 @@ Once you've added and tested the validation checks, commit the changes with a me
 Ready to proceed? Please provide the latest portfolio_logic.py code again.
 
 
+Overall Goal of Phase 5:
+The primary goal is to improve the internal organization and maintainability of the main_gui.py file. Currently, the PortfolioApp class, especially its initUI method, handles the creation and setup of all user interface elements. As the application grows, this can make the code harder to read, navigate, and modify. Refactoring will address this without changing the application's functionality or appearance (initially).
+Specific Steps We Will Take Next:
+Refactor the initUI Method into Helper Functions:
+Problem: The initUI method is quite long because it sequentially creates the header, controls, summary area, graphs, pies, table, and status bar.
+Solution: We will break down initUI into smaller, more focused private helper methods within the PortfolioApp class. Each helper will be responsible for creating and configuring a specific logical section of the UI. For example:
+_create_header_widgets(): Will contain the code to create the header_frame, main_title_label, header_info_label, and set up the header_layout.
+_create_controls_widgets(): Will handle the controls_frame, buttons (select_file_button, add_transaction_button, account_select_button, update_accounts_button, etc.), combo boxes, checkboxes, date edits, and the controls_layout.
+_create_summary_and_graphs_widgets(): Will set up the summary_and_graphs_frame, the summary grid layout, create summary label/value pairs (potentially calling create_summary_item), and set up the figure/canvas widgets for the performance graphs.
+_create_content_widgets(): Will set up the content_frame, the pie chart area (including titles, figures, canvases), the table panel (including its title labels), and the QTableView.
+_create_status_bar(): Will handle the QStatusBar creation and adding the status labels.
+Process: We will carefully cut the existing code blocks from initUI and paste them into these new private methods. The original initUI method will then become much shorter, consisting mainly of calls to these new helper methods in the correct order.
+Benefit: Improved code readability and organization. It will be easier to find the code related to a specific UI section.
+Move Stylesheet to an External File (style.qss):
+Problem: The application's visual style is currently defined as a large multi-line string (base_style_sheet) inside the apply_styles method. This makes the Python file longer and harder to edit the style rules conveniently.
+Solution: We will create a new file named style.qss in the same directory as main_gui.py. We will cut the entire content of the base_style_sheet string (from the opening """ to the closing """) and paste it directly into the style.qss file.
+Process: The apply_styles method in main_gui.py will be modified. Instead of defining the string, it will contain code to:
+Open the style.qss file.
+Read its entire content into a string variable.
+Call self.setStyleSheet() using the string read from the file.
+Include basic error handling in case the style.qss file cannot be found or read.
+Benefit: Separates presentation (styling) from application logic. Allows using editor features (like syntax highlighting) for .qss files, making style modifications easier and less error-prone. Keeps the Python file cleaner.
+These two steps will significantly clean up the main_gui.py file without altering how the application looks or functions for the user.
+Please let me know if you'd like to proceed with these refactoring steps.

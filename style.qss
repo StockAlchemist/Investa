@@ -1,0 +1,328 @@
+/* --- START OF FILE style.qss --- */
+QWidget {
+    font-family: "Arial", "DejaVu Sans", sans-serif;
+    font-size: 10pt;
+    /* Base size for controls etc. */
+}
+
+QMainWindow {
+    background-color: #FFFFFF;
+}
+
+QFrame#HeaderFrame {
+    background-color: #F8F9FA;
+    border-bottom: 1px solid #ADB5BD;
+}
+
+QLabel#MainTitleLabel {
+    font-size: 14pt;
+    font-weight: bold;
+    color: #495057;
+    padding: 4px 0px 4px 5px;
+}
+
+QLabel#HeaderInfoLabel {
+    font-size: 14pt;
+    font-weight: normal;
+    color: #212529;
+    padding: 5px 5px;
+    min-height: 18px;
+}
+
+QLabel#HeaderInfoLabel font {
+    /* Allow color tags */
+}
+
+QPushButton#AccountSelectButton {
+    padding: 4px 8px;
+    text-align: left;
+    min-width: 130px;
+}
+
+QPushButton#AccountSelectButton::menu-indicator {
+    image: none;
+}
+
+QFrame#ControlsFrame {
+    background-color: #FFFFFF;
+    border-bottom: 1px solid #DEE2E6;
+}
+
+QFrame#ControlsFrame QLabel {
+    color: #495057;
+    font-weight: bold;
+    padding: 0 3px;
+    font-size: 10pt;
+    /* Match base control size */
+}
+
+QStatusBar {
+    background-color: #F8F9FA;
+    border-top: 1px solid #DEE2E6;
+}
+
+QStatusBar QLabel#StatusLabel {
+    font-size: 9pt;
+    /* Slightly smaller */
+    color: #6C757D;
+    padding: 1px 8px;
+}
+
+QStatusBar QLabel#YahooAttributionLabel {
+    font-size: 9pt;
+    color: #6C757D;
+    padding: 1px 8px;
+    border-left: 1px solid #DEE2E6;
+    margin-left: 5px;
+}
+
+QStatusBar QLabel#ExchangeRateLabel {
+    font-size: 9pt;
+    color: #6C757D;
+    padding: 1px 8px;
+    border-left: 1px solid #DEE2E6;
+    margin-left: 5px;
+}
+
+QFrame#SummaryAndGraphsFrame {
+    background-color: #F8F9FA;
+    border-bottom: 1px solid #DEE2E6;
+    padding: 5px 10px;
+}
+
+QWidget#PerfGraphsContainer {
+    background-color: #F8F9FA;
+    border: 1px solid #DEE2E6;
+    border-radius: 4px;
+    padding: 5px;
+}
+
+QLabel#SummaryLabel {
+    font-size: 11pt;
+    /* Normal Summary Label */
+    color: #6C757D;
+    padding-right: 5px;
+}
+
+QLabel#SummaryLabelLarge {
+    font-size: 13pt;
+    /* Large Summary Label */
+    color: #6C757D;
+    padding-right: 5px;
+}
+
+QLabel#SummaryValue {
+    font-size: 12pt;
+    /* Normal Summary Value */
+    font-weight: bold;
+}
+
+QLabel#SummaryValueLarge {
+    font-size: 14pt;
+    /* Large Summary Value */
+    font-weight: bold;
+}
+
+FigureCanvas {
+    background-color: transparent;
+}
+
+QFrame#ContentFrame {
+    background-color: #FFFFFF;
+    border: none;
+    padding: 0;
+}
+
+QWidget#PieChartsContainer {
+    background-color: transparent;
+    border: none;
+    padding: 0;
+}
+
+QFrame#TablePanel {
+    background-color: transparent;
+    border: none;
+    padding: 0;
+}
+
+QLabel#AccountPieTitleLabel,
+QLabel#HoldingsPieTitleLabel {
+    font-size: 11pt;
+    /* Chart Title */
+    font-weight: bold;
+    color: #212529;
+    padding: 0;
+}
+
+QLabel#TableTitleLabel {
+    /* Right side: Detail */
+    font-size: 10pt;
+    /* Table Header */
+    font-weight: bold;
+    color: #495057;
+    padding: 5px 0px 3px 5px;
+}
+
+QLabel#TableScopeLabel {
+    /* Left side: Scope */
+    font-size: 9pt;
+    /* Table Scope */
+    font-weight: normal;
+    color: #6C757D;
+    padding: 5px 5px 3px 0px;
+}
+
+QTableView#HoldingsTable {
+    background-color: #FFFFFF;
+    border: 1px solid #DEE2E6;
+    border-radius: 4px;
+    gridline-color: #f0f0f5;
+    alternate-background-color: #fAfBff;
+    selection-background-color: #E9ECEF;
+    selection-color: #212529;
+    font-size: 10pt;
+    /* Table Data */
+}
+
+QTableView#HoldingsTable::item {
+    padding: 3px 5px;
+    border: none;
+    background-color: transparent;
+}
+
+QTableView#HoldingsTable::item:selected {
+    background-color: #E9ECEF;
+    color: #212529;
+}
+
+QHeaderView::section {
+    background-color: #F8F9FA;
+    color: #6C757D;
+    padding: 4px 5px;
+    border: none;
+    border-bottom: 2px solid #6C757D;
+    font-weight: bold;
+    font-size: 10pt;
+    /* Table Header */
+}
+
+QHeaderView::section:checked {
+    background-color: #6C757D;
+    color: #FFFFFF;
+}
+
+QPushButton {
+    background-color: #E9ECEF;
+    color: #212529;
+    border: none;
+    padding: 4px 10px;
+    border-radius: 10px;
+    font-weight: bold;
+    min-width: 70px;
+    font-size: 10pt;
+    /* Base control size */
+}
+
+QPushButton:hover {
+    background-color: #CED4DA;
+}
+
+QPushButton:pressed {
+    background-color: #FF8F00;
+    /* Example Press Color */
+}
+
+QPushButton:disabled {
+    background-color: #FFF8E1;
+    /* Lighter Amber */
+    color: #FFD180;
+    /* Lighter Text */
+}
+
+QPushButton#BenchmarkSelectButton {
+    padding: 4px 8px;
+    text-align: left;
+    min-width: 100px;
+}
+
+QPushButton#BenchmarkSelectButton::menu-indicator {
+    image: none;
+}
+
+QComboBox,
+QCheckBox,
+QDateEdit {
+    border: 1px solid #ADB5BD;
+    border-radius: 4px;
+    padding: 2px 4px;
+    background-color: #FFFFFF;
+    color: #212529;
+    min-height: 20px;
+    font-size: 10pt;
+    /* Base control size */
+}
+
+QComboBox {
+    padding-right: 15px;
+}
+
+QDateEdit {
+    padding-right: 0px;
+    min-width: 90px;
+}
+
+QComboBox:disabled,
+QCheckBox:disabled,
+QDateEdit:disabled {
+    background-color: #eeeeee;
+    color: #aaaaaa;
+    border-color: #cccccc;
+}
+
+QComboBox::drop-down,
+QDateEdit::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 15px;
+    border-left: 1px solid #ADB5BD;
+    border-top-right-radius: 3px;
+    border-bottom-right-radius: 3px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #fdfdfd, stop:1 #f0f0f0);
+}
+
+QComboBox QAbstractItemView {
+    font-size: 10pt;
+    /* Match control size */
+    border: 1px solid #ADB5BD;
+    background-color: #FFFFFF;
+    outline: 0px;
+    padding: 3px;
+    selection-background-color: #6C757D;
+    selection-color: #FFFFFF;
+}
+
+QMenu {
+    background-color: #FFFFFF;
+    border: 1px solid #ADB5BD;
+    padding: 4px;
+    font-size: 10pt;
+    /* Match control size */
+}
+
+QMenu::item {
+    padding: 4px 20px 4px 5px;
+    color: #212529;
+}
+
+QMenu::item:selected {
+    background-color: #6C757D;
+    color: #FFFFFF;
+}
+
+QMenu::separator {
+    height: 1px;
+    background: #DEE2E6;
+    margin: 4px 0px;
+}
+
+/* --- END OF FILE style.qss --- */

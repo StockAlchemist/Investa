@@ -1,11 +1,9 @@
 {
-    "transactions_file": "my_transactions.csv",
+    "transactions_file": "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/my_transactions.csv",
     "display_currency": "USD",
     "show_closed": false,
     "selected_accounts": [
-        "E*TRADE",
-        "IBKR",
-        "SET"
+        "E*TRADE"
     ],
     "load_on_startup": true,
     "fmp_api_key": "wWwpekF6q72Ekd3tf0YRT26hkjHPHoPQ",
@@ -19,8 +17,7 @@
     "graph_benchmarks": [
         "SPY",
         "QQQ",
-        "DIA",
-        "^SP500TR"
+        "DIA"
     ],
     "column_visibility": {
         "Account": false,
@@ -36,7 +33,7 @@
         "Unreal. G/L %": true,
         "Real. G/L": true,
         "Divs": true,
-        "Fees": true,
+        "Fees": false,
         "Total G/L": true,
         "Total Ret %": true,
         "IRR (%)": true
