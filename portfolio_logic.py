@@ -2867,6 +2867,7 @@ def _build_summary_rows(
     report_date: date,
     shortable_symbols: Set[str],
     excluded_symbols: Set[str],
+    manual_prices_dict: Dict[str, float],
 ) -> Tuple[
     List[Dict[str, Any]], Dict[str, float], Dict[str, str], bool, bool
 ]:  # Added has_errors, has_warnings
@@ -2874,7 +2875,7 @@ def _build_summary_rows(
     Builds the detailed list of portfolio summary rows, converting values to the display currency.
 
     Iterates through processed stock/ETF holdings and cash balances. Fetches the current price
-    (using API/cache data or fallback to last transaction price). Calculates market value,
+    (using API/cache data, fallback manual prices or fallback to last transaction price). Calculates market value,
     cost basis, unrealized gain/loss, total gain, total return %, and IRR for each position.
     Converts all monetary values from their local currency to the specified `display_currency`
     using the provided current FX rates. Aggregates the total market value for each account
@@ -2957,6 +2958,8 @@ def _build_summary_rows(
         day_change_pct = np.nan
 
         is_excluded = symbol in excluded_symbols
+        # --- Get potential live price ---
+        current_price_local_raw = stock_data.get("price")
         is_yahoo_price_valid = (
             pd.notna(current_price_local_raw)
             and isinstance(current_price_local_raw, (int, float))
@@ -2968,6 +2971,8 @@ def _build_summary_rows(
             price_source = "Yahoo API/Cache"
             current_price_local = float(current_price_local_raw)
             # Assign day change only if Yahoo price is valid
+            day_change_local_raw = stock_data.get("change")
+            day_change_pct_raw = stock_data.get("changesPercentage")
             day_change_local = (
                 float(day_change_local_raw)
                 if pd.notna(day_change_local_raw)
@@ -2975,30 +2980,61 @@ def _build_summary_rows(
             )
             day_change_pct = (
                 float(day_change_pct_raw) if pd.notna(day_change_pct_raw) else np.nan
-            )  # Already percentage
+            )
             logging.debug(
                 f"Price OK ({symbol}): Using Yahoo price {current_price_local}"
             )
-        elif not is_excluded and not is_yahoo_price_valid:
-            # Log warning if Yahoo price failed for a NON-excluded symbol
+        elif not is_excluded:  # Yahoo price failed for NON-excluded symbol
             logging.warning(
-                f"Warning: Yahoo price invalid/missing for {symbol}. Attempting fallback."
+                f"Warning: Yahoo price invalid/missing for {symbol}. Trying fallbacks."
             )
-            price_source = "Yahoo Invalid - Fallback"
+            price_source = "Yahoo Invalid"  # Base source before fallbacks
             has_warnings = True
         elif is_excluded:
-            # Log info that we are skipping Yahoo fetch for excluded symbol
-            logging.debug(
-                f"DEBUG: Symbol {symbol} is excluded. Attempting last transaction fallback."
+            logging.debug(  # Changed to info as this is expected
+                f"Info: Symbol {symbol} is excluded. Skipping Yahoo fetch, trying fallbacks."
             )
-            price_source = "Excluded - Fallback"
-            has_warnings = True  # Mark as warning since we don't have live price
+            price_source = "Excluded"  # Base source before fallbacks
+            has_warnings = True
 
-        # --- Step 2: Try Fallback (if price still NaN) ---
-        # Attempt fallback if primary Yahoo attempt failed OR if symbol was excluded
+        # --- Step 2: Try Manual Fallback (if price still NaN) ---
         if pd.isna(current_price_local):
+            manual_price = manual_prices_dict.get(
+                symbol
+            )  # Assumes manual_prices_dict is passed
+            # Check if manual price is a valid positive number
+            if (
+                manual_price is not None
+                and pd.notna(manual_price)
+                and isinstance(manual_price, (int, float))
+                and manual_price > 0
+            ):
+                current_price_local = float(manual_price)
+                price_source += " - Manual Fallback"  # Append source info
+                logging.debug(
+                    f"Info: Used MANUAL fallback price {current_price_local} for {symbol}/{account}"
+                )
+                # Manual price means no reliable day change
+                day_change_local = np.nan
+                day_change_pct = np.nan
+            else:
+                # Log even if manual price key exists but value is invalid/zero
+                if symbol in manual_prices_dict:
+                    logging.warning(
+                        f"Warn: Manual price found for {symbol} but was invalid/zero ({manual_price}). Trying Last TX."
+                    )
+                else:
+                    logging.debug(
+                        f"Info: Manual price not found for {symbol}. Trying Last TX."
+                    )
+                # Don't set price_source here, let Step 3 handle it
+
+        # --- Step 3: Try Last Transaction Fallback (if price still NaN) ---
+        if pd.isna(current_price_local):
+            price_source += (
+                " - No Manual" if "Manual Fallback" not in price_source else ""
+            )  # Indicate if manual was missing
             try:
-                # Find last transaction price ON OR BEFORE report_date
                 fallback_tx = transactions_df[
                     (transactions_df["Symbol"] == symbol)
                     & (transactions_df["Account"] == account)
@@ -3006,7 +3042,7 @@ def _build_summary_rows(
                     & (
                         pd.to_numeric(transactions_df["Price/Share"], errors="coerce")
                         > 1e-9
-                    )  # Ensure price > 0
+                    )
                     & (transactions_df["Date"].dt.date <= report_date)
                 ].copy()
 
@@ -3020,46 +3056,46 @@ def _build_summary_rows(
                     )
                     last_tx_date = last_tx_row["Date"].date()
 
-                    # Use fallback ONLY if it's a valid positive number
                     if pd.notna(last_tx_price) and last_tx_price > 1e-9:
                         current_price_local = float(last_tx_price)
-                        price_source += f" (Last TX: {last_tx_price:.2f} on {last_tx_date})"  # Append info
+                        price_source += (
+                            f" - Last TX ({last_tx_price:.2f}@{last_tx_date})"
+                        )
                         logging.debug(
-                            f"DEBUG: Used fallback price {current_price_local} ({local_currency}) for {symbol}/{account} from TX on {last_tx_date}"
+                            f"Info: Used Last TX fallback price {current_price_local} for {symbol}/{account}"
                         )
-                        # Fallback price means no reliable day change
-                        day_change_local = np.nan
-                        day_change_pct = np.nan
-                    else:  # Fallback found but price invalid
+                    else:
                         logging.warning(
-                            f"Warn: Fallback TX found for {symbol}/{account} but price was invalid/zero ({last_tx_price}). Using 0 price."
+                            f"Warn: Fallback TX found for {symbol}/{account} but price invalid ({last_tx_price}). Using 0."
                         )
-                        price_source += " (Fallback Failed - Using 0)"
+                        price_source += " - Last TX Invalid/Zero"
                         current_price_local = 0.0
-                else:  # No fallback transaction found
+                else:
                     logging.warning(
-                        f"Warn: No valid prior TX found for fallback price for {symbol}/{account}. Using 0 price."
+                        f"Warn: No valid prior TX found for fallback for {symbol}/{account}. Using 0."
                     )
-                    price_source += " (No TX Fallback - Using 0)"
+                    price_source += " - No Last TX"
                     current_price_local = 0.0
             except Exception as e_fallback:
                 logging.error(
-                    f"ERROR during fallback price lookup for {symbol}/{account}: {e_fallback}"
+                    f"ERROR during last TX fallback for {symbol}/{account}: {e_fallback}"
                 )
-                price_source += " (Fallback Error - Using 0)"
+                price_source += " - Fallback Error"
                 current_price_local = 0.0
-            # Ensure day change is NaN if fallback logic was entered
+            # Ensure day change is NaN if last TX fallback was attempted
             day_change_local = np.nan
             day_change_pct = np.nan
 
-        # --- Step 3: Final Check (Should only hit if initial value was NaN and fallback failed) ---
+        # --- Step 4: Final Check (if price STILL NaN) ---
         if pd.isna(current_price_local):
             logging.error(
-                f"ERROR: Final price determination failed for {symbol}/{account}. Forcing price to 0."
+                f"ERROR: All price sources failed for {symbol}/{account}. Forcing 0."
             )
             current_price_local = 0.0
-            price_source += " (Forced Zero)"
-            has_warnings = True  # This shouldn't ideally happen
+            # Ensure Price Source reflects the ultimate failure state if needed
+            if "Using 0" not in price_source and "Error" not in price_source:
+                price_source += " - Forced Zero"
+            has_warnings = True
 
         # Ensure price is float
         current_price_local = float(current_price_local)
@@ -3885,6 +3921,39 @@ def calculate_portfolio_summary(
             f"{final_status} ({msg})",
         )
 
+    # --- ADD Manual Price Loading ---
+    MANUAL_PRICE_FILE = "manual_prices.json"  # Define filename
+    manual_prices_dict = {}
+    try:
+        if os.path.exists(MANUAL_PRICE_FILE):
+            with open(MANUAL_PRICE_FILE, "r") as f:
+                manual_prices_dict = json.load(f)
+            if isinstance(manual_prices_dict, dict):
+                logging.info(
+                    f"Loaded {len(manual_prices_dict)} entries from {MANUAL_PRICE_FILE}"
+                )
+                # Optional: Validate content further (e.g., check if values are numbers)
+            else:
+                logging.warning(
+                    f"Warning: Content of {MANUAL_PRICE_FILE} is not a valid dictionary. Ignoring."
+                )
+                manual_prices_dict = {}
+        else:
+            logging.info(
+                f"{MANUAL_PRICE_FILE} not found. Manual prices will not be used."
+            )
+    except json.JSONDecodeError as e:
+        logging.error(
+            f"Error decoding JSON from {MANUAL_PRICE_FILE}: {e}. Ignoring manual prices."
+        )
+        manual_prices_dict = {}
+    except Exception as e:
+        logging.error(
+            f"Error reading {MANUAL_PRICE_FILE}: {e}. Ignoring manual prices."
+        )
+        manual_prices_dict = {}
+    # --- END Manual Price Loading --
+
     # --- 3. Process Stock/ETF Transactions ---
     holdings, _, _, _, ignored_indices_proc, ignored_reasons_proc, warn_proc = (
         _process_transactions_to_holdings(
@@ -3995,6 +4064,7 @@ def calculate_portfolio_summary(
         report_date=report_date,
         shortable_symbols=SHORTABLE_SYMBOLS,
         excluded_symbols=YFINANCE_EXCLUDED_SYMBOLS,
+        manual_prices_dict=manual_prices_dict,
     )
     if err_build:
         has_errors = True  # Update overall flag

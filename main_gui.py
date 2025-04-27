@@ -125,7 +125,7 @@ try:
             "text.color": "#333333",
         }
     )
-    logging.info("Matplotlib default font configured.")
+    logging.debug("Matplotlib default font configured.")
 except Exception as e:
     logging.warning(f"Warning: Could not configure Matplotlib font: {e}")
 # --- End Matplotlib Font Configuration ---

@@ -1,0 +1,479 @@
+/*
+-------------------------------------------------------------------------------
+ Name:          style.qss
+ Purpose:       Stylesheet for the Investa Portfolio Dashboard GUI.
+
+ Author:        Kit Matan
+ Author Email:  kittiwit@gmail.com
+
+ Created:       26/04/2025
+ Copyright:     (c) Kittiwit Matan 2025
+ Licence:       MIT
+-------------------------------------------------------------------------------
+SPDX-License-Identifier: MIT
+*/
+
+/* --- START OF Dark Mode style.qss --- */
+
+/* ----- Palette -----
+    BG_DARKER:  #212529 (Near Black)
+    BG_DARK:    #343a40 (Dark Gray)
+    BG_MEDIUM:  #495057 (Medium Gray)
+    BG_LIGHT:   #6C757D (Lighter Gray) - Used for borders, disabled text
+    TEXT_LIGHT: #F8F9FA (Off White)
+    TEXT_MEDIUM:#DEE2E6 (Light Gray)
+    TEXT_DARK:  #ADB5BD (Medium Gray - for less emphasis on dark bg)
+    ACCENT:     #20c997 (Teal)
+    ACCENT_DARK:#1aa07e (Darker Teal)
+    GAIN:       #28a745 (Slightly brighter Green)
+    LOSS:       #dc3545 (Red)
+--------------------- */
+
+QWidget {
+    font-family: "Arial", "DejaVu Sans", sans-serif;
+    font-size: 10pt;
+    background-color: #212529;
+    /* Base background */
+    color: #F8F9FA;
+    /* Base text color */
+    border: none;
+    /* Remove default borders */
+}
+
+QMainWindow {
+    background-color: #212529;
+}
+
+QFrame#HeaderFrame {
+    background-color: #343a40;
+    /* Slightly lighter header */
+    border-bottom: 1px solid #495057;
+}
+
+QLabel#MainTitleLabel {
+    font-size: 14pt;
+    font-weight: bold;
+    color: #F8F9FA;
+    /* Light text */
+    padding: 4px 0px 4px 5px;
+    background-color: transparent;
+    /* Ensure no override */
+}
+
+QLabel#HeaderInfoLabel {
+    font-size: 10pt;
+    font-weight: normal;
+    color: #DEE2E6;
+    /* Lighter text */
+    padding: 5px 5px;
+    min-height: 18px;
+    background-color: transparent;
+}
+
+QLabel#HeaderInfoLabel font {
+    /* Allow color tags (but colors defined in Python) */
+}
+
+QPushButton#AccountSelectButton {
+    padding: 4px 8px;
+    text-align: left;
+    min-width: 130px;
+}
+
+QPushButton#AccountSelectButton::menu-indicator {
+    image: none;
+}
+
+QFrame#ControlsFrame {
+    background-color: #212529;
+    /* Match base background */
+    border-bottom: 1px solid #495057;
+}
+
+QFrame#ControlsFrame QLabel {
+    color: #ADB5BD;
+    /* Medium gray for control labels */
+    font-weight: bold;
+    padding: 0 3px;
+    font-size: 10pt;
+    background-color: transparent;
+}
+
+QStatusBar {
+    background-color: #343a40;
+    border-top: 1px solid #495057;
+    color: #ADB5BD;
+    /* Default status bar text */
+}
+
+QStatusBar QLabel {
+    background-color: transparent;
+    /* Ensure labels have transparent bg */
+}
+
+QStatusBar QLabel#StatusLabel {
+    font-size: 9pt;
+    color: #ADB5BD;
+    padding: 1px 8px;
+}
+
+QStatusBar QLabel#YahooAttributionLabel {
+    font-size: 9pt;
+    color: #ADB5BD;
+    padding: 1px 8px;
+    border-left: 1px solid #495057;
+    margin-left: 5px;
+}
+
+QStatusBar QLabel#ExchangeRateLabel {
+    font-size: 9pt;
+    color: #ADB5BD;
+    padding: 1px 8px;
+    border-left: 1px solid #495057;
+    margin-left: 5px;
+}
+
+QFrame#SummaryAndGraphsFrame {
+    background-color: #343a40;
+    /* Match header */
+    border-bottom: 1px solid #495057;
+    padding: 5px 10px;
+}
+
+QWidget#PerfGraphsContainer {
+    background-color: #343a40;
+    /* Match frame */
+    border: 1px solid #495057;
+    border-radius: 4px;
+    padding: 5px;
+}
+
+/* Summary Labels */
+QLabel#SummaryLabel,
+QLabel#SummaryLabelLarge {
+    font-size: 11pt;
+    color: #ADB5BD;
+    /* Medium Gray */
+    padding-right: 5px;
+    background-color: transparent;
+}
+
+QLabel#SummaryLabelLarge {
+    font-size: 13pt;
+}
+
+/* Summary Values */
+QLabel#SummaryValue,
+QLabel#SummaryValueLarge {
+    font-size: 12pt;
+    font-weight: bold;
+    color: #F8F9FA;
+    /* Light Text */
+    background-color: transparent;
+}
+
+QLabel#SummaryValueLarge {
+    font-size: 14pt;
+}
+
+FigureCanvas {
+    background-color: transparent;
+    /* Let Python code control figure facecolor */
+}
+
+QFrame#ContentFrame {
+    background-color: #212529;
+    /* Base background */
+    padding: 0;
+}
+
+QWidget#PieChartsContainer {
+    background-color: transparent;
+    padding: 0;
+}
+
+QFrame#TablePanel {
+    background-color: transparent;
+    padding: 0;
+}
+
+/* Chart Titles */
+QLabel#AccountPieTitleLabel,
+QLabel#HoldingsPieTitleLabel {
+    font-size: 11pt;
+    font-weight: bold;
+    color: #DEE2E6;
+    /* Lighter Text */
+    padding: 0;
+    background-color: transparent;
+}
+
+/* Table Titles */
+QLabel#TableTitleLabel {
+    /* Right side: Detail */
+    font-size: 10pt;
+    font-weight: bold;
+    color: #DEE2E6;
+    /* Lighter Text */
+    padding: 5px 0px 3px 5px;
+    background-color: transparent;
+}
+
+QLabel#TableScopeLabel {
+    /* Left side: Scope */
+    font-size: 9pt;
+    font-weight: normal;
+    color: #ADB5BD;
+    /* Medium Gray */
+    padding: 5px 5px 3px 0px;
+    background-color: transparent;
+}
+
+QTableView#HoldingsTable {
+    background-color: #343a40;
+    /* Darker Background */
+    border: 1px solid #495057;
+    border-radius: 4px;
+    gridline-color: #495057;
+    /* Medium Gray grid */
+    alternate-background-color: #3a4147;
+    /* Slightly different dark */
+    selection-background-color: #20c997;
+    /* Teal Accent */
+    selection-color: #212529;
+    /* Dark text on selection */
+    color: #DEE2E6;
+    /* Lighter default text */
+    font-size: 10pt;
+}
+
+QTableView#HoldingsTable::item {
+    padding: 3px 5px;
+    border: none;
+    /* Background inherits from row */
+}
+
+QTableView#HoldingsTable::item:selected {
+    background-color: #20c997;
+    /* Teal Accent */
+    color: #212529;
+    /* Dark text */
+}
+
+QHeaderView::section {
+    background-color: #495057;
+    /* Medium Gray Header */
+    color: #F8F9FA;
+    /* Light Text */
+    padding: 4px 5px;
+    border: none;
+    /* Remove internal borders */
+    border-bottom: 1px solid #6C757D;
+    /* Lighter gray bottom border */
+    font-weight: bold;
+    font-size: 10pt;
+}
+
+QHeaderView::section:checked {
+    background-color: #20c997;
+    /* Teal Accent */
+    color: #212529;
+    /* Dark Text */
+}
+
+QPushButton {
+    background-color: #495057;
+    /* Medium Gray */
+    color: #F8F9FA;
+    /* Light Text */
+    border: 1px solid #6C757D;
+    /* Lighter border */
+    padding: 4px 10px;
+    border-radius: 4px;
+    /* Less pronounced radius */
+    font-weight: bold;
+    min-width: 70px;
+    font-size: 10pt;
+}
+
+QPushButton:hover {
+    background-color: #6C757D;
+    /* Lighter Gray */
+    border-color: #ADB5BD;
+}
+
+QPushButton:pressed {
+    background-color: #20c997;
+    /* Teal Accent */
+    color: #212529;
+    border-color: #1aa07e;
+}
+
+QPushButton:disabled {
+    background-color: #3a4147;
+    /* Darker disabled bg */
+    color: #6C757D;
+    /* Gray disabled text */
+    border-color: #495057;
+}
+
+QPushButton#BenchmarkSelectButton {
+    padding: 4px 8px;
+    text-align: left;
+    min-width: 100px;
+}
+
+QPushButton#BenchmarkSelectButton::menu-indicator {
+    image: none;
+}
+
+QComboBox,
+QCheckBox,
+QDateEdit {
+    border: 1px solid #6C757D;
+    border-radius: 4px;
+    padding: 2px 4px;
+    background-color: #495057;
+    /* Medium Gray background */
+    color: #F8F9FA;
+    /* Light text */
+    min-height: 20px;
+    font-size: 10pt;
+    selection-background-color: #20c997;
+    /* Teal for selection */
+    selection-color: #212529;
+    /* Dark text for selection */
+}
+
+QCheckBox::indicator {
+    /* Style checkbox indicator */
+    width: 13px;
+    height: 13px;
+    border: 1px solid #ADB5BD;
+    border-radius: 3px;
+    background-color: #343a40;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #20c997;
+    /* Teal when checked */
+    border-color: #1aa07e;
+    /* Optional: add check mark image */
+    /* image: url(path/to/check-dark.png); */
+}
+
+QCheckBox:disabled {
+    color: #6C757D;
+}
+
+QCheckBox::indicator:disabled {
+    border-color: #495057;
+    background-color: #3a4147;
+}
+
+QComboBox {
+    padding-right: 15px;
+}
+
+QDateEdit {
+    padding-right: 0px;
+    min-width: 90px;
+}
+
+QComboBox:disabled,
+QCheckBox:disabled,
+QDateEdit:disabled {
+    background-color: #3a4147;
+    color: #6C757D;
+    border-color: #495057;
+}
+
+QComboBox::drop-down,
+QDateEdit::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 15px;
+    border-left: 1px solid #6C757D;
+    border-top-right-radius: 3px;
+    border-bottom-right-radius: 3px;
+    background-color: #6C757D;
+    /* Match border */
+}
+
+QComboBox::down-arrow,
+QDateEdit::down-arrow {
+    /* Optional: Use a light arrow image suitable for dark background */
+    /* image: url(path/to/arrow-down-light.png); */
+    width: 10px;
+    height: 10px;
+}
+
+QComboBox QAbstractItemView {
+    /* Dropdown list */
+    font-size: 10pt;
+    border: 1px solid #6C757D;
+    background-color: #495057;
+    /* Medium gray */
+    outline: 0px;
+    padding: 3px;
+    color: #F8F9FA;
+    /* Light text */
+    selection-background-color: #20c997;
+    /* Teal selection */
+    selection-color: #212529;
+    /* Dark text selection */
+}
+
+QMenu {
+    background-color: #343a40;
+    /* Dark Gray */
+    border: 1px solid #495057;
+    padding: 4px;
+    font-size: 10pt;
+    color: #F8F9FA;
+    /* Light text */
+}
+
+QMenu::item {
+    padding: 4px 20px 4px 5px;
+    color: #F8F9FA;
+    /* Light text */
+    background-color: transparent;
+    /* Ensure transparent */
+}
+
+QMenu::item:selected {
+    background-color: #20c997;
+    /* Teal selection */
+    color: #212529;
+    /* Dark text selection */
+}
+
+QMenu::separator {
+    height: 1px;
+    background: #495057;
+    /* Medium Gray separator */
+    margin: 4px 0px;
+}
+
+QLineEdit {
+    background-color: #495057;
+    color: #F8F9FA;
+    border: 1px solid #6C757D;
+    border-radius: 4px;
+    padding: 2px 4px;
+    min-height: 20px;
+}
+
+QLineEdit:disabled {
+    background-color: #3a4147;
+    color: #6C757D;
+    border-color: #495057;
+}
+
+QLineEdit::placeholder {
+    /* Style placeholder text */
+    color: #ADB5BD;
+}
+
+/* --- END OF Dark Mode style.qss --- */

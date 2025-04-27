@@ -9,7 +9,8 @@ Investa is a desktop application built with Python and PySide6 for tracking and 
 * Reads transactions from a user-specified CSV file.
 * Calculates current portfolio holdings, cost basis, market value, gains/losses.
 * Fetches near real-time stock/ETF quotes and FX rates (via Yahoo Finance).
-* Calculates historical portfolio value and performance (TWR).
+* **Supports manual price overrides** for assets without live data via `manual_prices.json`.
+* Calculates historical portfolio value and performance (TWR), using last transaction prices as fallbacks for historical points.
 * Displays performance against selected benchmark symbols (e.g., SPY, QQQ).
 * Supports multiple accounts and currencies (with automatic FX conversion via USD bridge).
 * Filters display by selected accounts.
@@ -81,7 +82,23 @@ Investa is a desktop application built with Python and PySide6 for tracking and 
         * `Split Ratio (new shares per old share)` (Required only for 'Split' type, e.g., 4 for 4:1)
         * `Note` (Optional)
 
-2. **Configuration File (`gui_config.json`):**
+2. **Manual Prices File (`manual_prices.json`):** (Optional)
+    * Create this file in the same directory as `main_gui.py` if you need to provide *current estimated prices* for certain assets.
+    * **Purpose:** Used when a live price cannot be fetched from Yahoo Finance (e.g., for private funds, delisted stocks, or symbols added to `YFINANCE_EXCLUDED_SYMBOLS` in `portfolio_logic.py`).
+    * **Usage:** When calculating the **current summary**, the application will look in this file first before attempting the "Last Transaction Price" fallback. **This file does NOT affect historical graph calculations.**
+    * **Format:** A simple JSON object (key-value pairs):
+        * **Key:** The exact symbol string (case-sensitive) as used in your transactions CSV.
+        * **Value:** The estimated current price as a number (integer or float). **This price MUST be in the asset's local currency** (e.g., THB for SET funds, USD for US stocks).
+    * **Example `manual_prices.json`:**
+
+        ```json
+        {
+          "PRIVATE_FUND": 18.75,
+          "MY_PRIVATE_CO": 55.10
+        }
+        ```
+
+3. **Configuration File (`gui_config.json`):**
     * This file is automatically created/updated when the application closes to save your settings.
     * Key settings include:
         * `transactions_file`: Path to the last used CSV.
@@ -92,13 +109,13 @@ Investa is a desktop application built with Python and PySide6 for tracking and 
         * `graph_start_date`, `graph_end_date`, `graph_interval`, `graph_benchmarks`: Saved graph settings.
         * `column_visibility`: Saves which columns are visible in the table.
 
-3. **API Keys (Optional):**
+4. **API Keys (Optional):**
     * Currently, the FMP API key is loaded from config/environment but not actively used in the Yahoo Finance version.
 
 ## Running the Application
 
 1. Ensure your virtual environment is activated.
-2. Make sure your transaction CSV (e.g., `my_transactions.csv`) and `portfolio_logic.py` are in the same directory as `main_gui.py`.
+2. Make sure your transaction CSV (e.g., `my_transactions.csv`), `portfolio_logic.py`, and optionally `manual_prices.json` are in the same directory as `main_gui.py`.
 3. Run the main GUI script from the terminal:
 
     ```bash
