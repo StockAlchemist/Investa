@@ -1,3 +1,20 @@
+# -*- coding: utf-8 -*-
+"""
+-------------------------------------------------------------------------------
+ Name:          main_gui.py
+ Purpose:       Main application window and GUI logic for Investa Portfolio Dashboard.
+                Handles UI elements, user interaction, background tasks, and visualization.
+
+ Author:        Kit Matan
+ Author Email:  kittiwit@gmail.com
+
+ Created:       26/04/2025
+ Copyright:     (c) Kittiwit Matan 2025
+ Licence:       MIT
+-------------------------------------------------------------------------------
+SPDX-License-Identifier: MIT
+"""
+
 # --- START OF FILE main_gui.py ---
 
 # --- Module Docstring ---

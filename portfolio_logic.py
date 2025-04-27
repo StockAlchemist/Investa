@@ -1,3 +1,20 @@
+# -*- coding: utf-8 -*-
+"""
+-------------------------------------------------------------------------------
+ Name:          portfolio_logic.py
+ Purpose:       Core logic for portfolio calculations, data fetching, and analysis.
+                Handles transaction processing, current summary, and historical performance.
+
+Author:        Kit Matan
+ Author Email:  kittiwit@gmail.com
+
+ Created:       26/04/2025
+ Copyright:     (c) Kittiwit Matan 2025
+ Licence:       MIT
+-------------------------------------------------------------------------------
+SPDX-License-Identifier: MIT
+"""
+
 # --- START OF MODIFIED portfolio_logic.py ---
 # --- Imports needed within this function's scope or globally ---
 import pandas as pd
@@ -69,9 +86,9 @@ CASH_SYMBOL_CSV = "$CASH"  # Standardized cash symbol
 
 # --- Caching ---
 DEFAULT_CURRENT_CACHE_FILE_PATH = "portfolio_cache_yf.json"
-HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = "yf_portfolio_hist_raw_adjusted_v7"
+HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = "yf_portfolio_hist_raw_adjusted"
 DAILY_RESULTS_CACHE_PATH_PREFIX = (
-    "yf_portfolio_daily_results_v10"  # <-- V10 cache with daily_return & daily_gain
+    "yf_portfolio_daily_results"  # Cache with daily_return & daily_gain
 )
 YFINANCE_CACHE_DURATION_HOURS = 4  # Keep for CURRENT data
 
@@ -3361,8 +3378,7 @@ def safe_sum(df, col):
         return 0.0  # Return 0 on any unexpected error during sum
 
 
-# --- REVISED: _calculate_aggregate_metrics (using total_buy_cost) ---
-# --- REVISED: _calculate_aggregate_metrics (with Debugging) ---
+# --- REVISED: _calculate_aggregate_metrics ---
 def _calculate_aggregate_metrics(
     full_summary_df: pd.DataFrame,
     display_currency: str,

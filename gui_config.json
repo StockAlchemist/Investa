@@ -3,7 +3,9 @@
     "display_currency": "USD",
     "show_closed": false,
     "selected_accounts": [
-        "E*TRADE"
+        "E*TRADE",
+        "IBKR",
+        "SET"
     ],
     "load_on_startup": true,
     "fmp_api_key": "wWwpekF6q72Ekd3tf0YRT26hkjHPHoPQ",
