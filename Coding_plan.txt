@@ -367,3 +367,5 @@ Low-Hanging Fruit: Improving the Error/Warning Log Viewer (using the existing ig
 High-Impact Features: Asset Allocation view, more detailed Dividend tracking.
 Longer-Term: Brokerage import, alternative data sources, advanced risk metrics.
 Choose the improvements that most interest you or address the biggest pain points you find while using the application!
+
+K

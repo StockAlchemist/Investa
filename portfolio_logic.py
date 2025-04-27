@@ -40,6 +40,10 @@ import hashlib  # Added for cache key hashing
 from collections import defaultdict  # Ensure defaultdict is imported
 import logging  # Added for logging
 
+# --- Configure Logging Globally (as early as possible) ---
+# Set the desired global level here (e.g., logging.INFO, logging.DEBUG)
+LOGGING_LEVEL = logging.INFO  # Or logging.DEBUG for more detail
+
 # ADD THIS near the start of the file for easy toggling
 HISTORICAL_DEBUG_USD_CONVERSION = (
     False  # Set to True only when debugging this specific issue
@@ -2153,7 +2157,7 @@ def _process_transactions_to_holdings(
     #       in the main process that you expect workers to use directly.
     #       For production, consider using a QueueHandler.
     logging.basicConfig(
-        level=logging.DEBUG,  # Match the desired level
+        level=LOGGING_LEVEL,  # Match the desired level
         format="%(asctime)s [%(levelname)-8s] PID:%(process)d {%(module)s:%(lineno)d} %(message)s",  # Add PID
         datefmt="%Y-%m-%d %H:%M:%S",
         force=True,  # Override existing config if any
@@ -5284,7 +5288,7 @@ def _calculate_daily_metrics_worker(
     #       in the main process that you expect workers to use directly.
     #       For production, consider using a QueueHandler.
     logging.basicConfig(
-        level=logging.DEBUG,  # Match the desired level
+        level=LOGGING_LEVEL,  # Match the desired level
         format="%(asctime)s [%(levelname)-8s] PID:%(process)d {%(module)s:%(lineno)d} %(message)s",  # Add PID
         datefmt="%Y-%m-%d %H:%M:%S",
         force=True,  # Override existing config if any
@@ -6981,7 +6985,7 @@ def calculate_historical_performance(
 if __name__ == "__main__":
     # Configure logging for the test run
     logging.basicConfig(
-        level=logging.DEBUG,  # Show INFO, WARNING, ERROR, CRITICAL messages
+        level=LOGGING_LEVEL,  # Show INFO, WARNING, ERROR, CRITICAL messages
         format="%(asctime)s [%(levelname)-8s] %(module)s:%(lineno)d - %(message)s",  # Simplified module info
         datefmt="%Y-%m-%d %H:%M:%S",
     )

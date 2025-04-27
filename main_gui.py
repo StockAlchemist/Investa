@@ -3146,24 +3146,64 @@ class PortfolioApp(QMainWindow):
         holdings_chart_layout.addWidget(self.holdings_canvas)
         pie_charts_layout.addWidget(holdings_chart_widget)
         content_layout.addWidget(pie_charts_container_widget, 1)
+
         # Table Panel
         table_panel = QFrame()
         table_panel.setObjectName("TablePanel")
         table_layout = QVBoxLayout(table_panel)
         table_layout.setContentsMargins(0, 0, 0, 0)
         table_layout.setSpacing(5)
-        table_header_layout = QHBoxLayout()
-        table_header_layout.setContentsMargins(5, 5, 5, 3)
+
+        # --- Table Header Layout (MODIFIED for Filters) ---
+        table_header_and_filter_layout = (
+            QVBoxLayout()
+        )  # Use QVBoxLayout to stack title and filters
+        table_header_and_filter_layout.setContentsMargins(5, 5, 5, 0)  # Adjust margins
+        table_header_and_filter_layout.setSpacing(4)  # Add spacing
+
+        # Title Row (Original HBox)
+        table_title_layout = QHBoxLayout()
         self.table_title_label_left = QLabel("")
         self.table_title_label_left.setObjectName("TableScopeLabel")
         self.table_title_label_left.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.table_title_label_right = QLabel("Holdings Detail")
         self.table_title_label_right.setObjectName("TableTitleLabel")
         self.table_title_label_right.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        table_header_layout.addWidget(self.table_title_label_left)
-        table_header_layout.addStretch(1)
-        table_header_layout.addWidget(self.table_title_label_right)
-        table_layout.addLayout(table_header_layout)
+        table_title_layout.addWidget(self.table_title_label_left)
+        table_title_layout.addStretch(1)
+        table_title_layout.addWidget(self.table_title_label_right)
+        table_header_and_filter_layout.addLayout(table_title_layout)  # Add title row
+
+        # Filter Row (New HBox)
+        table_filter_layout = QHBoxLayout()
+        table_filter_layout.addWidget(QLabel("Filter:"))
+        self.filter_symbol_table_edit = QLineEdit()
+        self.filter_symbol_table_edit.setPlaceholderText("Symbol contains...")
+        self.filter_symbol_table_edit.setClearButtonEnabled(True)
+        table_filter_layout.addWidget(
+            self.filter_symbol_table_edit, 1
+        )  # Give symbol more stretch
+        self.filter_account_table_edit = QLineEdit()
+        self.filter_account_table_edit.setPlaceholderText("Account contains...")
+        self.filter_account_table_edit.setClearButtonEnabled(True)
+        table_filter_layout.addWidget(
+            self.filter_account_table_edit, 1
+        )  # Give account more stretch
+        self.apply_table_filter_button = QPushButton("Apply")
+        self.apply_table_filter_button.setToolTip("Apply table filters")
+        self.apply_table_filter_button.setObjectName("ApplyTableFilterButton")
+        table_filter_layout.addWidget(self.apply_table_filter_button)
+        self.clear_table_filter_button = QPushButton("Clear")
+        self.clear_table_filter_button.setToolTip("Clear table filters")
+        self.clear_table_filter_button.setObjectName("ClearTableFilterButton")
+        table_filter_layout.addWidget(self.clear_table_filter_button)
+        table_header_and_filter_layout.addLayout(table_filter_layout)  # Add filter row
+        # --- End Header/Filter Modification ---
+
+        # Add the combined header/filter layout to the main table layout
+        table_layout.addLayout(table_header_and_filter_layout)
+
+        # Table View
         self.table_view = QTableView()
         self.table_view.setObjectName("HoldingsTable")
         self.table_view.setAlternatingRowColors(True)
@@ -3235,6 +3275,71 @@ class PortfolioApp(QMainWindow):
         self.table_view.horizontalHeader().customContextMenuRequested.connect(
             self.show_header_context_menu
         )
+
+        # Table Filter Connections
+        self.apply_table_filter_button.clicked.connect(self._apply_table_filter)
+        self.clear_table_filter_button.clicked.connect(self._clear_table_filter)
+        # Optional: Trigger apply on pressing Enter in the line edits
+        self.filter_symbol_table_edit.returnPressed.connect(self._apply_table_filter)
+        self.filter_account_table_edit.returnPressed.connect(self._apply_table_filter)
+        # Optional: Trigger clear if the clear button (X) inside QLineEdit is clicked
+        self.filter_symbol_table_edit.textChanged.connect(
+            self._filter_text_maybe_changed
+        )
+        self.filter_account_table_edit.textChanged.connect(
+            self._filter_text_maybe_changed
+        )
+
+    def _update_table_display(self):
+        """Updates the table view, pie charts, and title based on current filters."""
+        logging.debug("Updating table display due to filter change...")
+        # 1. Get data filtered by Account, Show Closed, AND Table Filters
+        df_display_filtered = (
+            self._get_filtered_data()
+        )  # This now includes table filters
+
+        # 2. Update the table view itself
+        self._update_table_view_with_filtered_columns(df_display_filtered)
+        self.apply_column_visibility()  # Re-apply visibility
+
+        # 3. Update the holdings pie chart based on this filtered data
+        self.update_holdings_pie_chart(df_display_filtered)
+
+        # 4. Update the table title to reflect the number of items *shown*
+        self._update_table_title()  # This uses _get_filtered_data internally again, which is fine
+
+    @Slot()
+    def _apply_table_filter(self):
+        """Applies the current text filters to the table view."""
+        self._update_table_display()
+
+    @Slot()
+    def _clear_table_filter(self):
+        """Clears the text filters and updates the table view."""
+        self.filter_symbol_table_edit.clear()
+        self.filter_account_table_edit.clear()
+        self._update_table_display()
+
+    @Slot(str)
+    def _filter_text_maybe_changed(self, text):
+        """
+        Slot connected to textChanged signal of filter edits.
+        If text becomes empty (e.g., user clears the field using 'X'),
+        it applies the filter immediately.
+        """
+        # Check if the text is now empty. If so, re-apply filters immediately.
+        # This handles the case where the user clicks the 'X' button in the QLineEdit.
+        if not text:
+            # Check which sender it was, or just re-apply regardless
+            sender_edit = self.sender()
+            if sender_edit in [
+                self.filter_symbol_table_edit,
+                self.filter_account_table_edit,
+            ]:
+                logging.debug(
+                    f"Filter text cleared in {sender_edit.objectName()}, reapplying filters."
+                )
+                self._apply_table_filter()  # Re-apply the filter state
 
     # --- Styling Method (Reads External File) ---
     def apply_styles(self):
@@ -4899,22 +5004,20 @@ class PortfolioApp(QMainWindow):
         ):
             df_to_filter = self.holdings_data.copy()
 
-            # --- Filter by selected accounts ---
-            # Use self.selected_accounts. If empty or matches all available, no filtering needed.
+            # --- 1. Filter by selected accounts ---
             all_selected_or_empty = not self.selected_accounts or (
                 set(self.selected_accounts) == set(self.available_accounts)
                 if self.available_accounts
                 else True
             )
-
             if not all_selected_or_empty and "Account" in df_to_filter.columns:
                 df_filtered = df_to_filter[
                     df_to_filter["Account"].isin(self.selected_accounts)
                 ].copy()
-            else:  # Use all accounts if selection is empty/all or Account column missing
-                df_filtered = df_to_filter
-            # --- End Account Filter ---
+            else:
+                df_filtered = df_to_filter  # Use all if selection empty/all
 
+            # --- 2. Filter by 'Show Closed' ---
             show_closed = self.show_closed_check.isChecked()
             if (
                 not show_closed
@@ -4925,13 +5028,71 @@ class PortfolioApp(QMainWindow):
                     numeric_quantity = pd.to_numeric(
                         df_filtered["Quantity"], errors="coerce"
                     ).fillna(0)
-                    keep_mask = (numeric_quantity.abs() > 1e-9) | (
-                        df_filtered["Symbol"] == CASH_SYMBOL_CSV
+                    # Correctly handle CASH display name when filtering closed
+                    cash_display_symbol = (
+                        f"Cash ({self._get_currency_symbol(get_name=True)})"
+                    )
+                    keep_mask = (
+                        (numeric_quantity.abs() > 1e-9)
+                        | (df_filtered["Symbol"] == CASH_SYMBOL_CSV)
+                        | (df_filtered["Symbol"] == cash_display_symbol)
                     )
                     df_filtered = df_filtered[keep_mask]
                 except Exception as e:
                     logging.warning(f"Warning: Error filtering 'Show Closed': {e}")
-        return df_filtered
+
+            # --- 3. Apply Table Text Filters ---
+            symbol_filter_text = ""
+            account_filter_text = ""
+            if hasattr(self, "filter_symbol_table_edit"):  # Check widgets exist
+                symbol_filter_text = self.filter_symbol_table_edit.text().strip()
+            if hasattr(self, "filter_account_table_edit"):
+                account_filter_text = self.filter_account_table_edit.text().strip()
+
+            # Filter by Symbol (if text entered and column exists)
+            if symbol_filter_text and "Symbol" in df_filtered.columns:
+                try:
+                    # Match against the symbol itself OR the "Cash (CUR)" display format
+                    base_cash_symbol = CASH_SYMBOL_CSV
+                    cash_display_symbol = (
+                        f"Cash ({self._get_currency_symbol(get_name=True)})"
+                    )
+
+                    symbol_mask = (
+                        df_filtered["Symbol"]
+                        .astype(str)
+                        .str.contains(symbol_filter_text, case=False, na=False)
+                    )
+
+                    # If filtering for "CASH", also match the formatted display name
+                    if "CASH" in symbol_filter_text.upper():
+                        symbol_mask |= (
+                            df_filtered["Symbol"]
+                            .astype(str)
+                            .str.contains(cash_display_symbol, case=False, na=False)
+                        )
+
+                    df_filtered = df_filtered[symbol_mask]
+                except Exception as e_sym_filt:
+                    logging.warning(
+                        f"Warning: Error applying symbol table filter: {e_sym_filt}"
+                    )
+
+            # Filter by Account (if text entered and column exists)
+            if account_filter_text and "Account" in df_filtered.columns:
+                try:
+                    df_filtered = df_filtered[
+                        df_filtered["Account"]
+                        .astype(str)
+                        .str.contains(account_filter_text, case=False, na=False)
+                    ]
+                except Exception as e_acc_filt:
+                    logging.warning(
+                        f"Warning: Error applying account table filter: {e_acc_filt}"
+                    )
+            # --- End Table Text Filters ---
+
+        return df_filtered  # Return the DataFrame after all filters
 
     def _update_fx_rate_display(self, display_currency):
         """

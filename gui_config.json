@@ -10,7 +10,7 @@
     },
     "default_currency": "USD",
     "graph_start_date": "2009-12-30",
-    "graph_end_date": "2020-01-17",
+    "graph_end_date": "2025-04-25",
     "graph_interval": "D",
     "graph_benchmarks": [
         "SPY",

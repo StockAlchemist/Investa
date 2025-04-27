@@ -7,3 +7,5 @@ coding_plan.txt
 .vscode/
 .DS_Store
 Thumbs.db
+Coding_plan.txt
+__pycache__/portfolio_logic.cpython-312.pyc
