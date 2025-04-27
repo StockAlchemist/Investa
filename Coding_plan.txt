@@ -262,7 +262,7 @@ Action & Implementation:
 	◦	Skip the current iteration (e.g., continue in a loop).
 	◦	Return early from the function with an error indicator (e.g., return None, None, True, True).
 Examples:
-	•	In _process_transactions_to_holdings: # Before calculating cost sold:
+	•	In _process_transactions_to_holdings:# Before calculating cost sold:
 	•	held_qty = holding['qty']
 	•	if held_qty <= 1e-9:
 	•	    # Already handled by existing logic, but serves as an example
@@ -274,22 +274,22 @@ Examples:
 	•	     has_warnings = True
 	•	     cost_sold = 0.0 # Use default
 	•	else:
-	•	     cost_sold = qty_sold * (holding['total_cost_local'] / held_qty)   content_copy  download  Use code with caution.  Python  
-	•	In _build_summary_rows: # Before calculating market_value_display
+	•	     cost_sold = qty_sold * (holding['total_cost_local'] / held_qty)content_copydownloadUse code with caution.Python
+	•	In _build_summary_rows:# Before calculating market_value_display
 	•	if pd.isna(current_qty) or pd.isna(current_price_local) or pd.isna(fx_rate):
 	•	     logging.warning(f"Cannot calculate market value for {symbol}/{account} due to NaN inputs.")
 	•	     has_warnings = True
 	•	     market_value_display = np.nan # Set result to NaN
 	•	else:
-	•	     market_value_display = current_qty * current_price_local * fx_rate   content_copy  download  Use code with caution.  Python  
-	•	In _calculate_aggregate_metrics: # Before summing a column
+	•	     market_value_display = current_qty * current_price_local * fx_ratecontent_copydownloadUse code with caution.Python
+	•	In _calculate_aggregate_metrics:# Before summing a column
 	•	required_col = f'Market Value ({display_currency})'
 	•	if required_col not in full_summary_df.columns:
 	•	    logging.warning(f"Column '{required_col}' missing for overall aggregation. Result may be inaccurate.")
 	•	    has_warnings = True
 	•	    overall_market_value_display = 0.0 # Use default
 	•	else:
-	•	    overall_market_value_display = safe_sum(full_summary_df, required_col)   content_copy  download  Use code with caution.  Python  
+	•	    overall_market_value_display = safe_sum(full_summary_df, required_col)content_copydownloadUse code with caution.Python
 Testing:
 	1	Regression Testing: Run the existing if __name__ == '__main__': tests in portfolio_logic.py and ensure they still pass and produce the expected results/status messages. The new validation should ideally only trigger warnings/errors for genuinely problematic data, not standard cases.
 	2	Targeted Testing: Temporarily modify the my_transactions.csv file (or use a separate test CSV) to introduce specific invalid data points that should trigger your new validation checks (e.g., non-numeric quantity, missing date, invalid account name leading to missing currency). Run the code and verify that the appropriate log messages are generated and the code handles the situation gracefully (e.g., ignores the row, produces NaN, returns the correct error status) without crashing.
@@ -322,3 +322,48 @@ Include basic error handling in case the style.qss file cannot be found or read.
 Benefit: Separates presentation (styling) from application logic. Allows using editor features (like syntax highlighting) for .qss files, making style modifications easier and less error-prone. Keeps the Python file cleaner.
 These two steps will significantly clean up the main_gui.py file without altering how the application looks or functions for the user.
 Please let me know if you'd like to proceed with these refactoring steps.
+
+Future plan
+That's a great question! Now that Investa has a solid foundation for calculating and displaying current portfolio summaries and historical performance, there are many ways you could enhance it further. Here are some ideas, ranging from relatively simple additions to more complex features:
+I. User Interface & Experience (UX) Improvements:
+Error/Warning Log Viewer: Instead of just showing status messages, add a dedicated dockable window or dialog (perhaps accessible via a menu item or button) that displays the full list of ignored transactions (ignored_data) and any significant warnings or errors logged during the last calculation. This gives the user much better insight into data quality issues.
+Editable Account Currency Map: Create a simple dialog (maybe under a "Settings" menu) where the user can view and edit the account_currency_map directly within the GUI, instead of needing to edit gui_config.json manually.
+Editable Manual Prices: Similarly, add a dialog or table view to manage the manual_prices.json entries directly from the application.
+Interactive Charts:
+Tooltips: Add tooltips to the performance graphs that show the exact date, portfolio value, TWR %, and benchmark values when hovering over a point. Libraries like mplcursors can help, though integration with QtAgg might need care.
+Zoom/Pan: Enable built-in Matplotlib zoom/pan tools for the performance graphs.
+Table Enhancements:
+Filtering/Searching: Add a search box above the table to filter rows by symbol or account.
+Right-Click Actions: Add context menu actions on table rows (e.g., "View Transactions for [Symbol]", "Chart [Symbol] History").
+Conditional Formatting: Use more advanced cell background coloring (beyond just gain/loss) based on value ranges (e.g., highlight large unrealized gains/losses). Requires extending PandasModel.data for the Qt.BackgroundRole.
+Progress Bar: For long calculations (especially initial historical runs), replace the static "Refreshing..." status with a more informative progress bar (can be tricky with multiprocessing, might show indeterminate progress or progress based on dates processed).
+"Save As" for CSV: Add a "File -> Save Transactions As..." menu option to save the current transaction data (perhaps including added transactions) to a new CSV file.
+Themes: Offer a choice between the Light and Dark themes (requires loading different QSS files and potentially updating Matplotlib rcParams dynamically).
+II. Core Logic & Feature Enhancements:
+Transaction Editing/Deletion: Implement functionality (likely via the table's context menu and a dialog) to edit or delete existing transactions directly from the GUI, updating the CSV file accordingly. This requires careful handling of file I/O and triggering recalculations.
+More Analytics:
+Cost Basis Methods: Allow selection of different cost basis accounting methods (FIFO, LIFO, Average Cost) if needed (requires significant changes to _process_transactions_to_holdings).
+Asset Allocation: Calculate and display asset allocation percentages (e.g., Stocks, Bonds, Cash, International) based on user-defined categories for symbols (could be another config file). Display as a separate pie chart or table.
+Sector/Industry Analysis: If you can map symbols to sectors/industries (requires an external data source or manual mapping), display allocation and performance by sector.
+Risk Metrics: Calculate metrics like Standard Deviation (Volatility), Sharpe Ratio, Beta (vs. a benchmark) for the portfolio's historical returns. (Requires more advanced statistical calculations).
+Data Source Flexibility:
+Alternative APIs: Add support for other financial data providers (e.g., Alpha Vantage, IEX Cloud, EODHistoricalData) as alternatives or fallbacks to Yahoo Finance (requires abstracting the data fetching logic).
+Brokerage Import: Implement parsers for specific brokerage statement formats (e.g., E*TRADE, IBKR CSV exports) to directly import transactions, reducing manual CSV creation (can be complex due to varying formats).
+Cash Flow Analysis:
+Dividend Tracking: Provide a separate view or report specifically detailing dividend income over time, per stock, per account.
+Income/Expense: Allow tagging transactions as income/expense and generate reports.
+Multi-Portfolio Support: Allow managing multiple separate portfolios, each with its own transaction file and configuration.
+Benchmarking Enhancements:
+Custom Benchmarks: Allow creating blended benchmarks (e.g., 60% SPY, 40% AGG).
+Benchmark Comparison Metrics: Calculate Alpha, Beta, Tracking Error relative to the selected benchmarks.
+III. Technical & Maintenance Improvements:
+Refactor portfolio_logic Further: Break down very large functions like _calculate_portfolio_value_at_date_unadjusted or _build_summary_rows further if they become unwieldy.
+Unit Testing: Expand the unit test suite (test_portfolio_logic.py) to cover more edge cases and new features. Mock external API calls (yfinance) for more reliable testing.
+Error Handling: Make error reporting even more user-friendly (e.g., specific dialogs for critical errors instead of just the status bar).
+Packaging: Use tools like PyInstaller or cx_Freeze to package the application into a standalone executable for easier distribution on different operating systems. (Requires handling multiprocessing.freeze_support() correctly).
+Asynchronous Operations: For potentially slow operations like fetching current quotes without blocking the GUI entirely, explore using QThread or asyncio (more complex integration with Qt).
+Where to Start?
+Low-Hanging Fruit: Improving the Error/Warning Log Viewer (using the existing ignored_data), adding editable configurations (Account Map, Manual Prices), refining table filtering/sorting.
+High-Impact Features: Asset Allocation view, more detailed Dividend tracking.
+Longer-Term: Brokerage import, alternative data sources, advanced risk metrics.
+Choose the improvements that most interest you or address the biggest pain points you find while using the application!

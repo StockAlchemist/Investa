@@ -144,7 +144,8 @@ try:
         calculate_portfolio_summary,
         fetch_index_quotes_yfinance,
         CASH_SYMBOL_CSV,
-        calculate_historical_performance,  # v1.0 with include_accounts (but maybe not exclude_accounts yet)
+        calculate_historical_performance,
+        load_and_clean_transactions,
     )
 
     LOGIC_AVAILABLE = True
@@ -377,6 +378,7 @@ class PortfolioCalculatorWorker(QRunnable):
         # historical_kwargs will contain account_currency_map and default_currency
         self.historical_kwargs = historical_kwargs
         self.signals = WorkerSignals()
+        self.original_data = pd.DataFrame()
 
     @Slot()
     def run(self):
@@ -859,6 +861,7 @@ class PandasModel(QAbstractTableModel):
             order (Qt.SortOrder): The sort order (Qt.AscendingOrder or Qt.DescendingOrder).
         """
         if self._data.empty:
+            logging.debug("Sort called on empty model. Skipping.")
             return  # Nothing to sort
 
         try:
@@ -869,7 +872,9 @@ class PandasModel(QAbstractTableModel):
                 )
                 return
 
-            col_name = self._data.columns[column]  # Get the UI column name being sorted
+            col_name = self._data.columns[
+                column
+            ]  # Get the UI/Actual column name being sorted
             ascending_order = order == Qt.AscendingOrder
             logging.info(
                 f"Sorting by column: '{col_name}' (Index: {column}), Ascending: {ascending_order}"
@@ -877,53 +882,84 @@ class PandasModel(QAbstractTableModel):
 
             self.layoutAboutToBeChanged.emit()  # Notify view about layout change start
 
-            # --- Separate Cash Rows ---
+            # --- Separate Cash Rows (MODIFIED to handle both symbol column names) ---
             cash_rows = pd.DataFrame()
             non_cash_rows = self._data.copy()  # Start assuming all rows are non-cash
 
-            # Check if 'Symbol' column exists to identify cash rows reliably
-            if "Symbol" in self._data.columns:
+            # --- Determine the correct Symbol column name ---
+            symbol_col_name_internal = "Symbol"
+            symbol_col_name_original = "Stock / ETF Symbol"
+            actual_symbol_col = None
+            if symbol_col_name_internal in self._data.columns:
+                actual_symbol_col = symbol_col_name_internal
+            elif symbol_col_name_original in self._data.columns:
+                actual_symbol_col = symbol_col_name_original
+            # --- End Symbol column determination ---
+
+            if actual_symbol_col:  # Check if we found a symbol column
                 try:
-                    # Use the globally defined cash symbol
-                    # Special check for "Cash (CUR)" format after display change
                     base_cash_symbol = CASH_SYMBOL_CSV
-                    cash_display_symbol = (
-                        f"Cash ({self._get_currency_symbol_safe(get_name=True)})"
-                    )
+                    # Check for both possible cash representations
                     cash_mask = (
-                        self._data["Symbol"].astype(str) == base_cash_symbol
-                    ) | (self._data["Symbol"].astype(str) == cash_display_symbol)
+                        self._data[actual_symbol_col].astype(str) == base_cash_symbol
+                    )
+
+                    # Add check for display format "Cash (CUR)" only if using internal name "Symbol"
+                    # and if the parent application context is available to get the currency name.
+                    if actual_symbol_col == symbol_col_name_internal and self._parent:
+                        try:
+                            # Ensure _get_currency_symbol exists and is callable
+                            if hasattr(
+                                self._parent, "_get_currency_symbol"
+                            ) and callable(self._parent._get_currency_symbol):
+                                display_currency_name = (
+                                    self._parent._get_currency_symbol(get_name=True)
+                                )
+                                cash_display_symbol = f"Cash ({display_currency_name})"
+                                cash_mask |= (
+                                    self._data[actual_symbol_col].astype(str)
+                                    == cash_display_symbol
+                                )
+                            else:
+                                logging.debug(
+                                    "Parent lacks _get_currency_symbol method for cash sort check."
+                                )
+                        except Exception as e_disp_name:
+                            logging.warning(
+                                f"Could not get currency name for cash sort check: {e_disp_name}"
+                            )
 
                     if cash_mask.any():
                         cash_rows = self._data[cash_mask].copy()
-                        non_cash_rows = self._data[
-                            ~cash_mask
-                        ].copy()  # Update non_cash_rows
-                        # logging.debug(f"DEBUG Sort: Separated {len(cash_rows)} cash rows.")
+                        non_cash_rows = self._data[~cash_mask].copy()
+                        logging.debug(
+                            f"DEBUG Sort: Separated {len(cash_rows)} cash rows using '{actual_symbol_col}'."
+                        )
                 except Exception as e_cash_sep:
                     logging.warning(
                         f"Warning: Error separating cash rows during sort: {e_cash_sep}"
                     )
-                    # Proceed with non_cash_rows containing all data if separation fails
                     cash_rows = pd.DataFrame()  # Ensure cash_rows is empty
                     non_cash_rows = (
                         self._data.copy()
                     )  # Reset non_cash_rows to full data
             else:
+                # This warning will now only appear if NEITHER symbol column name is found
                 logging.warning(
-                    "Warning: 'Symbol' column not found, cannot separate cash for sorting."
+                    f"Warning: Could not find '{symbol_col_name_internal}' or '{symbol_col_name_original}' column, cannot separate cash for sorting."
                 )
+            # --- End Cash Row Separation Modification ---
 
-            # --- Sort Non-Cash Rows using pandas sort_values ---
+            # --- Sort Non-Cash Rows using pandas sort_values (MODIFIED Date Handling) ---
             sorted_non_cash_rows = pd.DataFrame()  # Initialize empty
             if not non_cash_rows.empty:
                 try:
-                    # Determine if the column *should* be numeric based on its name or content attempt
-                    # This helps decide if we should *try* numeric sorting
+                    # Determine if the column *should* be numeric, date, or string based on name/content
                     col_data_for_check = non_cash_rows[col_name]
-                    is_potentially_numeric = pd.api.types.is_numeric_dtype(
-                        col_data_for_check.dtype
-                    ) or any(
+
+                    # --- Column Type Heuristics ---
+                    # Check based on name first
+                    is_potentially_numeric_by_name = any(
                         indicator in col_name
                         for indicator in [
                             "%",
@@ -938,17 +974,97 @@ class PandasModel(QAbstractTableModel):
                             " Chg",
                             "Quantity",
                             "IRR",
+                            " Mkt",
+                            " Ret %",
+                            " Ratio",
                         ]
+                    ) or (
+                        self._parent
+                        and hasattr(self._parent, "_get_currency_symbol")
+                        and callable(self._parent._get_currency_symbol)
+                        and f"({self._parent._get_currency_symbol(get_name=True)})"
+                        in col_name
                     )
 
-                    # Explicitly treat Account and Symbol as strings for sorting
-                    is_string_col = col_name in ["Account", "Symbol"]
+                    # Handle original CSV headers that should be numeric
+                    original_numeric_headers = [
+                        "Quantity of Units",
+                        "Amount per unit",
+                        "Total Amount",
+                        "Fees",
+                        "Split Ratio (new shares per old share)",
+                    ]
+                    if col_name in original_numeric_headers:
+                        is_potentially_numeric_by_name = True
 
-                    # Define a key function for numeric conversion attempt
-                    # This will try to convert to numeric, returning NaN on failure
-                    numeric_key = lambda x: pd.to_numeric(x, errors="coerce")
+                    # Check actual dtype if name didn't trigger
+                    is_numeric_dtype = pd.api.types.is_numeric_dtype(
+                        col_data_for_check.dtype
+                    )
+                    is_potentially_numeric = (
+                        is_potentially_numeric_by_name or is_numeric_dtype
+                    )
 
-                    if is_potentially_numeric and not is_string_col:
+                    # Explicitly treat Account and Symbol columns as strings for sorting
+                    string_col_names = [
+                        "Account",
+                        "Symbol",
+                        "Investment Account",
+                        "Stock / ETF Symbol",
+                        "Transaction Type",
+                        "Price Source",
+                        "Note",
+                        "Local Currency",
+                        "Reason Ignored",
+                    ]
+                    is_string_col = col_name in string_col_names
+
+                    # Check for Date Column (using both possible names)
+                    date_col_name_internal = "Date"
+                    date_col_name_original = "Date (MMM DD, YYYY)"
+                    is_date_col = col_name in [
+                        date_col_name_internal,
+                        date_col_name_original,
+                    ]
+                    # --- End Column Type Heuristics ---
+
+                    # Define key functions
+                    # Attempt to strip common currency symbols and commas before numeric conversion
+                    def numeric_key_func(x_series):
+                        if not pd.api.types.is_string_dtype(x_series):
+                            x_series = x_series.astype(
+                                str
+                            )  # Convert to string if not already
+                        # Remove currency symbols (add more if needed) and commas
+                        cleaned_series = x_series.str.replace(
+                            r"[$,฿€£¥]", "", regex=True
+                        ).str.replace(",", "", regex=False)
+                        return pd.to_numeric(cleaned_series, errors="coerce")
+
+                    def date_key_func(x_series):
+                        # Try specific format first if applicable
+                        date_format_to_try = (
+                            CSV_DATE_FORMAT
+                            if col_name == date_col_name_original
+                            else None
+                        )
+                        return pd.to_datetime(
+                            x_series, errors="coerce", format=date_format_to_try
+                        )
+
+                    # --- Sorting Logic ---
+                    if is_date_col:
+                        logging.debug(
+                            f"DEBUG Sort: Using DATE sort strategy for '{col_name}'."
+                        )
+                        sorted_non_cash_rows = non_cash_rows.sort_values(
+                            by=col_name,
+                            ascending=ascending_order,
+                            na_position="last",
+                            key=date_key_func,  # Apply datetime conversion
+                            kind="mergesort",  # Use stable sort
+                        )
+                    elif is_potentially_numeric and not is_string_col:
                         logging.debug(
                             f"DEBUG Sort: Using NUMERIC sort strategy for '{col_name}'."
                         )
@@ -957,10 +1073,10 @@ class PandasModel(QAbstractTableModel):
                             by=col_name,
                             ascending=ascending_order,
                             na_position="last",  # Keep NaNs at the bottom
-                            key=numeric_key,  # Apply numeric conversion before sorting
-                            kind="mergesort",  # Stable sort
+                            key=numeric_key_func,  # Apply cleaning + numeric conversion before sorting
+                            kind="mergesort",  # Use stable sort
                         )
-                    else:
+                    else:  # Default to string sort (covers is_string_col and other cases)
                         logging.debug(
                             f"DEBUG Sort: Using STRING sort strategy for '{col_name}'."
                         )
@@ -972,31 +1088,37 @@ class PandasModel(QAbstractTableModel):
                             key=lambda x: x.astype(str).fillna(
                                 ""
                             ),  # Ensure string comparison
-                            kind="mergesort",  # Stable sort
+                            kind="mergesort",  # Use stable sort
                         )
 
                 except Exception as e_sort:
                     logging.error(
-                        f"ERROR during sorting logic for '{col_name}': {e_sort}"
+                        f"ERROR during primary sorting logic for '{col_name}': {e_sort}"
                     )
                     traceback.print_exc()
                     # Fallback: Attempt simple sort without key if specific sort failed
                     try:
+                        logging.warning(
+                            f"Attempting fallback string sort for '{col_name}' after error."
+                        )
                         sorted_non_cash_rows = non_cash_rows.sort_values(
                             by=col_name,
                             ascending=ascending_order,
                             na_position="last",
+                            key=lambda x: x.astype(str).fillna(
+                                ""
+                            ),  # Use string key for fallback
                             kind="mergesort",
                         )
                     except Exception as e_fallback_sort:
-                        logging.info(
+                        logging.error(
                             f"Fallback sort also failed for '{col_name}': {e_fallback_sort}"
                         )
                         sorted_non_cash_rows = (
                             non_cash_rows  # Fallback to original order on error
                         )
             else:
-                # logging.debug("DEBUG Sort: No non-cash rows to sort.")
+                logging.debug("DEBUG Sort: No non-cash rows to sort.")
                 pass  # sorted_non_cash_rows remains empty
 
             # --- Combine Sorted Rows ---
@@ -1004,16 +1126,25 @@ class PandasModel(QAbstractTableModel):
             self._data = pd.concat([sorted_non_cash_rows, cash_rows], ignore_index=True)
 
             self.layoutChanged.emit()  # Notify view about layout change end
-            # logging.info(f"Sorting finished for '{col_name}'.")
+            logging.info(f"Sorting finished for '{col_name}'.")
 
         except Exception as e:
             # Catch-all for unexpected errors in the sort method
             col_name_str = "OOB"
             try:
-                col_name_str = self._data.columns[column]
+                # Check if 'column' is a valid index before accessing
+                if 0 <= column < len(self._data.columns):
+                    col_name_str = self._data.columns[column]
+                else:
+                    col_name_str = f"Invalid Index {column}"
             except IndexError:
-                pass
-            logging.info(
+                col_name_str = f"IndexError {column}"
+            except (
+                AttributeError
+            ):  # Handle case where self._data might not be a DataFrame
+                col_name_str = "Model Data Invalid"
+
+            logging.error(
                 f"CRITICAL Error in sort method (Col:{column}, Name:'{col_name_str}'): {e}"
             )
             traceback.print_exc()
@@ -1024,6 +1155,424 @@ class PandasModel(QAbstractTableModel):
                 logging.error(
                     f"ERROR emitting layoutChanged after sort error: {e_emit}"
                 )
+
+
+class LogViewerDialog(QDialog):
+    """Dialog to display ignored transactions and reasons."""
+
+    def __init__(self, ignored_df: pd.DataFrame, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Ignored Transactions Log")
+        self.setMinimumSize(800, 400)  # Make it reasonably sized
+
+        layout = QVBoxLayout(self)
+
+        if ignored_df is None or ignored_df.empty:
+            label = QLabel("No transactions were ignored during the last calculation.")
+            label.setAlignment(Qt.AlignCenter)
+            layout.addWidget(label)
+        else:
+            self.table_view = QTableView()
+            self.table_view.setObjectName("IgnoredLogTable")
+            # Use a fresh PandasModel instance
+            self.table_model = PandasModel(
+                ignored_df.copy(), parent=parent
+            )  # Pass parent for currency maybe? Or just display raw
+            self.table_view.setModel(self.table_model)
+
+            # Configure table view appearance (optional but good)
+            self.table_view.setAlternatingRowColors(True)
+            self.table_view.setSelectionBehavior(QTableView.SelectRows)
+            self.table_view.setWordWrap(False)
+            self.table_view.setSortingEnabled(True)  # Allow sorting
+            self.table_view.horizontalHeader().setSectionResizeMode(
+                QHeaderView.Interactive
+            )
+            self.table_view.horizontalHeader().setStretchLastSection(False)
+            self.table_view.verticalHeader().setVisible(False)
+            self.table_view.resizeColumnsToContents()  # Initial resize
+
+            # Make the "Reason Ignored" column wider if it exists
+            try:
+                reason_col_idx = ignored_df.columns.get_loc("Reason Ignored")
+                self.table_view.setColumnWidth(reason_col_idx, 250)
+            except KeyError:
+                pass  # Column might not exist if no reasons were added
+
+            layout.addWidget(self.table_view)
+
+        # Add a close button
+        button_box = QDialogButtonBox(QDialogButtonBox.Close)
+        button_box.rejected.connect(self.reject)  # Close maps to reject
+        layout.addWidget(button_box)
+
+        # Apply parent's stylesheet if possible
+        if parent and hasattr(parent, "styleSheet"):
+            self.setStyleSheet(parent.styleSheet())
+        # Apply parent's font if possible
+        if parent and hasattr(parent, "font"):
+            self.setFont(parent.font())
+
+
+# Add this class near other dialogs in main_gui.py
+
+
+class ManageTransactionsDialog(QDialog):
+    """Dialog to view, edit, and delete transactions from the source CSV."""
+
+    # Signal to notify main window to refresh after changes
+    data_changed = Signal()
+
+    def __init__(self, original_df: pd.DataFrame, csv_filepath: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Manage Transactions")
+        self.setMinimumSize(1000, 600)
+        self._parent_app = parent  # Store reference to main app
+        self._original_data = original_df.copy()  # Keep a local copy
+        self._csv_filepath = csv_filepath  # Needed for saving changes
+
+        layout = QVBoxLayout(self)
+
+        # --- Add filtering (optional but helpful) ---
+        filter_layout = QHBoxLayout()
+        filter_layout.addWidget(QLabel("Filter Symbol:"))
+        self.filter_symbol_edit = QLineEdit()
+        filter_layout.addWidget(self.filter_symbol_edit)
+        filter_layout.addWidget(QLabel("Account:"))
+        self.filter_account_edit = QLineEdit()
+        filter_layout.addWidget(self.filter_account_edit)
+        filter_button = QPushButton("Apply Filter")
+        filter_button.clicked.connect(self._apply_filter)
+        filter_layout.addWidget(filter_button)
+        clear_button = QPushButton("Clear Filter")
+        clear_button.clicked.connect(self._clear_filter)
+        filter_layout.addWidget(clear_button)
+        filter_layout.addStretch(1)
+        layout.addLayout(filter_layout)
+        # --- End filtering ---
+
+        self.table_view = QTableView()
+        self.table_view.setObjectName("ManageTransactionsTable")
+        # Use the original data with original column names
+        self.table_model = PandasModel(self._original_data, parent=parent)
+        self.table_view.setModel(self.table_model)
+
+        self.table_view.setSelectionBehavior(QTableView.SelectRows)
+        self.table_view.setSelectionMode(
+            QTableView.SingleSelection
+        )  # Enforce single selection for Edit
+        self.table_view.setAlternatingRowColors(True)
+        self.table_view.setSortingEnabled(True)
+        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.table_view.verticalHeader().setVisible(False)
+        self.table_view.resizeColumnsToContents()
+        layout.addWidget(self.table_view)
+
+        button_layout = QHBoxLayout()
+        self.edit_button = QPushButton("Edit Selected")
+        self.delete_button = QPushButton("Delete Selected")
+        self.close_button = QPushButton("Close")
+        button_layout.addWidget(self.edit_button)
+        button_layout.addWidget(self.delete_button)
+        button_layout.addStretch(1)
+        button_layout.addWidget(self.close_button)
+        layout.addLayout(button_layout)
+
+        # Connections
+        self.edit_button.clicked.connect(self.edit_selected_transaction)
+        self.delete_button.clicked.connect(self.delete_selected_transaction)
+        self.close_button.clicked.connect(self.reject)  # Close button rejects
+
+        # Apply parent's style and font
+        if parent:
+            if hasattr(parent, "styleSheet"):
+                self.setStyleSheet(parent.styleSheet())
+            if hasattr(parent, "font"):
+                self.setFont(parent.font())
+
+    def _apply_filter(self):
+        """Filters the table view based on symbol/account input."""
+        symbol_filter = self.filter_symbol_edit.text().strip().upper()
+        account_filter = self.filter_account_edit.text().strip()
+        df_filtered = self._original_data.copy()
+
+        if symbol_filter:
+            try:
+                df_filtered = df_filtered[
+                    df_filtered["Stock / ETF Symbol"].str.contains(
+                        symbol_filter, case=False, na=False
+                    )
+                ]
+            except KeyError:
+                pass  # Ignore if column doesn't exist
+        if account_filter:
+            try:
+                df_filtered = df_filtered[
+                    df_filtered["Investment Account"].str.contains(
+                        account_filter, case=False, na=False
+                    )
+                ]
+            except KeyError:
+                pass
+
+        self.table_model.updateData(df_filtered)
+        self.table_view.resizeColumnsToContents()
+
+    def _clear_filter(self):
+        """Clears filters and shows all original data."""
+        self.filter_symbol_edit.clear()
+        self.filter_account_edit.clear()
+        self.table_model.updateData(self._original_data)
+        self.table_view.resizeColumnsToContents()
+
+    def get_selected_original_index(self) -> Optional[int]:
+        """
+        Gets the 'original_index' of the currently selected row in the table view.
+        Handles potential filtering/sorting by querying the model directly.
+        """
+        selected_indexes = self.table_view.selectionModel().selectedRows()
+        if not selected_indexes or len(selected_indexes) != 1:
+            logging.debug("get_selected_original_index: No single row selected.")
+            # Don't show a message box here, let the calling function handle it.
+            return None  # Indicate no valid selection
+
+        selected_view_index = selected_indexes[
+            0
+        ]  # This is the QModelIndex for the selected view row
+        source_model = self.table_model  # Get the model associated with the table
+
+        # --- Find the column index for 'original_index' in the model's data ---
+        try:
+            # Use the actual DataFrame currently backing the model to find the column
+            original_index_col_name = "original_index"  # The column name we stored
+            if original_index_col_name not in source_model._data.columns:
+                logging.error(
+                    f"'{original_index_col_name}' column not found in the ManageTransactionsDialog model's data."
+                )
+                QMessageBox.warning(
+                    self,
+                    "Internal Error",
+                    f"Required column '{original_index_col_name}' is missing.",
+                )
+                return None
+
+            original_index_col_idx = source_model._data.columns.get_loc(
+                original_index_col_name
+            )
+
+            # --- Create a QModelIndex specifically for the 'original_index' column of the selected row ---
+            target_model_index = source_model.index(
+                selected_view_index.row(), original_index_col_idx
+            )
+
+            # --- Ask the model for the data at that specific index ---
+            # Using DisplayRole should give us the value as displayed (likely a string number)
+            original_index_val = source_model.data(target_model_index, Qt.DisplayRole)
+
+            if original_index_val is None:
+                logging.warning(
+                    f"Model returned None for original_index at view row {selected_view_index.row()}, col idx {original_index_col_idx}"
+                )
+                QMessageBox.warning(
+                    self,
+                    "Selection Error",
+                    "Could not retrieve data for the selected row's original index.",
+                )
+                return None
+
+            # --- Convert the retrieved value to an integer ---
+            try:
+                return int(original_index_val)
+            except (ValueError, TypeError) as e:
+                logging.error(
+                    f"Could not convert retrieved original_index '{original_index_val}' to int: {e}"
+                )
+                QMessageBox.warning(
+                    self,
+                    "Data Error",
+                    f"Invalid original index value found for selected row: {original_index_val}",
+                )
+                return None
+
+        except (AttributeError, KeyError, IndexError) as e:
+            logging.error(
+                f"Error accessing model data/columns in get_selected_original_index: {e}"
+            )
+            QMessageBox.warning(
+                self, "Internal Error", "Error accessing table model data."
+            )
+            return None
+        except Exception as e:  # Catch any other unexpected errors
+            logging.exception("Unexpected error in get_selected_original_index")
+            QMessageBox.critical(
+                self,
+                "Unexpected Error",
+                "An unexpected error occurred while getting the selected row index.",
+            )
+            return None
+
+    @Slot()
+    def edit_selected_transaction(self):
+        original_index = self.get_selected_original_index()
+        if original_index is None:
+            QMessageBox.warning(
+                self, "Selection Error", "Please select a single transaction to edit."
+            )
+            return
+
+        # Find the row data from the original full dataset
+        try:
+            transaction_row = self._original_data[
+                self._original_data["original_index"] == original_index
+            ].iloc[0]
+            transaction_dict_for_dialog = transaction_row.to_dict()
+        except (IndexError, KeyError):
+            QMessageBox.warning(
+                self, "Data Error", "Could not find the selected transaction data."
+            )
+            return
+
+        # Reuse AddTransactionDialog
+        # Need the list of existing accounts for the dropdown
+        accounts = (
+            list(self._original_data["Investment Account"].unique())
+            if "Investment Account" in self._original_data
+            else []
+        )
+        edit_dialog = AddTransactionDialog(existing_accounts=accounts, parent=self)
+        edit_dialog.setWindowTitle("Edit Transaction")
+
+        # --- Pre-fill the dialog ---
+        try:
+            # Date
+            date_str = transaction_dict_for_dialog.get("Date (MMM DD, YYYY)")
+            if date_str:
+                # Try parsing with the specific CSV format first
+                qdate = QDate()
+                parsed_dt = datetime.strptime(date_str, CSV_DATE_FORMAT)
+                qdate.setDate(parsed_dt.year, parsed_dt.month, parsed_dt.day)
+                if qdate.isValid():
+                    edit_dialog.date_edit.setDate(qdate)
+                else:  # Fallback parsing
+                    qdate = QDate.fromString(
+                        date_str, "yyyy-MM-dd"
+                    )  # Try another common format
+                    if qdate.isValid():
+                        edit_dialog.date_edit.setDate(qdate)
+
+            # Type (match case-insensitively)
+            tx_type_str = transaction_dict_for_dialog.get("Transaction Type", "")
+            for i in range(edit_dialog.type_combo.count()):
+                if edit_dialog.type_combo.itemText(i).lower() == tx_type_str.lower():
+                    edit_dialog.type_combo.setCurrentIndex(i)
+                    break
+
+            edit_dialog.symbol_edit.setText(
+                str(transaction_dict_for_dialog.get("Stock / ETF Symbol", ""))
+            )
+
+            # Account (exact match)
+            acc_str = transaction_dict_for_dialog.get("Investment Account", "")
+            index = edit_dialog.account_combo.findText(acc_str, Qt.MatchFixedString)
+            if index >= 0:
+                edit_dialog.account_combo.setCurrentIndex(index)
+
+            # Numeric fields (handle potential formatting issues)
+            def format_for_edit(value, precision=8):
+                if pd.isna(value):
+                    return ""
+                try:
+                    # Format with desired precision, remove trailing zeros/decimal if integer
+                    formatted = f"{float(value):.{precision}f}".rstrip("0").rstrip(".")
+                    return (
+                        formatted if formatted else "0"
+                    )  # Return "0" if it became empty
+                except (ValueError, TypeError):
+                    return str(value)  # Fallback
+
+            edit_dialog.quantity_edit.setText(
+                format_for_edit(transaction_dict_for_dialog.get("Quantity of Units"))
+            )
+            edit_dialog.price_edit.setText(
+                format_for_edit(transaction_dict_for_dialog.get("Amount per unit"))
+            )
+            edit_dialog.total_amount_edit.setText(
+                format_for_edit(
+                    transaction_dict_for_dialog.get("Total Amount"), precision=2
+                )
+            )
+            edit_dialog.commission_edit.setText(
+                format_for_edit(transaction_dict_for_dialog.get("Fees"), precision=2)
+            )
+            edit_dialog.split_ratio_edit.setText(
+                format_for_edit(
+                    transaction_dict_for_dialog.get(
+                        "Split Ratio (new shares per old share)"
+                    )
+                )
+            )
+            edit_dialog.note_edit.setText(
+                str(transaction_dict_for_dialog.get("Note", ""))
+            )
+
+            edit_dialog._update_field_states(
+                edit_dialog.type_combo.currentText()
+            )  # Ensure fields are correctly enabled/disabled
+
+        except Exception as e_fill:
+            QMessageBox.critical(
+                self, "Dialog Error", f"Error pre-filling edit dialog:\n{e_fill}"
+            )
+            return
+        # --- End Pre-fill ---
+
+        if edit_dialog.exec():
+            new_data_dict = (
+                edit_dialog.get_transaction_data()
+            )  # Validation happens here
+            if new_data_dict:
+                # Call parent's method to handle CSV update and refresh
+                if self._parent_app and hasattr(
+                    self._parent_app, "_edit_transaction_in_csv"
+                ):
+                    if self._parent_app._edit_transaction_in_csv(
+                        original_index, new_data_dict
+                    ):
+                        # Refresh the data in *this* dialog's table if successful
+                        # Need to get updated original data from parent
+                        if hasattr(self._parent_app, "original_data"):
+                            self._original_data = self._parent_app.original_data.copy()
+                            self._apply_filter()  # Re-apply filter to show updated data
+                        self.data_changed.emit()  # Signal main window to refresh
+
+    @Slot()
+    def delete_selected_transaction(self):
+        original_index = self.get_selected_original_index()
+        if original_index is None:
+            QMessageBox.warning(
+                self, "Selection Error", "Please select a single transaction to delete."
+            )
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            "Are you sure you want to permanently delete this transaction?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+
+        if reply == QMessageBox.Yes:
+            # Call parent's method to handle CSV update and refresh
+            if self._parent_app and hasattr(
+                self._parent_app, "_delete_transactions_from_csv"
+            ):
+                if self._parent_app._delete_transactions_from_csv([original_index]):
+                    # Refresh the data in *this* dialog's table if successful
+                    if hasattr(self._parent_app, "original_data"):
+                        self._original_data = self._parent_app.original_data.copy()
+                        self._apply_filter()  # Re-apply filter
+                    self.data_changed.emit()  # Signal main window to refresh
 
 
 # --- Add/Edit Transaction Dialog ---
@@ -2387,6 +2936,27 @@ class PortfolioApp(QMainWindow):
         self.add_transaction_button.setIcon(
             self.style().standardIcon(QStyle.SP_FileIcon)
         )
+        self.manage_transactions_button = QPushButton("Manage Tx")
+        self.manage_transactions_button.setObjectName("ManageTransactionsButton")
+        self.manage_transactions_button.setIcon(
+            self.style().standardIcon(QStyle.SP_DialogSaveButton)
+        )  # Example icon
+        self.manage_transactions_button.setToolTip(
+            "Edit or delete existing transactions"
+        )
+        controls_layout.addWidget(self.manage_transactions_button)
+
+        self.view_ignored_button = QPushButton("View Log")
+        self.view_ignored_button.setObjectName("ViewIgnoredButton")
+        self.view_ignored_button.setIcon(
+            self.style().standardIcon(QStyle.SP_MessageBoxWarning)
+        )  # Example icon
+        self.view_ignored_button.setToolTip(
+            "View transactions ignored during the last calculation"
+        )
+        self.view_ignored_button.setEnabled(False)  # Initially disabled
+        controls_layout.addWidget(self.view_ignored_button)
+
         self.add_transaction_button.setToolTip("Manually add a new transaction")
         controls_layout.addWidget(self.add_transaction_button)
         self.account_select_button = QPushButton("Accounts")
@@ -2613,6 +3183,11 @@ class PortfolioApp(QMainWindow):
         table_layout.addWidget(self.table_view, 1)
         content_layout.addWidget(table_panel, 3)
 
+        self.view_ignored_button.clicked.connect(self.show_ignored_log)
+        self.manage_transactions_button.clicked.connect(
+            self.show_manage_transactions_dialog
+        )
+
         # --- Status Bar ---
         self._create_status_bar()
 
@@ -2797,6 +3372,30 @@ class PortfolioApp(QMainWindow):
                 final_right, key=lambda p: p["final_y"] + pos_map[p["index"]]["y_nudge"]
             )
         return label_positions
+
+    # Add this method to the PortfolioApp class
+    @Slot()
+    def show_ignored_log(self):
+        """Shows the dialog displaying ignored transactions."""
+        if hasattr(self, "ignored_data") and isinstance(
+            self.ignored_data, pd.DataFrame
+        ):
+            # Make sure the Reason Ignored column exists if possible
+            df_to_show = self.ignored_data.copy()
+            if "Reason Ignored" not in df_to_show.columns:
+                # If the main ignored_data doesn't have it (e.g., from older logic), add a placeholder
+                if not df_to_show.empty:
+                    df_to_show["Reason Ignored"] = "Reason not captured"
+                else:
+                    # If df is empty, create the column anyway for the dialog
+                    df_to_show = pd.DataFrame(columns=["Reason Ignored"])
+
+            dialog = LogViewerDialog(df_to_show, self)
+            dialog.exec()  # Show as a modal dialog
+        else:
+            QMessageBox.information(
+                self, "Info", "No ignored transaction data available."
+            )
 
     def update_account_pie_chart(self, df_account_data=None):
         """Updates the 'Value by Account' pie chart.
@@ -3930,6 +4529,229 @@ class PortfolioApp(QMainWindow):
         value_label.setPalette(palette)
 
     @Slot()
+    def show_manage_transactions_dialog(self):
+        """Opens the dialog to manage transactions."""
+        if not hasattr(self, "original_data") or self.original_data.empty:
+            # Try loading it now if not loaded on startup/refresh
+            account_map = self.config.get("account_currency_map", {"SET": "THB"})
+            def_currency = self.config.get("default_currency", "USD")
+            logging.info("Loading original transaction data for management dialog...")
+            (_, orig_df_temp, _, _, err_load_orig, _) = (
+                load_and_clean_transactions(  # <--- Direct call
+                    self.transactions_file, account_map, def_currency
+                )
+            )
+            if err_load_orig or orig_df_temp is None:
+                QMessageBox.critical(
+                    self,
+                    "Load Error",
+                    "Failed to load transaction data for management.",
+                )
+                return
+            else:
+                self.original_data = orig_df_temp.copy()
+
+        if self.original_data.empty:
+            QMessageBox.information(
+                self, "No Data", "No transaction data loaded to manage."
+            )
+            return
+
+        dialog = ManageTransactionsDialog(
+            self.original_data, self.transactions_file, self
+        )
+        # Connect the dialog's signal back to the main window's refresh
+        # dialog.data_changed.connect(self.refresh_data) # Let the _edit/_delete methods trigger refresh
+        dialog.exec()
+
+    def _backup_csv(self):
+        """Creates a timestamped backup of the transactions CSV."""
+        if not self.transactions_file or not os.path.exists(self.transactions_file):
+            return False, "CSV file not found."
+        try:
+            backup_dir = "csv_backups"
+            os.makedirs(backup_dir, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            base_name = os.path.basename(self.transactions_file)
+            name, ext = os.path.splitext(base_name)
+            backup_filename = f"{name}_{timestamp}{ext}"
+            backup_path = os.path.join(backup_dir, backup_filename)
+            shutil.copy2(
+                self.transactions_file, backup_path
+            )  # copy2 preserves metadata
+            logging.info(f"CSV backup created: {backup_path}")
+            return True, backup_path
+        except Exception as e:
+            logging.error(f"ERROR creating CSV backup: {e}")
+            return False, str(e)
+
+    def _rewrite_csv(self, df_to_write: pd.DataFrame) -> bool:
+        """Rewrites the entire CSV file from the DataFrame."""
+        if not self.transactions_file:
+            QMessageBox.critical(self, "Save Error", "CSV file path is not set.")
+            return False
+
+        # Define headers in the correct order
+        csv_headers = [
+            "Date (MMM DD, YYYY)",
+            "Transaction Type",
+            "Stock / ETF Symbol",
+            "Quantity of Units",
+            "Amount per unit",
+            "Total Amount",
+            "Fees",
+            "Investment Account",
+            "Split Ratio (new shares per old share)",
+            "Note",
+        ]
+        # Select and reorder columns to match headers
+        df_ordered = pd.DataFrame(
+            columns=csv_headers
+        )  # Start with an empty df with correct columns
+        for header in csv_headers:
+            # Find the corresponding column in df_to_write (handle potential renames/missing)
+            # This assumes df_to_write uses the *original* CSV headers
+            if header in df_to_write.columns:
+                df_ordered[header] = df_to_write[header]
+            else:
+                df_ordered[header] = ""  # Add empty column if missing in source
+
+        try:
+            # --- Backup BEFORE writing ---
+            backup_ok, backup_msg = self._backup_csv()
+            if not backup_ok:
+                QMessageBox.critical(
+                    self,
+                    "Backup Error",
+                    f"Failed to backup CSV before saving:\n{backup_msg}",
+                )
+                return False
+
+            # --- Write to CSV ---
+            # Use specific float formatting to avoid excessive decimals
+            float_format = "%.8f"  # Adjust precision as needed
+            df_ordered.to_csv(
+                self.transactions_file,
+                index=False,
+                encoding="utf-8",
+                quoting=csv.QUOTE_NONNUMERIC,  # Quote non-numeric fields
+                date_format=CSV_DATE_FORMAT,  # Use the specific date format
+                float_format=float_format,
+            )
+            logging.info(f"Successfully rewrote CSV: {self.transactions_file}")
+            return True
+        except PermissionError as e:
+            logging.error(f"Permission error rewriting CSV: {e}")
+            QMessageBox.critical(
+                self,
+                "Save Error",
+                f"Permission denied writing to CSV file:\n{e}\n\nIs the file open in another program?",
+            )
+            return False
+        except Exception as e:
+            logging.error(f"ERROR rewriting CSV: {e}")
+            traceback.print_exc()
+            QMessageBox.critical(
+                self,
+                "Save Error",
+                f"An unexpected error occurred while saving CSV:\n{e}",
+            )
+            return False
+
+    def _edit_transaction_in_csv(
+        self, original_index_to_edit: int, new_data_dict: Dict[str, str]
+    ) -> bool:
+        """Finds a transaction by original_index, updates it, and rewrites the CSV."""
+        if not hasattr(self, "original_data") or self.original_data.empty:
+            QMessageBox.critical(
+                self,
+                "Data Error",
+                "Original transaction data not available for editing.",
+            )
+            return False
+
+        # Work on a copy
+        df_modified = self.original_data.copy()
+
+        # Find the row index in the DataFrame corresponding to the original_index
+        row_mask = df_modified["original_index"] == original_index_to_edit
+        if not row_mask.any():
+            QMessageBox.critical(
+                self,
+                "Edit Error",
+                "Could not find the transaction to edit (original index mismatch).",
+            )
+            return False
+
+        df_row_index = df_modified.index[row_mask].tolist()[
+            0
+        ]  # Get the DataFrame index
+
+        # Update the row
+        for csv_header, new_value_str in new_data_dict.items():
+            if csv_header in df_modified.columns:
+                # Convert back to appropriate type before setting?
+                # Or just set the string value? Pandas might handle it on write.
+                # Let's set the string value directly for simplicity, to_csv handles quoting.
+                df_modified.loc[df_row_index, csv_header] = new_value_str
+            # else: Column from dialog doesn't exist in original_data? Should not happen.
+
+        # Rewrite the entire CSV
+        if self._rewrite_csv(df_modified):
+            QMessageBox.information(
+                self, "Success", "Transaction updated successfully."
+            )
+            self.refresh_data()  # Refresh data after successful edit
+            return True
+        else:
+            # Rewrite failed, error message shown in _rewrite_csv
+            return False
+
+    def _delete_transactions_from_csv(
+        self, original_indices_to_delete: List[int]
+    ) -> bool:
+        """Removes transactions by original_index and rewrites the CSV."""
+        if not hasattr(self, "original_data") or self.original_data.empty:
+            QMessageBox.critical(
+                self,
+                "Data Error",
+                "Original transaction data not available for deletion.",
+            )
+            return False
+        if not original_indices_to_delete:
+            return True  # Nothing to delete
+
+        # Work on a copy
+        df_original = self.original_data.copy()
+
+        # Filter OUT the rows to delete
+        rows_to_keep_mask = ~df_original["original_index"].isin(
+            original_indices_to_delete
+        )
+        df_filtered = df_original[rows_to_keep_mask]
+
+        if len(df_filtered) == len(df_original):
+            QMessageBox.warning(
+                self,
+                "Delete Error",
+                "Could not find the transaction(s) to delete (original index mismatch).",
+            )
+            return False  # None of the indices were found
+
+        # Rewrite the CSV with the filtered data
+        if self._rewrite_csv(df_filtered):
+            QMessageBox.information(
+                self,
+                "Success",
+                f"Successfully deleted {len(original_indices_to_delete)} transaction(s).",
+            )
+            self.refresh_data()  # Refresh data after successful delete
+            return True
+        else:
+            # Rewrite failed, error message shown in _rewrite_csv
+            return False
+
+    @Slot()
     def select_file(self):
         """Opens a file dialog to select a new transactions CSV file."""
         # (Keep implementation as before)
@@ -3974,6 +4796,8 @@ class PortfolioApp(QMainWindow):
         self._update_account_button_text()  # Update button text
         self._update_fx_rate_display(self.currency_combo.currentText())
         self.update_header_info(loading=True)
+        if hasattr(self, "view_ignored_button"):
+            self.view_ignored_button.setEnabled(False)  # Disable when clearing
 
     # --- Filter Change Handlers ---
     @Slot()
@@ -4226,6 +5050,40 @@ class PortfolioApp(QMainWindow):
             self.status_label.setText("Error: Select a valid transactions CSV file.")
             return
 
+        # --- Load original data FIRST ---
+        # Use the maps/defaults from config stored in self.config
+        account_map = self.config.get("account_currency_map", {"SET": "THB"})
+        def_currency = self.config.get("default_currency", "USD")
+        logging.info("Loading original transaction data for potential management...")
+        (
+            all_tx_df_temp,  # Temp var for all tx
+            orig_df_temp,  # This is what we want to store
+            _,  # ignored indices - not needed here again
+            _,  # ignored reasons - not needed here again
+            err_load_orig,
+            warn_load_orig,
+        ) = load_and_clean_transactions(
+            self.transactions_file, account_map, def_currency
+        )  # <-- Direct call
+        if err_load_orig or orig_df_temp is None:
+            QMessageBox.critical(
+                self,
+                "Load Error",
+                "Failed to load original transaction data for management.",
+            )
+            # Don't store potentially bad data
+            self.original_data = pd.DataFrame()
+            # Allow proceeding maybe? Or stop? Let's stop for now.
+            self.calculation_finished()  # Re-enable controls
+            return
+        else:
+            # Store the original DataFrame with its index
+            self.original_data = orig_df_temp.copy()
+            logging.info(f"Stored original data with {len(self.original_data)} rows.")
+            if warn_load_orig:
+                self.status_label.setText("Warning during initial data load check.")
+        # --- End Load original data ---
+
         self.is_calculating = True
         now_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
         self.status_label.setText(f"Refreshing data... ({now_str})")
@@ -4411,6 +5269,9 @@ class PortfolioApp(QMainWindow):
             holdings_df if holdings_df is not None else pd.DataFrame()
         )  # Store unfiltered holdings
         self.ignored_data = ignored_df if ignored_df is not None else pd.DataFrame()
+        if hasattr(self, "view_ignored_button"):
+            self.view_ignored_button.setEnabled(not self.ignored_data.empty)
+
         self.account_metrics_data = account_metrics if account_metrics else {}
         self.index_quote_data = index_quotes if index_quotes else {}
 

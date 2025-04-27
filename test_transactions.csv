@@ -1,73 +1,59 @@
 "Date (MMM DD, YYYY)",Transaction Type,Stock / ETF Symbol,Quantity of Units,Amount per unit,Total Amount, Fees,Investment Account,Split Ratio (new shares per old share),Note
-"Jan 2, 2018",Deposit,$CASH,"50000.00",1.000000000,"50000.00",0.00,E*TRADE,,Initial Seed Capital
-"Jan 3, 2018",Buy,BRK.B,35.000000000,198.104400000,"6933.65",6.95,E*TRADE,,
-"Jan 3, 2018",Sell,$CASH,"6940.60",1.000000000,"6940.60",0.00,E*TRADE,,Buy BRK.B + Fee
-"Jan 11, 2018",Deposit,$CASH,"10000.00",1.000000000,"10000.00",0.00,IBKR,,Example Deposit IBKR
-"Jan 29, 2018",Buy,ES-SET50,7.000000000,37.400000000,261.80,0.000000000,SET,,Sample Fund Buy TH
-"Feb 15, 2018",Buy,$CASH,865.00,1.000000000,865.00,0.000000000,E*TRADE,,Cash from Dividend
-"Feb 15, 2018",Dividend,AAPL,,,865.00,,E*TRADE,,Example Dividend
-"Feb 26, 2018",Buy,ES-JUMBO25,7.200000000,36.500000000,262.80,0.000000000,SET,,Sample Fund Buy TH
-"Mar 2, 2018",Sell,BAC,500.000000000,31.600000000,"15800.00",6.95,E*TRADE,,Sell BAC
-"Mar 2, 2018",Buy,$CASH,"15793.05",1.000000000,"15793.05",0.000000000,E*TRADE,,Cash from Sell BAC
-"Mar 2, 2018",Withdrawal,$CASH,"16000.00",1.000000000,"16000.00",0.00,E*TRADE,,Withdraw Funds
-"Apr 2, 2018",Buy,$CASH,240.00,1.000000000,240.00,0.000000000,E*TRADE,,Cash from Dividend
-"Apr 2, 2018",Dividend,BAC,,,240.00,,E*TRADE,,
-"May 17, 2018",Buy,$CASH,1000.00,1.000000000,1000.00,0.000000000,E*TRADE,,Cash from Dividend
-"May 17, 2018",Dividend,AAPL,,,1000.00,,E*TRADE,,
-"Aug 16, 2018",Buy,$CASH,1000.00,1.000000000,1000.00,0.000000000,E*TRADE,,Cash from Dividend
-"Aug 16, 2018",Dividend,AAPL,,,1000.00,,E*TRADE,,
-"Sep 29, 2018",Buy,$CASH,175.00,1.000000000,175.00,0.000000000,E*TRADE,,Cash from Dividend
-"Sep 29, 2018",Dividend,BAC,,,175.00,,E*TRADE,,
-"Dec 28, 2018",Buy,$CASH,175.00,1.000000000,175.00,0.000000000,E*TRADE,,Cash from Dividend
-"Dec 28, 2018",Dividend,BAC,,,175.00,,E*TRADE,,
-"Feb 14, 2019",Buy,$CASH,1000.00,1.000000000,1000.00,0.000000000,E*TRADE,,Cash from Dividend
-"Feb 14, 2019",Dividend,AAPL,,,1000.00,,E*TRADE,,
-"Mar 29, 2019",Buy,$CASH,175.00,1.000000000,175.00,0.000000000,E*TRADE,,Cash from Dividend
-"Mar 29, 2019",Dividend,BAC,,,175.00,,E*TRADE,,
-"May 16, 2019",Buy,$CASH,1050.00,1.000000000,1050.00,0.000000000,E*TRADE,,Cash from Dividend
-"May 16, 2019",Dividend,AAPL,,,1050.00,,E*TRADE,,
-"Jun 28, 2019",Buy,$CASH,175.00,1.000000000,175.00,0.000000000,E*TRADE,,Cash from Dividend
-"Jun 28, 2019",Dividend,BAC,,,175.00,,E*TRADE,,
-"Aug 15, 2019",Buy,$CASH,1050.00,1.000000000,1050.00,0.000000000,E*TRADE,,Cash from Dividend
-"Aug 15, 2019",Dividend,AAPL,,,1050.00,,E*TRADE,,
-"Sep 27, 2019",Buy,$CASH,210.00,1.000000000,210.00,0.000000000,E*TRADE,,Cash from Dividend
-"Sep 27, 2019",Dividend,BAC,,,210.00,,E*TRADE,,
-"Nov 14, 2019",Buy,$CASH,1050.00,1.000000000,1050.00,0.000000000,E*TRADE,,Cash from Dividend
-"Nov 14, 2019",Dividend,AAPL,,,1050.00,,E*TRADE,,
-"Dec 27, 2019",Buy,$CASH,210.00,1.000000000,210.00,0.000000000,E*TRADE,,Cash from Dividend
-"Dec 27, 2019",Dividend,BAC,,,210.00,,E*TRADE,,
-"Feb 13, 2020",Buy,$CASH,1050.00,1.000000000,1050.00,0.000000000,E*TRADE,,Cash from Dividend
-"Feb 13, 2020",Dividend,AAPL,,,1050.00,,E*TRADE,,
-"Mar 2, 2020",Buy,BRK.B,25.000000000,205.000000000,"5,125.00",0.00,E*TRADE,,
-"Mar 2, 2020",Sell,$CASH,"5,125.00",1.000000000,"5,125.00",0.00,E*TRADE,,
-"Mar 4, 2020",Buy,DAL,1000.000000000,45.000000000,"45,000.00",0.00,E*TRADE,,
-"Mar 4, 2020",Sell,$CASH,"45,000.00",1.000000000,"45,000.00",0.00,E*TRADE,,
-"May 7, 2020",Sell,DAL,1000.000000000,21.700000000,"21,700.00",0.60,E*TRADE,,
-"May 7, 2020",Buy,$CASH,"21,699.40",1.000000000,"21,699.40",0.00,E*TRADE,,Cash from Sell DAL
-"May 11, 2020",Buy,BRK.B,15.000000000,175.000000000,"2,625.00",0.00,E*TRADE,,
-"May 11, 2020",Sell,$CASH,"2,625.00",1.000000000,"2,625.00",0.00,E*TRADE,,
-"May 14, 2020",Buy,$CASH,1120.00,1.000000000,1120.00,0.000000000,E*TRADE,,Cash from Dividend
-"May 14, 2020",Dividend,AAPL,,,1120.00,,E*TRADE,, Example Dividend before Split
-"May 19, 2020",Buy,AXP,115.000000000,88.000000000,"10,120.00",0.00,E*TRADE,,
-"May 19, 2020",Buy,KO,225.000000000,44.500000000,"10,012.50",0.00,E*TRADE,,
-"May 19, 2020",Sell,$CASH,"10,120.00",1.000000000,"10,120.00",0.00,E*TRADE,,
-"May 19, 2020",Sell,$CASH,"10,012.50",1.000000000,"10,012.50",0.00,E*TRADE,,
-"Aug 14, 2020",Buy,$CASH,500.00,1.000000000,500.00,0.000000000,E*TRADE,,Cash from Dividend
-"Aug 14, 2020",Dividend,AAPL,,,500.00,,E*TRADE,, Example Dividend before Split
-"Aug 31, 2020",Split,AAPL,,,,,,4,AAPL 4:1 Split Example
-"Sep 3, 2020",Sell,AAPL,1200.000000000,127.000000000,"152,400.00",0.00,E*TRADE,,Sell Post-Split (Orig 300)
-"Sep 3, 2020",Buy,$CASH,"152,400.00",1.000000000,"152,400.00",0.00,E*TRADE,,Cash from Sell
-"Sep 15, 2020",Buy,QSR,1000.000000000,57.500000000,"57,500.00",0.00,E*TRADE,,
-"Sep 15, 2020",Sell,$CASH,"57,500.00",1.000000000,"57,500.00",0.00,E*TRADE,,
-"Sep 22, 2020",Sell,AAPL,1200.000000000,111.000000000,"133,200.00",0.00,E*TRADE,,Sell Post-Split (Orig 300)
-"Sep 22, 2020",Buy,$CASH,"133,200.00",1.000000000,"133,200.00",0.00,E*TRADE,,Cash from Sell
-"Oct 2, 2020",Buy,$CASH,395.00,1.000000000,395.00,0.000000000,E*TRADE,,Cash from Dividend
-"Oct 2, 2020",Dividend,QSR,,,395.00,,E*TRADE,,
-"Nov 11, 2020",Buy,$CASH,80.00,1.000000000,80.00,0.000000000,E*TRADE,,Cash from Dividend
-"Nov 11, 2020",Dividend,AAPL,,,80.00,,E*TRADE,, Dividend Post-Split
-"Dec 31, 2020",Fees,$CASH,,,"-10.00",10.00,E*TRADE,,Example Year End Fee
-"Jan 1, 2021",Deposit,$CASH,"5,000.00",1.000000000,"5,000.00",0.00,SET,,Start of Year Deposit TH
-"Feb 11, 2021",Buy,$CASH,80.00,1.000000000,80.00,0.000000000,E*TRADE,,Cash from Dividend
-"Feb 11, 2021",Dividend,AAPL,,,80.00,,E*TRADE,,
-"Mar 1, 2021",Buy,BRK.B,20.000000000,250.000000000,"5,000.00",0.00,E*TRADE,,
-"Mar 1, 2021",Sell,$CASH,"5,000.00",1.000000000,"5,000.00",0.00,E*TRADE,,
+"Jan 06, 2020",Deposit,$CASH,"100000.00",1.000000000,"100000.00",0.00,US Stocks,,Initial Seed USD
+"Jan 07, 2020",Deposit,$CASH,"80000.00",1.000000000,"80000.00",0.00,European Stocks,,Initial Seed EUR
+"Jan 08, 2020",Deposit,$CASH,"70000.00",1.000000000,"70000.00",0.00,UK Stocks,,Initial Seed GBP
+"Jan 09, 2020",Deposit,$CASH,"120000.00",1.000000000,"120000.00",0.00,Australian Stocks,,Initial Seed AUD
+"Jan 10, 2020",Deposit,$CASH,"60000.00",1.000000000,"60000.00",0.00,Chinese Stocks,,Initial Seed USD (ADR/ETF)
+"Jan 13, 2020",Deposit,$CASH,"3000000.00",1.000000000,"3000000.00",0.00,Thai Stocks,,Initial Seed THB
+"Jan 15, 2020",Buy,AAPL,100.000000000,77.000000000,"7700.00",6.95,US Stocks,,Buy AAPL Pre-Split (Unadjusted Price)
+"Jan 15, 2020",Sell,$CASH,"7706.95",1.000000000,"7706.95",0.00,US Stocks,,Cash for AAPL Buy+Fee
+"Jan 16, 2020",Buy,ASML.AS,50.000000000,290.000000000,"14500.00",12.00,European Stocks,,Buy ASML (EUR)
+"Jan 16, 2020",Sell,$CASH,"14512.00",1.000000000,"14512.00",0.00,European Stocks,,Cash for ASML Buy+Fee
+"Jan 17, 2020",Buy,GSK.L,1000.000000000,17.500000000,"17500.00",9.00,UK Stocks,,Buy GSK (GBP)
+"Jan 17, 2020",Sell,$CASH,"17509.00",1.000000000,"17509.00",0.00,UK Stocks,,Cash for GSK Buy+Fee
+"Jan 20, 2020",Buy,CBA.AX,150.000000000,82.000000000,"12300.00",20.00,Australian Stocks,,Buy CBA (AUD)
+"Jan 20, 2020",Sell,$CASH,"12320.00",1.000000000,"12320.00",0.00,Australian Stocks,,Cash for CBA Buy+Fee
+"Jan 21, 2020",Buy,MCHI,150.000000000,65.000000000,"9750.00",4.95,Chinese Stocks,,Buy MCHI ETF (USD)
+"Jan 21, 2020",Sell,$CASH,"9754.95",1.000000000,"9754.95",0.00,Chinese Stocks,,Cash for MCHI Buy+Fee
+"Jan 22, 2020",Buy,PTT.BK,5000.000000000,48.000000000,"240000.00",180.00,Thai Stocks,,Buy PTT (THB)
+"Jan 22, 2020",Sell,$CASH,"240180.00",1.000000000,"240180.00",0.00,Thai Stocks,,Cash for PTT Buy+Fee
+"Mar 16, 2020",Dividend,AAPL,,,77.00,,US Stocks,,Div on 100 sh (Pre-Split Price)
+"Apr 15, 2020",Dividend,ASML.AS,,,60.00,,European Stocks,,Div EUR
+"May 15, 2020",Dividend,AAPL,,,77.00,,US Stocks,,Div on 100 sh (Pre-Split Price)
+"Jun 10, 2020",Dividend,GSK.L,,,190.00,,UK Stocks,,Div GBP
+"Aug 14, 2020",Dividend,AAPL,,,82.00,,US Stocks,,Div on 100 sh (Pre-Split Price)
+"Aug 20, 2020",Dividend,CBA.AX,,,250.00,,Australian Stocks,,Div AUD
+"Sep 10, 2020",Sell,AAPL,200.000000000,125.000000000,"25000.00",0.00,US Stocks,,Sell 200 of 400 Post-Split
+"Sep 10, 2020",Buy,$CASH,"25000.00",1.000000000,"25000.00",0.00,US Stocks,,Cash from AAPL Sell
+"Oct 1, 2020",Buy,GOOG,50.000000000,1450.000000000,"72500.00",6.95,US Stocks,,Buy GOOG (High Price Example)
+"Oct 1, 2020",Sell,$CASH,"72506.95",1.000000000,"72506.95",0.00,US Stocks,,Cash for GOOG Buy+Fee
+"Oct 15, 2020",Buy,CPALL.BK,2000.000000000,60.000000000,"120000.00",130.00,Thai Stocks,,Buy CPALL (THB)
+"Oct 15, 2020",Sell,$CASH,"120130.00",1.000000000,"120130.00",0.00,Thai Stocks,,Cash for CPALL Buy+Fee
+"Nov 11, 2020",Dividend,AAPL,,,55.00,,US Stocks,,Dividend on 200 sh Post-Split
+"Dec 1, 2020",Dividend,VOW3.DE,,,0.00,0.00,European Stocks,,Buy VOW3 after this line
+"Dec 2, 2020",Buy,VOW3.DE,50.000000000,160.000000000,"8000.00",10.00,European Stocks,,Buy VW Pref (EUR)
+"Dec 2, 2020",Sell,$CASH,"8010.00",1.000000000,"8010.00",0.00,European Stocks,,Cash for VOW3 Buy+Fee
+"Dec 15, 2020",Dividend,PTT.BK,,,800.00,,Thai Stocks,,Example Div THB
+"Dec 31, 2020",Fees,$CASH,,,"-25.00",25.00,US Stocks,,Example Year End Fee US
+"Jan 11, 2021",Buy,VOD.L,5000.000000000,1.300000000,"6500.00",9.00,UK Stocks,,Buy Vodafone (GBP)
+"Jan 11, 2021",Sell,$CASH,"6509.00",1.000000000,"6509.00",0.00,UK Stocks,,Cash for VOD.L Buy+Fee
+"Feb 11, 2021",Dividend,AAPL,,,55.00,,US Stocks,,(on 200 sh)
+"Mar 1, 2021",Dividend,CBA.AX,,,300.00,,Australian Stocks,,Div AUD
+"Apr 1, 2021",Buy,AOT.BK,1000.000000000,65.000000000,"65000.00",75.00,Thai Stocks,,Buy AOT (THB)
+"Apr 1, 2021",Sell,$CASH,"65075.00",1.000000000,"65075.00",0.00,Thai Stocks,,Cash for AOT Buy+Fee
+"May 1, 2021",Dividend,VOW3.DE,,,70.00,,European Stocks,,Div EUR
+"May 13, 2021",Dividend,AAPL,,,55.00,,US Stocks,,(on 200 sh)
+"Jun 1, 2021",Sell,ASML.AS,25.000000000,550.000000000,"13750.00",10.00,European Stocks,,Sell Half ASML (EUR)
+"Jun 1, 2021",Buy,$CASH,"13740.00",1.000000000,"13740.00",0.00,European Stocks,,Cash from ASML Sell
+"Jun 15, 2021",Dividend,GSK.L,,,200.00,,UK Stocks,,Div GBP
+"Jul 1, 2021",Buy,WES.AX,200.000000000,50.000000000,"10000.00",15.00,Australian Stocks,,Buy Wesfarmers (AUD)
+"Jul 1, 2021",Sell,$CASH,"10015.00",1.000000000,"10015.00",0.00,Australian Stocks,,Cash for WES Buy+Fee
+"Aug 12, 2021",Dividend,AAPL,,,55.00,,US Stocks,,(on 200 sh)
+"Sep 1, 2021",Dividend,VOD.L,,,100.00,,UK Stocks,,Div GBP
+"Sep 15, 2021",Dividend,PTT.BK,,,800.00,,Thai Stocks,,Div THB
+"Oct 1, 2021",Buy,BABA,50.000000000,150.000000000,"7500.00",4.95,Chinese Stocks,,Buy BABA ADR (USD)
+"Oct 1, 2021",Sell,$CASH,"7504.95",1.000000000,"7504.95",0.00,Chinese Stocks,,Cash for BABA Buy+Fee
+"Nov 11, 2021",Dividend,AAPL,,,55.00,,US Stocks,,(on 200 sh)
+"Dec 31, 2021",Withdrawal,$CASH,"20000.00",1.000000000,"20000.00",0.00,US Stocks,,Withdraw Funds Example
+"Jan 10, 2022",Sell,CPALL.BK,1000.000000000,62.000000000,"62000.00",70.00,Thai Stocks,,Sell CPALL (THB)
+"Jan 10, 2022",Buy,$CASH,"61930.00",1.000000000,"61930.00",0.00,Thai Stocks,,Cash from CPALL Sell

@@ -1,5 +1,9 @@
 yf_portfolio_daily_results_*.json
 yf_portfolio_hist_raw_adjusted_*.json
 portfolio_cache_yf.json
-__pycache__/portfolio_logic.cpython-312.pyc
-
+__pycache__/
+coding_plan.txt
+.pytest_cache/
+.vscode/
+.DS_Store
+Thumbs.db

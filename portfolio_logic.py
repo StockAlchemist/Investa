@@ -233,8 +233,8 @@ def _get_file_hash(filepath: str) -> str:
     # --- End Refined Exception Handling ---
 
 
-# --- REVISED: _load_and_clean_transactions (Correct na_values Scope) ---
-def _load_and_clean_transactions(
+# --- REVISED: load_and_clean_transactions (Correct na_values Scope) ---
+def load_and_clean_transactions(
     transactions_csv_file: str,
     account_currency_map: Dict,  # Now required
     default_currency: str,  # Now required
@@ -2153,7 +2153,7 @@ def _process_transactions_to_holdings(
     #       in the main process that you expect workers to use directly.
     #       For production, consider using a QueueHandler.
     logging.basicConfig(
-        level=logging.INFO,  # Match the desired level
+        level=logging.DEBUG,  # Match the desired level
         format="%(asctime)s [%(levelname)-8s] PID:%(process)d {%(module)s:%(lineno)d} %(message)s",  # Add PID
         datefmt="%Y-%m-%d %H:%M:%S",
         force=True,  # Override existing config if any
@@ -3824,7 +3824,7 @@ def calculate_portfolio_summary(
         ignored_reasons_load,
         err_load,
         warn_load,
-    ) = _load_and_clean_transactions(
+    ) = load_and_clean_transactions(
         transactions_csv_file, account_currency_map, default_currency
     )
     ignored_row_indices.update(ignored_indices_load)
@@ -4464,11 +4464,22 @@ def _unadjust_prices(
             the calculated unadjusted 'price' (effectively, adjusted only for dividends). The index
             consists of date objects. Symbols without splits are returned with their original adjusted prices.
     """
+    logging.info("--- Starting Price Unadjustment ---")  # Add start log
     unadjusted_prices_yf = {}
     unadjusted_count = 0
 
     for yf_symbol, adj_price_df in adjusted_prices_yf.items():
+        # --- Add Debug for specific symbol ---
+        IS_DEBUG_SYMBOL = yf_symbol == "AAPL"  # Check if it's AAPL
+        if IS_DEBUG_SYMBOL:
+            logging.debug(f"  Processing unadjustment for DEBUG symbol: {yf_symbol}")
+        # --- End Debug ---
+
         if adj_price_df.empty or "price" not in adj_price_df.columns:
+            if IS_DEBUG_SYMBOL:
+                logging.debug(
+                    "    Skipping: Adjusted price DataFrame is empty or missing 'price'."
+                )
             unadjusted_prices_yf[yf_symbol] = adj_price_df.copy()
             continue
 
@@ -4478,22 +4489,29 @@ def _unadjust_prices(
             symbol_splits = splits_by_internal_symbol.get(internal_symbol)
 
         if not symbol_splits:
+            if IS_DEBUG_SYMBOL:
+                logging.debug(
+                    f"    No splits found for internal symbol '{internal_symbol}'. Copying adjusted prices."
+                )
             unadjusted_prices_yf[yf_symbol] = adj_price_df.copy()
             continue
+        else:
+            if IS_DEBUG_SYMBOL:
+                logging.debug(
+                    f"    Found splits for '{internal_symbol}'. Proceeding with unadjustment."
+                )
 
         unadj_df = adj_price_df.copy()
         if not isinstance(unadj_df.index, pd.DatetimeIndex):
             try:
-                # Ensure index is consistently date objects
                 unadj_df.index = pd.to_datetime(unadj_df.index, errors="coerce").date
-                unadj_df = unadj_df[pd.notnull(unadj_df.index)]  # Drop NaT indices
+                unadj_df = unadj_df[pd.notnull(unadj_df.index)]
             except Exception:
-                warn_key = f"unadjust_index_err_{yf_symbol}"
-                if warn_key not in processed_warnings:
+                # ... (warning log) ...
+                if IS_DEBUG_SYMBOL:
                     logging.warning(
-                        f"  Hist WARN (Unadjust): Failed to convert index to date for {yf_symbol}. Skipping unadjustment."
+                        "    Failed to convert index to date. Skipping unadjustment."
                     )
-                    processed_warnings.add(warn_key)
                 unadjusted_prices_yf[yf_symbol] = adj_price_df.copy()
                 continue
 
@@ -4503,64 +4521,99 @@ def _unadjust_prices(
         unadj_df.sort_index(inplace=True)
 
         forward_split_factor = pd.Series(1.0, index=unadj_df.index, dtype=float)
-        # Ensure splits are sorted correctly (most recent first)
         sorted_splits_desc = sorted(
             symbol_splits, key=lambda x: x.get("Date", date.min), reverse=True
-        )  # Added .get with default
+        )
+
+        if IS_DEBUG_SYMBOL:
+            logging.debug(f"    Splits (newest first): {sorted_splits_desc}")
 
         for split_info in sorted_splits_desc:
             try:
                 split_date_raw = split_info.get("Date")
                 if split_date_raw is None:
                     raise ValueError("Split info missing 'Date'")
-                # Ensure split_date is a date object
                 if isinstance(split_date_raw, datetime):
                     split_date = split_date_raw.date()
                 elif isinstance(split_date_raw, date):
                     split_date = split_date_raw
                 else:
-                    raise TypeError(
-                        f"Split date is not a valid date or datetime object: {type(split_date_raw)}"
-                    )
+                    raise TypeError(f"Invalid split date type: {type(split_date_raw)}")
 
                 split_ratio = float(split_info["Split Ratio"])
-
                 if split_ratio <= 0:
-                    warn_key = f"invalid_split_ratio_{yf_symbol}_{split_date}"
-                    if warn_key not in processed_warnings:
+                    if IS_DEBUG_SYMBOL:
                         logging.warning(
-                            f"  Hist WARN (Unadjust): Invalid split ratio ({split_ratio}) for {yf_symbol} on {split_date}. Skipping this split."
+                            f"    Invalid split ratio {split_ratio} on {split_date}. Skipping."
                         )
-                        processed_warnings.add(warn_key)
                     continue
+
                 # Apply split factor to dates *before* the split date
                 mask = forward_split_factor.index < split_date
-                forward_split_factor.loc[mask] *= split_ratio
-            except (KeyError, ValueError, TypeError, AttributeError) as e:
-                warn_key = (
-                    f"split_error_{yf_symbol}_{split_info.get('Date', 'UnknownDate')}"
-                )
-                error_detail = f"{type(e).__name__}: {e}"
-                if warn_key not in processed_warnings:
-                    logging.warning(
-                        f"  Hist WARN (Unadjust): Error processing split for {yf_symbol} around {split_info.get('Date', 'UnknownDate')}: {error_detail}. Skipping."
+                if IS_DEBUG_SYMBOL and split_date == date(2020, 8, 31):
+                    logging.debug(
+                        f"    Applying ratio {split_ratio} for split on {split_date}. Mask sum (dates before): {mask.sum()}"
                     )
-                    processed_warnings.add(warn_key)
+                forward_split_factor.loc[mask] *= split_ratio
+
+            except (KeyError, ValueError, TypeError, AttributeError) as e:
+                # ... (warning log) ...
+                if IS_DEBUG_SYMBOL:
+                    logging.warning(
+                        f"    Error processing split around {split_info.get('Date', 'N/A')}: {e}"
+                    )
                 continue
 
         original_prices = unadj_df["price"].copy()
-        # Align series before multiplication, handle missing dates
+        # Align series before multiplication
         aligned_factor, aligned_prices = forward_split_factor.align(
             unadj_df["price"], join="right", fill_value=1.0
         )
-        unadj_df["price"] = aligned_prices * aligned_factor
+        unadj_df["unadjusted_price"] = (
+            aligned_prices * aligned_factor
+        )  # Use new column name
 
-        if not unadj_df["price"].equals(
-            original_prices.reindex_like(unadj_df["price"])
+        # --- Add Debug logging for specific dates ---
+        if IS_DEBUG_SYMBOL:
+            debug_dates = [
+                date(2020, 8, 28),
+                date(2020, 8, 31),
+                date(2020, 9, 1),
+            ]  # Dates around split
+            debug_dates_in_index = [d for d in debug_dates if d in unadj_df.index]
+            if debug_dates_in_index:
+                logging.debug(
+                    f"    --- Unadjustment Details for {yf_symbol} around split ---"
+                )
+                log_df = unadj_df.loc[debug_dates_in_index].copy()
+                log_df["original_adjusted"] = original_prices.reindex(
+                    debug_dates_in_index
+                )
+                log_df["forward_factor"] = forward_split_factor.reindex(
+                    debug_dates_in_index
+                )
+                log_df = log_df[
+                    ["original_adjusted", "forward_factor", "unadjusted_price"]
+                ]  # Keep relevant columns
+                logging.debug(f"\n{log_df.to_string()}")
+            else:
+                logging.debug(f"    Could not find debug dates {debug_dates} in index.")
+        # --- End Debug Logging ---
+
+        if not unadj_df["unadjusted_price"].equals(
+            original_prices.reindex_like(unadj_df["unadjusted_price"])
         ):
             unadjusted_count += 1
-        unadjusted_prices_yf[yf_symbol] = unadj_df
 
+        # --- IMPORTANT: Return the correct column ---
+        unadjusted_prices_yf[yf_symbol] = unadj_df[["unadjusted_price"]].rename(
+            columns={"unadjusted_price": "price"}
+        )
+        # --- END Correct column return ---
+
+    logging.info(
+        f"--- Finished Price Unadjustment ({unadjusted_count} symbols processed with splits) ---"
+    )
     return unadjusted_prices_yf
 
 
@@ -4772,16 +4825,25 @@ def _calculate_daily_net_cash_flow(
     """
     fx_lookup_failed = False
     net_flow_target_curr = 0.0
+    # Filter for transactions ON the target date
     daily_tx = transactions_df[transactions_df["Date"].dt.date == target_date].copy()
     if daily_tx.empty:
         return 0.0, False
 
+    # Filter ONLY for explicit $CASH Deposit/Withdrawal transactions
+    # These represent money entering or leaving the portfolio boundary.
+    external_flow_types = ["deposit", "withdrawal"]  # Standard external flows
     cash_flow_tx = daily_tx[
         (daily_tx["Symbol"] == CASH_SYMBOL_CSV)
-        & (daily_tx["Type"].isin(["deposit", "withdrawal"]))
+        & (daily_tx["Type"].isin(external_flow_types))
     ].copy()
+
     if cash_flow_tx.empty:
-        return 0.0, False
+        return 0.0, False  # No external flows on this day
+
+    logging.debug(
+        f"Found {len(cash_flow_tx)} explicit external $CASH flows for {target_date}"
+    )
 
     for _, row in cash_flow_tx.iterrows():
         tx_type = row["Type"]
@@ -4790,38 +4852,51 @@ def _calculate_daily_net_cash_flow(
         commission_local = (
             0.0 if pd.isna(commission_local_raw) else float(commission_local_raw)
         )
-        # --- Use Local Currency from DataFrame ---
         local_currency = row["Local Currency"]
-        # ---------------------------------------
         flow_local = 0.0
 
-        if pd.isna(qty):  # Skip if qty missing
-            warn_key = f"missing_cash_qty_{target_date}"
-            # Suppressed warning
+        if pd.isna(qty):
+            logging.warning(
+                f"Skipping external cash flow row on {target_date} due to missing Quantity."
+            )
+            processed_warnings.add(f"missing_cash_flow_qty_{target_date}")
             continue
 
+        # Determine flow direction based ONLY on deposit/withdrawal
         if tx_type == "deposit":
-            flow_local = abs(qty) - commission_local
+            flow_local = abs(qty) - commission_local  # Cash IN (+)
         elif tx_type == "withdrawal":
-            flow_local = -abs(qty) - commission_local
+            flow_local = -abs(qty) - commission_local  # Cash OUT (-)
+        # Other types ('buy $CASH', 'sell $CASH') are ignored by the filter above
 
+        # Convert flow to target currency
         flow_target = flow_local
         if local_currency != target_currency:
             fx_rate = get_historical_rate_via_usd_bridge(
                 local_currency, target_currency, target_date, historical_fx_yf
             )
             if pd.isna(fx_rate):
-                warn_key = f"missing_fx_cashflow_{target_date}_{local_currency}_{target_currency}"
-                # Suppressed warning
+                logging.warning(
+                    f"Hist FX Lookup CRITICAL Failure for cash flow: {local_currency}->{target_currency} on {target_date}. Aborting day's flow."
+                )
                 fx_lookup_failed = True
-                flow_target = np.nan
+                net_flow_target_curr = np.nan
+                break
             else:
                 flow_target = flow_local * fx_rate
+
+        if pd.isna(net_flow_target_curr):
+            break  # Check if loop was broken
 
         if pd.notna(flow_target):
             net_flow_target_curr += flow_target
         else:
-            return np.nan, True
+            logging.warning(
+                f"Unexpected NaN cash flow target for {tx_type} on {target_date} after FX conversion."
+            )
+            net_flow_target_curr = np.nan
+            fx_lookup_failed = True
+            break
 
     return net_flow_target_curr, fx_lookup_failed
 
@@ -5209,7 +5284,7 @@ def _calculate_daily_metrics_worker(
     #       in the main process that you expect workers to use directly.
     #       For production, consider using a QueueHandler.
     logging.basicConfig(
-        level=logging.INFO,  # Match the desired level
+        level=logging.DEBUG,  # Match the desired level
         format="%(asctime)s [%(levelname)-8s] PID:%(process)d {%(module)s:%(lineno)d} %(message)s",  # Add PID
         datefmt="%Y-%m-%d %H:%M:%S",
         force=True,  # Override existing config if any
@@ -5344,7 +5419,7 @@ def _prepare_historical_inputs(
     Prepares all necessary inputs for the historical performance calculation.
 
     This function centralizes the initial setup steps:
-    1. Loads and cleans all transactions using `_load_and_clean_transactions`.
+    1. Loads and cleans all transactions using `load_and_clean_transactions`.
     2. Filters transactions based on `include_accounts` and `exclude_accounts`.
     3. Extracts split information from the transactions.
     4. Determines the unique set of stock/ETF symbols and currencies involved in the filtered transactions.
@@ -5405,7 +5480,7 @@ def _prepare_historical_inputs(
         ignored_reasons,
         err_load,
         warn_load,
-    ) = _load_and_clean_transactions(
+    ) = load_and_clean_transactions(
         transactions_csv_file, account_currency_map, default_currency
     )
     if all_transactions_df is None:
@@ -6227,6 +6302,58 @@ def _load_or_calculate_daily_results(
             )
             daily_df["daily_return"] = np.nan  # Initialize
 
+            # --- ADD DETAILED LOGGING FOR SPECIFIC DATE ---
+            DEBUG_TWR_DATE = date(
+                2020, 1, 7
+            )  # <<< CONFIRM this is the correct deposit date you want to check
+            logging.debug(
+                f"Checking for DEBUG_TWR_DATE: {DEBUG_TWR_DATE} (Type: {type(DEBUG_TWR_DATE)}) in daily_df index."
+            )
+
+            try:  # Add try-except around the lookup
+                debug_timestamp = pd.Timestamp(DEBUG_TWR_DATE)  # Ensure Timestamp type
+                if debug_timestamp in daily_df.index:
+                    debug_row = daily_df.loc[debug_timestamp]  # Use Timestamp for .loc
+                    dbg_start = debug_row["previous_value"]
+                    dbg_end = debug_row["value"]
+                    dbg_flow = debug_row["net_flow_filled"]
+                    dbg_gain = debug_row["daily_gain"]
+                    dbg_return_calc = np.nan
+                    if pd.notna(dbg_start) and abs(dbg_start) > 1e-9:
+                        dbg_return_calc = dbg_gain / dbg_start
+
+                    logging.debug(
+                        f"--- TWR DEBUG for Deposit Date {DEBUG_TWR_DATE} ---"
+                    )
+                    logging.debug(f"  Start Value (Prev End): {dbg_start:,.2f}")
+                    logging.debug(f"  End Value (Current):    {dbg_end:,.2f}")
+                    logging.debug(
+                        f"  Net External Flow:      {dbg_flow:,.2f}"
+                    )  # Should be + deposit amount
+                    logging.debug(
+                        f"  Calculated Daily Gain:  {dbg_gain:,.2f} (End - Start - Flow)"
+                    )
+                    logging.debug(
+                        f"  Calculated Daily Return:{dbg_return_calc:.6f} (Gain / Start)"
+                    )
+                    # Also log the final assigned return
+                    dbg_final_return = debug_row["daily_return"]
+                    logging.debug(f"  Final Assigned Return:  {dbg_final_return:.6f}")
+                    logging.debug(f"--- End TWR DEBUG ---")
+                else:
+                    logging.warning(
+                        f"DEBUG_TWR_DATE {DEBUG_TWR_DATE} (as {debug_timestamp}) NOT FOUND in daily_df index after dropna."
+                    )
+            except KeyError:
+                logging.error(
+                    f"KeyError looking up debug date {DEBUG_TWR_DATE} (as {debug_timestamp}). Might be missing from index."
+                )
+            except Exception as e_dbg:
+                logging.error(
+                    f"Error during TWR debug logging for {DEBUG_TWR_DATE}: {e_dbg}"
+                )
+            # --- END DETAILED LOGGING ---
+
             # Calculate return where previous value is valid and non-zero
             valid_prev_value_mask = previous_value.notna() & (
                 abs(previous_value) > 1e-9
@@ -6854,7 +6981,7 @@ def calculate_historical_performance(
 if __name__ == "__main__":
     # Configure logging for the test run
     logging.basicConfig(
-        level=logging.INFO,  # Show INFO, WARNING, ERROR, CRITICAL messages
+        level=logging.DEBUG,  # Show INFO, WARNING, ERROR, CRITICAL messages
         format="%(asctime)s [%(levelname)-8s] %(module)s:%(lineno)d - %(message)s",  # Simplified module info
         datefmt="%Y-%m-%d %H:%M:%S",
     )
