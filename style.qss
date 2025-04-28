@@ -340,4 +340,108 @@ QMenu::separator {
     margin: 4px 0px;
 }
 
+/* Target both navigation toolbars specifically by object name */
+#PerfReturnToolbar, #AbsValueToolbar {
+    background-color: #F0F0F0; /* Optional: Match background or make distinct */
+    border: none; /* Remove default toolbar border */
+    padding: 1px; /* Reduce padding */
+    margin: 0px;
+    min-height: 20px; /* Force a smaller minimum height */
+    max-height: 25px; /* Force a smaller maximum height */
+}
+
+/* Target ALL QToolButtons within the specific toolbars */
+#PerfReturnToolbar QToolButton,
+#AbsValueToolbar QToolButton {
+    background-color: transparent; /* Make button background transparent */
+    border: 1px solid transparent; /* Remove default button border */
+    padding: 1px; /* Reduce button padding */
+    margin: 1px; /* Add small margin between buttons */
+    min-width: 20px; /* Make buttons smaller */
+    max-width: 20px;
+    min-height: 18px;
+    max-height: 18px;
+    border-radius: 3px; /* Optional: Slightly rounded corners */
+    icon-size: 14px; /* Make icons smaller */
+}
+
+#PerfReturnToolbar QToolButton:hover,
+#AbsValueToolbar QToolButton:hover {
+    background-color: #E0E0E0; /* Light grey hover */
+    border: 1px solid #C0C0C0;
+}
+
+#PerfReturnToolbar QToolButton:pressed,
+#AbsValueToolbar QToolButton:pressed {
+    background-color: #D0D0D0; /* Slightly darker pressed */
+    border: 1px solid #B0B0B0;
+}
+
+#PerfReturnToolbar QToolButton:checked, /* Style for toggle buttons like Zoom */
+#AbsValueToolbar QToolButton:checked {
+    background-color: #C8DAF0; /* Light blueish when checked */
+    border: 1px solid #A0B0D0;
+}
+
+/* Optionally hide separators if they take up too much space */
+#PerfReturnToolbar QToolBarSeparator,
+#AbsValueToolbar QToolBarSeparator {
+    /* margin: 0px 2px; */ /* Adjust space around separators */
+     width: 0px; /* Try hiding them completely */
+     /* height: 0px; */ /* Might also need height */
+     /* border: none; */
+}
+
+/* Optionally hide the coordinate display (often takes space) */
+#PerfReturnToolbar QLabel,
+#AbsValueToolbar QLabel {
+     /* color: transparent; */ /* Hide text by making it transparent */
+     /* max-width: 0px; */   /* Or try to collapse it */
+     /* font-size: 1px; */
+     /* margin-right: 5px; */ /* Add some space if kept visible */
+     /* border: 1px solid red; */ /* DEBUG: See the label bounds */
+     /* display: none; /* Simplest way to hide */
+}
+
+/* Add styles for the Symbol Chart Toolbar */
+#SymbolChartToolbar {
+    background-color: #F0F0F0; /* Match other toolbars */
+    border: none;
+    padding: 1px;
+    margin: 0px;
+    min-height: 18px;   /* Compact height */
+    max-height: 22px;
+}
+
+#SymbolChartToolbar QToolButton {
+    background-color: transparent;
+    border: 1px solid transparent;
+    padding: 0px;
+    margin: 0px 1px;
+    min-width: 18px;    /* Small buttons */
+    max-width: 18px;
+    min-height: 16px;
+    max-height: 16px;
+    border-radius: 2px;
+    icon-size: 12px;    /* Small icons */
+}
+
+#SymbolChartToolbar QToolButton:hover {
+    background-color: #E0E0E0;
+    border: 1px solid #C0C0C0;
+}
+#SymbolChartToolbar QToolButton:pressed {
+    background-color: #D0D0D0;
+    border: 1px solid #B0B0B0;
+}
+#SymbolChartToolbar QToolButton:checked {
+    background-color: #C8DAF0;
+    border: 1px solid #A0B0D0;
+}
+
+#SymbolChartToolbar QToolBarSeparator {
+     width: 0px;
+     margin: 0px;
+}
+
 /* --- END OF FILE style.qss --- */

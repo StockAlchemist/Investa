@@ -99,6 +99,18 @@ from PySide6.QtWidgets import (
     QScrollArea,
 )
 
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QWidget, QLabel
+from PySide6.QtCore import Qt
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
+import matplotlib.dates as mdates
+import matplotlib.ticker as mtick
+import pandas as pd
+from datetime import date
+
+from PySide6.QtGui import QDoubleValidator
+
 from PySide6.QtGui import QColor, QPalette, QFont, QIcon, QPixmap, QAction
 from PySide6.QtCore import (
     Qt,
@@ -118,27 +130,54 @@ import matplotlib
 matplotlib.use("QtAgg")
 import matplotlib.pyplot as plt
 
-# --- Matplotlib Font Configuration (unchanged) ---
+# --- Matplotlib Font Configuration ---
 try:
+    # --- TRY THESE FONTS ---
+    # font_name = "Thonburi"       # Good choice for macOS Thai support
+    font_name = "DejaVu Sans"  # Excellent cross-platform choice if installed
+    # font_name = "Helvetica Neue" # Try if available
+    # font_name = "Lucida Grande"  # Try if available
+    # font_name = "Arial Unicode MS" # Best coverage if installed
+    # font_name = "Arial"          # Original (causes warning)
+
+    # Try setting the default font
+    plt.rcParams.update({"font.family": font_name})
+    # Update other rcParams as before
     plt.rcParams.update(
         {
             "font.size": 8,
-            "font.family": "Arial",  # Or Arial, Tahoma, Verdana, Segoe UI
             "axes.labelcolor": "#333333",
             "xtick.color": "#666666",
             "ytick.color": "#666666",
             "text.color": "#333333",
         }
     )
-    logging.debug("Matplotlib default font configured.")
+    logging.debug(
+        f"Matplotlib default font configured to: {plt.rcParams['font.family']}"
+    )
+
 except Exception as e:
     logging.warning(f"Warning: Could not configure Matplotlib font: {e}")
-# --- End Matplotlib Font Configuration ---
-
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import (
+    NavigationToolbar2QT as NavigationToolbar,
+)
 from matplotlib.figure import Figure
 import matplotlib.ticker as mtick
+
+try:
+    import mplcursors
+
+    MPLCURSORS_AVAILABLE = True
+except ImportError:
+    logging.warning(
+        "Warning: mplcursors library not found. Hover tooltips on graphs will be disabled."
+    )
+    logging.info("         Install it using: pip install mplcursors")
+    MPLCURSORS_AVAILABLE = False
+
+import matplotlib.dates as mdates  # Needed for date formatting in tooltips
 
 # --- Import Business Logic from portfolio_logic ---
 try:
@@ -352,7 +391,17 @@ class WorkerSignals(QObject):
     finished = Signal()
     error = Signal(str)
     # Args: summary_metrics, holdings_df, ignored_df, account_metrics, index_quotes, historical_data_df
-    result = Signal(dict, pd.DataFrame, pd.DataFrame, dict, dict, pd.DataFrame)
+    result = Signal(
+        dict,  # summary_metrics
+        pd.DataFrame,  # holdings_df
+        dict,  # account_metrics
+        dict,  # index_quotes
+        pd.DataFrame,  # historical_data_df (processed)
+        dict,  # hist_prices_adj (raw adjusted prices)
+        dict,  # hist_fx (raw fx rates)
+        set,  # combined_ignored_indices <-- ADDED
+        dict,  # combined_ignored_reasons <-- ADDED
+    )
 
 
 class PortfolioCalculatorWorker(QRunnable):
@@ -403,67 +452,64 @@ class PortfolioCalculatorWorker(QRunnable):
 
     @Slot()
     def run(self):
-        """
-        Executes the portfolio, index, and historical calculations sequentially.
-
-        Calls the provided functions, handles potential exceptions during each step,
-        and emits the 'result' signal with all collected data upon successful
-        completion, or the 'error' signal if any critical step fails. Finally,
-        emits the 'finished' signal.
-
-        Signals:
-            Emits signals defined in WorkerSignals (result, error, finished).
-        """
+        """Executes the calculations and emits results or errors."""
         portfolio_summary_metrics = {}
         holdings_df = pd.DataFrame()
-        ignored_df = pd.DataFrame()
+        ignored_df = (
+            pd.DataFrame()
+        )  # Note: Ignored DF comes from main thread's initial load now
         account_metrics = {}
         index_quotes = {}
-        historical_data_df = pd.DataFrame()
-        portfolio_status = "Error: Portfolio calculation did not run"
-        historical_status = "Info: Historical calculation pending"
-        overall_status = "Error: Worker did not complete initialization"
+        historical_data_df = pd.DataFrame()  # Final processed historical results
+        # Initialize raw data dicts
+        hist_prices_adj = {}
+        hist_fx = {}
+        # --- ADD Combined Ignored Placeholders ---
+        combined_ignored_indices = set()
+        combined_ignored_reasons = {}
+        # --- END ADD ---
+
+        portfolio_status = "Error: Portfolio calc not run"
+        historical_status = "Error: Historical calc not run"
+        overall_status = "Error: Worker did not complete"
 
         try:
             # --- 1. Run Portfolio Summary Calculation ---
             try:
                 current_portfolio_kwargs = self.portfolio_kwargs.copy()
-                # Add manual prices to the kwargs passed to the function
-                current_portfolio_kwargs["manual_prices_dict"] = (
-                    self.manual_prices_dict
-                )  # <-- ADD IT HERE
+                current_portfolio_kwargs["manual_prices_dict"] = self.manual_prices_dict
 
-                logging.debug(
-                    f"DEBUG Worker: Calling portfolio_fn with kwargs keys: {list(current_portfolio_kwargs.keys())}"
-                )
-                p_summary, p_holdings, p_ignored, p_account, p_status = (
-                    self.portfolio_fn(
-                        *self.portfolio_args, **current_portfolio_kwargs
-                    )  # Use updated kwargs
-                )
+                # --- Capture 7 return values ---
+                (
+                    p_summary,
+                    p_holdings,
+                    p_account,
+                    p_ignored_idx,
+                    p_ignored_rsn,
+                    p_status,
+                ) = self.portfolio_fn(*self.portfolio_args, **current_portfolio_kwargs)
                 portfolio_summary_metrics = p_summary if p_summary is not None else {}
                 holdings_df = p_holdings if p_holdings is not None else pd.DataFrame()
-                ignored_df = p_ignored if p_ignored is not None else pd.DataFrame()
                 account_metrics = p_account if p_account is not None else {}
+                # --- Store combined ignored info from portfolio calc ---
+                combined_ignored_indices = (
+                    p_ignored_idx if p_ignored_idx is not None else set()
+                )
+                combined_ignored_reasons = (
+                    p_ignored_rsn if p_ignored_rsn is not None else {}
+                )
+                # --- End Store ---
                 portfolio_status = (
                     p_status if p_status else "Error: Unknown portfolio status"
                 )
-                if isinstance(portfolio_summary_metrics, dict):
-                    portfolio_summary_metrics["status_msg"] = portfolio_status
+                # ... add status to metrics dict ...
             except Exception as port_e:
-                logging.info(
-                    f"--- Error during portfolio calculation in worker: {port_e} ---"
-                )
-                traceback.print_exc()
-                portfolio_status = f"Error in Portfolio Calc: {port_e}"
-                portfolio_summary_metrics, holdings_df, ignored_df, account_metrics = (
-                    {},
-                    pd.DataFrame(),
-                    pd.DataFrame(),
-                    {},
-                )
+                # ... handle error, reset results ...
+                # Ensure ignored sets/dicts are empty on error
+                combined_ignored_indices = set()
+                combined_ignored_reasons = {}
 
-            # --- 2. Fetch Index Quotes (unchanged) ---
+            # --- 2. Fetch Index Quotes ---
             try:
                 logging.debug("DEBUG Worker: Fetching index quotes...")
                 index_quotes = self.index_fn()
@@ -471,91 +517,119 @@ class PortfolioCalculatorWorker(QRunnable):
                     f"DEBUG Worker: Index quotes fetched ({len(index_quotes)} items)."
                 )
             except Exception as idx_e:
-                logging.info(
+                logging.error(
                     f"--- Error during index quote fetch in worker: {idx_e} ---"
                 )
                 traceback.print_exc()
-                index_quotes = {}
+                index_quotes = {}  # Reset on error
 
-            # --- 3. Run Historical Performance Calculation (unchanged wrt currency map) ---
+            # --- 3. Run Historical Performance Calculation ---
             try:
-                # --- MODIFICATION: Conditionally remove exclude_accounts if not supported ---
                 current_historical_kwargs = self.historical_kwargs.copy()
                 if (
                     not HISTORICAL_FN_SUPPORTS_EXCLUDE
                     and "exclude_accounts" in current_historical_kwargs
                 ):
-                    logging.debug(
-                        "DEBUG Worker: Removing 'exclude_accounts' from historical_fn call as it's not supported by the imported function."
-                    )
                     current_historical_kwargs.pop("exclude_accounts")
-                # --- End Modification ---
 
-                # No changes needed here, kwargs are passed directly
                 logging.debug(
                     f"DEBUG Worker: Calling historical_fn with kwargs keys: {list(current_historical_kwargs.keys())}"
                 )
-                hist_df, hist_status = self.historical_fn(
+
+                # --- CORRECT UNPACKING (expect 4 values) ---
+                hist_df, h_prices_adj, h_fx, hist_status = self.historical_fn(
                     *self.historical_args,
-                    **current_historical_kwargs,  # Use the potentially modified kwargs
+                    **current_historical_kwargs,
                 )
+                # --- END CORRECTION ---
+
                 historical_data_df = hist_df if hist_df is not None else pd.DataFrame()
+                # Store raw data correctly
+                hist_prices_adj = h_prices_adj if h_prices_adj is not None else {}
+                hist_fx = h_fx if h_fx is not None else {}
                 historical_status = (
                     hist_status if hist_status else "Error: Unknown historical status"
                 )
-                if isinstance(portfolio_summary_metrics, dict):
+
+                if isinstance(
+                    portfolio_summary_metrics, dict
+                ):  # Add status if possible
                     portfolio_summary_metrics["historical_status_msg"] = (
                         historical_status
                     )
                 logging.debug(
                     f"DEBUG Worker: Historical calculation finished. Status: {historical_status}"
                 )
-            except Exception as hist_e:
-                # ... (existing error handling for historical calc) ...
-                if isinstance(
-                    hist_e, TypeError
-                ) and "unexpected keyword argument 'exclude_accounts'" in str(hist_e):
-                    logging.info(
-                        f"--- Error during historical performance calculation in worker: {hist_e} ---"
-                    )
-                    logging.info(
-                        "--- This likely means the portfolio_logic.py version doesn't support 'exclude_accounts'. ---"
-                    )
-                    historical_status = (
-                        f"Error: Hist. Calc doesn't support 'exclude_accounts'"
-                    )
-                else:
-                    logging.info(
-                        f"--- Error during historical performance calculation in worker: {hist_e} ---"
-                    )
-                    traceback.print_exc()
-                    historical_status = f"Error in Hist. Calc: {hist_e}"
-                historical_data_df = pd.DataFrame()
 
-            # --- 4. Prepare and Emit Combined Results (unchanged) ---
+            except (
+                ValueError
+            ) as ve:  # Catch the specific unpack error if it happens again
+                logging.error(
+                    f"--- ValueError during historical performance unpack: {ve} ---"
+                )
+                traceback.print_exc()
+                historical_status = f"Error unpack: {ve}"
+                # Ensure defaults on error
+                historical_data_df = pd.DataFrame()
+                hist_prices_adj = {}
+                hist_fx = {}
+            except Exception as hist_e:
+                logging.error(
+                    f"--- Error during historical performance calculation in worker: {hist_e} ---"
+                )
+                traceback.print_exc()
+                historical_status = f"Error in Hist. Calc: {hist_e}"
+                # Ensure defaults on error
+                historical_data_df = pd.DataFrame()
+                hist_prices_adj = {}
+                hist_fx = {}
+
+            # --- 4. Prepare and Emit Combined Results ---
             overall_status = (
                 f"Portfolio: {portfolio_status} | Historical: {historical_status}"
             )
-            if any(err in portfolio_status for err in ["Error", "Crit"]) or any(
-                err in historical_status for err in ["Error", "Crit", "Fail", "Halt"]
-            ):
+            # Check status strings for error indicators
+            portfolio_had_error = any(
+                err in portfolio_status for err in ["Error", "Crit", "Fail"]
+            )
+            historical_had_error = any(
+                err in historical_status for err in ["Error", "Crit", "Fail"]
+            )
+
+            if portfolio_had_error or historical_had_error:
                 self.signals.error.emit(overall_status)
 
+            # --- Modify emit (9 arguments) ---
             self.signals.result.emit(
                 portfolio_summary_metrics,
                 holdings_df,
-                ignored_df,
+                # Removed ignored_df placeholder
                 account_metrics,
                 index_quotes,
-                historical_data_df,
+                historical_data_df,  # Processed results
+                hist_prices_adj,  # Raw adjusted prices
+                hist_fx,  # Raw FX rates
+                combined_ignored_indices,  # <-- Pass combined indices
+                combined_ignored_reasons,  # <-- Pass combined reasons
             )
-        except Exception as e:
-            logging.info(f"--- Critical Error in Worker Thread run method: {e} ---")
+            # --- End modification ---
+
+        except Exception as e:  # Catch errors in the outer try block
+            logging.error(f"--- Critical Error in Worker Thread run method: {e} ---")
             traceback.print_exc()
             overall_status = f"CritErr in Worker: {e}"
+            # --- EMIT DEFAULT/EMPTY VALUES on critical failure ---
             self.signals.result.emit(
-                {}, pd.DataFrame(), pd.DataFrame(), {}, {}, pd.DataFrame()
+                {},
+                pd.DataFrame(),
+                pd.DataFrame(),
+                {},
+                {},
+                pd.DataFrame(),
+                {},
+                {},  # Emit 8 empty/default values
             )
+            # --- END EMIT ---
             self.signals.error.emit(overall_status)
         finally:
             logging.debug("DEBUG Worker: Emitting finished signal.")
@@ -1769,9 +1843,301 @@ class ManageTransactionsDialog(QDialog):
                     self.data_changed.emit()  # Signal main window to refresh
 
 
-# In main_gui.py
-# Add QDoubleValidator to imports if not already there
-from PySide6.QtGui import QDoubleValidator
+class SymbolChartDialog(QDialog):
+    """Dialog to display a historical price chart for a single symbol."""
+
+    def __init__(
+        self,
+        symbol: str,
+        start_date: date,
+        end_date: date,
+        price_data: pd.DataFrame,
+        display_currency: str,  # display_currency is the CODE (e.g., "USD") passed in
+        parent=None,
+    ):
+        """
+        Initializes the dialog and plots the historical data.
+
+        Args:
+            symbol (str): The symbol whose data is being plotted.
+            start_date (date): The start date for the x-axis limit.
+            end_date (date): The end date for the x-axis limit.
+            price_data (pd.DataFrame): DataFrame indexed by date, with a 'price' column
+                                        containing historical prices (should be adjusted).
+            display_currency (str): The currency the prices *should* represent (used for axis label).
+                                    Note: This dialog doesn't perform FX conversion itself;
+                                    it assumes the input price_data is already effectively
+                                    in the desired display context if needed, although typically
+                                    stock charts show local price. Let's label with local for now.
+            parent (QWidget, optional): Parent widget. Defaults to None.
+        """
+        super().__init__(parent)
+        self._symbol = symbol
+        # Determine the likely local currency for labelling - requires parent access or passing it in.
+        # For now, let's assume the parent (PortfolioApp) can provide it.
+        self._local_currency_symbol = "$"  # Default
+        if parent and hasattr(parent, "_get_currency_for_symbol"):
+            local_curr_code = parent._get_currency_for_symbol(
+                symbol
+            )  # Need to implement this helper in PortfolioApp
+            if local_curr_code and hasattr(parent, "_get_currency_symbol"):
+                self._local_currency_symbol = parent._get_currency_symbol(
+                    currency_code=local_curr_code
+                )
+
+        self.setWindowTitle(f"Historical Price Chart: {symbol}")
+        self.setMinimumSize(700, 500)  # Good default size
+
+        # --- Layout ---
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(5, 5, 5, 5)
+        main_layout.setSpacing(2)
+
+        # --- Chart Area ---
+        chart_widget = QWidget()
+        chart_layout = QVBoxLayout(chart_widget)
+        chart_layout.setContentsMargins(0, 0, 0, 0)
+        chart_layout.setSpacing(1)
+
+        self.figure = Figure(figsize=(7, 4.5), dpi=CHART_DPI)  # Slightly adjusted size
+        self.ax = self.figure.add_subplot(111)
+        self.canvas = FigureCanvas(self.figure)
+        self.canvas.setObjectName("SymbolChartCanvas")
+        self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        # --- Toolbar ---
+        try:
+            # Always create the standard toolbar for now
+            self.toolbar = NavigationToolbar(
+                self.canvas,
+                chart_widget,
+                coordinates=True,  # Show coordinates in this dialog's toolbar
+            )
+            self.toolbar.setObjectName(
+                "SymbolChartToolbar"
+            )  # Set object name for styling
+            # Optional: Apply styles dynamically if needed, but QSS is preferred
+            # if self._parent_app and hasattr(self._parent_app, 'styleSheet'):
+            #      self.toolbar.setStyleSheet(self._parent_app.styleSheet()) # Might interfere? Use object name targeting in main QSS.
+            logging.debug(
+                f"Created standard NavigationToolbar for {self._symbol} chart."
+            )
+        except Exception as e_tb:
+            logging.error(f"Error creating standard symbol chart toolbar: {e_tb}")
+            self.toolbar = None  # Fallback
+
+        chart_layout.addWidget(self.canvas, 1)
+        if self.toolbar:  # Only add if successfully created
+            chart_layout.addWidget(self.toolbar)
+
+        main_layout.addWidget(chart_widget)
+        # --- End Toolbar Modification ---
+
+        # --- Plot Data ---
+        # Pass the determined SYMBOL ($) for formatting, and the CODE for the axis label
+        self._plot_data(
+            symbol,
+            start_date,
+            end_date,
+            price_data,
+            self._local_currency_symbol,  # Pass the symbol $, ฿ etc.
+            display_currency,
+        )  # Pass the code USD, THB etc.
+
+        # Apply parent's style and font if possible
+        if parent:
+            if hasattr(parent, "styleSheet"):
+                self.setStyleSheet(parent.styleSheet())
+            if hasattr(parent, "font"):
+                self.setFont(parent.font())
+
+    def _plot_data(
+        self,
+        symbol,
+        start_date,
+        end_date,
+        price_data,
+        currency_symbol_display,  # e.g. $
+        currency_code_label,
+    ):  # e.g. USD
+        """Helper method to perform the actual plotting."""
+        ax = self.ax
+        ax.clear()
+
+        if price_data is None or price_data.empty or "price" not in price_data.columns:
+            ax.text(
+                0.5,
+                0.5,
+                f"No historical data available\nfor {symbol}",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                fontsize=12,
+                color=COLOR_TEXT_SECONDARY,
+            )
+            ax.set_title(f"Price Chart: {symbol}", fontsize=10, weight="bold")
+            self.canvas.draw()
+            return
+
+        # Ensure index is DatetimeIndex for plotting
+        try:
+            if not isinstance(price_data.index, pd.DatetimeIndex):
+                price_data.index = pd.to_datetime(price_data.index)
+            price_data = price_data.sort_index()
+        except Exception as e:
+            logging.error(f"Error processing index for symbol chart {symbol}: {e}")
+            ax.text(
+                0.5,
+                0.5,
+                f"Error processing data\nfor {symbol}",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                fontsize=12,
+                color=COLOR_LOSS,
+            )
+            self.canvas.draw()
+            return
+
+        # Plot the price data
+        ax.plot(
+            price_data.index,
+            price_data["price"],
+            label=f"{symbol} Price ({currency_symbol_display})",
+            color=COLOR_ACCENT_TEAL,
+        )
+
+        # Formatting
+        ax.set_title(
+            f"Historical Price: {symbol}",
+            fontsize=10,
+            weight="bold",
+            color=COLOR_TEXT_DARK,
+        )
+        ax.set_ylabel(
+            f"Price ({currency_symbol_display})", fontsize=9, color=COLOR_TEXT_DARK
+        )
+        ax.grid(
+            True, which="major", linestyle="--", linewidth=0.5, color=COLOR_BORDER_LIGHT
+        )
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["bottom"].set_color(COLOR_BORDER_DARK)
+        ax.spines["left"].set_color(COLOR_BORDER_DARK)
+        ax.tick_params(axis="x", colors=COLOR_TEXT_SECONDARY, labelsize=8)
+        ax.tick_params(axis="y", colors=COLOR_TEXT_SECONDARY, labelsize=8)
+
+        # Y-axis formatting (simplified currency)
+        formatter = mtick.FormatStrFormatter(f"{currency_symbol_display}%.2f")
+        ax.yaxis.set_major_formatter(formatter)
+
+        # Set X-axis limits based on provided dates
+        try:
+            # Convert date objects to something matplotlib understands for limits if needed
+            # Often pandas Timestamps work directly
+            pd_start = pd.Timestamp(start_date)
+            pd_end = pd.Timestamp(end_date)
+            ax.set_xlim(pd_start, pd_end)
+        except Exception as e_lim:
+            logging.warning(
+                f"Could not set x-limits for symbol chart {symbol}: {e_lim}"
+            )
+            ax.autoscale(enable=True, axis="x", tight=True)  # Fallback
+
+        # Rotate x-axis labels
+        self.figure.autofmt_xdate(rotation=15)
+        self.figure.tight_layout(pad=0.5)  # Add some padding
+
+        # --- Add mplcursors Tooltip ---
+        if MPLCURSORS_AVAILABLE:
+            try:
+                cursor = mplcursors.cursor(
+                    ax.lines, hover=mplcursors.HoverMode.Transient
+                )
+
+                # Use lambda to capture the currency_symbol_display for the formatter
+                @cursor.connect("add")
+                def on_add(sel, sym=currency_symbol_display):  # Capture symbol
+                    x_dt = mdates.num2date(sel.target[0])
+                    date_str = x_dt.strftime("%Y-%m-%d")
+                    price_val = sel.target[1]
+                    # Use the captured symbol (sym)
+                    sel.annotation.set_text(f"{date_str}\nPrice: {sym}{price_val:.2f}")
+                    sel.annotation.get_bbox_patch().set(
+                        facecolor="lightyellow", alpha=0.8, edgecolor="gray"
+                    )
+                    sel.annotation.set_fontsize(8)
+
+            except Exception as e_cursor_sym:
+                logging.error(
+                    f"Error activating mplcursors for symbol chart {symbol}: {e_cursor_sym}"
+                )
+        # --- End mplcursors ---
+
+        self.canvas.draw()
+
+    # --- Helper Method (Optional but Recommended) ---
+    # This method could be added to PortfolioApp to find the currency of a symbol
+    # based on the first account it appears in.
+    def _get_currency_for_symbol(self, symbol_to_find: str) -> Optional[str]:
+        """
+        Finds the local currency code associated with a symbol based on transaction data
+        or the account currency map. Returns the default currency if not found.
+
+        Args:
+            symbol_to_find (str): The internal symbol (e.g., 'AAPL', 'SET:BKK').
+
+        Returns:
+            Optional[str]: The 3-letter currency code (e.g., 'USD', 'THB') or None if lookup fails badly.
+                           Returns default currency as fallback.
+        """
+        # 1. Check Cash Symbol
+        if symbol_to_find == CASH_SYMBOL_CSV:
+            return self.config.get("default_currency", "USD")
+
+        # 2. Check Holdings Data (if available and has Local Currency)
+        if (
+            hasattr(self, "holdings_data")
+            and not self.holdings_data.empty
+            and "Symbol" in self.holdings_data.columns
+            and "Local Currency" in self.holdings_data.columns
+        ):
+            symbol_rows = self.holdings_data[
+                self.holdings_data["Symbol"] == symbol_to_find
+            ]
+            if not symbol_rows.empty:
+                first_currency = symbol_rows["Local Currency"].iloc[0]
+                if (
+                    pd.notna(first_currency)
+                    and isinstance(first_currency, str)
+                    and len(first_currency) == 3
+                ):
+                    return first_currency.upper()
+
+        # 3. Fallback: Check original transactions to find account, then map account to currency
+        if hasattr(self, "original_data") and not self.original_data.empty:
+            if (
+                "Stock / ETF Symbol" in self.original_data.columns
+                and "Investment Account" in self.original_data.columns
+            ):
+                symbol_rows_orig = self.original_data[
+                    self.original_data["Stock / ETF Symbol"] == symbol_to_find
+                ]
+                if not symbol_rows_orig.empty:
+                    first_account = symbol_rows_orig["Investment Account"].iloc[0]
+                    if pd.notna(first_account) and isinstance(first_account, str):
+                        acc_map = self.config.get("account_currency_map", {})
+                        currency_from_map = acc_map.get(first_account)
+                        if (
+                            currency_from_map
+                            and isinstance(currency_from_map, str)
+                            and len(currency_from_map) == 3
+                        ):
+                            return currency_from_map.upper()
+
+        # 4. Final Fallback: Return application's default currency
+        default_curr = self.config.get("default_currency", "USD")
+        return default_curr
 
 
 class ManualPriceDialog(QDialog):
@@ -2442,33 +2808,60 @@ class PortfolioApp(QMainWindow):
                 is_visible = True
             self.column_visibility[col_name] = is_visible
 
-    def _get_currency_symbol(self, get_name=False):
+    def _get_currency_symbol(
+        self, get_name=False, currency_code=None
+    ):  # <-- Add currency_code=None
         """
         Gets the currency symbol (e.g., "$") or 3-letter name (e.g., "USD").
 
-        Retrieves the currently selected display currency from the UI or config.
+        If currency_code is provided, it returns the symbol/name for that code.
+        Otherwise, it uses the currently selected display currency from the UI or config.
 
         Args:
-            get_name (bool, optional): If True, returns the 3-letter currency code
-                                       (e.g., "USD"). Otherwise, returns the symbol
-                                       (e.g., "$"). Defaults to False.
+            get_name (bool, optional): If True, returns the 3-letter currency code.
+                                       Defaults to False.
+            currency_code (str | None, optional): If provided, get the symbol/name for
+                                                  this specific code. Defaults to None.
 
         Returns:
             str: The currency symbol or name.
         """
-        display_currency = "USD"
-        if (
-            hasattr(self, "currency_combo")
-            and self.currency_combo
-            and self.currency_combo.count() > 0
-        ):
-            display_currency = self.currency_combo.currentText()
-        elif hasattr(self, "config"):
-            display_currency = self.config.get("display_currency", "USD")
+        target_currency_code = None
+        if currency_code and isinstance(currency_code, str):
+            target_currency_code = currency_code.upper()
+        else:
+            # Fallback to display currency if no code provided
+            if (
+                hasattr(self, "currency_combo")
+                and self.currency_combo
+                and self.currency_combo.count() > 0
+            ):
+                target_currency_code = self.currency_combo.currentText()
+            elif hasattr(self, "config"):
+                target_currency_code = self.config.get("display_currency", "USD")
+            else:
+                target_currency_code = "USD"  # Final fallback
+
         if get_name:
-            return display_currency
-        symbol_map = {"USD": "$", "THB": "฿", "EUR": "€", "GBP": "£", "JPY": "¥"}
-        return symbol_map.get(display_currency, display_currency)
+            return target_currency_code  # Return the 3-letter code
+
+        # Map code to symbol
+        symbol_map = {
+            "USD": "$",
+            "THB": "฿",
+            "EUR": "€",
+            "GBP": "£",
+            "JPY": "¥",
+            "CAD": "$",
+            "AUD": "$",
+            "CHF": "Fr",
+            "CNY": "¥",
+            "HKD": "$",
+            "SGD": "$",
+        }  # Added more common ones
+        return symbol_map.get(
+            target_currency_code, target_currency_code
+        )  # Return code itself if no symbol mapped
 
     def _calculate_annualized_twr(self, total_twr_factor, start_date, end_date):
         """
@@ -2786,6 +3179,195 @@ class PortfolioApp(QMainWindow):
         )  # Need to implement show_about_dialog
         help_menu.addAction(about_action)
 
+    @Slot(str)  # Ensure Slot decorator is imported
+    def _chart_holding_history(self, symbol: str):
+        """Handles 'Chart History' context menu action by showing a price chart dialog."""
+        logging.info(f"Action triggered: Chart History for {symbol}")
+
+        if symbol == CASH_SYMBOL_CSV:
+            QMessageBox.information(self, "Info", "Cannot chart history for Cash.")
+            return
+
+        # --- Get required data ---
+        yf_symbol = None
+        price_data_df = None
+
+        # --- Use the stored map ---
+        if hasattr(self, "internal_to_yf_map") and isinstance(
+            self.internal_to_yf_map, dict
+        ):
+            yf_symbol = self.internal_to_yf_map.get(symbol)
+            if not yf_symbol:
+                # Fallback: Check if the symbol itself is a valid-looking ticker
+                if "." not in symbol and ":" not in symbol and " " not in symbol:
+                    logging.debug(
+                        f"Symbol '{symbol}' not in map, trying as direct YF ticker."
+                    )
+                    yf_symbol = symbol.upper()
+                else:
+                    logging.warning(
+                        f"No YF symbol mapping found for internal symbol: {symbol}"
+                    )
+        else:
+            logging.warning(
+                "internal_to_yf_map attribute not found or invalid. Cannot look up YF ticker."
+            )
+            # Attempt to use symbol directly as YF symbol as a last resort
+            if "." not in symbol and ":" not in symbol and " " not in symbol:
+                logging.debug(
+                    f"Symbol map missing, trying '{symbol}' as direct YF ticker."
+                )
+                yf_symbol = symbol.upper()
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Mapping Error",
+                    f"Could not determine Yahoo Finance ticker for '{symbol}'.",
+                )
+                return  # Cannot proceed without a YF ticker
+        # --- End Use the stored map ---
+
+        # Use ADJUSTED prices for single symbol history chart
+        if (
+            yf_symbol
+            and hasattr(self, "historical_prices_yf_adjusted")
+            and isinstance(self.historical_prices_yf_adjusted, dict)
+        ):
+            price_data_df = self.historical_prices_yf_adjusted.get(yf_symbol)
+            if price_data_df is None:
+                logging.warning(
+                    f"No adjusted historical price data found for YF symbol: {yf_symbol} (Internal: {symbol})"
+                )
+        else:
+            if not yf_symbol:
+                logging.warning("No YF symbol determined.")  # Already logged above
+            else:
+                logging.warning(
+                    "historical_prices_yf_adjusted attribute not found or invalid."
+                )
+
+        if price_data_df is None or price_data_df.empty:
+            QMessageBox.warning(
+                self,
+                "No Data",
+                f"Could not find historical price data for symbol '{symbol}' (Ticker: {yf_symbol or 'N/A'}).",
+            )
+            return
+
+        # 2. Date Range (from main UI controls)
+        try:
+            start_date = self.graph_start_date_edit.date().toPython()
+            end_date = self.graph_end_date_edit.date().toPython()
+            if start_date >= end_date:
+                QMessageBox.warning(
+                    self,
+                    "Invalid Date Range",
+                    "Graph start date must be before end date.",
+                )
+                return
+        except Exception as e:
+            logging.error(f"Error getting date range for symbol chart: {e}")
+            QMessageBox.critical(
+                self, "Error", "Could not get date range from UI controls."
+            )
+            return
+
+        # 3. Get Local Currency Code for Labeling
+        display_currency_code = self._get_currency_for_symbol(symbol)
+        if (
+            not display_currency_code
+        ):  # Should return default, but handle None just in case
+            display_currency_code = self.config.get("default_currency", "USD")
+
+        # --- Create and Show Dialog ---
+        try:
+            dialog = SymbolChartDialog(
+                symbol=symbol,  # Pass internal symbol for title
+                start_date=start_date,
+                end_date=end_date,
+                price_data=price_data_df.copy(),  # Pass a copy of the data
+                display_currency=display_currency_code,  # Pass currency CODE
+                parent=self,
+            )
+            dialog.exec()  # Show modal
+
+        except Exception as e_dialog:
+            logging.exception(
+                f"Error creating or showing SymbolChartDialog for {symbol}"
+            )
+            QMessageBox.critical(
+                self,
+                "Chart Error",
+                f"Failed to display chart for {symbol}:\n{e_dialog}",
+            )
+
+    def _get_currency_for_symbol(self, symbol_to_find: str) -> Optional[str]:
+        """
+        Finds the local currency code associated with a symbol based on transaction data
+        or the account currency map. Returns the default currency if not found.
+
+        Args:
+            symbol_to_find (str): The internal symbol (e.g., 'AAPL', 'SET:BKK').
+
+        Returns:
+            Optional[str]: The 3-letter currency code (e.g., 'USD', 'THB') or None if lookup fails badly.
+                           Returns default currency as fallback.
+        """
+        # 1. Check Cash Symbol
+        if symbol_to_find == CASH_SYMBOL_CSV:
+            # Cash usually takes the display currency context, but might be linked
+            # to specific accounts. Let's return the app's default for simplicity.
+            return self.config.get("default_currency", "USD")
+
+        # 2. Check Holdings Data (most reliable if data is loaded)
+        # This requires holdings_data to have the 'Local Currency' column correctly populated.
+        if (
+            hasattr(self, "holdings_data")
+            and not self.holdings_data.empty
+            and "Symbol" in self.holdings_data.columns
+        ):
+            symbol_rows = self.holdings_data[
+                self.holdings_data["Symbol"] == symbol_to_find
+            ]
+            if not symbol_rows.empty and "Local Currency" in symbol_rows.columns:
+                first_currency = symbol_rows["Local Currency"].iloc[0]
+                if (
+                    pd.notna(first_currency)
+                    and isinstance(first_currency, str)
+                    and len(first_currency) == 3
+                ):
+                    # logging.debug(f"Found currency '{first_currency}' for symbol '{symbol_to_find}' via holdings_data.")
+                    return first_currency.upper()
+
+        # 3. Fallback: Check original transactions (less efficient but broader)
+        # This requires original_data to have 'Investment Account' and 'Stock / ETF Symbol'
+        if hasattr(self, "original_data") and not self.original_data.empty:
+            if (
+                "Stock / ETF Symbol" in self.original_data.columns
+                and "Investment Account" in self.original_data.columns
+            ):
+                symbol_rows_orig = self.original_data[
+                    self.original_data["Stock / ETF Symbol"] == symbol_to_find
+                ]
+                if not symbol_rows_orig.empty:
+                    first_account = symbol_rows_orig["Investment Account"].iloc[0]
+                    if pd.notna(first_account) and isinstance(first_account, str):
+                        # Get currency from the account map
+                        acc_map = self.config.get("account_currency_map", {})
+                        currency_from_map = acc_map.get(first_account)
+                        if (
+                            currency_from_map
+                            and isinstance(currency_from_map, str)
+                            and len(currency_from_map) == 3
+                        ):
+                            # logging.debug(f"Found currency '{currency_from_map}' for symbol '{symbol_to_find}' via original_data/account_map (Account: {first_account}).")
+                            return currency_from_map.upper()
+
+        # 4. Final Fallback: Return application's default currency
+        default_curr = self.config.get("default_currency", "USD")
+        # logging.debug(f"Could not find specific currency for symbol '{symbol_to_find}'. Using default: {default_curr}")
+        return default_curr
+
     # Add this NEW slot method to PortfolioApp
     @Slot()
     def show_account_currency_dialog(self):
@@ -2939,6 +3521,67 @@ class PortfolioApp(QMainWindow):
             )
             return False
 
+    def _format_tooltip_annotation(self, selection):
+        """Callback function to format mplcursors annotations."""
+        try:
+            artist = selection.artist
+            ax = artist.axes
+            x_val_num = selection.target[0]  # X value (often matplotlib numeric date)
+            y_val = selection.target[1]  # Y value
+
+            # --- Convert X value (matplotlib date num) to datetime object ---
+            try:
+                # Use matplotlib's num2date for robust conversion
+                dt_obj = mdates.num2date(x_val_num)
+                # Format the date string
+                date_str = dt_obj.strftime("%Y-%m-%d")  # Or '%a, %b %d, %Y' etc.
+            except (ValueError, TypeError, OverflowError) as e_date:
+                logging.debug(f"Tooltip date conversion error: {e_date}")
+                date_str = f"Date Err ({x_val_num:.2f})"  # Show numeric value on error
+
+            # --- Get Series Label ---
+            label = artist.get_label()
+            # Clean up internal labels like '_lineX' if they appear
+            if label.startswith("_"):
+                label = "Portfolio"  # Or derive more cleverly if needed
+
+            # --- Format Y value based on Axis ---
+            formatted_y = "N/A"
+            if ax == self.perf_return_ax:  # Check if it's the return axis
+                formatted_y = f"{y_val:+.2f}%"  # Format as signed percentage
+            elif ax == self.abs_value_ax:  # Check if it's the value axis
+                currency_symbol = self._get_currency_symbol()
+                # Use a simplified version of the axis formatter logic
+                if abs(y_val) >= 1e6:
+                    formatted_y = f"{currency_symbol}{y_val/1e6:,.1f}M"
+                elif abs(y_val) >= 1e3:
+                    formatted_y = f"{currency_symbol}{y_val/1e3:,.0f}K"
+                else:
+                    formatted_y = f"{currency_symbol}{y_val:,.0f}"
+            else:  # Fallback if axis doesn't match expected ones
+                formatted_y = f"{y_val:,.2f}"
+
+            # --- Set Annotation Text ---
+            # Use multiline text for clarity
+            annotation_text = f"{date_str}\n{label}\n{formatted_y}"
+            selection.annotation.set_text(annotation_text)
+
+            # --- Optional: Customize annotation appearance ---
+            selection.annotation.get_bbox_patch().set(
+                facecolor="lightyellow", alpha=0.8, edgecolor="gray"
+            )
+            selection.annotation.set_fontsize(8)
+
+        except Exception as e:
+            logging.error(f"Error formatting tooltip annotation: {e}")
+            # Fallback annotation text
+            try:
+                selection.annotation.set_text(
+                    f"Err ({selection.target[0]:.1f}, {selection.target[1]:.1f})"
+                )
+            except Exception:
+                pass  # Ignore error during error reporting
+
     # --- Initialization Method ---
     def __init__(self):
         """Initializes the main application window, loads config, and sets up UI."""
@@ -2990,6 +3633,8 @@ class PortfolioApp(QMainWindow):
         self.apply_styles()
         self.update_header_info(loading=True)
         self.update_performance_graphs(initial=True)
+        self.return_cursor = None  # For the return graph cursor
+        self.value_cursor = None  # For the value graph cursor
 
         # --- Initial Load Logic ---
         if self.config.get("load_on_startup", True):
@@ -3504,6 +4149,7 @@ class PortfolioApp(QMainWindow):
         self.setWindowTitle(self.base_window_title)
         self.app_font = QFont("Arial", 9)
         self.setFont(self.app_font)
+        self.internal_to_yf_map = {}  # <-- ADD Initialize attribute
 
         # --- Configuration Loading ---
         self.config = self.load_config()
@@ -3518,6 +4164,15 @@ class PortfolioApp(QMainWindow):
 
         # --- State Variables ---
         self.is_calculating = False
+
+        # --- ADD Raw Historical Data Placeholders ---
+        self.historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}
+        self.historical_prices_yf_unadjusted: Dict[str, pd.DataFrame] = (
+            {}
+        )  # Might need this too if we want unadjusted charts later
+        self.historical_fx_yf: Dict[str, pd.DataFrame] = {}
+        # --- END ADD ---
+
         self.last_calc_status = ""
         self.last_hist_twr_factor = np.nan
 
@@ -3803,12 +4458,21 @@ class PortfolioApp(QMainWindow):
         summary_layout.setColumnStretch(3, 1)
         summary_layout.setRowStretch(5, 1)
         summary_graphs_layout.addWidget(summary_grid_widget, 1)
-        # Performance Graphs
+
+        # --- Performance Graphs Container (Using QHBoxLayout for side-by-side) ---
         perf_graphs_container_widget = QWidget()
         perf_graphs_container_widget.setObjectName("PerfGraphsContainer")
-        perf_graphs_layout = QHBoxLayout(perf_graphs_container_widget)
-        perf_graphs_layout.setContentsMargins(0, 0, 0, 0)
-        perf_graphs_layout.setSpacing(8)
+        # This layout holds the two vertical (Graph+Toolbar) widgets side-by-side
+        perf_graphs_main_layout = QHBoxLayout(perf_graphs_container_widget)
+        perf_graphs_main_layout.setContentsMargins(0, 0, 0, 0)
+        perf_graphs_main_layout.setSpacing(8)  # Spacing between the two graph columns
+
+        # -- Layout for Return Graph + Toolbar (Left Column) --
+        perf_return_widget = QWidget()  # Container for left graph + toolbar
+        perf_return_layout = QVBoxLayout(perf_return_widget)
+        perf_return_layout.setContentsMargins(0, 0, 0, 0)
+        perf_return_layout.setSpacing(2)  # Spacing between graph and its toolbar
+
         self.perf_return_fig = Figure(figsize=PERF_CHART_FIG_SIZE, dpi=CHART_DPI)
         self.perf_return_ax = self.perf_return_fig.add_subplot(111)
         self.perf_return_canvas = FigureCanvas(self.perf_return_fig)
@@ -3816,7 +4480,31 @@ class PortfolioApp(QMainWindow):
         self.perf_return_canvas.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
-        perf_graphs_layout.addWidget(self.perf_return_canvas)
+        perf_return_layout.addWidget(
+            self.perf_return_canvas, 1
+        )  # Canvas takes vertical space
+
+        # Create and configure the toolbar for the return graph
+        self.perf_return_toolbar = NavigationToolbar(
+            self.perf_return_canvas, perf_return_widget
+        )
+        # --- OR use the Compact Toolbar if you implemented it ---
+        # self.perf_return_toolbar = CompactNavigationToolbar(self.perf_return_canvas, perf_return_widget, coordinates=False)
+        self.perf_return_toolbar.setObjectName("PerfReturnToolbar")
+
+        perf_return_layout.addWidget(
+            self.perf_return_toolbar
+        )  # Add toolbar below graph
+        perf_graphs_main_layout.addWidget(
+            perf_return_widget
+        )  # Add left column to main layout
+
+        # -- Layout for Absolute Value Graph + Toolbar (Right Column) --
+        abs_value_widget = QWidget()  # Container for right graph + toolbar
+        abs_value_layout = QVBoxLayout(abs_value_widget)
+        abs_value_layout.setContentsMargins(0, 0, 0, 0)
+        abs_value_layout.setSpacing(2)  # Spacing between graph and its toolbar
+
         self.abs_value_fig = Figure(figsize=PERF_CHART_FIG_SIZE, dpi=CHART_DPI)
         self.abs_value_ax = self.abs_value_fig.add_subplot(111)
         self.abs_value_canvas = FigureCanvas(self.abs_value_fig)
@@ -3824,8 +4512,26 @@ class PortfolioApp(QMainWindow):
         self.abs_value_canvas.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
-        perf_graphs_layout.addWidget(self.abs_value_canvas)
+        abs_value_layout.addWidget(
+            self.abs_value_canvas, 1
+        )  # Canvas takes vertical space
+
+        # Create and configure the toolbar for the value graph
+        self.abs_value_toolbar = NavigationToolbar(
+            self.abs_value_canvas, abs_value_widget
+        )
+        # --- OR use the Compact Toolbar ---
+        # self.abs_value_toolbar = CompactNavigationToolbar(self.abs_value_canvas, abs_value_widget, coordinates=False)
+        self.abs_value_toolbar.setObjectName("AbsValueToolbar")
+
+        abs_value_layout.addWidget(self.abs_value_toolbar)  # Add toolbar below graph
+        perf_graphs_main_layout.addWidget(
+            abs_value_widget
+        )  # Add right column to main layout
+
+        # Add the main performance graphs container to the summary/graphs frame
         summary_graphs_layout.addWidget(perf_graphs_container_widget, 2)
+        # --- End Performance Graphs Container Modification ---
 
         # --- Content (Pies & Table) ---
         content_layout = QHBoxLayout(self.content_frame)
@@ -3943,7 +4649,14 @@ class PortfolioApp(QMainWindow):
         self.table_view.horizontalHeader().setStretchLastSection(False)
         self.table_view.verticalHeader().setVisible(False)
         self.table_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.table_view.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
+        # --- CONTEXT MENU SETUP ---
+        # Make sure context menu policy is set for the TABLE VIEW itself
+        self.table_view.setContextMenuPolicy(Qt.CustomContextMenu)
+        # Remove or ensure no connection for the HORIZONTAL HEADER's context menu
+        self.table_view.horizontalHeader().setContextMenuPolicy(
+            Qt.CustomContextMenu
+        )  # Remove if exists
+        # --- END CONTEXT MENU SETUP ---
         table_layout.addWidget(self.table_view, 1)
         content_layout.addWidget(table_panel, 3)
 
@@ -3969,6 +4682,139 @@ class PortfolioApp(QMainWindow):
         self.status_bar.addPermanentWidget(self.yahoo_attribution_label)
         # Use the exchange rate label defined in _create_controls_widget
         self.status_bar.addPermanentWidget(self.exchange_rate_display_label)
+
+    @Slot(
+        str, str
+    )  # Ensure Slot decorator is imported: from PySide6.QtCore import Slot
+    def _view_transactions_for_holding(self, symbol: str, account: str):
+        """Placeholder/Handler for 'View Transactions' context menu action."""
+        logging.info(f"Action triggered: View Transactions for {symbol} in {account}")
+
+        if not hasattr(self, "original_data") or self.original_data.empty:
+            QMessageBox.warning(
+                self, "No Data", "Original transaction data not loaded."
+            )
+            return
+
+        try:
+            # Filter original data (using original CSV headers)
+            symbol_to_filter = (
+                CASH_SYMBOL_CSV
+                if symbol == CASH_SYMBOL_CSV or symbol.startswith("Cash (")
+                else symbol
+            )
+
+            filtered_df = self.original_data[
+                (self.original_data["Stock / ETF Symbol"] == symbol_to_filter)
+                & (self.original_data["Investment Account"] == account)
+            ].copy()
+
+            if filtered_df.empty:
+                QMessageBox.information(
+                    self,
+                    "No Transactions",
+                    f"No transactions found for {symbol} in account {account}.",
+                )
+            else:
+                # Reuse LogViewerDialog
+                dialog = LogViewerDialog(filtered_df, self)
+                dialog.setWindowTitle(f"Transactions for: {symbol} / {account}")
+                dialog.exec()
+
+        except KeyError as e:
+            logging.error(f"Missing column in original_data for filtering: {e}")
+            QMessageBox.critical(
+                self,
+                "Error",
+                "Could not filter transactions due to missing data columns.",
+            )
+        except Exception as e:
+            logging.exception(
+                f"Error filtering/displaying transactions for {symbol}/{account}"
+            )
+            QMessageBox.critical(
+                self, "Error", f"An error occurred while viewing transactions:\n{e}"
+            )
+
+    @Slot(QPoint)
+    def show_table_context_menu(self, pos: QPoint):
+        """Shows a context menu for the row right-clicked in the holdings table."""
+        # Get the model index corresponding to the click position within the table view
+        index = self.table_view.indexAt(pos)
+
+        if not index.isValid():
+            logging.debug("Right-click outside valid table rows.")
+            return  # Click wasn't on a valid item row
+
+        # Get the row number in the VIEW
+        view_row = index.row()
+
+        # Get Symbol and Account from the model for the clicked row
+        symbol = None
+        account = None
+        try:
+            # Find column indices in the current model
+            symbol_col_idx = self.table_model._data.columns.get_loc("Symbol")
+            account_col_idx = self.table_model._data.columns.get_loc("Account")
+
+            # Get model indices for symbol and account in the clicked row
+            symbol_model_idx = self.table_model.index(view_row, symbol_col_idx)
+            account_model_idx = self.table_model.index(view_row, account_col_idx)
+
+            # Retrieve data using the model's data() method
+            symbol = self.table_model.data(symbol_model_idx, Qt.DisplayRole)
+            account = self.table_model.data(account_model_idx, Qt.DisplayRole)
+
+            # Handle potential "Cash (CUR)" display name
+            if isinstance(symbol, str) and symbol.startswith("Cash ("):
+                symbol = CASH_SYMBOL_CSV  # Use internal symbol
+
+        except (KeyError, IndexError, AttributeError) as e:
+            logging.error(
+                f"Error retrieving symbol/account from table model for context menu: {e}"
+            )
+            # Optionally show a generic menu or nothing? Let's show nothing on error.
+            return
+
+        if symbol is None or account is None:
+            logging.warning("Could not determine symbol or account for context menu.")
+            return
+
+        # Create the context menu
+        menu = QMenu(self)
+        menu.setStyleSheet(self.styleSheet())  # Apply style
+
+        # --- Define Actions ---
+        # Action 1: View Transactions
+        view_tx_action = QAction(f"View Transactions for {symbol}/{account}", self)
+        # Disable if original data isn't available
+        view_tx_action.setEnabled(
+            hasattr(self, "original_data") and not self.original_data.empty
+        )
+        # Use lambda to pass current symbol/account to the slot
+        view_tx_action.triggered.connect(
+            lambda checked=False, s=symbol, a=account: self._view_transactions_for_holding(
+                s, a
+            )
+        )
+        menu.addAction(view_tx_action)
+
+        # Separator
+        menu.addSeparator()
+
+        # Action 2: Chart History (Placeholder)
+        # Disable for Cash symbol
+        chart_action = QAction(f"Chart History for {symbol}", self)
+        chart_action.setEnabled(symbol != CASH_SYMBOL_CSV)  # Disable for cash
+        chart_action.triggered.connect(
+            lambda checked=False, s=symbol: self._chart_holding_history(s)
+        )
+        menu.addAction(chart_action)
+
+        # --- Show Menu ---
+        # Map the click position within the table's viewport to global screen coordinates
+        global_pos = self.table_view.viewport().mapToGlobal(pos)
+        menu.exec(global_pos)
 
     def _connect_signals(self):
         """Connects signals from UI widgets (buttons, combos, etc.) to their slots."""
@@ -4013,6 +4859,11 @@ class PortfolioApp(QMainWindow):
         self.filter_account_table_edit.textChanged.connect(
             self._filter_text_maybe_changed
         )
+
+        # Table Context Menu Connection
+        self.table_view.customContextMenuRequested.connect(
+            self.show_table_context_menu
+        )  # Connect table's signal
 
     def _update_table_display(self):
         """Updates the table view, pie charts, and title based on current filters."""
@@ -4548,6 +5399,22 @@ class PortfolioApp(QMainWindow):
         self.perf_return_ax.clear()
         self.abs_value_ax.clear()
 
+        # --- Clear existing mplcursors if they exist ---
+        # Disconnect signals to prevent errors if objects persist unexpectedly
+        if hasattr(self, "return_cursor") and self.return_cursor:
+            try:
+                self.return_cursor.disconnect_all()
+            except Exception:
+                pass  # Ignore errors during disconnect
+            self.return_cursor = None
+        if hasattr(self, "value_cursor") and self.value_cursor:
+            try:
+                self.value_cursor.disconnect_all()
+            except Exception:
+                pass
+            self.value_cursor = None
+        # --- End Clear cursors ---
+
         # --- Base Styling & Aspect ---
         for ax in [self.perf_return_ax, self.abs_value_ax]:
             ax.spines["top"].set_visible(False)
@@ -4566,21 +5433,16 @@ class PortfolioApp(QMainWindow):
                 linewidth=0.5,
                 color=COLOR_BORDER_LIGHT,
             )
-            # Set aspect ratio explicitly here after clearing
-            ax.set_aspect("auto")
+            ax.set_aspect("auto")  # Ensure aspect is auto after clearing
 
         # --- Dynamic Titles and Currency ---
         benchmark_display_name = (
             ", ".join(self.selected_benchmarks) if self.selected_benchmarks else "None"
         )
         display_currency = self._get_currency_symbol(get_name=True)
-        currency_symbol = (
-            self._get_currency_symbol()
-        )  # Define the symbol to be used consistently
+        currency_symbol = self._get_currency_symbol()
         return_graph_title = f"{scope_label} - Accumulated Gain (TWR)"
-        value_graph_title = (
-            f"{scope_label} - Value ({display_currency})"  # Use 3-letter code in title
-        )
+        value_graph_title = f"{scope_label} - Value ({display_currency})"
 
         # --- Get Selected Date Range for Limits ---
         plot_start_date = None
@@ -4589,7 +5451,7 @@ class PortfolioApp(QMainWindow):
             plot_start_date = self.graph_start_date_edit.date().toPython()
             plot_end_date = self.graph_end_date_edit.date().toPython()
         except Exception as e:
-            logging.error(f"Error get plot dates: {e}")  # Use logging.error
+            logging.error(f"Error getting plot dates: {e}")
 
         # --- Handle Initial State or Missing Data ---
         if (
@@ -4625,79 +5487,93 @@ class PortfolioApp(QMainWindow):
                 try:
                     self.perf_return_ax.set_xlim(plot_start_date, plot_end_date)
                     self.abs_value_ax.set_xlim(plot_start_date, plot_end_date)
-                    self.perf_return_ax.set_ylim(-10, 10)  # Set default Y range
-                    self.abs_value_ax.set_ylim(0, 100)  # Set default Y range
+                    self.perf_return_ax.set_ylim(-10, 10)  # Default Y range
+                    self.abs_value_ax.set_ylim(0, 100)  # Default Y range
                 except Exception as e:
-                    logging.warning(f"Warn init limits: {e}")
+                    logging.warning(f"Warn setting initial graph limits: {e}")
             self.perf_return_canvas.draw()
             self.abs_value_canvas.draw()
             return
 
-        # --- Data Prep (Use Full Data) ---
+        # --- Data Prep (Use Full Data stored in self.historical_data) ---
         results_df = self.historical_data.copy()
         if not isinstance(results_df.index, pd.DatetimeIndex):
             try:
                 results_df.index = pd.to_datetime(results_df.index)
             except Exception as e:
-                logging.error(f"ERROR index conv: {e}")
-                return  # Exit if index is bad
+                logging.error(
+                    f"ERROR converting historical index to DatetimeIndex: {e}"
+                )
+                # Attempt to draw empty graphs if index fails
+                self.update_performance_graphs(initial=True)
+                return
         results_df.sort_index(inplace=True)
 
-        # --- Filter data to the selected date range for Y limit calculation ---
-        results_visible_df = results_df.copy()  # Default to full data
+        # --- Filter data to the selected date range for Y limit calculation ONLY ---
+        results_visible_df = results_df.copy()  # Default to full data for range calc
         if plot_start_date and plot_end_date:
             try:
                 pd_start = pd.Timestamp(plot_start_date)
                 pd_end = pd.Timestamp(plot_end_date)
-                results_visible_df = results_df[
-                    (results_df.index >= pd_start) & (results_df.index <= pd_end)
-                ]
+                # Ensure index is timezone-naive before comparison if needed
+                if results_visible_df.index.tz is not None:
+                    results_visible_df.index = results_visible_df.index.tz_localize(
+                        None
+                    )
+
+                results_visible_df = results_df.loc[pd_start:pd_end]  # Use .loc slicing
                 logging.debug(
                     f"[Graph Update] Using date range {plot_start_date} to {plot_end_date} for Y-limit calculation ({len(results_visible_df)} rows)"
                 )
             except Exception as e_filter:
                 logging.warning(
-                    f"Error filtering DataFrame by date for Y limits: {e_filter}"
+                    f"Error filtering DataFrame by date for Y limits: {e_filter}. Using full range."
                 )
                 results_visible_df = results_df  # Fallback to full range
         else:
             logging.warning(
-                "[Graph Update] No date range specified for Y-limit filtering."
+                "[Graph Update] No valid date range from UI for Y-limit filtering. Using full range."
             )
-            results_visible_df = results_df  # Fallback to full range
+            results_visible_field = results_df
 
         # --- Calculate Y Ranges from VISIBLE Data ---
         min_y_ret, max_y_ret = np.inf, -np.inf
         min_y_val, max_y_val = np.inf, -np.inf
-        port_plotted, bench_plotted_count, val_data_plotted = False, 0, False
+        port_plotted_visible, bench_plotted_visible_count, val_data_plotted_visible = (
+            False,
+            0,
+            False,
+        )
         port_col = "Portfolio Accumulated Gain"
         if port_col in results_visible_df.columns:
-            vg = results_visible_df[port_col].dropna()
-            if not vg.empty:
-                pct = (vg - 1) * 100
-                min_y_ret = min(min_y_ret, pct.min())
-                max_y_ret = max(max_y_ret, pct.max())
-                port_plotted = True
+            vg_vis = results_visible_df[port_col].dropna()
+            if not vg_vis.empty:
+                pct_vis = (vg_vis - 1) * 100
+                min_y_ret = min(min_y_ret, pct_vis.min())
+                max_y_ret = max(max_y_ret, pct_vis.max())
+                port_plotted_visible = True
+
         for b in self.selected_benchmarks:
             bc = f"{b} Accumulated Gain"
             if bc in results_visible_df.columns:
-                vgb = results_visible_df[bc].dropna()
-                if not vgb.empty:
-                    pctb = (vgb - 1) * 100
-                    min_y_ret = min(min_y_ret, pctb.min())
-                    max_y_ret = max(max_y_ret, pctb.max())
-                    bench_plotted_count += 1
+                vgb_vis = results_visible_df[bc].dropna()
+                if not vgb_vis.empty:
+                    pctb_vis = (vgb_vis - 1) * 100
+                    min_y_ret = min(min_y_ret, pctb_vis.min())
+                    max_y_ret = max(max_y_ret, pctb_vis.max())
+                    bench_plotted_visible_count += 1
+
         val_col = "Portfolio Value"
-        # Use the already defined 'vv' variable consistently if needed later
-        vv = (
+        vv_vis = (
             results_visible_df[val_col].dropna()
             if val_col in results_visible_df.columns
             else pd.Series(dtype=float)
         )
-        val_data_plotted = not vv.empty  # Check if the resulting Series is empty
-        if val_data_plotted:
-            min_y_val = min(min_y_val, vv.min())
-            max_y_val = max(max_y_val, vv.max())  # Use vv here
+        val_data_plotted_visible = not vv_vis.empty
+        if val_data_plotted_visible:
+            min_y_val = min(min_y_val, vv_vis.min())
+            max_y_val = max(max_y_val, vv_vis.max())
+
         logging.debug(
             f"[Graph Update] Visible RETURN Y Range (data): Min={min_y_ret}, Max={max_y_ret}"
         )
@@ -4708,19 +5584,17 @@ class PortfolioApp(QMainWindow):
         # --- Plotting Setup ---
         prop_cycle = plt.rcParams["axes.prop_cycle"]
         colors = prop_cycle.by_key()["color"]
+        return_lines_plotted = []  # Store plotted lines for the return graph
+        value_lines_plotted = []  # Store plotted lines for the value graph
 
         # --- Plot 1: Accumulated Gain (TWR %) ---
-        self.perf_return_ax.clear()  # Clear axis
-        self.perf_return_ax.set_aspect("auto")  # Set aspect again after clear
-        port_plotted_full = False  # Track if anything was plotted from full data
-        if (
-            port_col in results_visible_df.columns
-        ):  # Check if column exists in (potentially filtered) visible data
-            vg_full = results_df[port_col].dropna()  # Get full data series for plotting
+        port_plotted_full = False  # Track if portfolio line was plotted from full data
+        if port_col in results_df.columns:
+            vg_full = results_df[port_col].dropna()  # Plot FULL data
             if not vg_full.empty:
                 pct_full = (vg_full - 1) * 100
                 lbl = f"{scope_label}"
-                self.perf_return_ax.plot(
+                (line,) = self.perf_return_ax.plot(
                     pct_full.index,
                     pct_full,
                     label=lbl,
@@ -4728,23 +5602,23 @@ class PortfolioApp(QMainWindow):
                     color=COLOR_ACCENT_TEAL,
                     zorder=10,
                 )
-                port_plotted_full = True  # Mark that we plotted this line
+                return_lines_plotted.append(line)
+                port_plotted_full = True
 
         bench_plotted_count_full = 0
         for i, b in enumerate(self.selected_benchmarks):
             bc = f"{b} Accumulated Gain"
-            if bc in results_visible_df.columns:  # Check if column exists
-                vgb_full = results_df[bc].dropna()  # Get full data series for plotting
+            if bc in results_df.columns:
+                vgb_full = results_df[bc].dropna()  # Plot FULL data
                 if not vgb_full.empty:
                     pctb_full = (vgb_full - 1) * 100
                     ci = i % len(colors)
-                    # Ensure bcol is different from portfolio color if possible
                     bcol = (
                         colors[ci]
                         if colors[ci] != COLOR_ACCENT_TEAL
                         else colors[(ci + 1) % len(colors)]
                     )
-                    self.perf_return_ax.plot(
+                    (line,) = self.perf_return_ax.plot(
                         pctb_full.index,
                         pctb_full,
                         label=f"{b}",
@@ -4752,9 +5626,10 @@ class PortfolioApp(QMainWindow):
                         color=bcol,
                         alpha=0.8,
                     )
+                    return_lines_plotted.append(line)
                     bench_plotted_count_full += 1
 
-        # Add TWR Annotation (remains the same)
+        # Add TWR Annotation
         if hasattr(self, "last_hist_twr_factor") and pd.notna(
             self.last_hist_twr_factor
         ):
@@ -4762,16 +5637,15 @@ class PortfolioApp(QMainWindow):
                 tfv = float(self.last_hist_twr_factor)
                 tpg = (tfv - 1) * 100.0
                 tt = f"Total TWR: {tpg:+.2f}%"
-                # Use QColor to get the name string for QSS compatibility if needed, or directly use hex
                 tc_color = QCOLOR_GAIN if tpg >= -1e-9 else QCOLOR_LOSS
                 self.perf_return_ax.text(
                     0.02,
-                    0.75,
+                    0.72,
                     tt,
                     transform=self.perf_return_ax.transAxes,
                     fontsize=9,
                     fontweight="bold",
-                    color=tc_color.name(),  # Use .name() for hex string
+                    color=tc_color.name(),
                     va="top",
                     ha="left",
                     bbox=dict(
@@ -4779,21 +5653,19 @@ class PortfolioApp(QMainWindow):
                     ),
                 )
             except Exception as e:
-                logging.warning(f"Warn TWR text: {e}")
+                logging.warning(f"Warn adding TWR annotation: {e}")
 
         # Format Return Plot
-        # Use the flags indicating if *anything* was plotted from the full data
         if port_plotted_full or bench_plotted_count_full > 0:
             self.perf_return_ax.yaxis.set_major_formatter(mtick.PercentFormatter())
-            # Calculate number of legend items based on what was actually plotted
             nl = bench_plotted_count_full + (1 if port_plotted_full else 0)
-            if nl > 0:  # Only show legend if there are items
+            if nl > 0:
                 self.perf_return_ax.legend(
                     fontsize=8,
                     ncol=min(3, nl),
-                    loc="upper center",
-                    bbox_to_anchor=(0.33, 0.98),
-                )
+                    loc="upper left",
+                    bbox_to_anchor=(0, 0.95),
+                )  # Adjusted legend position
             self.perf_return_ax.set_title(
                 return_graph_title, fontsize=10, weight="bold", color=COLOR_TEXT_DARK
             )
@@ -4808,40 +5680,40 @@ class PortfolioApp(QMainWindow):
                 color=COLOR_BORDER_LIGHT,
             )
 
-            # --- SET RETURN Y LIMITS (using VISIBLE range min/max calculated earlier) ---
+            # SET RETURN Y LIMITS (using VISIBLE range min/max)
             try:
-                # Use min_y_ret and max_y_ret calculated from results_visible_df
                 if (
                     np.isfinite(min_y_ret)
                     and np.isfinite(max_y_ret)
                     and max_y_ret >= min_y_ret
                 ):
                     yr = max_y_ret - min_y_ret
-                    pad = max(yr * 0.05, 1.0)
+                    pad = max(yr * 0.05, 1.0)  # Add at least 1% padding
                     fmin = min_y_ret - pad
                     fmax = max_y_ret + pad
+                    # Ensure range is not zero
+                    if abs(fmax - fmin) < 1e-6:
+                        fmax = fmin + 1
                     logging.debug(
                         f"[Graph Update] Setting RETURN ylim based on visible range: {fmin:.2f} to {fmax:.2f}"
                     )
                     self.perf_return_ax.set_ylim(fmin, fmax)
-                # --- Correction: Use port_plotted and bench_plotted_count (based on visible data) for fallback check ---
-                elif port_plotted or bench_plotted_count > 0:
+                elif (
+                    port_plotted_visible or bench_plotted_visible_count > 0
+                ):  # Fallback if range calc failed but visible data existed
                     logging.debug(
                         "[Graph Update] RETURN visible ylim invalid, using autoscale."
                     )
                     self.perf_return_ax.autoscale(enable=True, axis="y", tight=False)
-                else:  # Neither visible portfolio nor visible benchmarks had data
-                    self.perf_return_ax.set_ylim(
-                        -10, 10
-                    )  # Default if nothing plotted in visible range
+                else:  # Nothing plotted in visible range
+                    self.perf_return_ax.set_ylim(-10, 10)
             except Exception as e:
-                logging.warning(f"Warn RET ylim: {e}")
+                logging.warning(f"Warn setting RETURN ylim: {e}")
                 self.perf_return_ax.autoscale(
                     enable=True, axis="y", tight=False
-                )  # Fallback
-            # --- END SET RETURN Y LIMITS ---
+                )  # Final fallback
 
-        else:  # Case where nothing was plotted from the full data either
+        else:  # Nothing plotted from full data
             self.perf_return_ax.text(
                 0.5,
                 0.5,
@@ -4857,44 +5729,26 @@ class PortfolioApp(QMainWindow):
             )
             self.perf_return_ax.set_ylim(-10, 10)  # Default Y range if no data
 
-        # --- Apply Layout Adjustments ---
-        self.perf_return_fig.tight_layout(pad=0.3)
-        self.perf_return_fig.autofmt_xdate(rotation=15)
-        # --- SET RETURN X LIMITS (based on GUI edits) ---
-        try:
-            if plot_start_date and plot_end_date:
-                logging.debug(
-                    f"[Graph Update] Setting RETURN xlim: {plot_start_date} to {plot_end_date}"
-                )
-                self.perf_return_ax.set_xlim(plot_start_date, plot_end_date)
-        except Exception as e:
-            logging.warning(f"Warn RET xlim: {e}")
-        # --- Draw Canvas ---
-        self.perf_return_canvas.draw()
-
         # --- Plot 2: Absolute Value ---
-        self.abs_value_ax.clear()  # Clear axis
-        self.abs_value_ax.set_aspect("auto")  # Set aspect again after clear
-        if (
-            val_data_plotted
-        ):  # Check if there was valid data in the visible range to justify plotting
-            vv_full = results_df[val_col].dropna()  # Get full value data series
+        value_data_plotted_full = (
+            False  # Track if value line was plotted from full data
+        )
+        if val_col in results_df.columns:
+            vv_full = results_df[val_col].dropna()  # Plot FULL data
             if not vv_full.empty:
-                # Use currency_symbol defined earlier in the function
-                self.abs_value_ax.plot(
+                (line,) = self.abs_value_ax.plot(
                     vv_full.index,
                     vv_full,
                     label=f"{scope_label} Value ({currency_symbol})",
                     color="green",
                     linewidth=1.5,
-                )  # Plot full data
+                )
+                value_lines_plotted.append(line)
+                value_data_plotted_full = True
 
-                # Define the formatter function HERE, ensuring currency_symbol is accessible
+                # --- Define currency formatter ---
                 def currency_formatter(x, pos):
-                    # Need to access currency_symbol defined in the outer scope
-                    local_currency_symbol = (
-                        self._get_currency_symbol()
-                    )  # Or pass currency_symbol if needed
+                    local_currency_symbol = self._get_currency_symbol()
                     if pd.isna(x):
                         return "N/A"
                     try:
@@ -4904,20 +5758,18 @@ class PortfolioApp(QMainWindow):
                             return f"{local_currency_symbol}{x/1e3:,.0f}K"
                         return f"{local_currency_symbol}{x:,.0f}"
                     except TypeError:
-                        return "Err"  # Catch potential type errors during formatting
+                        return "Err"
 
-                formatter = mtick.FuncFormatter(
-                    currency_formatter
-                )  # Create formatter instance
-                self.abs_value_ax.yaxis.set_major_formatter(
-                    formatter
-                )  # Apply formatter
+                formatter = mtick.FuncFormatter(currency_formatter)
+                self.abs_value_ax.yaxis.set_major_formatter(formatter)
+                # --- End currency formatter ---
+
                 self.abs_value_ax.set_title(
                     value_graph_title, fontsize=10, weight="bold", color=COLOR_TEXT_DARK
                 )
                 self.abs_value_ax.set_ylabel(
                     f"Value ({currency_symbol})", fontsize=9, color=COLOR_TEXT_DARK
-                )  # Use currency_symbol here too
+                )
                 self.abs_value_ax.grid(
                     True,
                     which="major",
@@ -4934,27 +5786,31 @@ class PortfolioApp(QMainWindow):
                         and max_y_val >= min_y_val
                     ):
                         yrv = max_y_val - min_y_val
-                        padv = max(yrv * 0.05, 10.0)
+                        padv = max(yrv * 0.05, 10.0)  # Add reasonable padding
                         fminv = min_y_val - padv
-                        if min_y_val >= -1e-6:
-                            fminv = max(0, fminv)
+                        fminv = max(0, fminv)  # Value likely shouldn't go below zero
                         fmaxv = max_y_val + padv
                         if abs(fmaxv - fminv) < 1e-6:
-                            fmaxv += 1
+                            fmaxv = fminv + 10  # Ensure some range
                         logging.debug(
                             f"[Graph Update] Setting VALUE ylim based on visible range: {fminv:.2f} to {fmaxv:.2f}"
                         )
                         self.abs_value_ax.set_ylim(fminv, fmaxv)
-                    else:
-                        logging.info(
+                    elif (
+                        val_data_plotted_visible
+                    ):  # Fallback if range calc failed but visible data existed
+                        logging.debug(
                             "[Graph Update] VALUE visible ylim invalid, using autoscale."
                         )
                         self.abs_value_ax.autoscale(enable=True, axis="y", tight=False)
+                    else:  # Nothing plotted in visible range
+                        self.abs_value_ax.set_ylim(0, 100)  # Default Y range
                 except Exception as e:
-                    logging.warning(f"Warn VAL ylim: {e}")
-                    self.abs_value_ax.autoscale(enable=True, axis="y", tight=False)
-                # --- END SET VALUE Y LIMITS ---
-            else:  # Full data was empty after dropna
+                    logging.warning(f"Warn setting VALUE ylim: {e}")
+                    self.abs_value_ax.autoscale(
+                        enable=True, axis="y", tight=False
+                    )  # Final fallback
+            else:  # No valid value data in full range
                 self.abs_value_ax.text(
                     0.5,
                     0.5,
@@ -4968,12 +5824,13 @@ class PortfolioApp(QMainWindow):
                 self.abs_value_ax.set_title(
                     value_graph_title, fontsize=10, weight="bold", color=COLOR_TEXT_DARK
                 )
-                self.abs_value_ax.set_ylim(0, 100)
-        else:  # No valid data in visible range
+                self.abs_value_ax.set_ylim(0, 100)  # Default Y range
+
+        else:  # Value column doesn't even exist in full data
             self.abs_value_ax.text(
                 0.5,
                 0.5,
-                "No Value Data in Range",
+                "No Value Data",
                 ha="center",
                 va="center",
                 transform=self.abs_value_ax.transAxes,
@@ -4984,23 +5841,61 @@ class PortfolioApp(QMainWindow):
                 value_graph_title, fontsize=10, weight="bold", color=COLOR_TEXT_DARK
             )
             self.abs_value_ax.set_ylim(0, 100)
-        # --- Apply Layout Adjustments ---
-        self.abs_value_fig.tight_layout(pad=0.3)
-        self.abs_value_fig.autofmt_xdate(rotation=15)
-        # --- SET VALUE X LIMITS (based on GUI edits) ---
-        try:
-            if plot_start_date and plot_end_date:
-                logging.debug(
-                    f"[Graph Update] Setting VALUE xlim: {plot_start_date} to {plot_end_date}"
-                )
-                self.abs_value_ax.set_xlim(plot_start_date, plot_end_date)
-        except Exception as e:
-            logging.warning(f"Warn VAL xlim: {e}")
-        # --- Draw Canvas ---
-        self.abs_value_canvas.draw()
 
-        # Re-apply backgrounds
-        # ... (background setting code remains the same) ...
+        # --- Apply Final Layout Adjustments and X Limits ---
+        for fig, ax in [
+            (self.perf_return_fig, self.perf_return_ax),
+            (self.abs_value_fig, self.abs_value_ax),
+        ]:
+            try:
+                fig.tight_layout(pad=0.3)
+                fig.autofmt_xdate(rotation=15)
+                if plot_start_date and plot_end_date:
+                    ax.set_xlim(plot_start_date, plot_end_date)
+            except Exception as e:
+                logging.warning(f"Warn setting layout/xlim: {e}")
+
+        # --- Activate mplcursors AFTER plotting and formatting ---
+        if MPLCURSORS_AVAILABLE:
+            try:
+                # Clear previous cursors explicitly again just before creating new ones
+                if hasattr(self, "return_cursor") and self.return_cursor:
+                    self.return_cursor.disconnect_all()
+                if hasattr(self, "value_cursor") and self.value_cursor:
+                    self.value_cursor.disconnect_all()
+
+                if return_lines_plotted:
+                    self.return_cursor = mplcursors.cursor(
+                        return_lines_plotted, hover=mplcursors.HoverMode.Transient
+                    )  # Use Transient for hover
+                    self.return_cursor.connect("add", self._format_tooltip_annotation)
+                    logging.debug("mplcursors activated for Return graph.")
+                else:
+                    self.return_cursor = None
+
+                if value_lines_plotted:
+                    self.value_cursor = mplcursors.cursor(
+                        value_lines_plotted, hover=mplcursors.HoverMode.Transient
+                    )  # Use Transient for hover
+                    self.value_cursor.connect("add", self._format_tooltip_annotation)
+                    logging.debug("mplcursors activated for Value graph.")
+                else:
+                    self.value_cursor = None
+
+            except Exception as e_cursor:
+                logging.error(f"Error activating mplcursors: {e_cursor}")
+                self.return_cursor = None  # Ensure cursors are None on error
+                self.value_cursor = None
+        # --- End mplcursors Activation ---
+
+        # --- Draw Canvases ---
+        try:
+            self.perf_return_canvas.draw_idle()  # Use draw_idle for potentially smoother updates
+            self.abs_value_canvas.draw_idle()
+        except Exception as e_draw:
+            logging.error(f"Error drawing graph canvas: {e_draw}")
+
+        # --- Re-apply Backgrounds ---
         try:
             pc = "#FFFFFF"
             pf = "#F8F9FA"
@@ -5012,8 +5907,8 @@ class PortfolioApp(QMainWindow):
                 f.patch.set_facecolor(pf)
             for a in [self.perf_return_ax, self.abs_value_ax]:
                 a.patch.set_facecolor(pf)
-        except Exception as e:
-            logging.warning(f"Warn bg: {e}")
+        except Exception as e_bg:
+            logging.warning(f"Warn setting graph background: {e_bg}")
 
     # --- Data Handling and UI Update Methods ---
 
@@ -5913,7 +6808,7 @@ class PortfolioApp(QMainWindow):
         if sender == self.refresh_button:
             trigger_source = "'Refresh All' Button"
         elif sender == self.update_accounts_button:
-            trigger_source = "'Update Accounts' Button"  # Catch the new button
+            trigger_source = "'Update Accounts' Button"
         elif sender == self.graph_update_button:
             trigger_source = "'Update Graphs' Button"
         elif sender == self.currency_combo:
@@ -5935,40 +6830,175 @@ class PortfolioApp(QMainWindow):
             self.status_label.setText("Error: Select a valid transactions CSV file.")
             return
 
-        # --- Load original data FIRST ---
+        # --- Load original data FIRST and PREPARE INPUTS to get the map ---
         # Use the maps/defaults from config stored in self.config
         account_map = self.config.get("account_currency_map", {"SET": "THB"})
         def_currency = self.config.get("default_currency", "USD")
-        logging.info("Loading original transaction data for potential management...")
+        logging.info("Loading original transaction data and preparing inputs...")
+
+        # --- Call the PUBLIC load_and_clean_transactions function ---
         (
             all_tx_df_temp,  # Temp var for all tx
             orig_df_temp,  # This is what we want to store
-            _,  # ignored indices - not needed here again
-            _,  # ignored reasons - not needed here again
+            ignored_indices_load,  # Store ignored from this initial load too
+            ignored_reasons_load,
             err_load_orig,
             warn_load_orig,
-        ) = load_and_clean_transactions(
+        ) = load_and_clean_transactions(  # Use the imported function
             self.transactions_file, account_map, def_currency
-        )  # <-- Direct call
-        if err_load_orig or orig_df_temp is None:
+        )
+        # --- End function call ---
+
+        # Store ignored info from initial load
+        # We'll get more from the worker later, but capture these now
+        self.ignored_data = pd.DataFrame()  # Clear previous ignored
+        self.temp_ignored_reasons = (
+            ignored_reasons_load.copy()
+        )  # Store reasons temporarily
+
+        if err_load_orig or all_tx_df_temp is None:
             QMessageBox.critical(
-                self,
-                "Load Error",
-                "Failed to load original transaction data for management.",
+                self, "Load Error", "Failed to load/clean transaction data."
             )
-            # Don't store potentially bad data
-            self.original_data = pd.DataFrame()
-            # Allow proceeding maybe? Or stop? Let's stop for now.
+            self.original_data = pd.DataFrame()  # Ensure it's empty on failure
+            self.internal_to_yf_map = {}  # Ensure map is empty
             self.calculation_finished()  # Re-enable controls
+            if (
+                orig_df_temp is not None and ignored_indices_load
+            ):  # Try showing ignored even on load failure
+                self.ignored_data = orig_df_temp.loc[
+                    sorted(list(ignored_indices_load))
+                ].copy()
+                if "Reason Ignored" not in self.ignored_data.columns:
+                    self.ignored_data["Reason Ignored"] = self.ignored_data.index.map(
+                        self.temp_ignored_reasons
+                    ).fillna("Load/Clean Issue")
             return
         else:
-            # Store the original DataFrame with its index
-            self.original_data = orig_df_temp.copy()
-            logging.info(f"Stored original data with {len(self.original_data)} rows.")
-            if warn_load_orig:
-                self.status_label.setText("Warning during initial data load check.")
-        # --- End Load original data ---
+            # Store original data (make sure it includes original_index)
+            self.original_data = (
+                orig_df_temp.copy() if orig_df_temp is not None else pd.DataFrame()
+            )
+            if (
+                "original_index" not in self.original_data.columns
+                and not self.original_data.empty
+            ):
+                logging.warning("Original data missing 'original_index' after load.")
+                # Add it if missing - this might indicate an issue in load_and_clean
+                self.original_data["original_index"] = self.original_data.index
 
+            # Also store initial ignored df here
+            if ignored_indices_load and not self.original_data.empty:
+                try:
+                    valid_ignored_indices = [
+                        idx
+                        for idx in ignored_indices_load
+                        if idx in self.original_data["original_index"].values
+                    ]
+                    # Use original_index for filtering if it exists reliably
+                    ignored_rows = self.original_data[
+                        self.original_data["original_index"].isin(valid_ignored_indices)
+                    ].copy()
+                    if "Reason Ignored" not in ignored_rows.columns:
+                        ignored_rows["Reason Ignored"] = (
+                            ignored_rows["original_index"]
+                            .map(self.temp_ignored_reasons)
+                            .fillna("Load/Clean Issue")
+                        )
+                    self.ignored_data = ignored_rows
+                except KeyError:
+                    logging.warning(
+                        "Could not reliably map ignored indices to original data during initial load."
+                    )
+                    # Fallback to index if original_index mapping failed
+                    valid_ignored_indices = [
+                        idx
+                        for idx in ignored_indices_load
+                        if idx in self.original_data.index
+                    ]
+                    self.ignored_data = self.original_data.loc[
+                        valid_ignored_indices
+                    ].copy()
+                    if "Reason Ignored" not in self.ignored_data.columns:
+                        self.ignored_data["Reason Ignored"] = (
+                            self.ignored_data.index.map(
+                                self.temp_ignored_reasons
+                            ).fillna("Load/Clean Issue")
+                        )
+
+            # --- Now, run relevant parts of _prepare_historical_inputs ---
+            # --- to get the symbol map based on the loaded data ---
+            try:
+                # Filter based on current UI selection
+                # Need to handle case where selected_accounts might not be valid for the newly loaded data yet
+                current_available_accounts = (
+                    list(all_tx_df_temp["Account"].unique())
+                    if "Account" in all_tx_df_temp
+                    else []
+                )
+                valid_selected_accounts = [
+                    acc
+                    for acc in self.selected_accounts
+                    if acc in current_available_accounts
+                ]
+                # If selection becomes invalid/empty after loading new file, default to all for map generation
+                selected_accounts_for_logic = (
+                    valid_selected_accounts if valid_selected_accounts else None
+                )
+
+                transactions_df_effective = pd.DataFrame()
+                if selected_accounts_for_logic:
+                    transactions_df_effective = all_tx_df_temp[
+                        all_tx_df_temp["Account"].isin(selected_accounts_for_logic)
+                    ].copy()
+                else:
+                    transactions_df_effective = all_tx_df_temp.copy()  # Use all
+
+                if not transactions_df_effective.empty:
+                    all_symbols_internal = list(
+                        set(transactions_df_effective["Symbol"].unique())
+                    )
+                    temp_internal_to_yf_map = {}
+                    # Use the map_to_yf_symbol helper function (assumed imported or available)
+                    for internal_sym in all_symbols_internal:
+                        if internal_sym == CASH_SYMBOL_CSV:
+                            continue
+                        # Ensure map_to_yf_symbol is accessible - might need import from portfolio_logic
+                        try:
+                            from portfolio_logic import (
+                                map_to_yf_symbol,
+                            )  # Import inside if needed
+
+                            yf_sym = map_to_yf_symbol(internal_sym)
+                            if yf_sym:
+                                temp_internal_to_yf_map[internal_sym] = yf_sym
+                        except ImportError:
+                            logging.error(
+                                "Could not import map_to_yf_symbol from portfolio_logic"
+                            )
+                            break  # Stop trying if import fails
+                        except NameError:
+                            logging.error("map_to_yf_symbol function not defined")
+                            break  # Stop trying if function missing
+                    # --- STORE THE MAP ---
+                    self.internal_to_yf_map = temp_internal_to_yf_map
+                    logging.info(
+                        f"Generated internal_to_yf_map: {self.internal_to_yf_map}"
+                    )
+                    # --- END STORE MAP ---
+                else:
+                    self.internal_to_yf_map = {}  # No effective transactions
+                    logging.info(
+                        "No effective transactions for selected scope, clearing symbol map."
+                    )
+
+            except Exception as e_prep:
+                logging.error(
+                    f"Error generating symbol map during refresh prep: {e_prep}"
+                )
+                self.internal_to_yf_map = {}  # Clear map on error
+
+        # --- Continue with worker setup ---
         self.is_calculating = True
         now_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
         self.status_label.setText(f"Refreshing data... ({now_str})")
@@ -5979,20 +7009,10 @@ class PortfolioApp(QMainWindow):
         end_date = self.graph_end_date_edit.date().toPython()
         interval = self.graph_interval_combo.currentText()
         selected_benchmarks_list = self.selected_benchmarks
-        api_key = self.fmp_api_key
+        api_key = self.fmp_api_key  # Keep passing even if unused
 
-        # --- Get currency map and default currency from config ---
-        account_map = self.config.get(
-            "account_currency_map", {"SET": "THB"}
-        )  # Use default if missing
-        def_currency = self.config.get(
-            "default_currency", "USD"
-        )  # Use default if missing
-        # ---------------------------------------------------------
-
-        # Use self.selected_accounts. If it's empty, it means "All", so pass None or empty list to logic
-        # The backend logic handles empty list as "all"
-        selected_accounts_for_logic = (
+        # Use self.selected_accounts again for the worker call, handling empty list meaning 'All'
+        selected_accounts_for_worker = (
             self.selected_accounts if self.selected_accounts else None
         )
 
@@ -6002,30 +7022,26 @@ class PortfolioApp(QMainWindow):
             )
             self.calculation_finished()
             return
-        if not selected_benchmarks_list:
-            QMessageBox.warning(
-                self, "No Benchmark Selected", "Please select at least one benchmark."
+        if (
+            not selected_benchmarks_list
+        ):  # Should not happen if default is set, but check
+            selected_benchmarks_list = DEFAULT_GRAPH_BENCHMARKS
+            logging.warning(
+                f"No benchmarks selected, using default: {selected_benchmarks_list}"
             )
-            self.calculation_finished()
-            return
+            # Optionally inform user?
 
         # Determine accounts to exclude for historical calculation if feature supported
         accounts_to_exclude = []
         if HISTORICAL_FN_SUPPORTS_EXCLUDE:
-            # Example logic: If "All" are selected, exclude 'SET' by default
-            # if not selected_accounts_for_logic: # i.e., All are selected
-            #     accounts_to_exclude = ["SET"] # Replace with your default exclusion logic
-            # else:
-            #     accounts_to_exclude = [] # Don't exclude if specific accounts are selected
-            pass  # Keep exclusion logic minimal for now, user doesn't control it via GUI yet
+            # Implement your exclusion logic here if needed
+            pass
 
         logging.info(f"Starting calculation & data fetch:")
         logging.info(
-            f"File='{os.path.basename(self.transactions_file)}', Currency='{display_currency}', ShowClosed={show_closed}, SelectedAccounts={selected_accounts_for_logic if selected_accounts_for_logic else 'All'}"
+            f"File='{os.path.basename(self.transactions_file)}', Currency='{display_currency}', ShowClosed={show_closed}, SelectedAccounts={selected_accounts_for_worker if selected_accounts_for_worker else 'All'}"
         )
-        logging.info(
-            f"Default Currency: {def_currency}, Account Map: {account_map}"
-        )  # Log currency info
+        logging.info(f"Default Currency: {def_currency}, Account Map: {account_map}")
         exclude_log_msg = (
             f", ExcludeHist={accounts_to_exclude}"
             if HISTORICAL_FN_SUPPORTS_EXCLUDE and accounts_to_exclude
@@ -6035,17 +7051,18 @@ class PortfolioApp(QMainWindow):
             f"Graph Params: Start={start_date}, End={end_date}, Interval={interval}, Benchmarks={selected_benchmarks_list}{exclude_log_msg}"
         )
 
-        # --- Pass account_map and def_currency to worker ---
+        # Worker Setup
         portfolio_args = ()
         portfolio_kwargs = {
             "transactions_csv_file": self.transactions_file,
             "display_currency": display_currency,
             "show_closed_positions": show_closed,
-            "account_currency_map": account_map,  # <-- Pass map
-            "default_currency": def_currency,  # <-- Pass default
-            "cache_file_path": "portfolio_cache_yf.json",
+            "account_currency_map": account_map,
+            "default_currency": def_currency,
+            "cache_file_path": "portfolio_cache_yf.json",  # Use appropriate path
             "fmp_api_key": api_key,
-            "include_accounts": selected_accounts_for_logic,
+            "include_accounts": selected_accounts_for_worker,
+            # manual_prices_dict passed directly below
         }
         historical_args = ()
         historical_kwargs = {
@@ -6055,15 +7072,14 @@ class PortfolioApp(QMainWindow):
             "interval": interval,
             "benchmark_symbols_yf": selected_benchmarks_list,
             "display_currency": display_currency,
-            "account_currency_map": account_map,  # <-- Pass map
-            "default_currency": def_currency,  # <-- Pass default
-            "use_raw_data_cache": True,
-            "use_daily_results_cache": True,
-            "include_accounts": selected_accounts_for_logic,
+            "account_currency_map": account_map,
+            "default_currency": def_currency,
+            "use_raw_data_cache": True,  # Assume True unless configured otherwise
+            "use_daily_results_cache": True,  # Assume True unless configured otherwise
+            "include_accounts": selected_accounts_for_worker,
         }
         if HISTORICAL_FN_SUPPORTS_EXCLUDE:
             historical_kwargs["exclude_accounts"] = accounts_to_exclude
-        # ----------------------------------------------------
 
         worker = PortfolioCalculatorWorker(
             portfolio_fn=calculate_portfolio_summary,
@@ -6073,7 +7089,7 @@ class PortfolioApp(QMainWindow):
             historical_fn=calculate_historical_performance,
             historical_args=historical_args,
             historical_kwargs=historical_kwargs,
-            manual_prices_dict=self.manual_prices_dict,
+            manual_prices_dict=self.manual_prices_dict,  # Pass the loaded dict
         )
         worker.signals.result.connect(self.handle_results)
         worker.signals.error.connect(self.handle_error)
@@ -6110,90 +7126,184 @@ class PortfolioApp(QMainWindow):
         self.setCursor(Qt.WaitCursor if not enabled else Qt.ArrowCursor)
 
     # --- Signal Handlers from Worker ---
-    @Slot(dict, pd.DataFrame, pd.DataFrame, dict, dict, pd.DataFrame)
+    @Slot(
+        dict, pd.DataFrame, dict, dict, pd.DataFrame, dict, dict, set, dict
+    )  # Signature matches WorkerSignals.result
     def handle_results(
         self,
         summary_metrics,
-        holdings_df,
-        ignored_df,
+        holdings_df,  # This is the final holdings df potentially filtered by show_closed
+        # Ignored DF constructed from sets/dicts below
         account_metrics,
         index_quotes,
-        historical_data_df,
+        historical_data_df,  # Processed historical results
+        hist_prices_adj,  # Raw prices used by worker
+        hist_fx,  # Raw FX used by worker
+        combined_ignored_indices,  # Indices ignored by load OR process
+        combined_ignored_reasons,  # Reasons for ignoring
     ):
         """
         Slot to process results received from the PortfolioCalculatorWorker.
 
-        Updates internal data attributes (`self.holdings_data`, `self.summary_metrics_data`, etc.),
-        updates the list of available accounts, validates the current account selection,
+        Updates internal data attributes, constructs the ignored_data DataFrame,
+        updates the list of available accounts, validates current account selection,
         and triggers updates for all UI elements (summary, charts, table).
 
         Args:
-            summary_metrics (dict): Aggregated metrics for the overall portfolio.
-            holdings_df (pd.DataFrame): Detailed holdings data.
-            ignored_df (pd.DataFrame): DataFrame of transactions ignored during processing.
-            account_metrics (dict): Dictionary of metrics aggregated per account.
+            summary_metrics (dict): Aggregated metrics for the overall portfolio/scope.
+            holdings_df (pd.DataFrame): Detailed holdings data for the scope, filtered by show_closed.
+            account_metrics (dict): Dictionary of metrics aggregated per account for the scope.
             index_quotes (dict): Fetched data for header indices.
-            historical_data_df (pd.DataFrame): Calculated historical performance data.
+            historical_data_df (pd.DataFrame): Calculated historical performance data for the scope.
+            hist_prices_adj (dict): Raw ADJUSTED historical prices used by worker.
+            hist_fx (dict): Raw historical FX rates used by worker.
+            combined_ignored_indices (set): Set of original indices ignored during load or processing.
+            combined_ignored_reasons (dict): Dict mapping original index to reason ignored.
         """
+        logging.debug("Entering handle_results...")
+        # --- Handle Status Messages and TWR ---
         portfolio_status = summary_metrics.pop("status_msg", "Status Unknown")
         historical_status = summary_metrics.pop(
             "historical_status_msg", "Status Unknown"
         )
         self.last_calc_status = f"{portfolio_status} | {historical_status}"
-        self.last_hist_twr_factor = np.nan
+        self.last_hist_twr_factor = np.nan  # Reset TWR factor
+
+        # Parse TWR factor from historical status string
         if "|||TWR_FACTOR:" in historical_status:
             try:
                 twr_part = historical_status.split("|||TWR_FACTOR:")[1]
-                self.last_hist_twr_factor = float(twr_part)
+                # Handle potential "NaN" string explicitly
+                if twr_part.strip().upper() == "NAN":
+                    self.last_hist_twr_factor = np.nan
+                else:
+                    self.last_hist_twr_factor = float(twr_part)
             except (IndexError, ValueError, TypeError) as e_twr:
                 logging.warning(
-                    f"Warn: Could not parse TWR factor from status: {e_twr}"
+                    f"Warn: Could not parse TWR factor from status '{historical_status}': {e_twr}"
                 )
+                self.last_hist_twr_factor = np.nan  # Ensure NaN on parse failure
+        logging.info(f"Parsed TWR Factor: {self.last_hist_twr_factor}")
 
+        # --- Store Core Data ---
         self.summary_metrics_data = summary_metrics if summary_metrics else {}
         self.holdings_data = (
             holdings_df if holdings_df is not None else pd.DataFrame()
-        )  # Store unfiltered holdings
-        self.ignored_data = ignored_df if ignored_df is not None else pd.DataFrame()
-        if hasattr(self, "view_ignored_button"):
-            self.view_ignored_button.setEnabled(not self.ignored_data.empty)
-
+        )  # Store final holdings df
         self.account_metrics_data = account_metrics if account_metrics else {}
         self.index_quote_data = index_quotes if index_quotes else {}
-
-        # --- STORE THE FULL HISTORICAL DATA ---
         self.historical_data = (
             historical_data_df if historical_data_df is not None else pd.DataFrame()
+        )  # Store final processed historical df
+
+        # --- Store Raw Historical Data ---
+        self.historical_prices_yf_adjusted = (
+            hist_prices_adj if hist_prices_adj is not None else {}
         )
-        # --- ADD DEBUG PRINT HERE ---
+        self.historical_fx_yf = hist_fx if hist_fx is not None else {}
+        logging.info(
+            f"[Handle Results] Stored {len(self.historical_prices_yf_adjusted)} adjusted price series."
+        )
+        logging.info(
+            f"[Handle Results] Stored {len(self.historical_fx_yf)} FX rate series."
+        )
+
+        # --- CONSTRUCT Ignored DataFrame from combined results ---
+        self.ignored_data = pd.DataFrame()  # Reset ignored data
+        # We need self.original_data which should have been loaded and stored during refresh_data
         if (
-            isinstance(self.historical_data, pd.DataFrame)
-            and not self.historical_data.empty
+            combined_ignored_indices
+            and hasattr(self, "original_data")
+            and not self.original_data.empty
         ):
             logging.info(
-                f"[Handle Results] Stored historical data from {self.historical_data.index.min()} to {self.historical_data.index.max()} ({len(self.historical_data)} rows)"
+                f"Processing {len(combined_ignored_indices)} ignored row indices..."
             )
-        else:
-            logging.info("[Handle Results] Stored historical data is EMPTY or None.")
-        # --- END DEBUG PRINT ---
+            try:
+                # Ensure original_index exists in the stored original data
+                if "original_index" in self.original_data.columns:
+                    # Filter the original DataFrame to get rows matching the ignored indices
+                    # Ensure indices are integers if needed, though set should handle mixed types okay
+                    indices_to_check = {
+                        int(i) for i in combined_ignored_indices if pd.notna(i)
+                    }
+                    valid_indices_mask = self.original_data["original_index"].isin(
+                        indices_to_check
+                    )
+                    ignored_rows_df = self.original_data[valid_indices_mask].copy()
+
+                    if not ignored_rows_df.empty:
+                        # Add the reason using the combined reasons dictionary
+                        # Make sure keys in reasons dict match the type in original_index (likely int)
+                        reasons_mapped = (
+                            ignored_rows_df["original_index"]
+                            .map(combined_ignored_reasons)
+                            .fillna("Unknown Reason")
+                        )
+                        ignored_rows_df["Reason Ignored"] = reasons_mapped
+                        self.ignored_data = ignored_rows_df.sort_values(
+                            by="original_index"
+                        )  # Sort for consistency
+                        logging.info(
+                            f"Constructed ignored_data DataFrame with {len(self.ignored_data)} rows."
+                        )
+                    else:
+                        logging.warning(
+                            "No matching rows found in original_data for the ignored indices received from worker."
+                        )
+                else:
+                    logging.warning(
+                        "Cannot build ignored_data: 'original_index' missing from stored original data."
+                    )
+
+            except Exception as e_ignored:
+                logging.error(f"Error constructing ignored_data DataFrame: {e_ignored}")
+                traceback.print_exc()  # Log traceback for debugging
+                self.ignored_data = pd.DataFrame()  # Ensure empty on error
+        elif combined_ignored_indices:
+            logging.warning(
+                "Ignored indices received, but original_data is missing or empty. Cannot display ignored rows."
+            )
 
         # --- Update Available Accounts & Validate Selection ---
-        # ... (account handling remains the same) ...
-        available_accounts_from_backend = self.summary_metrics_data.pop(
-            "_available_accounts", None
+        # Get available accounts from the overall summary if possible, otherwise re-scan
+        available_accounts_from_backend = self.summary_metrics_data.get(
+            "_available_accounts"
         )
+
         if available_accounts_from_backend and isinstance(
             available_accounts_from_backend, list
         ):
             self.available_accounts = available_accounts_from_backend
         else:
+            # Fallback: derive from the holdings data IF it's available
             if not self.holdings_data.empty and "Account" in self.holdings_data.columns:
+                # Use unique accounts from the *returned* holdings data
                 self.available_accounts = sorted(
                     self.holdings_data["Account"].unique().tolist()
                 )
+                logging.warning(
+                    "Used accounts from holdings_df as fallback for available_accounts."
+                )
+            elif (
+                hasattr(self, "original_data")
+                and not self.original_data.empty
+                and "Investment Account" in self.original_data.columns
+            ):
+                # Fallback further to original data if holdings are empty
+                self.available_accounts = sorted(
+                    self.original_data["Investment Account"].unique().tolist()
+                )
+                logging.warning(
+                    "Used accounts from original_data as fallback for available_accounts."
+                )
             else:
-                self.available_accounts = []
+                self.available_accounts = []  # Cannot determine accounts
+                logging.error(
+                    "Could not determine available accounts from summary or data."
+                )
 
+        # Validate current selection against available accounts
         if self.selected_accounts:
             original_selection = self.selected_accounts.copy()
             self.selected_accounts = [
@@ -6203,47 +7313,51 @@ class PortfolioApp(QMainWindow):
                 logging.warning(
                     f"Warn: Some previously selected accounts are no longer available. Updated selection: {self.selected_accounts}"
                 )
+            # Default back to all if validation resulted in empty selection
             if not self.selected_accounts and self.available_accounts:
                 logging.warning(
                     "Warn: Validation resulted in empty selection. Defaulting to all available accounts."
                 )
                 self.selected_accounts = self.available_accounts.copy()
+        # If selection was initially empty, ensure it reflects 'all available' now
         elif not self.selected_accounts and self.available_accounts:
-            self.selected_accounts = self.available_accounts.copy()
-        self._update_account_button_text()
+            self.selected_accounts = (
+                []
+            )  # Keep it empty to signify "All" internally for filtering logic
+            logging.info("No accounts pre-selected, effectively showing 'All'.")
 
-        logging.debug("DEBUG: Updating UI elements...")
+        self._update_account_button_text()  # Update button text based on final state
+
+        # --- Update UI Elements ---
+        logging.debug("Updating UI elements after receiving results...")
         try:
-            # --- Get Filtered Data for Display (for table/holdings pie) ---
+            # Enable/Disable "View Log" button based on the newly constructed ignored_data
+            if hasattr(self, "view_ignored_button"):
+                self.view_ignored_button.setEnabled(not self.ignored_data.empty)
+
+            # Get Filtered Data for Display (uses self.holdings_data and current filters)
+            # IMPORTANT: _get_filtered_data uses self.holdings_data which was just updated
             df_display_filtered = self._get_filtered_data()
 
-            # --- Update Table Title ---
-            self._update_table_title()
-
-            # --- Update Rest of UI ---
-            self.update_dashboard_summary()
-            account_pie_data = pd.DataFrame()
-            if not self.holdings_data.empty and "Account" in self.holdings_data.columns:
-                # Filter holdings_data by selected accounts for the account pie chart
-                account_pie_data = (
-                    self.holdings_data[
-                        self.holdings_data["Account"].isin(self.selected_accounts)
-                    ].copy()
-                    if self.selected_accounts
-                    else self.holdings_data.copy()
-                )
-            self.update_account_pie_chart(account_pie_data)  # Pass scoped data
-            self.update_holdings_pie_chart(
+            # Update UI components
+            self._update_table_title()  # Uses available/selected accounts state
+            self.update_dashboard_summary()  # Uses self.summary_metrics_data and filtered data for cash
+            # Account pie needs data grouped by account *within the selected scope*
+            # We can derive this from the df_display_filtered
+            self.update_account_pie_chart(df_display_filtered)
+            self.update_holdings_pie_chart(df_display_filtered)  # Uses filtered data
+            self._update_table_view_with_filtered_columns(
                 df_display_filtered
-            )  # Uses account+closed filtered data
-            self._update_table_view_with_filtered_columns(df_display_filtered)
-            self.apply_column_visibility()
-            self.update_performance_graphs()  # <--- THIS SHOULD USE THE FULL self.historical_data
-            self.update_header_info()
-            self._update_fx_rate_display(self.currency_combo.currentText())
+            )  # Update table
+            self.apply_column_visibility()  # Re-apply visibility
+            self.update_performance_graphs()  # Uses self.historical_data (which reflects scope)
+            self.update_header_info()  # Uses self.index_quote_data
+            self._update_fx_rate_display(
+                self.currency_combo.currentText()
+            )  # Uses self.summary_metrics_data
 
         except Exception as ui_update_e:
-            logging.info(
+            logging.error(
                 f"--- CRITICAL ERROR during UI update in handle_results: {ui_update_e} ---"
             )
             traceback.print_exc()
@@ -6253,7 +7367,7 @@ class PortfolioApp(QMainWindow):
                 f"Failed to update display after calculation:\n{ui_update_e}",
             )
 
-        logging.debug("DEBUG: Exiting handle_results.")
+        logging.debug("Exiting handle_results.")
 
     @Slot(str)
     def handle_error(self, error_message):

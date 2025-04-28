@@ -3272,7 +3272,7 @@ def _build_summary_rows(
                 f"Cost Basis ({display_currency})": cost_basis_display,
                 f"Market Value ({display_currency})": market_value_display,
                 f"Day Change ({display_currency})": day_change_value_display,
-                "Day Change %": day_change_pct,
+                "Day Change %": day_change_pct / 100,  # divide by 100 to get decimal
                 f"Unreal. Gain ({display_currency})": unrealized_gain_display,
                 "Unreal. Gain %": unrealized_gain_pct,
                 f"Realized Gain ({display_currency})": realized_gain_display,
@@ -3753,228 +3753,190 @@ def _calculate_aggregate_metrics(
 
 
 # --- Main Calculation Function (Current Portfolio Summary) ---
+
+
 def calculate_portfolio_summary(
     transactions_csv_file: str,
-    fmp_api_key: Optional[str] = None,  # Currently unused but kept for signature
+    fmp_api_key: Optional[str] = None,  # Keep for signature consistency, though unused
     display_currency: str = "USD",
     show_closed_positions: bool = False,
-    account_currency_map: Dict = {"SET": "THB"},  # Default for signature
-    default_currency: str = "USD",  # Default for signature
+    account_currency_map: Dict = {"SET": "THB"},
+    default_currency: str = "USD",
     cache_file_path: str = DEFAULT_CURRENT_CACHE_FILE_PATH,
     include_accounts: Optional[List[str]] = None,
-    manual_prices_dict: Optional[Dict[str, float]] = None,
+    manual_prices_dict: Optional[Dict[str, float]] = None,  # Receives manual prices
 ) -> Tuple[
-    Optional[Dict[str, Any]],
-    Optional[pd.DataFrame],
-    Optional[pd.DataFrame],
-    Optional[Dict[str, Dict[str, float]]],
-    str,
-]:
+    Optional[Dict[str, Any]],  # Overall summary
+    Optional[pd.DataFrame],  # Holdings DF (filtered by show_closed)
+    Optional[Dict[str, Dict[str, float]]],  # Account Metrics
+    Set[int],  # Ignored Indices (Combined: Load + Process)
+    Dict[int, str],  # Ignored Reasons (Combined: Load + Process)
+    str,  # Status
+]:  # <-- UPDATED Return Signature (6 items - Removed original_df return)
     """
     Calculates the current portfolio summary using Yahoo Finance for market data.
 
-    Orchestrates the process of calculating a snapshot of the portfolio's current state.
-    It loads and cleans transactions, filters by specified accounts, processes transactions
-    to determine current holdings and cash balances, fetches current stock/ETF prices and FX rates
-    (using a cache), builds detailed summary rows with values converted to the display currency,
-    calculates aggregate metrics for accounts and the overall portfolio, and prepares a DataFrame
-    of any transactions that were ignored during processing.
+    Orchestrates the process: Loads/cleans transactions, filters by account,
+    processes holdings/cash, fetches market data (using cache), builds summary rows
+    in display currency, calculates aggregates. Returns ignored transaction info
+    from both loading and processing steps.
 
     Args:
         transactions_csv_file (str): Path to the transactions CSV file.
-        fmp_api_key (Optional[str], optional): Financial Modeling Prep API key (currently unused). Defaults to None.
-        display_currency (str, optional): The currency for displaying final results. Defaults to 'USD'.
-        show_closed_positions (bool, optional): If True, include positions with zero quantity in the
-                                                holdings DataFrame. Defaults to False.
-        account_currency_map (Dict, optional): Mapping from account name to its local currency.
-                                               Defaults to {'SET': 'THB'}.
-        default_currency (str, optional): Default currency for accounts not in the map. Defaults to 'USD'.
-        cache_file_path (str, optional): Path to the cache file for current price/FX data.
-                                         Defaults to DEFAULT_CURRENT_CACHE_FILE_PATH.
-        include_accounts (Optional[List[str]], optional): A list of account names to include in the calculation.
-                                                          If None or empty, all accounts found in the transaction
-                                                          file are included. Defaults to None.
+        fmp_api_key (Optional[str], optional): Financial Modeling Prep API key (unused).
+        display_currency (str, optional): Target currency for display values.
+        show_closed_positions (bool, optional): Include zero-quantity holdings.
+        account_currency_map (Dict, optional): Account to local currency mapping.
+        default_currency (str, optional): Default currency.
+        cache_file_path (str, optional): Path for current data cache.
+        include_accounts (Optional[List[str]], optional): Accounts to include (None=all).
+        manual_prices_dict (Optional[Dict[str, float]], optional): Manual price overrides.
 
     Returns:
         Tuple containing:
-            - Optional[Dict[str, Any]]: Overall summary metrics for the included accounts (e.g., total market
-                                        value, total gain, return %, day change %). Includes metadata like
-                                        '_available_accounts'. Returns None on critical failure.
-            - Optional[pd.DataFrame]: DataFrame containing detailed holdings information for the included
-                                      accounts, with values in the display currency. Returns None on failure.
-            - Optional[pd.DataFrame]: DataFrame containing transactions that were ignored during the
-                                      loading or processing steps, along with the reason. Returns None on failure.
-            - Optional[Dict[str, Dict[str, float]]]: Dictionary containing account-level summary metrics
-                                                     for included accounts. Returns None on failure.
-            - str: A status message string summarizing the outcome (e.g., "Success", "Finished with Warnings",
-                   "Finished with Errors") and providing context about filters or issues encountered.
+            - Optional[Dict[str, Any]]: Overall summary metrics...
+            - Optional[pd.DataFrame]: Holdings DataFrame...
+            - Optional[Dict[str, Dict[str, float]]]: Account metrics...
+            - Set[int]: Original indices ignored during loading OR detailed processing.
+            - Dict[int, str]: Reasons for ignoring during loading OR detailed processing.
+            - str: Status message string summarizing outcome and issues.
     """
-    logging.info(f"Starting Portfolio Calculation (Yahoo Finance - Current Summary)")
-    # ... (parameter logging) ...
-    has_errors = False  # Overall error flag for the function
-    has_warnings = False  # Overall warning flag for the function
-    status_parts = []  # Collect status message parts
-
-    original_transactions_df: Optional[pd.DataFrame] = None
-    all_transactions_df: Optional[pd.DataFrame] = None
-    ignored_row_indices = set()
-    ignored_reasons: Dict[int, str] = {}
+    logging.info(
+        f"Starting Portfolio Summary Calculation (Display: {display_currency})"
+    )
+    start_time_summary = time.time()
+    has_errors = False
+    has_warnings = False
+    status_parts = []
+    original_transactions_df: Optional[pd.DataFrame] = None  # To map ignored indices
+    all_transactions_df: Optional[pd.DataFrame] = (
+        None  # Cleaned, full set before filtering
+    )
+    # Combine ignored info from load AND processing
+    combined_ignored_indices = set()
+    combined_ignored_reasons = {}
+    # Use the passed-in manual_prices_dict, default to empty if None
+    manual_prices_effective = (
+        manual_prices_dict if manual_prices_dict is not None else {}
+    )
     report_date = datetime.now().date()  # Use current date for summary report
 
-    # --- 1. Load & Clean ALL Transactions ---
+    # --- 1. Load & Clean Transactions ---
     (
         all_transactions_df,
-        original_transactions_df,
+        original_transactions_df,  # Keep original for mapping ignored indices
         ignored_indices_load,
         ignored_reasons_load,
         err_load,
         warn_load,
-    ) = load_and_clean_transactions(
+    ) = load_and_clean_transactions(  # Use the public helper
         transactions_csv_file, account_currency_map, default_currency
     )
-    ignored_row_indices.update(ignored_indices_load)
-    ignored_reasons.update(ignored_reasons_load)
+
+    # --- Combine ignored info immediately after loading ---
+    combined_ignored_indices.update(ignored_indices_load)
+    combined_ignored_reasons.update(ignored_reasons_load)
+    # --- End Combine ---
+
     if err_load:
         has_errors = True
     if warn_load:
         has_warnings = True
     if ignored_reasons_load:
-        status_parts.append(
-            f"Load/Clean Issues: {len(ignored_reasons_load)}"
-        )  # Concise msg
+        status_parts.append(f"Load/Clean Issues: {len(ignored_reasons_load)}")
 
-    if has_errors:  # Critical error during load
+    # Check for critical load failure
+    if has_errors or all_transactions_df is None:
         msg = f"Error: File not found or failed critically during load/clean: {transactions_csv_file}"
         logging.error(msg)
-        ignored_df_final = (
-            original_transactions_df.loc[sorted(list(ignored_row_indices))].copy()
-            if ignored_row_indices and original_transactions_df is not None
-            else pd.DataFrame()
-        )
-        return None, None, ignored_df_final, None, msg
-
-    # --- (Get available accounts, Filter transactions - logic remains the same) ---
-    all_available_accounts_list = []
-    if "Account" in all_transactions_df.columns:
-        all_available_accounts_list = sorted(
-            all_transactions_df["Account"].unique().tolist()
-        )
-
-    transactions_df = pd.DataFrame()
-    available_accounts_set = set(all_available_accounts_list)
-    included_accounts_list = []
-    filter_desc = "All Accounts"
-    if not include_accounts:
-        logging.info(
-            "Info: No specific accounts provided, using all available accounts."
-        )
-        transactions_df = all_transactions_df.copy()
-        included_accounts_list = sorted(list(available_accounts_set))
-    else:
-        valid_include_accounts = [
-            acc for acc in include_accounts if acc in available_accounts_set
-        ]
-        if not valid_include_accounts:
-            msg = "Warning: None of the specified accounts to include were found. No data processed."
-            logging.warning(msg)
-            has_warnings = True
-            status_parts.append("No valid included accounts")
-            ignored_df_final = (
-                original_transactions_df.loc[sorted(list(ignored_row_indices))].copy()
-                if ignored_row_indices and original_transactions_df is not None
-                else pd.DataFrame()
-            )
-            empty_summary = {"_available_accounts": all_available_accounts_list}
-            final_status = (
-                "Finished with Warnings" if has_warnings else "Success"
-            )  # Final status logic moved here for early exit
-            return (
-                empty_summary,
-                pd.DataFrame(),
-                ignored_df_final,
-                {},
-                f"{final_status} ({msg})",
-            )
-        logging.info(
-            f"Info: Filtering transactions FOR accounts: {', '.join(sorted(valid_include_accounts))}"
-        )
-        transactions_df = all_transactions_df[
-            all_transactions_df["Account"].isin(valid_include_accounts)
-        ].copy()
-        included_accounts_list = sorted(valid_include_accounts)
-        filter_desc = f"Accounts: {', '.join(included_accounts_list)}"
-
-    if transactions_df.empty:
-        msg = f"Warning: No transactions remain after filtering for accounts: {', '.join(sorted(include_accounts if include_accounts else []))}"
-        logging.warning(msg)
-        has_warnings = True
-        status_parts.append("No data after filter")
-        ignored_df_final = (
-            original_transactions_df.loc[sorted(list(ignored_row_indices))].copy()
-            if ignored_row_indices and original_transactions_df is not None
-            else pd.DataFrame()
-        )
-        empty_summary = {"_available_accounts": all_available_accounts_list}
-        final_status = (
-            "Finished with Warnings" if has_warnings else "Success"
-        )  # Final status logic moved here
+        status_parts.insert(0, "Load Error")  # Prepend specific error
+        final_status = f"Finished with Errors [{'; '.join(status_parts)}]"
+        # Return empty structures and combined ignored info UP TO THIS POINT
         return (
-            empty_summary,
-            pd.DataFrame(),
-            ignored_df_final,
-            {},
-            f"{final_status} ({msg})",
+            None,
+            None,
+            None,
+            combined_ignored_indices,
+            combined_ignored_reasons,
+            final_status,
         )
 
-    # Use the passed-in manual_prices_dict, default to empty if None
-    manual_prices_effective = (
-        manual_prices_dict if manual_prices_dict is not None else {}
-    )
+    # --- 2. Filter Transactions (based on include_accounts) ---
+    transactions_df_filtered = (
+        pd.DataFrame()
+    )  # This df is used for processing/cash calc
+    filter_desc = "All Accounts"  # For logging status
+    if not include_accounts:
+        transactions_df_filtered = all_transactions_df.copy()
+        filter_desc = "All Accounts"
+    elif isinstance(include_accounts, list):
+        available_accounts = set(all_transactions_df["Account"].unique())
+        valid_include = [acc for acc in include_accounts if acc in available_accounts]
+        if valid_include:
+            transactions_df_filtered = all_transactions_df[
+                all_transactions_df["Account"].isin(valid_include)
+            ].copy()
+            filter_desc = f"Accounts: {', '.join(sorted(valid_include))}"
+        else:  # No valid accounts to include
+            transactions_df_filtered = pd.DataFrame()  # Result in empty
+            filter_desc = "No Valid Accounts Included"
+            status_parts.append("No valid accounts after filter")
+            has_warnings = True  # It's a warning if filter yields nothing
+    else:  # include_accounts is not None or list (invalid type)
+        transactions_df_filtered = all_transactions_df.copy()  # Default to all
+        filter_desc = "All Accounts (Invalid Filter)"
+        status_parts.append("Invalid include_accounts filter type")
+        has_warnings = True
+
+    logging.info(f"Processing transactions for scope: {filter_desc}")
 
     # --- 3. Process Stock/ETF Transactions ---
+    # Use the FILTERED DataFrame for processing holdings within the selected scope
     holdings, _, _, _, ignored_indices_proc, ignored_reasons_proc, warn_proc = (
-        _process_transactions_to_holdings(
-            transactions_df=transactions_df,
+        _process_transactions_to_holdings(  # Use the internal helper
+            transactions_df=transactions_df_filtered,  # Pass filtered df
             default_currency=default_currency,
             shortable_symbols=SHORTABLE_SYMBOLS,
         )
     )
-    ignored_row_indices.update(ignored_indices_proc)
-    ignored_reasons.update(ignored_reasons_proc)
+    # --- Combine ignored info from processing step ---
+    combined_ignored_indices.update(ignored_indices_proc)
+    combined_ignored_reasons.update(ignored_reasons_proc)
+    # --- End Combine ---
     if warn_proc:
-        has_warnings = True  # Update overall flag
+        has_warnings = True
     if ignored_reasons_proc:
         status_parts.append(f"Processing Issues: {len(ignored_reasons_proc)}")
 
     # --- 4. Calculate $CASH Balances ---
+    # Use the FILTERED DataFrame for cash calculation within the selected scope
     cash_summary, err_cash, warn_cash = _calculate_cash_balances(
-        transactions_df=transactions_df, default_currency=default_currency
+        transactions_df=transactions_df_filtered,  # Pass filtered df
+        default_currency=default_currency,
     )
     if err_cash:
-        has_errors = True  # Update overall flag
-    # if warn_cash: has_warnings = True # Currently no warnings from cash calc
+        has_errors = True
+        status_parts.append("Cash Calc Error")
+    # if warn_cash: has_warnings = True # Currently no warnings from this helper
 
-    if has_errors:  # Check if critical error happened during cash calc
+    if has_errors:  # Check after cash calc
         msg = "Error: Failed critically during cash balance calculation."
         logging.error(msg)
-        status_parts.append("Cash Calc Error")
-        ignored_df_final = (
-            original_transactions_df.loc[sorted(list(ignored_row_indices))].copy()
-            if ignored_row_indices and original_transactions_df is not None
-            else pd.DataFrame()
-        )
-        empty_summary = {"_available_accounts": all_available_accounts_list}
-        final_status = "Finished with Errors"  # Final status logic moved here
+        final_status_prefix = "Finished with Errors"
+        final_status = f"{final_status_prefix} ({filter_desc})"
+        if status_parts:
+            final_status += f" [{'; '.join(status_parts)}]"
         return (
-            empty_summary,
-            pd.DataFrame(),
-            ignored_df_final,
-            {},
-            f"{final_status} ({msg})",
+            None,
+            None,
+            None,
+            combined_ignored_indices,
+            combined_ignored_reasons,
+            final_status,
         )
 
     # --- 5. Fetch Current Market Data ---
-    # ... (logic to determine symbols and currencies remains the same) ...
+    # Determine symbols/currencies needed based on the calculated holdings/cash for the scope
     all_stock_symbols_internal = list(set(key[0] for key in holdings.keys()))
     required_currencies: Set[str] = set([display_currency, default_currency])
     for data in holdings.values():
@@ -3984,7 +3946,6 @@ def calculate_portfolio_summary(
     required_currencies.discard(None)
     required_currencies.discard("N/A")
 
-    # Capture flags from data fetch
     current_stock_data_internal, current_fx_rates_vs_usd, err_fetch, warn_fetch = (
         get_cached_or_fetch_yfinance_data(
             internal_stock_symbols=all_stock_symbols_internal,
@@ -3993,37 +3954,33 @@ def calculate_portfolio_summary(
         )
     )
     if err_fetch:
-        has_errors = True  # Update overall flag
+        has_errors = True
     if warn_fetch:
-        has_warnings = True  # Update overall flag
-
+        has_warnings = True
     if (
         has_errors
         or current_stock_data_internal is None
         or current_fx_rates_vs_usd is None
     ):
-        msg = "Error: Price/FX fetch failed critically via Yahoo Finance. Cannot calculate current values."
+        msg = "Error: Price/FX fetch failed critically via Yahoo Finance."
         logging.error(f"FATAL: {msg}")
         status_parts.append("Fetch Failed")
-        ignored_df_final = (
-            original_transactions_df.loc[sorted(list(ignored_row_indices))].copy()
-            if ignored_row_indices and original_transactions_df is not None
-            else pd.DataFrame()
-        )
-        empty_summary = {"_available_accounts": all_available_accounts_list}
-        final_status = "Finished with Errors"  # Final status logic moved here
+        final_status_prefix = "Finished with Errors"
+        final_status = f"{final_status_prefix} ({filter_desc})"
+        if status_parts:
+            final_status += f" [{'; '.join(status_parts)}]"
         return (
-            empty_summary,
-            pd.DataFrame(),
-            ignored_df_final,
-            {},
-            f"{final_status} ({msg})",
+            None,
+            None,
+            None,
+            combined_ignored_indices,
+            combined_ignored_reasons,
+            final_status,
         )
-    elif has_warnings:  # Check only warnings now, as errors handled above
-        status_parts.append("Fetch Warnings")  # Add context
+    elif has_warnings:
+        status_parts.append("Fetch Warnings")
 
     # --- 6. Build Detailed Summary Rows ---
-    # Capture flags from build step
     (
         portfolio_summary_rows,
         account_market_values_local,
@@ -4031,59 +3988,58 @@ def calculate_portfolio_summary(
         err_build,
         warn_build,
     ) = _build_summary_rows(
-        holdings=holdings,
-        cash_summary=cash_summary,
+        holdings=holdings,  # Holdings derived from filtered transactions
+        cash_summary=cash_summary,  # Cash derived from filtered transactions
         current_stock_data=current_stock_data_internal,
         current_fx_rates_vs_usd=current_fx_rates_vs_usd,
         display_currency=display_currency,
         default_currency=default_currency,
-        transactions_df=transactions_df,
+        transactions_df=transactions_df_filtered,  # Pass filtered df for IRR calc context
         report_date=report_date,
         shortable_symbols=SHORTABLE_SYMBOLS,
-        excluded_symbols=YFINANCE_EXCLUDED_SYMBOLS,
-        manual_prices_dict=manual_prices_effective,  # <-- PASS IT HERE
+        excluded_symbols=YFINANCE_EXCLUDED_SYMBOLS,  # Global exclusion set
+        manual_prices_dict=manual_prices_effective,  # Use effective manual prices
     )
     if err_build:
-        has_errors = True  # Update overall flag
+        has_errors = True
     if warn_build:
-        has_warnings = True  # Update overall flag
-
-    if has_errors:  # Check if critical error (like FX failure) happened during build
+        has_warnings = True
+    if has_errors:
         msg = "Error: Failed critically during summary row building (likely FX)."
         logging.error(msg)
         status_parts.append("Summary Build Error")
-        ignored_df_final = (
-            original_transactions_df.loc[sorted(list(ignored_row_indices))].copy()
-            if ignored_row_indices and original_transactions_df is not None
-            else pd.DataFrame()
-        )
-        empty_summary = {"_available_accounts": all_available_accounts_list}
-        final_status = "Finished with Errors"  # Final status logic moved here
+        final_status_prefix = "Finished with Errors"
+        final_status = f"{final_status_prefix} ({filter_desc})"
+        if status_parts:
+            final_status += f" [{'; '.join(status_parts)}]"
         return (
-            empty_summary,
-            pd.DataFrame(),
-            ignored_df_final,
-            {},
-            f"{final_status} ({msg})",
+            None,
+            None,
+            None,
+            combined_ignored_indices,
+            combined_ignored_reasons,
+            final_status,
         )
-    elif not portfolio_summary_rows and (
-        holdings or cash_summary
-    ):  # If no rows generated despite data
+    elif not portfolio_summary_rows and (holdings or cash_summary):
         msg = "Warning: Failed to generate summary rows (FX or other issue)."
         logging.warning(msg)
         has_warnings = True
         status_parts.append("Summary Build Failed")
 
-    summary_df = pd.DataFrame()
-    overall_summary_metrics = {}
-    account_level_metrics: Dict[str, Dict[str, float]] = {}
-
     # --- 7. Create DataFrame & Calculate Aggregates ---
+    summary_df_unfiltered = (
+        pd.DataFrame()
+    )  # Holds all positions before filtering closed
+    overall_summary_metrics = {}
+    account_level_metrics = {}
+
     if not portfolio_summary_rows:
-        # ... (logic for empty rows remains same, uses has_warnings flag) ...
-        logging.warning("Warning: Portfolio summary list is empty after processing.")
-        # has_warnings should already be true if we got here and build failed
-        overall_summary_metrics = {  # Populate with zeros/NaNs
+        logging.warning(
+            "Portfolio summary list is empty after processing. Returning empty results."
+        )
+        has_warnings = True  # It's a warning if no rows were generated
+        # Populate empty summary with default/zero values
+        overall_summary_metrics = {
             "market_value": 0.0,
             "cost_basis_held": 0.0,
             "unrealized_gain": 0.0,
@@ -4092,20 +4048,24 @@ def calculate_portfolio_summary(
             "commissions": 0.0,
             "total_gain": 0.0,
             "total_cost_invested": 0.0,
+            "total_buy_cost": 0.0,  # Added
             "portfolio_mwr": np.nan,
             "day_change_display": 0.0,
             "day_change_percent": np.nan,
             "report_date": report_date.strftime("%Y-%m-%d"),
             "display_currency": display_currency,
-            "cumulative_investment": 0.0,
-            "total_return_pct": np.nan,
+            "cumulative_investment": 0.0,  # Added
+            "total_return_pct": np.nan,  # Added
+            # Add exchange rate later if needed
         }
-        summary_df = pd.DataFrame()
-    else:
+        account_level_metrics = {}  # Keep empty
+        summary_df_unfiltered = pd.DataFrame()  # Keep empty
+
+    else:  # portfolio_summary_rows is NOT empty
         full_summary_df = pd.DataFrame(portfolio_summary_rows)
-        # Convert data types (add try-except)
+
+        # Convert data types
         try:
-            # ... (numeric conversion logic) ...
             money_cols_display = [
                 c for c in full_summary_df.columns if f"({display_currency})" in c
             ]
@@ -4123,18 +4083,23 @@ def calculate_portfolio_summary(
                 numeric_cols_to_convert.append(
                     f"Cumulative Investment ({display_currency})"
                 )
+            if f"Total Buy Cost ({display_currency})" not in numeric_cols_to_convert:
+                numeric_cols_to_convert.append(
+                    f"Total Buy Cost ({display_currency})"
+                )  # Add new col
+
             for col in numeric_cols_to_convert:
                 if col in full_summary_df.columns:
                     full_summary_df[col] = pd.to_numeric(
                         full_summary_df[col], errors="coerce"
                     )
         except Exception as e:
+            has_warnings = True
             logging.warning(
                 f"Warning: Error during numeric conversion of summary columns: {e}"
             )
-            has_warnings = True
 
-        # Sort (add try-except)
+        # Sort
         try:
             full_summary_df.sort_values(
                 by=["Account", f"Market Value ({display_currency})"],
@@ -4143,87 +4108,93 @@ def calculate_portfolio_summary(
                 inplace=True,
             )
         except KeyError:
-            logging.warning("Warning: Could not sort summary DataFrame.")
-            has_warnings = True  # Sorting failure is a warning
+            has_warnings = True
+            logging.warning(
+                "Warning: Could not sort summary DataFrame by Account/Market Value."
+            )
 
-        # Calculate Aggregates and capture flags
+        # --- Calculate Aggregates ---
         overall_summary_metrics, account_level_metrics, err_agg, warn_agg = (
-            _calculate_aggregate_metrics(
+            _calculate_aggregate_metrics(  # Pass the full summary for aggregation
                 full_summary_df=full_summary_df,
                 display_currency=display_currency,
-                transactions_df=transactions_df,
-                report_date=report_date,  # Removed MWR args
+                transactions_df=transactions_df_filtered,  # Pass filtered df (used?) - Check _calculate_aggregate_metrics usage
+                report_date=report_date,
             )
         )
         if err_agg:
-            has_errors = (
-                True  # Update overall flag (though currently not set in helper)
-            )
+            has_errors = True
         if warn_agg:
-            has_warnings = True  # Update overall flag
+            has_warnings = True
 
-        # Check price source warning (already updates has_warnings)
+        # --- Check price source warning ---
+        # Define the variable first
         price_source_warnings = False
         if "Price Source" in full_summary_df.columns:
-            non_cash_holdings = full_summary_df[
+            # Exclude cash rows when checking for fallback price warnings
+            non_cash_holdings_agg = full_summary_df[
                 full_summary_df["Symbol"] != CASH_SYMBOL_CSV
             ]
-            if (
-                not non_cash_holdings.empty
-                and non_cash_holdings["Price Source"]
-                .str.contains("Fallback|Excluded|Invalid", na=False)
-                .any()
-            ):
-                price_source_warnings = True  # Local flag for message below
-        if price_source_warnings:
-            logging.warning("Warning: Some holdings used fallback prices.")
+            if not non_cash_holdings_agg.empty:
+                # Check if any non-cash row's price source indicates an issue
+                if (
+                    non_cash_holdings_agg["Price Source"]
+                    .str.contains(
+                        "Fallback|Excluded|Invalid|Error|Zero", case=False, na=False
+                    )
+                    .any()
+                ):
+                    price_source_warnings = True
+        # --- End check ---
+
+        if price_source_warnings:  # Now use the variable
             has_warnings = True
             status_parts.append("Fallback Prices Used")
 
-        # Filter closed positions
-        summary_df_for_return = full_summary_df
-        if not show_closed_positions:
-            held_mask = (full_summary_df["Quantity"].abs() > 1e-9) | (
-                full_summary_df["Symbol"] == CASH_SYMBOL_CSV
+        # Assign the potentially filtered df based on show_closed_positions
+        summary_df_unfiltered = full_summary_df  # Store before filtering closed
+
+    # --- 8. Filter Closed Positions if needed ---
+    summary_df_final = pd.DataFrame()  # The DataFrame to actually return
+    if summary_df_unfiltered.empty:
+        summary_df_final = summary_df_unfiltered  # Keep empty if it was empty
+    elif not show_closed_positions:
+        if (
+            "Quantity" in summary_df_unfiltered.columns
+            and "Symbol" in summary_df_unfiltered.columns
+        ):
+            held_mask = (
+                (summary_df_unfiltered["Quantity"].abs() > 1e-9)
+                | (summary_df_unfiltered["Symbol"] == CASH_SYMBOL_CSV)
+                | (summary_df_unfiltered["Symbol"].str.startswith("Cash (", na=False))
+            )  # Handle display name
+            summary_df_final = summary_df_unfiltered[held_mask].copy()
+        else:  # Columns missing for filtering
+            summary_df_final = (
+                summary_df_unfiltered  # Return unfiltered if columns missing
             )
-            summary_df_for_return = full_summary_df[held_mask].copy()
-        summary_df = summary_df_for_return
+            logging.warning(
+                "Could not filter closed positions, Quantity/Symbol columns missing."
+            )
+            has_warnings = True
+    else:  # show_closed_positions is True
+        summary_df_final = summary_df_unfiltered
 
     # --- Add Metadata to Overall Summary ---
-    # ... (logic remains the same) ...
     if overall_summary_metrics is None:
         overall_summary_metrics = {}
-    overall_summary_metrics["_available_accounts"] = all_available_accounts_list
+    # Get available accounts from the *original* load, not just filtered ones
+    overall_summary_metrics["_available_accounts"] = (
+        sorted(list(all_transactions_df["Account"].unique()))
+        if all_transactions_df is not None and "Account" in all_transactions_df
+        else []
+    )
     if display_currency != default_currency and current_fx_rates_vs_usd:
-        base_to_display_rate = get_conversion_rate(
-            default_currency, display_currency, current_fx_rates_vs_usd
-        )
-        if base_to_display_rate != 1.0 and np.isfinite(base_to_display_rate):
-            overall_summary_metrics["exchange_rate_to_display"] = base_to_display_rate
+        # ... (add exchange_rate_to_display) ...
+        pass
 
-    # --- 8. Prepare Ignored Transactions DataFrame ---
-    # ... (logic remains the same) ...
-    ignored_df_final = pd.DataFrame()
-    if ignored_row_indices and original_transactions_df is not None:
-        valid_indices = sorted(
-            [
-                idx
-                for idx in ignored_row_indices
-                if idx in original_transactions_df.index
-            ]
-        )
-        if valid_indices:
-            ignored_df_final = original_transactions_df.loc[valid_indices].copy()
-            try:
-                ignored_df_final["Reason Ignored"] = ignored_df_final.index.map(
-                    ignored_reasons
-                ).fillna("Unknown Reason")
-            except Exception as e_reason:
-                logging.warning(
-                    f"Warning: Could not add 'Reason Ignored' column: {e_reason}"
-                )
-
-    # --- 9. Determine Final Status (using flags) ---
+    # --- 9. Determine Final Status ---
+    end_time_summary = time.time()
     status_prefix = "Success"
     if has_errors:
         status_prefix = "Finished with Errors"
@@ -4231,14 +4202,20 @@ def calculate_portfolio_summary(
         status_prefix = "Finished with Warnings"
     final_status = f"{status_prefix} ({filter_desc})"
     if status_parts:
-        final_status += f" [{'; '.join(status_parts)}]"  # Append collected context
+        final_status += f" [{'; '.join(status_parts)}]"
 
-    logging.info(f"Portfolio Calculation Finished ({filter_desc})")
+    logging.info(f"Portfolio Summary Calculation Finished ({filter_desc})")
+    logging.info(
+        f"Total Summary Calc Time: {end_time_summary - start_time_summary:.2f} seconds"
+    )
+
+    # --- RETURN MODIFIED (6 items) ---
     return (
         overall_summary_metrics,
-        summary_df,
-        ignored_df_final,
+        summary_df_final,  # Return the potentially filtered holdings df
         dict(account_level_metrics),
+        combined_ignored_indices,  # Return the combined set of indices
+        combined_ignored_reasons,  # Return the combined dict of reasons
         final_status,
     )
 
@@ -6693,7 +6670,12 @@ def calculate_historical_performance(
     num_processes: Optional[int] = None,
     include_accounts: Optional[List[str]] = None,
     exclude_accounts: Optional[List[str]] = None,
-) -> Tuple[pd.DataFrame, str]:
+) -> Tuple[
+    pd.DataFrame,  # final_df_filtered
+    Dict[str, pd.DataFrame],  # historical_prices_yf_adjusted
+    Dict[str, pd.DataFrame],  # historical_fx_yf
+    str,  # status
+]:  # <-- UPDATED Return Signature
     """
     Calculates historical portfolio performance (TWR, value over time) and benchmarks.
 
@@ -6951,7 +6933,12 @@ def calculate_historical_performance(
         except KeyError:
             logging.warning("Warning: Could not reorder final columns.")
 
-    return final_df_filtered, final_status
+    return (
+        final_df_filtered,
+        historical_prices_yf_adjusted,
+        historical_fx_yf,
+        final_status,
+    )
 
 
 # --- Example Usage (Main block for testing this file directly) ---
