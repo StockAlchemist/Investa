@@ -241,6 +241,7 @@ COMMON_CURRENCIES = [
     "HKD",
     "SGD",
 ]
+MANUAL_PRICE_FILE = "manual_prices.json"
 
 # --- Graph Defaults ---
 DEFAULT_GRAPH_START_DATE = date.today() - timedelta(
@@ -372,6 +373,7 @@ class PortfolioCalculatorWorker(QRunnable):
         historical_fn,
         historical_args,
         historical_kwargs,
+        manual_prices_dict,
     ):
         """
         Initializes the worker with calculation functions and arguments.
@@ -395,6 +397,7 @@ class PortfolioCalculatorWorker(QRunnable):
         self.historical_args = historical_args
         # historical_kwargs will contain account_currency_map and default_currency
         self.historical_kwargs = historical_kwargs
+        self.manual_prices_dict = manual_prices_dict  # <-- STORE IT
         self.signals = WorkerSignals()
         self.original_data = pd.DataFrame()
 
@@ -424,12 +427,19 @@ class PortfolioCalculatorWorker(QRunnable):
         try:
             # --- 1. Run Portfolio Summary Calculation ---
             try:
-                # No changes needed here, kwargs are passed directly
+                current_portfolio_kwargs = self.portfolio_kwargs.copy()
+                # Add manual prices to the kwargs passed to the function
+                current_portfolio_kwargs["manual_prices_dict"] = (
+                    self.manual_prices_dict
+                )  # <-- ADD IT HERE
+
                 logging.debug(
-                    f"DEBUG Worker: Calling portfolio_fn with kwargs keys: {list(self.portfolio_kwargs.keys())}"
+                    f"DEBUG Worker: Calling portfolio_fn with kwargs keys: {list(current_portfolio_kwargs.keys())}"
                 )
                 p_summary, p_holdings, p_ignored, p_account, p_status = (
-                    self.portfolio_fn(*self.portfolio_args, **self.portfolio_kwargs)
+                    self.portfolio_fn(
+                        *self.portfolio_args, **current_portfolio_kwargs
+                    )  # Use updated kwargs
                 )
                 portfolio_summary_metrics = p_summary if p_summary is not None else {}
                 holdings_df = p_holdings if p_holdings is not None else pd.DataFrame()
@@ -1759,6 +1769,260 @@ class ManageTransactionsDialog(QDialog):
                     self.data_changed.emit()  # Signal main window to refresh
 
 
+# In main_gui.py
+# Add QDoubleValidator to imports if not already there
+from PySide6.QtGui import QDoubleValidator
+
+
+class ManualPriceDialog(QDialog):
+    """Dialog to manage manual prices for symbols."""
+
+    def __init__(self, current_prices: Dict[str, float], parent=None):
+        super().__init__(parent)
+        self._parent_app = parent
+        self.setWindowTitle("Manual Price Overrides")
+        self.setMinimumSize(500, 400)
+
+        # Store original values and prepare for updates
+        # Ensure keys are uppercase for consistency
+        self._original_prices = {
+            k.upper().strip(): v for k, v in current_prices.items()
+        }
+        self.updated_prices = self._original_prices.copy()  # Start with a copy
+
+        # --- Layout ---
+        main_layout = QVBoxLayout(self)
+
+        # --- Table ---
+        main_layout.addWidget(QLabel("Edit manual prices (used as fallback):"))
+        self.table_widget = QTableWidget()
+        self.table_widget.setObjectName("ManualPriceTable")
+        self.table_widget.setColumnCount(2)
+        self.table_widget.setHorizontalHeaderLabels(["Symbol", "Manual Price"])
+        self.table_widget.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table_widget.setSelectionMode(
+            QAbstractItemView.SingleSelection
+        )  # Easier for delete
+        self.table_widget.verticalHeader().setVisible(False)
+        self.table_widget.setSortingEnabled(True)
+
+        # --- Validator for Price Column ---
+        # Allow positive floats with reasonable decimals
+        self.price_validator = QDoubleValidator(
+            0.00000001, 1000000000.0, 8, self
+        )  # Min > 0, Max large, 8 decimals
+        self.price_validator.setNotation(QDoubleValidator.StandardNotation)
+
+        # Populate table
+        self._populate_table()
+
+        # Resize columns
+        self.table_widget.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.Stretch
+        )  # Symbol stretches
+        self.table_widget.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeToContents
+        )  # Price fits
+
+        main_layout.addWidget(self.table_widget)
+
+        # --- Buttons ---
+        table_buttons_layout = QHBoxLayout()
+        self.add_row_button = QPushButton("Add Row")
+        self.delete_row_button = QPushButton("Delete Selected Row")
+        table_buttons_layout.addWidget(self.add_row_button)
+        table_buttons_layout.addWidget(self.delete_row_button)
+        table_buttons_layout.addStretch()
+        main_layout.addLayout(table_buttons_layout)
+
+        # --- Dialog Buttons ---
+        self.button_box = QDialogButtonBox(
+            QDialogButtonBox.Save | QDialogButtonBox.Cancel
+        )
+        main_layout.addWidget(self.button_box)
+
+        # --- Connections ---
+        self.add_row_button.clicked.connect(self._add_empty_row)
+        self.delete_row_button.clicked.connect(self._delete_selected_row)
+        self.button_box.accepted.connect(self.accept)  # Override accept
+        self.button_box.rejected.connect(self.reject)
+
+        # Apply parent's style and font
+        if parent:
+            if hasattr(parent, "styleSheet"):
+                self.setStyleSheet(parent.styleSheet())
+            if hasattr(parent, "font"):
+                self.setFont(parent.font())
+
+    def _populate_table(self):
+        """Fills the table with current manual prices."""
+        # Ensure keys are sorted for consistent display
+        sorted_symbols = sorted(self._original_prices.keys())
+        self.table_widget.setRowCount(len(sorted_symbols))
+        self.table_widget.setSortingEnabled(False)
+
+        for row_idx, symbol in enumerate(sorted_symbols):
+            price = self._original_prices[symbol]
+
+            # Symbol Item (Editable)
+            item_symbol = QTableWidgetItem(symbol)
+            self.table_widget.setItem(row_idx, 0, item_symbol)
+
+            # Price Item (Editable with Validation)
+            item_price = QTableWidgetItem(f"{price:.8f}")  # Format consistently
+            # item_price.setData(Qt.EditRole, price) # Store float for editor if needed
+            self.table_widget.setItem(row_idx, 1, item_price)
+
+        self.table_widget.setSortingEnabled(True)
+        # Connect itemChanged AFTER populating to avoid signals during setup
+        self.table_widget.itemChanged.connect(self._validate_cell_change)
+
+    @Slot(QTableWidgetItem)
+    def _validate_cell_change(self, item: QTableWidgetItem):
+        """Validates changes made directly in the table cells."""
+        if item.column() == 1:  # Price column
+            text = item.text().strip().replace(",", "")  # Allow commas during input
+            state = self.price_validator.validate(text, 0)[0]  # Get validation state
+            if state != QDoubleValidator.Acceptable:
+                item.setBackground(QColor("salmon"))  # Indicate error
+                item.setToolTip("Invalid price: Must be a positive number.")
+            else:
+                item.setBackground(QColor("white"))  # Clear background on valid
+                item.setToolTip("")
+                # Optional: Format the valid number back into the cell
+                try:
+                    item.setText(f"{float(text):.8f}")
+                except ValueError:
+                    pass  # Should not happen if Acceptable
+        elif item.column() == 0:  # Symbol column
+            text = item.text().strip().upper()
+            item.setText(text)  # Force uppercase and strip whitespace
+            if not text:
+                item.setBackground(QColor("salmon"))
+                item.setToolTip("Symbol cannot be empty.")
+            else:
+                item.setBackground(QColor("white"))
+                item.setToolTip("")
+
+    def _add_empty_row(self):
+        """Adds a new empty row to the table for adding a new entry."""
+        current_row_count = self.table_widget.rowCount()
+        self.table_widget.insertRow(current_row_count)
+
+        item_symbol = QTableWidgetItem("")
+        item_price = QTableWidgetItem("")
+
+        self.table_widget.setItem(current_row_count, 0, item_symbol)
+        self.table_widget.setItem(current_row_count, 1, item_price)
+
+        # Optionally scroll to and select the new row for editing
+        self.table_widget.scrollToItem(item_symbol, QAbstractItemView.PositionAtTop)
+        self.table_widget.setCurrentItem(item_symbol)
+        self.table_widget.editItem(item_symbol)  # Start editing symbol
+
+    def _delete_selected_row(self):
+        """Deletes the currently selected row from the table."""
+        selected_items = self.table_widget.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(
+                self, "Selection Error", "Please select a cell in the row to delete."
+            )
+            return
+
+        row_to_delete = selected_items[0].row()  # Get row from the first selected item
+        symbol_item = self.table_widget.item(row_to_delete, 0)
+        symbol = symbol_item.text() if symbol_item else "this row"
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Are you sure you want to delete the manual price for '{symbol}'?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+
+        if reply == QMessageBox.Yes:
+            self.table_widget.removeRow(row_to_delete)
+            logging.info(f"Row for '{symbol}' removed from manual price dialog.")
+
+    def accept(self):
+        """Overrides accept to validate all data and store results."""
+        new_prices = {}
+        has_errors = False
+        duplicate_symbols = set()
+        seen_symbols = set()
+
+        for row_idx in range(self.table_widget.rowCount()):
+            symbol_item = self.table_widget.item(row_idx, 0)
+            price_item = self.table_widget.item(row_idx, 1)
+
+            if not symbol_item or not price_item:
+                QMessageBox.warning(
+                    self, "Save Error", f"Error reading data from row {row_idx+1}."
+                )
+                has_errors = True
+                break
+
+            symbol = symbol_item.text().strip().upper()
+            price_text = price_item.text().strip().replace(",", "")
+
+            # Validate Symbol
+            if not symbol:
+                QMessageBox.warning(
+                    self, "Save Error", f"Symbol cannot be empty in row {row_idx+1}."
+                )
+                has_errors = True
+                self.table_widget.setCurrentItem(symbol_item)  # Highlight error
+                break
+            if symbol in seen_symbols:
+                duplicate_symbols.add(symbol)
+                has_errors = True  # Mark as error but continue checking all rows
+            seen_symbols.add(symbol)
+
+            # Validate Price
+            try:
+                price = float(price_text)
+                if price <= 0:
+                    raise ValueError("Price must be positive")
+                new_prices[symbol] = price
+            except (ValueError, TypeError):
+                QMessageBox.warning(
+                    self,
+                    "Save Error",
+                    f"Invalid price '{price_text}' for symbol '{symbol}' in row {row_idx+1}. Must be a positive number.",
+                )
+                has_errors = True
+                self.table_widget.setCurrentItem(price_item)  # Highlight error
+                break  # Stop on first price error
+
+        if duplicate_symbols:
+            QMessageBox.warning(
+                self,
+                "Save Error",
+                f"Duplicate symbols found: {', '.join(sorted(list(duplicate_symbols)))}. Please correct before saving.",
+            )
+            has_errors = True
+
+        if not has_errors:
+            self.updated_prices = new_prices
+            logging.info(
+                f"ManualPriceDialog accepted. Updated Prices: {self.updated_prices}"
+            )
+            super().accept()  # Close dialog if validation passes
+
+    # --- Static method to retrieve results cleanly ---
+    @staticmethod
+    def get_prices(parent=None, current_prices=None) -> Optional[Dict[str, float]]:
+        """Creates, shows dialog, and returns updated prices if saved."""
+        if current_prices is None:
+            current_prices = {}
+
+        dialog = ManualPriceDialog(current_prices, parent)
+        if dialog.exec():  # Returns 1 if accepted (Save clicked), 0 if rejected
+            return dialog.updated_prices
+        return None  # Return None if Cancel was clicked
+
+
 # --- Add/Edit Transaction Dialog ---
 class AddTransactionDialog(QDialog):
     """Dialog window for manually adding a new transaction entry."""
@@ -2503,6 +2767,17 @@ class PortfolioApp(QMainWindow):
         )  # Connect to new slot
         settings_menu.addAction(acc_currency_action)
 
+        # --- ADD Manual Prices action ---
+        manual_price_action = QAction("&Manual Prices...", self)
+        manual_price_action.setStatusTip(
+            "Set manual price overrides for specific symbols"
+        )
+        manual_price_action.triggered.connect(
+            self.show_manual_price_dialog
+        )  # Connect to new slot
+        settings_menu.addAction(manual_price_action)
+        # --- END ADD ---
+
         # --- Add Help Menu (Optional) ---
         help_menu = menu_bar.addMenu("&Help")
         about_action = QAction("&About", self)
@@ -2597,6 +2872,72 @@ class PortfolioApp(QMainWindow):
             "License: MIT<br><br>"
             "Data provided by Yahoo Finance. Use at your own risk.",
         )
+
+    @Slot()
+    def show_manual_price_dialog(self):
+        """Shows the dialog to edit manual prices."""
+        # self.manual_prices_dict should be populated during __init__ by _load_manual_prices
+        if not hasattr(self, "manual_prices_dict"):
+            logging.error("Manual prices dictionary not initialized.")
+            QMessageBox.critical(self, "Error", "Manual price data is not loaded.")
+            return
+
+        updated_prices = ManualPriceDialog.get_prices(
+            parent=self, current_prices=self.manual_prices_dict
+        )
+
+        if updated_prices is not None:  # User clicked Save and validation passed
+            # Check if prices actually changed
+            if updated_prices != self.manual_prices_dict:
+                logging.info("Manual prices changed. Saving and refreshing...")
+                self.manual_prices_dict = updated_prices  # Update internal dict
+                if self._save_manual_prices_to_json():  # Save to file
+                    self.refresh_data()  # Trigger refresh only if save succeeded
+                # Else: Error message shown by _save_manual_prices_to_json
+            else:
+                logging.info("Manual prices unchanged.")
+
+    def _save_manual_prices_to_json(self) -> bool:
+        """Saves the current self.manual_prices_dict to MANUAL_PRICE_FILE."""
+        if not hasattr(self, "manual_prices_dict"):
+            logging.error("Cannot save manual prices, dictionary attribute missing.")
+            return False
+
+        logging.info(f"Saving manual prices to: {MANUAL_PRICE_FILE}")
+        try:
+            # Ensure directory exists (optional, good practice)
+            # cache_dir = os.path.dirname(MANUAL_PRICE_FILE) # If it might be in a subdir
+            # if cache_dir: os.makedirs(cache_dir, exist_ok=True)
+
+            # Sort keys for consistent file output (optional)
+            prices_to_save = dict(sorted(self.manual_prices_dict.items()))
+
+            with open(MANUAL_PRICE_FILE, "w", encoding="utf-8") as f:
+                json.dump(prices_to_save, f, indent=4, ensure_ascii=False)
+            logging.info("Manual prices saved successfully.")
+            return True
+        except TypeError as e:
+            logging.error(f"TypeError writing manual prices JSON: {e}")
+            QMessageBox.critical(
+                self, "Save Error", f"Data error saving manual prices:\n{e}"
+            )
+            return False
+        except IOError as e:
+            logging.error(f"IOError writing manual prices JSON: {e}")
+            QMessageBox.critical(
+                self,
+                "Save Error",
+                f"Could not write to file:\n{MANUAL_PRICE_FILE}\n{e}",
+            )
+            return False
+        except Exception as e:
+            logging.exception("Unexpected error writing manual prices JSON")
+            QMessageBox.critical(
+                self,
+                "Save Error",
+                f"An unexpected error occurred saving manual prices:\n{e}",
+            )
+            return False
 
     # --- Initialization Method ---
     def __init__(self):
@@ -2919,6 +3260,54 @@ class PortfolioApp(QMainWindow):
 
     # --- End Account Selection Methods ---
 
+    def _load_manual_prices(self) -> Dict[str, float]:
+        """Loads manual prices from MANUAL_PRICE_FILE."""
+        manual_prices = {}
+        if os.path.exists(MANUAL_PRICE_FILE):
+            try:
+                with open(MANUAL_PRICE_FILE, "r", encoding="utf-8") as f:
+                    loaded_data = json.load(f)
+                if isinstance(loaded_data, dict):
+                    # Basic validation: ensure keys are strings and values are numbers
+                    valid_data = {}
+                    invalid_count = 0
+                    for key, value in loaded_data.items():
+                        if (
+                            isinstance(key, str)
+                            and isinstance(value, (int, float))
+                            and value > 0
+                        ):
+                            # Convert key to upper for consistency if needed, assuming symbols are keys
+                            valid_data[key.upper().strip()] = float(value)
+                        else:
+                            invalid_count += 1
+                            logging.warning(
+                                f"Warn: Invalid manual price entry skipped: Key='{key}' (Type: {type(key)}), Value='{value}' (Type: {type(value)})"
+                            )
+                    manual_prices = valid_data
+                    logging.info(
+                        f"Loaded {len(manual_prices)} valid entries from {MANUAL_PRICE_FILE}."
+                    )
+                    if invalid_count > 0:
+                        logging.warning(
+                            f"Skipped {invalid_count} invalid entries from {MANUAL_PRICE_FILE}."
+                        )
+                else:
+                    logging.warning(
+                        f"Warn: Content of {MANUAL_PRICE_FILE} is not a dictionary. Ignoring."
+                    )
+            except json.JSONDecodeError as e:
+                logging.error(
+                    f"Error decoding JSON from {MANUAL_PRICE_FILE}: {e}. Ignoring."
+                )
+            except Exception as e:
+                logging.error(f"Error reading {MANUAL_PRICE_FILE}: {e}. Ignoring.")
+        else:
+            logging.info(
+                f"{MANUAL_PRICE_FILE} not found. Manual prices will not be used initially."
+            )
+        return manual_prices
+
     # --- Helper to create summary items (moved from initUI) ---
     def create_summary_item(self, label_text, is_large=False):
         """
@@ -3118,6 +3507,10 @@ class PortfolioApp(QMainWindow):
 
         # --- Configuration Loading ---
         self.config = self.load_config()
+
+        # --- Load Manual Prices ---
+        self.manual_prices_dict = self._load_manual_prices()  # Load manual_prices.json
+
         self.transactions_file = self.config.get("transactions_file", DEFAULT_CSV)
         self.fmp_api_key = self.config.get(
             "fmp_api_key", DEFAULT_API_KEY
@@ -5680,6 +6073,7 @@ class PortfolioApp(QMainWindow):
             historical_fn=calculate_historical_performance,
             historical_args=historical_args,
             historical_kwargs=historical_kwargs,
+            manual_prices_dict=self.manual_prices_dict,
         )
         worker.signals.result.connect(self.handle_results)
         worker.signals.error.connect(self.handle_error)

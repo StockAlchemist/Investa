@@ -3762,6 +3762,7 @@ def calculate_portfolio_summary(
     default_currency: str = "USD",  # Default for signature
     cache_file_path: str = DEFAULT_CURRENT_CACHE_FILE_PATH,
     include_accounts: Optional[List[str]] = None,
+    manual_prices_dict: Optional[Dict[str, float]] = None,
 ) -> Tuple[
     Optional[Dict[str, Any]],
     Optional[pd.DataFrame],
@@ -3925,38 +3926,10 @@ def calculate_portfolio_summary(
             f"{final_status} ({msg})",
         )
 
-    # --- ADD Manual Price Loading ---
-    MANUAL_PRICE_FILE = "manual_prices.json"  # Define filename
-    manual_prices_dict = {}
-    try:
-        if os.path.exists(MANUAL_PRICE_FILE):
-            with open(MANUAL_PRICE_FILE, "r") as f:
-                manual_prices_dict = json.load(f)
-            if isinstance(manual_prices_dict, dict):
-                logging.info(
-                    f"Loaded {len(manual_prices_dict)} entries from {MANUAL_PRICE_FILE}"
-                )
-                # Optional: Validate content further (e.g., check if values are numbers)
-            else:
-                logging.warning(
-                    f"Warning: Content of {MANUAL_PRICE_FILE} is not a valid dictionary. Ignoring."
-                )
-                manual_prices_dict = {}
-        else:
-            logging.info(
-                f"{MANUAL_PRICE_FILE} not found. Manual prices will not be used."
-            )
-    except json.JSONDecodeError as e:
-        logging.error(
-            f"Error decoding JSON from {MANUAL_PRICE_FILE}: {e}. Ignoring manual prices."
-        )
-        manual_prices_dict = {}
-    except Exception as e:
-        logging.error(
-            f"Error reading {MANUAL_PRICE_FILE}: {e}. Ignoring manual prices."
-        )
-        manual_prices_dict = {}
-    # --- END Manual Price Loading --
+    # Use the passed-in manual_prices_dict, default to empty if None
+    manual_prices_effective = (
+        manual_prices_dict if manual_prices_dict is not None else {}
+    )
 
     # --- 3. Process Stock/ETF Transactions ---
     holdings, _, _, _, ignored_indices_proc, ignored_reasons_proc, warn_proc = (
@@ -4068,7 +4041,7 @@ def calculate_portfolio_summary(
         report_date=report_date,
         shortable_symbols=SHORTABLE_SYMBOLS,
         excluded_symbols=YFINANCE_EXCLUDED_SYMBOLS,
-        manual_prices_dict=manual_prices_dict,
+        manual_prices_dict=manual_prices_effective,  # <-- PASS IT HERE
     )
     if err_build:
         has_errors = True  # Update overall flag
