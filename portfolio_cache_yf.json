@@ -1,477 +1,321 @@
 {
-    "timestamp": "2025-04-28T20:57:32.535264",
+    "timestamp": "2025-04-29T22:49:06.207330",
     "stock_data_internal": {
-        "RIMM": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "BEM:BKK": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "SCBRMS&P500": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "GENCO:BKK": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "BBW": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "ES-TRESURY": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "NOK:BKK": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "SCBRMS50": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "UOBCG": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "ES-SET50": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "DSV": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "BANPU:BKK": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "SCC:BKK": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "AOT:BKK": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "AMARIN:BKK": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "ADRE": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "IDBOX": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "IDMOX": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "AAUKY": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "PTT:BKK": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "AAV:BKK": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "EMV": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "KRFT": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
+        "SCBRM1": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
         },
         "MBK:BKK": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
         },
-        "SCBSFF": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
+        "UOBCG": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
         },
-        "ES-FIXED_INCOME": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
+        "PTT:BKK": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
         },
-        "UOBBC": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
+        "BEM:BKK": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
         },
         "TCAP:BKK": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "ZEN:BKK": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "THAI:BKK": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "SCBRM1": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "IDLOX": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "BML:BKK": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "ES-JUMBO25": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "TRUE:BKK": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "IDIOX": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
-        },
-        "CPALL:BKK": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
         },
         "CPF:BKK": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
+        },
+        "AAV:BKK": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
+        },
+        "BML:BKK": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
         },
         "SCBRCTECH": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
+        },
+        "AMARIN:BKK": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
+        },
+        "CPALL:BKK": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
+        },
+        "ES-SET50": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
+        },
+        "NOK:BKK": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
+        },
+        "SCBSFF": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
+        },
+        "AOT:BKK": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
+        },
+        "BANPU:BKK": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
+        },
+        "SCC:BKK": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
+        },
+        "GENCO:BKK": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
+        },
+        "UOBBC": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
+        },
+        "ES-TRESURY": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
+        },
+        "ES-FIXED_INCOME": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
         },
         "BECL:BKK": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
+        },
+        "TRUE:BKK": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
+        },
+        "ES-JUMBO25": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
+        },
+        "SCBRMS50": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
+        },
+        "ZEN:BKK": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
+        },
+        "SCBRMS&P500": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
         },
         "ES-GQG": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
         },
         "SCBCHA-SSF": {
-            "price": NaN,
-            "change": NaN,
-            "changesPercentage": NaN,
-            "previousClose": NaN
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
         },
-        "ASML": {
-            "price": 671.58,
-            "change": -3.770691,
-            "changesPercentage": -55.83308,
-            "previousClose": 675.3507
-        },
-        "AMZN": {
-            "price": 188.553,
-            "change": -0.43701172,
-            "changesPercentage": -23.123536,
-            "previousClose": 188.99
-        },
-        "EPP": {
-            "price": 45.16,
-            "change": -0.22000122,
-            "changesPercentage": -48.479775000000004,
-            "previousClose": 45.38
-        },
-        "IBM": {
-            "price": 234.38,
-            "change": 1.9700012,
-            "changesPercentage": 84.764045,
-            "previousClose": 232.41
-        },
-        "VWO": {
-            "price": 44.9333,
-            "change": 0.06330109,
-            "changesPercentage": 14.107664,
-            "previousClose": 44.87
-        },
-        "VDE": {
-            "price": 114.9012,
-            "change": 0.2712021,
-            "changesPercentage": 23.65891,
-            "previousClose": 114.63
-        },
-        "SPY": {
-            "price": 551.187,
-            "change": 0.5469971,
-            "changesPercentage": 9.933842,
-            "previousClose": 550.64
-        },
-        "NVDA": {
-            "price": 108.6796,
-            "change": -2.3303986,
-            "changesPercentage": -209.92690000000002,
-            "previousClose": 111.01
+        "THAI:BKK": {
+            "price": null,
+            "change": null,
+            "changesPercentage": null,
+            "previousClose": null
         },
         "DAL": {
-            "price": 42.5451,
-            "change": 0.96509933,
-            "changesPercentage": 232.02348,
-            "previousClose": 41.58
-        },
-        "NLY": {
-            "price": 19.52,
-            "change": 0.31000137,
-            "changesPercentage": 161.37501,
-            "previousClose": 19.21
-        },
-        "AXP": {
-            "price": 265.755,
-            "change": 0.9450073,
-            "changesPercentage": 35.686240000000005,
-            "previousClose": 264.81
-        },
-        "DPZ": {
-            "price": 482.935,
-            "change": -4.644989,
-            "changesPercentage": -95.266193,
-            "previousClose": 487.58
-        },
-        "EFA": {
-            "price": 84.2323,
-            "change": 0.11229706,
-            "changesPercentage": 13.350785000000002,
-            "previousClose": 84.12
-        },
-        "GS": {
-            "price": 551.0,
-            "change": 6.1400146,
-            "changesPercentage": 112.68977,
-            "previousClose": 544.86
-        },
-        "VGK": {
-            "price": 72.465,
-            "change": 0.10499573,
-            "changesPercentage": 14.510189,
-            "previousClose": 72.36
-        },
-        "BHP": {
-            "price": 48.085,
-            "change": -0.125,
-            "changesPercentage": -25.928232,
-            "previousClose": 48.21
-        },
-        "BND": {
-            "price": 73.14,
-            "change": -0.040000916,
-            "changesPercentage": -5.4660994999999994,
-            "previousClose": 73.18
-        },
-        "VTI": {
-            "price": 271.0307,
-            "change": 0.39068604,
-            "changesPercentage": 14.435634,
-            "previousClose": 270.64
-        },
-        "PLTR": {
-            "price": 113.15,
-            "change": 0.37000275,
-            "changesPercentage": 32.807478,
-            "previousClose": 112.78
-        },
-        "BAC": {
-            "price": 39.89,
-            "change": 0.20000076,
-            "changesPercentage": 50.39072,
-            "previousClose": 39.69
-        },
-        "GOOGL": {
-            "price": 160.77,
-            "change": -1.1900024,
-            "changesPercentage": -73.47508,
-            "previousClose": 161.96
-        },
-        "DIA": {
-            "price": 402.535,
-            "change": 1.5150146,
-            "changesPercentage": 37.779030000000006,
-            "previousClose": 401.02
-        },
-        "C": {
-            "price": 68.89,
-            "change": 0.45999908,
-            "changesPercentage": 67.221844,
-            "previousClose": 68.43
-        },
-        "LQD": {
-            "price": 107.92,
-            "change": -0.069999695,
-            "changesPercentage": -6.4820535,
-            "previousClose": 107.99
-        },
-        "XLE": {
-            "price": 82.53,
-            "change": 0.13999939,
-            "changesPercentage": 16.99228,
-            "previousClose": 82.39
+            "price": 41.86,
+            "change": -0.099998474,
+            "changesPercentage": -23.831858,
+            "previousClose": 41.96
         },
         "VZ": {
-            "price": 42.055,
-            "change": 0.14500046,
-            "changesPercentage": 34.598057999999995,
-            "previousClose": 41.91
+            "price": 42.685,
+            "change": 0.29500198,
+            "changesPercentage": 69.592357,
+            "previousClose": 42.39
         },
-        "JNJ": {
-            "price": 154.45,
-            "change": -0.13000488,
-            "changesPercentage": -8.4102005,
-            "previousClose": 154.58
+        "VTI": {
+            "price": 271.5951,
+            "change": 0.565094,
+            "changesPercentage": 20.849868999999998,
+            "previousClose": 271.03
         },
-        "QSR": {
-            "price": 63.345,
-            "change": 0.4449997,
-            "changesPercentage": 70.747167,
-            "previousClose": 62.9
+        "BAC": {
+            "price": 39.835,
+            "change": 0.055000305,
+            "changesPercentage": 13.82612,
+            "previousClose": 39.78
         },
-        "NKE": {
-            "price": 57.375,
-            "change": -0.24499893,
-            "changesPercentage": -42.519774999999996,
-            "previousClose": 57.62
+        "NVDA": {
+            "price": 109.0071,
+            "change": 0.2770996,
+            "changesPercentage": 25.48511,
+            "previousClose": 108.73
         },
-        "BRK.B": {
-            "price": 536.57,
-            "change": 5.6099854,
-            "changesPercentage": 105.6574,
-            "previousClose": 530.96
+        "GOOGL": {
+            "price": 159.4717,
+            "change": -1.1383057,
+            "changesPercentage": -70.8739,
+            "previousClose": 160.61
         },
-        "CVX": {
-            "price": 139.6,
-            "change": 0.8700104,
-            "changesPercentage": 62.712489999999995,
-            "previousClose": 138.73
+        "BND": {
+            "price": 73.455,
+            "change": 0.09500122,
+            "changesPercentage": 12.950002999999999,
+            "previousClose": 73.36
+        },
+        "IBM": {
+            "price": 238.99,
+            "change": 2.8300018,
+            "changesPercentage": 119.83409,
+            "previousClose": 236.16
+        },
+        "DPZ": {
+            "price": 494.675,
+            "change": 4.034973,
+            "changesPercentage": 82.23897,
+            "previousClose": 490.64
         },
         "AAPL": {
-            "price": 209.575,
-            "change": 0.29499817,
-            "changesPercentage": 14.095859999999998,
-            "previousClose": 209.28
+            "price": 210.81,
+            "change": 0.66999817,
+            "changesPercentage": 31.88342,
+            "previousClose": 210.14
         },
-        "GOOG": {
-            "price": 162.605,
-            "change": -1.2450104,
-            "changesPercentage": -75.984764,
-            "previousClose": 163.85
+        "PLTR": {
+            "price": 114.61,
+            "change": -0.040000916,
+            "changesPercentage": -3.488959,
+            "previousClose": 114.65
         },
-        "BLV": {
-            "price": 69.1194,
-            "change": -0.030601501,
-            "changesPercentage": -4.425379599999999,
-            "previousClose": 69.15
+        "NKE": {
+            "price": 57.3313,
+            "change": 0.021297455,
+            "changesPercentage": 3.7161846,
+            "previousClose": 57.31
+        },
+        "ASML": {
+            "price": 668.13,
+            "change": -4.630005,
+            "changesPercentage": -68.82105,
+            "previousClose": 672.76
         },
         "KO": {
-            "price": 71.68,
-            "change": -0.23000336,
-            "changesPercentage": -31.98489,
-            "previousClose": 71.91
+            "price": 72.265,
+            "change": 0.47499847,
+            "changesPercentage": 66.169596,
+            "previousClose": 71.79
         },
-        "QQQ": {
-            "price": 471.88,
-            "change": -0.6799927,
-            "changesPercentage": -14.389552,
-            "previousClose": 472.56
+        "BRK.B": {
+            "price": 531.995,
+            "change": 1.0549927,
+            "changesPercentage": 19.87028,
+            "previousClose": 530.94
+        },
+        "AXP": {
+            "price": 265.595,
+            "change": 0.644989,
+            "changesPercentage": 24.343799999999998,
+            "previousClose": 264.95
+        },
+        "QSR": {
+            "price": 63.87,
+            "change": 0.25999832,
+            "changesPercentage": 40.873814,
+            "previousClose": 63.61
+        },
+        "BLV": {
+            "price": 69.6429,
+            "change": 0.152901,
+            "changesPercentage": 22.003310000000003,
+            "previousClose": 69.49
+        },
+        "C": {
+            "price": 68.575,
+            "change": 0.29499817,
+            "changesPercentage": 43.204185,
+            "previousClose": 68.28
+        },
+        "GOOG": {
+            "price": 161.3305,
+            "change": -1.0894928,
+            "changesPercentage": -67.07068000000001,
+            "previousClose": 162.42
+        },
+        "AMZN": {
+            "price": 186.645,
+            "change": -1.0549927,
+            "changesPercentage": -56.20632,
+            "previousClose": 187.7
         }
     },
     "fx_rates_vs_usd": {
         "USD": 1.0,
-        "THB": 33.5
+        "THB": 33.44
     }
 }

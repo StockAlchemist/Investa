@@ -2,14 +2,18 @@
     "transactions_file": "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/my_transactions.csv",
     "display_currency": "USD",
     "show_closed": false,
-    "selected_accounts": [],
+    "selected_accounts": [
+        "E*TRADE",
+        "IBKR",
+        "SET"
+    ],
     "load_on_startup": true,
     "fmp_api_key": "wWwpekF6q72Ekd3tf0YRT26hkjHPHoPQ",
     "account_currency_map": {
         "SET": "THB"
     },
     "default_currency": "USD",
-    "graph_start_date": "2009-12-30",
+    "graph_start_date": "2010-01-01",
     "graph_end_date": "2025-04-25",
     "graph_interval": "D",
     "graph_benchmarks": [

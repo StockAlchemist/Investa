@@ -1,0 +1,7 @@
+"Date (MMM DD, YYYY)",Transaction Type,Stock / ETF Symbol,Quantity of Units,Amount per unit,Total Amount, Fees,Investment Account,Split Ratio (new shares per old share),Note
+"Jan 15, 2023",Buy,AAPL,10,150.00,5.00,,IBKR,,Buy AAPL
+"Feb 10, 2023",Deposit,$CASH,50000,,100.00,,SET,,Initial Deposit THB
+"Mar 01, 2023",Sell,MSFT,5,250.00,5.00,,FID,,Sell MSFT
+"Apr 05, 2023",Dividend,AAPL,10,0.50,,,IBKR,,AAPL Dividend
+"Jul 01, 2023",Split,AAPL,,,,,IBKR,2,AAPL 2:1 Split
+"Aug 10, 2023",Fees,$CASH,,,,2.00,IBKR,,Account Fee IBKR
