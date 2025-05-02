@@ -147,6 +147,17 @@ def load_and_clean_transactions(
             has_errors,
             has_warnings,
         )
+    except pd.errors.EmptyDataError:
+        logging.warning(f"Warning: Input CSV file is empty: {transactions_csv_file}")
+        has_warnings = True  # It's a warning, not a critical error
+        return (
+            None,
+            None,  # No original DF either
+            ignored_row_indices,
+            ignored_reasons,
+            has_errors,  # Should still be False here
+            has_warnings,
+        )
     except pd.errors.ParserError as e:
         logging.error(f"Error parsing CSV file {transactions_csv_file}: {e}")
         has_errors = True
@@ -196,8 +207,12 @@ def load_and_clean_transactions(
             has_warnings,
         )
 
-    if transactions_df is None or transactions_df.empty:
-        logging.warning("Warning: Transactions DataFrame is empty after loading.")
+    # If loading failed critically earlier, transactions_df will be None.
+    # An empty DataFrame (e.g., header-only file) should proceed to cleaning.
+    if transactions_df is None:
+        logging.warning(
+            "Warning: Transactions DataFrame is None after loading attempt."
+        )
         has_warnings = True
         return (
             None,
@@ -207,6 +222,18 @@ def load_and_clean_transactions(
             has_errors,
             has_warnings,
         )
+
+    # Check if the DataFrame is empty *after* successful loading (e.g., header only)
+    # This is different from EmptyDataError which means the file itself was empty.
+    if transactions_df is not None and transactions_df.empty:
+        logging.warning(
+            "Warning: CSV loaded successfully but contains no data rows (header only?)."
+        )
+        # Set warning flag, but allow the empty DataFrame to be returned
+        # as it's technically a valid load result.
+        has_warnings = True
+        # We don't return here, let the empty DF proceed through the (no-op) cleaning
+        # and be returned at the end.
 
     try:
         # --- Rename Columns ---
@@ -522,19 +549,8 @@ def load_and_clean_transactions(
                 )
                 transactions_df.drop(valid_indices_to_drop, inplace=True)
 
-        if transactions_df.empty:
-            logging.warning(
-                "Helper WARN: All transactions dropped during cleaning validation."
-            )
-            has_warnings = True
-            return (
-                None,
-                original_transactions_df,
-                ignored_row_indices,
-                ignored_reasons,
-                has_errors,
-                has_warnings,
-            )
+        # If the dataframe is empty at this point (either started empty or all rows dropped),
+        # it's still a valid result (an empty DataFrame), so proceed to sort and return.
 
         # Sort and Return
         transactions_df.sort_values(
