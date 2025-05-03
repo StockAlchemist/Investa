@@ -3,6 +3,7 @@ yf_portfolio_hist_raw_adjusted_*.json
 portfolio_cache_yf.json
 __pycache__/
 coding_plan.txt
+coding_plan_2.rtf
 .pytest_cache/
 .vscode/
 .DS_Store
@@ -12,5 +13,5 @@ __pycache__/portfolio_logic.cpython-312.pyc
 __pycache__/portfolio_logic.cpython-312.pyc
 portfolio_cache_yf.json
 __pycache__/portfolio_logic.cpython-312.pyc
-tests/old_test_portfolio_logic.py
-
+my_transactions_old.csv
+__pycache__/portfolio_logic.cpython-312.pyc

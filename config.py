@@ -166,3 +166,9 @@ SHORTABLE_SYMBOLS = {"AAPL", "RIMM"}  # Used RIMM instead of BB
 
 # --- Default Settings ---
 DEFAULT_CURRENCY = "USD"  # Default currency for calculations if not specified
+
+# --- Calculation Method Configuration ---
+HISTORICAL_CALC_METHOD = "numba"  # Options: 'python', 'numba'
+HISTORICAL_COMPARE_METHODS = (
+    False  # If True, worker runs both methods and logs comparison (for debugging)
+)

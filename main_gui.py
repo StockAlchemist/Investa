@@ -49,7 +49,7 @@ import logging
 
 # --- Configure Logging Globally (as early as possible) ---
 # Set the desired global level here (e.g., logging.INFO, logging.DEBUG)
-LOGGING_LEVEL = logging.DEBUG  # Or logging.DEBUG for more detail
+LOGGING_LEVEL = logging.INFO  # Or logging.DEBUG for more detail
 
 logging.basicConfig(
     level=LOGGING_LEVEL,
