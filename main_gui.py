@@ -43,13 +43,21 @@ import json
 import traceback
 import csv
 import shutil
+
+# --- Add project root to sys.path ---
+# Ensures modules like config, data_loader etc. can be found reliably
+project_root = os.path.dirname(os.path.abspath(__file__))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+# --- End Path Addition ---
+
 from datetime import datetime, date, timedelta
 from typing import Dict, Any, Optional, List, Tuple, Set  # Added Set
 import logging
 
 # --- Configure Logging Globally (as early as possible) ---
 # Set the desired global level here (e.g., logging.INFO, logging.DEBUG)
-LOGGING_LEVEL = logging.INFO  # Or logging.DEBUG for more detail
+LOGGING_LEVEL = logging.DEBUG  # Or logging.DEBUG for more detail
 
 logging.basicConfig(
     level=LOGGING_LEVEL,
@@ -99,6 +107,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
 )
 
+from PySide6.QtWidgets import QProgressBar  # <-- ADDED for progress bar
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QWidget, QLabel
 from PySide6.QtCore import Qt
 from matplotlib.figure import Figure
@@ -189,7 +198,6 @@ try:
         calculate_portfolio_summary,
         CASH_SYMBOL_CSV,
         calculate_historical_performance,
-        load_and_clean_transactions,
     )
 
     # --- ADDED Import for MarketDataProvider ---
@@ -197,6 +205,10 @@ try:
     from finutils import map_to_yf_symbol
 
     LOGIC_AVAILABLE = True
+    # --- ADDED Import from data_loader ---
+    from data_loader import load_and_clean_transactions
+
+    # --- END ADD ---
     MARKET_PROVIDER_AVAILABLE = True  # Assume available if import succeeds
     # Check if the imported function signature actually supports 'exclude_accounts'
     import inspect
@@ -268,6 +280,11 @@ except Exception as import_err:
     class MarketDataProvider:
         def get_index_quotes(self, *args, **kwargs):
             return {}
+
+    # --- ADD Dummy for load_and_clean_transactions ---
+    def load_and_clean_transactions(*args, **kwargs):
+        logging.error("Using dummy load_and_clean_transactions due to import error.")
+        return None, None, set(), {}, True, True  # Return tuple indicating error
 
     def calculate_historical_performance(*args, **kwargs):
         # Remove unexpected arg if present in dummy function call
@@ -409,6 +426,7 @@ class WorkerSignals(QObject):
     """
 
     finished = Signal()
+    progress = Signal(int)  # <-- ADDED: Percentage complete (0-100)
     error = Signal(str)
     # Args: summary_metrics, holdings_df, ignored_df, account_metrics, index_quotes, historical_data_df
     result = Signal(
@@ -442,6 +460,7 @@ class PortfolioCalculatorWorker(QRunnable):
         historical_fn,
         historical_args,
         historical_kwargs,
+        worker_signals: WorkerSignals,  # <-- ADDED: Pass signals objec
         manual_prices_dict,
     ):
         """
@@ -468,7 +487,7 @@ class PortfolioCalculatorWorker(QRunnable):
         # historical_kwargs will contain account_currency_map and default_currency
         self.historical_kwargs = historical_kwargs
         self.manual_prices_dict = manual_prices_dict  # <-- STORE IT
-        self.signals = WorkerSignals()
+        self.signals = worker_signals  # <-- USE PASSED SIGNALS
         self.original_data = pd.DataFrame()
 
     @Slot()
@@ -572,6 +591,9 @@ class PortfolioCalculatorWorker(QRunnable):
                 logging.debug(
                     f"DEBUG Worker: Calling historical_fn with kwargs keys: {list(current_historical_kwargs.keys())}"
                 )
+                current_historical_kwargs["worker_signals"] = (
+                    self.signals
+                )  # <-- PASS SIGNALS DOWN
 
                 hist_df, h_prices_adj, h_fx, hist_status = self.historical_fn(
                     *self.historical_args,
@@ -4702,6 +4724,11 @@ class PortfolioApp(QMainWindow):
         )
         self.yahoo_attribution_label.setObjectName("YahooAttributionLabel")
         self.status_bar.addPermanentWidget(self.yahoo_attribution_label)
+        # --- ADD Progress Bar ---
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setObjectName("StatusBarProgressBar")
+        self.progress_bar.setVisible(False)  # Initially hidden
+        self.status_bar.addPermanentWidget(self.progress_bar)
         # Use the exchange rate label defined in _create_controls_widget
         self.status_bar.addPermanentWidget(self.exchange_rate_display_label)
 
@@ -6825,7 +6852,9 @@ class PortfolioApp(QMainWindow):
         `PortfolioCalculatorWorker`, and starts it in the thread pool. Disables
         UI controls during calculation.
         """
-        # ... (Initial logging and file checks remain the same) ...
+        if self.is_calculating:
+            logging.info("Calculation already in progress. Ignoring refresh request.")
+            return
 
         if not self.transactions_file or not os.path.exists(self.transactions_file):
             QMessageBox.warning(
@@ -6837,7 +6866,7 @@ class PortfolioApp(QMainWindow):
             return
 
         # --- Load original data FIRST and PREPARE INPUTS to get the map ---
-        # (Load/Clean logic remains the same)
+        # Get current account map and default currency from config
         account_map = self.config.get("account_currency_map", {"SET": "THB"})
         def_currency = self.config.get("default_currency", "USD")
         logging.info("Loading original transaction data and preparing inputs...")
@@ -6851,29 +6880,65 @@ class PortfolioApp(QMainWindow):
         ) = load_and_clean_transactions(
             self.transactions_file, account_map, def_currency
         )
-        self.ignored_data = pd.DataFrame()
-        self.temp_ignored_reasons = ignored_reasons_load.copy()
+        self.ignored_data = pd.DataFrame()  # Reset ignored data display
+        self.temp_ignored_reasons = (
+            ignored_reasons_load.copy()
+        )  # Store reasons temporarily
 
         if err_load_orig or all_tx_df_temp is None:
-            # (Error handling remains the same)
             QMessageBox.critical(
                 self, "Load Error", "Failed to load/clean transaction data."
             )
-            self.original_data = pd.DataFrame()
-            self.internal_to_yf_map = {}
-            self.calculation_finished()
-            # (Ignored data handling on error remains the same)
+            self.original_data = (
+                pd.DataFrame()
+            )  # Ensure original data is empty on failure
+            self.internal_to_yf_map = {}  # Clear map on failure
+            self.calculation_finished()  # Re-enable controls etc.
+            # Construct ignored_data from load errors if possible
+            if (
+                ignored_indices_load
+                and orig_df_temp is not None
+                and "original_index" in orig_df_temp.columns
+            ):
+                try:
+                    valid_ignored_indices = {
+                        int(i) for i in ignored_indices_load if pd.notna(i)
+                    }
+                    valid_indices_mask = orig_df_temp["original_index"].isin(
+                        valid_ignored_indices
+                    )
+                    ignored_rows_df = orig_df_temp[valid_indices_mask].copy()
+                    if not ignored_rows_df.empty:
+                        reasons_mapped = (
+                            ignored_rows_df["original_index"]
+                            .map(self.temp_ignored_reasons)
+                            .fillna("Load/Clean Issue")
+                        )
+                        ignored_rows_df["Reason Ignored"] = reasons_mapped
+                        self.ignored_data = ignored_rows_df.sort_values(
+                            by="original_index"
+                        )
+                        if hasattr(self, "view_ignored_button"):
+                            self.view_ignored_button.setEnabled(True)
+                except Exception as e_ignored_err:
+                    logging.error(
+                        f"Error constructing ignored_data after load failure: {e_ignored_err}"
+                    )
+                    self.ignored_data = pd.DataFrame()
             return
         else:
-            # (Storing original_data and initial ignored_data remains the same)
+            # Store original data on successful load
             self.original_data = (
                 orig_df_temp.copy() if orig_df_temp is not None else pd.DataFrame()
             )
+            # Ensure original_index exists
             if (
                 "original_index" not in self.original_data.columns
                 and not self.original_data.empty
             ):
                 self.original_data["original_index"] = self.original_data.index
+
+            # Construct initial ignored_data from load/clean phase
             if ignored_indices_load and not self.original_data.empty:
                 try:
                     valid_ignored_indices = {
@@ -6898,22 +6963,44 @@ class PortfolioApp(QMainWindow):
                         f"Error constructing initial ignored_data: {e_ignored_init}"
                     )
                     self.ignored_data = pd.DataFrame()
+            else:
+                self.ignored_data = pd.DataFrame()  # Ensure empty if no ignored indices
 
-            # (Generating internal_to_yf_map remains the same)
+            # Generate internal_to_yf_map based on the successfully loaded transactions
             try:
+                # Update available accounts list based on the loaded data
                 current_available_accounts = (
                     list(all_tx_df_temp["Account"].unique())
                     if "Account" in all_tx_df_temp
                     else []
                 )
+                self.available_accounts = sorted(current_available_accounts)
+                self._update_account_button_text()  # Update button now that accounts are known
+
+                # Validate selected accounts against the newly available ones
                 valid_selected_accounts = [
                     acc
                     for acc in self.selected_accounts
-                    if acc in current_available_accounts
+                    if acc in self.available_accounts
                 ]
+                if len(valid_selected_accounts) != len(self.selected_accounts):
+                    logging.warning(
+                        "Some selected accounts were not found in the loaded data. Adjusting selection."
+                    )
+                    self.selected_accounts = valid_selected_accounts
+                    # If selection becomes empty, default back to all
+                    if not self.selected_accounts and self.available_accounts:
+                        self.selected_accounts = []  # Represent "All" as empty list
+                        logging.info(
+                            "Selection became empty after validation, defaulting to all accounts."
+                        )
+                    self._update_account_button_text()  # Update button again if selection changed
+
+                # Determine effective transactions based on current selection
                 selected_accounts_for_logic = (
-                    valid_selected_accounts if valid_selected_accounts else None
-                )
+                    self.selected_accounts if self.selected_accounts else None
+                )  # None means all
+
                 transactions_df_effective = (
                     all_tx_df_temp[
                         all_tx_df_temp["Account"].isin(selected_accounts_for_logic)
@@ -6921,6 +7008,7 @@ class PortfolioApp(QMainWindow):
                     if selected_accounts_for_logic
                     else all_tx_df_temp.copy()
                 )
+
                 if not transactions_df_effective.empty:
                     all_symbols_internal = list(
                         set(transactions_df_effective["Symbol"].unique())
@@ -6949,7 +7037,6 @@ class PortfolioApp(QMainWindow):
                 self.internal_to_yf_map = {}
 
         # --- Continue with worker setup ---
-        # (Setting status, disabling controls, getting UI values remains the same)
         self.is_calculating = True
         now_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
         self.status_label.setText(f"Refreshing data... ({now_str})")
@@ -6962,26 +7049,34 @@ class PortfolioApp(QMainWindow):
         selected_benchmarks_list = self.selected_benchmarks
         api_key = self.fmp_api_key
 
+        # Use the validated selected_accounts (or None for all)
         selected_accounts_for_worker = (
             self.selected_accounts if self.selected_accounts else None
         )
-        if start_date >= end_date:  # Date check remains
+
+        if start_date >= end_date:
             QMessageBox.warning(
                 self, "Invalid Date Range", "Graph start date must be before end date."
             )
             self.calculation_finished()
             return
-        if not selected_benchmarks_list:  # Benchmark check remains
+        if not selected_benchmarks_list:
             selected_benchmarks_list = DEFAULT_GRAPH_BENCHMARKS
             logging.warning(
                 f"No benchmarks selected, using default: {selected_benchmarks_list}"
             )
 
-        accounts_to_exclude = []  # Exclusion logic remains the same
+        # Determine accounts to exclude for historical calc if supported
+        accounts_to_exclude = []
         if HISTORICAL_FN_SUPPORTS_EXCLUDE:
-            pass
+            if selected_accounts_for_worker:  # If specific accounts are included
+                accounts_to_exclude = [
+                    acc
+                    for acc in self.available_accounts
+                    if acc not in selected_accounts_for_worker
+                ]
+            # If selected_accounts_for_worker is None (all included), then exclude list remains empty
 
-        # (Logging remains the same)
         logging.info(f"Starting calculation & data fetch:")
         logging.info(
             f"File='{os.path.basename(self.transactions_file)}', Currency='{display_currency}', ShowClosed={show_closed}, SelectedAccounts={selected_accounts_for_worker if selected_accounts_for_worker else 'All'}"
@@ -7004,8 +7099,8 @@ class PortfolioApp(QMainWindow):
             "show_closed_positions": show_closed,
             "account_currency_map": account_map,
             "default_currency": def_currency,
-            "cache_file_path": "portfolio_cache_yf.json",
-            "fmp_api_key": api_key,
+            "cache_file_path": "portfolio_cache_yf.json",  # Pass current cache path
+            "fmp_api_key": api_key,  # Pass API key (though likely unused)
             "include_accounts": selected_accounts_for_worker,
             # manual_prices_dict passed directly below
         }
@@ -7022,9 +7117,14 @@ class PortfolioApp(QMainWindow):
             "use_raw_data_cache": True,
             "use_daily_results_cache": True,
             "include_accounts": selected_accounts_for_worker,
+            # worker_signals passed directly below
         }
+        # Add exclude_accounts only if supported by the function
         if HISTORICAL_FN_SUPPORTS_EXCLUDE:
             historical_kwargs["exclude_accounts"] = accounts_to_exclude
+
+        # --- Create signals object FIRST ---
+        worker_signals = WorkerSignals()
 
         # --- Instantiate worker WITHOUT index_fn ---
         worker = PortfolioCalculatorWorker(
@@ -7032,17 +7132,23 @@ class PortfolioApp(QMainWindow):
             portfolio_args=portfolio_args,
             portfolio_kwargs=portfolio_kwargs,
             # index_fn=fetch_index_quotes_yfinance, <-- REMOVED
-            historical_fn=calculate_historical_performance,
+            historical_fn=calculate_historical_performance,  # type: ignore
             historical_args=historical_args,
             historical_kwargs=historical_kwargs,
+            worker_signals=worker_signals,  # <-- PASS THE CREATED SIGNALS OBJECT
             manual_prices_dict=self.manual_prices_dict,
         )
         # --- END MODIFICATION ---
 
-        # (Connecting signals and starting worker remains the same)
-        worker.signals.result.connect(self.handle_results)
-        worker.signals.error.connect(self.handle_error)
-        worker.signals.finished.connect(self.calculation_finished)
+        # --- Connect signals using the created signals object ---
+        worker_signals.result.connect(self.handle_results)
+        worker_signals.error.connect(self.handle_error)
+        worker_signals.progress.connect(self.update_progress)
+        worker_signals.finished.connect(
+            self.calculation_finished
+        )  # Connect finished from the signals object
+        # --- END Connect signals ---
+
         self.threadpool.start(worker)
 
     # --- Control Enabling/Disabling ---
@@ -7374,6 +7480,23 @@ class PortfolioApp(QMainWindow):
                 self.status_label.setText(f"Finished ({now_str}): {cleaned_status}")
         else:
             self.status_label.setText("Finished (Status Unknown)")
+
+        # --- Hide progress bar on finish ---
+        if hasattr(self, "progress_bar"):
+            self.progress_bar.setVisible(False)
+
+    @Slot(int)
+    def update_progress(self, percent):
+        """Updates the progress bar and status label."""
+        if not hasattr(self, "progress_bar"):
+            return
+
+        if not self.progress_bar.isVisible():
+            self.progress_bar.setVisible(True)
+
+        self.progress_bar.setValue(percent)
+        # Optionally update status label too
+        self.status_label.setText(f"Calculating historical data... {percent}%")
 
     # --- Transaction Dialog Methods ---
     @Slot()

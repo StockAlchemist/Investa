@@ -15,3 +15,5 @@ portfolio_cache_yf.json
 __pycache__/portfolio_logic.cpython-312.pyc
 my_transactions_old.csv
 __pycache__/portfolio_logic.cpython-312.pyc
+numba_report.html
+portfolio_logic.py.lprof

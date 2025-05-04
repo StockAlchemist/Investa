@@ -37,6 +37,20 @@ import hashlib
 import logging
 import numba  # <-- ADD
 
+# --- ADDED: Import line_profiler if available, otherwise create dummy decorator ---
+try:
+    # This is primarily for type hinting and making the code runnable without kernprof
+    # The actual profiling happens when run via kernprof
+    # If line_profiler is not installed, the @profile decorator will be a no-op
+    from line_profiler import profile
+except ImportError:
+
+    def profile(func):
+        return func  # No-op decorator if line_profiler not installed
+
+
+# --- END ADDED ---
+
 # --- Configure Logging ---
 # Assumes logging is configured elsewhere (e.g., main_gui.py or config.py)
 # If running standalone, uncomment and configure basicConfig here.
@@ -1207,7 +1221,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
 
 
 # --- START NUMBA HELPER FUNCTION ---
-@numba.jit(nopython=True, fastmath=True)
+@numba.jit(nopython=True, fastmath=True)  # <-- PUT nopython=True BACK
 def _calculate_holdings_numba(
     target_date_ordinal,  # int: date.toordinal()
     tx_dates_ordinal_np,  # int64 array: date.toordinal()
@@ -1293,7 +1307,7 @@ def _calculate_holdings_numba(
             holdings_currency_np[symbol_id, account_id] = currency_id
         # Optional: Check for currency mismatch if already set (more complex in Numba)
 
-        # --- Split Logic ---
+        # --- TEMPORARILY COMMENTED OUT SPLIT LOGIC ---
         if type_id == split_type_id or type_id == stock_split_type_id:
             if split_ratio > 1e-9:
                 # Apply split to ALL accounts holding this symbol_id
@@ -1329,8 +1343,9 @@ def _calculate_holdings_numba(
                     symbol_id, account_id
                 ] += commission  # Or handle separately if needed
             continue  # Move to next transaction
+        # --- END TEMP COMMENT ---
 
-        # --- Shorting Logic ---
+        # --- TEMPORARILY COMMENTED OUT SHORTING LOGIC ---
         is_shortable_flag = False
         for short_id in shortable_symbol_ids:
             if symbol_id == short_id:
@@ -1394,6 +1409,7 @@ def _calculate_holdings_numba(
                     )
 
             continue  # Skip standard buy/sell
+        # --- END TEMP COMMENT ---
 
         # --- Standard Buy/Sell/Deposit/Withdrawal ---
         if type_id == buy_type_id or type_id == deposit_type_id:
@@ -1449,6 +1465,7 @@ def _calculate_holdings_numba(
 # --- END NUMBA HELPER FUNCTION ---
 
 
+@profile  # <-- ADD THIS DECORATOR FOR LINE_PROFILER
 def _calculate_portfolio_value_at_date_unadjusted_numba(
     target_date: date,
     transactions_df: pd.DataFrame,
@@ -2214,7 +2231,9 @@ def _prepare_historical_inputs(
         cache_key_hash = hashlib.sha256(daily_results_cache_key.encode()).hexdigest()[
             :16
         ]
-        daily_results_cache_file = f"{daily_cache_prefix}_{cache_key_hash}.json"
+        # --- CHANGE: Use .feather extension ---
+        daily_results_cache_file = f"{daily_cache_prefix}_{cache_key_hash}.feather"
+        # --- END CHANGE ---
     except Exception as e_key:
         logging.warning(
             f"Hist Prep WARN: Could not generate daily results cache key/filename: {e_key}."
@@ -2246,6 +2265,8 @@ def _load_or_calculate_daily_results(
     use_daily_results_cache: bool,
     daily_results_cache_file: Optional[str],
     daily_results_cache_key: Optional[str],
+    worker_signals: Optional[Any],  # <-- ADDED: For progress reporting
+    transactions_csv_file: str,  # <-- ADDED: Need path for mtime check
     start_date: date,
     end_date: date,
     transactions_df_effective: pd.DataFrame,
@@ -2285,6 +2306,8 @@ def _load_or_calculate_daily_results(
         use_daily_results_cache (bool): Whether to use the daily results cache.
         daily_results_cache_file (Optional[str]): Path to the daily results cache file.
         daily_results_cache_key (Optional[str]): Validation key for the daily results cache.
+        worker_signals (Optional[Any]): The signals object from the GUI worker (or None).
+        transactions_csv_file (str): Path to the source transactions CSV file (for mtime check).
         start_date (date): Start date of the analysis period.
         end_date (date): End date of the analysis period.
         transactions_df_effective (pd.DataFrame): Filtered transactions for the scope.
@@ -2318,73 +2341,105 @@ def _load_or_calculate_daily_results(
     cache_valid_daily_results = False
     status_update = ""
 
+    # --- ADDED: Define metadata filename ---
+    metadata_cache_file = None
+    if daily_results_cache_file:
+        metadata_cache_file = daily_results_cache_file.replace(".feather", ".meta.json")
+    # --- END ADDED ---
+
     if use_daily_results_cache and daily_results_cache_file and daily_results_cache_key:
-        if os.path.exists(daily_results_cache_file):
+        # --- MODIFIED: Check for both feather and metadata files ---
+        if (
+            os.path.exists(daily_results_cache_file)
+            and metadata_cache_file
+            and os.path.exists(metadata_cache_file)
+        ):
             logging.info(
-                f"Hist Daily (Scope: {filter_desc}): Found daily cache file. Checking key..."
+                f"Hist Daily (Scope: {filter_desc}): Found daily cache files (.feather & .meta.json). Validating..."
             )
             try:
-                with open(daily_results_cache_file, "r") as f:
-                    cached_daily_data = json.load(f)
-                if cached_daily_data.get("cache_key") == daily_results_cache_key:
-                    logging.info(
-                        f"Hist Daily (Scope: {filter_desc}): Cache MATCH. Loading..."
+                # --- ADDED: Load metadata and perform validation ---
+                with open(metadata_cache_file, "r") as f_meta:
+                    metadata = json.load(f_meta)
+
+                # 1. Check Cache Key
+                if metadata.get("cache_key") != daily_results_cache_key:
+                    logging.warning(
+                        f"Hist WARN (Scope: {filter_desc}): Daily cache key MISMATCH in metadata. Recalculating."
                     )
-                    results_json = cached_daily_data.get("daily_results_json")
-                    if results_json:
-                        try:
-                            daily_df = pd.read_json(
-                                StringIO(results_json), orient="split"
-                            )
-                            if not isinstance(daily_df, pd.DataFrame):
-                                raise ValueError(
-                                    "Loaded daily cache is not a DataFrame."
-                                )
-                            if not isinstance(daily_df.index, pd.DatetimeIndex):
-                                daily_df.index = pd.to_datetime(
-                                    daily_df.index, errors="coerce"
-                                )
-                                daily_df = daily_df[pd.notnull(daily_df.index)]
-                            daily_df.sort_index(inplace=True)
-                            required_cols = [
-                                "value",
-                                "net_flow",
-                                "daily_return",
-                                "daily_gain",
-                            ]
-                            missing_cols = [
-                                c for c in required_cols if c not in daily_df.columns
-                            ]
-                            if not missing_cols and not daily_df.empty:
-                                logging.info(
-                                    f"Hist Daily (Scope: {filter_desc}): Loaded {len(daily_df)} rows from cache."
-                                )
-                                cache_valid_daily_results = True
-                                status_update = " Daily results loaded from cache."
-                            else:
-                                logging.warning(
-                                    f"Hist WARN (Scope: {filter_desc}): Daily cache missing columns ({missing_cols}), empty, or failed validation. Recalculating."
-                                )
-                                daily_df = pd.DataFrame()
-                        except Exception as e_load_df:
-                            logging.warning(
-                                f"Hist WARN (Scope: {filter_desc}): Error deserializing/validating daily cache DF: {e_load_df}. Recalculating."
-                            )
-                            daily_df = pd.DataFrame()
-                    else:
+                    raise ValueError("Cache key mismatch")  # Treat as invalid cache
+
+                # 2. Check Transaction File Modification Time
+                try:
+                    csv_mtime_current = os.path.getmtime(transactions_csv_file)
+                    csv_mtime_cached = metadata.get("csv_mtime")
+                    if csv_mtime_cached is None or csv_mtime_current > csv_mtime_cached:
                         logging.warning(
-                            f"Hist WARN (Scope: {filter_desc}): Daily cache missing result data. Recalculating."
+                            f"Hist WARN (Scope: {filter_desc}): Transactions CSV file modified since cache was created. Recalculating."
                         )
+                        raise ValueError("CSV file modified")  # Treat as invalid cache
+                except OSError as e_mtime:
+                    logging.warning(
+                        f"Hist WARN (Scope: {filter_desc}): Could not get modification time for '{transactions_csv_file}': {e_mtime}. Assuming invalid cache."
+                    )
+                    raise ValueError("CSV mtime check failed")  # Treat as invalid cache
+                # --- END ADDED: Metadata validation ---
+
+                # --- If validation passed, load Feather file ---
+                logging.info(
+                    f"Hist Daily (Scope: {filter_desc}): Cache metadata valid. Loading Feather data..."
+                )
+                # --- CHANGE: Load directly using read_feather ---
+                daily_df = pd.read_feather(daily_results_cache_file)
+                # --- END CHANGE ---
+
+                if not isinstance(daily_df, pd.DataFrame):
+                    raise ValueError("Loaded Feather cache is not a DataFrame.")
+
+                # Feather usually preserves index type, but check just in case
+                if not isinstance(daily_df.index, pd.DatetimeIndex):
+                    daily_df.index = pd.to_datetime(daily_df.index, errors="coerce")
+                    daily_df = daily_df[pd.notnull(daily_df.index)]
+
+                daily_df.sort_index(inplace=True)
+
+                required_cols = [
+                    "value",
+                    "net_flow",
+                    "daily_return",
+                    "daily_gain",
+                ]
+                missing_cols = [c for c in required_cols if c not in daily_df.columns]
+
+                if not missing_cols and not daily_df.empty:
+                    logging.info(
+                        f"Hist Daily (Scope: {filter_desc}): Loaded {len(daily_df)} rows from Feather cache."
+                    )
+                    cache_valid_daily_results = True
+                    status_update = " Daily results loaded from cache."
                 else:
                     logging.warning(
-                        f"Hist WARN (Scope: {filter_desc}): Daily results cache key MISMATCH. Recalculating."
+                        f"Hist WARN (Scope: {filter_desc}): Feather cache missing columns ({missing_cols}), empty, or failed validation. Recalculating."
                     )
-            except Exception as e_load_cache:
+                    daily_df = pd.DataFrame()
+
+            # --- MODIFIED: Catch specific validation errors or general load errors ---
+            except (
+                ValueError,
+                json.JSONDecodeError,
+            ) as e_validate:  # Catch key/mtime mismatch or bad JSON
                 logging.warning(
-                    f"Hist WARN (Scope: {filter_desc}): Error reading daily cache: {e_load_cache}. Recalculating."
+                    f"Hist WARN (Scope: {filter_desc}): Daily cache validation failed: {e_validate}. Recalculating."
+                )
+                daily_df = pd.DataFrame()  # Ensure df is reset
+            except (
+                Exception
+            ) as e_load_cache:  # Catch other errors (Feather load, file IO etc.)
+                logging.warning(
+                    f"Hist WARN (Scope: {filter_desc}): Error reading/validating daily cache: {e_load_cache}. Recalculating."
                 )
         else:
-            logging.info(
+            logging.info(  # Log if either file is missing
                 f"Hist Daily (Scope: {filter_desc}): Daily cache file not found. Calculating."
             )
     elif not use_daily_results_cache:
@@ -2491,6 +2546,10 @@ def _load_or_calculate_daily_results(
                 results_iterator = pool.imap_unordered(
                     partial_worker, all_dates_to_process, chunksize=chunksize
                 )
+                # --- ADDED: Progress Reporting ---
+                total_dates = len(all_dates_to_process)
+                last_reported_percent = -1
+
                 for i, result in enumerate(results_iterator):
                     if i % 100 == 0 and i > 0:
                         logging.info(
@@ -2498,6 +2557,20 @@ def _load_or_calculate_daily_results(
                         )
                     if result:
                         daily_results_list.append(result)
+
+                    # --- Emit progress signal ---
+                    if worker_signals and hasattr(worker_signals, "progress"):
+                        try:
+                            percent_done = int(((i + 1) / total_dates) * 100)
+                            if (
+                                percent_done > last_reported_percent
+                            ):  # Avoid emitting too often
+                                worker_signals.progress.emit(percent_done)
+                                last_reported_percent = percent_done
+                        except Exception as e_prog:
+                            logging.warning(
+                                f"Warning: Failed to emit progress: {e_prog}"
+                            )
                 logging.info(
                     f"  Finished processing all {len(all_dates_to_process)} days."
                 )
@@ -2600,21 +2673,30 @@ def _load_or_calculate_daily_results(
             and not daily_df.empty
         ):
             logging.info(
-                f"Hist Daily (Scope: {filter_desc}): Saving daily results to cache: {daily_results_cache_file}"
+                f"Hist Daily (Scope: {filter_desc}): Saving daily results to cache: {daily_results_cache_file} and {metadata_cache_file}"
             )
-            cache_content = {
-                "cache_key": daily_results_cache_key,
-                "timestamp": datetime.now().isoformat(),
-                "daily_results_json": daily_df.to_json(
-                    orient="split", date_format="iso"
-                ),
-            }
             try:
                 cache_dir = os.path.dirname(daily_results_cache_file)
                 if cache_dir:
                     os.makedirs(cache_dir, exist_ok=True)
-                with open(daily_results_cache_file, "w") as f:
-                    json.dump(cache_content, f, indent=2)
+
+                # --- ADDED: Save metadata file ---
+                try:
+                    csv_mtime_current = os.path.getmtime(transactions_csv_file)
+                except OSError:
+                    csv_mtime_current = None  # Cannot save mtime if file access fails
+                metadata_content = {
+                    "cache_key": daily_results_cache_key,
+                    "cache_timestamp": datetime.now().isoformat(),
+                    "csv_mtime": csv_mtime_current,
+                }
+                with open(metadata_cache_file, "w") as f_meta:
+                    json.dump(metadata_content, f_meta, indent=2)
+                # --- END ADDED ---
+
+                # --- CHANGE: Save directly using to_feather ---
+                daily_df.to_feather(daily_results_cache_file)
+                # --- END CHANGE ---
             except Exception as e_save_cache:
                 logging.warning(
                     f"Hist WARN (Scope: {filter_desc}): Error writing daily cache: {e_save_cache}"
@@ -2853,6 +2935,7 @@ def calculate_historical_performance(
     use_daily_results_cache: bool = True,
     num_processes: Optional[int] = None,
     include_accounts: Optional[List[str]] = None,
+    worker_signals: Optional[Any] = None,  # <-- ADDED: Accept signals object
     exclude_accounts: Optional[List[str]] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], str]:
     """
@@ -2880,6 +2963,8 @@ def calculate_historical_performance(
         use_daily_results_cache (bool): Flag to use cache for calculated daily results.
         num_processes (Optional[int]): Number of parallel processes for daily calculation.
         include_accounts (Optional[List[str]]): Accounts to include (None for all).
+        worker_signals (Optional[Any]): The signals object from the GUI worker (or None).
+        transactions_csv_file (str): Path to the source transactions CSV file.
         exclude_accounts (Optional[List[str]]): Accounts to exclude.
 
     Returns:
@@ -3066,6 +3151,8 @@ def calculate_historical_performance(
         _load_or_calculate_daily_results(
             use_daily_results_cache=use_daily_results_cache,
             daily_results_cache_file=daily_results_cache_file,
+            worker_signals=worker_signals,  # <-- ADDED: Pass signals down
+            transactions_csv_file=transactions_csv_file,  # <-- ADDED: Pass CSV path
             daily_results_cache_key=daily_results_cache_key,
             start_date=start_date,
             end_date=end_date,
@@ -3186,8 +3273,44 @@ def calculate_historical_performance(
     )
 
 
+# --- Helper to generate mappings (Needed for standalone profiling) ---
+def generate_mappings(transactions_df_effective):
+    """Generates string-to-ID mappings based on the effective transaction data."""
+    symbol_to_id, id_to_symbol = {}, {}
+    account_to_id, id_to_account = {}, {}
+    type_to_id = {}
+    currency_to_id, id_to_currency = {}, {}
+    all_symbols = transactions_df_effective["Symbol"].unique()
+    symbol_to_id = {symbol: i for i, symbol in enumerate(all_symbols)}
+    id_to_symbol = {i: symbol for symbol, i in symbol_to_id.items()}
+    all_accounts = transactions_df_effective["Account"].unique()
+    account_to_id = {account: i for i, account in enumerate(all_accounts)}
+    id_to_account = {i: account for account, i in account_to_id.items()}
+    all_types = transactions_df_effective["Type"].unique()
+    type_to_id = {tx_type: i for i, tx_type in enumerate(all_types)}
+    all_currencies = transactions_df_effective["Local Currency"].unique()
+    currency_to_id = {curr: i for i, curr in enumerate(all_currencies)}
+    id_to_currency = {i: curr for curr, i in currency_to_id.items()}
+    # Ensure CASH symbol is included if not present
+    if CASH_SYMBOL_CSV not in symbol_to_id:
+        cash_id = len(symbol_to_id)
+        symbol_to_id[CASH_SYMBOL_CSV] = cash_id
+        id_to_symbol[cash_id] = CASH_SYMBOL_CSV
+    return (
+        symbol_to_id,
+        id_to_symbol,
+        account_to_id,
+        id_to_account,
+        type_to_id,
+        currency_to_id,
+        id_to_currency,
+    )
+
+
 # --- Example Usage (Main block for testing this file directly) ---
 if __name__ == "__main__":
+    # --- END ADDED ---
+
     logging.basicConfig(
         level=LOGGING_LEVEL,
         format="%(asctime)s [%(levelname)-8s] %(module)s:%(lineno)d - %(message)s",
@@ -3276,6 +3399,7 @@ if __name__ == "__main__":
             use_daily_results_cache=test_use_daily_results_cache_flag,
             num_processes=test_num_processes,
             include_accounts=None,
+            worker_signals=None,  # Pass None for standalone test
             exclude_accounts=None,
         )
         end_time_run = time.time()
@@ -3289,4 +3413,139 @@ if __name__ == "__main__":
             logging.info(f"Test 'All Accounts' Result: Empty DataFrame")
 
     logging.info("Finished portfolio_logic.py tests.")
+
+    # --- ADDED: Section for Profiling a Single Date Calculation ---
+    logging.info("\n--- Preparing for Single Date Profiling Run ---")
+    profile_target_date = date(2024, 4, 1)  # Choose a representative recent date
+    profile_display_currency = "USD"
+    profile_csv_file = "my_transactions.csv"
+
+    if not os.path.exists(profile_csv_file):
+        logging.error(
+            f"Cannot profile: Transaction file '{profile_csv_file}' not found."
+        )
+    else:
+        logging.info(f"Profiling target date: {profile_target_date}")
+        # 1. Prepare Inputs (reuse logic from historical test setup)
+        prep_result_profile = _prepare_historical_inputs(
+            transactions_csv_file=profile_csv_file,
+            account_currency_map=test_account_currency_map,  # Use test map
+            default_currency=test_default_currency,  # Use test default
+            include_accounts=None,  # Profile all accounts
+            exclude_accounts=None,
+            start_date=date(2010, 1, 1),  # Need a reasonable start for data fetching
+            end_date=profile_target_date,  # Fetch up to target date
+            benchmark_symbols_yf=[],  # No benchmarks needed for value calc
+            display_currency=profile_display_currency,
+        )
+        (
+            profile_tx_df,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            profile_symbols_yf,
+            profile_fx_pairs_yf,
+            profile_internal_to_yf,
+            profile_yf_to_internal,
+            profile_splits,
+            profile_raw_cache_file,
+            profile_raw_cache_key,
+            _,
+            _,
+            _,
+        ) = prep_result_profile
+
+        if profile_tx_df is not None and not profile_tx_df.empty:
+            # 2. Fetch/Load Data
+            profile_market_provider = MarketDataProvider()
+            profile_prices_adj, _ = profile_market_provider.get_historical_data(
+                symbols_yf=profile_symbols_yf,
+                start_date=date(2010, 1, 1),
+                end_date=profile_target_date,
+                use_cache=True,
+                cache_file=profile_raw_cache_file,
+                cache_key=profile_raw_cache_key,
+            )
+            profile_fx, _ = profile_market_provider.get_historical_fx_rates(
+                fx_pairs_yf=profile_fx_pairs_yf,
+                start_date=date(2010, 1, 1),
+                end_date=profile_target_date,
+                use_cache=True,
+                cache_file=profile_raw_cache_file,
+                cache_key=profile_raw_cache_key,
+            )
+            # 3. Derive Unadjusted Prices
+            profile_prices_unadj = _unadjust_prices(
+                profile_prices_adj, profile_yf_to_internal, profile_splits, set()
+            )
+            # 4. Generate Mappings
+            (
+                prof_sym_id,
+                prof_id_sym,
+                prof_acc_id,
+                prof_id_acc,
+                prof_type_id,
+                prof_curr_id,
+                prof_id_curr,
+            ) = generate_mappings(
+                profile_tx_df
+            )  # Reusing test helper
+
+            # 5. Perform a "warm-up" call to trigger Numba compilation
+            logging.info(
+                f"Calling _calculate_portfolio_value_at_date_unadjusted_numba (WARM-UP) for {profile_target_date}..."
+            )
+            _calculate_portfolio_value_at_date_unadjusted_numba(
+                target_date=profile_target_date,
+                transactions_df=profile_tx_df,
+                historical_prices_yf_unadjusted=profile_prices_unadj,
+                historical_fx_yf=profile_fx,
+                target_currency=profile_display_currency,
+                internal_to_yf_map=profile_internal_to_yf,
+                account_currency_map=test_account_currency_map,  # Use test map
+                default_currency=test_default_currency,  # Use test default
+                processed_warnings=set(),
+                symbol_to_id=prof_sym_id,
+                id_to_symbol=prof_id_sym,
+                account_to_id=prof_acc_id,
+                id_to_account=prof_id_acc,
+                type_to_id=prof_type_id,
+                currency_to_id=prof_curr_id,
+                id_to_currency=prof_id_curr,
+            )
+            logging.info("Warm-up call finished.")
+
+            # 6. Call the function AGAIN - this is the one that will be profiled
+            logging.info(
+                f"Calling _calculate_portfolio_value_at_date_unadjusted_numba (PROFILED) for {profile_target_date}..."
+            )
+            _calculate_portfolio_value_at_date_unadjusted_numba(
+                target_date=profile_target_date,
+                transactions_df=profile_tx_df,
+                historical_prices_yf_unadjusted=profile_prices_unadj,
+                historical_fx_yf=profile_fx,
+                target_currency=profile_display_currency,
+                internal_to_yf_map=profile_internal_to_yf,
+                account_currency_map=test_account_currency_map,  # Use test map
+                default_currency=test_default_currency,  # Use test default
+                processed_warnings=set(),
+                symbol_to_id=prof_sym_id,
+                id_to_symbol=prof_id_sym,
+                account_to_id=prof_acc_id,
+                id_to_account=prof_id_acc,
+                type_to_id=prof_type_id,
+                currency_to_id=prof_curr_id,
+                id_to_currency=prof_id_curr,
+            )
+            logging.info("Profiling call finished.")
+            # --- ADDED: Print Numba type inspection ---
+            # print("\n--- Numba Type Inspection (_calculate_holdings_numba) ---") # Keep commented out for now
+            # _calculate_holdings_numba.inspect_types(pretty=True)
+            # print("--- End Numba Type Inspection ---")
+        else:  # profile_tx_df is None or empty
+            logging.error("Could not prepare data for profiling run.")
+    # --- END ADDED ---
 # --- END OF MODIFIED portfolio_logic.py ---
