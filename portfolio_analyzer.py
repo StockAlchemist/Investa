@@ -1394,3 +1394,79 @@ def _calculate_aggregate_metrics(
         has_errors,
         has_warnings,
     )
+
+
+# --- NEW: Periodic Return Calculation ---
+def calculate_periodic_returns(
+    historical_df: pd.DataFrame, benchmark_symbols: List[str]
+) -> Dict[str, pd.DataFrame]:
+    """
+    Calculates periodic (Weekly, Monthly, Annual) returns from cumulative gain factors.
+
+    Args:
+        historical_df (pd.DataFrame): DataFrame indexed by date, containing cumulative
+            gain columns like 'Portfolio Accumulated Gain' and '{Benchmark} Accumulated Gain'.
+        benchmark_symbols (List[str]): List of benchmark symbols (e.g., ['SPY', 'QQQ'])
+            present in the historical_df columns.
+
+    Returns:
+        Dict[str, pd.DataFrame]: A dictionary where keys are interval codes ('W', 'M', 'Y')
+            and values are DataFrames containing the periodic returns for that interval.
+            Returns empty dict if input is invalid.
+    """
+    periodic_returns = {}
+    if not isinstance(historical_df, pd.DataFrame) or historical_df.empty:
+        logging.warning("Cannot calculate periodic returns: Input DataFrame is empty.")
+        return periodic_returns
+
+    # Ensure index is DatetimeIndex
+    if not isinstance(historical_df.index, pd.DatetimeIndex):
+        try:
+            historical_df.index = pd.to_datetime(historical_df.index)
+        except Exception as e:
+            logging.error(f"Error converting index to DatetimeIndex: {e}")
+            return periodic_returns
+
+    # Identify relevant columns
+    portfolio_col = "Portfolio Accumulated Gain"
+    benchmark_cols = [f"{b} Accumulated Gain" for b in benchmark_symbols]
+    all_gain_cols = [portfolio_col] + benchmark_cols
+    valid_gain_cols = [col for col in all_gain_cols if col in historical_df.columns]
+
+    if not valid_gain_cols:
+        logging.warning(
+            "Cannot calculate periodic returns: No valid accumulated gain columns found."
+        )
+        return periodic_returns
+
+    # Define intervals and corresponding pandas frequency codes
+    intervals = {"W": "W-FRI", "M": "ME", "Y": "YE"}
+
+    for interval_key, freq_code in intervals.items():
+        try:
+            # Resample to get the *last* value within each period
+            resampled_factors = (
+                historical_df[valid_gain_cols].resample(freq_code).last()
+            )
+
+            # Calculate period return: (End Factor / Previous End Factor) - 1
+            # Use pct_change() which does this calculation efficiently
+            period_returns_df = (
+                resampled_factors.pct_change() * 100.0
+            )  # Multiply by 100 for percentage
+
+            # Rename columns for clarity (optional)
+            period_returns_df.columns = [
+                col.replace(" Accumulated Gain", f" {interval_key}-Return")
+                for col in period_returns_df.columns
+            ]
+
+            periodic_returns[interval_key] = period_returns_df.dropna(
+                how="all"
+            )  # Drop rows where all returns are NaN
+
+        except Exception as e:
+            logging.error(f"Error calculating {interval_key} periodic returns: {e}")
+            periodic_returns[interval_key] = pd.DataFrame()  # Add empty df on error
+
+    return periodic_returns

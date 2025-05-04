@@ -57,7 +57,7 @@ import logging
 
 # --- Configure Logging Globally (as early as possible) ---
 # Set the desired global level here (e.g., logging.INFO, logging.DEBUG)
-LOGGING_LEVEL = logging.DEBUG  # Or logging.DEBUG for more detail
+LOGGING_LEVEL = logging.WARNING  # Or logging.DEBUG for more detail
 
 logging.basicConfig(
     level=LOGGING_LEVEL,
@@ -208,6 +208,11 @@ try:
     # --- ADDED Import from data_loader ---
     from data_loader import load_and_clean_transactions
 
+    # --- ADDED Import from portfolio_analyzer ---
+    from portfolio_analyzer import (
+        calculate_periodic_returns,
+    )  # Add the new function
+
     # --- END ADD ---
     MARKET_PROVIDER_AVAILABLE = True  # Assume available if import succeeds
     # Check if the imported function signature actually supports 'exclude_accounts'
@@ -285,6 +290,11 @@ except Exception as import_err:
     def load_and_clean_transactions(*args, **kwargs):
         logging.error("Using dummy load_and_clean_transactions due to import error.")
         return None, None, set(), {}, True, True  # Return tuple indicating error
+
+    # --- ADD Dummy for calculate_periodic_returns ---
+    def calculate_periodic_returns(*args, **kwargs):
+        logging.error("Using dummy calculate_periodic_returns due to import error.")
+        return {}  # Return empty dict
 
     def calculate_historical_performance(*args, **kwargs):
         # Remove unexpected arg if present in dummy function call
@@ -4317,15 +4327,25 @@ class PortfolioApp(QMainWindow):
         self.summary_and_graphs_frame = QFrame()
         self.summary_and_graphs_frame.setObjectName("SummaryAndGraphsFrame")
         self.content_frame = QFrame()
+        # --- ADD Bar Charts Frame ---
+        self.bar_charts_frame = QFrame()
+        self.bar_charts_frame.setObjectName("BarChartsFrame")
+        self.bar_charts_frame.setVisible(False)  # Initially hidden until data is ready
+        # --- END ADD ---
         self.content_frame.setObjectName("ContentFrame")
 
         # Add frames to main layout
         main_layout.addWidget(self.header_frame)
         main_layout.addWidget(self.controls_frame)
-        main_layout.addWidget(self.summary_and_graphs_frame)
         main_layout.addWidget(
-            self.content_frame, 1
-        )  # Content frame takes remaining space
+            self.summary_and_graphs_frame, 2.5
+        )  # Add summary/graphs frame with stretch 1
+        main_layout.addWidget(
+            self.bar_charts_frame, 1.5
+        )  # Add bar charts frame with stretch 2
+        main_layout.addWidget(
+            self.content_frame, 3  # Add content frame with stretch factor 3
+        )  # Content frame takes more relative space
 
     def _init_ui_widgets(self):
         """Creates and places all UI widgets within their respective frames."""
@@ -4501,7 +4521,7 @@ class PortfolioApp(QMainWindow):
         summary_layout.setColumnStretch(1, 1)
         summary_layout.setColumnStretch(3, 1)
         summary_layout.setRowStretch(5, 1)
-        summary_graphs_layout.addWidget(summary_grid_widget, 1)
+        summary_graphs_layout.addWidget(summary_grid_widget, 9)
 
         # --- Performance Graphs Container (Using QHBoxLayout for side-by-side) ---
         perf_graphs_container_widget = QWidget()
@@ -4574,8 +4594,57 @@ class PortfolioApp(QMainWindow):
         )  # Add right column to main layout
 
         # Add the main performance graphs container to the summary/graphs frame
-        summary_graphs_layout.addWidget(perf_graphs_container_widget, 2)
+        summary_graphs_layout.addWidget(perf_graphs_container_widget, 20)
         # --- End Performance Graphs Container Modification ---
+
+        # --- Bar Charts Frame Setup ---
+        bar_charts_main_layout = QHBoxLayout(self.bar_charts_frame)
+        bar_charts_main_layout.setContentsMargins(10, 5, 10, 5)
+        bar_charts_main_layout.setSpacing(10)
+
+        # Function to create a single bar chart widget
+        def create_bar_chart_widget(
+            title, canvas_attr_name, fig_attr_name, ax_attr_name
+        ):
+            widget = QWidget()
+            layout = QVBoxLayout(widget)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(2)
+
+            title_label = QLabel(f"<b>{title}</b>")
+            title_label.setObjectName("BarChartTitleLabel")
+            title_label.setAlignment(Qt.AlignCenter)
+            layout.addWidget(title_label)
+
+            setattr(
+                self, fig_attr_name, Figure(figsize=(4, 2.5), dpi=CHART_DPI)
+            )  # Smaller figsize
+            fig = getattr(self, fig_attr_name)
+            setattr(self, ax_attr_name, fig.add_subplot(111))
+            setattr(self, canvas_attr_name, FigureCanvas(fig))
+            canvas = getattr(self, canvas_attr_name)
+            canvas.setObjectName(canvas_attr_name)
+            canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            layout.addWidget(canvas, 1)
+            # No toolbar for bar charts for now
+            return widget
+
+        # Create the three bar chart widgets
+        self.annual_bar_widget = create_bar_chart_widget(
+            "Annual Returns", "annual_bar_canvas", "annual_bar_fig", "annual_bar_ax"
+        )
+        self.monthly_bar_widget = create_bar_chart_widget(
+            "Monthly Returns", "monthly_bar_canvas", "monthly_bar_fig", "monthly_bar_ax"
+        )
+        self.weekly_bar_widget = create_bar_chart_widget(
+            "Weekly Returns", "weekly_bar_canvas", "weekly_bar_fig", "weekly_bar_ax"
+        )
+
+        # Add widgets to the layout
+        bar_charts_main_layout.addWidget(self.annual_bar_widget, 1)
+        bar_charts_main_layout.addWidget(self.monthly_bar_widget, 1)
+        bar_charts_main_layout.addWidget(self.weekly_bar_widget, 1)
+        # --- End Bar Charts Frame Setup ---
 
         # --- Content (Pies & Table) ---
         content_layout = QHBoxLayout(self.content_frame)
@@ -4590,12 +4659,14 @@ class PortfolioApp(QMainWindow):
         account_chart_widget = QWidget()
         account_chart_layout = QVBoxLayout(account_chart_widget)
         account_chart_layout.setContentsMargins(0, 0, 0, 0)
-        self.account_pie_title_label = QLabel("<b>Value by Account</b>")
+        self.account_pie_title_label = QLabel(
+            "<b>Value by Account</b>"
+        )  # <-- RESTORED Title
         self.account_pie_title_label.setObjectName("AccountPieTitleLabel")
         self.account_pie_title_label.setTextFormat(Qt.RichText)
         account_chart_layout.addWidget(
             self.account_pie_title_label, alignment=Qt.AlignCenter
-        )
+        )  # <-- RESTORED Title
         self.account_fig = Figure(figsize=PIE_CHART_FIG_SIZE, dpi=CHART_DPI)
         self.account_ax = self.account_fig.add_subplot(111)
         self.account_canvas = FigureCanvas(self.account_fig)
@@ -4611,7 +4682,7 @@ class PortfolioApp(QMainWindow):
         self.holdings_pie_title_label.setTextFormat(Qt.RichText)
         holdings_chart_layout.addWidget(
             self.holdings_pie_title_label, alignment=Qt.AlignCenter
-        )
+        )  # <-- RESTORED Title AddWidget Call
         self.holdings_fig = Figure(figsize=PIE_CHART_FIG_SIZE, dpi=CHART_DPI)
         self.holdings_ax = self.holdings_fig.add_subplot(111)
         self.holdings_canvas = FigureCanvas(self.holdings_fig)
@@ -4702,7 +4773,7 @@ class PortfolioApp(QMainWindow):
         )  # Remove if exists
         # --- END CONTEXT MENU SETUP ---
         table_layout.addWidget(self.table_view, 1)
-        content_layout.addWidget(table_panel, 3)
+        content_layout.addWidget(table_panel, 4)
 
         self.view_ignored_button.clicked.connect(self.show_ignored_log)
         self.manage_transactions_button.clicked.connect(
@@ -5194,7 +5265,7 @@ class PortfolioApp(QMainWindow):
             cmap = plt.get_cmap("Spectral")
             colors = cmap(np.linspace(0, 1, len(values)))
             pie_radius = 0.9
-            label_offset_multiplier = 1.15
+            label_offset_multiplier = 1.1
             VERTICAL_THRESHOLD = 0.15  # Adjust as needed
 
             wedges, _ = self.account_ax.pie(
@@ -5264,7 +5335,11 @@ class PortfolioApp(QMainWindow):
                     color=COLOR_TEXT_DARK,
                 )
 
-        self.account_fig.tight_layout(pad=0.1)
+        # Adjust subplot parameters to make space for labels
+        # Increase left/right margins, decrease top/bottom slightly if needed
+        self.account_fig.subplots_adjust(left=0.15, right=0.85, top=0.92, bottom=0.05)
+        # Remove tight_layout as it can interfere with subplots_adjust and annotations
+        # self.account_fig.tight_layout(pad=0.1)
         self.account_canvas.draw()
 
     def update_holdings_pie_chart(self, df_display):
@@ -5339,7 +5414,7 @@ class PortfolioApp(QMainWindow):
             cmap = plt.get_cmap("Spectral")
             colors = cmap(np.linspace(0.1, 0.9, len(values)))
             pie_radius = 0.9
-            label_offset_multiplier = 1.15
+            label_offset_multiplier = 1.1
             VERTICAL_THRESHOLD = 0.15  # Adjust as needed
 
             wedges, _ = self.holdings_ax.pie(
@@ -5410,7 +5485,11 @@ class PortfolioApp(QMainWindow):
                     color=COLOR_TEXT_DARK,
                 )
 
-        self.holdings_fig.tight_layout(pad=0.1)
+        # Adjust subplot parameters to make space for labels
+        # Increase left/right margins, decrease top/bottom slightly if needed
+        self.holdings_fig.subplots_adjust(left=0.15, right=0.85, top=0.95, bottom=0.05)
+        # Remove tight_layout as it can interfere with subplots_adjust and annotations
+        # self.holdings_fig.tight_layout(pad=0.1)
         self.holdings_canvas.draw()
 
     def update_performance_graphs(self, initial=False):
@@ -5689,7 +5768,7 @@ class PortfolioApp(QMainWindow):
                 tc_color = QCOLOR_GAIN if tpg >= -1e-9 else QCOLOR_LOSS
                 self.perf_return_ax.text(
                     0.02,
-                    0.72,
+                    0.65,
                     tt,
                     transform=self.perf_return_ax.transAxes,
                     fontsize=9,
@@ -7245,6 +7324,8 @@ class PortfolioApp(QMainWindow):
         self.holdings_data = (
             holdings_df if holdings_df is not None else pd.DataFrame()
         )  # Store final holdings df
+        # --- ADDED: Store periodic returns data ---
+        self.periodic_returns_data: Dict[str, pd.DataFrame] = {}
         self.account_metrics_data = account_metrics if account_metrics else {}
         self.index_quote_data = index_quotes if index_quotes else {}
         self.historical_data = (
@@ -7316,6 +7397,21 @@ class PortfolioApp(QMainWindow):
                 traceback.print_exc()  # Log traceback for debugging
                 self.ignored_data = pd.DataFrame()  # Ensure empty on error
         elif combined_ignored_indices:
+            logging.warning(
+                "Ignored indices received, but original_data is missing or empty. Cannot display ignored rows."
+            )
+
+        # --- Calculate Periodic Returns ---
+        if not self.historical_data.empty:
+            logging.info("Calculating periodic returns for bar charts...")
+            self.periodic_returns_data = calculate_periodic_returns(
+                self.historical_data, self.selected_benchmarks
+            )
+            logging.info(
+                f"Periodic returns calculated for intervals: {list(self.periodic_returns_data.keys())}"
+            )
+        else:
+            self.periodic_returns_data = {}  # Clear if no historical data
             logging.warning(
                 "Ignored indices received, but original_data is missing or empty. Cannot display ignored rows."
             )
@@ -7410,6 +7506,11 @@ class PortfolioApp(QMainWindow):
             self._update_fx_rate_display(
                 self.currency_combo.currentText()
             )  # Uses self.summary_metrics_data
+            # --- Make bar charts visible and plot ---
+            self.bar_charts_frame.setVisible(
+                bool(self.periodic_returns_data)
+            )  # Show if data exists
+            self._update_periodic_bar_charts()  # Call the new plotting function
 
         except Exception as ui_update_e:
             logging.error(
@@ -7497,6 +7598,196 @@ class PortfolioApp(QMainWindow):
         self.progress_bar.setValue(percent)
         # Optionally update status label too
         self.status_label.setText(f"Calculating historical data... {percent}%")
+
+    # --- NEW: Bar Chart Plotting Function ---
+    def _update_periodic_bar_charts(self):
+        """Updates the weekly, monthly, and annual return bar charts."""
+        logging.info("Updating periodic return bar charts...")
+
+        intervals_config = {
+            "Y": {
+                "data_key": "Y",
+                "ax": self.annual_bar_ax,
+                "canvas": self.annual_bar_canvas,
+                "title": "Annual Returns",
+                "max_bars": 10,  # Show last 10 years
+                "date_format": "%Y",
+            },
+            "M": {
+                "data_key": "M",
+                "ax": self.monthly_bar_ax,
+                "canvas": self.monthly_bar_canvas,
+                "title": "Monthly Returns",
+                "max_bars": 12,  # Show last 12 months
+                "date_format": "%Y-%m",
+            },
+            "W": {
+                "data_key": "W",
+                "ax": self.weekly_bar_ax,
+                "canvas": self.weekly_bar_canvas,
+                "title": "Weekly Returns",
+                "max_bars": 12,  # Show last 12 weeks
+                "date_format": "%Y-%m-%d",  # Week ending date
+            },
+        }
+
+        # Get portfolio and benchmark column names based on current selection
+        portfolio_return_base = (
+            "Portfolio"  # Base name used in calculate_periodic_returns renaming
+        )
+        benchmark_return_bases = [f"{b}" for b in self.selected_benchmarks]
+
+        for config in intervals_config.values():
+            ax = config["ax"]
+            canvas = config["canvas"]
+            interval_key = config["data_key"]
+            ax.clear()  # Clear previous plot
+
+            returns_df = self.periodic_returns_data.get(interval_key)
+
+            if returns_df is None or returns_df.empty:
+                ax.text(
+                    0.5,
+                    0.5,
+                    "No Data",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                    color=COLOR_TEXT_SECONDARY,
+                )
+                ax.set_title(config["title"], fontsize=9, weight="bold")
+                canvas.draw()
+                continue
+
+            # Select relevant columns and limit bars
+            portfolio_col_name = f"{portfolio_return_base} {interval_key}-Return"
+            benchmark_col_names = [
+                f"{b_base} {interval_key}-Return" for b_base in benchmark_return_bases
+            ]
+            cols_to_plot = [portfolio_col_name] + benchmark_col_names
+            valid_cols = [col for col in cols_to_plot if col in returns_df.columns]
+
+            if not valid_cols:
+                ax.text(
+                    0.5,
+                    0.5,
+                    "No Data",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                    color=COLOR_TEXT_SECONDARY,
+                )
+                ax.set_title(config["title"], fontsize=9, weight="bold")
+                canvas.draw()
+                continue
+
+            plot_data = returns_df[valid_cols].tail(config["max_bars"]).copy()
+
+            # Plotting
+            n_series = len(plot_data.columns)
+            bar_width = 0.8 / n_series  # Adjust width based on number of series
+            index = np.arange(len(plot_data))
+
+            prop_cycle = plt.rcParams["axes.prop_cycle"]
+            # --- Store x-axis labels before clearing ticks ---
+            x_tick_labels = plot_data.index.strftime(config["date_format"])
+            # --- End Store x-axis labels ---
+
+            colors = prop_cycle.by_key()["color"]
+            color_map = {portfolio_col_name: COLOR_ACCENT_TEAL}  # Portfolio color
+            for i, bm_col in enumerate(benchmark_col_names):
+                if bm_col in plot_data.columns:
+                    ci = i % len(colors)
+                    color_map[bm_col] = (
+                        colors[ci]
+                        if colors[ci] != COLOR_ACCENT_TEAL
+                        else colors[(ci + 1) % len(colors)]
+                    )
+
+            for i, col in enumerate(plot_data.columns):
+                offset = (i - (n_series - 1) / 2) * bar_width
+                bars = ax.bar(
+                    index + offset,
+                    plot_data[col].fillna(0.0),
+                    bar_width,
+                    label=col.replace(
+                        f" {interval_key}-Return", ""
+                    ),  # Clean label for legend
+                    color=color_map.get(col, colors[i % len(colors)]),
+                )
+                # Add value labels on top/bottom of bars (optional, can get crowded)
+                # ax.bar_label(bars, fmt='%.1f%%', padding=2, fontsize=6, rotation=90)
+
+            # Formatting
+            # ax.set_ylabel("Return (%)", fontsize=8)
+            # ax.set_title(config["title"], fontsize=9, weight="bold") # <-- REMOVED Title from plot axes
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.yaxis.set_major_formatter(
+                mtick.PercentFormatter(xmax=100.0)
+            )  # Format Y axis as %
+            ax.grid(
+                True, axis="y", linestyle="--", linewidth=0.5, color=COLOR_BORDER_LIGHT
+            )
+            ax.axhline(0, color=COLOR_BORDER_DARK, linewidth=0.6)  # Zero line
+
+            # Legend
+            if (
+                n_series > 1 and interval_key == "Y"
+            ):  # Only show legend for Annual chart
+                ax.legend(
+                    fontsize=7,
+                    loc="lower left",  # Change location to bottom left
+                    bbox_to_anchor=(0, 0),  # Anchor at the bottom left corner
+                    ncol=n_series,
+                )
+
+            # --- Add mplcursors Tooltip ---
+            if MPLCURSORS_AVAILABLE:
+                try:
+                    # Use lambda to capture the correct x_tick_labels for this specific axis
+                    cursor = mplcursors.cursor(
+                        ax.containers, hover=mplcursors.HoverMode.Transient
+                    )  # Use Transient hover
+
+                    @cursor.connect("add")
+                    def on_add_bar(sel, labels=x_tick_labels):  # Capture labels
+                        bar_index = int(sel.index)
+                        series_label = sel.artist.get_label()
+                        if bar_index < len(labels):
+                            period_label = labels[bar_index]
+                        else:
+                            period_label = "Unknown Period"  # Fallback
+
+                        # FIX: Get height from sel.target[1] (y-coordinate) for bars
+                        return_value = sel.target[1]
+                        annotation_text = f"{period_label}\n{series_label}\nReturn: {return_value:+.2f}%"
+
+                        sel.annotation.set_text(annotation_text)
+                        sel.annotation.get_bbox_patch().set(
+                            facecolor="lightyellow", alpha=0.9, edgecolor="gray"
+                        )
+                        sel.annotation.set_fontsize(8)
+
+                except Exception as e_cursor_bar:
+                    logging.error(
+                        f"Error activating mplcursors for {config['title']} bar chart: {e_cursor_bar}"
+                    )
+            # --- End mplcursors ---
+
+            # Style tweaks - Hide all spines (axes lines)
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+            ax.spines["bottom"].set_visible(False)
+            ax.spines["left"].set_visible(False)
+            # ax.tick_params(axis="x", colors=COLOR_TEXT_SECONDARY, labelsize=7)
+            # ax.tick_params(axis="y", colors=COLOR_TEXT_SECONDARY, labelsize=7)
+
+            fig = config["ax"].get_figure()
+            fig.tight_layout(pad=0.5)
+            canvas.draw()
+
+    # --- END NEW FUNCTION ---
 
     # --- Transaction Dialog Methods ---
     @Slot()
