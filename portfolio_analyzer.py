@@ -1414,7 +1414,19 @@ def calculate_periodic_returns(
             and values are DataFrames containing the periodic returns for that interval.
             Returns empty dict if input is invalid.
     """
+    # --- ADDED: Log input ---
+    logging.debug("--- Entering calculate_periodic_returns ---")
+    if not isinstance(historical_df, pd.DataFrame) or historical_df.empty:
+        logging.warning(
+            "Input historical_df is not a valid DataFrame or is empty. Returning empty dict."
+        )
+        return {}
+    logging.debug(f"Input historical_df shape: {historical_df.shape}")
+    logging.debug(f"Input benchmarks: {benchmark_symbols}")
+    # --- END ADDED ---
+
     periodic_returns = {}
+    intervals = {"W": "W-FRI", "M": "ME", "Y": "YE"}  # Use Month End, Year End
     if not isinstance(historical_df, pd.DataFrame) or historical_df.empty:
         logging.warning("Cannot calculate periodic returns: Input DataFrame is empty.")
         return periodic_returns
@@ -1469,4 +1481,9 @@ def calculate_periodic_returns(
             logging.error(f"Error calculating {interval_key} periodic returns: {e}")
             periodic_returns[interval_key] = pd.DataFrame()  # Add empty df on error
 
+    # --- ADDED: Log final result ---
+    logging.debug(
+        f"--- Exiting calculate_periodic_returns. Result keys: {list(periodic_returns.keys())} ---"
+    )
+    # --- END ADDED ---
     return periodic_returns

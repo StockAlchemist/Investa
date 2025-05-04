@@ -57,7 +57,7 @@ import logging
 
 # --- Configure Logging Globally (as early as possible) ---
 # Set the desired global level here (e.g., logging.INFO, logging.DEBUG)
-LOGGING_LEVEL = logging.WARNING  # Or logging.DEBUG for more detail
+LOGGING_LEVEL = logging.DEBUG  # Or logging.DEBUG for more detail
 
 logging.basicConfig(
     level=LOGGING_LEVEL,
@@ -439,16 +439,16 @@ class WorkerSignals(QObject):
     progress = Signal(int)  # <-- ADDED: Percentage complete (0-100)
     error = Signal(str)
     # Args: summary_metrics, holdings_df, ignored_df, account_metrics, index_quotes, historical_data_df
-    result = Signal(
+    result = Signal(  # MODIFIED: 9 arguments
         dict,  # summary_metrics
         pd.DataFrame,  # holdings_df
         dict,  # account_metrics
         dict,  # index_quotes
-        pd.DataFrame,  # historical_data_df (processed)
+        pd.DataFrame,  # full_historical_data_df (FULL daily data with gains)
         dict,  # hist_prices_adj (raw adjusted prices)
         dict,  # hist_fx (raw fx rates)
-        set,  # combined_ignored_indices <-- ADDED
-        dict,  # combined_ignored_reasons <-- ADDED
+        set,  # combined_ignored_indices
+        dict,  # combined_ignored_reasons
     )
 
 
@@ -508,7 +508,10 @@ class PortfolioCalculatorWorker(QRunnable):
         # Removed ignored_df placeholder
         account_metrics = {}
         index_quotes = {}
-        historical_data_df = pd.DataFrame()  # Final processed historical results
+        # historical_data_df = pd.DataFrame() # Removed - we only get full data now
+        full_historical_data_df = (
+            pd.DataFrame()
+        )  # This will hold the full daily data from backend
         # Initialize raw data dicts
         hist_prices_adj = {}
         hist_fx = {}
@@ -605,12 +608,16 @@ class PortfolioCalculatorWorker(QRunnable):
                     self.signals
                 )  # <-- PASS SIGNALS DOWN
 
-                hist_df, h_prices_adj, h_fx, hist_status = self.historical_fn(
+                # MODIFIED: Unpack 4 items (full_daily_df, prices, fx, status)
+                full_hist_df, h_prices_adj, h_fx, hist_status = self.historical_fn(
                     *self.historical_args,
                     **current_historical_kwargs,
                 )
 
-                historical_data_df = hist_df if hist_df is not None else pd.DataFrame()
+                full_historical_data_df = (
+                    full_hist_df if full_hist_df is not None else pd.DataFrame()
+                )  # Store full data
+                # historical_data_df = hist_df if hist_df is not None else pd.DataFrame() # Removed
                 hist_prices_adj = h_prices_adj if h_prices_adj is not None else {}
                 hist_fx = h_fx if h_fx is not None else {}
                 historical_status = (
@@ -633,7 +640,8 @@ class PortfolioCalculatorWorker(QRunnable):
                 )
                 traceback.print_exc()
                 historical_status = f"Error unpack: {ve}"
-                historical_data_df = pd.DataFrame()
+                # historical_data_df = pd.DataFrame() # Removed
+                full_historical_data_df = pd.DataFrame()  # Clear data on error
                 hist_prices_adj = {}
                 hist_fx = {}
             except Exception as hist_e:
@@ -642,7 +650,8 @@ class PortfolioCalculatorWorker(QRunnable):
                 )
                 traceback.print_exc()
                 historical_status = f"Error in Hist. Calc: {hist_e}"
-                historical_data_df = pd.DataFrame()
+                # historical_data_df = pd.DataFrame() # Removed
+                full_historical_data_df = pd.DataFrame()  # Clear data on error
                 hist_prices_adj = {}
                 hist_fx = {}
 
@@ -661,12 +670,12 @@ class PortfolioCalculatorWorker(QRunnable):
             if portfolio_had_error or historical_had_error:
                 self.signals.error.emit(overall_status)
 
-            self.signals.result.emit(
+            self.signals.result.emit(  # MODIFIED: Emit 9 args
                 portfolio_summary_metrics,
                 holdings_df,
                 account_metrics,
                 index_quotes,
-                historical_data_df,
+                full_historical_data_df,  # Emit the full daily data
                 hist_prices_adj,
                 hist_fx,
                 combined_ignored_indices,
@@ -4367,6 +4376,14 @@ class PortfolioApp(QMainWindow):
         controls_layout = QHBoxLayout(self.controls_frame)
         controls_layout.setContentsMargins(10, 8, 10, 8)
         controls_layout.setSpacing(8)
+
+        # Helper function to create a vertical separator
+        def create_separator():
+            separator = QFrame()
+            separator.setFrameShape(QFrame.Shape.VLine)
+            separator.setFrameShadow(QFrame.Shadow.Sunken)
+            return separator
+
         # Buttons
         self.select_file_button = QPushButton("Select CSV")
         self.select_file_button.setObjectName("SelectFileButton")
@@ -4402,6 +4419,10 @@ class PortfolioApp(QMainWindow):
 
         self.add_transaction_button.setToolTip("Manually add a new transaction")
         controls_layout.addWidget(self.add_transaction_button)
+
+        # --- Separator 1 ---
+        controls_layout.addWidget(create_separator())
+
         self.account_select_button = QPushButton("Accounts")
         self.account_select_button.setObjectName("AccountSelectButton")
         self.account_select_button.setMinimumWidth(130)
@@ -4427,6 +4448,10 @@ class PortfolioApp(QMainWindow):
         self.show_closed_check.setObjectName("ShowClosedCheck")
         self.show_closed_check.setChecked(self.config.get("show_closed", False))
         controls_layout.addWidget(self.show_closed_check)
+
+        # --- Separator 2 ---
+        controls_layout.addWidget(create_separator())
+
         # Graph Controls
         controls_layout.addWidget(QLabel("Graphs:"))
         self.graph_start_date_edit = QDateEdit()
@@ -4467,6 +4492,10 @@ class PortfolioApp(QMainWindow):
             "Recalculate and redraw performance graphs."
         )
         controls_layout.addWidget(self.graph_update_button)
+
+        # --- Separator 3 ---
+        controls_layout.addWidget(create_separator())
+
         # Spacer & Right Aligned Controls
         controls_layout.addStretch(1)
         self.exchange_rate_display_label = QLabel("")
@@ -5698,9 +5727,14 @@ class PortfolioApp(QMainWindow):
             else pd.Series(dtype=float)
         )
         val_data_plotted_visible = not vv_vis.empty
-        if val_data_plotted_visible:
+        # FIX: Check for finite values before calculating min/max
+        vv_vis_finite = vv_vis[np.isfinite(vv_vis)]
+        if not vv_vis_finite.empty:
+            min_y_val = min(min_y_val, vv_vis_finite.min())
+            max_y_val = max(max_y_val, vv_vis_finite.max())
             min_y_val = min(min_y_val, vv_vis.min())
             max_y_val = max(max_y_val, vv_vis.max())
+            val_data_plotted_visible = True  # Mark as plotted if finite values exist
 
         logging.debug(
             f"[Graph Update] Visible RETURN Y Range (data): Min={min_y_ret}, Max={max_y_ret}"
@@ -5762,6 +5796,9 @@ class PortfolioApp(QMainWindow):
             self.last_hist_twr_factor
         ):
             try:
+                logging.debug(
+                    f"[Graph Update] Using self.last_hist_twr_factor for annotation: {self.last_hist_twr_factor}"
+                )  # ADDED LOG
                 tfv = float(self.last_hist_twr_factor)
                 tpg = (tfv - 1) * 100.0
                 tt = f"Total TWR: {tpg:+.2f}%"
@@ -5909,7 +5946,8 @@ class PortfolioApp(QMainWindow):
                 # --- SET VALUE Y LIMITS (using VISIBLE range min/max) ---
                 try:
                     if (
-                        np.isfinite(min_y_val)
+                        val_data_plotted_visible  # Check if any valid data was found
+                        and np.isfinite(min_y_val)
                         and np.isfinite(max_y_val)
                         and max_y_val >= min_y_val
                     ):
@@ -7260,20 +7298,20 @@ class PortfolioApp(QMainWindow):
         self.setCursor(Qt.WaitCursor if not enabled else Qt.ArrowCursor)
 
     # --- Signal Handlers from Worker ---
-    @Slot(
+    @Slot(  # MODIFIED: Signature matches WorkerSignals.result (9 args)
         dict, pd.DataFrame, dict, dict, pd.DataFrame, dict, dict, set, dict
-    )  # Signature matches WorkerSignals.result
-    def handle_results(
-        self,
+    )
+    def handle_results(  # MODIFIED: Signature matches Slot decorator (9 args)
+        self,  # Don't forget self!
         summary_metrics,
         holdings_df,  # This is the final holdings df potentially filtered by show_closed
         # Ignored DF constructed from sets/dicts below
         account_metrics,
         index_quotes,
-        historical_data_df,  # Processed historical results
+        full_historical_data_df,  # This is now the FULL daily data with gains
         hist_prices_adj,  # Raw prices used by worker
         hist_fx,  # Raw FX used by worker
-        combined_ignored_indices,  # Indices ignored by load OR process
+        combined_ignored_indices,
         combined_ignored_reasons,  # Reasons for ignoring
     ):
         """
@@ -7288,7 +7326,7 @@ class PortfolioApp(QMainWindow):
             holdings_df (pd.DataFrame): Detailed holdings data for the scope, filtered by show_closed.
             account_metrics (dict): Dictionary of metrics aggregated per account for the scope.
             index_quotes (dict): Fetched data for header indices.
-            historical_data_df (pd.DataFrame): Calculated historical performance data for the scope.
+            full_historical_data_df (pd.DataFrame): Full daily historical data with gains calculated.
             hist_prices_adj (dict): Raw ADJUSTED historical prices used by worker.
             hist_fx (dict): Raw historical FX rates used by worker.
             combined_ignored_indices (set): Set of original indices ignored during load or processing.
@@ -7303,21 +7341,12 @@ class PortfolioApp(QMainWindow):
         self.last_calc_status = f"{portfolio_status} | {historical_status}"
         self.last_hist_twr_factor = np.nan  # Reset TWR factor
 
-        # Parse TWR factor from historical status string
+        # REMOVED: TWR Factor parsing from status string. Will calculate later from filtered data.
         if "|||TWR_FACTOR:" in historical_status:
-            try:
-                twr_part = historical_status.split("|||TWR_FACTOR:")[1]
-                # Handle potential "NaN" string explicitly
-                if twr_part.strip().upper() == "NAN":
-                    self.last_hist_twr_factor = np.nan
-                else:
-                    self.last_hist_twr_factor = float(twr_part)
-            except (IndexError, ValueError, TypeError) as e_twr:
-                logging.warning(
-                    f"Warn: Could not parse TWR factor from status '{historical_status}': {e_twr}"
-                )
-                self.last_hist_twr_factor = np.nan  # Ensure NaN on parse failure
-        logging.info(f"Parsed TWR Factor: {self.last_hist_twr_factor}")
+            # Log the received factor but don't store it globally yet
+            logging.debug(
+                f"Received TWR factor from backend status (ignored): {historical_status.split('|||TWR_FACTOR:')[1]}"
+            )
 
         # --- Store Core Data ---
         self.summary_metrics_data = summary_metrics if summary_metrics else {}
@@ -7328,9 +7357,25 @@ class PortfolioApp(QMainWindow):
         self.periodic_returns_data: Dict[str, pd.DataFrame] = {}
         self.account_metrics_data = account_metrics if account_metrics else {}
         self.index_quote_data = index_quotes if index_quotes else {}
-        self.historical_data = (
-            historical_data_df if historical_data_df is not None else pd.DataFrame()
-        )  # Store final processed historical df
+        # self.historical_data = ... # Removed - will be created later by filtering full data
+
+        # --- ADDED: Store full historical data ---
+        self.full_historical_data = (
+            full_historical_data_df  # This is the full daily data now
+            if full_historical_data_df is not None
+            else pd.DataFrame()
+        )
+        # --- ADDED: Log full_historical_data details ---
+        logging.debug(
+            f"[Handle Results] Assigned self.full_historical_data (Type: {type(self.full_historical_data)})"
+        )
+        if isinstance(self.full_historical_data, pd.DataFrame):
+            logging.debug(f"  Shape: {self.full_historical_data.shape}")
+            if not self.full_historical_data.empty:
+                logging.debug(
+                    f"  Tail:\n{self.full_historical_data.tail().to_string()}"
+                )
+        # --- END ADDED ---
 
         # --- Store Raw Historical Data ---
         self.historical_prices_yf_adjusted = (
@@ -7348,7 +7393,9 @@ class PortfolioApp(QMainWindow):
         self.ignored_data = pd.DataFrame()  # Reset ignored data
         # We need self.original_data which should have been loaded and stored during refresh_data
         if (
-            combined_ignored_indices
+            # Indices are now the 8th arg (index 7)
+            combined_ignored_indices is not None
+            and len(combined_ignored_indices) > 0
             and hasattr(self, "original_data")
             and not self.original_data.empty
         ):
@@ -7360,7 +7407,7 @@ class PortfolioApp(QMainWindow):
                 if "original_index" in self.original_data.columns:
                     # Filter the original DataFrame to get rows matching the ignored indices
                     # Ensure indices are integers if needed, though set should handle mixed types okay
-                    indices_to_check = {
+                    indices_to_check = {  # Use the correct variable
                         int(i) for i in combined_ignored_indices if pd.notna(i)
                     }
                     valid_indices_mask = self.original_data["original_index"].isin(
@@ -7402,21 +7449,235 @@ class PortfolioApp(QMainWindow):
             )
 
         # --- Calculate Periodic Returns ---
-        if not self.historical_data.empty:
+        # --- MODIFIED: Use full_historical_data for periodic returns ---
+        if (
+            isinstance(self.full_historical_data, pd.DataFrame)
+            and not self.full_historical_data.empty
+        ):  # Explicit type check
             logging.info("Calculating periodic returns for bar charts...")
-            self.periodic_returns_data = calculate_periodic_returns(
-                self.historical_data, self.selected_benchmarks
+            # --- ADD TRY-EXCEPT around periodic calculation ---
+            # --- ADDED: Log input to periodic calc ---
+            logging.debug(
+                f"[Handle Results] Calling calculate_periodic_returns with self.full_historical_data:"
             )
-            logging.info(
-                f"Periodic returns calculated for intervals: {list(self.periodic_returns_data.keys())}"
-            )
+            if (
+                isinstance(self.full_historical_data, pd.DataFrame)
+                and not self.full_historical_data.empty
+            ):
+                logging.debug(
+                    f"  Type: {type(self.full_historical_data)}, Shape: {self.full_historical_data.shape}"
+                )
+                logging.debug(
+                    f"  Date Range: {self.full_historical_data.index.min()} to {self.full_historical_data.index.max()}"
+                )
+            # --- END ADDED ---
+
+            try:
+                self.periodic_returns_data = calculate_periodic_returns(
+                    self.full_historical_data, self.selected_benchmarks  # Use full data
+                )
+                logging.info(
+                    f"Periodic returns calculated for intervals: {list(self.periodic_returns_data.keys())}"
+                )
+                # --- ADDED: Log details of periodic_returns_data ---
+                logging.debug("[Handle Results] Details of self.periodic_returns_data:")
+                for key, df_periodic in self.periodic_returns_data.items():
+                    if isinstance(df_periodic, pd.DataFrame):
+                        logging.debug(
+                            f"  Interval '{key}': Shape={df_periodic.shape}, IsEmpty={df_periodic.empty}"
+                        )
+                    else:
+                        logging.debug(f"  Interval '{key}': Type={type(df_periodic)}")
+                # --- ADDED: Log details of periodic_returns_data ---
+                # --- ADD LOGGING for weekly periodic data ---
+                current_interval = (
+                    self.graph_interval_combo.currentText()
+                )  # Get current interval for logging
+                if current_interval == "W":
+                    weekly_periodic_df = self.periodic_returns_data.get("W")
+                    if weekly_periodic_df is None:
+                        logging.warning(
+                            "Periodic returns data does NOT contain 'W' key."
+                        )
+                    elif weekly_periodic_df.empty:
+                        logging.warning("Periodic returns data for 'W' key is EMPTY.")
+                    else:
+                        logging.info(
+                            f"Periodic returns data for 'W' (shape {weekly_periodic_df.shape}):\n{weekly_periodic_df.tail()}"
+                        )  # Show tail for recent weeks
+                # --- ADD LOGGING for monthly periodic data ---
+                elif current_interval == "M":
+                    monthly_periodic_df = self.periodic_returns_data.get("M")
+                    if monthly_periodic_df is None:
+                        logging.warning(
+                            "Periodic returns data does NOT contain 'M' key."
+                        )
+                    elif monthly_periodic_df.empty:
+                        logging.warning("Periodic returns data for 'M' key is EMPTY.")
+                    else:
+                        logging.info(
+                            f"Periodic returns data for 'M' (shape {monthly_periodic_df.shape}):\n{monthly_periodic_df.tail()}"
+                        )  # Show tail for recent months
+                # --- END LOGGING ---
+            except Exception as e_periodic:
+                logging.error(f"ERROR calculating periodic returns: {e_periodic}")
+                traceback.print_exc()
+                self.periodic_returns_data = {}  # Ensure it's empty on error
+            # --- END TRY-EXCEPT ---
         else:
             self.periodic_returns_data = {}  # Clear if no historical data
-            logging.warning(
-                "Ignored indices received, but original_data is missing or empty. Cannot display ignored rows."
-            )
+            # Add more detail to the warning
+            if not isinstance(self.full_historical_data, pd.DataFrame):
+                logging.warning(
+                    f"Cannot calculate periodic returns: full_historical_data is not a DataFrame (Type: {type(self.full_historical_data)})."
+                )
+            else:  # It's a DataFrame but empty
+                logging.warning(
+                    "Cannot calculate periodic returns: full_historical_data is empty."
+                )
 
-        # --- Update Available Accounts & Validate Selection ---
+        # --- ADDED: Filter full data to get data for line graphs ---
+        self.historical_data = pd.DataFrame()  # Initialize filtered data
+        if (
+            isinstance(self.full_historical_data, pd.DataFrame)
+            and not self.full_historical_data.empty
+        ):
+            plot_start_date = self.graph_start_date_edit.date().toPython()
+            plot_end_date = self.graph_end_date_edit.date().toPython()
+            try:
+                pd_start = pd.Timestamp(plot_start_date)
+                pd_end = pd.Timestamp(plot_end_date)
+                # Ensure index is DatetimeIndex and timezone-naive if needed
+                temp_df = self.full_historical_data
+                if not isinstance(temp_df.index, pd.DatetimeIndex):
+                    temp_df.index = pd.to_datetime(temp_df.index)
+                if temp_df.index.tz is not None:
+                    temp_df.index = temp_df.index.tz_localize(None)
+
+                self.historical_data = temp_df.loc[pd_start:pd_end].copy()
+                logging.debug(
+                    f"Filtered self.historical_data for line graphs: {self.historical_data.shape} rows from {plot_start_date} to {plot_end_date}"
+                )
+            except Exception as e_filter_gui:
+                logging.error(
+                    f"Error filtering full historical data in GUI: {e_filter_gui}. Using full data for line graphs."
+                )
+                # Ensure self.historical_data is assigned even on error
+                if isinstance(self.full_historical_data, pd.DataFrame):
+                    self.historical_data = self.full_historical_data.copy()  # Fallback
+                else:
+                    self.historical_data = pd.DataFrame()  # Ensure it's an empty DF
+                self.historical_data = self.full_historical_data.copy()  # Fallback
+        else:
+            logging.warning(
+                "Full historical data is empty or invalid, cannot filter for line graphs."
+            )
+            self.historical_data = pd.DataFrame()  # Ensure empty DF
+
+        # --- ADDED: Normalize Accumulated Gain columns to start at 1 for the filtered period ---
+        if (
+            isinstance(self.historical_data, pd.DataFrame)
+            and not self.historical_data.empty
+        ):
+            logging.debug(
+                "Normalizing Accumulated Gain columns for the filtered period..."
+            )
+            gain_cols = [
+                col for col in self.historical_data.columns if "Accumulated Gain" in col
+            ]
+            for col in gain_cols:
+                try:
+                    # Find the first valid (non-NaN) value in the filtered series
+                    first_valid_value = self.historical_data[col].dropna().iloc[0]
+                    if pd.notna(first_valid_value) and first_valid_value != 0:
+                        logging.debug(
+                            f"  Normalizing '{col}' using start value: {first_valid_value:.4f}"
+                        )
+                        self.historical_data[col] = (
+                            self.historical_data[col] / first_valid_value
+                        )
+                        # Set the very first point (which might have been NaN originally) to 1.0 after normalization
+                        self.historical_data.loc[self.historical_data.index[0], col] = (
+                            1.0
+                        )
+                    else:
+                        logging.warning(
+                            f"  Cannot normalize '{col}', first valid value is zero or NaN."
+                        )
+                        self.historical_data[col] = (
+                            np.nan
+                        )  # Set to NaN if normalization fails
+                except IndexError:
+                    logging.warning(
+                        f"  Cannot normalize '{col}', no valid data points found in the filtered range."
+                    )
+                    self.historical_data[col] = np.nan  # Set to NaN if no data
+                except Exception as e_norm:
+                    logging.error(f"  Error normalizing column '{col}': {e_norm}")
+                    self.historical_data[col] = np.nan  # Set to NaN on error
+
+        # --- ADDED: Calculate TWR Factor from the FILTERED self.historical_data ---
+        self.last_hist_twr_factor = np.nan  # Reset before calculation
+        if (
+            isinstance(self.historical_data, pd.DataFrame)
+            and not self.historical_data.empty
+        ):
+            # Log the filtered data's value column for debugging the value graph
+            if "Portfolio Value" in self.historical_data.columns:
+                logging.debug(
+                    f"  Filtered 'Portfolio Value' head:\n{self.historical_data['Portfolio Value'].head().to_string()}"
+                )
+                logging.debug(
+                    f"  Filtered 'Portfolio Value' tail:\n{self.historical_data['Portfolio Value'].tail().to_string()}"
+                )
+                logging.debug(
+                    f"  Filtered 'Portfolio Value' NaN count: {self.historical_data['Portfolio Value'].isna().sum()}"
+                )
+            else:
+                logging.warning(
+                    "  'Portfolio Value' column missing in filtered self.historical_data."
+                )
+
+            # Calculate TWR from filtered accumulated gain
+            if "Portfolio Accumulated Gain" in self.historical_data.columns:
+                # --- FIX: Calculate PERIOD TWR Factor ---
+                accum_gain_series = self.historical_data[
+                    "Portfolio Accumulated Gain"
+                ].dropna()
+                if len(accum_gain_series) >= 2:  # Need at least two points for a period
+                    start_gain = accum_gain_series.iloc[0]
+                    end_gain = accum_gain_series.iloc[-1]
+                    if pd.notna(start_gain) and pd.notna(end_gain) and start_gain != 0:
+                        logging.debug(
+                            f"  Calculating Period TWR: End Gain={end_gain:.6f}, Start Gain={start_gain:.6f}"
+                        )  # ADDED LOG
+                        period_twr_factor = end_gain / start_gain
+                        self.last_hist_twr_factor = (
+                            period_twr_factor  # Store the period-specific factor
+                        )
+                        logging.info(
+                            f"Calculated PERIOD TWR Factor ({plot_start_date} to {plot_end_date}): {self.last_hist_twr_factor:.6f} (End: {end_gain:.4f} / Start: {start_gain:.4f})"
+                        )
+                    else:
+                        logging.warning(
+                            "Could not calculate period TWR factor due to invalid start/end gain values."
+                        )
+                        self.last_hist_twr_factor = np.nan  # Ensure NaN on failure
+                elif len(accum_gain_series) == 1:
+                    logging.warning(
+                        "Only one data point in filtered range, cannot calculate period TWR."
+                    )
+                    self.last_hist_twr_factor = (
+                        np.nan
+                    )  # Cannot calculate with one point
+                else:  # Series is empty after dropna
+                    logging.info(
+                        f"Calculated TWR Factor from filtered data ({plot_start_date} to {plot_end_date}): {self.last_hist_twr_factor:.6f}"
+                    )
+                    logging.warning("Could not find valid TWR factor in filtered data.")
+                # --- END FIX ---
+
+        # --- Update Available Accounts & Validate Selection --- # (Keep existing logic below)
         # Get available accounts from the overall summary if possible, otherwise re-scan
         available_accounts_from_backend = self.summary_metrics_data.get(
             "_available_accounts"
@@ -7507,10 +7768,39 @@ class PortfolioApp(QMainWindow):
                 self.currency_combo.currentText()
             )  # Uses self.summary_metrics_data
             # --- Make bar charts visible and plot ---
-            self.bar_charts_frame.setVisible(
-                bool(self.periodic_returns_data)
-            )  # Show if data exists
-            self._update_periodic_bar_charts()  # Call the new plotting function
+            # --- MODIFY Visibility Check ---
+            # --- ADDED: Log state right before check ---
+            logging.debug(
+                f"[Handle Results] PRE-CHECK: self.periodic_returns_data is type {type(self.periodic_returns_data)}"
+            )
+            logging.debug(
+                f"[Handle Results] PRE-CHECK: bool(self.periodic_returns_data) = {bool(self.periodic_returns_data)}"
+            )
+            if isinstance(self.periodic_returns_data, dict):
+                logging.debug(
+                    f"[Handle Results] PRE-CHECK: periodic_returns_data keys: {list(self.periodic_returns_data.keys())}"
+                )
+                logging.debug(
+                    f"[Handle Results] PRE-CHECK: any(not df.empty...) = {any(not df.empty for df in self.periodic_returns_data.values() if isinstance(df, pd.DataFrame))}"
+                )
+            # --- END ADDED ---
+            # Check if the dictionary itself is non-empty AND if it contains data for *any* interval
+            bar_charts_have_data = bool(self.periodic_returns_data) and any(
+                not df.empty
+                for df in self.periodic_returns_data.values()
+                if isinstance(df, pd.DataFrame)
+            )
+            logging.debug(
+                f"[Handle Results] Bar charts visibility check: bar_charts_have_data = {bar_charts_have_data}"
+            )  # ADDED LOG
+            self.bar_charts_frame.setVisible(bar_charts_have_data)
+            # --- END MODIFY ---
+            if bar_charts_have_data:  # Only call plot if there's data
+                self._update_periodic_bar_charts()
+            else:
+                logging.info(
+                    "Hiding bar charts frame as no periodic data is available."
+                )
 
         except Exception as ui_update_e:
             logging.error(
@@ -7602,7 +7892,9 @@ class PortfolioApp(QMainWindow):
     # --- NEW: Bar Chart Plotting Function ---
     def _update_periodic_bar_charts(self):
         """Updates the weekly, monthly, and annual return bar charts."""
-        logging.info("Updating periodic return bar charts...")
+        logging.debug(
+            "--- Entering _update_periodic_bar_charts ---"
+        )  # Changed to DEBUG
 
         intervals_config = {
             "Y": {
@@ -7644,6 +7936,16 @@ class PortfolioApp(QMainWindow):
             ax.clear()  # Clear previous plot
 
             returns_df = self.periodic_returns_data.get(interval_key)
+
+            # --- ADDED: Log the DataFrame being used ---
+            logging.debug(f"Plotting interval '{interval_key}':")
+            if isinstance(returns_df, pd.DataFrame):
+                logging.debug(
+                    f"  DataFrame shape: {returns_df.shape}, IsEmpty: {returns_df.empty}"
+                )
+            else:
+                logging.debug(f"  Data is not a DataFrame (Type: {type(returns_df)})")
+            # --- END ADDED ---
 
             if returns_df is None or returns_df.empty:
                 ax.text(
@@ -7737,8 +8039,8 @@ class PortfolioApp(QMainWindow):
             ):  # Only show legend for Annual chart
                 ax.legend(
                     fontsize=7,
-                    loc="lower left",  # Change location to bottom left
-                    bbox_to_anchor=(0, 0),  # Anchor at the bottom left corner
+                    loc="upper left",  # Change location to bottom left
+                    bbox_to_anchor=(0, 1.25),  # Anchor at the bottom left corner
                     ncol=n_series,
                 )
 

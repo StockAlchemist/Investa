@@ -20,9 +20,9 @@
         "TD Ameritrade": "USD"
     },
     "default_currency": "USD",
-    "graph_start_date": "2010-01-01",
+    "graph_start_date": "2024-01-02",
     "graph_end_date": "2025-04-25",
-    "graph_interval": "D",
+    "graph_interval": "W",
     "graph_benchmarks": [
         "SPY",
         "QQQ",

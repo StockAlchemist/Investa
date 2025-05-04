@@ -2341,6 +2341,12 @@ def _load_or_calculate_daily_results(
     cache_valid_daily_results = False
     status_update = ""
 
+    # --- ADDED: Log input date range ---
+    logging.debug(
+        f"[_load_or_calculate_daily_results] Received date range: {start_date} to {end_date}"
+    )
+    # --- END ADDED ---
+
     # --- ADDED: Define metadata filename ---
     metadata_cache_file = None
     if daily_results_cache_file:
@@ -2466,6 +2472,9 @@ def _load_or_calculate_daily_results(
             else (clean_benchmark_symbols_yf[0] if clean_benchmark_symbols_yf else None)
         )
         market_days_index = pd.Index([], dtype="object")
+        logging.debug(
+            f"[_load_or_calculate_daily_results] Attempting to use '{market_day_source_symbol}' for market days."
+        )  # ADDED LOG
         if (
             market_day_source_symbol
             and market_day_source_symbol in historical_prices_yf_adjusted
@@ -2473,15 +2482,30 @@ def _load_or_calculate_daily_results(
             bench_df = historical_prices_yf_adjusted[market_day_source_symbol]
             if not bench_df.empty and isinstance(
                 bench_df.index, (pd.DatetimeIndex, pd.Index)
-            ):
+            ):  # ADDED: Check if index is valid before conversion
                 try:
-                    market_days_index = pd.Index(
-                        pd.to_datetime(bench_df.index, errors="coerce").date
-                    ).dropna()
+                    # Ensure index is datetime first
+                    datetime_index = pd.to_datetime(bench_df.index, errors="coerce")
+                    valid_datetime_index = datetime_index.dropna()
+                    if not valid_datetime_index.empty:
+                        market_days_index = pd.Index(
+                            valid_datetime_index.date
+                        ).unique()  # Get unique dates
+                        logging.debug(
+                            f"  Successfully created market_days_index from '{market_day_source_symbol}' ({len(market_days_index)} days)."
+                        )  # ADDED LOG
+                    else:
+                        logging.warning(
+                            f"  Benchmark '{market_day_source_symbol}' index could not be converted to valid datetimes."
+                        )  # ADDED LOG
                 except Exception as e_idx:
                     logging.warning(
                         f"WARN: Failed converting benchmark index for market days: {e_idx}"
                     )
+            else:  # ADDED: Log if benchmark df is empty or has bad index
+                logging.warning(
+                    f"  Benchmark df '{market_day_source_symbol}' is empty or has invalid index type."
+                )
         if market_days_index.empty:
             logging.warning(
                 f"Hist WARN (Scope: {filter_desc}): No market days found. Using business day range."
@@ -2490,10 +2514,16 @@ def _load_or_calculate_daily_results(
                 start=calc_start_date, end=calc_end_date, freq="B"
             ).date.tolist()
         else:
+            # Filter the market days index by the calculation start/end dates
             all_dates_to_process = market_days_index[
                 (market_days_index >= calc_start_date)
                 & (market_days_index <= calc_end_date)
             ].tolist()
+            # ADDED: Log the result of filtering market days
+            logging.debug(
+                f"  Filtered market days index to range {calc_start_date} - {calc_end_date}. Found {len(all_dates_to_process)} dates."
+            )
+            # --- END ADDED ---
 
         if not all_dates_to_process:
             logging.error(
@@ -2503,6 +2533,12 @@ def _load_or_calculate_daily_results(
         logging.info(
             f"Hist Daily (Scope: {filter_desc}): Determined {len(all_dates_to_process)} calculation dates from {min(all_dates_to_process)} to {max(all_dates_to_process)}"
         )
+        # --- ADDED: Log the determined calculation dates ---
+        if all_dates_to_process:  # FIX: Correct indentation
+            logging.debug(
+                f"  First 5 calc dates: {all_dates_to_process[:5]}, Last 5 calc dates: {all_dates_to_process[-5:]}"
+            )  # FIX: Correct indentation
+        # --- END ADDED ---
         logging.info(
             f"Hist Daily (Scope: {filter_desc}): Calculating {len(all_dates_to_process)} daily metrics parallel..."
         )
@@ -2551,7 +2587,7 @@ def _load_or_calculate_daily_results(
                 last_reported_percent = -1
 
                 for i, result in enumerate(results_iterator):
-                    if i % 100 == 0 and i > 0:
+                    if i % 100 == 0 and i > 0:  # FIX: Use > instead of &gt;
                         logging.info(
                             f"  Processed {i}/{len(all_dates_to_process)} days..."
                         )
@@ -2562,7 +2598,7 @@ def _load_or_calculate_daily_results(
                     if worker_signals and hasattr(worker_signals, "progress"):
                         try:
                             percent_done = int(((i + 1) / total_dates) * 100)
-                            if (
+                            if (  # FIX: Use > instead of &gt;
                                 percent_done > last_reported_percent
                             ):  # Avoid emitting too often
                                 worker_signals.progress.emit(percent_done)
@@ -2583,6 +2619,16 @@ def _load_or_calculate_daily_results(
         finally:
             pool_end_time = time.time()
             logging.info(
+                f"Hist Daily (Scope: {filter_desc}): Pool finished. Received {len(daily_results_list)} results total."
+            )
+            # --- ADDED: Log sample results ---
+            if daily_results_list:
+                logging.debug(f"  Sample result [0]: {daily_results_list[0]}")
+                if len(daily_results_list) > 1:  # FIX: Use > instead of &gt;
+                    logging.debug(f"  Sample result [-1]: {daily_results_list[-1]}")
+            # --- END ADDED ---
+            # FIX: Correct indentation for this log message
+            logging.info(
                 f"Hist Daily (Scope: {filter_desc}): Pool finished in {pool_end_time - pool_start_time:.2f}s."
             )
 
@@ -2593,6 +2639,12 @@ def _load_or_calculate_daily_results(
         if failed_count > 0:
             status_update += f" ({failed_count} dates failed in worker)."
         if not successful_results:
+            # --- ADDED: Log why results are empty ---
+            logging.error(
+                f"Hist ERROR (Scope: {filter_desc}): No successful results from workers. daily_results_list size: {len(daily_results_list)}"
+            )
+            # --- END ADDED ---
+
             return (
                 pd.DataFrame(),
                 False,
@@ -2707,8 +2759,12 @@ def _load_or_calculate_daily_results(
 
 # --- Accumulated Gain and Resampling (Keep as is) ---
 def _calculate_accumulated_gains_and_resample(
-    daily_df: pd.DataFrame, benchmark_symbols_yf: List[str], interval: str
-) -> Tuple[pd.DataFrame, float, str]:
+    daily_df: pd.DataFrame,
+    benchmark_symbols_yf: List[str],
+    interval: str,
+    start_date_filter: date,  # ADDED
+    end_date_filter: date,  # ADDED
+) -> Tuple[pd.DataFrame, float, str]:  # Return signature unchanged for now
     """
     Calculates accumulated gains for portfolio and benchmarks, and optionally resamples the data.
 
@@ -2724,6 +2780,8 @@ def _calculate_accumulated_gains_and_resample(
             'daily_return', and benchmark prices. Must be indexed by date.
         benchmark_symbols_yf (List[str]): List of YF benchmark tickers present in daily_df.
         interval (str): The desired output interval ('D', 'W', or 'ME').
+        start_date_filter (date): The start date requested by the user for filtering the final output.
+        end_date_filter (date): The end date requested by the user for filtering the final output.
 
     Returns:
         Tuple[pd.DataFrame, float, str]:
@@ -2734,7 +2792,6 @@ def _calculate_accumulated_gains_and_resample(
               entire period (based on daily data before resampling). np.nan if unavailable.
             - status_update (str): String describing the outcome (calculation, resampling, errors).
     """
-    # ... (Function body remains unchanged) ...
     if daily_df.empty:
         return pd.DataFrame(), np.nan, " (No daily data for final calcs)"
     if "daily_return" not in daily_df.columns:
@@ -2743,6 +2800,11 @@ def _calculate_accumulated_gains_and_resample(
     status_update = ""
     final_twr_factor = np.nan
     results_df = daily_df.copy()
+    # --- ADDED: Log input DataFrame shape and tail ---
+    logging.debug(
+        f"[_calculate_accumulated_gains_and_resample] Input daily_df shape: {results_df.shape}"
+    )
+    logging.debug(f"Input daily_df tail:\n{results_df.tail().to_string()}")
 
     try:
         gain_factors_portfolio = 1 + results_df["daily_return"].fillna(0.0)
@@ -2803,16 +2865,38 @@ def _calculate_accumulated_gains_and_resample(
                     final_df_resampled.rename(
                         columns={accum_col_daily: accum_col_final}, inplace=True
                     )
-        elif interval in ["W", "ME"] and not results_df.empty:
+        elif (
+            interval in ["W", "M", "ME"] and not results_df.empty
+        ):  # <-- ADD 'M' to the check
             logging.info(f"Hist Final: Resampling to interval '{interval}'...")
             try:
+                # --- ADDED: Log before resampling ---
+                logging.debug(
+                    f"Resampling '{interval}': Input results_df shape: {results_df.shape}"
+                )
+                # --- FIX: Determine correct resampling frequency ---
+                resample_freq = interval
+                if interval == "M":
+                    resample_freq = "ME"  # Use Month End for 'M' interval
+                # --- END FIX ---
                 resampling_agg = {"value": "last", "daily_gain": "sum"}
                 for bm_symbol in benchmark_symbols_yf:
                     price_col = f"{bm_symbol} Price"
                     if price_col in results_df.columns:
                         resampling_agg[price_col] = "last"
-                final_df_resampled = results_df.resample(interval).agg(resampling_agg)
+                final_df_resampled = results_df.resample(resample_freq).agg(
+                    resampling_agg
+                )
 
+                # --- ADDED: Log after resampling ---
+                logging.debug(
+                    f"Resampling '{interval}': Output final_df_resampled shape: {final_df_resampled.shape}"
+                )
+                logging.debug(
+                    f"Output final_df_resampled tail:\n{final_df_resampled.tail().to_string()}"
+                )
+
+                # <-- Use resample_freq
                 if (
                     "value" in final_df_resampled.columns
                     and not final_df_resampled["value"].dropna().empty
@@ -2910,9 +2994,31 @@ def _calculate_accumulated_gains_and_resample(
             columns={"value": "Portfolio Value", "daily_gain": "Portfolio Daily Gain"},
             inplace=True,
         )
+        # --- ADDED: Log final output DataFrame shape and tail ---
+        logging.debug(
+            f"[_calculate_accumulated_gains_and_resample] Final final_df_output shape: {final_df_output.shape}"
+        )
+        logging.debug(
+            f"Final final_df_output tail:\n{final_df_output.tail().to_string()}"
+        )
         if interval != "D" and "daily_return" in final_df_output.columns:
             final_df_output.drop(columns=["daily_return"], inplace=True)
 
+        # --- ADDED: Filter final output based on requested date range ---
+        if start_date_filter and end_date_filter:
+            try:
+                pd_start = pd.Timestamp(start_date_filter)
+                pd_end = pd.Timestamp(end_date_filter)
+                # Ensure index is timezone-naive before comparison if needed
+                if final_df_output.index.tz is not None:
+                    final_df_output.index = final_df_output.index.tz_localize(None)
+                final_df_output = final_df_output.loc[pd_start:pd_end]
+                logging.debug(
+                    f"Filtered final output to range: {start_date_filter} - {end_date_filter}"
+                )
+            except Exception as e_final_filter:
+                logging.warning(f"Could not apply final date filter: {e_final_filter}")
+        # --- END ADDED ---
     except Exception as e_accum:
         logging.exception(f"Hist CRITICAL: Accum gain/resample calc error")
         status_update += " Accum gain/resample calc failed."
@@ -2937,7 +3043,9 @@ def calculate_historical_performance(
     include_accounts: Optional[List[str]] = None,
     worker_signals: Optional[Any] = None,  # <-- ADDED: Accept signals object
     exclude_accounts: Optional[List[str]] = None,
-) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], str]:
+) -> Tuple[
+    pd.DataFrame, Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], str
+]:  # MODIFIED RETURN SIG (4 items)
     """
     Calculates historical portfolio performance using MarketDataProvider for data fetching.
 
@@ -2968,9 +3076,9 @@ def calculate_historical_performance(
         exclude_accounts (Optional[List[str]]): Accounts to exclude.
 
     Returns:
-        Tuple[pd.DataFrame, Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], str]:
-            - final_df_filtered (pd.DataFrame): DataFrame containing the calculated historical
-              performance data, indexed by date/period end. Empty on critical error.
+        Tuple[pd.DataFrame, Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], str]: # MODIFIED RETURN DOC (4 items)
+            - daily_df_with_gains (pd.DataFrame): DataFrame containing the full daily historical
+              data including calculated accumulated gains. Empty on critical error.
             - historical_prices_yf_adjusted (Dict): Dictionary of raw *adjusted* historical
               prices fetched/loaded (YF Ticker -> DataFrame).
             - historical_fx_yf (Dict): Dictionary of raw historical FX rates fetched/loaded
@@ -2986,11 +3094,26 @@ def calculate_historical_performance(
 
     # --- Initial Checks ---
     if not MARKET_PROVIDER_AVAILABLE:
-        return pd.DataFrame(), {}, {}, "Error: MarketDataProvider not available."
+        return (
+            pd.DataFrame(),
+            {},
+            {},
+            "Error: MarketDataProvider not available.",
+        )  # MODIFIED RETURN
     if start_date >= end_date:
-        return pd.DataFrame(), {}, {}, "Error: Start date must be before end date."
-    if interval not in ["D", "W", "ME"]:
-        return pd.DataFrame(), {}, {}, f"Error: Invalid interval '{interval}'."
+        return (
+            pd.DataFrame(),
+            {},
+            {},
+            "Error: Start date must be before end date.",
+        )  # MODIFIED RETURN
+    if interval not in ["D", "W", "M", "ME"]:  # <-- ADD 'M' to allowed intervals
+        return (
+            pd.DataFrame(),
+            {},
+            {},
+            f"Error: Invalid interval '{interval}'.",
+        )  # MODIFIED RETURN
     clean_benchmark_symbols_yf = (
         [
             b.upper().strip()
@@ -3010,6 +3133,52 @@ def calculate_historical_performance(
         )
         has_warnings = True
 
+    # --- Determine FULL date range from transactions FIRST ---
+    # This range will be used for fetching and daily calculation
+    try:
+        full_start_date = transactions_df_effective["Date"].min().date()
+        # Use max of transaction end date and requested UI end date for fetching
+        full_end_date_tx = transactions_df_effective["Date"].max().date()
+        fetch_end_date = max(end_date, full_end_date_tx)
+        logging.info(
+            f"Determined full transaction range: {full_start_date} to {full_end_date_tx}. Fetching data up to {fetch_end_date}."
+        )
+    except Exception as e_range:
+        logging.error(
+            f"Could not determine full date range from transactions: {e_range}. Using original UI start/end."
+        )
+        # Fallback to UI dates if transaction range fails
+        full_start_date = start_date
+        fetch_end_date = end_date
+
+    # --- Load ALL transactions first to determine full date range ---
+    (
+        all_transactions_df_for_range,
+        _,  # original df not needed here
+        _,  # ignored indices not needed here
+        _,  # ignored reasons not needed here
+        err_load_range,
+        _,  # warn load not needed here
+    ) = load_and_clean_transactions(
+        transactions_csv_file, account_currency_map, default_currency
+    )
+    if (
+        err_load_range
+        or all_transactions_df_for_range is None
+        or all_transactions_df_for_range.empty
+    ):
+        logging.error("Failed to load transactions to determine full date range.")
+        # Fallback to UI dates if transaction range fails
+        full_start_date = start_date
+        fetch_end_date = end_date
+    else:
+        full_start_date = all_transactions_df_for_range["Date"].min().date()
+        full_end_date_tx = all_transactions_df_for_range["Date"].max().date()
+        fetch_end_date = max(end_date, full_end_date_tx)  # Use max of tx end and UI end
+        logging.info(
+            f"Determined full transaction range: {full_start_date} to {full_end_date_tx}. Fetching data up to {fetch_end_date}."
+        )
+
     # --- 1. Prepare Inputs ---
     prep_result = _prepare_historical_inputs(
         transactions_csv_file,
@@ -3017,8 +3186,8 @@ def calculate_historical_performance(
         default_currency,
         include_accounts,
         exclude_accounts,
-        start_date,
-        end_date,
+        full_start_date,  # Use full range for cache keys etc.
+        fetch_end_date,  # Use fetch end date
         clean_benchmark_symbols_yf,
         display_currency,
         current_hist_version=CURRENT_HIST_VERSION,
@@ -3047,7 +3216,7 @@ def calculate_historical_performance(
 
     if transactions_df_effective is None:
         status_msg = f"Error: Failed to prepare inputs (load/clean/filter failed)."
-        return pd.DataFrame(), {}, {}, status_msg
+        return pd.DataFrame(), {}, {}, status_msg  # MODIFIED RETURN (4 items)
     status_parts.append(f"Inputs prepared ({filter_desc})")
     if ignored_reasons:
         status_parts.append(f"{len(ignored_reasons)} tx ignored")
@@ -3068,8 +3237,8 @@ def calculate_historical_performance(
     historical_prices_yf_adjusted, fetch_failed_prices = (
         market_provider.get_historical_data(
             symbols_yf=symbols_for_stocks_and_benchmarks_yf,
-            start_date=start_date,
-            end_date=end_date,
+            start_date=full_start_date,  # Fetch full range
+            end_date=fetch_end_date,  # Fetch full range
             use_cache=use_raw_data_cache,
             cache_file=raw_data_cache_file,
             cache_key=raw_data_cache_key,
@@ -3078,8 +3247,8 @@ def calculate_historical_performance(
     logging.info("Fetching/Loading historical FX rates...")
     historical_fx_yf, fetch_failed_fx = market_provider.get_historical_fx_rates(
         fx_pairs_yf=fx_pairs_for_api_yf,
-        start_date=start_date,
-        end_date=end_date,
+        start_date=full_start_date,  # Fetch full range
+        end_date=fetch_end_date,  # Fetch full range
         use_cache=use_raw_data_cache,
         cache_file=raw_data_cache_file,
         cache_key=raw_data_cache_key,
@@ -3146,17 +3315,31 @@ def calculate_historical_performance(
         has_errors = True
         # Handle error appropriately, maybe return early
 
+    try:
+        full_start_date = transactions_df_effective["Date"].min().date()
+        full_end_date = transactions_df_effective["Date"].max().date()
+        # Ensure end_date for fetching covers the requested plot end date too
+        fetch_end_date = max(end_date, full_end_date)
+        logging.info(
+            f"Determined full transaction range: {full_start_date} to {full_end_date}. Fetching data up to {fetch_end_date}."
+        )
+    except Exception as e_range:
+        logging.error(
+            f"Could not determine full date range from transactions: {e_range}. Using original start/end."
+        )
+        full_start_date, full_end_date, fetch_end_date = start_date, end_date, end_date
+
     # --- 5 & 6. Load or Calculate Daily Results ---
     daily_df, cache_was_valid_daily, status_update_daily = (
-        _load_or_calculate_daily_results(
-            use_daily_results_cache=use_daily_results_cache,
-            daily_results_cache_file=daily_results_cache_file,
+        _load_or_calculate_daily_results(  # FIX: Pass missing cache arguments
+            use_daily_results_cache=use_daily_results_cache,  # Add this
+            daily_results_cache_file=daily_results_cache_file,  # Add this
             worker_signals=worker_signals,  # <-- ADDED: Pass signals down
             transactions_csv_file=transactions_csv_file,  # <-- ADDED: Pass CSV path
             daily_results_cache_key=daily_results_cache_key,
-            start_date=start_date,
-            end_date=end_date,
             transactions_df_effective=transactions_df_effective,
+            start_date=full_start_date,  # Use full range for calculation
+            end_date=fetch_end_date,  # Use full range for calculation (fetch up to requested end)
             historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,  # Pass unadjusted
             historical_prices_yf_adjusted=historical_prices_yf_adjusted,  # Pass adjusted for benchmarks
             historical_fx_yf=historical_fx_yf,
@@ -3191,36 +3374,72 @@ def calculate_historical_performance(
     elif "WARN" in status_update_daily.upper():
         has_warnings = True
 
-    if has_errors or daily_df.empty:
-        final_status_prefix = (
-            "Finished with Errors"
-            if has_errors
-            else ("Finished with Warnings" if has_warnings else "Success")
-        )
-        final_status = f"{final_status_prefix} ({filter_desc})" + (
-            f" [{'; '.join(status_parts)}]" if status_parts else ""
-        )
-        return (
-            pd.DataFrame(),
-            historical_prices_yf_adjusted,
-            historical_fx_yf,
-            final_status,
-        )  # Return fetched data
+    # --- ADDED: Calculate Accumulated Gains on daily_df BEFORE returning it as full_df ---
+    # This ensures the full data has the necessary columns for periodic returns calc
+    if not daily_df.empty and "daily_return" in daily_df.columns:
+        logging.debug("Calculating daily accumulated gains for full_df...")
+        try:
+            # Portfolio Gain
+            gain_factors_portfolio = 1 + daily_df["daily_return"].fillna(0.0)
+            daily_df["Portfolio Accumulated Gain"] = (
+                gain_factors_portfolio.cumprod()
+            )  # Use final name
+            if not daily_df.empty and pd.isna(daily_df["daily_return"].iloc[0]):
+                daily_df.iloc[
+                    0, daily_df.columns.get_loc("Portfolio Accumulated Gain")
+                ] = np.nan
 
-    # --- 7. Calculate Accumulated Gains and Resample ---
-    final_df_filtered, final_twr_factor, status_update_final = (
-        _calculate_accumulated_gains_and_resample(
-            daily_df=daily_df,
-            benchmark_symbols_yf=clean_benchmark_symbols_yf,
-            interval=interval,
-        )
-    )
-    if status_update_final:
-        status_parts.append(status_update_final.strip())
-    if "Error" in status_update_final or "failed" in status_update_final.lower():
-        has_errors = True
-    elif "WARN" in status_update_final.upper():
-        has_warnings = True
+            # Benchmark Gains
+            for bm_symbol in clean_benchmark_symbols_yf:
+                price_col = f"{bm_symbol} Price"
+                accum_col_final = f"{bm_symbol} Accumulated Gain"  # Use final name
+                if price_col in daily_df.columns:
+                    bench_prices_no_na = daily_df[price_col].dropna()
+                    if not bench_prices_no_na.empty:
+                        bench_daily_returns = (
+                            bench_prices_no_na.pct_change()
+                            .reindex(daily_df.index)
+                            .ffill()
+                            .fillna(0.0)
+                        )
+                        gain_factors_bench = 1 + bench_daily_returns
+                        accum_gains_bench = gain_factors_bench.cumprod()
+                        daily_df[accum_col_final] = accum_gains_bench
+                        if not daily_df.empty:
+                            daily_df.iloc[
+                                0, daily_df.columns.get_loc(accum_col_final)
+                            ] = np.nan
+                    else:
+                        daily_df[accum_col_final] = np.nan
+                else:
+                    daily_df[accum_col_final] = np.nan
+            logging.debug("Finished calculating daily accumulated gains for full_df.")
+        except Exception as e_accum_daily:
+            logging.error(
+                f"Error calculating daily accumulated gains for full_df: {e_accum_daily}"
+            )
+            # If this fails, the full_df might still be missing columns, leading to bar chart issues
+            # We'll proceed, but the periodic returns might still fail later.
+            has_warnings = True
+            status_parts.append("Daily Accum Gain Calc Failed")
+    # --- END ADDED ---
+
+    # --- REMOVED: Early exit if daily_df is empty ---
+    # Let the GUI handle empty daily_df if necessary
+
+    # --- REMOVED: Call to _calculate_accumulated_gains_and_resample ---
+    # final_df_filtered, final_twr_factor, status_update_final = (
+    #     _calculate_accumulated_gains_and_resample(...)
+    # )
+    # --- END REMOVED ---
+
+    # --- Calculate final TWR factor from the full daily_df ---
+    final_twr_factor = np.nan
+    if not daily_df.empty and "Portfolio Accumulated Gain" in daily_df.columns:
+        last_valid_twr = daily_df["Portfolio Accumulated Gain"].dropna().iloc[-1:]
+        if not last_valid_twr.empty:
+            final_twr_factor = last_valid_twr.iloc[0]
+    # --- END TWR Factor Calculation ---
 
     # --- 8. Final Status and Return ---
     end_time_hist = time.time()
@@ -3243,30 +3462,16 @@ def calculate_historical_performance(
         else "|||TWR_FACTOR:NaN"
     )
 
-    # Final column ordering (optional)
-    if not final_df_filtered.empty:
-        final_cols_order = [
-            "Portfolio Value",
-            "Portfolio Daily Gain",
-            "daily_return",
-            "Portfolio Accumulated Gain",
-        ]
-        for bm in clean_benchmark_symbols_yf:
-            if f"{bm} Price" in final_df_filtered.columns:
-                final_cols_order.append(f"{bm} Price")
-            if f"{bm} Accumulated Gain" in final_df_filtered.columns:
-                final_cols_order.append(f"{bm} Accumulated Gain")
-        final_cols_order = [
-            c for c in final_cols_order if c in final_df_filtered.columns
-        ]
-        try:
-            final_df_filtered = final_df_filtered[final_cols_order]
-        except KeyError:
-            logging.warning("Warning: Could not reorder final columns.")
+    # --- ADDED: Rename 'value' column before returning ---
+    if not daily_df.empty and "value" in daily_df.columns:
+        daily_df.rename(columns={"value": "Portfolio Value"}, inplace=True)
+        logging.debug("Renamed 'value' column to 'Portfolio Value' in daily_df.")
+    # --- END ADDED ---
 
     # --- RETURN MODIFIED (4 items) ---
+    # Return the full daily_df (with gains), raw data, and status
     return (
-        final_df_filtered,
+        daily_df,  # Return the full daily_df with gains calculated
         historical_prices_yf_adjusted,
         historical_fx_yf,
         final_status,
