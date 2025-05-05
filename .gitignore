@@ -17,3 +17,8 @@ my_transactions_old.csv
 __pycache__/portfolio_logic.cpython-312.pyc
 numba_report.html
 portfolio_logic.py.lprof
+coding_plan_4.rtf
+my_transactions_old_1.csv
+my_transactions_old_2.csv
+portfolio_cache_yf.json
+test_save.csv

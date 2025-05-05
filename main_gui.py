@@ -2573,6 +2573,10 @@ class AddTransactionDialog(QDialog):
         self.type_combo.currentTextChanged.connect(self._update_field_states)
         self._update_field_states(self.type_combo.currentText())
 
+        # --- ADDED: Connect signals for auto-calculation ---
+        self.quantity_edit.textChanged.connect(self._auto_calculate_total)
+        self.price_edit.textChanged.connect(self._auto_calculate_total)
+
     def _update_field_states(self, tx_type):
         """Enables/disables input fields based on the selected transaction type.
 
@@ -2815,18 +2819,43 @@ class AddTransactionDialog(QDialog):
             qty_str, price_str, total_str, split_str = "", "", "", ""
 
         # Format for CSV (using corrected version)
+        # --- Apply Conditional Formatting ---
+        def format_sig(value_float: Optional[float], value_str: str) -> str:
+            """Formats float based on original string's decimal places."""
+            if value_float is None or pd.isna(value_float):
+                return ""
+            try:
+                # Use the float for calculation, but the string for precision check
+                cleaned_str = value_str.strip().replace(",", "")
+                if "." in cleaned_str:
+                    _, decimal_part = cleaned_str.split(".", 1)
+                    # Count significant digits after decimal (ignoring trailing zeros)
+                    significant_decimal_part = decimal_part.rstrip("0")
+                    num_significant_decimals = len(significant_decimal_part)
+
+                    if num_significant_decimals <= 2:
+                        return f"{value_float:.2f}"  # Format float to 2dp
+                    else:
+                        return cleaned_str  # Return original cleaned string to preserve precision
+                else:
+                    # Integer input, format float to 2dp
+                    return f"{value_float:.2f}"
+            except (ValueError, TypeError):
+                # Fallback if something unexpected happens
+                return f"{value_float:.2f}" if value_float is not None else ""
+
+        # Format numeric values before creating the final dict
+
         data = {
             "Date (MMM DD, YYYY)": date_val.strftime(CSV_DATE_FORMAT),
             "Transaction Type": self.type_combo.currentText(),
             "Stock / ETF Symbol": symbol,
-            "Quantity of Units": f"{qty:.8f}" if qty is not None else "",
-            "Amount per unit": f"{price:.8f}" if price is not None else "",
-            "Total Amount": f"{total:.2f}" if total is not None else "",
-            "Fees": f"{comm:.2f}",
+            "Quantity of Units": format_sig(qty, qty_str),
+            "Amount per unit": format_sig(price, price_str),
+            "Total Amount": format_sig(total, total_str),
+            "Fees": format_sig(comm, comm_str),  # Apply to fees too
             "Investment Account": account,
-            "Split Ratio (new shares per old share)": (
-                f"{split:.8f}" if split is not None else ""
-            ),
+            "Split Ratio (new shares per old share)": format_sig(split, split_str),
             "Note": note_str,
         }
         # Return only the validated data dictionary
@@ -2841,6 +2870,32 @@ class AddTransactionDialog(QDialog):
         """
         if self.get_transaction_data():  # Validation happens here
             super().accept()
+
+    # Inside AddTransactionDialog class...
+
+    @Slot()
+    def _auto_calculate_total(self):
+        """Automatically calculates Total Amount from Quantity and Price."""
+        # Only calculate if Quantity and Price fields are enabled (relevant for Buy/Sell)
+        if not self.quantity_edit.isEnabled() or not self.price_edit.isEnabled():
+            return
+
+        qty_str = self.quantity_edit.text().strip().replace(",", "")
+        price_str = self.price_edit.text().strip().replace(",", "")
+
+        try:
+            qty = float(qty_str)
+            price = float(price_str)
+            if qty > 0 and price > 0:
+                total = qty * price
+                # Update the Total Amount field, formatted to 2 decimal places
+                self.total_amount_edit.setText(f"{total:.2f}")
+            # else: # Optional: Clear total if qty/price are zero or negative?
+            #     self.total_amount_edit.clear()
+        except ValueError:
+            # If either input is not a valid number, do nothing (or clear total)
+            # self.total_amount_edit.clear() # Optional: Clear if inputs invalid
+            pass
 
 
 # --- Main Application Window ---
@@ -3502,12 +3557,34 @@ class PortfolioApp(QMainWindow):
             if not fname.lower().endswith(".csv"):
                 fname += ".csv"
             logging.info(f"Attempting to save transactions to: {fname}")
+
+            # --- Backup the ORIGINAL file FIRST ---
+            original_file_to_backup = self.transactions_file
+            if original_file_to_backup and os.path.exists(original_file_to_backup):
+                backup_ok, backup_msg = self._backup_csv(
+                    filename_to_backup=original_file_to_backup
+                )  # Pass original filename
+                if not backup_ok:
+                    QMessageBox.critical(
+                        self,
+                        "Backup Error",
+                        f"Failed to backup original CSV before saving:\n{backup_msg}",
+                    )
+                    return  # Stop if backup fails
+            else:
+                logging.info(
+                    "Original transaction file not set or found, skipping backup for 'Save As'."
+                )
+            # --- End Backup ---
+
             # Use the same rewrite logic, but with the new filename
             temp_orig_file = self.transactions_file  # Store original
             self.transactions_file = fname  # Temporarily set filename for rewrite
+            # Modify _rewrite_csv to optionally skip its internal backup call
             success = self._rewrite_csv(
-                self.original_data.drop(columns=["original_index"], errors="ignore")
-            )  # Drop internal index before saving copy
+                self.original_data.drop(columns=["original_index"], errors="ignore"),
+                skip_backup=True,  # Add flag to skip internal backup
+            )
             self.transactions_file = temp_orig_file  # Restore original filename
 
             if success:
@@ -6553,28 +6630,36 @@ class PortfolioApp(QMainWindow):
         # dialog.data_changed.connect(self.refresh_data) # Let the _edit/_delete methods trigger refresh
         dialog.exec()
 
-    def _backup_csv(self):
-        """Creates a timestamped backup of the transactions CSV."""
-        if not self.transactions_file or not os.path.exists(self.transactions_file):
-            return False, "CSV file not found."
+    def _backup_csv(self, filename_to_backup=None):  # Add optional argument
+        """Creates a timestamped backup of the specified transactions CSV."""
+        file_to_backup = (
+            filename_to_backup if filename_to_backup else self.transactions_file
+        )  # Use provided or default
+        if not file_to_backup or not os.path.exists(file_to_backup):
+            return (
+                False,
+                f"CSV file not found: {file_to_backup}",
+            )  # Use actual filename in message
         try:
             backup_dir = "csv_backups"
             os.makedirs(backup_dir, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            base_name = os.path.basename(self.transactions_file)
+            base_name = os.path.basename(file_to_backup)  # Use correct base name
             name, ext = os.path.splitext(base_name)
             backup_filename = f"{name}_{timestamp}{ext}"
             backup_path = os.path.join(backup_dir, backup_filename)
             shutil.copy2(
-                self.transactions_file, backup_path
+                file_to_backup, backup_path  # Use correct source file
             )  # copy2 preserves metadata
             logging.info(f"CSV backup created: {backup_path}")
             return True, backup_path
         except Exception as e:
-            logging.error(f"ERROR creating CSV backup: {e}")
+            logging.error(f"ERROR creating CSV backup for {file_to_backup}: {e}")
             return False, str(e)
 
-    def _rewrite_csv(self, df_to_write: pd.DataFrame) -> bool:
+    def _rewrite_csv(
+        self, df_to_write: pd.DataFrame, skip_backup=False
+    ) -> bool:  # Add skip_backup flag
         """Rewrites the entire CSV file from the DataFrame."""
         if not self.transactions_file:
             QMessageBox.critical(self, "Save Error", "CSV file path is not set.")
@@ -6591,9 +6676,8 @@ class PortfolioApp(QMainWindow):
             "Fees",
             "Investment Account",
             "Split Ratio (new shares per old share)",
-            "Note",
+            "Note",  # Removed "Calculated Total Value" header
         ]
-        # Select and reorder columns to match headers
         df_ordered = pd.DataFrame(
             columns=csv_headers
         )  # Start with an empty df with correct columns
@@ -6605,27 +6689,49 @@ class PortfolioApp(QMainWindow):
             else:
                 df_ordered[header] = ""  # Add empty column if missing in source
 
+        # --- Ensure correct data types before saving ---
+        try:
+            # Convert Date column ONLY (needed for date_format)
+            date_col_name = "Date (MMM DD, YYYY)"
+            if date_col_name in df_ordered.columns:
+                # Convert to datetime objects first, coercing errors
+                df_ordered[date_col_name] = pd.to_datetime(
+                    df_ordered[date_col_name], errors="coerce"
+                )
+                # Drop rows where date conversion failed
+                df_ordered.dropna(subset=[date_col_name], inplace=True)
+
+        except Exception as e_dtype:
+            logging.error(f"Error converting Date dtype before CSV rewrite: {e_dtype}")
+            QMessageBox.critical(
+                self,
+                "Save Error",
+                f"Internal data type error before saving:\n{e_dtype}",
+            )
+            return False
+        # --- End dtype conversion ---
+
         try:
             # --- Backup BEFORE writing ---
-            backup_ok, backup_msg = self._backup_csv()
-            if not backup_ok:
-                QMessageBox.critical(
-                    self,
-                    "Backup Error",
-                    f"Failed to backup CSV before saving:\n{backup_msg}",
-                )
-                return False
+            if not skip_backup:  # Only backup if not skipped
+                backup_ok, backup_msg = (
+                    self._backup_csv()
+                )  # Backup the current self.transactions_file
+                if not backup_ok:
+                    QMessageBox.critical(
+                        self,
+                        "Backup Error",
+                        f"Failed to backup CSV before saving:\n{backup_msg}",
+                    )
+                    return False
 
             # --- Write to CSV ---
-            # Use specific float formatting to avoid excessive decimals
-            float_format = "%.8f"  # Adjust precision as needed
             df_ordered.to_csv(
                 self.transactions_file,
                 index=False,
                 encoding="utf-8",
-                quoting=csv.QUOTE_NONNUMERIC,  # Quote non-numeric fields
+                quoting=csv.QUOTE_MINIMAL,  # Keep minimal quoting
                 date_format=CSV_DATE_FORMAT,  # Use the specific date format
-                float_format=float_format,
             )
             logging.info(f"Successfully rewrote CSV: {self.transactions_file}")
             return True
@@ -8259,20 +8365,88 @@ class PortfolioApp(QMainWindow):
             "Fees",
             "Investment Account",
             "Split Ratio (new shares per old share)",
-            "Note",
+            "Note",  # Removed "Calculated Total Value" header
         ]
         # --- END FIX ---
-        new_row = [transaction_data.get(h, "") for h in csv_headers]
         try:
             # Check if file is empty to write header
+            needs_newline = False
             file_exists = os.path.exists(self.transactions_file)
             is_empty = not file_exists or os.path.getsize(self.transactions_file) == 0
+
+            # --- ADDED: Check for trailing newline if file is not empty ---
+            if not is_empty:
+                try:
+                    with open(
+                        self.transactions_file, "rb"
+                    ) as f:  # Open in binary read mode
+                        f.seek(-1, os.SEEK_END)  # Go to the last byte
+                        if f.read(1) != b"\n":
+                            needs_newline = True
+                            logging.info(
+                                "CSV file does not end with a newline. Will add one."
+                            )
+                except (
+                    OSError
+                ):  # Handle potential issues like empty file after size check
+                    pass
+            # --- END ADDED ---
+
+            # --- ADDED: Calculate Qty * Price and potentially overwrite "Total Amount" ---
+            tx_type = transaction_data.get("Transaction Type", "").lower()
+            try:
+                qty_str = transaction_data.get("Quantity of Units", "")
+                price_str = transaction_data.get("Amount per unit", "")
+                # Only overwrite for Buy/Sell types where calculation is primary
+                if (
+                    tx_type in ["buy", "sell", "short sell", "buy to cover"]
+                    and qty_str
+                    and price_str
+                ):
+                    qty = float(qty_str.replace(",", ""))
+                    price = float(price_str.replace(",", ""))
+                    if qty > 0 and price > 0:
+                        calculated_total = qty * price
+                        # --- Determine max decimal places from inputs ---
+                        qty_decimals = 0
+                        if "." in qty_str:
+                            qty_decimals = len(qty_str.split(".")[-1].rstrip("0"))
+
+                        price_decimals = 0
+                        if "." in price_str:
+                            price_decimals = len(price_str.split(".")[-1].rstrip("0"))
+
+                        # Use max of input decimals, capped at a reasonable limit (e.g., 8), default to 2
+                        total_decimals = max(2, min(8, qty_decimals + price_decimals))
+                        # --- End Determine max decimal places ---
+
+                        calculated_total_str = f"{calculated_total:.{total_decimals}f}"
+                        # Overwrite the value in the dictionary
+                        logging.debug(
+                            f"Qty Dec: {qty_decimals}, Price Dec: {price_decimals}, Total Dec: {total_decimals}"
+                        )  # Overwrite the value in the dictionary
+                        transaction_data["Total Amount"] = calculated_total_str
+                        logging.debug(
+                            f"Calculated and set Total Amount to: {calculated_total_str}"
+                        )
+            except (ValueError, TypeError):
+                logging.warning(
+                    "Could not calculate Qty*Price for Total Amount override."
+                )
+            # --- END ADDED ---
+
+            # Create the row list AFTER potentially modifying transaction_data
+            new_row = [transaction_data.get(h, "") for h in csv_headers]
+
             # Open in append mode ('a'), it creates if not exists
             with open(self.transactions_file, "a", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
+                # Use QUOTE_MINIMAL (default) to only quote fields containing delimiter/quotechar
+                writer = csv.writer(f)  # Removed quoting=csv.QUOTE_NONNUMERIC
                 # Write header only if file was empty before opening
                 if is_empty:
                     writer.writerow(csv_headers)
+                elif needs_newline:  # If not empty but needs newline
+                    f.write("\n")  # Write the newline character directly
                 writer.writerow(new_row)
             logging.info("Transaction successfully appended to CSV.")
             QMessageBox.information(
