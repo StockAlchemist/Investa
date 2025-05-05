@@ -105,6 +105,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
     QScrollArea,
+    QSpinBox,  # <-- Import QSpinBox
 )
 
 from PySide6.QtWidgets import QProgressBar  # <-- ADDED for progress bar
@@ -2984,6 +2985,9 @@ class PortfolioApp(QMainWindow):
             "graph_interval": DEFAULT_GRAPH_INTERVAL,
             "graph_benchmarks": DEFAULT_GRAPH_BENCHMARKS,
             "column_visibility": default_column_visibility,
+            "bar_periods_annual": 10,  # Default periods
+            "bar_periods_monthly": 12,
+            "bar_periods_weekly": 12,
         }
         config = config_defaults.copy()
         if os.path.exists(CONFIG_FILE):
@@ -3096,6 +3100,16 @@ class PortfolioApp(QMainWindow):
         except:
             config["graph_end_date"] = DEFAULT_GRAPH_END_DATE.strftime("%Y-%m-%d")
 
+        # Validate bar chart periods
+        for key in ["bar_periods_annual", "bar_periods_monthly", "bar_periods_weekly"]:
+            if key in config:
+                try:
+                    val = int(config[key])
+                    config[key] = max(1, min(val, 100))  # Clamp between 1 and 100
+                except (ValueError, TypeError):
+                    config[key] = config_defaults[key]  # Reset to default on error
+            else:
+                config[key] = config_defaults[key]  # Add if missing
         return config
 
     # --- UI Update Methods (Define BEFORE __init__ calls them) ---
@@ -4193,6 +4207,11 @@ class PortfolioApp(QMainWindow):
             self.config["graph_benchmarks"] = DEFAULT_GRAPH_BENCHMARKS
         self.config["column_visibility"] = self.column_visibility
 
+        # Save bar chart periods
+        self.config["bar_periods_annual"] = self.annual_periods_spinbox.value()
+        self.config["bar_periods_monthly"] = self.monthly_periods_spinbox.value()
+        self.config["bar_periods_weekly"] = self.weekly_periods_spinbox.value()
+
         try:
             with open(CONFIG_FILE, "w") as f:
                 json.dump(self.config, f, indent=4)
@@ -4632,18 +4651,43 @@ class PortfolioApp(QMainWindow):
         bar_charts_main_layout.setSpacing(10)
 
         # Function to create a single bar chart widget
-        def create_bar_chart_widget(
-            title, canvas_attr_name, fig_attr_name, ax_attr_name
+        def create_bar_chart_widget(  # Modified signature
+            title,
+            canvas_attr_name,
+            fig_attr_name,
+            ax_attr_name,
+            spinbox_attr_name,
+            default_periods,
         ):
             widget = QWidget()
             layout = QVBoxLayout(widget)
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(2)
 
+            # --- Title and Input Row ---
+            title_input_layout = QHBoxLayout()
+            title_input_layout.setContentsMargins(0, 0, 0, 0)
+            title_input_layout.setSpacing(5)
+
             title_label = QLabel(f"<b>{title}</b>")
             title_label.setObjectName("BarChartTitleLabel")
-            title_label.setAlignment(Qt.AlignCenter)
-            layout.addWidget(title_label)
+            title_input_layout.addWidget(title_label)
+            title_input_layout.addStretch()  # Push input to the right
+
+            title_input_layout.addWidget(QLabel("Periods:"))
+            spinbox = QSpinBox()
+            spinbox.setObjectName(f"{spinbox_attr_name}")  # e.g., annualPeriodsSpinBox
+            spinbox.setMinimum(1)
+            spinbox.setMaximum(100)  # Adjust max as needed
+            spinbox.setValue(default_periods)
+            spinbox.setToolTip(f"Number of {title.split()[0].lower()} to display")
+            spinbox.setFixedWidth(50)  # Keep it compact
+            setattr(
+                self, spinbox_attr_name, spinbox
+            )  # Store reference, e.g., self.annual_periods_spinbox
+            title_input_layout.addWidget(spinbox)
+
+            layout.addLayout(title_input_layout)  # Add the title/input row
 
             setattr(
                 self, fig_attr_name, Figure(figsize=(4, 2.5), dpi=CHART_DPI)
@@ -4660,13 +4704,28 @@ class PortfolioApp(QMainWindow):
 
         # Create the three bar chart widgets
         self.annual_bar_widget = create_bar_chart_widget(
-            "Annual Returns", "annual_bar_canvas", "annual_bar_fig", "annual_bar_ax"
+            "Annual Returns",
+            "annual_bar_canvas",
+            "annual_bar_fig",
+            "annual_bar_ax",
+            "annual_periods_spinbox",
+            self.config.get("bar_periods_annual", 10),
         )
         self.monthly_bar_widget = create_bar_chart_widget(
-            "Monthly Returns", "monthly_bar_canvas", "monthly_bar_fig", "monthly_bar_ax"
+            "Monthly Returns",
+            "monthly_bar_canvas",
+            "monthly_bar_fig",
+            "monthly_bar_ax",
+            "monthly_periods_spinbox",
+            self.config.get("bar_periods_monthly", 12),
         )
         self.weekly_bar_widget = create_bar_chart_widget(
-            "Weekly Returns", "weekly_bar_canvas", "weekly_bar_fig", "weekly_bar_ax"
+            "Weekly Returns",
+            "weekly_bar_canvas",
+            "weekly_bar_fig",
+            "weekly_bar_ax",
+            "weekly_periods_spinbox",
+            self.config.get("bar_periods_weekly", 12),
         )
 
         # Add widgets to the layout
@@ -5013,6 +5072,17 @@ class PortfolioApp(QMainWindow):
         self.table_view.customContextMenuRequested.connect(
             self.show_table_context_menu
         )  # Connect table's signal
+
+        # Bar Chart Period Spinbox Connections
+        self.annual_periods_spinbox.valueChanged.connect(
+            self._update_periodic_bar_charts
+        )
+        self.monthly_periods_spinbox.valueChanged.connect(
+            self._update_periodic_bar_charts
+        )
+        self.weekly_periods_spinbox.valueChanged.connect(
+            self._update_periodic_bar_charts
+        )
 
     def _update_table_display(self):
         """Updates the table view, pie charts, and title based on current filters."""
@@ -5732,8 +5802,6 @@ class PortfolioApp(QMainWindow):
         if not vv_vis_finite.empty:
             min_y_val = min(min_y_val, vv_vis_finite.min())
             max_y_val = max(max_y_val, vv_vis_finite.max())
-            min_y_val = min(min_y_val, vv_vis.min())
-            max_y_val = max(max_y_val, vv_vis.max())
             val_data_plotted_visible = True  # Mark as plotted if finite values exist
 
         logging.debug(
@@ -5744,8 +5812,18 @@ class PortfolioApp(QMainWindow):
         )
 
         # --- Plotting Setup ---
-        prop_cycle = plt.rcParams["axes.prop_cycle"]
-        colors = prop_cycle.by_key()["color"]
+        # Use the first color for the portfolio, the rest for benchmarks
+        all_colors = [
+            "red",
+            "blue",
+            "green",
+            "orange",
+            "purple",
+            "brown",
+            "magenta",
+            "cyan",
+        ]
+        portfolio_color = all_colors[0]
         return_lines_plotted = []  # Store plotted lines for the return graph
         value_lines_plotted = []  # Store plotted lines for the value graph
 
@@ -5761,7 +5839,7 @@ class PortfolioApp(QMainWindow):
                     pct_full,
                     label=lbl,
                     linewidth=2.0,
-                    color=COLOR_ACCENT_TEAL,
+                    color=portfolio_color,  # Use defined portfolio color
                     zorder=10,
                 )
                 return_lines_plotted.append(line)
@@ -5774,12 +5852,8 @@ class PortfolioApp(QMainWindow):
                 vgb_full = results_df[bc].dropna()  # Plot FULL data
                 if not vgb_full.empty:
                     pctb_full = (vgb_full - 1) * 100
-                    ci = i % len(colors)
-                    bcol = (
-                        colors[ci]
-                        if colors[ci] != COLOR_ACCENT_TEAL
-                        else colors[(ci + 1) % len(colors)]
-                    )
+                    # Cycle through benchmark colors, skipping the first one used for portfolio
+                    bcol = all_colors[(i + 1) % len(all_colors)]
                     (line,) = self.perf_return_ax.plot(
                         pctb_full.index,
                         pctb_full,
@@ -5905,7 +5979,7 @@ class PortfolioApp(QMainWindow):
                     vv_full.index,
                     vv_full,
                     label=f"{scope_label} Value ({currency_symbol})",
-                    color="green",
+                    color=portfolio_color,  # Use portfolio color for value line too
                     linewidth=1.5,
                 )
                 value_lines_plotted.append(line)
@@ -6016,7 +6090,32 @@ class PortfolioApp(QMainWindow):
             try:
                 fig.tight_layout(pad=0.3)
                 fig.autofmt_xdate(rotation=15)
-                if plot_start_date and plot_end_date:
+                # --- MODIFIED: Adjust x-axis start limit ---
+                if (
+                    plot_start_date
+                    and plot_end_date
+                    and isinstance(self.historical_data, pd.DataFrame)
+                    and not self.historical_data.empty
+                ):
+                    try:
+                        first_data_date = (
+                            self.historical_data.index.min().date()
+                        )  # Get first date from filtered data
+                        effective_start_date = max(
+                            plot_start_date, first_data_date
+                        )  # Use the later date
+                        logging.debug(
+                            f"Setting xlim: Effective Start={effective_start_date}, UI End={plot_end_date}"
+                        )
+                        ax.set_xlim(effective_start_date, plot_end_date)
+                    except Exception as e_xlim_calc:
+                        logging.warning(
+                            f"Could not determine effective start date for xlim: {e_xlim_calc}. Using UI dates."
+                        )
+                        ax.set_xlim(
+                            plot_start_date, plot_end_date
+                        )  # Fallback to UI dates
+                elif plot_start_date and plot_end_date:  # If no data, just use UI dates
                     ax.set_xlim(plot_start_date, plot_end_date)
             except Exception as e:
                 logging.warning(f"Warn setting layout/xlim: {e}")
@@ -7889,7 +7988,6 @@ class PortfolioApp(QMainWindow):
         # Optionally update status label too
         self.status_label.setText(f"Calculating historical data... {percent}%")
 
-    # --- NEW: Bar Chart Plotting Function ---
     def _update_periodic_bar_charts(self):
         """Updates the weekly, monthly, and annual return bar charts."""
         logging.debug(
@@ -7901,8 +7999,8 @@ class PortfolioApp(QMainWindow):
                 "data_key": "Y",
                 "ax": self.annual_bar_ax,
                 "canvas": self.annual_bar_canvas,
-                "title": "Annual Returns",
-                "max_bars": 10,  # Show last 10 years
+                "title": "Annual Returns",  # Title used for logging/errors
+                "spinbox": self.annual_periods_spinbox,  # Reference to the spinbox
                 "date_format": "%Y",
             },
             "M": {
@@ -7910,7 +8008,7 @@ class PortfolioApp(QMainWindow):
                 "ax": self.monthly_bar_ax,
                 "canvas": self.monthly_bar_canvas,
                 "title": "Monthly Returns",
-                "max_bars": 12,  # Show last 12 months
+                "spinbox": self.monthly_periods_spinbox,
                 "date_format": "%Y-%m",
             },
             "W": {
@@ -7918,8 +8016,8 @@ class PortfolioApp(QMainWindow):
                 "ax": self.weekly_bar_ax,
                 "canvas": self.weekly_bar_canvas,
                 "title": "Weekly Returns",
-                "max_bars": 12,  # Show last 12 weeks
-                "date_format": "%Y-%m-%d",  # Week ending date
+                "spinbox": self.weekly_periods_spinbox,
+                "date_format": "%Y-%m-%d",
             },
         }
 
@@ -7983,28 +8081,43 @@ class PortfolioApp(QMainWindow):
                 canvas.draw()
                 continue
 
-            plot_data = returns_df[valid_cols].tail(config["max_bars"]).copy()
+            # --- Get number of periods from spinbox ---
+            try:
+                num_periods = config["spinbox"].value()
+            except Exception:
+                num_periods = 10  # Fallback default
+            logging.debug(f"  Using num_periods = {num_periods} from spinbox.")
+            plot_data = (
+                returns_df[valid_cols].tail(num_periods).copy()
+            )  # Use value from spinbox
 
             # Plotting
             n_series = len(plot_data.columns)
             bar_width = 0.8 / n_series  # Adjust width based on number of series
             index = np.arange(len(plot_data))
 
-            prop_cycle = plt.rcParams["axes.prop_cycle"]
             # --- Store x-axis labels before clearing ticks ---
             x_tick_labels = plot_data.index.strftime(config["date_format"])
             # --- End Store x-axis labels ---
 
-            colors = prop_cycle.by_key()["color"]
-            color_map = {portfolio_col_name: COLOR_ACCENT_TEAL}  # Portfolio color
+            # Define colors for bars
+            # Use the first color for the portfolio, the rest for benchmarks
+            all_colors = [
+                "red",
+                "blue",
+                "green",
+                "orange",
+                "purple",
+                "brown",
+                "magenta",
+                "cyan",
+            ]
+            portfolio_color = all_colors[0]
+            color_map = {portfolio_col_name: portfolio_color}
             for i, bm_col in enumerate(benchmark_col_names):
                 if bm_col in plot_data.columns:
-                    ci = i % len(colors)
-                    color_map[bm_col] = (
-                        colors[ci]
-                        if colors[ci] != COLOR_ACCENT_TEAL
-                        else colors[(ci + 1) % len(colors)]
-                    )
+                    # Cycle through benchmark colors, skipping the first one
+                    color_map[bm_col] = all_colors[(i + 1) % len(all_colors)]
 
             for i, col in enumerate(plot_data.columns):
                 offset = (i - (n_series - 1) / 2) * bar_width
@@ -8015,7 +8128,9 @@ class PortfolioApp(QMainWindow):
                     label=col.replace(
                         f" {interval_key}-Return", ""
                     ),  # Clean label for legend
-                    color=color_map.get(col, colors[i % len(colors)]),
+                    color=color_map.get(
+                        col, "gray"
+                    ),  # Use mapped color, fallback to gray
                 )
                 # Add value labels on top/bottom of bars (optional, can get crowded)
                 # ax.bar_label(bars, fmt='%.1f%%', padding=2, fontsize=6, rotation=90)
@@ -8088,8 +8203,6 @@ class PortfolioApp(QMainWindow):
             fig = config["ax"].get_figure()
             fig.tight_layout(pad=0.5)
             canvas.draw()
-
-    # --- END NEW FUNCTION ---
 
     # --- Transaction Dialog Methods ---
     @Slot()

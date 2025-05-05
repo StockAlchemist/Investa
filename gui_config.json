@@ -20,7 +20,7 @@
         "TD Ameritrade": "USD"
     },
     "default_currency": "USD",
-    "graph_start_date": "2024-01-02",
+    "graph_start_date": "2020-01-06",
     "graph_end_date": "2025-04-25",
     "graph_interval": "W",
     "graph_benchmarks": [
@@ -46,5 +46,8 @@
         "Total G/L": true,
         "Total Ret %": true,
         "IRR (%)": true
-    }
+    },
+    "bar_periods_annual": 5,
+    "bar_periods_monthly": 6,
+    "bar_periods_weekly": 7
 }
