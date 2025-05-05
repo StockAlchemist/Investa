@@ -1,5 +1,5 @@
 {
-    "timestamp": "2025-05-05T14:18:43.242865",
+    "timestamp": "2025-05-05T15:15:49.585497",
     "stock_data_internal": {
         "MBK:BKK": {
             "price": null,
@@ -316,6 +316,7 @@
     },
     "fx_rates_vs_usd": {
         "USD": 1.0,
-        "THB": 33.03
+        "THB": 33.03,
+        "JPY": 144.115
     }
 }

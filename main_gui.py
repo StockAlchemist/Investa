@@ -4955,18 +4955,18 @@ class PortfolioApp(QMainWindow):
         self.status_label = QLabel("Ready")
         self.status_label.setObjectName("StatusLabel")
         self.status_bar.addWidget(self.status_label, 1)
-        self.yahoo_attribution_label = QLabel(
+        self.yahoo_attribution_label = QLabel(  # RESTORED
             "Financial data provided by Yahoo Finance"
         )
         self.yahoo_attribution_label.setObjectName("YahooAttributionLabel")
-        self.status_bar.addPermanentWidget(self.yahoo_attribution_label)
+        self.status_bar.addPermanentWidget(self.yahoo_attribution_label)  # RESTORED
         # --- ADD Progress Bar ---
         self.progress_bar = QProgressBar()
         self.progress_bar.setObjectName("StatusBarProgressBar")
         self.progress_bar.setVisible(False)  # Initially hidden
-        self.status_bar.addPermanentWidget(self.progress_bar)
+        self.status_bar.addPermanentWidget(self.progress_bar)  # RESTORED
         # Use the exchange rate label defined in _create_controls_widget
-        self.status_bar.addPermanentWidget(self.exchange_rate_display_label)
+        self.status_bar.addPermanentWidget(self.exchange_rate_display_label)  # RESTORED
 
     @Slot(
         str, str
@@ -5955,15 +5955,15 @@ class PortfolioApp(QMainWindow):
                 tt = f"Total TWR: {tpg:+.2f}%"
                 tc_color = QCOLOR_GAIN if tpg >= -1e-9 else QCOLOR_LOSS
                 self.perf_return_ax.text(
-                    0.02,
-                    0.65,
+                    0.98,  # X-coordinate (near right edge)
+                    0.05,  # Y-coordinate (near bottom edge)
                     tt,
                     transform=self.perf_return_ax.transAxes,
                     fontsize=9,
                     fontweight="bold",
                     color=tc_color.name(),
-                    va="top",
-                    ha="left",
+                    va="bottom",  # Vertical alignment
+                    ha="right",  # Horizontal alignment
                     bbox=dict(
                         boxstyle="round,pad=0.3", fc="white", alpha=0.7, ec="none"
                     ),
@@ -8067,13 +8067,13 @@ class PortfolioApp(QMainWindow):
         # Update status label based on the final combined status
         if self.last_calc_status:
             cleaned_status = self.last_calc_status.split("|||TWR_FACTOR:")[0].strip()
-            if "Error" in cleaned_status or "Crit" in cleaned_status:
-                self.status_label.setText(f"Finished with Errors: {cleaned_status}")
-            elif "Warn" in cleaned_status:
-                self.status_label.setText(f"Finished with Warnings: {cleaned_status}")
+            if (
+                "Error" in cleaned_status or "Crit" in cleaned_status
+            ):  # Check original status string for errors
+                self.status_label.setText("Finished (Errors)")  # Shortened message
             else:
                 now_str = QDateTime.currentDateTime().toString("hh:mm:ss")
-                self.status_label.setText(f"Finished ({now_str}): {cleaned_status}")
+                self.status_label.setText(f"Finished ({now_str})")  # Shortened message
         else:
             self.status_label.setText("Finished (Status Unknown)")
 

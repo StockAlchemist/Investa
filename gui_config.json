@@ -1,6 +1,6 @@
 {
     "transactions_file": "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/my_transactions.csv",
-    "display_currency": "USD",
+    "display_currency": "JPY",
     "show_closed": false,
     "selected_accounts": [
         "E*TRADE",
