@@ -1,322 +1,363 @@
 {
-    "timestamp": "2025-05-05T15:15:49.585497",
-    "stock_data_internal": {
-        "MBK:BKK": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "BML:BKK": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "ES-JUMBO25": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "SCC:BKK": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "BEM:BKK": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "SCBCHA-SSF": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "ES-GQG": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "UOBBC": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "PTT:BKK": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "UOBCG": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "BECL:BKK": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "SCBSFF": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "SCBRMS&P500": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "GENCO:BKK": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "BANPU:BKK": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "CPF:BKK": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "AAV:BKK": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "NOK:BKK": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "SCBRM1": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "ZEN:BKK": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "THAI:BKK": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "CPALL:BKK": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "SCBRMS50": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "TRUE:BKK": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "AOT:BKK": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "ES-FIXED_INCOME": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "ES-TRESURY": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "AMARIN:BKK": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "SCBRCTECH": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "TCAP:BKK": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "ES-SET50": {
-            "price": null,
-            "change": null,
-            "changesPercentage": null,
-            "previousClose": null
-        },
-        "BAC": {
-            "price": 41.07,
-            "change": 0.900002,
-            "changesPercentage": 224.04799999999997,
-            "previousClose": 40.17
-        },
-        "AXP": {
-            "price": 276.85,
-            "change": 8.31,
-            "changesPercentage": 309.451,
-            "previousClose": 268.54
-        },
-        "IBM": {
-            "price": 245.55,
-            "change": 5.89,
-            "changesPercentage": 245.76500000000001,
-            "previousClose": 239.66
-        },
-        "QSR": {
-            "price": 66.62,
-            "change": 1.37,
-            "changesPercentage": 209.962,
-            "previousClose": 65.25
-        },
-        "BLV": {
-            "price": 68.26,
-            "change": -0.419998,
-            "changesPercentage": -61.1529,
-            "previousClose": 68.68
-        },
-        "AMZN": {
-            "price": 189.98,
-            "change": -0.22000122,
-            "changesPercentage": -11.5668364,
-            "previousClose": 190.2
-        },
-        "KO": {
-            "price": 71.65,
-            "change": 0.360001,
-            "changesPercentage": 50.4981,
-            "previousClose": 71.29
-        },
-        "BND": {
-            "price": 72.7,
-            "change": -0.3600006,
-            "changesPercentage": -49.274653,
-            "previousClose": 73.06
-        },
-        "ASML": {
-            "price": 690.33,
-            "change": 23.610046,
-            "changesPercentage": 354.12238,
-            "previousClose": 666.72
-        },
-        "NKE": {
-            "price": 58.59,
-            "change": 1.83,
-            "changesPercentage": 322.40999999999997,
-            "previousClose": 56.76
-        },
-        "GOOGL": {
-            "price": 164.03,
-            "change": 2.7299957,
-            "changesPercentage": 169.24957,
-            "previousClose": 161.3
-        },
-        "C": {
-            "price": 70.59,
-            "change": 2.45,
-            "changesPercentage": 359.553,
-            "previousClose": 68.14
-        },
-        "AAPL": {
-            "price": 205.35,
-            "change": -7.970001,
-            "changesPercentage": -373.61715000000004,
-            "previousClose": 213.32
-        },
-        "NVDA": {
-            "price": 114.5,
-            "change": 2.8899994,
-            "changesPercentage": 258.9373,
-            "previousClose": 111.61
-        },
-        "GOOG": {
-            "price": 165.81,
-            "change": 3.0200043,
-            "changesPercentage": 185.51536,
-            "previousClose": 162.79
-        },
-        "PLTR": {
-            "price": 124.28,
-            "change": 8.080002,
-            "changesPercentage": 695.353,
-            "previousClose": 116.2
-        },
-        "DAL": {
-            "price": 44.2,
-            "change": 2.7,
-            "changesPercentage": 650.603,
-            "previousClose": 41.5
-        },
-        "VZ": {
-            "price": 43.74,
-            "change": 0.440002,
-            "changesPercentage": 101.617,
-            "previousClose": 43.3
-        },
-        "VTI": {
-            "price": 278.8,
-            "change": 4.28,
-            "changesPercentage": 155.90800000000002,
-            "previousClose": 274.52
-        },
-        "DPZ": {
-            "price": 484.61,
-            "change": 3.2199707,
-            "changesPercentage": 66.88902399999999,
-            "previousClose": 481.39
-        },
-        "BRK.B": {
-            "price": 539.8,
-            "change": 9.57001,
-            "changesPercentage": 180.488,
-            "previousClose": 530.23
-        }
+  "cache_key": "CURRENT_QUOTES_v2::AAPL_AMZN_ASML_AXP_BAC_BHP_BLV_BND_BRK-B_C_CVX_DAL_DIA_DPZ_EFA_EPP_GOOG_GOOGL_GS_IBM_JNJ_KO_LQD_NKE_NLY_NVDA_PLTR_QQQ_QSR_SPY_VDE_VGK_VTI_VWO_VZ_XLE::THB_USD",
+  "timestamp": "2025-05-06T12:52:17.618208+00:00",
+  "quotes": {
+    "GOOGL": {
+      "price": 164.21,
+      "change": 0.18000793,
+      "changesPercentage": 0.10974086,
+      "currency": "USD",
+      "name": "Alphabet Inc.",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:03.018425+00:00"
     },
-    "fx_rates_vs_usd": {
-        "USD": 1.0,
-        "THB": 33.03,
-        "JPY": 144.115
+    "CVX": {
+      "price": 135.5,
+      "change": -3.0,
+      "changesPercentage": -2.16606,
+      "currency": "USD",
+      "name": "Chevron Corporation",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:03.440280+00:00"
+    },
+    "EPP": {
+      "price": 46.62,
+      "change": -0.330002,
+      "changesPercentage": -0.702879,
+      "currency": "USD",
+      "name": "iShares MSCI Pacific Ex-Japan I",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:03.864322+00:00"
+    },
+    "DPZ": {
+      "price": 477.84,
+      "change": -6.769989,
+      "changesPercentage": -1.3969975,
+      "currency": "USD",
+      "name": "Domino's Pizza Inc",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:04.264729+00:00"
+    },
+    "NVDA": {
+      "price": 113.82,
+      "change": -0.6800003,
+      "changesPercentage": -0.59388673,
+      "currency": "USD",
+      "name": "NVIDIA Corporation",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:04.684397+00:00"
+    },
+    "NLY": {
+      "price": 19.26,
+      "change": -0.0599995,
+      "changesPercentage": -0.310556,
+      "currency": "USD",
+      "name": "Annaly Capital Management Inc.",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:05.084415+00:00"
+    },
+    "VZ": {
+      "price": 43.54,
+      "change": -0.200001,
+      "changesPercentage": -0.457249,
+      "currency": "USD",
+      "name": "Verizon Communications Inc.",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:05.498912+00:00"
+    },
+    "AMZN": {
+      "price": 186.35,
+      "change": -3.6299896,
+      "changesPercentage": -1.910722,
+      "currency": "USD",
+      "name": "Amazon.com, Inc.",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:05.930567+00:00"
+    },
+    "JNJ": {
+      "price": 155.0,
+      "change": -1.12,
+      "changesPercentage": -0.717394,
+      "currency": "USD",
+      "name": "Johnson & Johnson",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:06.339850+00:00"
+    },
+    "BRK.B": {
+      "price": 512.15,
+      "change": -27.65,
+      "changesPercentage": -5.12226,
+      "currency": "USD",
+      "name": "Berkshire Hathaway Inc. New",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:06.742523+00:00"
+    },
+    "LQD": {
+      "price": 106.76,
+      "change": -0.150002,
+      "changesPercentage": -0.140306,
+      "currency": "USD",
+      "name": "iShares iBoxx $ Investment Grad",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:07.142892+00:00"
+    },
+    "BAC": {
+      "price": 41.12,
+      "change": 0.0499992,
+      "changesPercentage": 0.121742,
+      "currency": "USD",
+      "name": "Bank of America Corporation",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:07.549459+00:00"
+    },
+    "AAPL": {
+      "price": 198.89,
+      "change": -6.4600067,
+      "changesPercentage": -3.1458516,
+      "currency": "USD",
+      "name": "Apple Inc.",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:07.970291+00:00"
+    },
+    "DAL": {
+      "price": 45.51,
+      "change": 1.31,
+      "changesPercentage": 2.9638,
+      "currency": "USD",
+      "name": "Delta Air Lines, Inc.",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:08.426206+00:00"
+    },
+    "QQQ": {
+      "price": 485.93,
+      "change": -2.899994,
+      "changesPercentage": -0.59325206,
+      "currency": "USD",
+      "name": "Invesco QQQ Trust, Series 1",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:08.812488+00:00"
+    },
+    "BHP": {
+      "price": 48.62,
+      "change": -0.210003,
+      "changesPercentage": -0.430069,
+      "currency": "USD",
+      "name": "BHP Group Limited",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:09.223424+00:00"
+    },
+    "VGK": {
+      "price": 74.28,
+      "change": 0.0999985,
+      "changesPercentage": 0.134805,
+      "currency": "USD",
+      "name": "Vanguard FTSEEuropean ETF",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:09.628077+00:00"
+    },
+    "ASML": {
+      "price": 683.36,
+      "change": -6.9700317,
+      "changesPercentage": -1.0096667,
+      "currency": "USD",
+      "name": "ASML Holding N.V. - New York Re",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:10.051618+00:00"
+    },
+    "GOOG": {
+      "price": 166.05,
+      "change": 0.2400055,
+      "changesPercentage": 0.1447473,
+      "currency": "USD",
+      "name": "Alphabet Inc.",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:10.490917+00:00"
+    },
+    "AXP": {
+      "price": 278.03,
+      "change": 1.17999,
+      "changesPercentage": 0.426221,
+      "currency": "USD",
+      "name": "American Express Company",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:10.948047+00:00"
+    },
+    "IBM": {
+      "price": 249.18,
+      "change": 3.62999,
+      "changesPercentage": 1.47831,
+      "currency": "USD",
+      "name": "International Business Machines",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:11.374238+00:00"
+    },
+    "VTI": {
+      "price": 277.22,
+      "change": -1.57999,
+      "changesPercentage": -0.56671,
+      "currency": "USD",
+      "name": "Vanguard Total Stock Market ETF",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:11.855870+00:00"
+    },
+    "QSR": {
+      "price": 66.74,
+      "change": 0.119995,
+      "changesPercentage": 0.180119,
+      "currency": "USD",
+      "name": "Restaurant Brands International",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:12.349460+00:00"
+    },
+    "EFA": {
+      "price": 86.25,
+      "change": 0.150002,
+      "changesPercentage": 0.174218,
+      "currency": "USD",
+      "name": "iShares MSCI EAFE ETF",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:12.810875+00:00"
+    },
+    "BND": {
+      "price": 72.6,
+      "change": -0.099998474,
+      "changesPercentage": -0.13754949,
+      "currency": "USD",
+      "name": "Vanguard Total Bond Market ETF",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:13.221385+00:00"
+    },
+    "VWO": {
+      "price": 46.81,
+      "change": 0.370003,
+      "changesPercentage": 0.796733,
+      "currency": "USD",
+      "name": "Vanguard FTSE Emerging Markets ",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:13.611274+00:00"
+    },
+    "KO": {
+      "price": 71.7,
+      "change": 0.0499954,
+      "changesPercentage": 0.0697773,
+      "currency": "USD",
+      "name": "Coca-Cola Company (The)",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:13.986170+00:00"
+    },
+    "GS": {
+      "price": 559.56,
+      "change": -6.53998,
+      "changesPercentage": -1.15527,
+      "currency": "USD",
+      "name": "Goldman Sachs Group, Inc. (The)",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:14.397366+00:00"
+    },
+    "DIA": {
+      "price": 412.26,
+      "change": -0.779999,
+      "changesPercentage": -0.188843,
+      "currency": "USD",
+      "name": "SPDR Dow Jones Industrial Avera",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:14.804252+00:00"
+    },
+    "NKE": {
+      "price": 57.35,
+      "change": -1.24,
+      "changesPercentage": -2.11641,
+      "currency": "USD",
+      "name": "Nike, Inc.",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:15.214171+00:00"
+    },
+    "XLE": {
+      "price": 80.5,
+      "change": -1.48,
+      "changesPercentage": -1.80532,
+      "currency": "USD",
+      "name": "SPDR Select Sector Fund - Energ",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:15.611950+00:00"
+    },
+    "VDE": {
+      "price": 112.24,
+      "change": -2.16,
+      "changesPercentage": -1.88812,
+      "currency": "USD",
+      "name": "Vanguard Energy ETF",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:16.011713+00:00"
+    },
+    "SPY": {
+      "price": 563.51,
+      "change": -3.25,
+      "changesPercentage": -0.573435,
+      "currency": "USD",
+      "name": "SPDR S&P 500",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:16.413320+00:00"
+    },
+    "PLTR": {
+      "price": 123.77,
+      "change": -0.51000214,
+      "changesPercentage": -0.4103654,
+      "currency": "USD",
+      "name": "Palantir Technologies Inc.",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:16.812409+00:00"
+    },
+    "BLV": {
+      "price": 67.92,
+      "change": -0.340004,
+      "changesPercentage": -0.498101,
+      "currency": "USD",
+      "name": "Vanguard Long-Term Bond ETF",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:17.211591+00:00"
+    },
+    "C": {
+      "price": 70.24,
+      "change": 0.209999,
+      "changesPercentage": 0.29987,
+      "currency": "USD",
+      "name": "Citigroup, Inc.",
+      "source": "yf_info",
+      "timestamp": "2025-05-06T12:52:17.599158+00:00"
     }
+  },
+  "fx_rates": {
+    "THB": 32.5800018311,
+    "USD": 1.0
+  },
+  "INDEX_QUOTES_v1::^DJI_^GSPC_^IXIC": {
+    "timestamp": "2025-05-06T12:52:19.044848+00:00",
+    "data": {
+      "^DJI": {
+        "price": 41218.83,
+        "change": -98.60156,
+        "changesPercentage": -0.23864399,
+        "name": "Dow Jones Industrial Average",
+        "source": "yf_info",
+        "timestamp": "2025-05-06T12:52:18.268670+00:00"
+      },
+      "^IXIC": {
+        "price": 17844.24,
+        "change": -133.48828,
+        "changesPercentage": -0.7425203,
+        "name": "NASDAQ Composite",
+        "source": "yf_info",
+        "timestamp": "2025-05-06T12:52:18.645179+00:00"
+      },
+      "^GSPC": {
+        "price": 5650.38,
+        "change": -36.29004,
+        "changesPercentage": -0.63815975,
+        "name": "S&P 500",
+        "source": "yf_info",
+        "timestamp": "2025-05-06T12:52:19.044168+00:00"
+      }
+    }
+  }
 }

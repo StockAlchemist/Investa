@@ -57,7 +57,7 @@ import logging
 
 # --- Configure Logging Globally (as early as possible) ---
 # Set the desired global level here (e.g., logging.INFO, logging.DEBUG)
-LOGGING_LEVEL = logging.DEBUG  # Or logging.DEBUG for more detail
+LOGGING_LEVEL = logging.WARNING  # Or logging.DEBUG for more detail
 
 logging.basicConfig(
     level=LOGGING_LEVEL,
@@ -134,7 +134,8 @@ from PySide6.QtCore import (
     QDate,
     QPoint,
 )
-
+from PySide6.QtGui import QValidator, QIcon  # <-- ADDED Import QValidator
+from PySide6.QtCore import QSize  # <-- ADDED Import QSize
 import matplotlib
 
 matplotlib.use("QtAgg")
@@ -145,7 +146,7 @@ try:
     # --- TRY THESE FONTS ---
     # font_name = "Thonburi"       # Good choice for macOS Thai support
     font_name = "DejaVu Sans"  # Excellent cross-platform choice if installed
-    # font_name = "Helvetica Neue" # Try if available
+    # font_name = "Helvetica Neue"  # Try if available
     # font_name = "Lucida Grande"  # Try if available
     # font_name = "Arial Unicode MS" # Best coverage if installed
     # font_name = "Arial"          # Original (causes warning)
@@ -312,8 +313,8 @@ CONFIG_FILE = "gui_config.json"  # Configuration file name
 CHART_MAX_SLICES = 10  # Max slices before grouping into 'Other' in pie charts
 PIE_CHART_FIG_SIZE = (5.0, 2.5)  # Figure size for pie charts
 PERF_CHART_FIG_SIZE = (7.5, 3.0)  # Figure size for performance graphs
-CHART_DPI = 95  # Dots per inch for charts
-INDICES_FOR_HEADER = [".DJI", "IXIC", ".INX"]  # Indices to display in the header
+CHART_DPI = 95  # Dots per inch for charts # Use the actual YF tickers fetched
+INDICES_FOR_HEADER = ["^DJI", "^IXIC", "^GSPC"]  # Use the actual YF tickers fetched
 CSV_DATE_FORMAT = "%b %d, %Y"  # Define the specific date format used in the CSV
 COMMON_CURRENCIES = [
     "USD",
@@ -576,6 +577,9 @@ class PortfolioCalculatorWorker(QRunnable):
                     index_quotes = (
                         market_provider.get_index_quotes()
                     )  # Uses defaults from config
+                    logging.debug(
+                        f"DEBUG Worker: MarketDataProvider returned index_quotes: {index_quotes}"
+                    )  # <-- ADDED LOG
                 else:
                     logging.error(
                         "MarketDataProvider not available, cannot fetch index quotes."
@@ -2539,6 +2543,7 @@ class AddTransactionDialog(QDialog):
         self.split_ratio_edit.setMinimumWidth(input_min_width)
 
         self.note_edit = QLineEdit()
+        self.note_edit.setObjectName("NoteEdit")  # Add object name
         self.note_edit.setPlaceholderText(" Optional note")
         self.note_edit.setMinimumWidth(input_min_width)
 
@@ -2572,6 +2577,37 @@ class AddTransactionDialog(QDialog):
         # Connect type change (remains the same)
         self.type_combo.currentTextChanged.connect(self._update_field_states)
         self._update_field_states(self.type_combo.currentText())
+
+        # --- ADDED: Input Validation ---
+        # Define validators
+        # Allow positive numbers, high precision for qty/price/split, 2 for total/commission
+        self.quantity_validator = QDoubleValidator(0.00000001, 1e12, 8, self)
+        self.quantity_validator.setNotation(QDoubleValidator.StandardNotation)
+        self.price_validator = QDoubleValidator(0.00000001, 1e12, 8, self)
+        self.price_validator.setNotation(QDoubleValidator.StandardNotation)
+        self.total_validator = QDoubleValidator(0.0, 1e12, 2, self)  # Allow 0 for total
+        self.total_validator.setNotation(QDoubleValidator.StandardNotation)
+        self.commission_validator = QDoubleValidator(
+            0.0, 1e12, 2, self
+        )  # Allow 0 for commission
+        self.commission_validator.setNotation(QDoubleValidator.StandardNotation)
+        self.split_validator = QDoubleValidator(0.00000001, 1e12, 8, self)
+        self.split_validator.setNotation(QDoubleValidator.StandardNotation)
+
+        # Apply validators
+        self.quantity_edit.setValidator(self.quantity_validator)
+        self.price_edit.setValidator(self.price_validator)
+        self.total_amount_edit.setValidator(self.total_validator)
+        self.commission_edit.setValidator(self.commission_validator)
+        self.split_ratio_edit.setValidator(self.split_validator)
+
+        # Connect textChanged signals to validation slot
+        self.quantity_edit.textChanged.connect(self._validate_numeric_input)
+        self.price_edit.textChanged.connect(self._validate_numeric_input)
+        self.total_amount_edit.textChanged.connect(self._validate_numeric_input)
+        self.commission_edit.textChanged.connect(self._validate_numeric_input)
+        self.split_ratio_edit.textChanged.connect(self._validate_numeric_input)
+        # --- END ADDED: Input Validation ---
 
         # --- ADDED: Connect signals for auto-calculation ---
         self.quantity_edit.textChanged.connect(self._auto_calculate_total)
@@ -2624,6 +2660,30 @@ class AddTransactionDialog(QDialog):
         else:
             # Re-enable price edit if not cash flow
             self.price_edit.setEnabled(not is_split and not is_fee)
+
+    # --- ADDED: Slot for live validation feedback ---
+    @Slot()
+    def _validate_numeric_input(self):
+        """Provides visual feedback on numeric input fields based on validator state."""
+        sender_widget = self.sender()
+        if not isinstance(sender_widget, QLineEdit):
+            return
+
+        validator = sender_widget.validator()
+        if not validator:
+            return
+
+        text = sender_widget.text()
+        state = validator.validate(text, 0)[0]  # Get the QValidator.State
+
+        if state == QValidator.Acceptable:
+            sender_widget.setStyleSheet("")  # Reset style
+        else:  # Intermediate or Invalid
+            sender_widget.setStyleSheet(
+                "background-color: #ffe0e0;"
+            )  # Light red background
+
+    # --- END ADDED ---
 
     def get_transaction_data(self) -> Optional[Dict[str, str]]:
         """Validates user input and returns transaction data formatted for CSV saving.
@@ -2868,7 +2928,43 @@ class AddTransactionDialog(QDialog):
         Calls `get_transaction_data` for validation. If validation passes, the
         dialog is accepted; otherwise, it remains open.
         """
-        if self.get_transaction_data():  # Validation happens here
+        # --- ADDED: Explicit Validator Check Before Accept ---
+        invalid_fields = []
+        fields_to_check = [
+            (self.quantity_edit, "Quantity"),
+            (self.price_edit, "Price/Unit"),
+            (self.total_amount_edit, "Total Amount"),
+            (self.commission_edit, "Commission"),
+            (self.split_ratio_edit, "Split Ratio"),
+        ]
+
+        for widget, name in fields_to_check:
+            if widget.isEnabled():  # Only check enabled fields
+                validator = widget.validator()
+                if validator:
+                    text = widget.text()
+                    state = validator.validate(text, 0)[0]
+                    if state != QValidator.Acceptable:
+                        # Even if Intermediate is allowed during typing, it's not acceptable for saving
+                        invalid_fields.append(name)
+                        # Ensure background is red if somehow it wasn't set by textChanged
+                        widget.setStyleSheet("background-color: #ffe0e0;")
+
+        if invalid_fields:
+            QMessageBox.warning(
+                self,
+                "Invalid Input",
+                f"Please correct the following fields with invalid numeric input:\n- {', '.join(invalid_fields)}",
+            )
+            return  # Do not accept
+        # --- END ADDED ---
+
+        # Proceed with existing type-specific validation if numeric validation passes
+        validated_data = self.get_transaction_data()
+        if validated_data:
+            # Reset background colors on successful save (optional, but good UX)
+            for widget, _ in fields_to_check:
+                widget.setStyleSheet("")
             super().accept()
 
     # Inside AddTransactionDialog class...
@@ -3248,12 +3344,13 @@ class PortfolioApp(QMainWindow):
 
         # --- File Menu ---
         file_menu = menu_bar.addMenu("&File")
-        select_action = QAction(
+        self.select_action = QAction(  # Store as attribute
             QIcon.fromTheme("document-open"), "Select &Transactions CSV...", self
         )  # Use standard icon if possible
-        select_action.setStatusTip("Select the transaction CSV file to load")
-        select_action.triggered.connect(self.select_file)
-        file_menu.addAction(select_action)
+
+        self.select_action.setStatusTip("Select the transaction CSV file to load")
+        self.select_action.triggered.connect(self.select_file)
+        file_menu.addAction(self.select_action)
 
         save_as_action = QAction(
             QIcon.fromTheme("document-save-as"), "Save Transactions &As...", self
@@ -3275,11 +3372,37 @@ class PortfolioApp(QMainWindow):
 
         # --- View Menu ---
         view_menu = menu_bar.addMenu("&View")
-        refresh_action = QAction(QIcon.fromTheme("view-refresh"), "&Refresh Data", self)
-        refresh_action.setStatusTip("Reload data and recalculate")
-        refresh_action.setShortcut("F5")  # Common shortcut for refresh
-        refresh_action.triggered.connect(self.refresh_data)
-        view_menu.addAction(refresh_action)
+        self.refresh_action = QAction(
+            QIcon.fromTheme("view-refresh"), "&Refresh Data", self
+        )  # Store as attribute
+        self.refresh_action.setStatusTip("Reload data and recalculate")
+        self.refresh_action.setShortcut("F5")  # Common shortcut for refresh
+        self.refresh_action.triggered.connect(self.refresh_data)
+        view_menu.addAction(self.refresh_action)
+
+        # --- ADDED: Transactions Menu ---
+        tx_menu = menu_bar.addMenu("&Transactions")
+        self.add_transaction_action = QAction(
+            QIcon.fromTheme("list-add"), "&Add Transaction...", self
+        )  # Store as attribute
+        self.add_transaction_action.setStatusTip("Manually add a new transaction")
+        self.add_transaction_action.triggered.connect(self.open_add_transaction_dialog)
+        tx_menu.addAction(self.add_transaction_action)
+
+        self.manage_transactions_action = QAction(
+            QIcon.fromTheme("document-edit"), "&Manage Transactions...", self
+        )  # Store as attribute
+        self.manage_transactions_action.setStatusTip(
+            "Edit or delete existing transactions"
+        )
+        self.manage_transactions_action.triggered.connect(
+            self.show_manage_transactions_dialog
+        )
+        tx_menu.addAction(self.manage_transactions_action)
+        # --- END ADDED ---
+
+        # --- ADDED: View Log Action (moved from button logic) ---
+        # (Could also go in View menu)
 
         # --- Settings Menu ---
         settings_menu = menu_bar.addMenu("&Settings")
@@ -3309,7 +3432,46 @@ class PortfolioApp(QMainWindow):
         about_action.triggered.connect(
             self.show_about_dialog
         )  # Need to implement show_about_dialog
+        # --- ADDED: CSV Format Help Action ---
+        csv_help_action = QAction("CSV Format Help...", self)
+        csv_help_action.setStatusTip("Show required CSV file format and headers")
+        csv_help_action.triggered.connect(self.show_csv_format_help)
+        help_menu.addAction(csv_help_action)
         help_menu.addAction(about_action)
+
+    # --- ADDED: Slot for CSV Format Help ---
+    @Slot()
+    def show_csv_format_help(self):
+        """Displays a message box with information about the expected CSV format."""
+        help_text = """
+<b>Required CSV File Format</b>
+
+The CSV file should contain the following columns (header names must match exactly):
+
+<ol>
+    <li><b>"Date (MMM DD, YYYY)"</b>: Transaction date (e.g., <i>Jan 01, 2023</i>, <i>Dec 31, 2024</i>)</li>
+    <li><b>Transaction Type</b>: Type of transaction (e.g., <i>Buy, Sell, Dividend, Split, Deposit, Withdrawal, Fees</i>)</li>
+    <li><b>Stock / ETF Symbol</b>: Ticker symbol (e.g., <i>AAPL, GOOG</i>). Use <i>$CASH</i> for cash deposits/withdrawals.</li>
+    <li><b>Quantity of Units</b>: Number of shares/units (positive). Required for most types.</li>
+    <li><b>Amount per unit</b>: Price per share/unit (positive). Required for Buy/Sell.</li>
+    <li><b>Total Amount</b>: Total value of the transaction (optional, can be calculated for Buy/Sell). Required for some Dividends.</li>
+    <li><b>Fees</b>: Transaction fees/commissions (positive).</li>
+    <li><b>Investment Account</b>: Name of the account (e.g., <i>Brokerage A, IRA</i>).</li>
+    <li><b>Split Ratio (new shares per old share)</b>: Required only for 'Split' type (e.g., <i>2</i> for 2-for-1).</li>
+    <li><b>Note</b>: Optional text note for the transaction.</li>
+</ol>
+
+<b>Example Rows:</b>
+<pre>
+"Date (MMM DD, YYYY)",Transaction Type,Stock / ETF Symbol,Quantity of Units,Amount per unit,Total Amount,Fees,Investment Account,Split Ratio (new shares per old share),Note
+"Jan 15, 2023",Buy,AAPL,10,150.25,1502.50,5.95,Brokerage A,,Bought Apple shares
+"Feb 01, 2023",Dividend,MSFT,,,50.00,,Brokerage A,,Microsoft dividend received
+"Mar 10, 2023",Deposit,$CASH,1000,,1000.00,,IRA,,Initial IRA contribution
+</pre>
+"""
+        QMessageBox.information(self, "CSV Format Help", help_text)
+
+    # --- END ADDED ---
 
     @Slot(str)  # Ensure Slot decorator is imported
     def _chart_holding_history(self, symbol: str):
@@ -4309,6 +4471,7 @@ class PortfolioApp(QMainWindow):
         self.app_font = QFont("Arial", 9)
         self.setFont(self.app_font)
         self.internal_to_yf_map = {}  # <-- ADD Initialize attribute
+        self._initial_file_selection = False  # Flag for initial auto-select
 
         # --- Configuration Loading ---
         self.config = self.load_config()
@@ -4378,6 +4541,24 @@ class PortfolioApp(QMainWindow):
         self._init_menu_bar()
         self._connect_signals()  # Connect buttons etc.
 
+        # --- Toolbar ---
+        self.toolbar = self.addToolBar("Main Toolbar")
+        self.toolbar.setObjectName("MainToolBar")
+        self.toolbar.setIconSize(QSize(20, 20))  # Optional: Set icon size
+
+        # Add actions (ensure these attributes were set in _init_menu_bar)
+        if hasattr(self, "select_action"):
+            self.toolbar.addAction(self.select_action)
+        if hasattr(self, "refresh_action"):
+            self.toolbar.addAction(self.refresh_action)
+        # Add separator
+        self.toolbar.addSeparator()
+        if hasattr(self, "add_transaction_action"):
+            self.toolbar.addAction(self.add_transaction_action)
+        if hasattr(self, "manage_transactions_action"):
+            self.toolbar.addAction(self.manage_transactions_action)
+        # --- End Toolbar ---
+
         # --- Apply Styles & Initial Updates ---
         self.apply_styles()
         self.update_header_info(loading=True)  # Show loading state initially
@@ -4395,6 +4576,24 @@ class PortfolioApp(QMainWindow):
                 QTimer.singleShot(
                     150, self.refresh_data
                 )  # Delay slightly to ensure UI is fully shown
+            # --- ADDED: Auto-prompt if file is missing ---
+            elif not self.transactions_file or not os.path.exists(
+                self.transactions_file
+            ):
+                logging.info(
+                    f"Startup TX file invalid or not found: '{self.transactions_file}'. Prompting user."
+                )
+                self.status_label.setText(
+                    "Info: Please select your transactions CSV file."
+                )
+                self._initial_file_selection = (
+                    True  # Set flag before calling select_file
+                )
+                from PySide6.QtCore import QTimer
+
+                # Use QTimer to ensure the dialog shows *after* the main window is fully up
+                QTimer.singleShot(100, self.select_file)
+            # --- END ADDED ---
             else:
                 # Provide specific feedback if the configured file is bad
                 startup_file_msg = f"Warn: Startup TX file invalid or not found: '{self.transactions_file}'. Load skipped."
@@ -4486,13 +4685,15 @@ class PortfolioApp(QMainWindow):
         self.select_file_button.setIcon(
             self.style().standardIcon(QStyle.SP_DirOpenIcon)
         )
-        controls_layout.addWidget(self.select_file_button)
+        # controls_layout.addWidget(self.select_file_button) # REMOVED from controls bar
         self.add_transaction_button = QPushButton("Add Tx")
         self.add_transaction_button.setObjectName("AddTransactionButton")
         self.add_transaction_button.setIcon(
             self.style().standardIcon(QStyle.SP_FileIcon)
         )
-        self.manage_transactions_button = QPushButton("Manage Tx")
+        self.manage_transactions_button = QPushButton(
+            "Manage Tx"
+        )  # Keep button instance for menu/toolbar
         self.manage_transactions_button.setObjectName("ManageTransactionsButton")
         self.manage_transactions_button.setIcon(
             self.style().standardIcon(QStyle.SP_DialogSaveButton)
@@ -4500,7 +4701,7 @@ class PortfolioApp(QMainWindow):
         self.manage_transactions_button.setToolTip(
             "Edit or delete existing transactions"
         )
-        controls_layout.addWidget(self.manage_transactions_button)
+        # controls_layout.addWidget(self.manage_transactions_button) # REMOVED from controls bar
 
         self.view_ignored_button = QPushButton("View Log")
         self.view_ignored_button.setObjectName("ViewIgnoredButton")
@@ -4511,10 +4712,10 @@ class PortfolioApp(QMainWindow):
             "View transactions ignored during the last calculation"
         )
         self.view_ignored_button.setEnabled(False)  # Initially disabled
-        controls_layout.addWidget(self.view_ignored_button)
+        # controls_layout.addWidget(self.view_ignored_button) # REMOVED from left group
 
         self.add_transaction_button.setToolTip("Manually add a new transaction")
-        controls_layout.addWidget(self.add_transaction_button)
+        # controls_layout.addWidget(self.add_transaction_button) # REMOVED from controls bar
 
         # --- Separator 1 ---
         controls_layout.addWidget(create_separator())
@@ -4544,6 +4745,9 @@ class PortfolioApp(QMainWindow):
         self.show_closed_check.setObjectName("ShowClosedCheck")
         self.show_closed_check.setChecked(self.config.get("show_closed", False))
         controls_layout.addWidget(self.show_closed_check)
+
+        # --- Separator 2 (Between Account/Display and Graph Controls) ---
+        controls_layout.addWidget(create_separator())
 
         # --- Separator 2 ---
         controls_layout.addWidget(create_separator())
@@ -4597,11 +4801,12 @@ class PortfolioApp(QMainWindow):
         self.exchange_rate_display_label = QLabel("")
         self.exchange_rate_display_label.setObjectName("ExchangeRateLabel")
         self.exchange_rate_display_label.setVisible(False)
+        controls_layout.addWidget(self.view_ignored_button)  # ADDED to right group
         controls_layout.addWidget(self.exchange_rate_display_label)
         self.refresh_button = QPushButton("Refresh All")
         self.refresh_button.setObjectName("RefreshButton")
         self.refresh_button.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
-        controls_layout.addWidget(self.refresh_button)
+        # controls_layout.addWidget(self.refresh_button) # REMOVED from controls bar
 
         # --- Summary & Graphs ---
         summary_graphs_layout = QHBoxLayout(self.summary_and_graphs_frame)
@@ -5425,7 +5630,7 @@ class PortfolioApp(QMainWindow):
         else:
             # --- Turn axis back on only if we have data to plot ---
             self.account_ax.axis("on")  # Turn axis back on for plotting
-            self.account_ax.axis("equal")  # Ensure pie is circular
+            # self.account_ax.axis("equal")  # REMOVED - Pie chart handles aspect ratio
 
             account_values = account_values.sort_values(ascending=False)
             labels = account_values.index.tolist()
@@ -5564,7 +5769,7 @@ class PortfolioApp(QMainWindow):
         else:
             # --- Turn axis back on only if we have data to plot ---
             self.holdings_ax.axis("on")  # Turn axis back on for plotting
-            self.holdings_ax.axis("equal")  # Ensure pie is circular
+            # self.holdings_ax.axis("equal")  # REMOVED - Pie chart handles aspect ratio
 
             holdings_values = holdings_values.sort_values(ascending=False)
             labels_internal = holdings_values.index.tolist()
@@ -6864,7 +7069,10 @@ class PortfolioApp(QMainWindow):
             self.config["transactions_file"] = fname
             logging.info(f"Selected new file: {self.transactions_file}")
             self.clear_results()  # Clear results including available accounts
-            self.refresh_data()  # Refresh will load new data and accounts
+            # --- MODIFIED: Only refresh if not initial selection ---
+            if not self._initial_file_selection:
+                self.refresh_data()  # Refresh will load new data and accounts
+            # --- END MODIFICATION ---
 
     def clear_results(self):
         """Clears all displayed data, resets UI elements, and clears internal state."""
@@ -6904,6 +7112,9 @@ class PortfolioApp(QMainWindow):
         Calls `refresh_data`.
         """
         sender = self.sender()
+        # Reset initial selection flag if any filter change happens after startup
+        self._initial_file_selection = False
+
         changed_control = "Unknown Filter"
         if sender == self.currency_combo:
             changed_control = "Currency"
@@ -7175,6 +7386,9 @@ class PortfolioApp(QMainWindow):
         UI controls during calculation.
         """
         if self.is_calculating:
+            # Reset flag if refresh is attempted while calculating (shouldn't happen often)
+            self._initial_file_selection = False
+
             logging.info("Calculation already in progress. Ignoring refresh request.")
             return
 
@@ -7186,6 +7400,9 @@ class PortfolioApp(QMainWindow):
             )
             self.status_label.setText("Error: Select a valid transactions CSV file.")
             return
+
+        # Reset initial selection flag when a valid refresh starts
+        self._initial_file_selection = False
 
         # --- Load original data FIRST and PREPARE INPUTS to get the map ---
         # Get current account map and default currency from config
@@ -7560,6 +7777,9 @@ class PortfolioApp(QMainWindow):
         )  # Store final holdings df
         # --- ADDED: Store periodic returns data ---
         self.periodic_returns_data: Dict[str, pd.DataFrame] = {}
+        logging.debug(
+            f"DEBUG handle_results: Received index_quotes: {index_quotes}"
+        )  # <-- ADDED LOG
         self.account_metrics_data = account_metrics if account_metrics else {}
         self.index_quote_data = index_quotes if index_quotes else {}
         # self.historical_data = ... # Removed - will be created later by filtering full data
@@ -8572,7 +8792,7 @@ if __name__ == "__main__":
     # Name does not show up in the menu bar
     app.setApplicationName("Investa")
     # --->>> ------------ <<<---
-    print(
+    logging.debug(
         f"DEBUG: QApplication name set to: {app.applicationName()}"
     )  # <-- ADD THIS LINE
 

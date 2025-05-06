@@ -342,26 +342,28 @@ def calculate_portfolio_summary(
         has_errors = True
     if warn_fetch:
         has_warnings = True
-    if (
-        has_errors
-        or current_stock_data_internal is None
-        or current_fx_rates_vs_usd is None
-    ):
+    # --- MODIFIED: Only log FATAL, don't return immediately on fetch error ---
+    # Allow calculation to proceed with potentially missing/stale data if fetch failed
+    if err_fetch:
+        # Log as fatal, but don't set has_errors = True here, let subsequent steps handle missing data
         msg = "Error: Price/FX fetch failed critically via MarketDataProvider."
         logging.error(f"FATAL: {msg}")
         status_parts.append("Fetch Failed")
-        final_status_prefix = "Finished with Errors"
-        final_status = f"{final_status_prefix} ({filter_desc})" + (
-            f" [{'; '.join(status_parts)}]" if status_parts else ""
-        )
-        return (
-            None,
-            None,
-            None,
-            combined_ignored_indices,
-            combined_ignored_reasons,
-            final_status,
-        )
+        # We will continue, but the status will reflect the fetch failure later.
+        # Ensure data structures are at least empty dicts if they are None
+        if current_stock_data_internal is None:
+            current_stock_data_internal = {}
+        if current_fx_rates_vs_usd is None:
+            current_fx_rates_vs_usd = {}
+        # REMOVED early return:
+        # return (
+        #    None,
+        #    None,
+        #    None,
+        #    combined_ignored_indices,
+        #    combined_ignored_reasons,
+        #    final_status,
+        # )
     elif has_warnings:
         status_parts.append("Fetch Warnings")
 
@@ -3027,7 +3029,6 @@ def _calculate_accumulated_gains_and_resample(
     return final_df_output, final_twr_factor, status_update
 
 
-# --- Historical Performance Calculation Wrapper Function (Uses MarketDataProvider) ---
 def calculate_historical_performance(
     transactions_csv_file: str,
     start_date: date,
@@ -3085,35 +3086,25 @@ def calculate_historical_performance(
               (YF Pair -> DataFrame).
             - final_status (str): Overall status message, including TWR factor if calculated.
     """
-    # ... (Function body remains unchanged) ...
     CURRENT_HIST_VERSION = "v1.0"  # Keep version consistent
     start_time_hist = time.time()
     has_errors = False
     has_warnings = False
     status_parts = []
+    processed_warnings = set()  # Initialize here
+    final_twr_factor = np.nan
+    daily_df = pd.DataFrame()
+    historical_prices_yf_adjusted = {}
+    historical_fx_yf = {}
 
     # --- Initial Checks ---
     if not MARKET_PROVIDER_AVAILABLE:
-        return (
-            pd.DataFrame(),
-            {},
-            {},
-            "Error: MarketDataProvider not available.",
-        )  # MODIFIED RETURN
+        return pd.DataFrame(), {}, {}, "Error: MarketDataProvider not available."
     if start_date >= end_date:
-        return (
-            pd.DataFrame(),
-            {},
-            {},
-            "Error: Start date must be before end date.",
-        )  # MODIFIED RETURN
-    if interval not in ["D", "W", "M", "ME"]:  # <-- ADD 'M' to allowed intervals
-        return (
-            pd.DataFrame(),
-            {},
-            {},
-            f"Error: Invalid interval '{interval}'.",
-        )  # MODIFIED RETURN
+        return pd.DataFrame(), {}, {}, "Error: Start date must be before end date."
+    if interval not in ["D", "W", "M", "ME"]:
+        return pd.DataFrame(), {}, {}, f"Error: Invalid interval '{interval}'."
+
     clean_benchmark_symbols_yf = (
         [
             b.upper().strip()
@@ -3133,61 +3124,16 @@ def calculate_historical_performance(
         )
         has_warnings = True
 
-    # --- Determine FULL date range from transactions FIRST ---
-    # This range will be used for fetching and daily calculation
-    try:
-        full_start_date = transactions_df_effective["Date"].min().date()
-        # Use max of transaction end date and requested UI end date for fetching
-        full_end_date_tx = transactions_df_effective["Date"].max().date()
-        fetch_end_date = max(end_date, full_end_date_tx)
-        logging.info(
-            f"Determined full transaction range: {full_start_date} to {full_end_date_tx}. Fetching data up to {fetch_end_date}."
-        )
-    except Exception as e_range:
-        logging.error(
-            f"Could not determine full date range from transactions: {e_range}. Using original UI start/end."
-        )
-        # Fallback to UI dates if transaction range fails
-        full_start_date = start_date
-        fetch_end_date = end_date
-
-    # --- Load ALL transactions first to determine full date range ---
-    (
-        all_transactions_df_for_range,
-        _,  # original df not needed here
-        _,  # ignored indices not needed here
-        _,  # ignored reasons not needed here
-        err_load_range,
-        _,  # warn load not needed here
-    ) = load_and_clean_transactions(
-        transactions_csv_file, account_currency_map, default_currency
-    )
-    if (
-        err_load_range
-        or all_transactions_df_for_range is None
-        or all_transactions_df_for_range.empty
-    ):
-        logging.error("Failed to load transactions to determine full date range.")
-        # Fallback to UI dates if transaction range fails
-        full_start_date = start_date
-        fetch_end_date = end_date
-    else:
-        full_start_date = all_transactions_df_for_range["Date"].min().date()
-        full_end_date_tx = all_transactions_df_for_range["Date"].max().date()
-        fetch_end_date = max(end_date, full_end_date_tx)  # Use max of tx end and UI end
-        logging.info(
-            f"Determined full transaction range: {full_start_date} to {full_end_date_tx}. Fetching data up to {fetch_end_date}."
-        )
-
-    # --- 1. Prepare Inputs ---
+    # --- 1. Prepare Inputs (Loads and filters transactions) ---
+    # Call this FIRST to get transactions_df_effective
     prep_result = _prepare_historical_inputs(
         transactions_csv_file,
         account_currency_map,
         default_currency,
         include_accounts,
         exclude_accounts,
-        full_start_date,  # Use full range for cache keys etc.
-        fetch_end_date,  # Use fetch end date
+        start_date,  # Pass initial UI start/end for now
+        end_date,  # Pass initial UI start/end for now
         clean_benchmark_symbols_yf,
         display_currency,
         current_hist_version=CURRENT_HIST_VERSION,
@@ -3195,7 +3141,7 @@ def calculate_historical_performance(
         daily_cache_prefix=DAILY_RESULTS_CACHE_PATH_PREFIX,
     )
     (
-        transactions_df_effective,
+        transactions_df_effective,  # <-- DEFINED HERE
         original_transactions_df,
         ignored_indices,
         ignored_reasons,
@@ -3217,15 +3163,29 @@ def calculate_historical_performance(
     if transactions_df_effective is None:
         status_msg = f"Error: Failed to prepare inputs (load/clean/filter failed)."
         return pd.DataFrame(), {}, {}, status_msg  # MODIFIED RETURN (4 items)
+
     status_parts.append(f"Inputs prepared ({filter_desc})")
     if ignored_reasons:
         status_parts.append(f"{len(ignored_reasons)} tx ignored")
 
-    processed_warnings = set()
-    final_twr_factor = np.nan
-    daily_df = pd.DataFrame()
-    historical_prices_yf_adjusted = {}  # Initialize
-    historical_fx_yf = {}  # Initialize
+    # --- Determine FULL date range from the EFFECTIVE transactions ---
+    # Use the transactions_df_effective returned by _prepare_historical_inputs
+    try:
+        if transactions_df_effective.empty:
+            raise ValueError("Effective transaction DataFrame is empty.")
+        full_start_date = transactions_df_effective["Date"].min().date()
+        full_end_date_tx = transactions_df_effective["Date"].max().date()
+        fetch_end_date = max(end_date, full_end_date_tx)  # Use max of tx end and UI end
+        logging.info(
+            f"Determined full transaction range: {full_start_date} to {full_end_date_tx}. Fetching data up to {fetch_end_date}."
+        )
+    except Exception as e_range:
+        logging.error(
+            f"Could not determine full date range from transactions: {e_range}. Using original UI start/end."
+        )
+        # Fallback to UI dates if transaction range fails
+        full_start_date = start_date
+        fetch_end_date = end_date
 
     # --- 2. Instantiate MarketDataProvider ---
     market_provider = MarketDataProvider(
@@ -3237,14 +3197,16 @@ def calculate_historical_performance(
     historical_prices_yf_adjusted, fetch_failed_prices = (
         market_provider.get_historical_data(
             symbols_yf=symbols_for_stocks_and_benchmarks_yf,
-            start_date=full_start_date,  # Fetch full range
-            end_date=fetch_end_date,  # Fetch full range
+            start_date=full_start_date,  # Use determined start date
+            end_date=fetch_end_date,  # Use determined fetch end date
             use_cache=use_raw_data_cache,
             cache_file=raw_data_cache_file,
             cache_key=raw_data_cache_key,
         )
     )
-    logging.info("Fetching/Loading historical FX rates...")
+    logging.info(
+        f"Fetching/Loading historical FX rates ({len(fx_pairs_for_api_yf)} pairs)..."
+    )
     historical_fx_yf, fetch_failed_fx = market_provider.get_historical_fx_rates(
         fx_pairs_yf=fx_pairs_for_api_yf,
         start_date=full_start_date,  # Fetch full range
@@ -3314,20 +3276,6 @@ def calculate_historical_performance(
         logging.error(f"CRITICAL ERROR creating string-to-ID mappings: {e_map}")
         has_errors = True
         # Handle error appropriately, maybe return early
-
-    try:
-        full_start_date = transactions_df_effective["Date"].min().date()
-        full_end_date = transactions_df_effective["Date"].max().date()
-        # Ensure end_date for fetching covers the requested plot end date too
-        fetch_end_date = max(end_date, full_end_date)
-        logging.info(
-            f"Determined full transaction range: {full_start_date} to {full_end_date}. Fetching data up to {fetch_end_date}."
-        )
-    except Exception as e_range:
-        logging.error(
-            f"Could not determine full date range from transactions: {e_range}. Using original start/end."
-        )
-        full_start_date, full_end_date, fetch_end_date = start_date, end_date, end_date
 
     # --- 5 & 6. Load or Calculate Daily Results ---
     daily_df, cache_was_valid_daily, status_update_daily = (

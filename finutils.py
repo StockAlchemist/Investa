@@ -553,7 +553,7 @@ def get_cash_flows_for_mwr(
         if pd.notna(cash_flow_local) and abs(cash_flow_local) > 1e-9:
             if local_currency != target_currency:
                 rate = get_conversion_rate(local_currency, target_currency, fx_rates)
-                if rate == 1.0 and local_currency != target_currency:
+                if pd.isna(rate):  # Check for NaN explicitly
                     logging.warning(
                         f"Warning: MWR calc cannot convert flow on {tx_date} from {local_currency} to {target_currency} (FX rate missing/invalid). Skipping flow."
                     )
@@ -582,15 +582,18 @@ def get_cash_flows_for_mwr(
                 acc_tx_copy["Date"].min().date() if not acc_tx_copy.empty else end_date
             )
             if end_date >= first_tx_date_for_account:
+                # If no flows but final value exists, need initial flow (usually 0)
+                # This case is complex for MWR, maybe return empty?
+                # For now, let's return empty if no flow dates exist.
                 return [], []
             else:
-                return [], []
+                return [], []  # End date is before first transaction
         elif end_date >= final_dates[-1]:
             if final_dates[-1] == end_date:
-                final_flows[-1] += final_market_value_abs
+                final_flows[-1] += final_market_value_abs  # Add to last flow
             else:
                 final_dates.append(end_date)
-                final_flows.append(final_market_value_abs)
+                final_flows.append(final_market_value_abs)  # Append as new flow
 
     if len(final_dates) < 2:
         return [], []
@@ -625,8 +628,9 @@ def get_conversion_rate(
 
     Returns:
         float: The conversion rate (units of `to_curr` for 1 unit of `from_curr`).
-               Returns 1.0 if `from_curr` equals `to_curr`, or if the necessary rates
-               are missing or invalid in the `fx_rates` dictionary, or if inputs are invalid.
+               Returns np.nan if the necessary rates are missing or invalid in the
+               `fx_rates` dictionary, or if inputs are invalid.
+               Returns 1.0 if `from_curr` equals `to_curr`.
     """
     if (
         not from_curr
@@ -635,14 +639,14 @@ def get_conversion_rate(
         or not isinstance(to_curr, str)
     ):
         logging.debug("get_conversion_rate: Invalid from_curr or to_curr input.")
-        return 1.0
+        return np.nan  # Return NaN on invalid input
     if from_curr == to_curr:
         return 1.0
     if not isinstance(fx_rates, dict):
         logging.warning(
-            f"Warning: get_conversion_rate received invalid fx_rates type. Returning 1.0"
+            f"Warning: get_conversion_rate received invalid fx_rates type. Returning NaN"
         )
-        return 1.0
+        return np.nan  # Return NaN on invalid rates dict
 
     from_curr_upper = from_curr.upper()
     to_curr_upper = to_curr.upper()
@@ -665,10 +669,13 @@ def get_conversion_rate(
                 pass
 
     if pd.isna(rate_B_per_A):
+        # Log the warning but return a neutral rate (1.0) to avoid breaking calculations?
+        # Or return NaN to signal failure? Let's return NaN for clarity.
         logging.warning(
-            f"Warning: Current FX rate lookup failed for {from_curr}->{to_curr}. Returning 1.0"
+            f"Warning: Current FX rate lookup failed for {from_curr}->{to_curr}. Returning NaN"
         )
-        return 1.0
+        # return np.nan  # Fallback to NaN to indicate failure
+        return 1.0  # Fallback to 1.0 might hide errors
     else:
         return float(rate_B_per_A)
 
@@ -813,9 +820,10 @@ def map_to_yf_symbol(internal_symbol: str) -> Optional[str]:
     """
     Maps an internal symbol to a Yahoo Finance compatible ticker, handling specific cases.
 
-    Checks for excluded symbols, cash symbol, explicit mappings (SYMBOL_MAP_TO_YFINANCE),
-    and converts BKK (Thailand) stock exchange symbols (e.g., 'ADVANC:BKK' -> 'ADVANC.BK').
-    Returns None for symbols that should be excluded or cannot be reliably mapped.
+    Checks the explicit map (SYMBOL_MAP_TO_YFINANCE) first, then handles excluded symbols,
+    the cash symbol, and converts BKK (Thailand) stock exchange symbols
+    (e.g., 'ADVANC:BKK' -> 'ADVANC.BK'). Returns None for symbols that should be excluded
+    or cannot be reliably mapped.
 
     Args:
         internal_symbol (str): The internal symbol used in the transaction data.
@@ -834,29 +842,74 @@ def map_to_yf_symbol(internal_symbol: str) -> Optional[str]:
         YFINANCE_EXCLUDED_SYMBOLS = set()
         SYMBOL_MAP_TO_YFINANCE = {}
 
-    if (
-        internal_symbol == CASH_SYMBOL_CSV
-        or internal_symbol in YFINANCE_EXCLUDED_SYMBOLS
-    ):
+    if not internal_symbol or not isinstance(internal_symbol, str):
         return None
-    if internal_symbol in SYMBOL_MAP_TO_YFINANCE:
-        return SYMBOL_MAP_TO_YFINANCE[internal_symbol]
-    if internal_symbol.endswith(":BKK"):
-        base_symbol = internal_symbol[:-4]
-        if base_symbol in SYMBOL_MAP_TO_YFINANCE:
-            base_symbol = SYMBOL_MAP_TO_YFINANCE[base_symbol]
+
+    # --- ADDED Logging ---
+    logging.debug(f"map_to_yf_symbol: Received internal_symbol='{internal_symbol}'")
+
+    # Normalize the input symbol (uppercase, strip whitespace)
+    normalized_symbol = internal_symbol.upper().strip()
+    logging.debug(f"  Normalized to: '{normalized_symbol}'")
+
+    # --- 1. Check Excluded and Cash Symbols FIRST ---
+    if (
+        normalized_symbol == CASH_SYMBOL_CSV
+        or normalized_symbol in YFINANCE_EXCLUDED_SYMBOLS
+    ):
+        logging.debug(
+            f"  Symbol '{normalized_symbol}' is CASH or EXCLUDED. Returning None."
+        )
+        return None
+
+    # --- 2. Check Explicit Map (if not excluded) ---
+    # Ensure keys in the map are also normalized for comparison
+    normalized_map = {k.upper().strip(): v for k, v in SYMBOL_MAP_TO_YFINANCE.items()}
+    if normalized_symbol in normalized_map:
+        mapped_symbol = normalized_map[normalized_symbol]
+        logging.debug(
+            f"  Found in explicit map: '{normalized_symbol}' -> '{mapped_symbol}'"
+        )
+        return normalized_map[normalized_symbol]
+
+    # --- 3. Apply Automatic Conversion Rules (if not found in map) ---
+    # Handle Thai stocks (:BKK -> .BK)
+    logging.debug(
+        f"  '{normalized_symbol}' not in explicit map. Checking rules..."
+    )  # ADDED Logging
+    if normalized_symbol.endswith(":BKK"):
+        base_symbol = normalized_symbol[:-4]
+        # Check if the base symbol itself has an explicit mapping (e.g., "BRK.B" -> "BRK-B")
+        # This check is now redundant because we check the full normalized_symbol first
+        # if base_symbol in normalized_map:
+        #     base_symbol = normalized_map[base_symbol]
         if "." in base_symbol or len(base_symbol) == 0:
             logging.warning(
                 f"Hist WARN: Skipping potentially invalid BKK conversion: {internal_symbol}"
             )
             return None
+        # --- ADDED Logging ---
+        converted_symbol = f"{base_symbol.upper()}.BK"
+        logging.debug(
+            f"  Applied :BKK rule: '{normalized_symbol}' -> '{converted_symbol}'"
+        )
+        # --- END Logging ---
         return f"{base_symbol.upper()}.BK"
-    if " " in internal_symbol or any(c in internal_symbol for c in [":", ","]):
+
+    # --- 4. Check for other invalid formats ---
+    if " " in normalized_symbol or any(c in normalized_symbol for c in [":", ","]):
         logging.warning(
-            f"Hist WARN: Skipping potentially invalid symbol format for YF: {internal_symbol}"
+            f"map_to_yf_symbol WARN: Skipping potentially invalid symbol format for YF: {internal_symbol}"  # Modified log source
         )
         return None
-    return internal_symbol.upper()
+
+    # --- 5. Return normalized symbol if no rules applied ---
+    # --- ADDED Logging ---
+    logging.debug(
+        f"  No rules applied. Returning normalized symbol: '{normalized_symbol.upper()}'"
+    )
+    # --- END Logging ---
+    return normalized_symbol.upper()
 
 
 # --- DataFrame Aggregation Helper ---

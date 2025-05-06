@@ -55,11 +55,15 @@ YFINANCE_CACHE_DURATION_HOURS = (
     4  # Max age in hours for the CURRENT data cache to be considered valid
 )
 
+# --- ADDED: Cache duration for CURRENT quotes (stock/index) ---
+# How long (in minutes) to keep current quote data before refetching
+CURRENT_QUOTE_CACHE_DURATION_MINUTES = 15
+
 # --- Yahoo Finance Mappings & Configuration ---
 # Mapping for specific index symbols used in the header/logic to YF tickers
 YFINANCE_INDEX_TICKER_MAP = {".DJI": "^DJI", "IXIC": "^IXIC", ".INX": "^GSPC"}
 DEFAULT_INDEX_QUERY_SYMBOLS = list(
-    YFINANCE_INDEX_TICKER_MAP.keys()
+    YFINANCE_INDEX_TICKER_MAP.values()
 )  # Default indices to query
 
 # Mapping for specific internal stock symbols to YF tickers (e.g., handling BRK.B)
@@ -109,57 +113,73 @@ SYMBOL_MAP_TO_YFINANCE = {
     "^GSPC": "^GSPC",
     "VT": "VT",
     "IWM": "IWM",
+    "TCAP:BKK": "TCAP.BK",
+    "BEM:BKK": "BEM.BK",
+    "GENCO:BKK": "GENCO.BK",
+    "NOK:BKK": "NOK.BK",
+    "AOT:BKK": "AOT.BK",
+    "THAI:BKK": "THAI.BK",
+    "TRUE:BKK": "TRUE.BK",
+    "BECL:BKK": "BECL.BK",  # Note: BECL might be delisted/merged, verify ticker
+    "AMARIN:BKK": "AMARIN.BK",
+    "PTT:BKK": "PTT.BK",
+    "CPF:BKK": "CPF.BK",
+    "BANPU:BKK": "BANPU.BK",
+    "AAV:BKK": "AAV.BK",
+    "BBL:BKK": "BBL.BK",  # Assuming BML:BKK meant BBL.BK, please verify
+    "MBK:BKK": "MBK.BK",
+    "ZEN:BKK": "ZEN.BK",
+    "CPALL:BKK": "CPALL.BK",
+    "SCC:BKK": "SCC.BK",
 }
 
 # Set of internal symbols explicitly excluded from Yahoo Finance fetching/processing
-YFINANCE_EXCLUDED_SYMBOLS = set(
-    [
-        "BBW",
-        "IDBOX",
-        "IDIOX",
-        "ES-Fixed_Income",
-        "GENCO:BKK",
-        "UOBBC",
-        "ES-JUMBO25",
-        "SCBCHA-SSF",
-        "ES-SET50",
-        "ES-Tresury",
-        "UOBCG",
-        "ES-GQG",
-        "SCBRM1",
-        "SCBRMS50",
-        "AMARIN:BKK",
-        "RIMM",
-        "SCBSFF",
-        "BANPU:BKK",
-        "AAV:BKK",
-        "CPF:BKK",
-        "EMV",
-        "IDMOX",
-        "BML:BKK",
-        "ZEN:BKK",
-        "SCBRCTECH",
-        "MBK:BKK",
-        "DSV",
-        "THAI:BKK",
-        "IDLOX",
-        "SCBRMS&P500",
-        "AOT:BKK",
-        "BECL:BKK",
-        "TCAP:BKK",
-        "KRFT",
-        "AAUKY",
-        "NOK:BKK",
-        "ADRE",
-        "SCC:BKK",
-        "CPALL:BKK",
-        "TRUE:BKK",
-        "PTT:BKK",
-        "ES-FIXED_INCOME",
-        "ES-TRESURY",
-        "BEM:BKK",
-    ]
-)
+YFINANCE_EXCLUDED_SYMBOLS = {
+    "BBW",
+    "IDBOX",
+    "IDIOX",
+    "ES-Fixed_Income",
+    "GENCO:BKK",
+    "UOBBC",
+    "ES-JUMBO25",
+    "SCBCHA-SSF",
+    "ES-SET50",
+    "ES-Tresury",
+    "UOBCG",
+    "ES-GQG",
+    "SCBRM1",
+    "SCBRMS50",
+    "AMARIN:BKK",
+    "RIMM",
+    "SCBSFF",
+    "BANPU:BKK",
+    "AAV:BKK",
+    "CPF:BKK",
+    "EMV",
+    "IDMOX",
+    "BML:BKK",
+    "ZEN:BKK",
+    "SCBRCTECH",
+    "MBK:BKK",
+    "DSV",
+    "THAI:BKK",
+    "IDLOX",
+    "SCBRMS&P500",
+    "AOT:BKK",
+    "BECL:BKK",
+    "TCAP:BKK",
+    "KRFT",
+    "AAUKY",
+    "NOK:BKK",
+    "ADRE",
+    "SCC:BKK",
+    "CPALL:BKK",
+    "TRUE:BKK",
+    "PTT:BKK",
+    "ES-FIXED_INCOME",
+    "ES-TRESURY",
+    "BEM:BKK",
+}
 
 # Set of symbols allowed for short selling logic
 SHORTABLE_SYMBOLS = {"AAPL", "RIMM"}  # Used RIMM instead of BB

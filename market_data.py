@@ -4,7 +4,7 @@ import numpy as np
 import logging
 import json
 import os
-from datetime import datetime, timedelta, date, UTC  # Added UTC
+from datetime import datetime, timedelta, date, UTC, timezone  # Added UTC
 from typing import List, Dict, Optional, Tuple, Set, Any
 import time
 import requests  # Keep for potential future use
@@ -41,6 +41,7 @@ try:
     from config import (
         DEFAULT_CURRENT_CACHE_FILE_PATH,
         YFINANCE_CACHE_DURATION_HOURS,
+        CURRENT_QUOTE_CACHE_DURATION_MINUTES,
         YFINANCE_INDEX_TICKER_MAP,
         DEFAULT_INDEX_QUERY_SYMBOLS,
         SYMBOL_MAP_TO_YFINANCE,
@@ -55,6 +56,7 @@ except ImportError:
     # Define fallbacks if needed, though fixing import path is better
     DEFAULT_CURRENT_CACHE_FILE_PATH = "portfolio_cache_yf.json"
     YFINANCE_CACHE_DURATION_HOURS = 4
+    CURRENT_QUOTE_CACHE_DURATION_MINUTES = 15
     YFINANCE_INDEX_TICKER_MAP = {}
     DEFAULT_INDEX_QUERY_SYMBOLS = []
     SYMBOL_MAP_TO_YFINANCE = {}
@@ -115,583 +117,651 @@ class MarketDataProvider:
 
     def __init__(
         self,
-        current_cache_file: str = DEFAULT_CURRENT_CACHE_FILE_PATH,
-        current_cache_duration_hours: int = YFINANCE_CACHE_DURATION_HOURS,
-        hist_raw_cache_prefix: str = HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
+        hist_raw_cache_prefix=HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
+        current_cache_file=DEFAULT_CURRENT_CACHE_FILE_PATH,  # <-- ADDED
     ):
-        """
-        Initializes the provider with cache settings.
-
-        Args:
-            current_cache_file (str): Path for the current quotes cache file.
-            current_cache_duration_hours (int): Max age for the current quotes cache.
-            hist_raw_cache_prefix (str): Prefix for historical raw data cache files.
-        """
-        self.current_cache_file = current_cache_file
-        self.current_cache_duration_hours = current_cache_duration_hours
         self.hist_raw_cache_prefix = hist_raw_cache_prefix
-        logging.info(
-            f"MarketDataProvider initialized. Current Cache: '{self.current_cache_file}', Hist Prefix: '{self.hist_raw_cache_prefix}'"
-        )
+        self.current_cache_file = current_cache_file  # <-- ADDED
+        self._session = None  # Initialize session attribute
+        self.historical_fx_for_fallback: Dict[str, pd.DataFrame] = (
+            {}
+        )  # Store recently fetched historical FX
+        logging.info("MarketDataProvider initialized.")
 
-    # --- Current Quotes and FX ---
     def get_current_quotes(
-        self, internal_stock_symbols: List[str], required_currencies: Set[str]
-    ) -> Tuple[
-        Optional[Dict[str, Dict[str, Optional[float]]]],
-        Optional[Dict[str, float]],
-        bool,
-        bool,
-    ]:
+        self,
+        internal_stock_symbols: List[str],
+        required_currencies: Set[str],
+        manual_prices_dict: Optional[Dict[str, float]] = None,
+    ) -> Tuple[Dict[str, Dict], Dict[str, float], bool, bool]:
         """
-        Gets current stock/ETF price/change data and FX rates relative to USD, using cache.
-        (Replaces get_cached_or_fetch_yfinance_data)
+        Fetches current market quotes (price, change, currency) for given stock symbols
+        and required FX rates against USD. Uses MarketDataProvider caching.
 
         Args:
-            internal_stock_symbols (List[str]): List of internal stock/ETF symbols.
-            required_currencies (Set[str]): Set of currency codes (e.g., 'USD', 'EUR') needed.
+            internal_stock_symbols (List[str]): List of internal stock symbols (e.g., 'AAPL', 'SET:BKK').
+            required_currencies (Set[str]): Set of all currency codes needed (e.g., {'USD', 'THB', 'EUR'}).
+            manual_prices_dict (Optional[Dict[str, float]]): Dictionary of manual price overrides.
 
         Returns:
-            Tuple containing:
-            - Stock Data Dict (Optional[Dict[internal_symbol, Dict[metric, value]]]):
-              Inner dict keys: 'price', 'change', 'changesPercentage', 'previousClose'. Values can be float or None.
-            - FX Rates vs USD Dict (Optional[Dict[currency_code, rate]]): Rate is units of currency per 1 USD.
-            - bool: has_errors - True if critical fetch/load errors occurred.
-            - bool: has_warnings - True if recoverable issues occurred.
+            Tuple[Dict[str, Dict], Dict[str, float], bool, bool]:
+                - results (Dict[str, Dict]): Dictionary mapping *internal* stock symbols to quote data
+                  (price, change, changesPercentage, currency, name, source, timestamp).
+                - fx_rates_vs_usd (Dict[str, float]): Dictionary mapping currency codes to their rate vs USD.
+                - has_errors (bool): True if critical errors occurred during fetching.
+                - has_warnings (bool): True if non-critical warnings occurred.
         """
-        stock_data_internal: Optional[Dict[str, Dict[str, Optional[float]]]] = None
-        fx_rates_vs_usd: Optional[Dict[str, float]] = {"USD": 1.0}
-        cache_needs_update = True
-        cached_data = {}
-        now = datetime.now()
-        has_errors = False
+        logging.info(
+            f"Getting current quotes for {len(internal_stock_symbols)} symbols and FX for {len(required_currencies)} currencies."
+        )
         has_warnings = False
+        has_errors = False
+        results = {}
+        cached_data_used = False  # Flag to indicate if cache was used
 
-        # --- Cache Loading Logic ---
-        if not self.current_cache_file:
-            logging.warning(
-                "Warning: Invalid current cache file path. Cache read skipped."
-            )
-            has_warnings = True
-            cache_needs_update = True
-        elif os.path.exists(self.current_cache_file):
-            try:
-                with open(self.current_cache_file, "r") as f:
-                    cached_data = json.load(f)
-                cache_timestamp_str = cached_data.get("timestamp")
-                cached_stocks = cached_data.get("stock_data_internal")
-                cached_fx_vs_usd = cached_data.get("fx_rates_vs_usd")
-
-                if (
-                    cache_timestamp_str
-                    and isinstance(cached_stocks, dict)
-                    and isinstance(cached_fx_vs_usd, dict)
-                ):
-                    cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
-                    cache_age = now - cache_timestamp
-                    if cache_age <= timedelta(hours=self.current_cache_duration_hours):
-                        # Check completeness
-                        all_stocks_present = all(
-                            s in cached_stocks
-                            for s in internal_stock_symbols
-                            if s not in YFINANCE_EXCLUDED_SYMBOLS
-                            and s != CASH_SYMBOL_CSV
-                        )
-                        stock_format_ok = (
-                            all(
-                                isinstance(v, dict) and "price" in v
-                                for v in cached_stocks.values()
-                            )
-                            if cached_stocks
-                            else True
-                        )
-                        all_fx_present = required_currencies.issubset(
-                            cached_fx_vs_usd.keys()
-                        )
-
-                        if all_stocks_present and stock_format_ok and all_fx_present:
-                            logging.info(
-                                f"Current quotes cache is valid (age: {cache_age}). Using cached data."
-                            )
-                            stock_data_internal = cached_stocks
-                            fx_rates_vs_usd = cached_fx_vs_usd
-                            cache_needs_update = False
-                        else:
-                            logging.warning(
-                                "Current quotes cache is recent but incomplete/invalid. Will fetch/update."
-                            )
-                            has_warnings = True
-                            stock_data_internal = (
-                                cached_stocks if stock_format_ok else {}
-                            )
-                            fx_rates_vs_usd = (
-                                cached_fx_vs_usd
-                                if isinstance(cached_fx_vs_usd, dict)
-                                else {"USD": 1.0}
-                            )
-                            cache_needs_update = True
-                    else:
-                        logging.info(
-                            f"Current quotes cache is outdated (age: {cache_age}). Will fetch fresh data."
-                        )
-                        cache_needs_update = True
-                else:
-                    logging.warning(
-                        "Current quotes cache is invalid or missing data. Will fetch fresh data."
-                    )
-                    has_warnings = True
-                    cache_needs_update = True
-            except (json.JSONDecodeError, FileNotFoundError, Exception) as e:
-                logging.warning(
-                    f"Error reading current quotes cache file {self.current_cache_file}: {e}. Will fetch fresh data."
+        # --- 1. Map internal symbols to YF tickers ---
+        yf_symbols_to_fetch = set()
+        internal_to_yf_map_local = {}
+        for internal_symbol in internal_stock_symbols:
+            if internal_symbol == CASH_SYMBOL_CSV:
+                continue
+            yf_symbol = map_to_yf_symbol(internal_symbol)
+            if yf_symbol:
+                yf_symbols_to_fetch.add(yf_symbol)
+                internal_to_yf_map_local[internal_symbol] = yf_symbol
+            else:
+                logging.debug(
+                    f"Symbol '{internal_symbol}' excluded or unmappable to YF ticker. Skipping fetch."  # More accurate message
                 )
                 has_warnings = True
-                cache_needs_update = True
-                stock_data_internal = {}
-                fx_rates_vs_usd = {"USD": 1.0}
-        else:
-            logging.info(
-                f"Current quotes cache file {self.current_cache_file} not found. Will fetch fresh data."
-            )
-            cache_needs_update = True
 
-        # --- Data Fetching Logic ---
-        if cache_needs_update:
-            if not YFINANCE_AVAILABLE:
-                logging.error("Cannot fetch current quotes: yfinance not available.")
-                return None, None, True, has_warnings  # Critical error
+        if not yf_symbols_to_fetch:
+            logging.info(f"No valid stock symbols provided for current quotes.")
+            return {}, {}, has_errors, has_warnings  # Return empty if no symbols
 
-            logging.info(
-                "Fetching/Updating current quotes from Yahoo Finance (Stocks & FX vs USD)..."
-            )
-            fetched_stocks = (
-                stock_data_internal if stock_data_internal is not None else {}
-            )
-            # fx_rates_vs_usd is already initialized or loaded partially
+        # --- 2. Caching Logic for Current Quotes ---
+        cache_key = f"CURRENT_QUOTES_v2::{'_'.join(sorted(yf_symbols_to_fetch))}::{'_'.join(sorted(required_currencies))}"
+        cached_quotes = None
+        cached_fx = None
+        cache_valid = False
 
-            # Determine symbols/tickers to fetch
-            yf_tickers_to_fetch = set()
-            internal_to_yf_map = {}
-            yf_to_internal_map = {}
-            missing_stock_symbols = []
-            explicitly_excluded_count = 0
-
-            # Stocks/ETFs
-            for internal_sym in internal_stock_symbols:
-                if internal_sym == CASH_SYMBOL_CSV:
-                    continue
-                if internal_sym in YFINANCE_EXCLUDED_SYMBOLS:
-                    if internal_sym not in fetched_stocks:
-                        explicitly_excluded_count += 1
-                        fetched_stocks[internal_sym] = {
-                            "price": None,
-                            "change": None,
-                            "changesPercentage": None,
-                            "previousClose": None,
-                        }
-                    continue
-
-                yf_ticker = map_to_yf_symbol(internal_sym)  # Use the helper
-                if yf_ticker:
-                    should_fetch_stock = True
-                    if internal_sym in fetched_stocks:
-                        cached_entry = fetched_stocks[internal_sym]
-                        # Check if price is valid (not None, not NaN)
-                        if (
-                            isinstance(cached_entry, dict)
-                            and cached_entry.get("price") is not None
-                            and pd.notna(cached_entry.get("price"))
+        if os.path.exists(self.current_cache_file):
+            try:
+                with open(self.current_cache_file, "r") as f:
+                    cache_data = json.load(f)
+                if cache_data.get("cache_key") == cache_key:
+                    cache_timestamp_str = cache_data.get("timestamp")
+                    if cache_timestamp_str:
+                        cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
+                        # Use CURRENT_QUOTE_CACHE_DURATION_MINUTES
+                        if datetime.now(timezone.utc) - cache_timestamp < timedelta(
+                            minutes=CURRENT_QUOTE_CACHE_DURATION_MINUTES
                         ):
-                            should_fetch_stock = False
-                    if should_fetch_stock:
-                        yf_tickers_to_fetch.add(yf_ticker)
-                        internal_to_yf_map[internal_sym] = yf_ticker
-                        yf_to_internal_map[yf_ticker] = internal_sym
-                else:  # Invalid mapping/format
-                    missing_stock_symbols.append(internal_sym)
-                    if internal_sym not in fetched_stocks:
-                        logging.warning(
-                            f"Warning: No valid Yahoo Finance ticker mapping for: {internal_sym}."
-                        )
-                        has_warnings = True
-                        fetched_stocks[internal_sym] = {
-                            "price": None,
-                            "change": None,
-                            "changesPercentage": None,
-                            "previousClose": None,
-                        }
-
-            if explicitly_excluded_count > 0:
-                logging.info(
-                    f"Info: Explicitly excluded {explicitly_excluded_count} stock symbols."
-                )
-
-            # FX Rates vs USD
-            fx_tickers_to_fetch = set()
-            currencies_to_fetch_vs_usd = required_currencies - set(
-                fx_rates_vs_usd.keys()
-            )
-            for currency in currencies_to_fetch_vs_usd:
-                if currency != "USD" and currency and isinstance(currency, str):
-                    fx_ticker = f"{currency.upper()}=X"
-                    fx_tickers_to_fetch.add(fx_ticker)
-                    yf_tickers_to_fetch.add(fx_ticker)  # Add to the main fetch list
-
-            # Fetching using yfinance
-            if not yf_tickers_to_fetch:
-                logging.info("No new Stock/FX tickers need fetching.")
-            else:
-                logging.info(
-                    f"Fetching/Updating {len(yf_tickers_to_fetch)} tickers from Yahoo: {list(yf_tickers_to_fetch)}"
-                )
-                fetch_success = True
-                all_fetched_data = {}
-                try:
-                    yf_ticker_list = list(yf_tickers_to_fetch)
-                    fetch_batch_size = 50  # Keep batching
-                    for i in range(0, len(yf_ticker_list), fetch_batch_size):
-                        batch = yf_ticker_list[i : i + fetch_batch_size]
-                        logging.info(
-                            f"  Fetching batch {i//fetch_batch_size + 1} ({len(batch)} tickers)..."
-                        )
-                        try:
-                            tickers_data = yf.Tickers(" ".join(batch))
-                            for yf_ticker, ticker_obj in tickers_data.tickers.items():
-                                ticker_info = getattr(ticker_obj, "info", None)
-                                price, change, pct_change, prev_close = (
-                                    None,
-                                    None,
-                                    None,
-                                    None,
+                            cached_quotes = cache_data.get("quotes")
+                            cached_fx = cache_data.get("fx_rates")
+                            if cached_quotes is not None and cached_fx is not None:
+                                cache_valid = True
+                                logging.info(
+                                    f"Using valid cache for current quotes (Key: {cache_key[:30]}...)."
                                 )
-                                if ticker_info:
-                                    price_raw = ticker_info.get(
-                                        "regularMarketPrice",
-                                        ticker_info.get("currentPrice"),
-                                    )
-                                    change_raw = ticker_info.get("regularMarketChange")
-                                    pct_change_raw = ticker_info.get(
-                                        "regularMarketChangePercent"
-                                    )  # Fraction
-                                    prev_close_raw = ticker_info.get("previousClose")
-                                    try:
-                                        price = (
-                                            float(price_raw)
-                                            if price_raw is not None
-                                            else None
-                                        )
-                                    except (ValueError, TypeError):
-                                        price = None
-                                    try:
-                                        change = (
-                                            float(change_raw)
-                                            if change_raw is not None
-                                            else None
-                                        )
-                                    except (ValueError, TypeError):
-                                        change = None
-                                    try:
-                                        pct_change = (
-                                            float(pct_change_raw)
-                                            if pct_change_raw is not None
-                                            else None
-                                        )  # Keep as fraction
-                                    except (ValueError, TypeError):
-                                        pct_change = None
-                                    try:
-                                        prev_close = (
-                                            float(prev_close_raw)
-                                            if prev_close_raw is not None
-                                            else None
-                                        )
-                                    except (ValueError, TypeError):
-                                        prev_close = None
+                        else:
+                            logging.info("Current quotes cache expired.")
+                    else:
+                        logging.warning("Current quotes cache missing timestamp.")
+                else:
+                    logging.info("Current quotes cache key mismatch.")
+            except (json.JSONDecodeError, IOError, Exception) as e:
+                logging.warning(
+                    f"Error reading current quotes cache: {e}. Will refetch."
+                )
 
-                                    # Validate price
-                                    if not (
-                                        price is not None
-                                        and pd.notna(price)
-                                        and price > 1e-9
-                                    ):
-                                        price = None  # Treat invalid price as None
+        if cache_valid and cached_quotes is not None and cached_fx is not None:
+            # --- Populate results from cache ---
+            # Ensure keys are correct format if needed (e.g., internal symbols for quotes)
+            # The cache should ideally store quotes keyed by internal symbol already
+            results = cached_quotes
+            fx_rates_vs_usd = cached_fx
+            cached_data_used = True  # Mark cache as used
+            # --- End Populate results ---
+        else:
+            logging.info("Fetching fresh current quotes and FX rates...")
+            # --- Fetching logic will run if cache is not valid ---
+            pass  # Let the fetching logic below execute
 
-                                    # Convert pct_change fraction to percentage value for storage/consistency
-                                    if pct_change is not None and pd.notna(pct_change):
-                                        pct_change *= 100.0
+        # --- 3. Fetching Logic (Only runs if cache was invalid/missing) ---
+        if not cached_data_used:
+            fx_rates_vs_usd = {}  # Initialize here before fallback logic
+            # --- 2. Determine required FX pairs ---
+            fx_pairs_to_fetch = set()
+            if "USD" not in required_currencies:
+                # If USD isn't explicitly needed, we still need it as the base for other pairs
+                required_currencies.add("USD")
 
-                                all_fetched_data[yf_ticker] = {
-                                    "price": price,
-                                    "change": change,
-                                    "changesPercentage": pct_change,  # Store percentage value
-                                    "previousClose": prev_close,
-                                }
-                        except requests.exceptions.ConnectionError as conn_err:
-                            logging.error(f"  NETWORK ERROR fetching batch: {conn_err}")
-                            fetch_success = False
-                            has_errors = True
-                            break
-                        except requests.exceptions.Timeout as timeout_err:
+            for curr in required_currencies:
+                if curr != "USD":
+                    fx_pairs_to_fetch.add(f"{curr}=X")
+
+            stock_data_yf = {}  # Initialize as dict
+            # --- 3. Fetch Stock Quotes ---
+            logging.info(
+                f"Fetching current quotes for {len(yf_symbols_to_fetch)} YF stock symbols..."
+            )
+            stock_tickers_str = " ".join(yf_symbols_to_fetch)
+            try:
+                tickers = yf.Tickers(stock_tickers_str)  # REMOVED session argument
+                # Accessing 'info' or fast_info can be slow and trigger rate limits if done individually.
+                # Let's try fetching necessary fields more directly if possible,
+                # or accept the potential slowness/rate limit risk of using .info/.fast_info
+                # Using fast_info is generally preferred for speed if available fields suffice.
+                # However, 'currency' might only be in .info
+
+                # Iterate through tickers and get necessary info
+                for yf_symbol, ticker_obj in tickers.tickers.items():
+                    try:
+                        # Use .info as fast_info might miss crucial fields like currency
+                        ticker_info = getattr(ticker_obj, "info", None)
+                        if ticker_info:
+                            price = (
+                                ticker_info.get("currentPrice")
+                                or ticker_info.get("regularMarketPrice")
+                                or ticker_info.get("previousClose")
+                            )
+                            change = ticker_info.get(
+                                "regularMarketChange"
+                            )  # Absolute change
+                            change_pct = ticker_info.get("regularMarketChangePercent")
+                            currency = ticker_info.get("currency")
+                            name = ticker_info.get("shortName") or ticker_info.get(
+                                "longName"
+                            )
+
+                            # Map back to internal symbol
+                            internal_symbol = next(
+                                (
+                                    k
+                                    for k, v in internal_to_yf_map_local.items()
+                                    if v == yf_symbol
+                                ),
+                                None,
+                            )
+
+                            if (
+                                internal_symbol
+                                and price is not None
+                                and currency is not None
+                            ):
+                                stock_data_yf[internal_symbol] = (
+                                    {  # Key by internal symbol
+                                        "price": price,
+                                        "change": change,
+                                        "changesPercentage": (
+                                            # If yfinance raw value is actual_pct * 100 (e.g., 150.0 for 1.5%), divide by 100.
+                                            change_pct
+                                            if pd.notna(change_pct)
+                                            else None
+                                        ),
+                                        "currency": (
+                                            currency.upper() if currency else None
+                                        ),  # Ensure uppercase
+                                        "name": name,
+                                        "source": "yf_info",
+                                        "timestamp": datetime.now(
+                                            timezone.utc
+                                        ).isoformat(),  # Add timestamp
+                                    }
+                                )
+                            else:
+                                logging.warning(
+                                    f"Could not get sufficient quote data (price/currency) for {yf_symbol} from info."
+                                )
+                                has_warnings = True
+                        else:
                             logging.warning(
-                                f"  TIMEOUT ERROR fetching batch: {timeout_err}"
+                                f"Could not get .info for ticker {yf_symbol}"
                             )
-                            fetch_success = False
                             has_warnings = True
-                        except requests.exceptions.HTTPError as http_err:
-                            logging.error(f"  HTTP ERROR fetching batch: {http_err}")
-                            fetch_success = False
-                            has_errors = True
-                        except Exception as yf_err:
-                            logging.error(
-                                f"  YFINANCE ERROR fetching batch info: {yf_err}"
-                            )
-                            fetch_success = False
-                            has_warnings = True
-                        time.sleep(0.1)  # Small delay between batches
-                except Exception as e:
-                    logging.exception("ERROR during Yahoo Finance fetch loop")
-                    fetch_success = False
-                    has_errors = True
 
-                # Process fetched data
-                # Stocks
-                for yf_ticker, data_dict in all_fetched_data.items():
-                    internal_sym = yf_to_internal_map.get(yf_ticker)
-                    if internal_sym:
-                        fetched_stocks[internal_sym] = data_dict
-                # Ensure entries for all requested symbols
-                for sym in internal_stock_symbols:
+                    except yf.exceptions.YFRateLimitError:
+                        logging.error(
+                            f"RATE LIMITED while fetching info for {yf_symbol}. Aborting quote fetch."
+                        )
+                        # Return any valid cached data if available, otherwise indicate error
+                        return (
+                            cached_quotes or {},
+                            cached_fx or {},
+                            True,
+                            True,
+                        )  # Error = True, Warning = True
+                    except Exception as e_ticker:
+                        logging.error(
+                            f"Error fetching info for ticker {yf_symbol}: {e_ticker}"
+                        )
+                        has_warnings = (
+                            True  # Treat individual ticker errors as warnings for now
+                        )
+                    # time.sleep(0.2)  # Add small delay after each ticker info fetch
+
+            except (
+                yf.exceptions.YFRateLimitError
+            ):  # Catch rate limit for the Tickers() call itself
+                logging.error(
+                    "RATE LIMITED during yf.Tickers() call. Aborting quote fetch."
+                )
+                # Return any valid cached data if available, otherwise indicate error
+                return (
+                    cached_quotes or {},
+                    cached_fx or {},
+                    True,
+                    True,
+                )  # Error = True, Warning = True
+            except Exception as e_quotes:
+                logging.error(f"Error fetching stock quotes batch: {e_quotes}")
+                has_errors = True  # Treat batch fetch errors as more severe
+
+            # --- Fallback for FX Rates using recent historical data ---
+            fx_pairs_needing_fallback = []
+            for yf_fx_pair_full in fx_pairs_to_fetch:  # e.g., "THB=X"
+                # This check happens BEFORE the main FX fetch loop below
+                base_curr_fallback = yf_fx_pair_full.replace(
+                    "=X", ""
+                ).upper()  # e.g., "THB"
+                if base_curr_fallback not in fx_rates_vs_usd or pd.isna(
+                    fx_rates_vs_usd.get(base_curr_fallback)
+                ):
+                    fx_pairs_needing_fallback.append(yf_fx_pair_full)
+
+            if fx_pairs_needing_fallback:
+                logging.warning(
+                    f"Initial check shows FX pairs {fx_pairs_needing_fallback} might need fallback. Will attempt after primary fetch if still needed."
+                )
+                # Try to get recent historical data for these pairs
+                # Fetch last 7 days, hoping for at least one data point
+                end_fallback_date = date.today()
+                start_fallback_date = end_fallback_date - timedelta(days=7)
+
+                # Use a temporary, minimal version of get_historical_fx_rates logic
+                # This avoids a full historical data call if not otherwise needed.
+                # We'll store fetched historical FX briefly in self.historical_fx_for_fallback
+                # to avoid re-fetching if called multiple times in short succession (though unlikely for current quotes).
+
+                fallback_fx_data, _ = self.get_historical_fx_rates(
+                    fx_pairs_yf=fx_pairs_needing_fallback,
+                    start_date=start_fallback_date,
+                    end_date=end_fallback_date,
+                    use_cache=True,  # Use historical cache if available
+                    cache_file=f"{self.hist_raw_cache_prefix}_fallback_fx.json",  # Temp cache file
+                    cache_key=f"FALLBACK_FX::{'_'.join(sorted(fx_pairs_needing_fallback))}",
+                )
+
+                for yf_fx_pair_fallback in fx_pairs_needing_fallback:
+                    base_curr_fb = yf_fx_pair_fallback.replace("=X", "").upper()
                     if (
-                        sym != CASH_SYMBOL_CSV
-                        and sym not in YFINANCE_EXCLUDED_SYMBOLS
-                        and sym not in fetched_stocks
+                        yf_fx_pair_fallback in fallback_fx_data
+                        and not fallback_fx_data[yf_fx_pair_fallback].empty
                     ):
-                        if sym not in missing_stock_symbols:
-                            logging.warning(
-                                f"Warning: Data for {sym} still not found after fetch."
+                        last_known_rate = fallback_fx_data[yf_fx_pair_fallback][
+                            "price"
+                        ].iloc[-1]
+                        if pd.notna(last_known_rate):
+                            fx_rates_vs_usd[base_curr_fb] = float(last_known_rate)
+                            logging.info(
+                                f"Used historical fallback for {base_curr_fb}: {last_known_rate:.4f} (from {fallback_fx_data[yf_fx_pair_fallback].index[-1]})"
                             )
-                            has_warnings = True
-                        fetched_stocks[sym] = {
-                            "price": None,
-                            "change": None,
-                            "changesPercentage": None,
-                            "previousClose": None,
-                        }
-                # FX Rates vs USD
-                for currency in currencies_to_fetch_vs_usd:
-                    if currency == "USD":
-                        continue
-                    fx_ticker = f"{currency.upper()}=X"
-                    fx_data_dict = all_fetched_data.get(fx_ticker)
-                    price = (
-                        fx_data_dict.get("price")
-                        if isinstance(fx_data_dict, dict)
-                        else None
+                            has_warnings = True  # Indicate that a fallback was used
+
+            # --- 4. Fetch FX Rates ---
+            logging.info(
+                f"Fetching current FX rates for {len(fx_pairs_to_fetch)} pairs..."
+            )
+            # fx_rates_vs_usd = {} # Moved initialization up
+            fx_data_yf = {}  # Initialize as dict
+
+            # Determine which FX pairs *still* need fetching after potential cache load / initial checks
+            actual_fx_pairs_to_fetch_now = {
+                pair
+                for pair in fx_pairs_to_fetch
+                if pair.replace("=X", "").upper() not in fx_rates_vs_usd
+                or pd.isna(fx_rates_vs_usd.get(pair.replace("=X", "").upper()))
+            }
+
+            if actual_fx_pairs_to_fetch_now:
+                fx_tickers_str = " ".join(actual_fx_pairs_to_fetch_now)
+                try:
+                    fx_tickers = yf.Tickers(fx_tickers_str)  # REMOVED session argument
+                    # Iterate and extract rates
+                    for yf_symbol, ticker_obj in fx_tickers.tickers.items():
+                        try:
+                            # Use .info for FX
+                            fx_info = getattr(ticker_obj, "info", None)
+                            if fx_info:
+                                # Try multiple keys for the FX rate
+                                rate = fx_info.get(
+                                    "regularMarketPrice"
+                                )  # Often the most reliable for FX
+                                if rate is None:
+                                    rate = fx_info.get("currentPrice")
+                                if rate is None:
+                                    rate = (
+                                        fx_info.get(
+                                            "previousClose"
+                                        )  # Correctly assign and check previousClose
+                                        or fx_info.get("regularMarketPrice")
+                                        or fx_info.get("previousClose")
+                                    )
+                                currency_code = fx_info.get(
+                                    "currency"
+                                )  # Should be USD for =X pairs, but check
+                                if rate is not None and currency_code == "USD":
+                                    # Key is the base currency (e.g., EUR from EUR=X)
+                                    base_curr = yf_symbol.replace("=X", "").upper()
+                                    fx_rates_vs_usd[base_curr] = float(rate)
+                                else:
+                                    logging.error(
+                                        f"Could not get valid rate/currency for FX pair {yf_symbol} from info."
+                                    )
+                                    has_warnings = True
+                            else:
+                                logging.error(
+                                    f"Could not get .info for FX pair {yf_symbol}"
+                                )
+                                has_warnings = True
+
+                        except yf.exceptions.YFRateLimitError:
+                            logging.error(
+                                f"RATE LIMITED while fetching info for FX {yf_symbol}. Aborting FX fetch."
+                            )
+                            # Return any valid cached data if available, otherwise indicate error
+                            return (
+                                cached_quotes or {},
+                                cached_fx or {},
+                                True,
+                                True,
+                            )  # Error = True, Warning = True
+                        except Exception as e_fx_ticker:
+                            logging.error(
+                                f"Error fetching info for FX pair {yf_symbol}: {e_fx_ticker}"
+                            )
+                        # time.sleep(0.05)  # Add small delay after each FX info fetch
+                        # time.sleep(0.2)  # Add small delay after each FX info fetch
+
+                except yf.exceptions.YFRateLimitError:
+                    logging.error(
+                        "RATE LIMITED during yf.Tickers() call for FX. Aborting FX fetch."
                     )
-                    if price is not None and pd.notna(price):
-                        fx_rates_vs_usd[currency.upper()] = price
+                    # Return any valid cached data if available, otherwise indicate error
+                    return (
+                        cached_quotes or {},
+                        cached_fx or {},
+                        True,
+                        True,
+                    )  # Error = True, Warning = True
+                except Exception as e_fx:
+                    logging.error(f"Error fetching FX rates batch: {e_fx}")
+                    has_errors = True  # Treat batch FX errors as critical
+
+            # --- SECOND ATTEMPT: Fallback for any FX rates that are STILL missing ---
+            fx_pairs_still_needing_fallback = []
+            for yf_fx_pair_full in fx_pairs_to_fetch:  # Iterate original list
+                base_curr_fallback = yf_fx_pair_full.replace("=X", "").upper()
+                if base_curr_fallback not in fx_rates_vs_usd or pd.isna(
+                    fx_rates_vs_usd.get(base_curr_fallback)
+                ):
+                    fx_pairs_still_needing_fallback.append(yf_fx_pair_full)
+
+            if fx_pairs_still_needing_fallback:
+                logging.warning(
+                    f"Current FX fetch failed for {fx_pairs_still_needing_fallback}. Attempting historical fallback."
+                )
+                end_fallback_date = date.today()
+                start_fallback_date = end_fallback_date - timedelta(days=7)
+
+                # Fetch historical data for these specific pairs
+                # Using a more specific cache file for this fallback to avoid conflicts
+                # Pass self.hist_raw_cache_prefix to ensure it uses the configured base path
+                fallback_hist_fx_data, _ = self.get_historical_fx_rates(
+                    fx_pairs_yf=fx_pairs_still_needing_fallback,
+                    start_date=start_fallback_date,
+                    end_date=end_fallback_date,
+                    use_cache=True,
+                    cache_file=f"{self.hist_raw_cache_prefix}_curr_quote_fx_fallback.json",  # Specific cache file
+                    cache_key=f"CURR_FX_FALLBACK_v1::{'_'.join(sorted(fx_pairs_still_needing_fallback))}",
+                )
+
+                for yf_fx_pair_fb in fx_pairs_still_needing_fallback:
+                    base_curr_fb_key = yf_fx_pair_fb.replace("=X", "").upper()
+                    if (
+                        yf_fx_pair_fb in fallback_hist_fx_data
+                        and not fallback_hist_fx_data[yf_fx_pair_fb].empty
+                    ):
+                        # Get the last valid price from the historical data
+                        last_known_rate = (
+                            fallback_hist_fx_data[yf_fx_pair_fb]["price"]
+                            .dropna()
+                            .iloc[-1:]
+                        )
+                        if not last_known_rate.empty and pd.notna(
+                            last_known_rate.iloc[0]
+                        ):
+                            rate_value = float(last_known_rate.iloc[0])
+                            fx_rates_vs_usd[base_curr_fb_key] = rate_value
+                            logging.info(
+                                f"Used historical fallback for {base_curr_fb_key}: {rate_value:.4f} (from {last_known_rate.index[0].strftime('%Y-%m-%d')})"
+                            )
+                            has_warnings = True  # Indicate that a fallback was used
+                        else:
+                            logging.warning(
+                                f"Historical fallback for {base_curr_fb_key} yielded no valid rate."
+                            )
                     else:
                         logging.warning(
-                            f"Warning: Failed to fetch/update FX rate for {fx_ticker}."
+                            f"No historical fallback data found for {base_curr_fb_key}."
                         )
-                        has_warnings = True
-                        if currency.upper() not in fx_rates_vs_usd:
-                            fx_rates_vs_usd[currency.upper()] = (
-                                None  # Store None if fetch failed
-                            )
+            # --- End SECOND ATTEMPT ---
 
-            # Assign final results
-            stock_data_internal = fetched_stocks
-
-            # Save Cache
-            if cache_needs_update and self.current_cache_file:
-                logging.info(
-                    f"Saving updated current quotes data to cache: {self.current_cache_file}"
-                )
-                if "USD" not in fx_rates_vs_usd:
-                    fx_rates_vs_usd["USD"] = 1.0
-                content = {
-                    "timestamp": now.isoformat(),
-                    "stock_data_internal": stock_data_internal,
-                    "fx_rates_vs_usd": fx_rates_vs_usd,
-                }
-                try:
-                    cache_dir = os.path.dirname(self.current_cache_file)
-                    if cache_dir and not os.path.exists(cache_dir):
-                        os.makedirs(cache_dir)
-                    with open(self.current_cache_file, "w") as f:
-                        json.dump(content, f, indent=4, cls=NpEncoder)  # Use NpEncoder
-                except (TypeError, IOError, Exception) as e:
-                    logging.error(
-                        f"Error writing current quotes cache ('{self.current_cache_file}'): {e}"
-                    )
-                    # Don't mark as critical error, just failed to save cache
-
-        # Final Checks
-        if not isinstance(stock_data_internal, dict):
-            stock_data_internal = None
-            has_errors = True
-        if not isinstance(fx_rates_vs_usd, dict):
-            fx_rates_vs_usd = None
-            has_errors = True
-        if isinstance(fx_rates_vs_usd, dict) and "USD" not in fx_rates_vs_usd:
+            # Add USD rate (always 1.0)
             fx_rates_vs_usd["USD"] = 1.0
-        if stock_data_internal is not None:
-            for sym in internal_stock_symbols:
-                if (
-                    sym != CASH_SYMBOL_CSV
-                    and sym not in YFINANCE_EXCLUDED_SYMBOLS
-                    and sym not in stock_data_internal
-                ):
-                    stock_data_internal[sym] = {
-                        "price": None,
-                        "change": None,
-                        "changesPercentage": None,
-                        "previousClose": None,
+
+            # --- 5. Map YF results back to internal symbols ---
+            # (This part remains the same)
+            results = {}  # Reset results to fill from fresh fetch
+            for internal_symbol, yf_data in stock_data_yf.items():
+                # The stock_data_yf should already be keyed by internal symbol now
+                results[internal_symbol] = yf_data
+
+            # --- 6. Save to Cache ---
+            if not has_errors:  # Only cache if the fetch didn't have critical errors
+                try:
+                    cache_content = {
+                        "cache_key": cache_key,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "quotes": results,  # Store quotes keyed by internal symbol
+                        "fx_rates": fx_rates_vs_usd,
                     }
-                    logging.warning(
-                        f"Warning: Data for symbol {sym} missing in final check."
+                    with open(self.current_cache_file, "w") as f:
+                        json.dump(cache_content, f, indent=2)
+                    logging.info(
+                        f"Saved current quotes/FX to cache: {self.current_cache_file}"
                     )
-                    has_warnings = True
+                except Exception as e_cache_write:
+                    logging.warning(
+                        f"Failed to write current quotes cache: {e_cache_write}"
+                    )
+            # --- End Save to Cache ---
 
-        # If fetch failed for critical data, mark as error
-        if fx_rates_vs_usd is None or stock_data_internal is None:
-            has_errors = True
+        # --- 7. Return results (either from cache or fresh fetch) ---
+        return results, fx_rates_vs_usd, has_errors, has_warnings
 
-        return stock_data_internal, fx_rates_vs_usd, has_errors, has_warnings
-
-    # --- Index Quotes ---
     def get_index_quotes(
-        self, query_symbols: List[str] = DEFAULT_INDEX_QUERY_SYMBOLS
-    ) -> Dict[str, Optional[Dict[str, Any]]]:
+        self, index_symbols: List[str] = DEFAULT_INDEX_QUERY_SYMBOLS
+    ) -> Dict[str, Dict]:
         """
-        Fetches near real-time quotes for specified INDEX symbols using yfinance.
-        (Replaces fetch_index_quotes_yfinance)
+        Fetches current market quotes for specified index symbols using yfinance.
+        Includes caching and rate limit handling.
 
         Args:
-            query_symbols (List[str], optional): List of internal index symbols (e.g., '.DJI').
+            index_symbols (List[str], optional): List of index symbols (e.g., '.DJI', 'IXIC').
+                                                 Defaults to DEFAULT_INDEX_QUERY_SYMBOLS.
 
         Returns:
-            Dict[str, Optional[Dict[str, Any]]]: Dict keyed by internal symbol. Value is dict
-                with 'price', 'change', 'changesPercentage' (fraction), 'name', etc., or None on failure.
+            Dict[str, Dict]: Dictionary mapping index symbols to their quote data
+                             (price, change, changesPercentage, name, source, timestamp).
+                             Returns cached data or empty dict on failure/rate limit.
         """
-        if not YFINANCE_AVAILABLE:
-            logging.error("Cannot fetch index quotes: yfinance not available.")
-            return {q_sym: None for q_sym in query_symbols}
-
-        if not query_symbols:
-            return {}
-        yf_tickers_to_fetch = []
-        yf_ticker_to_query_symbol_map = {}
-        for q_sym in query_symbols:
-            yf_ticker = YFINANCE_INDEX_TICKER_MAP.get(q_sym)
-            if yf_ticker:
-                if yf_ticker not in yf_ticker_to_query_symbol_map:
-                    yf_tickers_to_fetch.append(yf_ticker)
-                yf_ticker_to_query_symbol_map[yf_ticker] = q_sym
-            else:
-                logging.warning(f"Warn: No yfinance ticker mapping for index: {q_sym}")
-
-        if not yf_tickers_to_fetch:
-            return {q_sym: None for q_sym in query_symbols}
-
-        results: Dict[str, Optional[Dict[str, Any]]] = {}
         logging.info(
-            f"Fetching index quotes via yfinance for tickers: {', '.join(yf_tickers_to_fetch)}"
+            f"Fetching current quotes for {len(index_symbols)} index symbols..."
         )
-        try:
-            tickers_data = yf.Tickers(" ".join(yf_tickers_to_fetch))
-            for yf_ticker, ticker_obj in tickers_data.tickers.items():
-                original_query_symbol = yf_ticker_to_query_symbol_map.get(yf_ticker)
-                if not original_query_symbol:
-                    continue
-                ticker_info = getattr(ticker_obj, "info", None)
-                if ticker_info:
-                    try:
-                        price_raw = ticker_info.get(
-                            "regularMarketPrice", ticker_info.get("currentPrice")
-                        )
-                        prev_close_raw = ticker_info.get("previousClose")
-                        name = ticker_info.get(
-                            "shortName",
-                            ticker_info.get("longName", original_query_symbol),
-                        )
-                        change_val_raw = ticker_info.get("regularMarketChange")
-                        change_pct_val_raw = ticker_info.get(
-                            "regularMarketChangePercent"
-                        )  # Fraction
+        results = {}
+        cached_data_used = False
+        cache_valid = False
+        cached_results = None
 
-                        price = float(price_raw) if price_raw is not None else None
-                        prev_close = (
-                            float(prev_close_raw)
-                            if prev_close_raw is not None
-                            else None
-                        )
-                        change = (
-                            float(change_val_raw)
-                            if change_val_raw is not None
-                            else None
-                        )
-                        changesPercentage = (
-                            float(change_pct_val_raw)
-                            if change_pct_val_raw is not None
-                            else None
-                        )  # Keep fraction
+        # --- Caching Logic for Index Quotes ---
+        cache_key = f"INDEX_QUOTES_v1::{'_'.join(sorted(index_symbols))}"
+        cache_duration_minutes = (
+            CURRENT_QUOTE_CACHE_DURATION_MINUTES  # Use same duration as stock quotes
+        )
 
-                        # Calculate change if missing
-                        if (
-                            (change is None or pd.isna(change))
-                            and (price is not None and pd.notna(price))
-                            and (prev_close is not None and pd.notna(prev_close))
+        if os.path.exists(self.current_cache_file):
+            try:
+                with open(self.current_cache_file, "r") as f:
+                    cache_data = json.load(f)
+                # Check if the specific key for index quotes exists
+                index_cache_entry = cache_data.get(cache_key)
+                if index_cache_entry and isinstance(index_cache_entry, dict):
+                    cache_timestamp_str = index_cache_entry.get("timestamp")
+                    if cache_timestamp_str:
+                        cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
+                        if datetime.now(timezone.utc) - cache_timestamp < timedelta(
+                            minutes=cache_duration_minutes
                         ):
-                            change = price - prev_close
-
-                        # Fallback for percentage ONLY if primary fetch failed AND change/prev_close are valid
-                        if (
-                            (changesPercentage is None or pd.isna(changesPercentage))
-                            and (change is not None and pd.notna(change))
-                            and (
-                                prev_close is not None
-                                and pd.notna(prev_close)
-                                and prev_close != 0
-                            )
-                        ):
-                            changesPercentage = change / prev_close  # Store as fraction
-
-                        if price is not None and pd.notna(price):
-                            results[original_query_symbol] = {
-                                "price": price,
-                                "change": change if pd.notna(change) else None,
-                                "changesPercentage": (
-                                    changesPercentage
-                                    if pd.notna(changesPercentage)
-                                    else None
-                                ),  # Store fraction
-                                "name": name,
-                                "symbol": original_query_symbol,
-                                "yf_ticker": yf_ticker,
-                            }
+                            cached_results = index_cache_entry.get("data")
+                            if cached_results is not None:
+                                cache_valid = True
+                                logging.info(
+                                    f"Using valid cache for index quotes (Key: {cache_key[:30]}...)."
+                                )
                         else:
-                            results[original_query_symbol] = None
-                            logging.warning(
-                                f"Warn: Index {original_query_symbol} ({yf_ticker}) missing price."
-                            )
-                    except (ValueError, TypeError, KeyError, AttributeError) as e:
-                        results[original_query_symbol] = None
-                        logging.warning(
-                            f"Warn: Error parsing index {original_query_symbol} ({yf_ticker}): {e}"
-                        )
+                            logging.info("Index quotes cache expired.")
+                    else:
+                        logging.warning("Index quotes cache entry missing timestamp.")
                 else:
-                    results[original_query_symbol] = None
-                    logging.warning(f"Warn: No yfinance info for index: {yf_ticker}")
-        except Exception as e:
-            logging.error(f"Error fetching yfinance index data: {e}")
-            traceback.print_exc()
-            results = {q_sym: None for q_sym in query_symbols}
+                    logging.info("Index quotes cache key not found in file.")
+            except (json.JSONDecodeError, IOError, Exception) as e:
+                logging.warning(f"Error reading index quotes cache: {e}. Will refetch.")
 
-        # Ensure all requested symbols have an entry (even if None)
-        for q_sym in query_symbols:
-            if q_sym not in results:
-                results[q_sym] = None
+        if cache_valid and cached_results is not None:
+            results = cached_results
+            cached_data_used = True
+        else:
+            logging.info("Fetching fresh index quotes...")
+            # Fetching logic will run if cache was invalid/missing
+            pass  # Let the fetching logic below execute
+
+        # --- Fetching Logic (Only runs if cache was invalid/missing) ---
+        if not cached_data_used:
+            results = {}  # Ensure results is empty before fresh fetch
+            if not index_symbols:
+                logging.warning("No index symbols provided to get_index_quotes.")
+                return results
+
+            index_tickers_str = " ".join(index_symbols)
+            try:
+                tickers = yf.Tickers(index_tickers_str)  # REMOVED session argument
+                for symbol, ticker_obj in tickers.tickers.items():
+                    try:
+                        # Use .info for indices as it often contains the necessary fields
+                        ticker_info = getattr(
+                            ticker_obj, "info", None
+                        )  # This is where the error occurred
+                        if ticker_info:
+                            # Prioritize keys commonly available for indices
+                            price = (
+                                ticker_info.get("regularMarketPrice")
+                                or ticker_info.get("currentPrice")
+                                or ticker_info.get("previousClose")
+                            )
+                            change = ticker_info.get("regularMarketChange")
+                            change_pct = ticker_info.get("regularMarketChangePercent")
+                            name = ticker_info.get("shortName") or ticker_info.get(
+                                "longName"
+                            )
+
+                            if price is not None:
+                                results[symbol] = {
+                                    "price": price,
+                                    "change": change,
+                                    "changesPercentage": (
+                                        # If yfinance raw value is actual_pct * 100, divide by 100.
+                                        change_pct
+                                        if pd.notna(change_pct)
+                                        else None
+                                    ),
+                                    "name": name,
+                                    "source": "yf_info",
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                }
+                            else:
+                                logging.warning(
+                                    f"Could not get price for index {symbol} from info."
+                                )
+                        else:
+                            logging.warning(f"Could not get .info for index {symbol}")
+
+                    except yf.exceptions.YFRateLimitError:
+                        logging.error(
+                            f"RATE LIMITED while fetching info for index {symbol}. Aborting index fetch."
+                        )
+                        # Return cached data if available, otherwise empty
+                        return cached_results or {}
+                    except AttributeError as ae:
+                        # Specifically catch potential AttributeError if 'info' is called incorrectly or object is bad
+                        logging.error(
+                            f"AttributeError fetching info for index {symbol}: {ae}. Ticker object: {ticker_obj}"
+                        )
+                        # Continue to next symbol, don't abort all
+                    except Exception as e_ticker:
+                        logging.error(
+                            f"Error fetching info for index {symbol}: {e_ticker}"
+                        )
+                        # Continue trying other symbols
+                    # time.sleep(0.05)  # Add small delay after each index info fetch
+                    # time.sleep(0.1)  # Add small delay after each index info fetch
+
+            except yf.exceptions.YFRateLimitError:
+                logging.error(
+                    "RATE LIMITED during yf.Tickers() call for indices. Aborting index fetch."
+                )
+                # Return cached data if available, otherwise empty
+                return cached_results or {}
+            except Exception as e_indices:
+                logging.error(f"Error fetching index quotes batch: {e_indices}")
+                # Return cached data if available, otherwise empty
+                return cached_results or {}
+
+            # --- Save to Cache ---
+            if results:  # Only save if we got some results
+                try:
+                    # Load existing cache data (if any) to update it
+                    full_cache_data = {}
+                    if os.path.exists(self.current_cache_file):
+                        with open(self.current_cache_file, "r") as f_read:
+                            full_cache_data = json.load(f_read)
+
+                    # Add/Update the index quote entry
+                    full_cache_data[cache_key] = {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "data": results,
+                    }
+                    with open(self.current_cache_file, "w") as f_write:
+                        json.dump(full_cache_data, f_write, indent=2)
+                    logging.info(
+                        f"Saved/Updated index quotes in cache: {self.current_cache_file}"
+                    )
+                except Exception as e_cache_write:
+                    logging.warning(
+                        f"Failed to write index quotes to cache: {e_cache_write}"
+                    )
+
         return results
 
     # --- Historical Data Fetching ---
@@ -801,7 +871,7 @@ class MarketDataProvider:
                 )
 
             symbols_processed += len(batch_symbols)
-            time.sleep(0.2)  # Small delay between batches
+            # time.sleep(0.2)  # Small delay between batches
 
         logging.info(
             f"Hist Fetch Helper: Finished fetching ({len(historical_data)} symbols successful)."
