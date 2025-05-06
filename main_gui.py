@@ -43,6 +43,7 @@ import json
 import traceback
 import csv
 import shutil
+import tempfile
 
 # --- Add project root to sys.path ---
 # Ensures modules like config, data_loader etc. can be found reliably
@@ -6869,6 +6870,7 @@ The CSV file should contain the following columns (header names must match exact
         if not self.transactions_file:
             QMessageBox.critical(self, "Save Error", "CSV file path is not set.")
             return False
+        temp_file_path = None  # Initialize for finally block
 
         # Define headers in the correct order
         csv_headers = [
@@ -6930,14 +6932,35 @@ The CSV file should contain the following columns (header names must match exact
                     )
                     return False
 
-            # --- Write to CSV ---
+            # --- Create a temporary file in the same directory for atomic write ---
+            # Ensure the directory exists and is writable
+            target_dir = os.path.dirname(self.transactions_file)
+            if (
+                not target_dir
+            ):  # Handle cases where transactions_file might be just a filename
+                target_dir = os.getcwd()
+
+            # mkstemp returns an open file descriptor and path. Close fd, pandas opens by path.
+            temp_fd, temp_file_path = tempfile.mkstemp(
+                dir=target_dir, prefix=".investa_rewrite_", suffix=".csv"
+            )
+            os.close(temp_fd)
+
+            # --- Write to the temporary CSV ---
             df_ordered.to_csv(
-                self.transactions_file,
+                temp_file_path,  # Write to temp file
                 index=False,
                 encoding="utf-8",
                 quoting=csv.QUOTE_MINIMAL,  # Keep minimal quoting
                 date_format=CSV_DATE_FORMAT,  # Use the specific date format
             )
+
+            # --- Atomically replace the original file with the temporary file ---
+            shutil.move(temp_file_path, self.transactions_file)
+            temp_file_path = (
+                None  # Mark as moved, so finally block doesn't try to remove it
+            )
+
             logging.info(f"Successfully rewrote CSV: {self.transactions_file}")
             return True
         except PermissionError as e:
@@ -6957,6 +6980,11 @@ The CSV file should contain the following columns (header names must match exact
                 f"An unexpected error occurred while saving CSV:\n{e}",
             )
             return False
+        finally:
+            # --- Clean up the temporary file if it still exists (e.g., on error) ---
+            if temp_file_path and os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+                logging.debug(f"Cleaned up temporary file: {temp_file_path}")
 
     def _edit_transaction_in_csv(
         self, original_index_to_edit: int, new_data_dict: Dict[str, str]

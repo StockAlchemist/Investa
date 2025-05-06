@@ -1,6 +1,6 @@
 {
     "transactions_file": "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/my_transactions.csv",
-    "display_currency": "THB",
+    "display_currency": "USD",
     "show_closed": false,
     "selected_accounts": [],
     "load_on_startup": true,
@@ -16,7 +16,7 @@
         "TD Ameritrade": "USD"
     },
     "default_currency": "USD",
-    "graph_start_date": "2015-01-01",
+    "graph_start_date": "2010-01-01",
     "graph_end_date": "2025-04-25",
     "graph_interval": "D",
     "graph_benchmarks": [
@@ -43,7 +43,7 @@
         "Total Ret %": true,
         "IRR (%)": true
     },
-    "bar_periods_annual": 29,
+    "bar_periods_annual": 10,
     "bar_periods_monthly": 6,
     "bar_periods_weekly": 7
 }
