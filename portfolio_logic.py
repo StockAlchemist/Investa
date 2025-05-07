@@ -1223,7 +1223,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
 
 
 # --- START NUMBA HELPER FUNCTION ---
-@numba.jit(nopython=True, fastmath=True)
+@numba.jit(nopython=True, fastmath=True)  # <-- PUT nopython=True BACK
 def _calculate_holdings_numba(
     target_date_ordinal,  # int: date.toordinal()
     tx_dates_ordinal_np,  # int64 array: date.toordinal()

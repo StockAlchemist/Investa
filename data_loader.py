@@ -7,7 +7,7 @@ from io import StringIO  # Keep if used in tests or function
 
 # Import constants from config.py (assuming it's in the same directory)
 try:
-    from config import CASH_SYMBOL_CSV, LOGGING_LEVEL, SHORTABLE_SYMBOLS
+    from config import CASH_SYMBOL_CSV, LOGGING_LEVEL  # Add others if needed
 except ImportError:
     logging.error(
         "CRITICAL: Could not import constants from config.py in data_loader.py"
@@ -29,6 +29,8 @@ except ImportError:
 -------------------------------------------------------------------------------
 SPDX-License-Identifier: MIT
 """
+# Constants
+SHORTABLE_SYMBOLS = {"AAPL", "RIMM"}
 
 
 # --- REVISED: load_and_clean_transactions (Correct na_values Scope) ---

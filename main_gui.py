@@ -43,7 +43,6 @@ import json
 import traceback
 import csv
 import shutil
-import tempfile
 
 # --- Add project root to sys.path ---
 # Ensures modules like config, data_loader etc. can be found reliably
@@ -314,8 +313,8 @@ CONFIG_FILE = "gui_config.json"  # Configuration file name
 CHART_MAX_SLICES = 10  # Max slices before grouping into 'Other' in pie charts
 PIE_CHART_FIG_SIZE = (5.0, 2.5)  # Figure size for pie charts
 PERF_CHART_FIG_SIZE = (7.5, 3.0)  # Figure size for performance graphs
-CHART_DPI = 95  # Dots per inch for charts # Use the actual YF tickers fetched
-INDICES_FOR_HEADER = ["^DJI", "^IXIC", "^GSPC"]  # Use the actual YF tickers fetched
+CHART_DPI = 95  # Dots per inch for charts
+INDICES_FOR_HEADER = [".DJI", "IXIC", ".INX"]
 CSV_DATE_FORMAT = "%b %d, %Y"  # Define the specific date format used in the CSV
 COMMON_CURRENCIES = [
     "USD",
@@ -578,9 +577,6 @@ class PortfolioCalculatorWorker(QRunnable):
                     index_quotes = (
                         market_provider.get_index_quotes()
                     )  # Uses defaults from config
-                    logging.debug(
-                        f"DEBUG Worker: MarketDataProvider returned index_quotes: {index_quotes}"
-                    )  # <-- ADDED LOG
                 else:
                     logging.error(
                         "MarketDataProvider not available, cannot fetch index quotes."
@@ -4473,6 +4469,7 @@ The CSV file should contain the following columns (header names must match exact
         self.setFont(self.app_font)
         self.internal_to_yf_map = {}  # <-- ADD Initialize attribute
         self._initial_file_selection = False  # Flag for initial auto-select
+        self.worker_signals = WorkerSignals()  # Central signals object
 
         # --- Configuration Loading ---
         self.config = self.load_config()
@@ -4506,6 +4503,10 @@ The CSV file should contain the following columns (header names must match exact
         self.account_metrics_data = {}
         self.historical_data = pd.DataFrame()
         self.index_quote_data: Dict[str, Dict[str, Any]] = {}
+        self.full_historical_data = pd.DataFrame()
+        self.periodic_returns_data: Dict[str, pd.DataFrame] = (
+            {}
+        )  # Initialize as empty dict
 
         # --- Account Selection State ---
         self.available_accounts: List[str] = []
@@ -4540,37 +4541,17 @@ The CSV file should contain the following columns (header names must match exact
         self._init_ui_structure()  # Setup frames and main layout
         self._init_ui_widgets()  # Create widgets within frames
         self._init_menu_bar()
-        self._connect_signals()  # Connect buttons etc.
-
-        # --- Toolbar ---
-        self.toolbar = self.addToolBar("Main Toolbar")
-        self.toolbar.setObjectName("MainToolBar")
-        self.toolbar.setIconSize(QSize(20, 20))  # Optional: Set icon size
-
-        # Add actions (ensure these attributes were set in _init_menu_bar)
-        if hasattr(self, "select_action"):
-            self.toolbar.addAction(self.select_action)
-        if hasattr(self, "refresh_action"):
-            self.toolbar.addAction(self.refresh_action)
-        # Add separator
-        self.toolbar.addSeparator()
-        if hasattr(self, "add_transaction_action"):
-            self.toolbar.addAction(self.add_transaction_action)
-        if hasattr(self, "manage_transactions_action"):
-            self.toolbar.addAction(self.manage_transactions_action)
-        # --- End Toolbar ---
+        self._init_toolbar()  # Initialize toolbar after menu actions are created
+        self._connect_signals()  # Connect signals after all UI elements are initialized
 
         # --- Apply Styles & Initial Updates ---
-        self.apply_styles()
-        self.update_header_info(loading=True)  # Show loading state initially
-        self.update_performance_graphs(initial=True)  # Draw empty graphs initially
-        self._update_account_button_text()  # Set initial account button text based on loaded config/defaults
-        self._update_benchmark_button_text()  # Set initial benchmark button text
-        self._update_table_title()  # Set initial table title
+        self._apply_initial_styles_and_updates()
 
         # --- Initial Data Load Logic ---
         if self.config.get("load_on_startup", True):
             if self.transactions_file and os.path.exists(self.transactions_file):
+                # Need to get available accounts before potentially filtering in refresh_data
+                # Let's trigger a preliminary load just for accounts if needed, or handle in refresh_data
                 logging.info("Triggering initial data refresh on startup...")
                 from PySide6.QtCore import QTimer
 
@@ -4614,6 +4595,1505 @@ The CSV file should contain the following columns (header names must match exact
             self.update_performance_graphs(initial=True)
             self._update_account_button_text()
             self._update_table_title()
+
+    def _apply_initial_styles_and_updates(self):
+        """Applies styles and initial UI states after widgets are created."""
+        self.apply_styles()
+        self.update_header_info(loading=True)
+        self.update_performance_graphs(initial=True)
+        self._update_account_button_text()
+        self._update_benchmark_button_text()
+        self._update_table_title()
+        self._update_periodic_bar_charts()  # Draw empty bar charts initially
+
+    def _init_ui_structure(self):
+        """Sets up the main window layout using QFrames for structure."""
+        self.setWindowTitle(self.base_window_title)
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Create main frames/panels
+        self.header_frame = QFrame()
+        self.header_frame.setObjectName("HeaderFrame")
+        self.controls_frame = QFrame()
+        self.controls_frame.setObjectName("ControlsFrame")
+        self.summary_and_graphs_frame = QFrame()
+        self.summary_and_graphs_frame.setObjectName("SummaryAndGraphsFrame")
+        self.content_frame = QFrame()
+        # --- ADD Bar Charts Frame ---
+        self.bar_charts_frame = QFrame()
+        self.bar_charts_frame.setObjectName("BarChartsFrame")
+        self.bar_charts_frame.setVisible(False)  # Initially hidden until data is ready
+        # --- END ADD ---
+        self.content_frame.setObjectName("ContentFrame")
+
+        # Add frames to main layout
+        main_layout.addWidget(self.header_frame)
+        main_layout.addWidget(self.controls_frame)
+        main_layout.addWidget(
+            self.summary_and_graphs_frame, 5
+        )  # Add summary/graphs frame with stretch 5
+        main_layout.addWidget(
+            self.bar_charts_frame, 3
+        )  # Add bar charts frame with stretch 3
+        main_layout.addWidget(
+            self.content_frame, 6  # Add content frame with stretch factor 6
+        )  # Content frame takes more relative space
+
+    def _init_header_frame_widgets(self):
+        """Initializes widgets for the Header Frame."""
+        if not hasattr(self, "header_frame"):
+            return
+
+        header_layout = QHBoxLayout(self.header_frame)
+        header_layout.setContentsMargins(15, 8, 15, 8)
+        self.main_title_label = QLabel("📈 <b>Investa Portfolio Dashboard</b> ✨")
+        self.main_title_label.setObjectName("MainTitleLabel")
+        self.main_title_label.setTextFormat(Qt.RichText)
+        self.header_info_label = QLabel("<i>Initializing...</i>")
+        self.header_info_label.setObjectName("HeaderInfoLabel")
+        self.header_info_label.setTextFormat(Qt.RichText)
+        self.header_info_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        header_layout.addWidget(self.main_title_label)
+        header_layout.addStretch(1)
+        header_layout.addWidget(self.header_info_label)
+
+    def _init_controls_frame_widgets(self):
+        """Initializes widgets for the Controls Frame."""
+        if not hasattr(self, "controls_frame"):
+            return
+        controls_layout = QHBoxLayout(self.controls_frame)  # Use self.controls_frame
+        controls_layout.setContentsMargins(10, 8, 10, 8)
+        controls_layout.setSpacing(8)
+
+        # Helper function to create a vertical separator
+        def create_separator():
+            separator = QFrame()
+            separator.setFrameShape(QFrame.Shape.VLine)
+            separator.setFrameShadow(QFrame.Shadow.Sunken)
+            return separator
+
+        # Buttons
+        self.select_file_button = QPushButton("Select CSV")
+        self.select_file_button.setObjectName("SelectFileButton")
+        self.select_file_button.setIcon(
+            self.style().standardIcon(QStyle.SP_DirOpenIcon)
+        )
+        # controls_layout.addWidget(self.select_file_button) # REMOVED from controls bar
+        self.add_transaction_button = QPushButton("Add Tx")
+        self.add_transaction_button.setObjectName("AddTransactionButton")
+        self.add_transaction_button.setIcon(
+            self.style().standardIcon(QStyle.SP_FileIcon)
+        )
+        self.manage_transactions_button = QPushButton(
+            "Manage Tx"
+        )  # Keep button instance for menu/toolbar
+        self.manage_transactions_button.setObjectName("ManageTransactionsButton")
+        self.manage_transactions_button.setIcon(
+            self.style().standardIcon(QStyle.SP_DialogSaveButton)
+        )  # Example icon
+        self.manage_transactions_button.setToolTip(
+            "Edit or delete existing transactions"
+        )
+        # controls_layout.addWidget(self.manage_transactions_button) # REMOVED from controls bar
+
+        self.view_ignored_button = QPushButton("View Log")
+        self.view_ignored_button.setObjectName("ViewIgnoredButton")
+        self.view_ignored_button.setIcon(
+            self.style().standardIcon(QStyle.SP_MessageBoxWarning)
+        )  # Example icon
+        self.view_ignored_button.setToolTip(
+            "View transactions ignored during the last calculation"
+        )
+        self.view_ignored_button.setEnabled(False)  # Initially disabled
+        # controls_layout.addWidget(self.view_ignored_button) # REMOVED from left group
+
+        self.add_transaction_button.setToolTip("Manually add a new transaction")
+        # controls_layout.addWidget(self.add_transaction_button) # REMOVED from controls bar
+
+        # --- Separator 1 ---
+        controls_layout.addWidget(create_separator())
+
+        self.account_select_button = QPushButton("Accounts")
+        self.account_select_button.setObjectName("AccountSelectButton")
+        self.account_select_button.setMinimumWidth(130)
+        controls_layout.addWidget(self.account_select_button)
+        self.update_accounts_button = QPushButton("Update Accounts")
+        self.update_accounts_button.setObjectName("UpdateAccountsButton")
+        self.update_accounts_button.setIcon(
+            self.style().standardIcon(QStyle.SP_DialogApplyButton)
+        )
+        self.update_accounts_button.setToolTip(
+            "Apply selected accounts and recalculate"
+        )
+        controls_layout.addWidget(self.update_accounts_button)
+        # Filters & Combos
+        controls_layout.addWidget(QLabel("Currency:"))
+        self.currency_combo = QComboBox()
+        self.currency_combo.setObjectName("CurrencyCombo")
+        self.currency_combo.addItems(["USD", "THB", "JPY", "EUR", "GBP"])
+        self.currency_combo.setCurrentText(self.config.get("display_currency", "USD"))
+        self.currency_combo.setMinimumWidth(80)
+        controls_layout.addWidget(self.currency_combo)
+        self.show_closed_check = QCheckBox("Show Closed")
+        self.show_closed_check.setObjectName("ShowClosedCheck")
+        self.show_closed_check.setChecked(self.config.get("show_closed", False))
+        controls_layout.addWidget(self.show_closed_check)
+
+        # --- Separator 2 (Between Account/Display and Graph Controls) ---
+        controls_layout.addWidget(create_separator())
+
+        # --- Separator 2 ---
+        controls_layout.addWidget(create_separator())
+
+        # Graph Controls
+        controls_layout.addWidget(QLabel("Graphs:"))
+        self.graph_start_date_edit = QDateEdit()
+        self.graph_start_date_edit.setObjectName("GraphDateEdit")
+        self.graph_start_date_edit.setCalendarPopup(True)
+        self.graph_start_date_edit.setDisplayFormat("yyyy-MM-dd")
+        self.graph_start_date_edit.setDate(
+            QDate.fromString(self.config.get("graph_start_date"), "yyyy-MM-dd")
+        )
+        controls_layout.addWidget(self.graph_start_date_edit)
+        controls_layout.addWidget(QLabel("to"))
+        self.graph_end_date_edit = QDateEdit()
+        self.graph_end_date_edit.setObjectName("GraphDateEdit")
+        self.graph_end_date_edit.setCalendarPopup(True)
+        self.graph_end_date_edit.setDisplayFormat("yyyy-MM-dd")
+        self.graph_end_date_edit.setDate(
+            QDate.fromString(self.config.get("graph_end_date"), "yyyy-MM-dd")
+        )
+        controls_layout.addWidget(self.graph_end_date_edit)
+        self.graph_interval_combo = QComboBox()
+        self.graph_interval_combo.setObjectName("GraphIntervalCombo")
+        self.graph_interval_combo.addItems(["D", "W", "M"])
+        self.graph_interval_combo.setCurrentText(
+            self.config.get("graph_interval", DEFAULT_GRAPH_INTERVAL)
+        )
+        self.graph_interval_combo.setMinimumWidth(60)
+        controls_layout.addWidget(self.graph_interval_combo)
+        self.benchmark_select_button = QPushButton()
+        self.benchmark_select_button.setObjectName("BenchmarkSelectButton")
+        self.benchmark_select_button.setMinimumWidth(100)
+        controls_layout.addWidget(self.benchmark_select_button)  # Text set later
+        self.graph_update_button = QPushButton("Update Graphs")
+        self.graph_update_button.setObjectName("GraphUpdateButton")
+        self.graph_update_button.setIcon(
+            self.style().standardIcon(QStyle.SP_BrowserReload)
+        )
+        self.graph_update_button.setToolTip(
+            "Recalculate and redraw performance graphs."
+        )
+        controls_layout.addWidget(self.graph_update_button)
+
+        # --- Separator 3 ---
+        controls_layout.addWidget(create_separator())
+
+        # Spacer & Right Aligned Controls
+        controls_layout.addStretch(1)
+        self.exchange_rate_display_label = QLabel("")
+        self.exchange_rate_display_label.setObjectName("ExchangeRateLabel")
+        self.exchange_rate_display_label.setVisible(False)
+        controls_layout.addWidget(self.view_ignored_button)  # ADDED to right group
+        controls_layout.addWidget(self.exchange_rate_display_label)
+        self.refresh_button = QPushButton("Refresh All")
+        self.refresh_button.setObjectName("RefreshButton")
+        self.refresh_button.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
+        # controls_layout.addWidget(self.refresh_button) # REMOVED from controls bar
+
+    def _init_summary_grid_widgets(self, summary_graphs_layout: QHBoxLayout):
+        """Initializes the summary grid widgets and adds them to the provided layout."""
+        if not hasattr(self, "summary_and_graphs_frame"):
+            return
+
+        summary_graphs_layout.setContentsMargins(10, 5, 10, 5)
+        summary_graphs_layout.setSpacing(10)
+        # Summary Grid
+        summary_grid_widget = QWidget()
+        summary_layout = QGridLayout(summary_grid_widget)
+        summary_layout.setContentsMargins(10, 25, 10, 10)
+        summary_layout.setHorizontalSpacing(15)
+        summary_layout.setVerticalSpacing(30)
+        self.summary_net_value = self.create_summary_item("Net Value", True)
+        self.summary_day_change = self.create_summary_item("Day's G/L", True)
+        self.summary_total_gain = self.create_summary_item("Total G/L")
+        self.summary_realized_gain = self.create_summary_item("Realized G/L")
+        self.summary_unrealized_gain = self.create_summary_item("Unrealized G/L")
+        self.summary_dividends = self.create_summary_item("Dividends")
+        self.summary_commissions = self.create_summary_item("Fees")
+        self.summary_cash = self.create_summary_item("Cash Balance")
+        self.summary_total_return_pct = self.create_summary_item("Total Ret %")
+        self.summary_annualized_twr = self.create_summary_item("Ann. TWR %")
+        summary_layout.addWidget(self.summary_net_value[0], 0, 0, Qt.AlignRight)
+        summary_layout.addWidget(self.summary_net_value[1], 0, 1)
+        summary_layout.addWidget(self.summary_day_change[0], 0, 2, Qt.AlignRight)
+        summary_layout.addWidget(self.summary_day_change[1], 0, 3)
+        summary_layout.addWidget(self.summary_total_gain[0], 1, 0, Qt.AlignRight)
+        summary_layout.addWidget(self.summary_total_gain[1], 1, 1)
+        summary_layout.addWidget(self.summary_realized_gain[0], 1, 2, Qt.AlignRight)
+        summary_layout.addWidget(self.summary_realized_gain[1], 1, 3)
+        summary_layout.addWidget(self.summary_unrealized_gain[0], 2, 0, Qt.AlignRight)
+        summary_layout.addWidget(self.summary_unrealized_gain[1], 2, 1)
+        summary_layout.addWidget(self.summary_dividends[0], 2, 2, Qt.AlignRight)
+        summary_layout.addWidget(self.summary_dividends[1], 2, 3)
+        summary_layout.addWidget(self.summary_commissions[0], 3, 0, Qt.AlignRight)
+        summary_layout.addWidget(self.summary_commissions[1], 3, 1)
+        summary_layout.addWidget(self.summary_cash[0], 3, 2, Qt.AlignRight)
+        summary_layout.addWidget(self.summary_cash[1], 3, 3)
+        summary_layout.addWidget(self.summary_total_return_pct[0], 4, 0, Qt.AlignRight)
+        summary_layout.addWidget(self.summary_total_return_pct[1], 4, 1)
+        summary_layout.addWidget(self.summary_annualized_twr[0], 4, 2, Qt.AlignRight)
+        summary_layout.addWidget(self.summary_annualized_twr[1], 4, 3)
+        summary_layout.setColumnStretch(1, 1)
+        summary_layout.setColumnStretch(3, 1)
+        summary_layout.setRowStretch(5, 1)
+        summary_graphs_layout.addWidget(summary_grid_widget, 9)
+
+    def _init_performance_graph_widgets(self, summary_graphs_layout: QHBoxLayout):
+        """Initializes the performance graph widgets and adds them to the provided layout."""
+        perf_graphs_container_widget = QWidget()
+        if not hasattr(self, "summary_and_graphs_frame"):
+            return
+        perf_graphs_container_widget.setObjectName("PerfGraphsContainer")
+        # This layout holds the two vertical (Graph+Toolbar) widgets side-by-side
+        perf_graphs_main_layout = QHBoxLayout(perf_graphs_container_widget)
+        perf_graphs_main_layout.setContentsMargins(0, 0, 0, 0)
+        perf_graphs_main_layout.setSpacing(8)  # Spacing between the two graph columns
+
+        # -- Layout for Return Graph + Toolbar (Left Column) --
+        perf_return_widget = QWidget()  # Container for left graph + toolbar
+        perf_return_layout = QVBoxLayout(perf_return_widget)
+        perf_return_layout.setContentsMargins(0, 0, 0, 0)
+        perf_return_layout.setSpacing(2)  # Spacing between graph and its toolbar
+
+        self.perf_return_fig = Figure(figsize=PERF_CHART_FIG_SIZE, dpi=CHART_DPI)
+        self.perf_return_ax = self.perf_return_fig.add_subplot(111)
+        self.perf_return_canvas = FigureCanvas(self.perf_return_fig)
+        self.perf_return_canvas.setObjectName("PerfReturnCanvas")
+        self.perf_return_canvas.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Expanding
+        )
+        perf_return_layout.addWidget(
+            self.perf_return_canvas, 1
+        )  # Canvas takes vertical space
+
+        # Create and configure the toolbar for the return graph
+        self.perf_return_toolbar = NavigationToolbar(
+            self.perf_return_canvas, perf_return_widget
+        )
+        # --- OR use the Compact Toolbar if you implemented it ---
+        # self.perf_return_toolbar = CompactNavigationToolbar(self.perf_return_canvas, perf_return_widget, coordinates=False)
+        self.perf_return_toolbar.setObjectName("PerfReturnToolbar")
+
+        perf_return_layout.addWidget(
+            self.perf_return_toolbar
+        )  # Add toolbar below graph
+        perf_graphs_main_layout.addWidget(
+            perf_return_widget
+        )  # Add left column to main layout
+
+        # -- Layout for Absolute Value Graph + Toolbar (Right Column) --
+        abs_value_widget = QWidget()  # Container for right graph + toolbar
+        abs_value_layout = QVBoxLayout(abs_value_widget)
+        abs_value_layout.setContentsMargins(0, 0, 0, 0)
+        abs_value_layout.setSpacing(2)  # Spacing between graph and its toolbar
+
+        self.abs_value_fig = Figure(figsize=PERF_CHART_FIG_SIZE, dpi=CHART_DPI)
+        self.abs_value_ax = self.abs_value_fig.add_subplot(111)
+        self.abs_value_canvas = FigureCanvas(self.abs_value_fig)
+        self.abs_value_canvas.setObjectName("AbsValueCanvas")
+        self.abs_value_canvas.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Expanding
+        )
+        abs_value_layout.addWidget(
+            self.abs_value_canvas, 1
+        )  # Canvas takes vertical space
+
+        # Create and configure the toolbar for the value graph
+        self.abs_value_toolbar = NavigationToolbar(
+            self.abs_value_canvas, abs_value_widget
+        )
+        # --- OR use the Compact Toolbar ---
+        # self.abs_value_toolbar = CompactNavigationToolbar(self.abs_value_canvas, abs_value_widget, coordinates=False)
+        self.abs_value_toolbar.setObjectName("AbsValueToolbar")
+
+        abs_value_layout.addWidget(self.abs_value_toolbar)  # Add toolbar below graph
+        perf_graphs_main_layout.addWidget(
+            abs_value_widget
+        )  # Add right column to main layout
+
+        # Add the main performance graphs container to the summary/graphs frame
+        summary_graphs_layout.addWidget(perf_graphs_container_widget, 20)
+        # --- End Performance Graphs Container Modification ---
+
+    def _init_bar_charts_frame_widgets(self):
+        """Initializes widgets for the Bar Charts Frame."""
+        if not hasattr(self, "bar_charts_frame"):
+            return
+        bar_charts_main_layout = QHBoxLayout(
+            self.bar_charts_frame
+        )  # Use self.bar_charts_frame
+        bar_charts_main_layout.setContentsMargins(10, 5, 10, 5)
+        bar_charts_main_layout.setSpacing(10)
+
+        # Function to create a single bar chart widget
+        def create_bar_chart_widget(  # Modified signature
+            title,
+            canvas_attr_name,
+            fig_attr_name,
+            ax_attr_name,
+            spinbox_attr_name,
+            default_periods,
+        ):
+            widget = QWidget()
+            layout = QVBoxLayout(widget)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(2)
+
+            # --- Title and Input Row ---
+            title_input_layout = QHBoxLayout()
+            title_input_layout.setContentsMargins(0, 0, 0, 0)
+            title_input_layout.setSpacing(5)
+
+            title_label = QLabel(f"<b>{title}</b>")
+            title_label.setObjectName("BarChartTitleLabel")
+            title_input_layout.addWidget(title_label)
+            title_input_layout.addStretch()  # Push input to the right
+
+            title_input_layout.addWidget(QLabel("Periods:"))
+            spinbox = QSpinBox()
+            spinbox.setObjectName(f"{spinbox_attr_name}")  # e.g., annualPeriodsSpinBox
+            spinbox.setMinimum(1)
+            spinbox.setMaximum(100)  # Adjust max as needed
+            spinbox.setValue(default_periods)
+            spinbox.setToolTip(f"Number of {title.split()[0].lower()} to display")
+            spinbox.setFixedWidth(50)  # Keep it compact
+            setattr(
+                self, spinbox_attr_name, spinbox
+            )  # Store reference, e.g., self.annual_periods_spinbox
+            title_input_layout.addWidget(spinbox)
+
+            layout.addLayout(title_input_layout)  # Add the title/input row
+
+            setattr(
+                self, fig_attr_name, Figure(figsize=(4, 2.5), dpi=CHART_DPI)
+            )  # Smaller figsize
+            fig = getattr(self, fig_attr_name)
+            setattr(self, ax_attr_name, fig.add_subplot(111))
+            setattr(self, canvas_attr_name, FigureCanvas(fig))
+            canvas = getattr(self, canvas_attr_name)
+            canvas.setObjectName(canvas_attr_name)
+            canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            layout.addWidget(canvas, 1)
+            # No toolbar for bar charts for now
+            return widget
+
+        # Create the three bar chart widgets
+        self.annual_bar_widget = create_bar_chart_widget(
+            "Annual Returns",
+            "annual_bar_canvas",
+            "annual_bar_fig",
+            "annual_bar_ax",
+            "annual_periods_spinbox",
+            self.config.get("bar_periods_annual", 10),
+        )
+        self.monthly_bar_widget = create_bar_chart_widget(
+            "Monthly Returns",
+            "monthly_bar_canvas",
+            "monthly_bar_fig",
+            "monthly_bar_ax",
+            "monthly_periods_spinbox",
+            self.config.get("bar_periods_monthly", 12),
+        )
+        self.weekly_bar_widget = create_bar_chart_widget(
+            "Weekly Returns",
+            "weekly_bar_canvas",
+            "weekly_bar_fig",
+            "weekly_bar_ax",
+            "weekly_periods_spinbox",
+            self.config.get("bar_periods_weekly", 12),
+        )
+
+        # Add widgets to the layout
+        bar_charts_main_layout.addWidget(self.annual_bar_widget, 1)
+        bar_charts_main_layout.addWidget(self.monthly_bar_widget, 1)
+        bar_charts_main_layout.addWidget(self.weekly_bar_widget, 1)
+        # --- End Bar Charts Frame Setup ---
+
+    def _init_pie_chart_widgets(self, content_layout: QHBoxLayout):
+        """Initializes pie chart widgets and adds them to the provided content_layout."""
+        if not hasattr(self, "content_frame"):
+            return
+        pie_charts_container_widget = QWidget()
+        pie_charts_container_widget.setObjectName("PieChartsContainer")
+        pie_charts_layout = QVBoxLayout(pie_charts_container_widget)
+        pie_charts_layout.setContentsMargins(0, 0, 0, 0)
+        pie_charts_layout.setSpacing(10)
+        account_chart_widget = QWidget()
+        account_chart_layout = QVBoxLayout(account_chart_widget)
+        account_chart_layout.setContentsMargins(0, 0, 0, 0)
+        self.account_pie_title_label = QLabel(
+            "<b>Value by Account</b>"
+        )  # <-- RESTORED Title
+        self.account_pie_title_label.setObjectName("AccountPieTitleLabel")
+        self.account_pie_title_label.setTextFormat(Qt.RichText)
+        account_chart_layout.addWidget(
+            self.account_pie_title_label, alignment=Qt.AlignCenter
+        )  # <-- RESTORED Title
+        self.account_fig = Figure(figsize=PIE_CHART_FIG_SIZE, dpi=CHART_DPI)
+        self.account_ax = self.account_fig.add_subplot(111)
+        self.account_canvas = FigureCanvas(self.account_fig)
+        self.account_canvas.setObjectName("AccountPieCanvas")
+        self.account_canvas.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        account_chart_layout.addWidget(self.account_canvas)
+        pie_charts_layout.addWidget(account_chart_widget)
+        holdings_chart_widget = QWidget()
+        holdings_chart_layout = QVBoxLayout(holdings_chart_widget)
+        holdings_chart_layout.setContentsMargins(0, 0, 0, 0)
+        self.holdings_pie_title_label = QLabel("<b>Value by Holding</b>")
+        self.holdings_pie_title_label.setObjectName("HoldingsPieTitleLabel")
+        self.holdings_pie_title_label.setTextFormat(Qt.RichText)
+        holdings_chart_layout.addWidget(
+            self.holdings_pie_title_label, alignment=Qt.AlignCenter
+        )  # <-- RESTORED Title AddWidget Call
+        self.holdings_fig = Figure(figsize=PIE_CHART_FIG_SIZE, dpi=CHART_DPI)
+        self.holdings_ax = self.holdings_fig.add_subplot(111)
+        self.holdings_canvas = FigureCanvas(self.holdings_fig)
+        self.holdings_canvas.setObjectName("HoldingsPieCanvas")
+        self.holdings_canvas.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        holdings_chart_layout.addWidget(self.holdings_canvas)
+        pie_charts_layout.addWidget(holdings_chart_widget)
+        content_layout.addWidget(pie_charts_container_widget, 1)
+
+    def _init_table_panel_widgets(self, content_layout: QHBoxLayout):
+        """Initializes the table panel widgets and adds them to the provided content_layout."""
+        table_panel = QFrame()
+        if not hasattr(self, "content_frame"):
+            return
+        table_panel.setObjectName("TablePanel")
+        table_layout = QVBoxLayout(table_panel)
+        table_layout.setContentsMargins(0, 0, 0, 0)
+        table_layout.setSpacing(5)
+
+        # --- Table Header Layout (MODIFIED for Filters) ---
+        table_header_and_filter_layout = (
+            QVBoxLayout()
+        )  # Use QVBoxLayout to stack title and filters
+        table_header_and_filter_layout.setContentsMargins(5, 5, 5, 0)  # Adjust margins
+        table_header_and_filter_layout.setSpacing(4)  # Add spacing
+
+        # Title Row (Original HBox)
+        table_title_layout = QHBoxLayout()
+        self.table_title_label_left = QLabel("")
+        self.table_title_label_left.setObjectName("TableScopeLabel")
+        self.table_title_label_left.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.table_title_label_right = QLabel("Holdings Detail")
+        self.table_title_label_right.setObjectName("TableTitleLabel")
+        self.table_title_label_right.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        table_title_layout.addWidget(self.table_title_label_left)
+        table_title_layout.addStretch(1)
+        table_title_layout.addWidget(self.table_title_label_right)
+        table_header_and_filter_layout.addLayout(table_title_layout)  # Add title row
+
+        # Filter Row (New HBox)
+        table_filter_layout = QHBoxLayout()
+        table_filter_layout.addWidget(QLabel("Filter:"))
+        self.filter_symbol_table_edit = QLineEdit()
+        self.filter_symbol_table_edit.setPlaceholderText("Symbol contains...")
+        self.filter_symbol_table_edit.setClearButtonEnabled(True)
+        table_filter_layout.addWidget(
+            self.filter_symbol_table_edit, 1
+        )  # Give symbol more stretch
+        self.filter_account_table_edit = QLineEdit()
+        self.filter_account_table_edit.setPlaceholderText("Account contains...")
+        self.filter_account_table_edit.setClearButtonEnabled(True)
+        table_filter_layout.addWidget(
+            self.filter_account_table_edit, 1
+        )  # Give account more stretch
+        self.apply_table_filter_button = QPushButton("Apply")
+        self.apply_table_filter_button.setToolTip("Apply table filters")
+        self.apply_table_filter_button.setObjectName("ApplyTableFilterButton")
+        table_filter_layout.addWidget(self.apply_table_filter_button)
+        self.clear_table_filter_button = QPushButton("Clear")
+        self.clear_table_filter_button.setToolTip("Clear table filters")
+        self.clear_table_filter_button.setObjectName("ClearTableFilterButton")
+        table_filter_layout.addWidget(self.clear_table_filter_button)
+        table_header_and_filter_layout.addLayout(table_filter_layout)  # Add filter row
+        # --- End Header/Filter Modification ---
+
+        # Add the combined header/filter layout to the main table layout
+        table_layout.addLayout(table_header_and_filter_layout)
+
+        # Table View
+        self.table_view = QTableView()
+        self.table_view.setObjectName("HoldingsTable")
+        self.table_view.setAlternatingRowColors(True)
+        self.table_view.setSelectionBehavior(QTableView.SelectRows)
+        self.table_view.setWordWrap(False)
+        self.table_view.setSortingEnabled(True)
+        self.table_model = PandasModel(parent=self)
+        self.table_view.setModel(self.table_model)
+        table_font = QFont(self.app_font)
+        table_font.setPointSize(self.app_font.pointSize() + 1)
+        self.table_view.setFont(table_font)
+        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.table_view.horizontalHeader().setStretchLastSection(False)
+        self.table_view.verticalHeader().setVisible(False)
+        self.table_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        # --- CONTEXT MENU SETUP ---
+        # Make sure context menu policy is set for the TABLE VIEW itself
+        self.table_view.setContextMenuPolicy(Qt.CustomContextMenu)
+        # Remove or ensure no connection for the HORIZONTAL HEADER's context menu
+        self.table_view.horizontalHeader().setContextMenuPolicy(
+            Qt.CustomContextMenu
+        )  # Remove if exists
+        # --- END CONTEXT MENU SETUP ---
+        table_layout.addWidget(self.table_view, 1)
+        content_layout.addWidget(table_panel, 4)
+
+        self.view_ignored_button.clicked.connect(self.show_ignored_log)
+        self.manage_transactions_button.clicked.connect(
+            self.show_manage_transactions_dialog
+        )
+
+    def _init_ui_widgets(self):
+        """Orchestrates the initialization of all UI widgets within their frames."""
+        self._init_header_frame_widgets()
+        self._init_controls_frame_widgets()
+
+        # Summary & Graphs Frame (needs its own layout passed to helpers)
+        summary_graphs_layout = QHBoxLayout(self.summary_and_graphs_frame)
+        self._init_summary_grid_widgets(summary_graphs_layout)
+        self._init_performance_graph_widgets(summary_graphs_layout)
+
+        self._init_bar_charts_frame_widgets()
+
+        # Content Frame (needs its own layout passed to helpers)
+        content_layout = QHBoxLayout(self.content_frame)
+        self._init_pie_chart_widgets(content_layout)
+        self._init_table_panel_widgets(content_layout)
+
+        self._create_status_bar()
+
+    def _create_status_bar(self):
+        """Creates and configures the application's status bar."""
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
+        self.status_label = QLabel("Ready")
+        self.status_label.setObjectName("StatusLabel")
+        self.status_bar.addWidget(self.status_label, 1)
+        self.yahoo_attribution_label = QLabel(  # RESTORED
+            "Financial data provided by Yahoo Finance"
+        )
+        self.yahoo_attribution_label.setObjectName("YahooAttributionLabel")
+        self.status_bar.addPermanentWidget(self.yahoo_attribution_label)  # RESTORED
+        # --- ADD Progress Bar ---
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setObjectName("StatusBarProgressBar")
+        self.progress_bar.setVisible(False)  # Initially hidden
+        self.status_bar.addPermanentWidget(self.progress_bar)  # RESTORED
+        # Use the exchange rate label defined in _create_controls_widget
+        self.status_bar.addPermanentWidget(self.exchange_rate_display_label)  # RESTORED
+
+    def _init_toolbar(self):
+        """Initializes the main application toolbar."""
+        self.toolbar = self.addToolBar("Main Toolbar")
+        self.toolbar.setObjectName("MainToolBar")
+        self.toolbar.setIconSize(QSize(20, 20))
+
+        if hasattr(self, "select_action"):
+            self.toolbar.addAction(self.select_action)
+        if hasattr(self, "refresh_action"):
+            self.toolbar.addAction(self.refresh_action)
+        self.toolbar.addSeparator()
+        if hasattr(self, "add_transaction_action"):
+            self.toolbar.addAction(self.add_transaction_action)
+        if hasattr(self, "manage_transactions_action"):
+            self.toolbar.addAction(self.manage_transactions_action)
+
+    @Slot()
+    def refresh_data(self):
+        """
+        Initiates the background calculation process via the worker thread.
+
+        Gathers current UI settings (file path, currency, filters, graph parameters),
+        prepares arguments for the portfolio logic functions, creates a
+        `PortfolioCalculatorWorker`, and starts it in the thread pool. Disables
+        UI controls during calculation.
+        """
+        if self.is_calculating:
+            # Reset flag if refresh is attempted while calculating (shouldn't happen often)
+            self._initial_file_selection = False
+
+            logging.info("Calculation already in progress. Ignoring refresh request.")
+            return
+
+        if not self.transactions_file or not os.path.exists(self.transactions_file):
+            QMessageBox.warning(
+                self,
+                "Missing File",
+                f"Transactions CSV file not found:\n{self.transactions_file}",
+            )
+            self.status_label.setText("Error: Select a valid transactions CSV file.")
+            return
+
+        # Reset initial selection flag when a valid refresh starts
+        self._initial_file_selection = False
+
+        # --- Load original data FIRST and PREPARE INPUTS to get the map ---
+        # Get current account map and default currency from config
+        account_map = self.config.get("account_currency_map", {"SET": "THB"})
+        def_currency = self.config.get("default_currency", "USD")
+        logging.info("Loading original transaction data and preparing inputs...")
+        (
+            all_tx_df_temp,
+            orig_df_temp,
+            ignored_indices_load,
+            ignored_reasons_load,
+            err_load_orig,
+            warn_load_orig,
+        ) = load_and_clean_transactions(
+            self.transactions_file, account_map, def_currency
+        )
+        self.ignored_data = pd.DataFrame()  # Reset ignored data display
+        self.temp_ignored_reasons = (
+            ignored_reasons_load.copy()
+        )  # Store reasons temporarily
+
+        if err_load_orig or all_tx_df_temp is None:
+            QMessageBox.critical(
+                self, "Load Error", "Failed to load/clean transaction data."
+            )
+            self.original_data = (
+                pd.DataFrame()
+            )  # Ensure original data is empty on failure
+            self.internal_to_yf_map = {}  # Clear map on failure
+            self.calculation_finished()  # Re-enable controls etc.
+            # Construct ignored_data from load errors if possible
+            if (
+                ignored_indices_load
+                and orig_df_temp is not None
+                and "original_index" in orig_df_temp.columns
+            ):
+                try:
+                    valid_ignored_indices = {
+                        int(i) for i in ignored_indices_load if pd.notna(i)
+                    }
+                    valid_indices_mask = orig_df_temp["original_index"].isin(
+                        valid_ignored_indices
+                    )
+                    ignored_rows_df = orig_df_temp[valid_indices_mask].copy()
+                    if not ignored_rows_df.empty:
+                        reasons_mapped = (
+                            ignored_rows_df["original_index"]
+                            .map(self.temp_ignored_reasons)
+                            .fillna("Load/Clean Issue")
+                        )
+                        ignored_rows_df["Reason Ignored"] = reasons_mapped
+                        self.ignored_data = ignored_rows_df.sort_values(
+                            by="original_index"
+                        )
+                        if hasattr(self, "view_ignored_button"):
+                            self.view_ignored_button.setEnabled(True)
+                except Exception as e_ignored_err:
+                    logging.error(
+                        f"Error constructing ignored_data after load failure: {e_ignored_err}"
+                    )
+                    self.ignored_data = pd.DataFrame()
+            return
+        else:
+            # Store original data on successful load
+            self.original_data = (
+                orig_df_temp.copy() if orig_df_temp is not None else pd.DataFrame()
+            )
+            # Ensure original_index exists
+            if (
+                "original_index" not in self.original_data.columns
+                and not self.original_data.empty
+            ):
+                self.original_data["original_index"] = self.original_data.index
+
+            # Construct initial ignored_data from load/clean phase
+            if ignored_indices_load and not self.original_data.empty:
+                try:
+                    valid_ignored_indices = {
+                        int(i) for i in ignored_indices_load if pd.notna(i)
+                    }
+                    valid_indices_mask = self.original_data["original_index"].isin(
+                        valid_ignored_indices
+                    )
+                    ignored_rows_df = self.original_data[valid_indices_mask].copy()
+                    if not ignored_rows_df.empty:
+                        reasons_mapped = (
+                            ignored_rows_df["original_index"]
+                            .map(self.temp_ignored_reasons)
+                            .fillna("Load/Clean Issue")
+                        )
+                        ignored_rows_df["Reason Ignored"] = reasons_mapped
+                        self.ignored_data = ignored_rows_df.sort_values(
+                            by="original_index"
+                        )
+                except Exception as e_ignored_init:
+                    logging.error(
+                        f"Error constructing initial ignored_data: {e_ignored_init}"
+                    )
+                    self.ignored_data = pd.DataFrame()
+            else:
+                self.ignored_data = pd.DataFrame()  # Ensure empty if no ignored indices
+
+            # Generate internal_to_yf_map based on the successfully loaded transactions
+            try:
+                # Update available accounts list based on the loaded data
+                current_available_accounts = (
+                    list(all_tx_df_temp["Account"].unique())
+                    if "Account" in all_tx_df_temp
+                    else []
+                )
+                self.available_accounts = sorted(current_available_accounts)
+                self._update_account_button_text()  # Update button now that accounts are known
+
+                # Validate selected accounts against the newly available ones
+                valid_selected_accounts = [
+                    acc
+                    for acc in self.selected_accounts
+                    if acc in self.available_accounts
+                ]
+                if len(valid_selected_accounts) != len(self.selected_accounts):
+                    logging.warning(
+                        "Some selected accounts were not found in the loaded data. Adjusting selection."
+                    )
+                    self.selected_accounts = valid_selected_accounts
+                    # If selection becomes empty, default back to all
+                    if not self.selected_accounts and self.available_accounts:
+                        self.selected_accounts = []  # Represent "All" as empty list
+                        logging.info(
+                            "Selection became empty after validation, defaulting to all accounts."
+                        )
+                    self._update_account_button_text()  # Update button again if selection changed
+
+                # Determine effective transactions based on current selection
+                selected_accounts_for_logic = (
+                    self.selected_accounts if self.selected_accounts else None
+                )  # None means all
+
+                transactions_df_effective = (
+                    all_tx_df_temp[
+                        all_tx_df_temp["Account"].isin(selected_accounts_for_logic)
+                    ].copy()
+                    if selected_accounts_for_logic
+                    else all_tx_df_temp.copy()
+                )
+
+                if not transactions_df_effective.empty:
+                    all_symbols_internal = list(
+                        set(transactions_df_effective["Symbol"].unique())
+                    )
+                    temp_internal_to_yf_map = {}
+                    # Use map_to_yf_symbol from finutils (should be imported at top)
+                    for internal_sym in all_symbols_internal:
+                        if internal_sym == CASH_SYMBOL_CSV:
+                            continue
+                        yf_sym = map_to_yf_symbol(internal_sym)  # Use helper
+                        if yf_sym:
+                            temp_internal_to_yf_map[internal_sym] = yf_sym
+                    self.internal_to_yf_map = temp_internal_to_yf_map
+                    logging.info(
+                        f"Generated internal_to_yf_map: {self.internal_to_yf_map}"
+                    )
+                else:
+                    self.internal_to_yf_map = {}
+                    logging.info(
+                        "No effective transactions for selected scope, clearing symbol map."
+                    )
+            except Exception as e_prep:
+                logging.error(
+                    f"Error generating symbol map during refresh prep: {e_prep}"
+                )
+                self.internal_to_yf_map = {}
+
+        # --- Continue with worker setup ---
+        self.is_calculating = True
+        now_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+        self.status_label.setText(f"Refreshing data... ({now_str})")
+        self.set_controls_enabled(False)
+        display_currency = self.currency_combo.currentText()
+        show_closed = self.show_closed_check.isChecked()
+        start_date = self.graph_start_date_edit.date().toPython()
+        end_date = self.graph_end_date_edit.date().toPython()
+        interval = self.graph_interval_combo.currentText()
+        selected_benchmarks_list = self.selected_benchmarks
+        api_key = self.fmp_api_key
+
+        # Use the validated selected_accounts (or None for all)
+        selected_accounts_for_worker = (
+            self.selected_accounts if self.selected_accounts else None
+        )
+
+        if start_date >= end_date:
+            QMessageBox.warning(
+                self, "Invalid Date Range", "Graph start date must be before end date."
+            )
+            self.calculation_finished()
+            return
+        if not selected_benchmarks_list:
+            selected_benchmarks_list = DEFAULT_GRAPH_BENCHMARKS
+            logging.warning(
+                f"No benchmarks selected, using default: {selected_benchmarks_list}"
+            )
+
+        # Determine accounts to exclude for historical calc if supported
+        accounts_to_exclude = []
+        if HISTORICAL_FN_SUPPORTS_EXCLUDE:
+            if selected_accounts_for_worker:  # If specific accounts are included
+                accounts_to_exclude = [
+                    acc
+                    for acc in self.available_accounts
+                    if acc not in selected_accounts_for_worker
+                ]
+            # If selected_accounts_for_worker is None (all included), then exclude list remains empty
+
+        logging.info(f"Starting calculation & data fetch:")
+        logging.info(
+            f"File='{os.path.basename(self.transactions_file)}', Currency='{display_currency}', ShowClosed={show_closed}, SelectedAccounts={selected_accounts_for_worker if selected_accounts_for_worker else 'All'}"
+        )
+        logging.info(f"Default Currency: {def_currency}, Account Map: {account_map}")
+        exclude_log_msg = (
+            f", ExcludeHist={accounts_to_exclude}"
+            if HISTORICAL_FN_SUPPORTS_EXCLUDE and accounts_to_exclude
+            else ""
+        )
+        logging.info(
+            f"Graph Params: Start={start_date}, End={end_date}, Interval={interval}, Benchmarks={selected_benchmarks_list}{exclude_log_msg}"
+        )
+
+        # --- Worker Setup (MODIFIED) ---
+        portfolio_args = ()
+        portfolio_kwargs = {
+            "transactions_csv_file": self.transactions_file,  # This is the path string
+            "display_currency": display_currency,
+            "show_closed_positions": show_closed,
+            "account_currency_map": account_map,
+            "default_currency": def_currency,
+            "cache_file_path": "portfolio_cache_yf.json",  # Pass current cache path
+            "fmp_api_key": api_key,  # Pass API key (though likely unused)
+            "include_accounts": selected_accounts_for_worker,
+            # manual_prices_dict passed directly below
+        }
+        historical_args = ()
+        historical_kwargs = {
+            "transactions_csv_file": self.transactions_file,
+            "start_date": start_date,
+            "end_date": end_date,
+            "interval": interval,
+            "benchmark_symbols_yf": selected_benchmarks_list,
+            "display_currency": display_currency,
+            "account_currency_map": account_map,
+            "default_currency": def_currency,
+            "use_raw_data_cache": True,
+            "use_daily_results_cache": True,
+            "include_accounts": selected_accounts_for_worker,
+            # worker_signals passed directly below
+        }
+        # Add exclude_accounts only if supported by the function
+        if HISTORICAL_FN_SUPPORTS_EXCLUDE:
+            historical_kwargs["exclude_accounts"] = accounts_to_exclude
+
+        # --- Instantiate worker WITHOUT index_fn ---
+        worker = PortfolioCalculatorWorker(
+            portfolio_fn=calculate_portfolio_summary,
+            portfolio_args=portfolio_args,
+            portfolio_kwargs=portfolio_kwargs,
+            # index_fn=fetch_index_quotes_yfinance, <-- REMOVED
+            historical_fn=calculate_historical_performance,  # type: ignore
+            historical_args=historical_args,
+            historical_kwargs=historical_kwargs,
+            worker_signals=self.worker_signals,  # <-- PASS THE CENTRAL SIGNALS OBJECT
+            manual_prices_dict=self.manual_prices_dict,
+        )
+        # --- END MODIFICATION ---
+
+        # --- Connect signals using the created signals object ---
+        # Ensure connections are made only once or are robust to multiple calls if refresh_data is called again
+        # For simplicity, we assume refresh_data isn't called while a worker is active.
+        # If it could be, connections might need to be managed more carefully (e.g., disconnect previous).
+        try:
+            self.worker_signals.result.disconnect(self.handle_results)
+            self.worker_signals.error.disconnect(self.handle_error)
+            self.worker_signals.progress.disconnect(self.update_progress)
+            self.worker_signals.finished.disconnect(self.calculation_finished)
+        except RuntimeError:  # No connections to disconnect
+            pass
+
+        self.worker_signals.result.connect(self.handle_results)
+        self.worker_signals.error.connect(self.handle_error)
+        self.worker_signals.progress.connect(self.update_progress)
+        self.worker_signals.finished.connect(
+            self.calculation_finished
+        )  # Connect finished from the signals object
+        # --- END Connect signals ---
+
+        self.threadpool.start(worker)
+
+    def _perform_initial_load(self):
+        """Performs the initial data load on startup if configured."""
+        if self.config.get("load_on_startup", True):
+            if self.transactions_file and os.path.exists(self.transactions_file):
+                logging.info("Triggering initial data refresh on startup...")
+                from PySide6.QtCore import QTimer
+
+                QTimer.singleShot(150, self.refresh_data)
+            elif not self.transactions_file or not os.path.exists(
+                self.transactions_file
+            ):
+                logging.info(
+                    f"Startup TX file invalid or not found: '{self.transactions_file}'. Prompting user."
+                )
+                self.status_label.setText(
+                    "Info: Please select your transactions CSV file."
+                )
+                self._initial_file_selection = True
+                from PySide6.QtCore import QTimer
+
+                QTimer.singleShot(100, self.select_file)
+            else:
+                startup_file_msg = f"Warn: Startup TX file invalid or not found: '{self.transactions_file}'. Load skipped."
+                self.status_label.setText(startup_file_msg)
+                logging.info(startup_file_msg)
+                self._update_table_view_with_filtered_columns(pd.DataFrame())
+                self.apply_column_visibility()
+                self.update_performance_graphs(initial=True)
+                self._update_account_button_text()
+                self._update_table_title()
+        else:
+            self.status_label.setText("Ready. Select CSV file and click Refresh.")
+            self._update_table_view_with_filtered_columns(pd.DataFrame())
+            self.apply_column_visibility()
+            self.update_performance_graphs(initial=True)
+            self._update_account_button_text()
+            self._update_table_title()
+
+    def _store_worker_data(
+        self,
+        summary_metrics,
+        holdings_df,
+        account_metrics,
+        index_quotes,
+        full_historical_data_df,
+        hist_prices_adj,
+        hist_fx,
+        combined_ignored_indices,
+        combined_ignored_reasons,
+    ):
+        """Stores data received from the worker into self attributes and handles status.
+        Args:
+            summary_metrics (dict): Aggregated metrics for the overall portfolio/scope.
+            holdings_df (pd.DataFrame): Detailed holdings data for the scope, filtered by show_closed.
+            account_metrics (dict): Dictionary of metrics aggregated per account for the scope.
+            index_quotes (dict): Fetched data for header indices.
+            full_historical_data_df (pd.DataFrame): Full daily historical data with gains calculated.
+            hist_prices_adj (dict): Raw ADJUSTED historical prices used by worker.
+            hist_fx (dict): Raw historical FX rates used by worker.
+            combined_ignored_indices (set): Set of original indices ignored during load or processing.
+            combined_ignored_reasons (dict): Maps 'original_index' to a string describing the reason the row was ignored.
+        """
+        # --- Handle Status Messages and TWR ---
+        portfolio_status = summary_metrics.pop("status_msg", "Status Unknown")
+        historical_status = summary_metrics.pop(
+            "historical_status_msg", "Status Unknown"
+        )
+        self.last_calc_status = f"{portfolio_status} | {historical_status}"
+        self.last_hist_twr_factor = np.nan  # Reset TWR factor
+
+        # REMOVED: TWR Factor parsing from status string. Will calculate later from filtered data.
+        if "|||TWR_FACTOR:" in historical_status:
+            # Log the received factor but don't store it globally yet
+            logging.debug(
+                f"Received TWR factor from backend status (ignored): {historical_status.split('|||TWR_FACTOR:')[1]}"
+            )
+
+        # --- Store Core Data ---
+        self.summary_metrics_data = summary_metrics if summary_metrics else {}
+        self.holdings_data = (
+            holdings_df if holdings_df is not None else pd.DataFrame()
+        )  # Store final holdings df
+        # --- ADDED: Store periodic returns data ---
+        self.periodic_returns_data: Dict[str, pd.DataFrame] = {}
+        self.account_metrics_data = account_metrics if account_metrics else {}
+        self.index_quote_data = index_quotes if index_quotes else {}
+        # self.historical_data = ... # Removed - will be created later by filtering full data
+
+        # --- ADDED: Store full historical data ---
+        self.full_historical_data = (
+            full_historical_data_df  # This is the full daily data now
+            if full_historical_data_df is not None
+            else pd.DataFrame()
+        )
+        # --- ADDED: Log full_historical_data details ---
+        logging.debug(
+            f"[Handle Results] Assigned self.full_historical_data (Type: {type(self.full_historical_data)})"
+        )
+        if isinstance(self.full_historical_data, pd.DataFrame):
+            logging.debug(f"  Shape: {self.full_historical_data.shape}")
+            if not self.full_historical_data.empty:
+                logging.debug(
+                    f"  Tail:\n{self.full_historical_data.tail().to_string()}"
+                )
+        # --- END ADDED ---
+
+        # --- Store Raw Historical Data ---
+        self.historical_prices_yf_adjusted = (
+            hist_prices_adj if hist_prices_adj is not None else {}
+        )
+        self.historical_fx_yf = hist_fx if hist_fx is not None else {}
+        logging.info(
+            f"[Handle Results] Stored {len(self.historical_prices_yf_adjusted)} adjusted price series."
+        )
+        logging.info(
+            f"[Handle Results] Stored {len(self.historical_fx_yf)} FX rate series."
+        )
+
+        # --- CONSTRUCT Ignored DataFrame from combined results ---
+        self.ignored_data = pd.DataFrame()  # Reset ignored data
+        # We need self.original_data which should have been loaded and stored during refresh_data
+        if (
+            # Indices are now the 8th arg (index 7)
+            combined_ignored_indices is not None
+            and len(combined_ignored_indices) > 0
+            and hasattr(self, "original_data")
+            and not self.original_data.empty
+        ):
+            logging.info(
+                f"Processing {len(combined_ignored_indices)} ignored row indices..."
+            )
+            try:
+                # Ensure original_index exists in the stored original data
+                if "original_index" in self.original_data.columns:
+                    # Filter the original DataFrame to get rows matching the ignored indices
+                    # Ensure indices are integers if needed, though set should handle mixed types okay
+                    indices_to_check = {  # Use the correct variable
+                        int(i) for i in combined_ignored_indices if pd.notna(i)
+                    }
+                    valid_indices_mask = self.original_data["original_index"].isin(
+                        indices_to_check
+                    )
+                    ignored_rows_df = self.original_data[valid_indices_mask].copy()
+
+                    if not ignored_rows_df.empty:
+                        # Add the reason using the combined reasons dictionary
+                        # Make sure keys in reasons dict match the type in original_index (likely int)
+                        reasons_mapped = (
+                            ignored_rows_df["original_index"]
+                            .map(combined_ignored_reasons)
+                            .fillna("Unknown Reason")
+                        )
+                        ignored_rows_df["Reason Ignored"] = reasons_mapped
+                        self.ignored_data = ignored_rows_df.sort_values(
+                            by="original_index"
+                        )  # Sort for consistency
+                        logging.info(
+                            f"Constructed ignored_data DataFrame with {len(self.ignored_data)} rows."
+                        )
+                    else:
+                        logging.warning(
+                            "No matching rows found in original_data for the ignored indices received from worker."
+                        )
+                else:
+                    logging.warning(
+                        "Cannot build ignored_data: 'original_index' missing from stored original data."
+                    )
+
+            except Exception as e_ignored:
+                logging.error(f"Error constructing ignored_data DataFrame: {e_ignored}")
+                traceback.print_exc()  # Log traceback for debugging
+                self.ignored_data = pd.DataFrame()  # Ensure empty on error
+        elif combined_ignored_indices:
+            logging.warning(
+                "Ignored indices received, but original_data is missing or empty. Cannot display ignored rows."
+            )
+
+    def _process_historical_and_periodic_data(self):
+        """Processes full historical data to derive filtered historical data and periodic returns."""
+        logging.debug("Entering _process_historical_and_periodic_data...")
+
+        # --- Calculate Periodic Returns ---
+        # --- MODIFIED: Use full_historical_data for periodic returns ---
+        if (
+            isinstance(self.full_historical_data, pd.DataFrame)
+            and not self.full_historical_data.empty
+        ):  # Explicit type check
+            logging.info("Calculating periodic returns for bar charts...")
+            # --- ADD TRY-EXCEPT around periodic calculation ---
+            # --- ADDED: Log input to periodic calc ---
+            logging.debug(
+                f"[Handle Results] Calling calculate_periodic_returns with self.full_historical_data:"
+            )
+            if (
+                isinstance(self.full_historical_data, pd.DataFrame)
+                and not self.full_historical_data.empty
+            ):
+                logging.debug(
+                    f"  Type: {type(self.full_historical_data)}, Shape: {self.full_historical_data.shape}"
+                )
+                logging.debug(
+                    f"  Date Range: {self.full_historical_data.index.min()} to {self.full_historical_data.index.max()}"
+                )
+            # --- END ADDED ---
+
+            try:
+                self.periodic_returns_data = calculate_periodic_returns(
+                    self.full_historical_data, self.selected_benchmarks  # Use full data
+                )
+                logging.info(
+                    f"Periodic returns calculated for intervals: {list(self.periodic_returns_data.keys())}"
+                )
+                # --- ADDED: Log details of periodic_returns_data ---
+                logging.debug("[Handle Results] Details of self.periodic_returns_data:")
+                for key, df_periodic in self.periodic_returns_data.items():
+                    if isinstance(df_periodic, pd.DataFrame):
+                        logging.debug(
+                            f"  Interval '{key}': Shape={df_periodic.shape}, IsEmpty={df_periodic.empty}"
+                        )
+                    else:
+                        logging.debug(f"  Interval '{key}': Type={type(df_periodic)}")
+                # --- ADDED: Log details of periodic_returns_data ---
+                # --- ADD LOGGING for weekly periodic data ---
+                current_interval = (
+                    self.graph_interval_combo.currentText()
+                )  # Get current interval for logging
+                if current_interval == "W":
+                    weekly_periodic_df = self.periodic_returns_data.get("W")
+                    if weekly_periodic_df is None:
+                        logging.warning(
+                            "Periodic returns data does NOT contain 'W' key."
+                        )
+                    elif weekly_periodic_df.empty:
+                        logging.warning("Periodic returns data for 'W' key is EMPTY.")
+                    else:
+                        logging.info(
+                            f"Periodic returns data for 'W' (shape {weekly_periodic_df.shape}):\n{weekly_periodic_df.tail()}"
+                        )  # Show tail for recent weeks
+                # --- ADD LOGGING for monthly periodic data ---
+                elif current_interval == "M":
+                    monthly_periodic_df = self.periodic_returns_data.get("M")
+                    if monthly_periodic_df is None:
+                        logging.warning(
+                            "Periodic returns data does NOT contain 'M' key."
+                        )
+                    elif monthly_periodic_df.empty:
+                        logging.warning("Periodic returns data for 'M' key is EMPTY.")
+                    else:
+                        logging.info(
+                            f"Periodic returns data for 'M' (shape {monthly_periodic_df.shape}):\n{monthly_periodic_df.tail()}"
+                        )  # Show tail for recent months
+                # --- END LOGGING ---
+            except Exception as e_periodic:
+                logging.error(f"ERROR calculating periodic returns: {e_periodic}")
+                traceback.print_exc()
+                self.periodic_returns_data = {}  # Ensure it's empty on error
+            # --- END TRY-EXCEPT ---
+        else:
+            self.periodic_returns_data = {}  # Clear if no historical data
+            # Add more detail to the warning
+            if not isinstance(self.full_historical_data, pd.DataFrame):
+                logging.warning(
+                    f"Cannot calculate periodic returns: full_historical_data is not a DataFrame (Type: {type(self.full_historical_data)})."
+                )
+            else:  # It's a DataFrame but empty
+                logging.warning(
+                    "Cannot calculate periodic returns: full_historical_data is empty."
+                )
+
+        # --- ADDED: Filter full data to get data for line graphs ---
+        self.historical_data = pd.DataFrame()  # Initialize filtered data
+        if (
+            isinstance(self.full_historical_data, pd.DataFrame)
+            and not self.full_historical_data.empty
+        ):
+            plot_start_date = self.graph_start_date_edit.date().toPython()
+            plot_end_date = self.graph_end_date_edit.date().toPython()
+            try:
+                pd_start = pd.Timestamp(plot_start_date)
+                pd_end = pd.Timestamp(plot_end_date)
+                # Ensure index is DatetimeIndex and timezone-naive if needed
+                temp_df = self.full_historical_data
+                if not isinstance(temp_df.index, pd.DatetimeIndex):
+                    temp_df.index = pd.to_datetime(temp_df.index)
+                if temp_df.index.tz is not None:
+                    temp_df.index = temp_df.index.tz_localize(None)
+
+                self.historical_data = temp_df.loc[pd_start:pd_end].copy()
+                logging.debug(
+                    f"Filtered self.historical_data for line graphs: {self.historical_data.shape} rows from {plot_start_date} to {plot_end_date}"
+                )
+            except Exception as e_filter_gui:
+                logging.error(
+                    f"Error filtering full historical data in GUI: {e_filter_gui}. Using full data for line graphs."
+                )
+                # Ensure self.historical_data is assigned even on error
+                if isinstance(self.full_historical_data, pd.DataFrame):
+                    self.historical_data = self.full_historical_data.copy()  # Fallback
+                else:
+                    self.historical_data = pd.DataFrame()  # Ensure it's an empty DF
+                self.historical_data = self.full_historical_data.copy()  # Fallback
+        else:
+            logging.warning(
+                "Full historical data is empty or invalid, cannot filter for line graphs."
+            )
+            self.historical_data = pd.DataFrame()  # Ensure empty DF
+
+        # --- ADDED: Normalize Accumulated Gain columns to start at 1 for the filtered period ---
+        if (
+            isinstance(self.historical_data, pd.DataFrame)
+            and not self.historical_data.empty
+        ):
+            logging.debug(
+                "Normalizing Accumulated Gain columns for the filtered period..."
+            )
+            gain_cols = [
+                col for col in self.historical_data.columns if "Accumulated Gain" in col
+            ]
+            for col in gain_cols:
+                try:
+                    # Find the first valid (non-NaN) value in the filtered series
+                    first_valid_value = self.historical_data[col].dropna().iloc[0]
+                    if pd.notna(first_valid_value) and first_valid_value != 0:
+                        logging.debug(
+                            f"  Normalizing '{col}' using start value: {first_valid_value:.4f}"
+                        )
+                        self.historical_data[col] = (
+                            self.historical_data[col] / first_valid_value
+                        )
+                        # Set the very first point (which might have been NaN originally) to 1.0 after normalization
+                        self.historical_data.loc[self.historical_data.index[0], col] = (
+                            1.0
+                        )
+                    else:
+                        logging.warning(
+                            f"  Cannot normalize '{col}', first valid value is zero or NaN."
+                        )
+                        self.historical_data[col] = (
+                            np.nan
+                        )  # Set to NaN if normalization fails
+                except IndexError:
+                    logging.warning(
+                        f"  Cannot normalize '{col}', no valid data points found in the filtered range."
+                    )
+                    self.historical_data[col] = np.nan  # Set to NaN if no data
+                except Exception as e_norm:
+                    logging.error(f"  Error normalizing column '{col}': {e_norm}")
+                    self.historical_data[col] = np.nan  # Set to NaN on error
+        else:  # Ensure historical_data is an empty DataFrame if it's not valid
+            self.historical_data = pd.DataFrame()
+
+        # --- ADDED: Calculate TWR Factor from the FILTERED self.historical_data ---
+        plot_start_date = self.graph_start_date_edit.date().toPython()  # For logging
+        plot_end_date = self.graph_end_date_edit.date().toPython()  # For logging
+        self.last_hist_twr_factor = np.nan  # Reset before calculation
+        if (  # This block was indented one level too far
+            isinstance(self.historical_data, pd.DataFrame)
+            and not self.historical_data.empty
+        ):
+            # Log the filtered data's value column for debugging the value graph
+            if "Portfolio Value" in self.historical_data.columns:
+                logging.debug(
+                    f"  Filtered 'Portfolio Value' head:\n{self.historical_data['Portfolio Value'].head().to_string()}"
+                )
+                logging.debug(
+                    f"  Filtered 'Portfolio Value' tail:\n{self.historical_data['Portfolio Value'].tail().to_string()}"
+                )
+                logging.debug(
+                    f"  Filtered 'Portfolio Value' NaN count: {self.historical_data['Portfolio Value'].isna().sum()}"
+                )
+            else:
+                logging.warning(
+                    "  'Portfolio Value' column missing in filtered self.historical_data."
+                )
+
+            # Calculate TWR from filtered accumulated gain
+            if "Portfolio Accumulated Gain" in self.historical_data.columns:
+                # --- FIX: Calculate PERIOD TWR Factor ---
+                accum_gain_series = self.historical_data[
+                    "Portfolio Accumulated Gain"
+                ].dropna()
+                if len(accum_gain_series) >= 2:  # Need at least two points for a period
+                    start_gain = accum_gain_series.iloc[0]
+                    end_gain = accum_gain_series.iloc[-1]
+                    if pd.notna(start_gain) and pd.notna(end_gain) and start_gain != 0:
+                        logging.debug(
+                            f"  Calculating Period TWR: End Gain={end_gain:.6f}, Start Gain={start_gain:.6f}"
+                        )  # ADDED LOG
+                        period_twr_factor = end_gain / start_gain
+                        self.last_hist_twr_factor = (
+                            period_twr_factor  # Store the period-specific factor
+                        )
+                        logging.info(
+                            f"Calculated PERIOD TWR Factor ({plot_start_date} to {plot_end_date}): {self.last_hist_twr_factor:.6f} (End: {end_gain:.4f} / Start: {start_gain:.4f})"
+                        )
+                    else:
+                        logging.warning(
+                            "Could not calculate period TWR factor due to invalid start/end gain values."
+                        )
+                        self.last_hist_twr_factor = np.nan  # Ensure NaN on failure
+                elif len(accum_gain_series) == 1:
+                    logging.warning(
+                        "Only one data point in filtered range, cannot calculate period TWR."
+                    )
+                    self.last_hist_twr_factor = (
+                        np.nan
+                    )  # Cannot calculate with one point
+                else:  # Series is empty after dropna
+                    logging.info(
+                        f"Calculated TWR Factor from filtered data ({plot_start_date} to {plot_end_date}): {self.last_hist_twr_factor:.6f}"
+                    )
+                    logging.warning("Could not find valid TWR factor in filtered data.")
+                # --- END FIX ---
+
+    def _update_available_accounts_and_selection(self):
+        """Updates the list of available accounts and validates the current selection."""
+        logging.debug("Entering _update_available_accounts_and_selection...")
+        # --- Update Available Accounts & Validate Selection --- # (Keep existing logic below)
+        # Get available accounts from the overall summary if possible, otherwise re-scan
+        available_accounts_from_backend = self.summary_metrics_data.get(
+            "_available_accounts", []  # Default to empty list
+        )
+
+        if available_accounts_from_backend and isinstance(
+            available_accounts_from_backend, list
+        ):
+            self.available_accounts = available_accounts_from_backend
+        else:
+            # Fallback: derive from the holdings data IF it's available
+            if not self.holdings_data.empty and "Account" in self.holdings_data.columns:
+                # Use unique accounts from the *returned* holdings data
+                self.available_accounts = sorted(
+                    self.holdings_data["Account"].unique().tolist()
+                )
+                logging.warning(
+                    "Used accounts from holdings_df as fallback for available_accounts."
+                )
+            elif (
+                hasattr(self, "original_data")
+                and not self.original_data.empty
+                and "Investment Account" in self.original_data.columns
+            ):
+                # Fallback further to original data if holdings are empty
+                self.available_accounts = sorted(
+                    self.original_data["Investment Account"].unique().tolist()
+                )
+                logging.warning(
+                    "Used accounts from original_data as fallback for available_accounts."
+                )
+            else:
+                self.available_accounts = []  # Cannot determine accounts
+                logging.error(
+                    "Could not determine available accounts from summary or data."
+                )
+
+        # Validate current selection against available accounts
+        if self.selected_accounts:
+            original_selection = self.selected_accounts.copy()
+            self.selected_accounts = [
+                acc for acc in self.selected_accounts if acc in self.available_accounts
+            ]
+            if len(self.selected_accounts) != len(original_selection):
+                logging.warning(
+                    f"Warn: Some previously selected accounts are no longer available. Updated selection: {self.selected_accounts}"
+                )
+            # Default back to all if validation resulted in empty selection
+            if not self.selected_accounts and self.available_accounts:
+                logging.warning(
+                    "Warn: Validation resulted in empty selection. Defaulting to all available accounts."
+                )
+                self.selected_accounts = []  # Empty list means "All"
+        # If selection was initially empty, ensure it reflects 'all available' now
+        elif not self.selected_accounts and self.available_accounts:
+            self.selected_accounts = (
+                []
+            )  # Keep it empty to signify "All" internally for filtering logic
+            logging.info("No accounts pre-selected, effectively showing 'All'.")
+
+        self._update_account_button_text()  # Update button text based on final state
+
+    def _update_ui_components_after_calculation(self):
+        """Updates all relevant UI components after data processing."""
+        logging.debug("Entering _update_ui_components_after_calculation...")
+        logging.debug("Updating UI elements after receiving results...")
+        try:
+            # Enable/Disable "View Log" button based on the newly constructed ignored_data
+            if hasattr(self, "view_ignored_button"):
+                self.view_ignored_button.setEnabled(not self.ignored_data.empty)
+
+            # Get Filtered Data for Display (uses self.holdings_data and current filters)
+            # IMPORTANT: _get_filtered_data uses self.holdings_data which was just updated
+            df_display_filtered = self._get_filtered_data()
+
+            # Update UI components
+            self._update_table_title()  # Uses available/selected accounts state
+            self.update_dashboard_summary()  # Uses self.summary_metrics_data and filtered data for cash
+            # Account pie needs data grouped by account *within the selected scope*
+            # We can derive this from the df_display_filtered
+            self.update_account_pie_chart(df_display_filtered)
+            self.update_holdings_pie_chart(df_display_filtered)  # Uses filtered data
+            self._update_table_view_with_filtered_columns(
+                df_display_filtered
+            )  # Update table
+            self.apply_column_visibility()  # Re-apply visibility
+            self.update_performance_graphs()  # Uses self.historical_data (which reflects scope)
+            self.update_header_info()  # Uses self.index_quote_data
+            self._update_fx_rate_display(
+                self.currency_combo.currentText()
+            )  # Uses self.summary_metrics_data
+            # --- Make bar charts visible and plot ---
+            # --- MODIFY Visibility Check ---
+            # --- ADDED: Log state right before check ---
+            logging.debug(
+                f"[Handle Results] PRE-CHECK: self.periodic_returns_data is type {type(self.periodic_returns_data)}"
+            )
+            logging.debug(
+                f"[Handle Results] PRE-CHECK: bool(self.periodic_returns_data) = {bool(self.periodic_returns_data)}"
+            )
+            if isinstance(self.periodic_returns_data, dict):
+                logging.debug(
+                    f"[Handle Results] PRE-CHECK: periodic_returns_data keys: {list(self.periodic_returns_data.keys())}"
+                )
+                logging.debug(
+                    f"[Handle Results] PRE-CHECK: any(not df.empty...) = {any(not df.empty for df in self.periodic_returns_data.values() if isinstance(df, pd.DataFrame))}"
+                )
+            # --- END ADDED ---
+            # Check if the dictionary itself is non-empty AND if it contains data for *any* interval
+            bar_charts_have_data = bool(self.periodic_returns_data) and any(
+                not df.empty
+                for df in self.periodic_returns_data.values()
+                if isinstance(df, pd.DataFrame)
+            )
+            logging.debug(
+                f"[Handle Results] Bar charts visibility check: bar_charts_have_data = {bar_charts_have_data}"
+            )  # ADDED LOG
+            self.bar_charts_frame.setVisible(bar_charts_have_data)
+            # --- END MODIFY ---
+            if bar_charts_have_data:  # Only call plot if there's data
+                self._update_periodic_bar_charts()
+            else:
+                logging.info(
+                    "Hiding bar charts frame as no periodic data is available."
+                )
+
+        except Exception as ui_update_e:
+            logging.error(
+                f"--- CRITICAL ERROR during UI update in handle_results: {ui_update_e} ---"
+            )
+            traceback.print_exc()
+            QMessageBox.critical(
+                self,
+                "UI Update Error",
+                f"Failed to update display after calculation:\n{ui_update_e}",
+            )
+
+        logging.debug("Exiting handle_results.")
 
     def _init_ui_structure(self):
         """Sets up the main window layout using QFrames for structure."""
@@ -6870,7 +8350,6 @@ The CSV file should contain the following columns (header names must match exact
         if not self.transactions_file:
             QMessageBox.critical(self, "Save Error", "CSV file path is not set.")
             return False
-        temp_file_path = None  # Initialize for finally block
 
         # Define headers in the correct order
         csv_headers = [
@@ -6932,35 +8411,14 @@ The CSV file should contain the following columns (header names must match exact
                     )
                     return False
 
-            # --- Create a temporary file in the same directory for atomic write ---
-            # Ensure the directory exists and is writable
-            target_dir = os.path.dirname(self.transactions_file)
-            if (
-                not target_dir
-            ):  # Handle cases where transactions_file might be just a filename
-                target_dir = os.getcwd()
-
-            # mkstemp returns an open file descriptor and path. Close fd, pandas opens by path.
-            temp_fd, temp_file_path = tempfile.mkstemp(
-                dir=target_dir, prefix=".investa_rewrite_", suffix=".csv"
-            )
-            os.close(temp_fd)
-
-            # --- Write to the temporary CSV ---
+            # --- Write to CSV ---
             df_ordered.to_csv(
-                temp_file_path,  # Write to temp file
+                self.transactions_file,
                 index=False,
                 encoding="utf-8",
                 quoting=csv.QUOTE_MINIMAL,  # Keep minimal quoting
                 date_format=CSV_DATE_FORMAT,  # Use the specific date format
             )
-
-            # --- Atomically replace the original file with the temporary file ---
-            shutil.move(temp_file_path, self.transactions_file)
-            temp_file_path = (
-                None  # Mark as moved, so finally block doesn't try to remove it
-            )
-
             logging.info(f"Successfully rewrote CSV: {self.transactions_file}")
             return True
         except PermissionError as e:
@@ -6980,11 +8438,6 @@ The CSV file should contain the following columns (header names must match exact
                 f"An unexpected error occurred while saving CSV:\n{e}",
             )
             return False
-        finally:
-            # --- Clean up the temporary file if it still exists (e.g., on error) ---
-            if temp_file_path and os.path.exists(temp_file_path):
-                os.remove(temp_file_path)
-                logging.debug(f"Cleaned up temporary file: {temp_file_path}")
 
     def _edit_transaction_in_csv(
         self, original_index_to_edit: int, new_data_dict: Dict[str, str]
@@ -7754,519 +9207,38 @@ The CSV file should contain the following columns (header names must match exact
     def handle_results(  # MODIFIED: Signature matches Slot decorator (9 args)
         self,  # Don't forget self!
         summary_metrics,
-        holdings_df,  # This is the final holdings df potentially filtered by show_closed
-        # Ignored DF constructed from sets/dicts below
+        holdings_df,
         account_metrics,
         index_quotes,
-        full_historical_data_df,  # This is now the FULL daily data with gains
-        hist_prices_adj,  # Raw prices used by worker
-        hist_fx,  # Raw FX used by worker
+        full_historical_data_df,
+        hist_prices_adj,
+        hist_fx,
         combined_ignored_indices,
-        combined_ignored_reasons,  # Reasons for ignoring
+        combined_ignored_reasons,
     ):
         """
         Slot to process results received from the PortfolioCalculatorWorker.
-
-        Updates internal data attributes, constructs the ignored_data DataFrame,
-        updates the list of available accounts, validates current account selection,
-        and triggers updates for all UI elements (summary, charts, table).
-
-        Args:
-            summary_metrics (dict): Aggregated metrics for the overall portfolio/scope.
-            holdings_df (pd.DataFrame): Detailed holdings data for the scope, filtered by show_closed.
-            account_metrics (dict): Dictionary of metrics aggregated per account for the scope.
-            index_quotes (dict): Fetched data for header indices.
-            full_historical_data_df (pd.DataFrame): Full daily historical data with gains calculated.
-            hist_prices_adj (dict): Raw ADJUSTED historical prices used by worker.
-            hist_fx (dict): Raw historical FX rates used by worker.
-            combined_ignored_indices (set): Set of original indices ignored during load or processing.
-            combined_ignored_reasons (dict): Dict mapping original index to reason ignored.
+        Orchestrates data storage, processing, and UI updates.
         """
-        logging.debug("Entering handle_results...")
-        # --- Handle Status Messages and TWR ---
-        portfolio_status = summary_metrics.pop("status_msg", "Status Unknown")
-        historical_status = summary_metrics.pop(
-            "historical_status_msg", "Status Unknown"
-        )
-        self.last_calc_status = f"{portfolio_status} | {historical_status}"
-        self.last_hist_twr_factor = np.nan  # Reset TWR factor
+        logging.debug("Entering handle_results orchestrator...")
 
-        # REMOVED: TWR Factor parsing from status string. Will calculate later from filtered data.
-        if "|||TWR_FACTOR:" in historical_status:
-            # Log the received factor but don't store it globally yet
-            logging.debug(
-                f"Received TWR factor from backend status (ignored): {historical_status.split('|||TWR_FACTOR:')[1]}"
-            )
-
-        # --- Store Core Data ---
-        self.summary_metrics_data = summary_metrics if summary_metrics else {}
-        self.holdings_data = (
-            holdings_df if holdings_df is not None else pd.DataFrame()
-        )  # Store final holdings df
-        # --- ADDED: Store periodic returns data ---
-        self.periodic_returns_data: Dict[str, pd.DataFrame] = {}
-        logging.debug(
-            f"DEBUG handle_results: Received index_quotes: {index_quotes}"
-        )  # <-- ADDED LOG
-        self.account_metrics_data = account_metrics if account_metrics else {}
-        self.index_quote_data = index_quotes if index_quotes else {}
-        # self.historical_data = ... # Removed - will be created later by filtering full data
-
-        # --- ADDED: Store full historical data ---
-        self.full_historical_data = (
-            full_historical_data_df  # This is the full daily data now
-            if full_historical_data_df is not None
-            else pd.DataFrame()
-        )
-        # --- ADDED: Log full_historical_data details ---
-        logging.debug(
-            f"[Handle Results] Assigned self.full_historical_data (Type: {type(self.full_historical_data)})"
-        )
-        if isinstance(self.full_historical_data, pd.DataFrame):
-            logging.debug(f"  Shape: {self.full_historical_data.shape}")
-            if not self.full_historical_data.empty:
-                logging.debug(
-                    f"  Tail:\n{self.full_historical_data.tail().to_string()}"
-                )
-        # --- END ADDED ---
-
-        # --- Store Raw Historical Data ---
-        self.historical_prices_yf_adjusted = (
-            hist_prices_adj if hist_prices_adj is not None else {}
-        )
-        self.historical_fx_yf = hist_fx if hist_fx is not None else {}
-        logging.info(
-            f"[Handle Results] Stored {len(self.historical_prices_yf_adjusted)} adjusted price series."
-        )
-        logging.info(
-            f"[Handle Results] Stored {len(self.historical_fx_yf)} FX rate series."
+        self._store_worker_data(
+            summary_metrics,
+            holdings_df,
+            account_metrics,
+            index_quotes,
+            full_historical_data_df,
+            hist_prices_adj,
+            hist_fx,
+            combined_ignored_indices,
+            combined_ignored_reasons,
         )
 
-        # --- CONSTRUCT Ignored DataFrame from combined results ---
-        self.ignored_data = pd.DataFrame()  # Reset ignored data
-        # We need self.original_data which should have been loaded and stored during refresh_data
-        if (
-            # Indices are now the 8th arg (index 7)
-            combined_ignored_indices is not None
-            and len(combined_ignored_indices) > 0
-            and hasattr(self, "original_data")
-            and not self.original_data.empty
-        ):
-            logging.info(
-                f"Processing {len(combined_ignored_indices)} ignored row indices..."
-            )
-            try:
-                # Ensure original_index exists in the stored original data
-                if "original_index" in self.original_data.columns:
-                    # Filter the original DataFrame to get rows matching the ignored indices
-                    # Ensure indices are integers if needed, though set should handle mixed types okay
-                    indices_to_check = {  # Use the correct variable
-                        int(i) for i in combined_ignored_indices if pd.notna(i)
-                    }
-                    valid_indices_mask = self.original_data["original_index"].isin(
-                        indices_to_check
-                    )
-                    ignored_rows_df = self.original_data[valid_indices_mask].copy()
+        self._process_historical_and_periodic_data()
+        self._update_available_accounts_and_selection()
+        self._update_ui_components_after_calculation()
 
-                    if not ignored_rows_df.empty:
-                        # Add the reason using the combined reasons dictionary
-                        # Make sure keys in reasons dict match the type in original_index (likely int)
-                        reasons_mapped = (
-                            ignored_rows_df["original_index"]
-                            .map(combined_ignored_reasons)
-                            .fillna("Unknown Reason")
-                        )
-                        ignored_rows_df["Reason Ignored"] = reasons_mapped
-                        self.ignored_data = ignored_rows_df.sort_values(
-                            by="original_index"
-                        )  # Sort for consistency
-                        logging.info(
-                            f"Constructed ignored_data DataFrame with {len(self.ignored_data)} rows."
-                        )
-                    else:
-                        logging.warning(
-                            "No matching rows found in original_data for the ignored indices received from worker."
-                        )
-                else:
-                    logging.warning(
-                        "Cannot build ignored_data: 'original_index' missing from stored original data."
-                    )
-
-            except Exception as e_ignored:
-                logging.error(f"Error constructing ignored_data DataFrame: {e_ignored}")
-                traceback.print_exc()  # Log traceback for debugging
-                self.ignored_data = pd.DataFrame()  # Ensure empty on error
-        elif combined_ignored_indices:
-            logging.warning(
-                "Ignored indices received, but original_data is missing or empty. Cannot display ignored rows."
-            )
-
-        # --- Calculate Periodic Returns ---
-        # --- MODIFIED: Use full_historical_data for periodic returns ---
-        if (
-            isinstance(self.full_historical_data, pd.DataFrame)
-            and not self.full_historical_data.empty
-        ):  # Explicit type check
-            logging.info("Calculating periodic returns for bar charts...")
-            # --- ADD TRY-EXCEPT around periodic calculation ---
-            # --- ADDED: Log input to periodic calc ---
-            logging.debug(
-                f"[Handle Results] Calling calculate_periodic_returns with self.full_historical_data:"
-            )
-            if (
-                isinstance(self.full_historical_data, pd.DataFrame)
-                and not self.full_historical_data.empty
-            ):
-                logging.debug(
-                    f"  Type: {type(self.full_historical_data)}, Shape: {self.full_historical_data.shape}"
-                )
-                logging.debug(
-                    f"  Date Range: {self.full_historical_data.index.min()} to {self.full_historical_data.index.max()}"
-                )
-            # --- END ADDED ---
-
-            try:
-                self.periodic_returns_data = calculate_periodic_returns(
-                    self.full_historical_data, self.selected_benchmarks  # Use full data
-                )
-                logging.info(
-                    f"Periodic returns calculated for intervals: {list(self.periodic_returns_data.keys())}"
-                )
-                # --- ADDED: Log details of periodic_returns_data ---
-                logging.debug("[Handle Results] Details of self.periodic_returns_data:")
-                for key, df_periodic in self.periodic_returns_data.items():
-                    if isinstance(df_periodic, pd.DataFrame):
-                        logging.debug(
-                            f"  Interval '{key}': Shape={df_periodic.shape}, IsEmpty={df_periodic.empty}"
-                        )
-                    else:
-                        logging.debug(f"  Interval '{key}': Type={type(df_periodic)}")
-                # --- ADDED: Log details of periodic_returns_data ---
-                # --- ADD LOGGING for weekly periodic data ---
-                current_interval = (
-                    self.graph_interval_combo.currentText()
-                )  # Get current interval for logging
-                if current_interval == "W":
-                    weekly_periodic_df = self.periodic_returns_data.get("W")
-                    if weekly_periodic_df is None:
-                        logging.warning(
-                            "Periodic returns data does NOT contain 'W' key."
-                        )
-                    elif weekly_periodic_df.empty:
-                        logging.warning("Periodic returns data for 'W' key is EMPTY.")
-                    else:
-                        logging.info(
-                            f"Periodic returns data for 'W' (shape {weekly_periodic_df.shape}):\n{weekly_periodic_df.tail()}"
-                        )  # Show tail for recent weeks
-                # --- ADD LOGGING for monthly periodic data ---
-                elif current_interval == "M":
-                    monthly_periodic_df = self.periodic_returns_data.get("M")
-                    if monthly_periodic_df is None:
-                        logging.warning(
-                            "Periodic returns data does NOT contain 'M' key."
-                        )
-                    elif monthly_periodic_df.empty:
-                        logging.warning("Periodic returns data for 'M' key is EMPTY.")
-                    else:
-                        logging.info(
-                            f"Periodic returns data for 'M' (shape {monthly_periodic_df.shape}):\n{monthly_periodic_df.tail()}"
-                        )  # Show tail for recent months
-                # --- END LOGGING ---
-            except Exception as e_periodic:
-                logging.error(f"ERROR calculating periodic returns: {e_periodic}")
-                traceback.print_exc()
-                self.periodic_returns_data = {}  # Ensure it's empty on error
-            # --- END TRY-EXCEPT ---
-        else:
-            self.periodic_returns_data = {}  # Clear if no historical data
-            # Add more detail to the warning
-            if not isinstance(self.full_historical_data, pd.DataFrame):
-                logging.warning(
-                    f"Cannot calculate periodic returns: full_historical_data is not a DataFrame (Type: {type(self.full_historical_data)})."
-                )
-            else:  # It's a DataFrame but empty
-                logging.warning(
-                    "Cannot calculate periodic returns: full_historical_data is empty."
-                )
-
-        # --- ADDED: Filter full data to get data for line graphs ---
-        self.historical_data = pd.DataFrame()  # Initialize filtered data
-        if (
-            isinstance(self.full_historical_data, pd.DataFrame)
-            and not self.full_historical_data.empty
-        ):
-            plot_start_date = self.graph_start_date_edit.date().toPython()
-            plot_end_date = self.graph_end_date_edit.date().toPython()
-            try:
-                pd_start = pd.Timestamp(plot_start_date)
-                pd_end = pd.Timestamp(plot_end_date)
-                # Ensure index is DatetimeIndex and timezone-naive if needed
-                temp_df = self.full_historical_data
-                if not isinstance(temp_df.index, pd.DatetimeIndex):
-                    temp_df.index = pd.to_datetime(temp_df.index)
-                if temp_df.index.tz is not None:
-                    temp_df.index = temp_df.index.tz_localize(None)
-
-                self.historical_data = temp_df.loc[pd_start:pd_end].copy()
-                logging.debug(
-                    f"Filtered self.historical_data for line graphs: {self.historical_data.shape} rows from {plot_start_date} to {plot_end_date}"
-                )
-            except Exception as e_filter_gui:
-                logging.error(
-                    f"Error filtering full historical data in GUI: {e_filter_gui}. Using full data for line graphs."
-                )
-                # Ensure self.historical_data is assigned even on error
-                if isinstance(self.full_historical_data, pd.DataFrame):
-                    self.historical_data = self.full_historical_data.copy()  # Fallback
-                else:
-                    self.historical_data = pd.DataFrame()  # Ensure it's an empty DF
-                self.historical_data = self.full_historical_data.copy()  # Fallback
-        else:
-            logging.warning(
-                "Full historical data is empty or invalid, cannot filter for line graphs."
-            )
-            self.historical_data = pd.DataFrame()  # Ensure empty DF
-
-        # --- ADDED: Normalize Accumulated Gain columns to start at 1 for the filtered period ---
-        if (
-            isinstance(self.historical_data, pd.DataFrame)
-            and not self.historical_data.empty
-        ):
-            logging.debug(
-                "Normalizing Accumulated Gain columns for the filtered period..."
-            )
-            gain_cols = [
-                col for col in self.historical_data.columns if "Accumulated Gain" in col
-            ]
-            for col in gain_cols:
-                try:
-                    # Find the first valid (non-NaN) value in the filtered series
-                    first_valid_value = self.historical_data[col].dropna().iloc[0]
-                    if pd.notna(first_valid_value) and first_valid_value != 0:
-                        logging.debug(
-                            f"  Normalizing '{col}' using start value: {first_valid_value:.4f}"
-                        )
-                        self.historical_data[col] = (
-                            self.historical_data[col] / first_valid_value
-                        )
-                        # Set the very first point (which might have been NaN originally) to 1.0 after normalization
-                        self.historical_data.loc[self.historical_data.index[0], col] = (
-                            1.0
-                        )
-                    else:
-                        logging.warning(
-                            f"  Cannot normalize '{col}', first valid value is zero or NaN."
-                        )
-                        self.historical_data[col] = (
-                            np.nan
-                        )  # Set to NaN if normalization fails
-                except IndexError:
-                    logging.warning(
-                        f"  Cannot normalize '{col}', no valid data points found in the filtered range."
-                    )
-                    self.historical_data[col] = np.nan  # Set to NaN if no data
-                except Exception as e_norm:
-                    logging.error(f"  Error normalizing column '{col}': {e_norm}")
-                    self.historical_data[col] = np.nan  # Set to NaN on error
-
-        # --- ADDED: Calculate TWR Factor from the FILTERED self.historical_data ---
-        self.last_hist_twr_factor = np.nan  # Reset before calculation
-        if (
-            isinstance(self.historical_data, pd.DataFrame)
-            and not self.historical_data.empty
-        ):
-            # Log the filtered data's value column for debugging the value graph
-            if "Portfolio Value" in self.historical_data.columns:
-                logging.debug(
-                    f"  Filtered 'Portfolio Value' head:\n{self.historical_data['Portfolio Value'].head().to_string()}"
-                )
-                logging.debug(
-                    f"  Filtered 'Portfolio Value' tail:\n{self.historical_data['Portfolio Value'].tail().to_string()}"
-                )
-                logging.debug(
-                    f"  Filtered 'Portfolio Value' NaN count: {self.historical_data['Portfolio Value'].isna().sum()}"
-                )
-            else:
-                logging.warning(
-                    "  'Portfolio Value' column missing in filtered self.historical_data."
-                )
-
-            # Calculate TWR from filtered accumulated gain
-            if "Portfolio Accumulated Gain" in self.historical_data.columns:
-                # --- FIX: Calculate PERIOD TWR Factor ---
-                accum_gain_series = self.historical_data[
-                    "Portfolio Accumulated Gain"
-                ].dropna()
-                if len(accum_gain_series) >= 2:  # Need at least two points for a period
-                    start_gain = accum_gain_series.iloc[0]
-                    end_gain = accum_gain_series.iloc[-1]
-                    if pd.notna(start_gain) and pd.notna(end_gain) and start_gain != 0:
-                        logging.debug(
-                            f"  Calculating Period TWR: End Gain={end_gain:.6f}, Start Gain={start_gain:.6f}"
-                        )  # ADDED LOG
-                        period_twr_factor = end_gain / start_gain
-                        self.last_hist_twr_factor = (
-                            period_twr_factor  # Store the period-specific factor
-                        )
-                        logging.info(
-                            f"Calculated PERIOD TWR Factor ({plot_start_date} to {plot_end_date}): {self.last_hist_twr_factor:.6f} (End: {end_gain:.4f} / Start: {start_gain:.4f})"
-                        )
-                    else:
-                        logging.warning(
-                            "Could not calculate period TWR factor due to invalid start/end gain values."
-                        )
-                        self.last_hist_twr_factor = np.nan  # Ensure NaN on failure
-                elif len(accum_gain_series) == 1:
-                    logging.warning(
-                        "Only one data point in filtered range, cannot calculate period TWR."
-                    )
-                    self.last_hist_twr_factor = (
-                        np.nan
-                    )  # Cannot calculate with one point
-                else:  # Series is empty after dropna
-                    logging.info(
-                        f"Calculated TWR Factor from filtered data ({plot_start_date} to {plot_end_date}): {self.last_hist_twr_factor:.6f}"
-                    )
-                    logging.warning("Could not find valid TWR factor in filtered data.")
-                # --- END FIX ---
-
-        # --- Update Available Accounts & Validate Selection --- # (Keep existing logic below)
-        # Get available accounts from the overall summary if possible, otherwise re-scan
-        available_accounts_from_backend = self.summary_metrics_data.get(
-            "_available_accounts"
-        )
-
-        if available_accounts_from_backend and isinstance(
-            available_accounts_from_backend, list
-        ):
-            self.available_accounts = available_accounts_from_backend
-        else:
-            # Fallback: derive from the holdings data IF it's available
-            if not self.holdings_data.empty and "Account" in self.holdings_data.columns:
-                # Use unique accounts from the *returned* holdings data
-                self.available_accounts = sorted(
-                    self.holdings_data["Account"].unique().tolist()
-                )
-                logging.warning(
-                    "Used accounts from holdings_df as fallback for available_accounts."
-                )
-            elif (
-                hasattr(self, "original_data")
-                and not self.original_data.empty
-                and "Investment Account" in self.original_data.columns
-            ):
-                # Fallback further to original data if holdings are empty
-                self.available_accounts = sorted(
-                    self.original_data["Investment Account"].unique().tolist()
-                )
-                logging.warning(
-                    "Used accounts from original_data as fallback for available_accounts."
-                )
-            else:
-                self.available_accounts = []  # Cannot determine accounts
-                logging.error(
-                    "Could not determine available accounts from summary or data."
-                )
-
-        # Validate current selection against available accounts
-        if self.selected_accounts:
-            original_selection = self.selected_accounts.copy()
-            self.selected_accounts = [
-                acc for acc in self.selected_accounts if acc in self.available_accounts
-            ]
-            if len(self.selected_accounts) != len(original_selection):
-                logging.warning(
-                    f"Warn: Some previously selected accounts are no longer available. Updated selection: {self.selected_accounts}"
-                )
-            # Default back to all if validation resulted in empty selection
-            if not self.selected_accounts and self.available_accounts:
-                logging.warning(
-                    "Warn: Validation resulted in empty selection. Defaulting to all available accounts."
-                )
-                self.selected_accounts = self.available_accounts.copy()
-        # If selection was initially empty, ensure it reflects 'all available' now
-        elif not self.selected_accounts and self.available_accounts:
-            self.selected_accounts = (
-                []
-            )  # Keep it empty to signify "All" internally for filtering logic
-            logging.info("No accounts pre-selected, effectively showing 'All'.")
-
-        self._update_account_button_text()  # Update button text based on final state
-
-        # --- Update UI Elements ---
-        logging.debug("Updating UI elements after receiving results...")
-        try:
-            # Enable/Disable "View Log" button based on the newly constructed ignored_data
-            if hasattr(self, "view_ignored_button"):
-                self.view_ignored_button.setEnabled(not self.ignored_data.empty)
-
-            # Get Filtered Data for Display (uses self.holdings_data and current filters)
-            # IMPORTANT: _get_filtered_data uses self.holdings_data which was just updated
-            df_display_filtered = self._get_filtered_data()
-
-            # Update UI components
-            self._update_table_title()  # Uses available/selected accounts state
-            self.update_dashboard_summary()  # Uses self.summary_metrics_data and filtered data for cash
-            # Account pie needs data grouped by account *within the selected scope*
-            # We can derive this from the df_display_filtered
-            self.update_account_pie_chart(df_display_filtered)
-            self.update_holdings_pie_chart(df_display_filtered)  # Uses filtered data
-            self._update_table_view_with_filtered_columns(
-                df_display_filtered
-            )  # Update table
-            self.apply_column_visibility()  # Re-apply visibility
-            self.update_performance_graphs()  # Uses self.historical_data (which reflects scope)
-            self.update_header_info()  # Uses self.index_quote_data
-            self._update_fx_rate_display(
-                self.currency_combo.currentText()
-            )  # Uses self.summary_metrics_data
-            # --- Make bar charts visible and plot ---
-            # --- MODIFY Visibility Check ---
-            # --- ADDED: Log state right before check ---
-            logging.debug(
-                f"[Handle Results] PRE-CHECK: self.periodic_returns_data is type {type(self.periodic_returns_data)}"
-            )
-            logging.debug(
-                f"[Handle Results] PRE-CHECK: bool(self.periodic_returns_data) = {bool(self.periodic_returns_data)}"
-            )
-            if isinstance(self.periodic_returns_data, dict):
-                logging.debug(
-                    f"[Handle Results] PRE-CHECK: periodic_returns_data keys: {list(self.periodic_returns_data.keys())}"
-                )
-                logging.debug(
-                    f"[Handle Results] PRE-CHECK: any(not df.empty...) = {any(not df.empty for df in self.periodic_returns_data.values() if isinstance(df, pd.DataFrame))}"
-                )
-            # --- END ADDED ---
-            # Check if the dictionary itself is non-empty AND if it contains data for *any* interval
-            bar_charts_have_data = bool(self.periodic_returns_data) and any(
-                not df.empty
-                for df in self.periodic_returns_data.values()
-                if isinstance(df, pd.DataFrame)
-            )
-            logging.debug(
-                f"[Handle Results] Bar charts visibility check: bar_charts_have_data = {bar_charts_have_data}"
-            )  # ADDED LOG
-            self.bar_charts_frame.setVisible(bar_charts_have_data)
-            # --- END MODIFY ---
-            if bar_charts_have_data:  # Only call plot if there's data
-                self._update_periodic_bar_charts()
-            else:
-                logging.info(
-                    "Hiding bar charts frame as no periodic data is available."
-                )
-
-        except Exception as ui_update_e:
-            logging.error(
-                f"--- CRITICAL ERROR during UI update in handle_results: {ui_update_e} ---"
-            )
-            traceback.print_exc()
-            QMessageBox.critical(
-                self,
-                "UI Update Error",
-                f"Failed to update display after calculation:\n{ui_update_e}",
-            )
-
-        logging.debug("Exiting handle_results.")
+        logging.debug("Exiting handle_results orchestrator.")
 
     @Slot(str)
     def handle_error(self, error_message):
@@ -8738,15 +9710,16 @@ The CSV file should contain the following columns (header names must match exact
             logging.warning("Warning: Worker threads did not finish closing.")
         event.accept()
 
+    # --- Run Application Entry Point ---
+    # (No function here, but the `if __name__ == "__main__":` block executes)
+    # This block handles:
+    # - Checking for required library dependencies.
+    # - Setting up basic logging.
+    # - Initializing the QApplication.
+    # - Creating and showing the main PortfolioApp window.
+    # - Starting the Qt event loop.
 
-# --- Run Application Entry Point ---
-# (No function here, but the `if __name__ == "__main__":` block executes)
-# This block handles:
-# - Checking for required library dependencies.
-# - Setting up basic logging.
-# - Initializing the QApplication.
-# - Creating and showing the main PortfolioApp window.
-# - Starting the Qt event loop.
+
 if __name__ == "__main__":
     # --- Dependency Check ---
     # Check for essential libraries before starting the GUI
@@ -8846,5 +9819,6 @@ if __name__ == "__main__":
     # --- Show Window and Run Event Loop ---
     main_window.show()
     sys.exit(app.exec())
+
 
 # --- END OF FILE main_gui.py ---

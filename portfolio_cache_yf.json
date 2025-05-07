@@ -1,362 +1,362 @@
 {
   "cache_key": "CURRENT_QUOTES_v2::AAPL_AMZN_ASML_AXP_BAC_BHP_BLV_BND_BRK-B_C_CVX_DAL_DIA_DPZ_EFA_EPP_GOOG_GOOGL_GS_IBM_JNJ_KO_LQD_NKE_NLY_NVDA_PLTR_QQQ_QSR_SPY_VDE_VGK_VTI_VWO_VZ_XLE::THB_USD",
-  "timestamp": "2025-05-06T16:43:40.707323+00:00",
+  "timestamp": "2025-05-07T01:46:57.704096+00:00",
   "quotes": {
-    "SPY": {
-      "price": 560.77,
-      "change": -2.7399902,
-      "changesPercentage": -0.4862363,
-      "currency": "USD",
-      "name": "SPDR S&P 500",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:31.050306+00:00"
-    },
-    "GS": {
-      "price": 554.755,
-      "change": -4.8049927,
-      "changesPercentage": -0.8587091,
-      "currency": "USD",
-      "name": "Goldman Sachs Group, Inc. (The)",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:31.328104+00:00"
-    },
-    "KO": {
-      "price": 71.585,
-      "change": -0.114997864,
-      "changesPercentage": -0.16038755,
-      "currency": "USD",
-      "name": "Coca-Cola Company (The)",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:31.598116+00:00"
-    },
-    "BND": {
-      "price": 72.5699,
-      "change": -0.030097961,
-      "changesPercentage": -0.041457247,
-      "currency": "USD",
-      "name": "Vanguard Total Bond Market ETF",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:31.873597+00:00"
-    },
-    "AMZN": {
-      "price": 186.44,
-      "change": 0.08999634,
-      "changesPercentage": 0.04829425,
-      "currency": "USD",
-      "name": "Amazon.com, Inc.",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:32.140132+00:00"
-    },
-    "PLTR": {
-      "price": 106.9453,
-      "change": -16.8247,
-      "changesPercentage": -13.59352,
-      "currency": "USD",
-      "name": "Palantir Technologies Inc.",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:32.434905+00:00"
-    },
     "VZ": {
-      "price": 44.095,
-      "change": 0.5550003,
-      "changesPercentage": 1.2746906,
+      "price": 44.15,
+      "change": 0.610001,
+      "changesPercentage": 1.40101,
       "currency": "USD",
       "name": "Verizon Communications Inc.",
       "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:32.699430+00:00"
-    },
-    "DIA": {
-      "price": 409.82,
-      "change": -2.4400024,
-      "changesPercentage": -0.59186006,
-      "currency": "USD",
-      "name": "SPDR Dow Jones Industrial Avera",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:32.967058+00:00"
-    },
-    "NVDA": {
-      "price": 113.165,
-      "change": -0.6549988,
-      "changesPercentage": -0.57546896,
-      "currency": "USD",
-      "name": "NVIDIA Corporation",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:33.261523+00:00"
-    },
-    "NKE": {
-      "price": 57.3,
-      "change": -0.049999237,
-      "changesPercentage": -0.08718263,
-      "currency": "USD",
-      "name": "Nike, Inc.",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:33.525712+00:00"
-    },
-    "LQD": {
-      "price": 106.535,
-      "change": -0.22499847,
-      "changesPercentage": -0.21075165,
-      "currency": "USD",
-      "name": "iShares iBoxx $ Investment Grad",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:33.788635+00:00"
-    },
-    "CVX": {
-      "price": 136.11,
-      "change": 0.6100006,
-      "changesPercentage": 0.45018494,
-      "currency": "USD",
-      "name": "Chevron Corporation",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:34.069307+00:00"
-    },
-    "AAPL": {
-      "price": 199.7,
-      "change": 0.80999756,
-      "changesPercentage": 0.40725908,
-      "currency": "USD",
-      "name": "Apple Inc.",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:34.329162+00:00"
-    },
-    "QQQ": {
-      "price": 482.55,
-      "change": -3.380005,
-      "changesPercentage": -0.69557446,
-      "currency": "USD",
-      "name": "Invesco QQQ Trust, Series 1",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:34.597496+00:00"
-    },
-    "VTI": {
-      "price": 275.8687,
-      "change": -1.3512878,
-      "changesPercentage": -0.4874424,
-      "currency": "USD",
-      "name": "Vanguard Total Stock Market ETF",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:34.858516+00:00"
-    },
-    "QSR": {
-      "price": 67.55,
-      "change": 0.8100052,
-      "changesPercentage": 1.2136728,
-      "currency": "USD",
-      "name": "Restaurant Brands International",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:35.119652+00:00"
-    },
-    "DPZ": {
-      "price": 473.22,
-      "change": -4.619995,
-      "changesPercentage": -0.9668498,
-      "currency": "USD",
-      "name": "Domino's Pizza Inc",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:35.392078+00:00"
-    },
-    "EPP": {
-      "price": 46.9,
-      "change": 0.2800026,
-      "changesPercentage": 0.6006062,
-      "currency": "USD",
-      "name": "iShares MSCI Pacific Ex-Japan I",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:35.657552+00:00"
-    },
-    "DAL": {
-      "price": 45.01,
-      "change": -0.5099983,
-      "changesPercentage": -1.1206292,
-      "currency": "USD",
-      "name": "Delta Air Lines, Inc.",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:35.925267+00:00"
-    },
-    "EFA": {
-      "price": 86.29,
-      "change": 0.040000916,
-      "changesPercentage": 0.046372496,
-      "currency": "USD",
-      "name": "iShares MSCI EAFE ETF",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:36.205402+00:00"
-    },
-    "BAC": {
-      "price": 41.115,
-      "change": -0.0049972534,
-      "changesPercentage": -0.012152854,
-      "currency": "USD",
-      "name": "Bank of America Corporation",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:36.497085+00:00"
-    },
-    "VGK": {
-      "price": 74.205,
-      "change": -0.07499695,
-      "changesPercentage": -0.1009652,
-      "currency": "USD",
-      "name": "Vanguard FTSEEuropean ETF",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:36.759251+00:00"
-    },
-    "IBM": {
-      "price": 248.34,
-      "change": -0.83999634,
-      "changesPercentage": -0.33710426,
-      "currency": "USD",
-      "name": "International Business Machines",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:37.026083+00:00"
-    },
-    "ASML": {
-      "price": 683.55,
-      "change": 0.19000244,
-      "changesPercentage": 0.027804151,
-      "currency": "USD",
-      "name": "ASML Holding N.V. - New York Re",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:37.314243+00:00"
-    },
-    "JNJ": {
-      "price": 155.48,
-      "change": 0.47999573,
-      "changesPercentage": 0.30967465,
-      "currency": "USD",
-      "name": "Johnson & Johnson",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:37.595565+00:00"
-    },
-    "VDE": {
-      "price": 112.695,
-      "change": 0.45500183,
-      "changesPercentage": 0.40538296,
-      "currency": "USD",
-      "name": "Vanguard Energy ETF",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:37.870494+00:00"
+      "timestamp": "2025-05-07T01:46:38.172168+00:00"
     },
     "XLE": {
-      "price": 80.695,
-      "change": 0.1949997,
-      "changesPercentage": 0.24223565,
+      "price": 80.52,
+      "change": 0.0199966,
+      "changesPercentage": 0.0248406,
       "currency": "USD",
       "name": "SPDR Select Sector Fund - Energ",
       "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:38.136901+00:00"
+      "timestamp": "2025-05-07T01:46:38.667892+00:00"
     },
-    "VWO": {
-      "price": 46.67,
-      "change": -0.1400032,
-      "changesPercentage": -0.29908824,
+    "SPY": {
+      "price": 558.8,
+      "change": -4.71002,
+      "changesPercentage": -0.835836,
       "currency": "USD",
-      "name": "Vanguard FTSE Emerging Markets ",
+      "name": "SPDR S&P 500",
       "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:38.415727+00:00"
+      "timestamp": "2025-05-07T01:46:39.182397+00:00"
+    },
+    "GOOG": {
+      "price": 165.2,
+      "change": -0.8500061,
+      "changesPercentage": -0.5118977,
+      "currency": "USD",
+      "name": "Alphabet Inc.",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:39.803586+00:00"
+    },
+    "ASML": {
+      "price": 679.99,
+      "change": -3.369995,
+      "changesPercentage": -0.49315077,
+      "currency": "USD",
+      "name": "ASML Holding N.V. - New York Re",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:40.338196+00:00"
+    },
+    "BND": {
+      "price": 72.76,
+      "change": 0.16000366,
+      "changesPercentage": 0.22039074,
+      "currency": "USD",
+      "name": "Vanguard Total Bond Market ETF",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:40.939692+00:00"
+    },
+    "AAPL": {
+      "price": 198.51,
+      "change": -0.38000488,
+      "changesPercentage": -0.19106284,
+      "currency": "USD",
+      "name": "Apple Inc.",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:41.438313+00:00"
+    },
+    "NVDA": {
+      "price": 113.54,
+      "change": -0.27999878,
+      "changesPercentage": -0.24600138,
+      "currency": "USD",
+      "name": "NVIDIA Corporation",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:41.930524+00:00"
+    },
+    "EPP": {
+      "price": 46.86,
+      "change": 0.240002,
+      "changesPercentage": 0.514804,
+      "currency": "USD",
+      "name": "iShares MSCI Pacific Ex-Japan I",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:42.437833+00:00"
+    },
+    "BAC": {
+      "price": 40.84,
+      "change": -0.279999,
+      "changesPercentage": -0.680931,
+      "currency": "USD",
+      "name": "Bank of America Corporation",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:42.955226+00:00"
+    },
+    "QQQ": {
+      "price": 481.41,
+      "change": -4.519989,
+      "changesPercentage": -0.93017286,
+      "currency": "USD",
+      "name": "Invesco QQQ Trust, Series 1",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:43.501311+00:00"
+    },
+    "IBM": {
+      "price": 249.12,
+      "change": -0.0599976,
+      "changesPercentage": -0.024078,
+      "currency": "USD",
+      "name": "International Business Machines",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:44.016295+00:00"
+    },
+    "DPZ": {
+      "price": 479.49,
+      "change": 1.6499939,
+      "changesPercentage": 0.34530258,
+      "currency": "USD",
+      "name": "Domino's Pizza Inc",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:44.542753+00:00"
+    },
+    "GOOGL": {
+      "price": 163.23,
+      "change": -0.980011,
+      "changesPercentage": -0.5968035,
+      "currency": "USD",
+      "name": "Alphabet Inc.",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:45.072519+00:00"
+    },
+    "AMZN": {
+      "price": 185.01,
+      "change": -1.3400116,
+      "changesPercentage": -0.7190832,
+      "currency": "USD",
+      "name": "Amazon.com, Inc.",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:45.573555+00:00"
+    },
+    "VDE": {
+      "price": 112.37,
+      "change": 0.130005,
+      "changesPercentage": 0.115828,
+      "currency": "USD",
+      "name": "Vanguard Energy ETF",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:46.119372+00:00"
+    },
+    "VTI": {
+      "price": 274.97,
+      "change": -2.25,
+      "changesPercentage": -0.81163,
+      "currency": "USD",
+      "name": "Vanguard Total Stock Market ETF",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:46.650549+00:00"
     },
     "NLY": {
-      "price": 18.97,
-      "change": -0.29000092,
-      "changesPercentage": -1.5057161,
+      "price": 19.02,
+      "change": -0.24,
+      "changesPercentage": -1.2461,
       "currency": "USD",
       "name": "Annaly Capital Management Inc.",
       "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:38.680669+00:00"
+      "timestamp": "2025-05-07T01:46:47.253362+00:00"
     },
-    "GOOG": {
-      "price": 165.96,
-      "change": -0.08999634,
-      "changesPercentage": -0.054198336,
+    "KO": {
+      "price": 71.72,
+      "change": 0.0200043,
+      "changesPercentage": 0.0279,
       "currency": "USD",
-      "name": "Alphabet Inc.",
+      "name": "Coca-Cola Company (The)",
       "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:39.045681+00:00"
+      "timestamp": "2025-05-07T01:46:47.734666+00:00"
     },
-    "BHP": {
-      "price": 48.86,
-      "change": 0.24000168,
-      "changesPercentage": 0.4936275,
+    "VGK": {
+      "price": 74.09,
+      "change": -0.190002,
+      "changesPercentage": -0.255792,
       "currency": "USD",
-      "name": "BHP Group Limited",
+      "name": "Vanguard FTSEEuropean ETF",
       "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:39.323567+00:00"
-    },
-    "AXP": {
-      "price": 276.38,
-      "change": -1.6499939,
-      "changesPercentage": -0.59345895,
-      "currency": "USD",
-      "name": "American Express Company",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:39.624830+00:00"
-    },
-    "BLV": {
-      "price": 67.645,
-      "change": -0.27500153,
-      "changesPercentage": -0.40489036,
-      "currency": "USD",
-      "name": "Vanguard Long-Term Bond ETF",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:39.893145+00:00"
+      "timestamp": "2025-05-07T01:46:48.251290+00:00"
     },
     "BRK.B": {
-      "price": 512.19,
-      "change": 0.039978027,
-      "changesPercentage": 0.007805921,
+      "price": 512.33,
+      "change": 0.179993,
+      "changesPercentage": 0.0351445,
       "currency": "USD",
       "name": "Berkshire Hathaway Inc. New",
       "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:40.159336+00:00"
-    },
-    "GOOGL": {
-      "price": 164.015,
-      "change": -0.19500732,
-      "changesPercentage": -0.118754834,
-      "currency": "USD",
-      "name": "Alphabet Inc.",
-      "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:40.420283+00:00"
+      "timestamp": "2025-05-07T01:46:48.754473+00:00"
     },
     "C": {
-      "price": 70.0,
-      "change": -0.23999786,
-      "changesPercentage": -0.3416826,
+      "price": 69.47,
+      "change": -0.769997,
+      "changesPercentage": -1.09624,
       "currency": "USD",
       "name": "Citigroup, Inc.",
       "source": "yf_info",
-      "timestamp": "2025-05-06T16:43:40.697042+00:00"
+      "timestamp": "2025-05-07T01:46:49.282424+00:00"
+    },
+    "EFA": {
+      "price": 86.14,
+      "change": -0.110001,
+      "changesPercentage": -0.127537,
+      "currency": "USD",
+      "name": "iShares MSCI EAFE ETF",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:49.771598+00:00"
+    },
+    "DAL": {
+      "price": 44.81,
+      "change": -0.699997,
+      "changesPercentage": -1.53812,
+      "currency": "USD",
+      "name": "Delta Air Lines, Inc.",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:50.275204+00:00"
+    },
+    "BLV": {
+      "price": 68.1,
+      "change": 0.18,
+      "changesPercentage": 0.265018,
+      "currency": "USD",
+      "name": "Vanguard Long-Term Bond ETF",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:50.831852+00:00"
+    },
+    "PLTR": {
+      "price": 108.86,
+      "change": -14.909996,
+      "changesPercentage": -12.0465355,
+      "currency": "USD",
+      "name": "Palantir Technologies Inc.",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:51.319050+00:00"
+    },
+    "GS": {
+      "price": 549.36,
+      "change": -10.2,
+      "changesPercentage": -1.82286,
+      "currency": "USD",
+      "name": "Goldman Sachs Group, Inc. (The)",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:51.849959+00:00"
+    },
+    "VWO": {
+      "price": 46.58,
+      "change": -0.23,
+      "changesPercentage": -0.491347,
+      "currency": "USD",
+      "name": "Vanguard FTSE Emerging Markets ",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:52.360499+00:00"
+    },
+    "JNJ": {
+      "price": 154.47,
+      "change": -0.529999,
+      "changesPercentage": -0.341935,
+      "currency": "USD",
+      "name": "Johnson & Johnson",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:52.855784+00:00"
+    },
+    "NKE": {
+      "price": 57.04,
+      "change": -0.309998,
+      "changesPercentage": -0.540536,
+      "currency": "USD",
+      "name": "Nike, Inc.",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:53.355203+00:00"
+    },
+    "BHP": {
+      "price": 48.83,
+      "change": 0.210003,
+      "changesPercentage": 0.431927,
+      "currency": "USD",
+      "name": "BHP Group Limited",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:53.864837+00:00"
+    },
+    "AXP": {
+      "price": 275.37,
+      "change": -2.66,
+      "changesPercentage": -0.956733,
+      "currency": "USD",
+      "name": "American Express Company",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:54.409396+00:00"
+    },
+    "DIA": {
+      "price": 408.24,
+      "change": -4.02002,
+      "changesPercentage": -0.975118,
+      "currency": "USD",
+      "name": "SPDR Dow Jones Industrial Avera",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:54.928545+00:00"
+    },
+    "CVX": {
+      "price": 135.6,
+      "change": 0.100006,
+      "changesPercentage": 0.0738052,
+      "currency": "USD",
+      "name": "Chevron Corporation",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:55.415958+00:00"
+    },
+    "QSR": {
+      "price": 67.77,
+      "change": 1.03,
+      "changesPercentage": 1.5433,
+      "currency": "USD",
+      "name": "Restaurant Brands International",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:55.900087+00:00"
+    },
+    "LQD": {
+      "price": 106.97,
+      "change": 0.209999,
+      "changesPercentage": 0.196702,
+      "currency": "USD",
+      "name": "iShares iBoxx $ Investment Grad",
+      "source": "yf_info",
+      "timestamp": "2025-05-07T01:46:56.413862+00:00"
     }
   },
   "fx_rates": {
-    "THB": 32.5699996948,
-    "USD": 1.0
+    "USD": 1.0,
+    "THB": 32.7599983215332
   },
-  "INDEX_QUOTES_v1::^DJI_^GSPC_^IXIC": {
-    "timestamp": "2025-05-06T16:43:41.724667+00:00",
+  "INDEX_QUOTES_v1::.DJI_.INX_IXIC": {
+    "timestamp": "2025-05-07T01:47:00.773680+00:00",
     "data": {
-      "^DJI": {
-        "price": 40979.56,
-        "change": -239.26953,
-        "changesPercentage": -0.58047295,
+      ".DJI": {
+        "price": 40829.0,
+        "change": -389.82812,
+        "changesPercentage": -0.94575256,
         "name": "Dow Jones Industrial Average",
         "source": "yf_info",
-        "timestamp": "2025-05-06T16:43:41.202553+00:00"
+        "timestamp": "2025-05-07T01:46:59.695381+00:00"
       },
-      "^IXIC": {
-        "price": 17747.273,
-        "change": -96.9668,
-        "changesPercentage": -0.5433627,
+      "IXIC": {
+        "price": 17689.658,
+        "change": -154.58203,
+        "changesPercentage": -0.8662853,
         "name": "NASDAQ Composite",
         "source": "yf_info",
-        "timestamp": "2025-05-06T16:43:41.465138+00:00"
+        "timestamp": "2025-05-07T01:47:00.171502+00:00"
       },
-      "^GSPC": {
-        "price": 5623.78,
-        "change": -26.600098,
-        "changesPercentage": -0.47074986,
+      ".INX": {
+        "price": 5606.91,
+        "change": -43.469727,
+        "changesPercentage": -0.76932395,
         "name": "S&P 500",
         "source": "yf_info",
-        "timestamp": "2025-05-06T16:43:41.724093+00:00"
+        "timestamp": "2025-05-07T01:47:00.614416+00:00"
       }
     }
   }

@@ -230,7 +230,6 @@ class MarketDataProvider:
 
         # --- 3. Fetching Logic (Only runs if cache was invalid/missing) ---
         if not cached_data_used:
-            fx_rates_vs_usd = {}  # Initialize here before fallback logic
             # --- 2. Determine required FX pairs ---
             fx_pairs_to_fetch = set()
             if "USD" not in required_currencies:
@@ -295,11 +294,10 @@ class MarketDataProvider:
                                         "price": price,
                                         "change": change,
                                         "changesPercentage": (
-                                            # If yfinance raw value is actual_pct * 100 (e.g., 150.0 for 1.5%), divide by 100.
                                             change_pct
-                                            if pd.notna(change_pct)
+                                            if change_pct is not None
                                             else None
-                                        ),
+                                        ),  # Store as percentage
                                         "currency": (
                                             currency.upper() if currency else None
                                         ),  # Ensure uppercase
@@ -339,7 +337,7 @@ class MarketDataProvider:
                         has_warnings = (
                             True  # Treat individual ticker errors as warnings for now
                         )
-                    # time.sleep(0.2)  # Add small delay after each ticker info fetch
+                    time.sleep(0.2)  # Add small delay after each ticker info fetch
 
             except (
                 yf.exceptions.YFRateLimitError
@@ -358,74 +356,17 @@ class MarketDataProvider:
                 logging.error(f"Error fetching stock quotes batch: {e_quotes}")
                 has_errors = True  # Treat batch fetch errors as more severe
 
-            # --- Fallback for FX Rates using recent historical data ---
-            fx_pairs_needing_fallback = []
-            for yf_fx_pair_full in fx_pairs_to_fetch:  # e.g., "THB=X"
-                # This check happens BEFORE the main FX fetch loop below
-                base_curr_fallback = yf_fx_pair_full.replace(
-                    "=X", ""
-                ).upper()  # e.g., "THB"
-                if base_curr_fallback not in fx_rates_vs_usd or pd.isna(
-                    fx_rates_vs_usd.get(base_curr_fallback)
-                ):
-                    fx_pairs_needing_fallback.append(yf_fx_pair_full)
-
-            if fx_pairs_needing_fallback:
-                logging.warning(
-                    f"Initial check shows FX pairs {fx_pairs_needing_fallback} might need fallback. Will attempt after primary fetch if still needed."
-                )
-                # Try to get recent historical data for these pairs
-                # Fetch last 7 days, hoping for at least one data point
-                end_fallback_date = date.today()
-                start_fallback_date = end_fallback_date - timedelta(days=7)
-
-                # Use a temporary, minimal version of get_historical_fx_rates logic
-                # This avoids a full historical data call if not otherwise needed.
-                # We'll store fetched historical FX briefly in self.historical_fx_for_fallback
-                # to avoid re-fetching if called multiple times in short succession (though unlikely for current quotes).
-
-                fallback_fx_data, _ = self.get_historical_fx_rates(
-                    fx_pairs_yf=fx_pairs_needing_fallback,
-                    start_date=start_fallback_date,
-                    end_date=end_fallback_date,
-                    use_cache=True,  # Use historical cache if available
-                    cache_file=f"{self.hist_raw_cache_prefix}_fallback_fx.json",  # Temp cache file
-                    cache_key=f"FALLBACK_FX::{'_'.join(sorted(fx_pairs_needing_fallback))}",
-                )
-
-                for yf_fx_pair_fallback in fx_pairs_needing_fallback:
-                    base_curr_fb = yf_fx_pair_fallback.replace("=X", "").upper()
-                    if (
-                        yf_fx_pair_fallback in fallback_fx_data
-                        and not fallback_fx_data[yf_fx_pair_fallback].empty
-                    ):
-                        last_known_rate = fallback_fx_data[yf_fx_pair_fallback][
-                            "price"
-                        ].iloc[-1]
-                        if pd.notna(last_known_rate):
-                            fx_rates_vs_usd[base_curr_fb] = float(last_known_rate)
-                            logging.info(
-                                f"Used historical fallback for {base_curr_fb}: {last_known_rate:.4f} (from {fallback_fx_data[yf_fx_pair_fallback].index[-1]})"
-                            )
-                            has_warnings = True  # Indicate that a fallback was used
+            # The original "Fallback for FX Rates" block (lines 308-338 in the provided file) is removed.
+            # The correctly positioned fallback logic is already present later in the code (lines 358-398).
 
             # --- 4. Fetch FX Rates ---
             logging.info(
                 f"Fetching current FX rates for {len(fx_pairs_to_fetch)} pairs..."
             )
-            # fx_rates_vs_usd = {} # Moved initialization up
+            fx_rates_vs_usd = {}
             fx_data_yf = {}  # Initialize as dict
-
-            # Determine which FX pairs *still* need fetching after potential cache load / initial checks
-            actual_fx_pairs_to_fetch_now = {
-                pair
-                for pair in fx_pairs_to_fetch
-                if pair.replace("=X", "").upper() not in fx_rates_vs_usd
-                or pd.isna(fx_rates_vs_usd.get(pair.replace("=X", "").upper()))
-            }
-
-            if actual_fx_pairs_to_fetch_now:
-                fx_tickers_str = " ".join(actual_fx_pairs_to_fetch_now)
+            if fx_pairs_to_fetch:
+                fx_tickers_str = " ".join(fx_pairs_to_fetch)
                 try:
                     fx_tickers = yf.Tickers(fx_tickers_str)  # REMOVED session argument
                     # Iterate and extract rates
@@ -434,36 +375,41 @@ class MarketDataProvider:
                             # Use .info for FX
                             fx_info = getattr(ticker_obj, "info", None)
                             if fx_info:
-                                # Try multiple keys for the FX rate
-                                rate = fx_info.get(
-                                    "regularMarketPrice"
-                                )  # Often the most reliable for FX
-                                if rate is None:
-                                    rate = fx_info.get("currentPrice")
-                                if rate is None:
-                                    rate = (
-                                        fx_info.get(
-                                            "previousClose"
-                                        )  # Correctly assign and check previousClose
-                                        or fx_info.get("regularMarketPrice")
-                                        or fx_info.get("previousClose")
-                                    )
+                                rate = (
+                                    fx_info.get("currentPrice")
+                                    or fx_info.get("regularMarketPrice")
+                                    or fx_info.get(
+                                        "regularMarketPreviousClose"
+                                    )  # Added one more fallback
+                                    or fx_info.get("previousClose")
+                                )
                                 currency_code = fx_info.get(
                                     "currency"
                                 )  # Should be USD for =X pairs, but check
-                                if rate is not None and currency_code == "USD":
+
+                                base_curr = yf_symbol.replace("=X", "").upper()
+                                if (
+                                    rate is not None
+                                    and pd.notna(rate)
+                                    and currency_code == "USD"
+                                ):
                                     # Key is the base currency (e.g., EUR from EUR=X)
-                                    base_curr = yf_symbol.replace("=X", "").upper()
                                     fx_rates_vs_usd[base_curr] = float(rate)
                                 else:
                                     logging.error(
                                         f"Could not get valid rate/currency for FX pair {yf_symbol} from info."
                                     )
+                                    # Ensure the key exists, even if NaN, so fallback logic can target it
+                                    if base_curr not in fx_rates_vs_usd:
+                                        fx_rates_vs_usd[base_curr] = np.nan
                                     has_warnings = True
                             else:
                                 logging.error(
                                     f"Could not get .info for FX pair {yf_symbol}"
                                 )
+                                base_curr_no_info = yf_symbol.replace("=X", "").upper()
+                                if base_curr_no_info not in fx_rates_vs_usd:
+                                    fx_rates_vs_usd[base_curr_no_info] = np.nan
                                 has_warnings = True
 
                         except yf.exceptions.YFRateLimitError:
@@ -481,8 +427,8 @@ class MarketDataProvider:
                             logging.error(
                                 f"Error fetching info for FX pair {yf_symbol}: {e_fx_ticker}"
                             )
-                        # time.sleep(0.05)  # Add small delay after each FX info fetch
-                        # time.sleep(0.2)  # Add small delay after each FX info fetch
+                        time.sleep(0.05)  # Add small delay after each FX info fetch
+                        time.sleep(0.2)  # Add small delay after each FX info fetch
 
                 except yf.exceptions.YFRateLimitError:
                     logging.error(
@@ -499,67 +445,60 @@ class MarketDataProvider:
                     logging.error(f"Error fetching FX rates batch: {e_fx}")
                     has_errors = True  # Treat batch FX errors as critical
 
-            # --- SECOND ATTEMPT: Fallback for any FX rates that are STILL missing ---
-            fx_pairs_still_needing_fallback = []
-            for yf_fx_pair_full in fx_pairs_to_fetch:  # Iterate original list
+            # Add USD rate (always 1.0)
+            fx_rates_vs_usd["USD"] = 1.0
+
+            # --- MOVED: Fallback for FX Rates using recent historical data ---
+            # This now runs AFTER the primary attempt to fetch current FX rates.
+            fx_pairs_needing_fallback_after_primary_fetch = []
+            for (
+                yf_fx_pair_full
+            ) in fx_pairs_to_fetch:  # Iterate through all originally required pairs
                 base_curr_fallback = yf_fx_pair_full.replace("=X", "").upper()
+                # Check if the rate is still missing or NaN in fx_rates_vs_usd
                 if base_curr_fallback not in fx_rates_vs_usd or pd.isna(
                     fx_rates_vs_usd.get(base_curr_fallback)
                 ):
-                    fx_pairs_still_needing_fallback.append(yf_fx_pair_full)
+                    fx_pairs_needing_fallback_after_primary_fetch.append(
+                        yf_fx_pair_full
+                    )
 
-            if fx_pairs_still_needing_fallback:
+            if fx_pairs_needing_fallback_after_primary_fetch:
                 logging.warning(
-                    f"Current FX fetch failed for {fx_pairs_still_needing_fallback}. Attempting historical fallback."
+                    f"Current FX fetch failed or incomplete for {fx_pairs_needing_fallback_after_primary_fetch}. Attempting historical fallback."
                 )
                 end_fallback_date = date.today()
                 start_fallback_date = end_fallback_date - timedelta(days=7)
 
-                # Fetch historical data for these specific pairs
-                # Using a more specific cache file for this fallback to avoid conflicts
-                # Pass self.hist_raw_cache_prefix to ensure it uses the configured base path
-                fallback_hist_fx_data, _ = self.get_historical_fx_rates(
-                    fx_pairs_yf=fx_pairs_still_needing_fallback,
+                fallback_fx_data, _ = self.get_historical_fx_rates(
+                    fx_pairs_yf=fx_pairs_needing_fallback_after_primary_fetch,  # Fetch only for those still needed
                     start_date=start_fallback_date,
                     end_date=end_fallback_date,
                     use_cache=True,
-                    cache_file=f"{self.hist_raw_cache_prefix}_curr_quote_fx_fallback.json",  # Specific cache file
-                    cache_key=f"CURR_FX_FALLBACK_v1::{'_'.join(sorted(fx_pairs_still_needing_fallback))}",
+                    cache_file=f"{self.hist_raw_cache_prefix}_fallback_fx.json",
+                    cache_key=f"FALLBACK_FX::{'_'.join(sorted(fx_pairs_needing_fallback_after_primary_fetch))}",
                 )
 
-                for yf_fx_pair_fb in fx_pairs_still_needing_fallback:
-                    base_curr_fb_key = yf_fx_pair_fb.replace("=X", "").upper()
+                for (
+                    yf_fx_pair_fallback
+                ) in fx_pairs_needing_fallback_after_primary_fetch:
+                    base_curr_fb = yf_fx_pair_fallback.replace("=X", "").upper()
                     if (
-                        yf_fx_pair_fb in fallback_hist_fx_data
-                        and not fallback_hist_fx_data[yf_fx_pair_fb].empty
+                        yf_fx_pair_fallback in fallback_fx_data
+                        and not fallback_fx_data[yf_fx_pair_fallback].empty
                     ):
-                        # Get the last valid price from the historical data
-                        last_known_rate = (
-                            fallback_hist_fx_data[yf_fx_pair_fb]["price"]
-                            .dropna()
-                            .iloc[-1:]
-                        )
-                        if not last_known_rate.empty and pd.notna(
-                            last_known_rate.iloc[0]
-                        ):
-                            rate_value = float(last_known_rate.iloc[0])
-                            fx_rates_vs_usd[base_curr_fb_key] = rate_value
+                        last_known_rate = fallback_fx_data[yf_fx_pair_fallback][
+                            "price"
+                        ].iloc[-1]
+                        if pd.notna(last_known_rate):
+                            fx_rates_vs_usd[base_curr_fb] = float(
+                                last_known_rate
+                            )  # Update the main dict
                             logging.info(
-                                f"Used historical fallback for {base_curr_fb_key}: {rate_value:.4f} (from {last_known_rate.index[0].strftime('%Y-%m-%d')})"
+                                f"Used historical fallback for {base_curr_fb}: {last_known_rate:.4f} (from {fallback_fx_data[yf_fx_pair_fallback].index[-1]})"
                             )
-                            has_warnings = True  # Indicate that a fallback was used
-                        else:
-                            logging.warning(
-                                f"Historical fallback for {base_curr_fb_key} yielded no valid rate."
-                            )
-                    else:
-                        logging.warning(
-                            f"No historical fallback data found for {base_curr_fb_key}."
-                        )
-            # --- End SECOND ATTEMPT ---
-
-            # Add USD rate (always 1.0)
-            fx_rates_vs_usd["USD"] = 1.0
+                            has_warnings = True
+            # --- END MOVED Fallback Logic ---
 
             # --- 5. Map YF results back to internal symbols ---
             # (This part remains the same)
@@ -665,9 +604,37 @@ class MarketDataProvider:
                 return results
 
             index_tickers_str = " ".join(index_symbols)
+
+            # --- MODIFICATION: Use YFINANCE_INDEX_TICKER_MAP ---
+            yf_tickers_to_fetch = []
+            internal_to_yf_index_map = {}  # To map results back
+            for internal_idx_sym in index_symbols:
+                yf_idx_sym = YFINANCE_INDEX_TICKER_MAP.get(
+                    internal_idx_sym, internal_idx_sym
+                )  # Fallback to itself if not in map
+                yf_tickers_to_fetch.append(yf_idx_sym)
+                internal_to_yf_index_map[yf_idx_sym] = (
+                    internal_idx_sym  # Store mapping YF -> Internal
+                )
+
+            if not yf_tickers_to_fetch:
+                logging.warning("No valid YF index tickers to fetch after mapping.")
+                return results
+
+            yf_tickers_str = " ".join(yf_tickers_to_fetch)
+            logging.info(
+                f"Fetching fresh index quotes for YF tickers: {yf_tickers_str}"
+            )
+            # --- END MODIFICATION ---
+
             try:
-                tickers = yf.Tickers(index_tickers_str)  # REMOVED session argument
-                for symbol, ticker_obj in tickers.tickers.items():
+                tickers = yf.Tickers(yf_tickers_str)  # Use mapped YF tickers
+                for (
+                    yf_symbol,
+                    ticker_obj,
+                ) in (
+                    tickers.tickers.items()
+                ):  # yf_symbol is now the YF ticker like ^DJI
                     try:
                         # Use .info for indices as it often contains the necessary fields
                         ticker_info = getattr(
@@ -686,46 +653,55 @@ class MarketDataProvider:
                                 "longName"
                             )
 
+                            # Map back to the original internal symbol for results dictionary
+                            internal_result_key = internal_to_yf_index_map.get(
+                                yf_symbol, yf_symbol
+                            )
                             if price is not None:
-                                results[symbol] = {
-                                    "price": price,
-                                    "change": change,
-                                    "changesPercentage": (
-                                        # If yfinance raw value is actual_pct * 100, divide by 100.
-                                        change_pct
-                                        if pd.notna(change_pct)
-                                        else None
-                                    ),
-                                    "name": name,
-                                    "source": "yf_info",
-                                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                                }
+                                results[internal_result_key] = (
+                                    {  # Store result with internal key
+                                        "price": price,
+                                        "change": change,
+                                        "changesPercentage": (
+                                            change_pct
+                                            if change_pct is not None
+                                            else None
+                                        ),  # Store as percentage
+                                        "name": name,
+                                        "source": "yf_info",
+                                        "timestamp": datetime.now(
+                                            timezone.utc
+                                        ).isoformat(),
+                                    }
+                                )
                             else:
                                 logging.warning(
-                                    f"Could not get price for index {symbol} from info."
+                                    f"Could not get price for index {yf_symbol} (Internal: {internal_result_key}) from info."
                                 )
                         else:
-                            logging.warning(f"Could not get .info for index {symbol}")
+                            logging.warning(
+                                f"Could not get .info for index {yf_symbol} (Internal: {internal_to_yf_index_map.get(yf_symbol, yf_symbol)})"
+                            )
 
                     except yf.exceptions.YFRateLimitError:
                         logging.error(
-                            f"RATE LIMITED while fetching info for index {symbol}. Aborting index fetch."
+                            f"RATE LIMITED while fetching info for index {yf_symbol}. Aborting index fetch."
                         )
                         # Return cached data if available, otherwise empty
                         return cached_results or {}
                     except AttributeError as ae:
                         # Specifically catch potential AttributeError if 'info' is called incorrectly or object is bad
                         logging.error(
-                            f"AttributeError fetching info for index {symbol}: {ae}. Ticker object: {ticker_obj}"
+                            f"AttributeError fetching info for index {yf_symbol}: {ae}. Ticker object: {ticker_obj}"
                         )
                         # Continue to next symbol, don't abort all
                     except Exception as e_ticker:
                         logging.error(
-                            f"Error fetching info for index {symbol}: {e_ticker}"
+                            f"Error fetching info for index {yf_symbol}: {e_ticker}"
                         )
                         # Continue trying other symbols
-                    # time.sleep(0.05)  # Add small delay after each index info fetch
-                    # time.sleep(0.1)  # Add small delay after each index info fetch
+                    time.sleep(0.05)  # Add small delay after each index info fetch
+                    time.sleep(0.1)  # Add small delay after each index info fetch
 
             except yf.exceptions.YFRateLimitError:
                 logging.error(
@@ -871,7 +847,7 @@ class MarketDataProvider:
                 )
 
             symbols_processed += len(batch_symbols)
-            # time.sleep(0.2)  # Small delay between batches
+            time.sleep(0.2)  # Small delay between batches
 
         logging.info(
             f"Hist Fetch Helper: Finished fetching ({len(historical_data)} symbols successful)."

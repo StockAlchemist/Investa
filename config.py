@@ -63,7 +63,7 @@ CURRENT_QUOTE_CACHE_DURATION_MINUTES = 15
 # Mapping for specific index symbols used in the header/logic to YF tickers
 YFINANCE_INDEX_TICKER_MAP = {".DJI": "^DJI", "IXIC": "^IXIC", ".INX": "^GSPC"}
 DEFAULT_INDEX_QUERY_SYMBOLS = list(
-    YFINANCE_INDEX_TICKER_MAP.values()
+    YFINANCE_INDEX_TICKER_MAP.keys()
 )  # Default indices to query
 
 # Mapping for specific internal stock symbols to YF tickers (e.g., handling BRK.B)
