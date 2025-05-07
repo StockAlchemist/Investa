@@ -11,6 +11,7 @@ import requests  # Keep for potential future use
 import traceback  # For detailed error logging
 from io import StringIO  # For historical cache loading
 import hashlib  # For cache key hashing
+from PySide6.QtCore import QStandardPaths  # For standard directory locations
 
 # --- Finance API Import ---
 try:
@@ -46,7 +47,7 @@ try:
         DEFAULT_INDEX_QUERY_SYMBOLS,
         SYMBOL_MAP_TO_YFINANCE,
         YFINANCE_EXCLUDED_SYMBOLS,
-        CASH_SYMBOL_CSV,
+        CASH_SYMBOL_CSV,  # DEFAULT_CURRENT_CACHE_FILE_PATH is used by main_gui now
         HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
     )
 except ImportError:
@@ -62,7 +63,9 @@ except ImportError:
     SYMBOL_MAP_TO_YFINANCE = {}
     YFINANCE_EXCLUDED_SYMBOLS = set()
     CASH_SYMBOL_CSV = "$CASH"
-    HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = "yf_portfolio_hist_raw_adjusted"
+    HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = (
+        "yf_portfolio_hist_raw_adjusted"  # Keep as prefix for basename construction
+    )
 
 # --- Import helpers from finutils.py ---
 try:
@@ -117,15 +120,45 @@ class MarketDataProvider:
 
     def __init__(
         self,
-        hist_raw_cache_prefix=HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
-        current_cache_file=DEFAULT_CURRENT_CACHE_FILE_PATH,  # <-- ADDED
+        hist_raw_cache_basename=HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,  # Changed prefix to basename
+        current_cache_file=None,  # Default to None, path constructed if not absolute
     ):
-        self.hist_raw_cache_prefix = hist_raw_cache_prefix
-        self.current_cache_file = current_cache_file  # <-- ADDED
+        self.hist_raw_cache_basename = hist_raw_cache_basename  # Store basename
         self._session = None  # Initialize session attribute
         self.historical_fx_for_fallback: Dict[str, pd.DataFrame] = (
             {}
         )  # Store recently fetched historical FX
+
+        # Construct full path for current_cache_file if not absolute
+        # Assuming QStandardPaths.CacheLocation gives an app-specific dir like ~/Library/Caches/Investa
+        if current_cache_file and not os.path.isabs(current_cache_file):
+            cache_dir_base = QStandardPaths.writableLocation(
+                QStandardPaths.CacheLocation
+            )
+            if cache_dir_base:
+                app_cache_dir = cache_dir_base  # Use the path directly
+                os.makedirs(app_cache_dir, exist_ok=True)
+                self.current_cache_file = os.path.join(
+                    app_cache_dir, current_cache_file
+                )
+            else:  # Fallback
+                self.current_cache_file = current_cache_file  # Relative path
+        elif current_cache_file:  # Already an absolute path
+            self.current_cache_file = current_cache_file
+        else:  # Default construction if None (e.g., "portfolio_cache_yf.json")
+            cache_dir_base = QStandardPaths.writableLocation(
+                QStandardPaths.CacheLocation
+            )
+            if cache_dir_base:
+                app_cache_dir = cache_dir_base
+                os.makedirs(app_cache_dir, exist_ok=True)
+                self.current_cache_file = os.path.join(
+                    app_cache_dir, DEFAULT_CURRENT_CACHE_FILE_PATH
+                )  # Use default filename
+            else:
+                self.current_cache_file = (
+                    DEFAULT_CURRENT_CACHE_FILE_PATH  # Relative path fallback
+                )
         logging.info("MarketDataProvider initialized.")
 
     def get_current_quotes(
@@ -473,9 +506,9 @@ class MarketDataProvider:
                 fallback_fx_data, _ = self.get_historical_fx_rates(
                     fx_pairs_yf=fx_pairs_needing_fallback_after_primary_fetch,  # Fetch only for those still needed
                     start_date=start_fallback_date,
-                    end_date=end_fallback_date,
-                    use_cache=True,
-                    cache_file=f"{self.hist_raw_cache_prefix}_fallback_fx.json",
+                    end_date=end_fallback_date,  # cache_file will be constructed by get_historical_fx_rates
+                    use_cache=True,  # cache_file will be constructed by get_historical_fx_rates
+                    cache_file=None,  # Let get_historical_fx_rates construct its default
                     cache_key=f"FALLBACK_FX::{'_'.join(sorted(fx_pairs_needing_fallback_after_primary_fetch))}",
                 )
 
@@ -940,10 +973,13 @@ class MarketDataProvider:
         cache_key: Optional[str] = None,  # Key for validation
         cache_file: Optional[str] = None,  # Specific file path
     ) -> Tuple[Dict[str, pd.DataFrame], bool]:
-        """
-        Loads/fetches ADJUSTED historical price data using cache.
-        (Replaces parts of _load_or_fetch_raw_historical_data related to price fetching)
+        """Loads/fetches ADJUSTED historical price data using cache.
 
+        If cache_file is not provided or is relative, it constructs a default path
+        in the standard user cache directory using self.hist_raw_cache_basename.
+        Example default path: ~/Library/Caches/Investa/yf_portfolio_hist_raw_adjusted_YYYY-MM-DD_YYYY-MM-DD.json
+
+        (Replaces parts of _load_or_fetch_raw_historical_data related to price fetching)
         Args:
             symbols_yf (List[str]): List of YF stock/benchmark tickers required.
             start_date (date): Start date for historical data.
@@ -962,6 +998,26 @@ class MarketDataProvider:
         cache_valid_raw = False
         fetch_failed = False
         cache_data_loaded = None
+
+        # --- Construct cache_file path if not absolute ---
+        # Assuming QStandardPaths.CacheLocation gives an app-specific dir like ~/Library/Caches/Investa
+        if not cache_file or not os.path.isabs(cache_file):
+            cache_dir_base = QStandardPaths.writableLocation(
+                QStandardPaths.CacheLocation
+            )
+            if cache_dir_base:
+                app_cache_dir = cache_dir_base  # Use the path directly
+                os.makedirs(app_cache_dir, exist_ok=True)
+                # Use basename and date range for a more specific default cache file name
+                cache_file = os.path.join(
+                    app_cache_dir,
+                    f"{self.hist_raw_cache_basename}_{start_date.isoformat()}_{end_date.isoformat()}.json",
+                )
+            else:  # Fallback
+                cache_file = f"{self.hist_raw_cache_basename}_{start_date.isoformat()}_{end_date.isoformat()}.json"  # Relative path
+            logging.info(
+                f"Hist Prices: Using constructed cache file path: {cache_file}"
+            )
 
         # --- 1. Try Loading Cache ---
         if use_cache and cache_file and cache_key:
@@ -1069,9 +1125,12 @@ class MarketDataProvider:
         cache_key: Optional[str] = None,  # Key for validation
         cache_file: Optional[str] = None,  # Specific file path
     ) -> Tuple[Dict[str, pd.DataFrame], bool]:
-        """
-        Loads/fetches historical FX rates (vs USD) using cache.
-        (Replaces parts of _load_or_fetch_raw_historical_data related to FX fetching)
+        """Loads/fetches historical FX rates (vs USD) using cache.
+
+        If cache_file is not provided or is relative, it constructs a default path
+        in the standard user cache directory using self.hist_raw_cache_basename.
+        Example default path: ~/Library/Caches/Investa/yf_portfolio_hist_raw_adjusted_YYYY-MM-DD_YYYY-MM-DD.json
+        (Note: FX data is often stored in the same raw data cache file as prices).
 
         Args:
             fx_pairs_yf (List[str]): List of YF FX tickers (e.g., 'JPY=X') required.
@@ -1093,6 +1152,22 @@ class MarketDataProvider:
         fetch_failed = False
         cache_data_loaded = None
         fx_needing_fetch = []  # Initialize list of pairs to fetch
+
+        # --- Construct cache_file path if not absolute (same logic as get_historical_data) ---
+        if not cache_file or not os.path.isabs(cache_file):
+            cache_dir_base = QStandardPaths.writableLocation(
+                QStandardPaths.CacheLocation
+            )
+            if cache_dir_base:
+                app_cache_dir = cache_dir_base  # Use the path directly
+                os.makedirs(app_cache_dir, exist_ok=True)
+                cache_file = os.path.join(
+                    app_cache_dir,
+                    f"{self.hist_raw_cache_basename}_{start_date.isoformat()}_{end_date.isoformat()}.json",
+                )
+            else:  # Fallback
+                cache_file = f"{self.hist_raw_cache_basename}_{start_date.isoformat()}_{end_date.isoformat()}.json"
+            logging.info(f"Hist FX: Using constructed cache file path: {cache_file}")
 
         # --- 1. Try Loading Cache ---
         if use_cache and cache_file and cache_key:

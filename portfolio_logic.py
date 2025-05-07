@@ -106,6 +106,15 @@ except ImportError:
     logging.critical("CRITICAL ERROR: Could not import from data_loader.py. Exiting.")
     raise
 
+# --- ADDED: Import QStandardPaths for cache directory ---
+try:
+    from PySide6.QtCore import QStandardPaths
+except ImportError:
+    logging.warning(
+        "PySide6.QtCore.QStandardPaths not found. Cache paths might be relative."
+    )
+    QStandardPaths = None  # Fallback
+
 # --- Import the NEW Market Data Provider ---
 try:
     from market_data import MarketDataProvider
@@ -2217,10 +2226,32 @@ def _prepare_historical_inputs(
         list({f"{curr}=X" for curr in all_currencies_needed if curr != "USD"})
     )
 
-    raw_data_cache_file = (
-        f"{raw_cache_prefix}_{start_date.isoformat()}_{end_date.isoformat()}.json"
-    )
+    # --- Construct full cache paths using QStandardPaths ---
+    # Assuming QStandardPaths.CacheLocation gives an app-specific dir like ~/Library/Caches/Investa
+    app_cache_dir = None
+    if QStandardPaths:
+        cache_dir_base = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
+        if cache_dir_base:
+            app_cache_dir = cache_dir_base  # Use the path directly
+            os.makedirs(app_cache_dir, exist_ok=True)
+
+    if app_cache_dir:
+        raw_data_cache_file = os.path.join(
+            app_cache_dir,
+            f"{raw_cache_prefix}_{start_date.isoformat()}_{end_date.isoformat()}.json",
+        )
+    else:  # Fallback to relative path if QStandardPaths failed
+        raw_data_cache_file = (
+            f"{raw_cache_prefix}_{start_date.isoformat()}_{end_date.isoformat()}.json"
+        )
+        logging.warning(
+            f"Hist Prep WARN: Using relative path for raw data cache: {raw_data_cache_file}"
+        )
+
     raw_data_cache_key = f"ADJUSTED_v7::{start_date.isoformat()}::{end_date.isoformat()}::{'_'.join(sorted(symbols_for_stocks_and_benchmarks_yf))}::{'_'.join(fx_pairs_for_api_yf)}"
+
+    logging.info(f"Hist Prep: Raw data cache file set to: {raw_data_cache_file}")
+    logging.info(f"Hist Prep: Raw data cache key: {raw_data_cache_key[:50]}...")
 
     daily_results_cache_file = None
     daily_results_cache_key = None
@@ -2234,8 +2265,19 @@ def _prepare_historical_inputs(
             :16
         ]
         # --- CHANGE: Use .feather extension ---
-        daily_results_cache_file = f"{daily_cache_prefix}_{cache_key_hash}.feather"
-        # --- END CHANGE ---
+        daily_results_filename = f"{daily_cache_prefix}_{cache_key_hash}.feather"
+        if app_cache_dir:
+            daily_results_cache_file = os.path.join(
+                app_cache_dir, daily_results_filename
+            )
+        else:  # Fallback to relative path
+            daily_results_cache_file = daily_results_filename
+            logging.warning(
+                f"Hist Prep WARN: Using relative path for daily results cache: {daily_results_cache_file}"
+            )
+        logging.info(
+            f"Hist Prep: Daily results cache file set to: {daily_results_cache_file}"
+        )
     except Exception as e_key:
         logging.warning(
             f"Hist Prep WARN: Could not generate daily results cache key/filename: {e_key}."
@@ -3189,7 +3231,7 @@ def calculate_historical_performance(
 
     # --- 2. Instantiate MarketDataProvider ---
     market_provider = MarketDataProvider(
-        hist_raw_cache_prefix=HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX  # Pass prefix if needed
+        hist_raw_cache_basename=HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX  # Pass basename as expected
     )
 
     # --- 3. Load or Fetch ADJUSTED Historical Raw Data using Provider ---

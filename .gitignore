@@ -22,3 +22,9 @@ my_transactions_old_1.csv
 my_transactions_old_2.csv
 portfolio_cache_yf.json
 test_save.csv
+build
+dist
+.venv
+my_new_transactions_1.csv
+my_new_transactions_2.csv
+my_new_transactions.csv

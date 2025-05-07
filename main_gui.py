@@ -133,6 +133,7 @@ from PySide6.QtCore import (
     QDateTime,
     QDate,
     QPoint,
+    QStandardPaths,
 )
 from PySide6.QtGui import QValidator, QIcon  # <-- ADDED Import QValidator
 from PySide6.QtCore import QSize  # <-- ADDED Import QSize
@@ -307,9 +308,50 @@ except Exception as import_err:
 
 
 # --- Constants ---
-DEFAULT_CSV = "my_transactions.csv"  # Default transaction file name
+# Helper function to determine correct path for bundled resources
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        # For development, __file__ is the path to the current script.
+        # os.path.dirname(__file__) gives the directory of the script.
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
+
+
+# For DEFAULT_CSV, it's often better to let the user select it or store its path in config,
+# rather than bundling a specific "my_transactions.csv".
+# If "my_transactions.csv" is an example/template, then resource_path could be used.
+# For now, we'll assume it's user-selected and its path is stored in config.
+DEFAULT_CSV = "my_transactions.csv"
+
+# --- User-specific file paths using QStandardPaths ---
+APP_NAME_FOR_QT = "Investa"  # Define your application name for Qt settings
+
+# Configuration File Path (e.g., gui_config.json)
+CONFIG_DIR_PATH = QStandardPaths.writableLocation(QStandardPaths.AppConfigLocation)
+if not CONFIG_DIR_PATH:  # Fallback if AppConfigLocation is not available
+    CONFIG_DIR_PATH = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
+
+if CONFIG_DIR_PATH:  # AppConfigLocation and AppDataLocation are already app-specific
+    USER_SPECIFIC_APP_FOLDER = CONFIG_DIR_PATH
+    os.makedirs(USER_SPECIFIC_APP_FOLDER, exist_ok=True)  # Ensure the directory exists
+    CONFIG_FILE = os.path.join(
+        USER_SPECIFIC_APP_FOLDER, "gui_config.json"
+    )  # gui_config.json in .../Investa/
+    MANUAL_PRICE_FILE = os.path.join(
+        USER_SPECIFIC_APP_FOLDER, "manual_prices.json"
+    )  # manual_prices.json in .../Investa/
+else:  # Fallback if QStandardPaths fails (less likely on macOS)
+    USER_SPECIFIC_APP_FOLDER = os.path.expanduser(f"~/.{APP_NAME_FOR_QT.lower()}")
+    os.makedirs(USER_SPECIFIC_APP_FOLDER, exist_ok=True)
+    CONFIG_FILE = os.path.join(USER_SPECIFIC_APP_FOLDER, "gui_config.json")
+    MANUAL_PRICE_FILE = os.path.join(USER_SPECIFIC_APP_FOLDER, "manual_prices.json")
+
 DEFAULT_API_KEY = os.getenv("FMP_API_KEY")  # Optional API key from environment
-CONFIG_FILE = "gui_config.json"  # Configuration file name
+CONFIG_FILE = resource_path("gui_config.json")  # Configuration file name
 CHART_MAX_SLICES = 10  # Max slices before grouping into 'Other' in pie charts
 PIE_CHART_FIG_SIZE = (5.0, 2.5)  # Figure size for pie charts
 PERF_CHART_FIG_SIZE = (7.5, 3.0)  # Figure size for performance graphs
@@ -329,7 +371,7 @@ COMMON_CURRENCIES = [
     "HKD",
     "SGD",
 ]
-MANUAL_PRICE_FILE = "manual_prices.json"
+MANUAL_PRICE_FILE = resource_path("manual_prices.json")
 
 # --- Graph Defaults ---
 DEFAULT_GRAPH_START_DATE = date.today() - timedelta(
@@ -378,6 +420,18 @@ QCOLOR_GAIN = QColor(COLOR_GAIN)
 QCOLOR_LOSS = QColor(COLOR_LOSS)
 QCOLOR_TEXT_DARK = QColor(COLOR_TEXT_DARK)
 QCOLOR_TEXT_SECONDARY = QColor(COLOR_TEXT_SECONDARY)
+
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        # For development, __file__ is the path to the current script.
+        # os.path.dirname(__file__) gives the directory of the script.
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
 
 
 # --- Column Definition Helper ---
@@ -2511,7 +2565,20 @@ class AddTransactionDialog(QDialog):
 
         self.account_combo = QComboBox()
         self.account_combo.addItems(sorted(list(set(existing_accounts))))
+        self.account_combo.setEditable(True)  # <-- Make editable
+        self.account_combo.setInsertPolicy(
+            QComboBox.NoInsert
+        )  # Prevent adding duplicates to list automatically
         self.account_combo.setMinimumWidth(input_min_width)
+
+        # --- ADDED: Set E*TRADE as default account ---
+        # default_account_name = "E*TRADE"
+        # if default_account_name in existing_accounts:
+        #     self.account_combo.setCurrentText(default_account_name)
+        # elif self.account_combo.isEditable():  # If not in list but editable, pre-fill
+        #     self.account_combo.setCurrentText(default_account_name)
+        # If not in list and not editable, it will just pick the first item or be blank
+        # --- END ADDED ---
 
         self.quantity_edit = QLineEdit()
         self.quantity_edit.setPlaceholderText(" e.g., 100.5 (required for most types)")
@@ -2522,7 +2589,9 @@ class AddTransactionDialog(QDialog):
         self.price_edit.setMinimumWidth(input_min_width)
 
         self.total_amount_edit = QLineEdit()
-        self.total_amount_edit.setPlaceholderText(" Optional (used for some dividends)")
+        self.total_amount_edit.setPlaceholderText(
+            "Required for Dividend / Auto for Buy/Sell"
+        )  # MODIFIED Placeholder
         self.total_amount_edit.setMinimumWidth(input_min_width)
 
         self.commission_edit = QLineEdit()
@@ -2627,14 +2696,22 @@ class AddTransactionDialog(QDialog):
         is_cash_flow = (tx_type in ["deposit", "withdrawal"]) and (
             self.symbol_edit.text().strip().upper() == CASH_SYMBOL_CSV
         )
-        is_dividend = tx_type == "dividend"
+        is_dividend = tx_type == "dividend"  # Explicit check for dividend
+        is_buy_sell = tx_type in ["buy", "sell", "short sell", "buy to cover"]
 
         # Enable/disable based on type
-        self.quantity_edit.setEnabled(not is_split and not is_fee)
-        self.price_edit.setEnabled(not is_split and not is_fee and not is_cash_flow)
+        self.quantity_edit.setEnabled(not is_split and not is_fee and not is_dividend)
+        self.price_edit.setEnabled(
+            not is_split and not is_fee and not is_cash_flow and not is_dividend
+        )
+
         self.total_amount_edit.setEnabled(
-            is_dividend
-        )  # Primarily for dividends if price/qty not given
+            is_dividend or is_buy_sell
+        )  # Enabled for dividend (editable) or buy/sell (read-only)
+        self.total_amount_edit.setReadOnly(
+            is_buy_sell
+        )  # Read-only if buy/sell (auto-calculated)
+
         self.split_ratio_edit.setEnabled(is_split)
         self.split_ratio_label.setEnabled(is_split)  # Also enable/disable label
 
@@ -2643,7 +2720,8 @@ class AddTransactionDialog(QDialog):
             self.quantity_edit.clear()
         if not self.price_edit.isEnabled():
             self.price_edit.clear()
-        if not self.total_amount_edit.isEnabled():
+        # Clear total_amount_edit if it's neither for dividend (editable) nor buy/sell (auto-filled read-only)
+        if not is_dividend and not is_buy_sell:  # i.e. it's disabled
             self.total_amount_edit.clear()
         if not self.split_ratio_edit.isEnabled():
             self.split_ratio_edit.clear()
@@ -2656,7 +2734,8 @@ class AddTransactionDialog(QDialog):
             self.price_edit.setEnabled(False)
         else:
             # Re-enable price edit if not cash flow
-            self.price_edit.setEnabled(not is_split and not is_fee)
+            if not is_dividend:
+                self.price_edit.setEnabled(not is_split and not is_fee)
 
     # --- ADDED: Slot for live validation feedback ---
     @Slot()
@@ -3342,12 +3421,26 @@ class PortfolioApp(QMainWindow):
         # --- File Menu ---
         file_menu = menu_bar.addMenu("&File")
         self.select_action = QAction(  # Store as attribute
-            QIcon.fromTheme("document-open"), "Select &Transactions CSV...", self
+            QIcon.fromTheme("document-open"), "Open &Transactions File...", self
         )  # Use standard icon if possible
 
         self.select_action.setStatusTip("Select the transaction CSV file to load")
-        self.select_action.triggered.connect(self.select_file)
+        self.select_action.triggered.connect(
+            self.select_file
+        )  # Keep existing connection
         file_menu.addAction(self.select_action)
+
+        # --- ADDED: New Transaction File Action ---
+        self.new_transactions_file_action = QAction(
+            QIcon.fromTheme("document-new"), "&New Transactions File...", self
+        )
+        self.new_transactions_file_action.setStatusTip(
+            "Create a new, empty transactions CSV file"
+        )
+        self.new_transactions_file_action.triggered.connect(
+            self.create_new_transactions_file
+        )
+        file_menu.addAction(self.new_transactions_file_action)
 
         save_as_action = QAction(
             QIcon.fromTheme("document-save-as"), "Save Transactions &As...", self
@@ -3422,6 +3515,13 @@ class PortfolioApp(QMainWindow):
         )  # Connect to new slot
         settings_menu.addAction(manual_price_action)
         # --- END ADD ---
+        settings_menu.addSeparator()
+        clear_cache_action = QAction("Clear &Cache Files...", self)
+        clear_cache_action.setStatusTip(
+            "Delete all application cache files (market data, etc.)"
+        )
+        clear_cache_action.triggered.connect(self.clear_cache_files_action_triggered)
+        settings_menu.addAction(clear_cache_action)
 
         # --- Add Help Menu (Optional) ---
         help_menu = menu_bar.addMenu("&Help")
@@ -3798,11 +3898,22 @@ The CSV file should contain the following columns (header names must match exact
             logging.error("Cannot save manual prices, dictionary attribute missing.")
             return False
 
-        logging.info(f"Saving manual prices to: {MANUAL_PRICE_FILE}")
+        # MANUAL_PRICE_FILE is already an absolute path from resource_path
+        manual_price_file_path = MANUAL_PRICE_FILE
+        logging.info(f"Saving manual prices to: {manual_price_file_path}")
+
         try:
-            # Ensure directory exists (optional, good practice)
-            # cache_dir = os.path.dirname(MANUAL_PRICE_FILE) # If it might be in a subdir
-            # if cache_dir: os.makedirs(cache_dir, exist_ok=True)
+            # For bundled apps, resource_path might point inside the app bundle,
+            # which might not be writable. For config/manual prices that are user-editable
+            # and persistent, QStandardPaths.AppConfigLocation or AppDataLocation is better.
+            # However, resource_path() as defined will use the script's dir in dev,
+            # and _MEIPASS in bundle. If MANUAL_PRICE_FILE is meant to be bundled and read-only,
+            # then saving to it in a bundle is problematic.
+            # For simplicity here, we'll assume it's writable or this is dev mode.
+            # A more robust solution would save user-modifiable files to user directories.
+            manual_price_dir = os.path.dirname(manual_price_file_path)
+            if manual_price_dir:
+                os.makedirs(manual_price_dir, exist_ok=True)
 
             # Sort keys for consistent file output (optional)
             prices_to_save = dict(sorted(self.manual_prices_dict.items()))
@@ -3822,7 +3933,7 @@ The CSV file should contain the following columns (header names must match exact
             QMessageBox.critical(
                 self,
                 "Save Error",
-                f"Could not write to file:\n{MANUAL_PRICE_FILE}\n{e}",
+                f"Could not write to file:\n{manual_price_file_path}\n{e}",
             )
             return False
         except Exception as e:
@@ -6904,7 +7015,17 @@ The CSV file should contain the following columns (header names must match exact
         logging.info("Applying styles from style.qss...")
         qss_file = "style.qss"  # Expect file in the same directory
         try:
-            with open(qss_file, "r") as f:
+            # --- MODIFIED: Use resource_path to find style.qss ---
+            qss_path = resource_path(qss_file)  # This line is crucial
+            logging.info(f"Attempting to load stylesheet from: {qss_path}")  # Add log
+            if not os.path.exists(qss_path):
+                logging.error(f"Stylesheet file NOT FOUND at: {qss_path}")
+                # Fallback or error handling if needed
+                self.setStyleSheet("")  # Clear any existing style
+                return
+            # --- END MODIFICATION ---
+
+            with open(qss_path, "r") as f:  # Use qss_path
                 style_sheet = f.read()
                 self.setStyleSheet(style_sheet)
             logging.info("Styles applied successfully.")
@@ -8324,10 +8445,25 @@ The CSV file should contain the following columns (header names must match exact
         if not file_to_backup or not os.path.exists(file_to_backup):
             return (
                 False,
-                f"CSV file not found: {file_to_backup}",
+                f"CSV file to backup not found: {file_to_backup}",
             )  # Use actual filename in message
         try:
-            backup_dir = "csv_backups"
+            # --- MODIFIED: Use QStandardPaths for backups ---
+            # This places backups in a standard user-specific application data location
+            app_data_dir_base = QStandardPaths.writableLocation(
+                QStandardPaths.AppDataLocation
+            )
+            if not app_data_dir_base:  # Fallback if AppDataLocation is not available
+                app_data_dir_base = QStandardPaths.writableLocation(
+                    QStandardPaths.DocumentsLocation
+                )
+                if not app_data_dir_base:  # Further fallback
+                    app_data_dir_base = os.path.expanduser("~")
+
+            investa_app_data_dir = os.path.join(app_data_dir_base, "Investa")
+            backup_dir = os.path.join(investa_app_data_dir, "csv_backups")
+            # --- END MODIFICATION ---
+
             os.makedirs(backup_dir, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             base_name = os.path.basename(file_to_backup)  # Use correct base name
@@ -8338,7 +8474,7 @@ The CSV file should contain the following columns (header names must match exact
                 file_to_backup, backup_path  # Use correct source file
             )  # copy2 preserves metadata
             logging.info(f"CSV backup created: {backup_path}")
-            return True, backup_path
+            return True, f"Backup saved to: {backup_path}"
         except Exception as e:
             logging.error(f"ERROR creating CSV backup for {file_to_backup}: {e}")
             return False, str(e)
@@ -9119,11 +9255,28 @@ The CSV file should contain the following columns (header names must match exact
             "show_closed_positions": show_closed,
             "account_currency_map": account_map,
             "default_currency": def_currency,
-            "cache_file_path": "portfolio_cache_yf.json",  # Pass current cache path
             "fmp_api_key": api_key,  # Pass API key (though likely unused)
             "include_accounts": selected_accounts_for_worker,
             # manual_prices_dict passed directly below
+            # cache_file_path will be added by the block below
         }
+        # Construct current quotes cache path using QStandardPaths
+        current_cache_dir_base = QStandardPaths.writableLocation(
+            QStandardPaths.CacheLocation
+        )
+        if (
+            current_cache_dir_base
+        ):  # Assuming CacheLocation is also app-specific (e.g., ~/Library/Caches/Investa)
+            current_cache_dir = current_cache_dir_base  # Use the path directly
+            os.makedirs(current_cache_dir, exist_ok=True)
+            portfolio_kwargs["cache_file_path"] = os.path.join(
+                current_cache_dir, "portfolio_cache_yf.json"
+            )  # portfolio_cache_yf.json in .../Investa/
+        else:  # Fallback if CacheLocation is not available
+            portfolio_kwargs["cache_file_path"] = (
+                "portfolio_cache_yf.json"  # Relative path as last resort
+            )
+
         historical_args = ()
         historical_kwargs = {
             "transactions_csv_file": self.transactions_file,
@@ -9554,6 +9707,23 @@ The CSV file should contain the following columns (header names must match exact
             if new_data:
                 self.save_new_transaction(new_data)
 
+    def _add_new_account_if_needed(self, account_name: str):
+        """Checks if an account is new and adds it to available_accounts and config."""
+        if account_name not in self.available_accounts:
+            self.available_accounts.append(account_name)
+            self.available_accounts.sort()  # Keep it sorted
+            logging.info(f"New account '{account_name}' added to available accounts.")
+            # Optionally add to config with default currency
+            if account_name not in self.config.get("account_currency_map", {}):
+                default_curr = self.config.get("default_currency", "USD")
+                self.config.setdefault("account_currency_map", {})[
+                    account_name
+                ] = default_curr
+                logging.info(
+                    f"New account '{account_name}' added to config map with currency '{default_curr}'."
+                )
+                # self.save_config() # Decide if config should be saved immediately or on app close
+
     def save_new_transaction(self, transaction_data: Dict[str, str]):
         """
         Appends a new transaction row to the selected CSV file.
@@ -9574,6 +9744,11 @@ The CSV file should contain the following columns (header names must match exact
                 f"Cannot save transaction. CSV file not found:\n{self.transactions_file}",
             )
             return
+
+        # --- ADDED: Check for new account and update internal lists ---
+        new_account_name = transaction_data.get("Investment Account")
+        if new_account_name:
+            self._add_new_account_if_needed(new_account_name)
         # --- FIX: Define headers WITHOUT the initial blank column ---
         csv_headers = [
             "Date (MMM DD, YYYY)",
@@ -9710,6 +9885,220 @@ The CSV file should contain the following columns (header names must match exact
             logging.warning("Warning: Worker threads did not finish closing.")
         event.accept()
 
+    # --- Toolbar Initialization ---
+    def _init_toolbar(self):
+        """Initializes the main application toolbar."""
+        self.toolbar = self.addToolBar("Main Toolbar")
+        self.toolbar.setObjectName("MainToolBar")
+        self.toolbar.setIconSize(QSize(20, 20))
+
+        if hasattr(self, "select_action"):
+            self.toolbar.addAction(self.select_action)
+        if hasattr(
+            self, "new_transactions_file_action"
+        ):  # Check if it exists before adding
+            self.toolbar.addAction(self.new_transactions_file_action)
+        if hasattr(self, "refresh_action"):
+            self.toolbar.addAction(self.refresh_action)
+        self.toolbar.addSeparator()
+        if hasattr(self, "add_transaction_action"):
+            self.toolbar.addAction(self.add_transaction_action)
+        if hasattr(self, "manage_transactions_action"):
+            self.toolbar.addAction(self.manage_transactions_action)
+
+    # --- Show Window and Run Event Loop ---
+    # main_window.show() # This should be in __main__
+    # sys.exit(app.exec()) # This should be in __main__
+
+    # --- Moved create_new_transactions_file INSIDE PortfolioApp class ---
+    @Slot()
+    def create_new_transactions_file(self):
+        """Prompts the user to create a new, empty transactions CSV file."""
+        start_dir = (
+            os.path.dirname(self.transactions_file)
+            if self.transactions_file
+            and os.path.exists(os.path.dirname(self.transactions_file))
+            else os.getcwd()
+        )
+        default_filename = "my_new_transactions.csv"
+
+        fname, _ = QFileDialog.getSaveFileName(
+            self,
+            "Create New Transactions CSV",
+            os.path.join(start_dir, default_filename),
+            "CSV Files (*.csv)",
+        )
+
+        if fname:
+            if not fname.lower().endswith(".csv"):
+                fname += ".csv"
+
+            logging.info(f"User selected to create new transactions file at: {fname}")
+
+            # Define standard CSV headers
+            csv_headers = [
+                "Date (MMM DD, YYYY)",
+                "Transaction Type",
+                "Stock / ETF Symbol",
+                "Quantity of Units",
+                "Amount per unit",
+                "Total Amount",
+                "Fees",
+                "Investment Account",
+                "Split Ratio (new shares per old share)",
+                "Note",
+            ]
+
+            try:
+                with open(fname, "w", newline="", encoding="utf-8") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(csv_headers)
+
+                logging.info(
+                    f"Successfully created new transactions file with headers: {fname}"
+                )
+                QMessageBox.information(
+                    self,
+                    "File Created",
+                    f"New transactions file created successfully:\n{fname}",
+                )
+
+                # Update application state to use this new file
+                self.transactions_file = fname
+                self.config["transactions_file"] = fname
+                # --- ADDED: Reset account-specific config for a new file ---
+                self.config["account_currency_map"] = {}  # Reset to empty
+                self.config["selected_accounts"] = []  # Reset selected accounts
+                # Default currency (self.config["default_currency"]) can remain as is.
+                self.save_config()
+                self.clear_results()  # Clear any existing data from UI
+                self.setWindowTitle(
+                    f"{self.base_window_title} - {os.path.basename(self.transactions_file)}"
+                )
+                self.status_label.setText(
+                    f"New file created: {os.path.basename(fname)}. Ready to add transactions or refresh."
+                )
+                # Optionally, you might want to trigger a refresh_data() here if you want to process the empty file
+                # self.refresh_data()
+                # For now, let's just clear and let the user decide to refresh/add.
+
+            except IOError as e:
+                logging.error(f"IOError creating new CSV file '{fname}': {e}")
+                QMessageBox.critical(
+                    self,
+                    "File Creation Error",
+                    f"Could not create file:\n{fname}\n\n{e}",
+                )
+            except Exception as e:
+                logging.exception(f"Unexpected error creating new CSV file '{fname}'")
+                QMessageBox.critical(
+                    self, "File Creation Error", f"An unexpected error occurred:\n{e}"
+                )
+        else:
+            logging.info("New transactions file creation cancelled by user.")
+
+    # --- End moved method ---
+
+    @Slot()
+    def clear_cache_files_action_triggered(self):
+        """
+        Handles the 'Clear Cache Files' menu action.
+        Deletes known cache files from the application's standard cache directory.
+        """
+        cache_dir_base = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
+        if not cache_dir_base:
+            QMessageBox.critical(
+                self, "Error", "Could not determine cache directory location."
+            )
+            logging.error(
+                "Failed to get QStandardPaths.CacheLocation for clearing cache."
+            )
+            return
+
+        found_cache_file_paths = set()  # Use a set to avoid duplicates
+
+        # 1. Explicitly named files
+        # This cache is for current quotes from portfolio_summary
+        explicit_files_to_check = ["portfolio_cache_yf.json"]
+        for fname in explicit_files_to_check:
+            full_path = os.path.join(cache_dir_base, fname)
+            if os.path.exists(full_path) and os.path.isfile(full_path):
+                found_cache_file_paths.add(full_path)
+
+        # 2. Pattern-matched files
+        # These are typically historical data caches from historical_performance
+        # yf_portfolio_hist_raw_adjusted* -> raw historical prices/fx
+        # yf_portfolio_daily_results* -> daily calculated portfolio/benchmark values
+        prefixes_to_match = [
+            "yf_portfolio_hist_raw_adjusted",
+            "yf_portfolio_daily_results",
+        ]
+
+        if os.path.isdir(
+            cache_dir_base
+        ):  # Only attempt to list files if the directory exists
+            try:
+                for filename_in_dir in os.listdir(cache_dir_base):
+                    for prefix in prefixes_to_match:
+                        if filename_in_dir.startswith(prefix):
+                            full_path = os.path.join(cache_dir_base, filename_in_dir)
+                            if os.path.isfile(full_path):  # Ensure it's a file
+                                found_cache_file_paths.add(full_path)
+                            break  # Found a match for this file, move to next file in directory
+            except OSError as e:
+                logging.warning(f"Could not list cache directory {cache_dir_base}: {e}")
+
+        existing_cache_files = sorted(list(found_cache_file_paths))
+
+        if not existing_cache_files:
+            QMessageBox.information(
+                self, "Cache Clear", "No cache files found to delete."
+            )
+            logging.info("Clear cache action: No cache files found.")
+            return
+
+        confirm_msg = "This will delete the following cache files:\n\n"
+        confirm_msg += "\n".join([os.path.basename(p) for p in existing_cache_files])
+        confirm_msg += (
+            "\n\nThe application may be slower on the next data refresh. Are you sure?"
+        )
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm Cache Clear",
+            confirm_msg,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+
+        if reply == QMessageBox.Yes:
+            deleted_files_count = 0
+            errors = []
+            for file_path in existing_cache_files:
+                try:
+                    os.remove(file_path)
+                    deleted_files_count += 1
+                    logging.info(f"Cache file deleted: {file_path}")
+                except Exception as e:
+                    logging.error(f"Error deleting cache file {file_path}: {e}")
+                    errors.append(
+                        f"Could not delete {os.path.basename(file_path)}: {e}"
+                    )
+
+            if errors:
+                QMessageBox.warning(
+                    self,
+                    "Cache Clear Issues",
+                    f"Deleted {deleted_files_count} cache file(s).\nEncountered errors:\n"
+                    + "\n".join(errors),
+                )
+            else:
+                QMessageBox.information(
+                    self,
+                    "Cache Cleared",
+                    f"Successfully deleted {deleted_files_count} cache file(s).",
+                )
+
     # --- Run Application Entry Point ---
     # (No function here, but the `if __name__ == "__main__":` block executes)
     # This block handles:
@@ -9721,6 +10110,12 @@ The CSV file should contain the following columns (header names must match exact
 
 
 if __name__ == "__main__":
+    # --- ADDED: multiprocessing.freeze_support() ---
+    # This is CRUCIAL for PyInstaller on macOS/Windows when using multiprocessing
+    import multiprocessing
+
+    multiprocessing.freeze_support()
+    # --- END ADDED ---
     # --- Dependency Check ---
     # Check for essential libraries before starting the GUI
     missing_libs = []
@@ -9791,7 +10186,7 @@ if __name__ == "__main__":
 
     # --->>> IT MUST BE HERE <<<---
     # Name does not show up in the menu bar
-    app.setApplicationName("Investa")
+    app.setApplicationName(APP_NAME_FOR_QT)  # <--- Use the constant
     # --->>> ------------ <<<---
     logging.debug(
         f"DEBUG: QApplication name set to: {app.applicationName()}"

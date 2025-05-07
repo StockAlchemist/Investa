@@ -21,6 +21,9 @@ from datetime import date
 # Set the desired global level here (e.g., logging.INFO, logging.DEBUG)
 LOGGING_LEVEL = logging.INFO  # Or logging.DEBUG for more detail
 
+# --- Application Name (used by QStandardPaths if it doesn't infer from bundle) ---
+APP_NAME = "Investa"
+
 # --- Debugging Flags (Consider removing or managing differently in production) ---
 HISTORICAL_DEBUG_USD_CONVERSION = (
     False  # Set to True only when debugging USD conversion issues
