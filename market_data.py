@@ -213,7 +213,7 @@ class MarketDataProvider:
             return {}, {}, has_errors, has_warnings  # Return empty if no symbols
 
         # --- 2. Caching Logic for Current Quotes ---
-        cache_key = f"CURRENT_QUOTES_v2::{'_'.join(sorted(yf_symbols_to_fetch))}::{'_'.join(sorted(required_currencies))}"
+        cache_key = f"CURRENT_QUOTES_v3::{'_'.join(sorted(yf_symbols_to_fetch))}::{'_'.join(sorted(required_currencies))}"  # Cache key bumped for new fields
         cached_quotes = None
         cached_fx = None
         cache_valid = False
@@ -305,7 +305,16 @@ class MarketDataProvider:
                             currency = ticker_info.get("currency")
                             name = ticker_info.get("shortName") or ticker_info.get(
                                 "longName"
-                            )
+                            )  # Parenthesis moved here
+                            # --- ADDED: Fetch dividend data ---
+                            trailing_annual_dividend_rate = ticker_info.get(
+                                "trailingAnnualDividendRate"
+                            ) or ticker_info.get(
+                                "dividendRate"
+                            )  # Latter is fallback
+                            dividend_yield_on_current = ticker_info.get(
+                                "dividendYield"
+                            )  # This is a fraction, e.g. 0.02 for 2%
 
                             # Map back to internal symbol
                             internal_symbol = next(
@@ -339,6 +348,8 @@ class MarketDataProvider:
                                         "timestamp": datetime.now(
                                             timezone.utc
                                         ).isoformat(),  # Add timestamp
+                                        "trailingAnnualDividendRate": trailing_annual_dividend_rate,
+                                        "dividendYield": dividend_yield_on_current,
                                     }
                                 )
                             else:

@@ -134,6 +134,7 @@ from PySide6.QtCore import (
     QDate,
     QPoint,
     QStandardPaths,
+    QTimer,
 )
 from PySide6.QtGui import QValidator, QIcon  # <-- ADDED Import QValidator
 from PySide6.QtCore import QSize  # <-- ADDED Import QSize
@@ -326,6 +327,7 @@ def resource_path(relative_path):
 # If "my_transactions.csv" is an example/template, then resource_path could be used.
 # For now, we'll assume it's user-selected and its path is stored in config.
 DEFAULT_CSV = "my_transactions.csv"
+DEBOUNCE_INTERVAL_MS = 400  # Debounce interval for live table filtering
 
 # --- User-specific file paths using QStandardPaths ---
 APP_NAME_FOR_QT = "Investa"  # Define your application name for Qt settings
@@ -470,6 +472,9 @@ def get_column_definitions(display_currency="USD"):
         "Total Ret %": "Total Return %",  # Calculated using Cumulative Investment
         "IRR (%)": "IRR (%)",
         # Optional columns that might be added for debugging or other features:
+        "Yield (Cost) %": f"Div. Yield (Cost) %",
+        "Yield (Mkt) %": f"Div. Yield (Current) %",
+        f"Est. Income": f"Est. Ann. Income ({display_currency})",
         # 'Cumulative Investment': f'Cumulative Investment ({display_currency})',
         # 'Price Source': 'Price Source',
     }
@@ -853,6 +858,9 @@ class PandasModel(QAbstractTableModel):
                                 "IRR",
                                 " Mkt",
                                 " Ret %",
+                                "Yield (Cost) %",  # New
+                                "Yield (Mkt) %",  # New
+                                "Est. Income",  # New
                             ]
                         )
                         or f"({self._parent.currency_combo.currentText()})" in col_name
@@ -885,6 +893,8 @@ class PandasModel(QAbstractTableModel):
                         "Unreal. G/L %",
                         "Day Chg %",
                         "IRR (%)",
+                        "Yield (Cost) %",  # New
+                        "Yield (Mkt) %",  # New
                     ]  # Added IRR (%) here for coloring
                     if any(indicator in col_name for indicator in gain_loss_color_cols):
                         if value_float > 1e-9:
@@ -923,6 +933,14 @@ class PandasModel(QAbstractTableModel):
                     # Specific handling for IRR % for cash: It should be N/A
                     if col_name == "IRR (%)" and symbol_value == CASH_SYMBOL_CSV:
                         return "-"  # Display '-' for cash IRR
+                    # Specific handling for new dividend columns for cash
+                    if symbol_value == CASH_SYMBOL_CSV and col_name in [
+                        "Yield (Cost) %",
+                        "Yield (Mkt) %",
+                        f"Est. Income",
+                    ]:  # Check Est. Income without currency for simplicity, actual col has it
+                        return "-"
+
                     if col_name == "Symbol" and symbol_value == CASH_SYMBOL_CSV:
                         display_currency_name = (
                             self._parent._get_currency_symbol(get_name=True)
@@ -945,7 +963,7 @@ class PandasModel(QAbstractTableModel):
                         display_value_float = 0.0
 
                     if "Quantity" in col_name:
-                        return f"{value_float:,.4f}"  # Keep original sign for Quantity
+                        return f"{value_float:,.4f}"  # Keep original sign for Quantity, up to 10 decimal places
 
                     # Combined Percentage and IRR formatting
                     elif (
@@ -962,6 +980,7 @@ class PandasModel(QAbstractTableModel):
                             "Avg Cost",
                             "Price",
                             "Cost Basis",
+                            "Est. Income",  # New currency column
                             "Mkt Val",
                             "Unreal. G/L",
                             "Real. G/L",
@@ -4066,7 +4085,6 @@ The CSV file should contain the following columns (header names must match exact
                 # Need to get available accounts before potentially filtering in refresh_data
                 # Let's trigger a preliminary load just for accounts if needed, or handle in refresh_data
                 logging.info("Triggering initial data refresh on startup...")
-                from PySide6.QtCore import QTimer
 
                 QTimer.singleShot(150, self.refresh_data)
             else:
@@ -4579,6 +4597,10 @@ The CSV file should contain the following columns (header names must match exact
         self.app_font = QFont("Arial", 9)
         self.setFont(self.app_font)
         self.internal_to_yf_map = {}  # <-- ADD Initialize attribute
+        # --- ADDED: Timer for debounced table filtering ---
+        self.table_filter_timer = QTimer(self)
+        self.table_filter_timer.setSingleShot(True)
+        # --- END ADDED ---
         self._initial_file_selection = False  # Flag for initial auto-select
         self.worker_signals = WorkerSignals()  # Central signals object
 
@@ -4664,7 +4686,6 @@ The CSV file should contain the following columns (header names must match exact
                 # Need to get available accounts before potentially filtering in refresh_data
                 # Let's trigger a preliminary load just for accounts if needed, or handle in refresh_data
                 logging.info("Triggering initial data refresh on startup...")
-                from PySide6.QtCore import QTimer
 
                 QTimer.singleShot(
                     150, self.refresh_data
@@ -4682,7 +4703,6 @@ The CSV file should contain the following columns (header names must match exact
                 self._initial_file_selection = (
                     True  # Set flag before calling select_file
                 )
-                from PySide6.QtCore import QTimer
 
                 # Use QTimer to ensure the dialog shows *after* the main window is fully up
                 QTimer.singleShot(100, self.select_file)
@@ -5224,12 +5244,11 @@ The CSV file should contain the following columns (header names must match exact
         self.filter_account_table_edit.setClearButtonEnabled(True)
         table_filter_layout.addWidget(
             self.filter_account_table_edit, 1
-        )  # Give account more stretch
-        self.apply_table_filter_button = QPushButton("Apply")
-        self.apply_table_filter_button.setToolTip("Apply table filters")
-        self.apply_table_filter_button.setObjectName("ApplyTableFilterButton")
-        table_filter_layout.addWidget(self.apply_table_filter_button)
-        self.clear_table_filter_button = QPushButton("Clear")
+        )  # Give account more stretch # REMOVED Apply Button
+        # self.apply_table_filter_button = QPushButton("Apply")
+        # self.apply_table_filter_button.setToolTip("Apply table filters")
+        # self.apply_table_filter_button.setObjectName("ApplyTableFilterButton")
+        # table_filter_layout.addWidget(self.apply_table_filter_button)        self.clear_table_filter_button = QPushButton("Clear")
         self.clear_table_filter_button.setToolTip("Clear table filters")
         self.clear_table_filter_button.setObjectName("ClearTableFilterButton")
         table_filter_layout.addWidget(self.clear_table_filter_button)
@@ -5654,7 +5673,6 @@ The CSV file should contain the following columns (header names must match exact
         if self.config.get("load_on_startup", True):
             if self.transactions_file and os.path.exists(self.transactions_file):
                 logging.info("Triggering initial data refresh on startup...")
-                from PySide6.QtCore import QTimer
 
                 QTimer.singleShot(150, self.refresh_data)
             elif not self.transactions_file or not os.path.exists(
@@ -5667,7 +5685,6 @@ The CSV file should contain the following columns (header names must match exact
                     "Info: Please select your transactions CSV file."
                 )
                 self._initial_file_selection = True
-                from PySide6.QtCore import QTimer
 
                 QTimer.singleShot(100, self.select_file)
             else:
@@ -6929,18 +6946,21 @@ The CSV file should contain the following columns (header names must match exact
         )
 
         # Table Filter Connections
-        self.apply_table_filter_button.clicked.connect(self._apply_table_filter)
+        # self.apply_table_filter_button.clicked.connect(self._apply_table_filter)
         self.clear_table_filter_button.clicked.connect(self._clear_table_filter)
         # Optional: Trigger apply on pressing Enter in the line edits
         self.filter_symbol_table_edit.returnPressed.connect(self._apply_table_filter)
         self.filter_account_table_edit.returnPressed.connect(self._apply_table_filter)
         # Optional: Trigger clear if the clear button (X) inside QLineEdit is clicked
         self.filter_symbol_table_edit.textChanged.connect(
-            self._filter_text_maybe_changed
+            self._on_table_filter_text_changed
         )
         self.filter_account_table_edit.textChanged.connect(
-            self._filter_text_maybe_changed
+            self._on_table_filter_text_changed
         )
+        self.table_filter_timer.timeout.connect(
+            self._apply_table_filter
+        )  # Timer timeout applies filter
 
         # Table Context Menu Connection
         self.table_view.customContextMenuRequested.connect(
@@ -6982,32 +7002,19 @@ The CSV file should contain the following columns (header names must match exact
         self._update_table_display()
 
     @Slot()
-    def _clear_table_filter(self):
-        """Clears the text filters and updates the table view."""
+    def _clear_table_filter(self):  # Slot for "Clear" button
+        """Clears the text filters. The table view will update via textChanged signal."""
         self.filter_symbol_table_edit.clear()
         self.filter_account_table_edit.clear()
-        self._update_table_display()
+        # Clearing the text will trigger _on_table_filter_text_changed, which starts the timer.
 
-    @Slot(str)
-    def _filter_text_maybe_changed(self, text):
-        """
-        Slot connected to textChanged signal of filter edits.
-        If text becomes empty (e.g., user clears the field using 'X'),
-        it applies the filter immediately.
-        """
-        # Check if the text is now empty. If so, re-apply filters immediately.
-        # This handles the case where the user clicks the 'X' button in the QLineEdit.
-        if not text:
-            # Check which sender it was, or just re-apply regardless
-            sender_edit = self.sender()
-            if sender_edit in [
-                self.filter_symbol_table_edit,
-                self.filter_account_table_edit,
-            ]:
-                logging.debug(
-                    f"Filter text cleared in {sender_edit.objectName()}, reapplying filters."
-                )
-                self._apply_table_filter()  # Re-apply the filter state
+    @Slot(str)  # Slot for textChanged signals from filter QLineEdits
+    def _on_table_filter_text_changed(self, text: str):
+        """Restarts the debounce timer when filter text changes."""
+        logging.debug(
+            f"Filter text changed: '{text}', restarting debounce timer ({DEBOUNCE_INTERVAL_MS}ms)."
+        )
+        self.table_filter_timer.start(DEBOUNCE_INTERVAL_MS)
 
     # --- Styling Method (Reads External File) ---
     def apply_styles(self):
@@ -8792,6 +8799,11 @@ The CSV file should contain the following columns (header names must match exact
                     "Price": 70,
                     "Cost Basis": 100,
                 }
+                # Add new dividend columns to width adjustments if needed
+                col_widths[f"Est. Income"] = (
+                    90  # Assuming this is the UI name from get_column_definitions
+                )
+
                 for ui_header_name, width in col_widths.items():
                     if ui_header_name in df_for_table.columns:
                         col_index = df_for_table.columns.get_loc(ui_header_name)

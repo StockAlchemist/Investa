@@ -848,6 +848,10 @@ def _build_summary_rows(
         current_price_local = float(current_price_local)
 
         # --- Currency Conversion ---
+        # Ensure fx_rate is defined before the try block for IRR
+        # It's used for converting local currency values to display currency.
+        # If this fails, many subsequent calculations will result in NaN.
+
         fx_rate = get_conversion_rate(
             local_currency, display_currency, current_fx_rates_vs_usd
         )
@@ -857,6 +861,73 @@ def _build_summary_rows(
             )
             has_errors = True
             fx_rate = np.nan
+
+        # --- Dividend Yield and Income Calculations (in local currency first) ---
+        trailing_annual_dividend_rate_local = stock_data.get(
+            "trailingAnnualDividendRate"
+        )  # This is per share
+        dividend_yield_on_current_direct = stock_data.get(
+            "dividendYield"
+        )  # This is a fraction e.g. 0.02 for 2%
+
+        div_yield_on_cost_pct_local = np.nan
+        div_yield_on_current_pct_local = np.nan
+        est_annual_income_local = np.nan
+
+        if (
+            pd.notna(trailing_annual_dividend_rate_local)
+            and trailing_annual_dividend_rate_local > 0
+        ):
+            # Estimated Annual Income (Local)
+            if (
+                pd.notna(current_qty) and abs(current_qty) > 1e-9
+            ):  # Only for long positions
+                est_annual_income_local = (
+                    trailing_annual_dividend_rate_local * current_qty
+                )
+
+            # Dividend Yield on Cost (Local)
+            if (
+                pd.notna(current_qty)
+                and current_qty > 1e-9
+                and pd.notna(current_total_cost_local)
+                and current_total_cost_local > 1e-9
+            ):
+                avg_cost_price_local = current_total_cost_local / current_qty
+                if avg_cost_price_local > 1e-9:
+                    div_yield_on_cost_pct_local = (
+                        trailing_annual_dividend_rate_local / avg_cost_price_local
+                    ) * 100.0
+
+            # Dividend Yield on Current Value (Local)
+            if (
+                pd.notna(dividend_yield_on_current_direct)
+                and dividend_yield_on_current_direct > 0
+            ):
+                div_yield_on_current_pct_local = dividend_yield_on_current_direct
+            elif (
+                pd.notna(current_price_local) and current_price_local > 1e-9
+            ):  # Fallback calculation
+                div_yield_on_current_pct_local = (
+                    trailing_annual_dividend_rate_local / current_price_local
+                )
+
+        # Convert dividend metrics to display currency
+        div_yield_on_cost_pct_display = div_yield_on_cost_pct_local  # Yields are percentages, not currency dependent directly once calculated
+        div_yield_on_current_pct_display = div_yield_on_current_pct_local
+
+        est_annual_income_display = np.nan
+        if pd.notna(est_annual_income_local) and pd.notna(fx_rate):
+            est_annual_income_display = est_annual_income_local * fx_rate
+
+        logging.debug(
+            f"Symbol: {symbol}, Div Rate Local: {trailing_annual_dividend_rate_local}, Est Income Local: {est_annual_income_local}, Est Income Display: {est_annual_income_display}"
+        )
+        logging.debug(
+            f"  Yield Cost Local: {div_yield_on_cost_pct_local}, Yield Current Local: {div_yield_on_current_pct_local}"
+        )
+
+        # --- End Dividend Calculations ---
 
         # --- Calculate Display Currency Values ---
         market_value_local = current_qty * current_price_local
@@ -1015,6 +1086,9 @@ def _build_summary_rows(
                 "IRR (%)": irr_value_to_store,
                 "Local Currency": local_currency,
                 "Price Source": price_source,
+                f"Div. Yield (Cost) %": div_yield_on_cost_pct_display,
+                f"Div. Yield (Current) %": div_yield_on_current_pct_display,
+                f"Est. Ann. Income ({display_currency})": est_annual_income_display,
             }
         )
     # --- End Stock/ETF Loop ---
@@ -1098,6 +1172,9 @@ def _build_summary_rows(
                     "IRR (%)": irr_value_to_store_cash,
                     "Local Currency": local_currency,
                     "Price Source": "N/A (Cash)",
+                    f"Div. Yield (Cost) %": np.nan,  # Not applicable for cash
+                    f"Div. Yield (Current) %": np.nan,  # Not applicable for cash
+                    f"Est. Ann. Income ({display_currency})": np.nan,  # Not applicable for cash
                 }
             )
 

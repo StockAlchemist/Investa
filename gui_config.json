@@ -1,6 +1,6 @@
 {
     "transactions_file": "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/my_transactions.csv",
-    "display_currency": "GBP",
+    "display_currency": "USD",
     "show_closed": false,
     "selected_accounts": [],
     "load_on_startup": true,
@@ -41,7 +41,10 @@
         "Fees": false,
         "Total G/L": true,
         "Total Ret %": true,
-        "IRR (%)": true
+        "IRR (%)": true,
+        "Yield (Cost) %": true,
+        "Yield (Mkt) %": true,
+        "Est. Income": true
     },
     "bar_periods_annual": 10,
     "bar_periods_monthly": 6,
