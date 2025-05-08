@@ -408,7 +408,7 @@ class MarketDataProvider:
                             # Use .info for FX
                             fx_info = getattr(ticker_obj, "info", None)
                             if fx_info:
-                                rate = (
+                                rate_val = (
                                     fx_info.get("currentPrice")
                                     or fx_info.get("regularMarketPrice")
                                     or fx_info.get(
@@ -416,29 +416,77 @@ class MarketDataProvider:
                                     )  # Added one more fallback
                                     or fx_info.get("previousClose")
                                 )
-                                currency_code = fx_info.get(
-                                    "currency"
-                                )  # Should be USD for =X pairs, but check
+                                currency_code_from_info = fx_info.get("currency")
+                                base_curr_from_symbol = yf_symbol.replace(
+                                    "=X", ""
+                                ).upper()
 
-                                base_curr = yf_symbol.replace("=X", "").upper()
                                 if (
-                                    rate is not None
-                                    and pd.notna(rate)
-                                    and currency_code == "USD"
+                                    rate_val is not None
+                                    and pd.notna(rate_val)
+                                    and currency_code_from_info
                                 ):
-                                    # Key is the base currency (e.g., EUR from EUR=X)
-                                    fx_rates_vs_usd[base_curr] = float(rate)
+                                    rate_float = float(rate_val)
+                                    if (
+                                        abs(rate_float) < 1e-9
+                                    ):  # Avoid division by zero or using zero rate
+                                        logging.warning(
+                                            f"FX pair {yf_symbol} reported zero or near-zero rate ({rate_float}). Will attempt fallback."
+                                        )
+                                        if base_curr_from_symbol not in fx_rates_vs_usd:
+                                            fx_rates_vs_usd[base_curr_from_symbol] = (
+                                                np.nan
+                                            )
+                                        has_warnings = True
+                                    elif currency_code_from_info == "USD":
+                                        # Rate is USD per base_curr (e.g., EUR=X, rate 1.08 means 1 EUR = 1.08 USD)
+                                        # We store base_curr per USD.
+                                        fx_rates_vs_usd[base_curr_from_symbol] = (
+                                            1.0 / rate_float
+                                        )
+                                        logging.info(
+                                            f"Processed FX {yf_symbol} (USD quoted): {rate_float:.4f} {currency_code_from_info}/{base_curr_from_symbol} -> {fx_rates_vs_usd[base_curr_from_symbol]:.4f} {base_curr_from_symbol}/USD"
+                                        )
+                                    elif (
+                                        currency_code_from_info == base_curr_from_symbol
+                                    ):
+                                        # Rate is base_curr per USD (e.g., THB=X, rate 36.7 means 1 USD = 36.7 THB)
+                                        # This is the desired format.
+                                        fx_rates_vs_usd[base_curr_from_symbol] = (
+                                            rate_float
+                                        )
+                                        logging.info(
+                                            f"Processed FX {yf_symbol} (Base quoted): {rate_float:.4f} {base_curr_from_symbol}/USD"
+                                        )
+                                    else:
+                                        # Unexpected currency code
+                                        logging.warning(
+                                            f"Could not get valid primary rate/currency for FX pair {yf_symbol} from info. "
+                                            f"Received rate: '{rate_val}', currency_code: '{currency_code_from_info}'. "
+                                            f"Expected 'USD' or '{base_curr_from_symbol}'. Will attempt fallback."
+                                        )
+                                        if (
+                                            base_curr_from_symbol not in fx_rates_vs_usd
+                                        ):  # Ensure key exists for fallback
+                                            fx_rates_vs_usd[base_curr_from_symbol] = (
+                                                np.nan
+                                            )
+                                        has_warnings = True
                                 else:
-                                    logging.error(
-                                        f"Could not get valid rate/currency for FX pair {yf_symbol} from info."
+                                    # Rate or currency code missing from info
+                                    logging.warning(
+                                        f"Insufficient data (rate/currency) for FX pair {yf_symbol} from info. "
+                                        f"Rate: '{rate_val}', Currency: '{currency_code_from_info}'. Will attempt fallback."
                                     )
-                                    # Ensure the key exists, even if NaN, so fallback logic can target it
-                                    if base_curr not in fx_rates_vs_usd:
-                                        fx_rates_vs_usd[base_curr] = np.nan
+                                    if (
+                                        base_curr_from_symbol not in fx_rates_vs_usd
+                                    ):  # Ensure key exists for fallback
+                                        fx_rates_vs_usd[base_curr_from_symbol] = np.nan
                                     has_warnings = True
                             else:
-                                logging.error(
-                                    f"Could not get .info for FX pair {yf_symbol}"
+                                # fx_info is None
+                                logging.warning(
+                                    f"Could not get .info for FX pair {yf_symbol}. Will attempt fallback."
                                 )
                                 base_curr_no_info = yf_symbol.replace("=X", "").upper()
                                 if base_curr_no_info not in fx_rates_vs_usd:
@@ -903,7 +951,7 @@ class MarketDataProvider:
                 logging.info("Hist Cache: Cache key MATCH. Data loaded.")
                 return cached_data, True  # Return loaded data and valid flag
             else:
-                logging.warning("Hist Cache: Cache key MISMATCH. Ignoring cache.")
+                logging.info("Hist Cache: Cache key MISMATCH. Ignoring cache.")
                 return None, False
         except Exception as e:
             logging.error(
@@ -1186,7 +1234,7 @@ class MarketDataProvider:
                     if p not in historical_fx_yf or historical_fx_yf[p].empty
                 ]
                 if fx_needing_fetch:
-                    logging.warning(
+                    logging.info(  # Changed from warning to info
                         f"Hist FX Cache: Cache valid but incomplete. Missing/empty FX pairs: {fx_needing_fetch}. Will fetch missing."
                     )
                     # Keep cache_valid_initially=True, but fx_needing_fetch will trigger fetch below
