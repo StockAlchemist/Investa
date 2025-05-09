@@ -75,7 +75,7 @@ except ImportError:
 
 
 # --- Define a constant for the aggregated cash account name ---
-_AGGREGATE_CASH_ACCOUNT_NAME_ = " Portfolio Cash"
+_AGGREGATE_CASH_ACCOUNT_NAME_ = "Cash"
 
 # --- Moved Functions ---
 

@@ -2,9 +2,7 @@
     "transactions_file": "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/my_transactions.csv",
     "display_currency": "USD",
     "show_closed": false,
-    "selected_accounts": [
-        "E*TRADE"
-    ],
+    "selected_accounts": [],
     "load_on_startup": true,
     "fmp_api_key": "wWwpekF6q72Ekd3tf0YRT26hkjHPHoPQ",
     "account_currency_map": {
@@ -44,11 +42,11 @@
         "Total G/L": true,
         "Total Ret %": true,
         "IRR (%)": true,
-        "Yield (Cost) %": true,
-        "Yield (Mkt) %": true,
+        "Yield (Cost) %": false,
+        "Yield (Mkt) %": false,
         "Est. Income": true
     },
     "bar_periods_annual": 10,
-    "bar_periods_monthly": 6,
-    "bar_periods_weekly": 7
+    "bar_periods_monthly": 12,
+    "bar_periods_weekly": 12
 }

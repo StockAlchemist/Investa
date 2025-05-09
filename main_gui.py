@@ -101,6 +101,8 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QTableWidget,
+    QGroupBox,  # <-- ADDED for grouping
+    QTextEdit,  # <-- ADDED for FundamentalDataDialog
     QTableWidgetItem,
     QAbstractItemView,
     QHeaderView,
@@ -512,6 +514,8 @@ class WorkerSignals(QObject):
         set,  # combined_ignored_indices
         dict,  # combined_ignored_reasons
     )
+
+    fundamental_data_ready = Signal(str, dict)  # display_symbol, data_dict
 
 
 class PortfolioCalculatorWorker(QRunnable):
@@ -1394,6 +1398,271 @@ class PandasModel(QAbstractTableModel):
                 logging.error(
                     f"ERROR emitting layoutChanged after sort error: {e_emit}"
                 )
+
+
+class FundamentalDataDialog(QDialog):
+    """Dialog to display fundamental stock data."""
+
+    def __init__(
+        self, display_symbol: str, fundamental_data_dict: Dict[str, Any], parent=None
+    ):
+        super().__init__(parent)
+        self.setWindowTitle(f"Fundamental Data: {display_symbol}")
+        self.setMinimumSize(600, 650)  # Adjusted minimum size
+        self.setFont(
+            parent.font() if parent else QFont("Arial", 10)
+        )  # Inherit font from parent app
+        self._parent_app = parent  # Store parent reference to access methods
+
+        main_layout = QVBoxLayout(self)
+
+        scroll_area = QScrollArea(self)
+        scroll_area.setWidgetResizable(True)
+        main_layout.addWidget(scroll_area)
+
+        content_widget = QWidget()
+        scroll_area.setWidget(content_widget)
+        form_layout = QFormLayout(content_widget)
+        form_layout.setFieldGrowthPolicy(
+            QFormLayout.ExpandingFieldsGrow
+        )  # Allow fields to expand
+
+        form_layout.setLabelAlignment(
+            Qt.AlignRight
+        )  # Align labels to the right within group boxes
+
+        # Helper to format values
+        def format_value(key, value):
+            if value is None or pd.isna(value):
+                return "N/A"
+
+            # Get currency symbol if parent app is available
+            currency_symbol = "$"  # Default
+            if self._parent_app and hasattr(self._parent_app, "_get_currency_symbol"):
+                # Try to get the local currency of the symbol, fallback to display currency
+                local_curr_code = self._parent_app._get_currency_for_symbol(
+                    display_symbol
+                )
+                if local_curr_code:
+                    currency_symbol = self._parent_app._get_currency_symbol(
+                        currency_code=local_curr_code
+                    )
+                else:
+                    # Fallback to display currency symbol if local currency lookup fails
+                    currency_symbol = self._parent_app._get_currency_symbol()
+
+            if key == "marketCap" and isinstance(value, (int, float)):
+                if value >= 1e12:
+                    return f"{currency_symbol}{value/1e12:,.2f} T"
+                elif value >= 1e9:
+                    return f"{currency_symbol}{value/1e9:,.2f} B"
+                elif value >= 1e6:
+                    return f"{currency_symbol}{value/1e6:,.2f} M"
+                else:
+                    return f"{currency_symbol}{value:,.2f}"  # Use .2f for smaller currency values too
+            elif key == "dividendYield" and isinstance(value, (int, float)):
+                return f"{value:.2f}%"  # Removed *100, f-string % does it
+            elif key == "dividendRate" and isinstance(value, (int, float)):
+                return f"{currency_symbol}{value:.2f}"  # Dividend rate is per share, in local currency
+            elif key in ["fiftyTwoWeekHigh", "fiftyTwoWeekLow"] and isinstance(
+                value, (int, float)
+            ):
+                return f"{currency_symbol}{value:.2f}"  # Price stats in local currency
+            elif key in [
+                "regularMarketVolume",
+                "averageVolume",
+                "averageVolume10days",
+                "fullTimeEmployees",
+            ] and isinstance(value, (int, float)):
+                return f"{value:,.0f}"  # Integer formatting with commas
+            elif isinstance(value, (int, float)):
+                return f"{value:.2f}"  # Default numeric formatting
+            else:
+                return str(value)
+
+        # --- Group 1: Company Overview ---
+        group_overview = QGroupBox("Company Overview")
+        layout_overview = QFormLayout(group_overview)
+        layout_overview.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        layout_overview.setLabelAlignment(Qt.AlignRight)
+        overview_fields = [
+            ("shortName", "Short Name"),
+            ("longName", "Long Name"),
+            ("sector", "Sector"),
+            ("industry", "Industry"),
+            ("fullTimeEmployees", "Full Time Employees"),
+        ]
+        for key, friendly_name in overview_fields:
+            value = fundamental_data_dict.get(key)
+            layout_overview.addRow(
+                QLabel(f"<b>{friendly_name}:</b>"), QLabel(format_value(key, value))
+            )
+        form_layout.addRow(group_overview)
+
+        # --- Group 2: Valuation Metrics ---
+        group_valuation = QGroupBox("Valuation Metrics")
+        layout_valuation = QFormLayout(group_valuation)
+        layout_valuation.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        layout_valuation.setLabelAlignment(Qt.AlignRight)
+        valuation_fields = [
+            ("marketCap", "Market Cap"),
+            ("trailingPE", "Trailing P/E"),
+            ("forwardPE", "Forward P/E"),
+            ("trailingEps", "Trailing EPS"),
+            ("forwardEps", "Forward EPS"),
+            ("beta", "Beta"),
+        ]
+        for key, friendly_name in valuation_fields:
+            value = fundamental_data_dict.get(key)
+            layout_valuation.addRow(
+                QLabel(f"<b>{friendly_name}:</b>"), QLabel(format_value(key, value))
+            )
+        form_layout.addRow(group_valuation)
+
+        # --- Group 3: Dividend Information ---
+        group_dividend = QGroupBox("Dividend Information")
+        layout_dividend = QFormLayout(group_dividend)
+        layout_dividend.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        layout_dividend.setLabelAlignment(Qt.AlignRight)
+        dividend_fields = [
+            ("dividendYield", "Dividend Yield"),
+            ("dividendRate", "Annual Dividend Rate"),  # Renamed for clarity
+        ]
+        for key, friendly_name in dividend_fields:
+            value = fundamental_data_dict.get(key)
+            layout_dividend.addRow(
+                QLabel(f"<b>{friendly_name}:</b>"), QLabel(format_value(key, value))
+            )
+        form_layout.addRow(group_dividend)
+
+        # --- Group 4: Price Statistics ---
+        group_price_stats = QGroupBox("Price Statistics")
+        layout_price_stats = QFormLayout(group_price_stats)
+        layout_price_stats.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        layout_price_stats.setLabelAlignment(Qt.AlignRight)
+        price_stats_fields = [
+            ("fiftyTwoWeekHigh", "52 Week High"),
+            ("fiftyTwoWeekLow", "52 Week Low"),
+            ("regularMarketVolume", "Volume"),
+            (
+                "averageVolume",
+                "Avg. Volume (3 month)",
+            ),  # yfinance 'averageVolume' is 3 month avg
+            ("averageVolume10days", "Avg. Volume (10 day)"),
+        ]
+        for key, friendly_name in price_stats_fields:
+            value = fundamental_data_dict.get(key)
+            # Handle averageVolume vs averageVolume10days preference
+            if (
+                key == "averageVolume"
+                and "averageVolume10days" in fundamental_data_dict
+            ):
+                continue  # Skip 3-month if 10-day is present
+            if (
+                key == "averageVolume10days"
+                and "averageVolume10days" not in fundamental_data_dict
+                and "averageVolume" in fundamental_data_dict
+            ):
+                # If 10days is missing but general averageVolume is present, use that one instead for the "Avg. Volume (10 day)" label
+                value_avg = fundamental_data_dict.get("averageVolume")
+                layout_price_stats.addRow(
+                    QLabel(f"<b>{friendly_name}:</b>"),
+                    QLabel(format_value("averageVolume", value_avg)),
+                )
+            else:
+                layout_price_stats.addRow(
+                    QLabel(f"<b>{friendly_name}:</b>"), QLabel(format_value(key, value))
+                )
+        form_layout.addRow(group_price_stats)
+
+        # --- Group 5: Business Summary ---
+        group_summary = QGroupBox("Business Summary")
+        layout_summary = QVBoxLayout(group_summary)
+        layout_summary.setContentsMargins(
+            5, 5, 5, 5
+        )  # Add some padding inside group box
+        layout_summary.setSpacing(5)
+
+        summary_text = fundamental_data_dict.get("longBusinessSummary", "N/A")
+        if summary_text and summary_text != "N/A":
+            summary_text_edit = QTextEdit()
+            summary_text_edit.setPlainText(summary_text)
+            summary_text_edit.setReadOnly(True)
+            summary_text_edit.setFixedHeight(150)  # Adjust height as needed
+            layout_summary.addWidget(summary_text_edit)
+        else:
+            layout_summary.addWidget(QLabel("N/A"))
+
+        form_layout.addRow(group_summary)
+
+        # --- End Groups ---
+
+        # Add a stretch to push groups to the top if needed
+        # form_layout.addRow(QLabel(""), None) # Add a final empty row for spacing - QFormLayout doesn't need this for stretch
+        # QFormLayout does not have setRowStretch. The QScrollArea handles content height.
+
+        # --- Dialog Buttons ---
+        # The following lines were likely a copy-paste error from within the loop
+        # and are not needed here as the button_box is added directly.
+        # label_widget = QLabel(f"<b>{friendly_name}:</b>") # friendly_name might be out of scope or hold last loop value
+        # value_str_fallback = "N/A" # Ensure value_str is defined
+        # value_widget = QLabel(value_str_fallback)
+        # value_widget.setWordWrap(True)
+        # form_layout.addRow(label_widget, value_widget) # This would add an extra incorrect row
+
+        # Business Summary (special handling)
+        summary_text = fundamental_data_dict.get("longBusinessSummary", "N/A")
+        if summary_text and summary_text != "N/A":
+            form_layout.addRow(QLabel(""), None)  # Spacer
+            summary_label = QLabel("<b>Business Summary:</b>")
+            form_layout.addRow(summary_label)
+            summary_text_edit = QTextEdit()
+            summary_text_edit.setPlainText(summary_text)
+            summary_text_edit.setReadOnly(True)
+            summary_text_edit.setFixedHeight(150)  # Adjust height as needed
+            form_layout.addRow(summary_text_edit)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok)
+        button_box.accepted.connect(self.accept)
+        main_layout.addWidget(button_box)
+
+        if parent and hasattr(parent, "styleSheet"):
+            self.setStyleSheet(parent.styleSheet())
+
+
+class FundamentalDataWorker(QRunnable):
+    """Worker to fetch fundamental data in the background."""
+
+    def __init__(self, yf_symbol: str, display_symbol: str, signals: WorkerSignals):
+        super().__init__()
+        self.yf_symbol = yf_symbol
+        self.display_symbol = display_symbol
+        self.signals = signals
+
+    @Slot()
+    def run(self):
+        try:
+            market_provider = MarketDataProvider()  # Assuming default init is fine
+            data = market_provider.get_fundamental_data(self.yf_symbol)
+            if (
+                data is not None
+            ):  # data can be {} if symbol invalid, which is a valid result
+                self.signals.fundamental_data_ready.emit(self.display_symbol, data)
+            else:  # Fetching itself failed (e.g. network error)
+                self.signals.error.emit(
+                    f"Failed to fetch fundamental data for {self.display_symbol}."
+                )
+        except Exception as e:
+            logging.error(
+                f"Error in FundamentalDataWorker for {self.display_symbol}: {e}"
+            )
+            traceback.print_exc()
+            self.signals.error.emit(
+                f"Error fetching fundamentals for {self.display_symbol}: {e}"
+            )
+        finally:
+            # self.signals.finished.emit() # Not strictly needed if result/error always emitted
+            pass
 
 
 class LogViewerDialog(QDialog):
@@ -5330,22 +5599,6 @@ The CSV file should contain the following columns (header names must match exact
         # Use the exchange rate label defined in _create_controls_widget
         self.status_bar.addPermanentWidget(self.exchange_rate_display_label)  # RESTORED
 
-    def _init_toolbar(self):
-        """Initializes the main application toolbar."""
-        self.toolbar = self.addToolBar("Main Toolbar")
-        self.toolbar.setObjectName("MainToolBar")
-        self.toolbar.setIconSize(QSize(20, 20))
-
-        if hasattr(self, "select_action"):
-            self.toolbar.addAction(self.select_action)
-        if hasattr(self, "refresh_action"):
-            self.toolbar.addAction(self.refresh_action)
-        self.toolbar.addSeparator()
-        if hasattr(self, "add_transaction_action"):
-            self.toolbar.addAction(self.add_transaction_action)
-        if hasattr(self, "manage_transactions_action"):
-            self.toolbar.addAction(self.manage_transactions_action)
-
     @Slot()
     def refresh_data(self):
         """
@@ -5663,7 +5916,7 @@ The CSV file should contain the following columns (header names must match exact
         self.worker_signals.error.connect(self.handle_error)
         self.worker_signals.progress.connect(self.update_progress)
         self.worker_signals.finished.connect(
-            self.calculation_finished
+            lambda: self.calculation_finished()  # Default call without error message
         )  # Connect finished from the signals object
         # --- END Connect signals ---
 
@@ -6495,6 +6748,9 @@ The CSV file should contain the following columns (header names must match exact
         # --- OR use the Compact Toolbar if you implemented it ---
         # self.perf_return_toolbar = CompactNavigationToolbar(self.perf_return_canvas, perf_return_widget, coordinates=False)
         self.perf_return_toolbar.setObjectName("PerfReturnToolbar")
+        self.perf_return_toolbar.setIconSize(
+            QSize(18, 18)
+        )  # Adjust (width, height) as needed
 
         perf_return_layout.addWidget(
             self.perf_return_toolbar
@@ -6527,6 +6783,9 @@ The CSV file should contain the following columns (header names must match exact
         # --- OR use the Compact Toolbar ---
         # self.abs_value_toolbar = CompactNavigationToolbar(self.abs_value_canvas, abs_value_widget, coordinates=False)
         self.abs_value_toolbar.setObjectName("AbsValueToolbar")
+        self.abs_value_toolbar.setIconSize(
+            QSize(18, 18)
+        )  # Adjust (width, height) as needed
 
         abs_value_layout.addWidget(self.abs_value_toolbar)  # Add toolbar below graph
         perf_graphs_main_layout.addWidget(
@@ -6914,6 +7173,19 @@ The CSV file should contain the following columns (header names must match exact
         # --- Show Menu ---
         # Map the click position within the table's viewport to global screen coordinates
         global_pos = self.table_view.viewport().mapToGlobal(pos)
+
+        # --- ADD Fundamental Data Action to Context Menu ---
+        if symbol != CASH_SYMBOL_CSV:  # Only for actual stocks/ETFs
+            menu.addSeparator()
+            fundamentals_action = QAction(f"View Fundamentals for {symbol}", self)
+            fundamentals_action.triggered.connect(
+                lambda checked=False, s=symbol: self._handle_context_menu_fundamental_lookup(
+                    s
+                )
+            )
+            menu.addAction(fundamentals_action)
+        # --- END ADD ---
+
         menu.exec(global_pos)
 
     def _connect_signals(self):
@@ -6962,6 +7234,13 @@ The CSV file should contain the following columns (header names must match exact
         self.table_filter_timer.timeout.connect(
             self._apply_table_filter
         )  # Timer timeout applies filter
+
+        # Fundamental Lookup Connections
+        self.lookup_button.clicked.connect(self._handle_direct_symbol_lookup)
+        self.lookup_symbol_edit.returnPressed.connect(self._handle_direct_symbol_lookup)
+        self.worker_signals.fundamental_data_ready.connect(
+            self._show_fundamental_data_dialog_from_worker
+        )
 
         # Table Context Menu Connection
         self.table_view.customContextMenuRequested.connect(
@@ -9361,6 +9640,9 @@ The CSV file should contain the following columns (header names must match exact
             self.benchmark_select_button,
             self.graph_update_button,
             self.refresh_button,
+            # Add fundamental lookup controls here
+            self.lookup_symbol_edit,
+            self.lookup_button,
         ]
         for control in controls_to_toggle:
             try:
@@ -9444,14 +9726,16 @@ The CSV file should contain the following columns (header names must match exact
             logging.info(f"Status indicates warning/info: '{cleaned_status}'.")
 
     @Slot()
-    def calculation_finished(self):
+    def calculation_finished(
+        self, error_message: Optional[str] = None
+    ):  # Add optional error_message
         """
         Slot called when the worker thread finishes (success or error).
 
         Re-enables UI controls and updates the status bar with the final status message.
         """
         self.is_calculating = False
-        logging.info("Worker thread finished.")
+        logging.info(f"Worker thread finished. Error message received: {error_message}")
         self.set_controls_enabled(True)
         # Update status label based on the final combined status
         if self.last_calc_status:
@@ -9459,11 +9743,26 @@ The CSV file should contain the following columns (header names must match exact
             if (
                 "Error" in cleaned_status or "Crit" in cleaned_status
             ):  # Check original status string for errors
+                # Also re-enable fundamental lookup UI if error_message is present and indicates it
+                if error_message and (
+                    "fundamental" in error_message.lower()
+                    or "fundamentals" in error_message.lower()
+                ):
+                    self.lookup_symbol_edit.setEnabled(True)
+                    self.lookup_button.setEnabled(True)
                 self.status_label.setText("Finished (Errors)")  # Shortened message
             else:
                 now_str = QDateTime.currentDateTime().toString("hh:mm:ss")
                 self.status_label.setText(f"Finished ({now_str})")  # Shortened message
-        else:
+        elif error_message:  # If no last_calc_status but there was an error
+            if (
+                "fundamental" in error_message.lower()
+                or "fundamentals" in error_message.lower()
+            ):
+                self.lookup_symbol_edit.setEnabled(True)
+                self.lookup_button.setEnabled(True)
+            self.status_label.setText("Finished (Errors)")
+        else:  # No last_calc_status and no error_message
             self.status_label.setText("Finished (Status Unknown)")
 
         # --- Hide progress bar on finish ---
@@ -9908,19 +10207,42 @@ The CSV file should contain the following columns (header names must match exact
         self.toolbar.setObjectName("MainToolBar")
         self.toolbar.setIconSize(QSize(20, 20))
 
+        # Add standard actions first
         if hasattr(self, "select_action"):
-            self.toolbar.addAction(self.select_action)
+            self.toolbar.addAction(self.select_action)  # Restored & Corrected
         if hasattr(
             self, "new_transactions_file_action"
         ):  # Check if it exists before adding
-            self.toolbar.addAction(self.new_transactions_file_action)
+            self.toolbar.addAction(self.new_transactions_file_action)  # Restored
         if hasattr(self, "refresh_action"):
-            self.toolbar.addAction(self.refresh_action)
-        self.toolbar.addSeparator()
+            self.toolbar.addAction(self.refresh_action)  # Kept
+
+        self.toolbar.addSeparator()  # Separator after file/refresh actions
+
         if hasattr(self, "add_transaction_action"):
             self.toolbar.addAction(self.add_transaction_action)
-        if hasattr(self, "manage_transactions_action"):
+        if hasattr(self, "manage_transactions_action"):  # Moved before spacer
             self.toolbar.addAction(self.manage_transactions_action)
+
+        # Add a spacer widget to push subsequent items to the right
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.toolbar.addWidget(spacer)
+
+        # Create and add the fundamental lookup widgets AFTER the spacer
+        # The self.toolbar.addSeparator() that was here is removed as spacer handles it.
+        self.lookup_symbol_edit = QLineEdit(self)
+        self.lookup_symbol_edit.setPlaceholderText(
+            "Symbol for Fundamentals (e.g. AAPL)"
+        )
+        # Ensure consistent width for the lookup edit
+        self.lookup_symbol_edit.setMinimumWidth(150)
+        self.lookup_symbol_edit.setMaximumWidth(150)
+        self.toolbar.addWidget(self.lookup_symbol_edit)
+
+        self.lookup_button = QPushButton("Get Fundamentals")
+        self.lookup_button.setIcon(QIcon.fromTheme("help-about"))  # Example icon
+        self.toolbar.addWidget(self.lookup_button)
 
     # --- Show Window and Run Event Loop ---
     # main_window.show() # This should be in __main__
@@ -10014,6 +10336,150 @@ The CSV file should contain the following columns (header names must match exact
             logging.info("New transactions file creation cancelled by user.")
 
     # --- End moved method ---
+
+    # --- Slots for Fundamental Data Lookup ---
+    @Slot()
+    def _handle_direct_symbol_lookup(self):
+        """Handles the 'Get Fundamentals' button click or Enter press."""
+        input_symbol = self.lookup_symbol_edit.text().strip().upper()
+        if not input_symbol:
+            QMessageBox.warning(self, "Input Error", "Please enter a stock symbol.")
+            return
+
+        yf_symbol = map_to_yf_symbol(input_symbol)  # Use existing utility from finutils
+        if not yf_symbol:
+            QMessageBox.warning(
+                self,
+                "Symbol Error",
+                f"Could not map '{input_symbol}' to a valid Yahoo Finance ticker.",
+            )
+            return
+
+        logging.info(
+            f"Direct fundamental lookup requested for: {input_symbol} (YF: {yf_symbol})"
+        )
+        self.status_label.setText(f"Fetching fundamentals for {input_symbol}...")
+        self.lookup_symbol_edit.setEnabled(False)
+        self.lookup_button.setEnabled(False)
+        # Optionally disable other controls if desired, e.g., self.set_controls_enabled(False)
+        # but the specific lookup controls are most important here.
+
+        worker = FundamentalDataWorker(yf_symbol, input_symbol, self.worker_signals)
+        self.threadpool.start(worker)
+
+    @Slot(str, dict)
+    def _show_fundamental_data_dialog_from_worker(
+        self, display_symbol: str, data: dict
+    ):
+        """Shows the FundamentalDataDialog with data received from the worker."""
+        self.lookup_symbol_edit.setEnabled(True)
+        self.lookup_button.setEnabled(True)
+        self.status_label.setText("Ready")  # Reset status
+
+        if (
+            not data
+        ):  # data is an empty dict if yfinance found nothing or error during fetch by worker
+            QMessageBox.warning(
+                self,
+                "Data Not Found",
+                f"Could not retrieve fundamental data for {display_symbol}.",
+            )
+            return
+
+        dialog = FundamentalDataDialog(display_symbol, data, self)
+        dialog.exec()
+
+    @Slot(str)
+    def _handle_context_menu_fundamental_lookup(self, internal_symbol: str):
+        """Handles fundamental lookup triggered from the table's context menu."""
+        if not internal_symbol or internal_symbol == CASH_SYMBOL_CSV:
+            return
+
+        yf_symbol = self.internal_to_yf_map.get(internal_symbol)
+        if not yf_symbol:
+            # Fallback if not in map (e.g., if map wasn't populated for some reason)
+            yf_symbol_fallback = map_to_yf_symbol(internal_symbol)
+            if not yf_symbol_fallback:
+                QMessageBox.warning(
+                    self,
+                    "Symbol Error",
+                    f"Could not map '{internal_symbol}' to a Yahoo Finance ticker for fundamentals.",
+                )
+                return
+            yf_symbol = yf_symbol_fallback
+            logging.warning(
+                f"Used fallback YF symbol mapping for context menu fundamental lookup: {internal_symbol} -> {yf_symbol}"
+            )
+
+        logging.info(
+            f"Context menu fundamental lookup for: {internal_symbol} (YF: {yf_symbol})"
+        )
+        self.status_label.setText(f"Fetching fundamentals for {internal_symbol}...")
+        self.lookup_symbol_edit.setEnabled(
+            False
+        )  # Disable direct lookup while context menu lookup is active
+        self.lookup_button.setEnabled(False)
+
+        worker = FundamentalDataWorker(yf_symbol, internal_symbol, self.worker_signals)
+        self.threadpool.start(worker)
+
+    # --- End Fundamental Data Slots ---
+
+    @Slot(str, dict)
+    def _show_fundamental_data_dialog_from_worker(
+        self, display_symbol: str, data: dict
+    ):
+        """Shows the FundamentalDataDialog with data received from the worker."""
+        self.lookup_symbol_edit.setEnabled(True)
+        self.lookup_button.setEnabled(True)
+        self.status_label.setText("Ready")  # Reset status
+
+        if (
+            not data
+        ):  # data is an empty dict if yfinance found nothing or error during fetch by worker
+            QMessageBox.warning(
+                self,
+                "Data Not Found",
+                f"Could not retrieve fundamental data for {display_symbol}.",
+            )
+            return
+
+        dialog = FundamentalDataDialog(display_symbol, data, self)
+        dialog.exec()
+
+    @Slot(str)
+    def _handle_context_menu_fundamental_lookup(self, internal_symbol: str):
+        """Handles fundamental lookup triggered from the table's context menu."""
+        if not internal_symbol or internal_symbol == CASH_SYMBOL_CSV:
+            return
+
+        yf_symbol = self.internal_to_yf_map.get(internal_symbol)
+        if not yf_symbol:
+            # Fallback if not in map (e.g., if map wasn't populated for some reason)
+            yf_symbol_fallback = map_to_yf_symbol(internal_symbol)
+            if not yf_symbol_fallback:
+                QMessageBox.warning(
+                    self,
+                    "Symbol Error",
+                    f"Could not map '{internal_symbol}' to a Yahoo Finance ticker for fundamentals.",
+                )
+                return
+            yf_symbol = yf_symbol_fallback
+            logging.warning(
+                f"Used fallback YF symbol mapping for context menu fundamental lookup: {internal_symbol} -> {yf_symbol}"
+            )
+
+        logging.info(
+            f"Context menu fundamental lookup for: {internal_symbol} (YF: {yf_symbol})"
+        )
+        self.status_label.setText(f"Fetching fundamentals for {internal_symbol}...")
+        # Optionally disable some UI elements, though dialog will be modal
+        # self.set_controls_enabled(False) # Might be too broad
+
+        worker = FundamentalDataWorker(yf_symbol, internal_symbol, self.worker_signals)
+        self.threadpool.start(worker)
+
+    # --- End Fundamental Data Slots ---
 
     @Slot()
     def clear_cache_files_action_triggered(self):

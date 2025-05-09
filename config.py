@@ -57,6 +57,7 @@ DAILY_RESULTS_CACHE_PATH_PREFIX = (
 YFINANCE_CACHE_DURATION_HOURS = (
     4  # Max age in hours for the CURRENT data cache to be considered valid
 )
+FUNDAMENTALS_CACHE_DURATION_HOURS = 24  # Max age in hours for yfinance Ticker.info data
 
 # --- ADDED: Cache duration for CURRENT quotes (stock/index) ---
 # How long (in minutes) to keep current quote data before refetching

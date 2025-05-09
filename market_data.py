@@ -46,6 +46,7 @@ try:
         YFINANCE_INDEX_TICKER_MAP,
         DEFAULT_INDEX_QUERY_SYMBOLS,
         SYMBOL_MAP_TO_YFINANCE,
+        FUNDAMENTALS_CACHE_DURATION_HOURS,  # <-- ADDED
         YFINANCE_EXCLUDED_SYMBOLS,
         CASH_SYMBOL_CSV,  # DEFAULT_CURRENT_CACHE_FILE_PATH is used by main_gui now
         HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
@@ -61,6 +62,7 @@ except ImportError:
     YFINANCE_INDEX_TICKER_MAP = {}
     DEFAULT_INDEX_QUERY_SYMBOLS = []
     SYMBOL_MAP_TO_YFINANCE = {}
+    FUNDAMENTALS_CACHE_DURATION_HOURS = 24  # <-- ADDED Fallback
     YFINANCE_EXCLUDED_SYMBOLS = set()
     CASH_SYMBOL_CSV = "$CASH"
     HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = (
@@ -122,6 +124,7 @@ class MarketDataProvider:
         self,
         hist_raw_cache_basename=HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,  # Changed prefix to basename
         current_cache_file=None,  # Default to None, path constructed if not absolute
+        fundamentals_cache_file="fundamentals_cache.json",  # New cache file for fundamentals
     ):
         self.hist_raw_cache_basename = hist_raw_cache_basename  # Store basename
         self._session = None  # Initialize session attribute
@@ -159,6 +162,25 @@ class MarketDataProvider:
                 self.current_cache_file = (
                     DEFAULT_CURRENT_CACHE_FILE_PATH  # Relative path fallback
                 )
+
+        # Construct full path for fundamentals_cache_file
+        if fundamentals_cache_file and not os.path.isabs(fundamentals_cache_file):
+            cache_dir_base_fund = QStandardPaths.writableLocation(
+                QStandardPaths.CacheLocation
+            )
+            if cache_dir_base_fund:
+                app_cache_dir_fund = cache_dir_base_fund
+                os.makedirs(app_cache_dir_fund, exist_ok=True)
+                self.fundamentals_cache_file = os.path.join(
+                    app_cache_dir_fund, fundamentals_cache_file
+                )
+            else:
+                self.fundamentals_cache_file = fundamentals_cache_file  # Relative path
+        elif fundamentals_cache_file:  # Already absolute
+            self.fundamentals_cache_file = fundamentals_cache_file
+        else:  # Should not happen if default is provided
+            self.fundamentals_cache_file = "fundamentals_cache.json"  # Fallback
+
         logging.info("MarketDataProvider initialized.")
 
     def get_current_quotes(
@@ -1329,6 +1351,111 @@ class MarketDataProvider:
                 fetch_failed = True
 
         return historical_fx_yf, fetch_failed
+
+    def get_fundamental_data(self, yf_symbol: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetches fundamental data (ticker.info) for a given Yahoo Finance symbol.
+        Uses a JSON file-based cache.
+
+        Args:
+            yf_symbol (str): The Yahoo Finance ticker symbol (e.g., "AAPL").
+
+        Returns:
+            Optional[Dict[str, Any]]: A dictionary containing the fundamental data,
+                                      or None if fetching fails or symbol is invalid.
+        """
+        if not YFINANCE_AVAILABLE:
+            logging.error("yfinance not available. Cannot fetch fundamental data.")
+            return None
+        if not yf_symbol or not isinstance(yf_symbol, str):
+            logging.warning(f"Invalid yf_symbol provided for fundamentals: {yf_symbol}")
+            return None
+
+        logging.info(f"Requesting fundamental data for YF symbol: {yf_symbol}")
+
+        # --- Caching Logic ---
+        # Cache key is just the symbol for fundamentals
+        # The cache file stores a dictionary: { "symbol1": {"timestamp": "...", "data": {...}}, ... }
+        cached_data = None
+        cache_valid = False
+
+        if os.path.exists(self.fundamentals_cache_file):
+            try:
+                with open(self.fundamentals_cache_file, "r", encoding="utf-8") as f:
+                    full_cache_content = json.load(f)
+
+                symbol_cache_entry = full_cache_content.get(yf_symbol)
+                if symbol_cache_entry and isinstance(symbol_cache_entry, dict):
+                    cache_timestamp_str = symbol_cache_entry.get("timestamp")
+                    if cache_timestamp_str:
+                        cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
+                        if datetime.now(timezone.utc) - cache_timestamp < timedelta(
+                            hours=FUNDAMENTALS_CACHE_DURATION_HOURS
+                        ):
+                            cached_data = symbol_cache_entry.get("data")
+                            if (
+                                cached_data is not None
+                            ):  # Could be an empty dict if that was cached
+                                cache_valid = True
+                                logging.info(
+                                    f"Using valid fundamentals cache for {yf_symbol}."
+                                )
+                        else:
+                            logging.info(f"Fundamentals cache expired for {yf_symbol}.")
+                    else:
+                        logging.warning(
+                            f"Fundamentals cache for {yf_symbol} missing timestamp."
+                        )
+            except (json.JSONDecodeError, IOError, Exception) as e:
+                logging.warning(f"Error reading fundamentals cache: {e}. Will refetch.")
+
+        if cache_valid and cached_data is not None:
+            return cached_data
+
+        # --- Fetching Logic ---
+        logging.info(f"Fetching fresh fundamental data for {yf_symbol}...")
+        try:
+            ticker = yf.Ticker(yf_symbol)
+            data = ticker.info  # This is the main call
+            if not data:  # yfinance returns empty dict for invalid symbols or no data
+                logging.warning(
+                    f"No fundamental data returned by yfinance for {yf_symbol}."
+                )
+                data = (
+                    {}
+                )  # Store empty dict to avoid refetching invalid symbol immediately
+
+            # Save to cache
+            try:
+                full_cache_content = {}
+                if os.path.exists(
+                    self.fundamentals_cache_file
+                ):  # Load existing to update
+                    with open(
+                        self.fundamentals_cache_file, "r", encoding="utf-8"
+                    ) as f_read:
+                        full_cache_content = json.load(f_read)
+
+                full_cache_content[yf_symbol] = {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "data": data,
+                }
+                with open(
+                    self.fundamentals_cache_file, "w", encoding="utf-8"
+                ) as f_write:
+                    json.dump(
+                        full_cache_content, f_write, indent=2, cls=NpEncoder
+                    )  # Use NpEncoder for numpy types
+                logging.info(f"Saved fundamentals for {yf_symbol} to cache.")
+            except Exception as e_cache_write:
+                logging.warning(
+                    f"Failed to write fundamentals cache for {yf_symbol}: {e_cache_write}"
+                )
+            return data
+        except Exception as e_fetch:
+            logging.error(f"Error fetching fundamental data for {yf_symbol}: {e_fetch}")
+            traceback.print_exc()
+            return None
 
 
 # --- END OF FILE market_data.py ---
