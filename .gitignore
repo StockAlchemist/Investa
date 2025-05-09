@@ -29,9 +29,13 @@ coding_plan*
 main_gui.py.lprof
 __pycache__/
 pytest.ini
-style_dark*
+style_dark_1.qss
+style_dark_2.qss
 .vscode
 .pytest_cache
 csv_backups
 .gitignore
 my_transactions.csv
+Coding_plan.txt
+coding_plan*
+
