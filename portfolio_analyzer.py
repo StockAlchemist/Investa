@@ -72,6 +72,9 @@ except ImportError:
         return 0.0
 
 
+# --- Define a constant for the aggregated cash account name ---
+_AGGREGATE_CASH_ACCOUNT_NAME_ = " Portfolio Cash"
+
 # --- Moved Functions ---
 
 
@@ -695,6 +698,14 @@ def _build_summary_rows(
     has_errors = False
     has_warnings = False
 
+    # --- Initialize details for aggregated cash ---
+    aggregated_cash_details = {
+        "market_value_display": 0.0,
+        "dividends_display": 0.0,
+        "commissions_display": 0.0,
+        # Add other relevant fields if they need to be summed for the cash line
+    }
+
     logging.info(f"Calculating final portfolio summary rows in {display_currency}...")
 
     # --- Loop 1: Process Stock/ETF Holdings ---
@@ -1093,7 +1104,7 @@ def _build_summary_rows(
         )
     # --- End Stock/ETF Loop ---
 
-    # --- Loop 2: Process CASH Balances ---
+    # --- Loop 2: Aggregate CASH Balances (No longer adds individual rows here) ---
     if cash_summary:
         for account, cash_data in cash_summary.items():
             symbol = CASH_SYMBOL_CSV
@@ -1103,7 +1114,10 @@ def _build_summary_rows(
             dividends_local = cash_data.get("dividends", 0.0)
             commissions_local = cash_data.get("commissions", 0.0)
 
-            account_local_currency_map[account] = local_currency
+            # Ensure account's local currency is mapped
+            if account not in account_local_currency_map:
+                account_local_currency_map[account] = local_currency
+
             fx_rate = get_conversion_rate(
                 local_currency, display_currency, current_fx_rates_vs_usd
             )
@@ -1116,67 +1130,109 @@ def _build_summary_rows(
 
             market_value_local = current_qty * 1.0
             if pd.notna(market_value_local):
-                account_market_values_local[account] += market_value_local
+                account_market_values_local[account] = (
+                    account_market_values_local.get(account, 0.0) + market_value_local
+                )  # Add to existing or initialize
+
+            # Aggregate into display currency
             market_value_display = (
                 market_value_local * fx_rate if pd.notna(fx_rate) else np.nan
             )
-            current_price_display = 1.0 * fx_rate if pd.notna(fx_rate) else np.nan
-            cost_basis_display = market_value_display
-            avg_cost_price_display = current_price_display
-            day_change_value_display = 0.0
-            day_change_pct = 0.0
-            unrealized_gain_display = 0.0
-            unrealized_gain_pct = 0.0
             realized_gain_display = (
                 realized_gain_local * fx_rate if pd.notna(fx_rate) else np.nan
             )
             dividends_display = (
                 dividends_local * fx_rate if pd.notna(fx_rate) else np.nan
             )
-            commissions_display = (
+            commissions_display_for_acc_cash = (  # Renamed to avoid conflict
                 commissions_local * fx_rate if pd.notna(fx_rate) else np.nan
             )
-            total_gain_display = (
-                (dividends_display - commissions_display)
-                if pd.notna(dividends_display) and pd.notna(commissions_display)
-                else np.nan
-            )
-            cumulative_investment_display = (
-                market_value_display if pd.notna(market_value_display) else np.nan
-            )
-            total_buy_cost_display = market_value_display
-            total_return_pct_cash = np.nan
-            irr_value_to_store_cash = np.nan
 
-            portfolio_summary_rows.append(
-                {
-                    "Account": account,
-                    "Symbol": symbol,
-                    "Quantity": current_qty,
-                    f"Avg Cost ({display_currency})": avg_cost_price_display,
-                    f"Price ({display_currency})": current_price_display,
-                    f"Cost Basis ({display_currency})": cost_basis_display,
-                    f"Market Value ({display_currency})": market_value_display,
-                    f"Day Change ({display_currency})": day_change_value_display,
-                    "Day Change %": day_change_pct,
-                    f"Unreal. Gain ({display_currency})": unrealized_gain_display,
-                    "Unreal. Gain %": unrealized_gain_pct,
-                    f"Realized Gain ({display_currency})": realized_gain_display,
-                    f"Dividends ({display_currency})": dividends_display,
-                    f"Commissions ({display_currency})": commissions_display,
-                    f"Total Gain ({display_currency})": total_gain_display,
-                    f"Total Cost Invested ({display_currency})": cost_basis_display,
-                    "Total Return %": total_return_pct_cash,
-                    f"Cumulative Investment ({display_currency})": cumulative_investment_display,
-                    f"Total Buy Cost ({display_currency})": total_buy_cost_display,
-                    "IRR (%)": irr_value_to_store_cash,
-                    "Local Currency": local_currency,
-                    "Price Source": "N/A (Cash)",
-                    f"Div. Yield (Cost) %": np.nan,  # Not applicable for cash
-                    f"Div. Yield (Current) %": np.nan,  # Not applicable for cash
-                    f"Est. Ann. Income ({display_currency})": np.nan,  # Not applicable for cash
-                }
-            )
+            if pd.notna(market_value_display):
+                aggregated_cash_details["market_value_display"] += market_value_display
+            if pd.notna(dividends_display):
+                aggregated_cash_details["dividends_display"] += dividends_display
+            if pd.notna(commissions_display_for_acc_cash):
+                aggregated_cash_details[
+                    "commissions_display"
+                ] += commissions_display_for_acc_cash
+
+    # --- Add a single aggregated cash row if there's any cash ---
+    # Or always add it, even if zero, for consistency. Let's always add it.
+    if True:  # Always add the aggregated cash line
+        total_cash_mv_display = aggregated_cash_details["market_value_display"]
+        total_cash_div_display = aggregated_cash_details["dividends_display"]
+        total_cash_comm_display = aggregated_cash_details["commissions_display"]
+
+        # For cash, total gain is typically dividends minus commissions associated with cash accounts
+        total_cash_gain_display = total_cash_div_display - total_cash_comm_display
+
+        # Cost basis, total cost invested, cumulative investment, total buy cost for cash is its market value
+        # as it represents the net cash position.
+        cash_basis_and_investment = total_cash_mv_display
+
+        # Total return for cash itself is usually not calculated this way, or is 0% if based on its own value.
+        # If total_cash_gain_display is non-zero and cash_basis_and_investment is non-zero, can calculate.
+        total_return_pct_cash = np.nan
+        if (
+            pd.notna(total_cash_gain_display)
+            and pd.notna(cash_basis_and_investment)
+            and abs(cash_basis_and_investment) > 1e-9
+        ):
+            total_return_pct_cash = (
+                total_cash_gain_display / cash_basis_and_investment
+            ) * 100.0
+        elif (
+            pd.notna(total_cash_gain_display) and abs(total_cash_gain_display) < 1e-9
+        ):  # Zero gain
+            total_return_pct_cash = 0.0
+
+        # Add the aggregated cash row
+        # Using a special account name defined at the top of the file
+        # Using CASH_SYMBOL_CSV for the symbol for internal consistency
+        # The display name will be handled by the GUI's PandasModel
+
+        # For cash, price is 1 in its currency. Quantity is the value.
+        # Since we are in display_currency, price is 1.0.
+        # Quantity is total_cash_mv_display.
+
+        # Avg Cost and Price for aggregated cash in display currency is 1.0
+        # if we consider the "Quantity" to be the market value itself.
+
+        portfolio_summary_rows.append(
+            {
+                "Account": _AGGREGATE_CASH_ACCOUNT_NAME_,
+                "Symbol": CASH_SYMBOL_CSV,
+                "Quantity": total_cash_mv_display,  # Value is quantity, price is 1
+                f"Avg Cost ({display_currency})": (
+                    1.0
+                    if pd.notna(total_cash_mv_display)
+                    and abs(total_cash_mv_display) > 1e-9
+                    else np.nan
+                ),
+                f"Price ({display_currency})": 1.0,  # Price of cash in its currency is 1
+                f"Cost Basis ({display_currency})": cash_basis_and_investment,
+                f"Market Value ({display_currency})": total_cash_mv_display,
+                f"Day Change ({display_currency})": 0.0,  # Cash doesn't change day-to-day by itself
+                "Day Change %": 0.0,
+                f"Unreal. Gain ({display_currency})": 0.0,  # No unrealized gain on cash
+                "Unreal. Gain %": 0.0,
+                f"Realized Gain ({display_currency})": 0.0,  # Realized gain is for assets
+                f"Dividends ({display_currency})": total_cash_div_display,
+                f"Commissions ({display_currency})": total_cash_comm_display,
+                f"Total Gain ({display_currency})": total_cash_gain_display,
+                f"Total Cost Invested ({display_currency})": cash_basis_and_investment,
+                "Total Return %": total_return_pct_cash,
+                f"Cumulative Investment ({display_currency})": cash_basis_and_investment,
+                f"Total Buy Cost ({display_currency})": cash_basis_and_investment,
+                "IRR (%)": np.nan,  # IRR not applicable for cash aggregate this way
+                "Local Currency": display_currency,  # Aggregated cash is in display currency
+                "Price Source": "N/A (Cash)",
+                f"Div. Yield (Cost) %": np.nan,  # Not applicable for cash
+                f"Div. Yield (Current) %": np.nan,  # Not applicable for cash
+                f"Est. Ann. Income ({display_currency})": np.nan,  # Not applicable for cash
+            }
+        )
 
     return (
         portfolio_summary_rows,

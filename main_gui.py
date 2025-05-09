@@ -215,6 +215,7 @@ try:
     # --- ADDED Import from portfolio_analyzer ---
     from portfolio_analyzer import (
         calculate_periodic_returns,
+        _AGGREGATE_CASH_ACCOUNT_NAME_,  # Import the constant
     )  # Add the new function
 
     # --- END ADD ---
@@ -928,26 +929,26 @@ class PandasModel(QAbstractTableModel):
                 try:
                     symbol_col_idx = self._data.columns.get_loc("Symbol")
                     symbol_value = self._data.iloc[row, symbol_col_idx]
-                    if col_name == "Total Ret %" and symbol_value == CASH_SYMBOL_CSV:
-                        return "-"
-                    # Specific handling for IRR % for cash: It should be N/A
-                    if col_name == "IRR (%)" and symbol_value == CASH_SYMBOL_CSV:
-                        return "-"  # Display '-' for cash IRR
-                    # Specific handling for new dividend columns for cash
-                    if symbol_value == CASH_SYMBOL_CSV and col_name in [
+
+                    if col_name == "Symbol" and symbol_value == CASH_SYMBOL_CSV:
+                        # Check if this is the aggregated cash row
+                        account_val_idx = self._data.columns.get_loc("Account")
+                        account_val = self._data.iloc[row, account_val_idx]
+                        if account_val == _AGGREGATE_CASH_ACCOUNT_NAME_:
+                            return f"Total Cash ({self._parent._get_currency_symbol(get_name=True)})"
+                        # Fallback for any other cash symbol (should not happen with new logic but safe)
+                        # else:
+                        #     display_currency_name = self._parent._get_currency_symbol(get_name=True) if self._parent else "CUR"
+                        #     return f"Cash ({display_currency_name})"
+                    elif symbol_value == CASH_SYMBOL_CSV and col_name in [
+                        "Total Ret %",
+                        "IRR (%)",
                         "Yield (Cost) %",
                         "Yield (Mkt) %",
                         f"Est. Income",
-                    ]:  # Check Est. Income without currency for simplicity, actual col has it
+                    ]:
+                        # For the aggregated cash row, these are typically not applicable or zero
                         return "-"
-
-                    if col_name == "Symbol" and symbol_value == CASH_SYMBOL_CSV:
-                        display_currency_name = (
-                            self._parent._get_currency_symbol(get_name=True)
-                            if self._parent
-                            else "CUR"
-                        )
-                        return f"Cash ({display_currency_name})"
                 except (KeyError, IndexError):
                     pass
 
@@ -8128,14 +8129,12 @@ The CSV file should contain the following columns (header names must match exact
                         self._get_filtered_data()
                     )  # Use existing filter logic
                     cash_mask = df_filtered_for_cash["Symbol"] == CASH_SYMBOL_CSV
-                    # Also handle the display format "Cash (CUR)"
-                    cash_display_symbol = (
-                        f"Cash ({self._get_currency_symbol(get_name=True)})"
+                    cash_mask &= (
+                        df_filtered_for_cash["Account"] == _AGGREGATE_CASH_ACCOUNT_NAME_
                     )
-                    cash_mask |= df_filtered_for_cash["Symbol"] == cash_display_symbol
 
                     overall_cash_value = (
-                        pd.to_numeric(
+                        pd.to_numeric(  # Ensure it's numeric before summing
                             df_filtered_for_cash.loc[cash_mask, cash_val_col_actual],
                             errors="coerce",
                         )
@@ -8841,9 +8840,14 @@ The CSV file should contain the following columns (header names must match exact
                 else True
             )
             if not all_selected_or_empty and "Account" in df_to_filter.columns:
-                df_filtered = df_to_filter[
+                # Keep rows that match selected accounts OR the special aggregate cash account
+                account_filter_mask = (
                     df_to_filter["Account"].isin(self.selected_accounts)
-                ].copy()
+                ) | (df_to_filter["Account"] == _AGGREGATE_CASH_ACCOUNT_NAME_)
+                df_filtered = df_to_filter[account_filter_mask].copy()
+                logging.debug(
+                    f"Applied account filter, kept {len(df_filtered)} rows including aggregate cash."
+                )
             else:
                 df_filtered = df_to_filter  # Use all if selection empty/all
 

@@ -2,7 +2,9 @@
     "transactions_file": "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/my_transactions.csv",
     "display_currency": "USD",
     "show_closed": false,
-    "selected_accounts": [],
+    "selected_accounts": [
+        "E*TRADE"
+    ],
     "load_on_startup": true,
     "fmp_api_key": "wWwpekF6q72Ekd3tf0YRT26hkjHPHoPQ",
     "account_currency_map": {
