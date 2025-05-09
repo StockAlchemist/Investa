@@ -53,7 +53,7 @@ Before you can start crunching numbers, there are a couple of preliminary steps:
     Open your terminal, make sure your virtual environment is active (if you're using one), and navigate to the Investa project directory. Then run:
 
     ```bash
-    python /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/main_gui.py
+    python main_gui.py
     ```
 
 2. **Select Your Transactions File:**

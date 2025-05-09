@@ -123,7 +123,7 @@ Here's a quick overview:
 1. **Run the application:**
 
     ```bash
-    python /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/main_gui.py
+    python main_gui.py
     ```
 
 2. **Select Transactions File:**
@@ -154,7 +154,7 @@ If you wish to package Investa as a standalone macOS application (`.app` bundle)
 3. **Generate a Spec File:**
 
     ```bash
-    pyi-makespec --name Investa --windowed --noconfirm /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/main_gui.py
+    pyi-makespec --name Investa --windowed --noconfirm main_gui.py
     ```
 
 4. **Modify `Investa.spec`:**
