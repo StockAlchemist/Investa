@@ -25,7 +25,6 @@ test_save.csv
 build
 dist
 .venv
-my_transactions
 coding_plan*
 main_gui.py.lprof
 __pycache__/
@@ -35,6 +34,4 @@ style_dark*
 .pytest_cache
 csv_backups
 .gitignore
-
-
 my_transactions.csv
