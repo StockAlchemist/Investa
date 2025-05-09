@@ -365,7 +365,8 @@ else:  # Fallback if QStandardPaths fails (less likely on macOS)
     CONFIG_FILE = os.path.join(USER_SPECIFIC_APP_FOLDER, "gui_config.json")
     MANUAL_PRICE_FILE = os.path.join(USER_SPECIFIC_APP_FOLDER, "manual_prices.json")
 
-DEFAULT_API_KEY = os.getenv("FMP_API_KEY")  # Optional API key from environment
+# DEFAULT_API_KEY = os.getenv("FMP_API_KEY")  # Optional API key from environment
+DEFAULT_API_KEY = ""
 CONFIG_FILE = resource_path("gui_config.json")  # Configuration file name
 CHART_MAX_SLICES = 10  # Max slices before grouping into 'Other' in pie charts
 PIE_CHART_FIG_SIZE = (5.0, 2.5)  # Figure size for pie charts
@@ -4800,10 +4801,10 @@ The CSV file should contain the following columns (header names must match exact
     def save_config(self):
         """Saves the current application configuration to gui_config.json."""
         self.config["transactions_file"] = self.transactions_file
-        if self.fmp_api_key:
-            self.config["fmp_api_key"] = self.fmp_api_key
-        else:
-            self.config.pop("fmp_api_key", None)
+        # Ensure fmp_api_key is NOT saved to the config file
+        self.config.pop(
+            "fmp_api_key", None
+        )  # Remove it if it exists from a previous load
         self.config["display_currency"] = self.currency_combo.currentText()
         self.config["show_closed"] = self.show_closed_check.isChecked()
         # Save list of selected accounts

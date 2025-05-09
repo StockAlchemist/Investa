@@ -1,31 +1,21 @@
 {
-    "transactions_file": "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/my_transactions.csv",
+    "transactions_file": "my_transactions.csv",
     "display_currency": "USD",
     "show_closed": false,
     "selected_accounts": [],
     "load_on_startup": true,
-    "fmp_api_key": "wWwpekF6q72Ekd3tf0YRT26hkjHPHoPQ",
     "account_currency_map": {
-        "Dime!": "USD",
-        "E*TRADE": "USD",
-        "IBKR": "USD",
-        "ING Direct": "USD",
-        "Penson": "USD",
-        "SET": "THB",
-        "Sharebuilder": "USD",
-        "TD Ameritrade": "USD"
+        "SET": "THB"
     },
     "default_currency": "USD",
-    "graph_start_date": "2010-01-01",
-    "graph_end_date": "2025-04-25",
-    "graph_interval": "D",
+    "graph_start_date": "2023-05-11",
+    "graph_end_date": "2025-05-10",
+    "graph_interval": "W",
     "graph_benchmarks": [
-        "SPY",
-        "QQQ",
-        "DIA"
+        "SPY"
     ],
     "column_visibility": {
-        "Account": false,
+        "Account": true,
         "Symbol": true,
         "Quantity": true,
         "Day Chg": true,
@@ -38,12 +28,12 @@
         "Unreal. G/L %": true,
         "Real. G/L": true,
         "Divs": true,
-        "Fees": false,
+        "Fees": true,
         "Total G/L": true,
         "Total Ret %": true,
         "IRR (%)": true,
-        "Yield (Cost) %": false,
-        "Yield (Mkt) %": false,
+        "Yield (Cost) %": true,
+        "Yield (Mkt) %": true,
         "Est. Income": true
     },
     "bar_periods_annual": 10,
