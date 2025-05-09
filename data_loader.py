@@ -22,8 +22,7 @@ except ImportError:
  Name:          data_loader.py
  Purpose:       Handles loading and cleaning of transaction data from CSV.
 
- Author:        Kit Matan (Derived from portfolio_logic.py)
- Created:       [Date you create this file]
+ Author:        Kit Matan (Derived from portfolio_logic.py) and Google Gemini 2.5
  Copyright:     (c) Kittiwit Matan 2025
  Licence:       MIT
 -------------------------------------------------------------------------------

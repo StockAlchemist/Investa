@@ -6,10 +6,9 @@
                 Includes IRR/NPV calculations, currency conversion helpers,
                 cash flow generation, historical price lookups, and file hashing.
 
- Author:        Kit Matan (Derived from portfolio_logic.py)
+ Author:        Kit Matan (Derived from portfolio_logic.py) and Google Gemini 2.5
  Author Email:  kittiwit@gmail.com
 
- Created:       [Date you create this file]
  Copyright:     (c) Kittiwit Matan 2025
  Licence:       MIT
 -------------------------------------------------------------------------------

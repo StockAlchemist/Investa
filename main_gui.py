@@ -5,7 +5,7 @@
  Purpose:       Main application window and GUI logic for Investa Portfolio Dashboard.
                 Handles UI elements, user interaction, background tasks, and visualization.
 
- Author:        Kit Matan
+ Author:        Kit Matan and Google Gemini 2.5
  Author Email:  kittiwit@gmail.com
 
  Created:       26/04/2025

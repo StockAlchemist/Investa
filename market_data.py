@@ -101,7 +101,7 @@ except ImportError:
  Purpose:       Handles fetching and caching of market data (prices, FX, indices)
                 using yfinance. Encapsulates logic previously in portfolio_logic.py.
 
- Author:        Kit Matan (Derived from portfolio_logic.py)
+ Author:        Kit Matan (Derived from portfolio_logic.py) and Google Gemini 2.5
  Created:       [Date you create this file, e.g., 29/04/2025]
  Copyright:     (c) Kittiwit Matan 2025
  Licence:       MIT

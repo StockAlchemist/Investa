@@ -4,10 +4,9 @@
  Name:          config.py
  Purpose:       Configuration constants for the Investa Portfolio Dashboard.
 
- Author:        Kit Matan (Derived from portfolio_logic.py)
+ Author:        Kit Matan (Derived from portfolio_logic.py) and Google Gemini 2.5
  Author Email:  kittiwit@gmail.com
 
- Created:       [Date you create this file]
  Copyright:     (c) Kittiwit Matan 2025
  Licence:       MIT
 -------------------------------------------------------------------------------

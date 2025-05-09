@@ -6,11 +6,11 @@
                 holdings, cash balances, and summary metrics from transactions
                 and market data. (Refactored from portfolio_logic.py)
 
- Author:        Kit Matan (Derived from portfolio_logic.py)
+ Author:        Kit Matan (Derived from portfolio_logic.py) and Google Gemini 2.5
  Author Email:  kittiwit@gmail.com
 
  Created:       29/04/2025
- Modified:      2025-04-30 # <-- Updated modification date
+ Modified:      2025-04-30
  Copyright:     (c) Kittiwit Matan 2025
  Licence:       MIT
 -------------------------------------------------------------------------------
