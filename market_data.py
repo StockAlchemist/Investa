@@ -980,27 +980,40 @@ class MarketDataProvider:
         )
         return historical_data
 
-    # --- Historical Cache Helpers ---
     def _load_historical_cache(
         self, cache_file: str, cache_key: str
     ) -> Tuple[Optional[Dict], bool]:
-        """Loads historical data (prices and FX) from a JSON cache file if the key matches."""
+        """
+        Loads historical data (prices and FX) from a JSON cache file if the key matches.
+        Logs detailed information about the cache loading attempt.
+        """
+        logging.info(
+            f"Hist Cache Load: Attempting to load cache. File='{cache_file}', Expected Key='{cache_key[:50]}...'"
+        )
         if not cache_file or not os.path.exists(cache_file):
+            logging.info("Hist Cache Load: Cache MISS (file not found).")
             return None, False  # Cache doesn't exist
 
-        logging.info(f"Hist Cache: Attempting to load cache: {cache_file}")
         try:
             with open(cache_file, "r") as f:
                 cached_data = json.load(f)
-            if cached_data.get("cache_key") == cache_key:
-                logging.info("Hist Cache: Cache key MATCH. Data loaded.")
+
+            loaded_cache_key = cached_data.get("cache_key")
+            logging.info(
+                f"Hist Cache Load: File exists. Found Key='{str(loaded_cache_key)[:50]}...'"
+            )
+
+            if loaded_cache_key == cache_key:
+                logging.info("Hist Cache Load: Cache HIT (key MATCH). Data loaded.")
                 return cached_data, True  # Return loaded data and valid flag
             else:
-                logging.info("Hist Cache: Cache key MISMATCH. Ignoring cache.")
+                logging.info(
+                    "Hist Cache Load: Cache MISS (key MISMATCH). Ignoring cache."
+                )
                 return None, False
         except Exception as e:
             logging.error(
-                f"Error reading hist cache {cache_file}: {e}. Ignoring cache."
+                f"Hist Cache Load: Cache MISS (Error reading file '{cache_file}'): {e}. Ignoring cache."
             )
             return None, False
 
@@ -1012,12 +1025,14 @@ class MarketDataProvider:
             logging.error("Hist Cache: Invalid arguments for saving cache.")
             return
 
-        logging.info(f"Hist Cache: Saving updated raw data to cache: {cache_file}")
         cache_content = {
             "cache_key": cache_key,
             "timestamp": datetime.now().isoformat(),
             **data_to_cache,  # Merge the data (e.g., {"historical_prices": ..., "historical_fx_rates": ...})
         }
+        logging.info(
+            f"Hist Cache Save: Saving data to cache. File='{cache_file}', Key='{cache_key[:50]}...', Sections: {list(data_to_cache.keys())}"
+        )
         try:
             cache_dir = os.path.dirname(cache_file)
             if cache_dir:
@@ -1025,7 +1040,9 @@ class MarketDataProvider:
             with open(cache_file, "w") as f:
                 json.dump(cache_content, f, indent=2)  # Use indent for readability
         except Exception as e:
-            logging.error(f"Error writing hist cache: {e}")
+            logging.error(
+                f"Hist Cache Save: Error writing cache file '{cache_file}': {e}"
+            )
 
     def _deserialize_historical_data(
         self, cached_data: Dict, key_name: str, expected_keys: List[str]
@@ -1034,6 +1051,9 @@ class MarketDataProvider:
         deserialized_dict = {}
         data_section = cached_data.get(key_name, {})
         if not isinstance(data_section, dict):
+            logging.warning(
+                f"Hist Cache Deserialize: Section '{key_name}' is not a dict or missing."
+            )
             return {}  # Invalid section
 
         for expected_key in expected_keys:
@@ -1053,10 +1073,16 @@ class MarketDataProvider:
                     logging.debug(
                         f"DEBUG: Error deserializing cached {key_name} for {expected_key}: {e_deser}"
                     )
+            # Log success or failure of deserialization for this key
+            status_msg = (
+                "successfully" if not df.empty else "as empty DataFrame (or failed)"
+            )
+            logging.debug(
+                f"Hist Cache Deserialize: Deserialized '{expected_key}' from section '{key_name}' {status_msg}."
+            )
             deserialized_dict[expected_key] = df  # Store df (even if empty)
         return deserialized_dict
 
-    # --- Public Historical Methods ---
     def get_historical_data(
         self,
         symbols_yf: List[str],
@@ -1121,21 +1147,27 @@ class MarketDataProvider:
                 historical_prices_yf_adjusted = self._deserialize_historical_data(
                     cache_data_loaded, "historical_prices", symbols_yf
                 )
+                logging.info(
+                    f"Hist Prices: Loaded {len(historical_prices_yf_adjusted)} price series from cache for {len(symbols_yf)} requested symbols."
+                )
                 # Check if all requested symbols were actually loaded from cache
                 if not all(s in historical_prices_yf_adjusted for s in symbols_yf):
                     logging.warning(
-                        "Hist Cache: Price cache valid but incomplete. Will fetch missing."
+                        "Hist Prices Cache: Price cache valid but seems incomplete based on initial symbol list. Will verify and fetch missing if needed."
                     )
                     cache_valid_raw = False  # Mark as invalid to trigger fetch
             elif cache_data_loaded is None and cache_valid_raw is False:
-                logging.info(
-                    "Hist Cache: Cache file not found or key mismatch."
-                )  # Already logged by helper
+                # This case is already logged by _load_historical_cache
+                pass
             elif cache_valid_raw is True and cache_data_loaded is None:
                 logging.error(
-                    "Hist Cache: Logic error - cache marked valid but no data loaded."
+                    "Hist Prices Cache: Logic error - cache marked valid but no data loaded."
                 )
                 cache_valid_raw = False  # Treat as invalid
+            else:  # Cache was not valid
+                logging.info(
+                    "Hist Prices: Cache not valid or not used. Will proceed to fetch logic."
+                )
 
         # --- 2. Fetch Missing Data if Cache Invalid/Incomplete ---
         if not cache_valid_raw:
@@ -1147,7 +1179,9 @@ class MarketDataProvider:
                 or historical_prices_yf_adjusted[s].empty
             ]
 
-            if symbols_needing_fetch:
+            if (
+                symbols_needing_fetch
+            ):  # This block will run if cache_valid_raw is False OR if symbols_needing_fetch is non-empty
                 logging.info(
                     f"Hist Prices: Fetching {len(symbols_needing_fetch)} stock/benchmark symbols..."
                 )
@@ -1155,6 +1189,9 @@ class MarketDataProvider:
                     symbols_needing_fetch, start_date, end_date
                 )
                 historical_prices_yf_adjusted.update(fetched_stock_data)
+                logging.info(
+                    f"Hist Prices: Fetch completed. Total series in memory now: {len(historical_prices_yf_adjusted)}."
+                )
             else:
                 logging.info(
                     "Hist Prices: All stock/benchmark symbols found in cache or not needed."
@@ -1275,12 +1312,12 @@ class MarketDataProvider:
                 # --- MODIFICATION START: Check completeness immediately after load ---
                 fx_needing_fetch = [
                     p
-                    for p in fx_pairs_yf
+                    for p in fx_pairs_yf  # Check against all originally requested pairs
                     if p not in historical_fx_yf or historical_fx_yf[p].empty
                 ]
                 if fx_needing_fetch:
                     logging.info(  # Changed from warning to info
-                        f"Hist FX Cache: Cache valid but incomplete. Missing/empty FX pairs: {fx_needing_fetch}. Will fetch missing."
+                        f"Hist FX Cache: Cache valid but incomplete for originally requested pairs. Missing/empty: {fx_needing_fetch}. Will attempt to fetch these."
                     )
                     # Keep cache_valid_initially=True, but fx_needing_fetch will trigger fetch below
                 else:
@@ -1289,15 +1326,19 @@ class MarketDataProvider:
                     )
                 # --- MODIFICATION END ---
             elif cache_data_loaded is None and not cache_valid_initially:
-                logging.info("Hist FX Cache: Cache file not found or key mismatch.")
+                # This case is already logged by _load_historical_cache
                 fx_needing_fetch = list(fx_pairs_yf)  # Need to fetch all
             elif cache_valid_initially and cache_data_loaded is None:
                 logging.error(
                     "Hist FX Cache: Logic error - cache marked valid but no data loaded."
                 )
                 fx_needing_fetch = list(fx_pairs_yf)  # Need to fetch all
-            else:  # Cache disabled or file/key invalid
+            else:  # Cache was not valid (e.g. key mismatch)
+                logging.info(
+                    "Hist FX: Cache not valid. Will fetch all required FX pairs."
+                )
                 fx_needing_fetch = list(fx_pairs_yf)  # Need to fetch all
+
         else:  # Cache disabled or file/key invalid
             logging.info(
                 "Hist FX Cache: Cache disabled or file/key not provided. Will fetch all."
@@ -1315,6 +1356,9 @@ class MarketDataProvider:
                 fx_needing_fetch, start_date, end_date
             )
             historical_fx_yf.update(fetched_fx_data)  # Update dict with fetched data
+            logging.info(
+                f"Hist FX: Fetch completed. Total FX series in memory now: {len(historical_fx_yf)}."
+            )
 
             # --- Validation after fetch ---
             final_fx_missing_after_fetch = [
@@ -1329,7 +1373,6 @@ class MarketDataProvider:
                 fetch_failed = True  # Missing ANY required FX is critical
         else:
             logging.info("Hist FX: No FX pairs needed fetching.")
-        # --- END MODIFICATION ---
 
         # --- 3. Update Cache if Fetch Occurred and Cache Enabled ---
         if fetch_occurred and use_cache and cache_file and cache_key:
