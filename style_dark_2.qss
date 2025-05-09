@@ -215,7 +215,7 @@ QTableView#HoldingsTable {
     /* Bright text for selection */
     font-size: 10pt;
 }
-
+ 
 QTableView#HoldingsTable::item {
     padding: 3px 5px;
     border: none;
