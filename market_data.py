@@ -11,6 +11,17 @@ import requests  # Keep for potential future use
 import traceback  # For detailed error logging
 from io import StringIO  # For historical cache loading
 import hashlib  # For cache key hashing
+
+# --- ADDED: Import line_profiler if available, otherwise create dummy decorator ---
+try:
+    from line_profiler import profile
+except ImportError:
+
+    def profile(func):
+        return func  # No-op decorator if line_profiler not installed
+
+
+# --- END ADDED ---
 from PySide6.QtCore import QStandardPaths  # For standard directory locations
 
 # --- Finance API Import ---
@@ -403,7 +414,7 @@ class MarketDataProvider:
                         has_warnings = (
                             True  # Treat individual ticker errors as warnings for now
                         )
-                    time.sleep(0.2)  # Add small delay after each ticker info fetch
+                    # time.sleep(0.2)  # Add small delay after each ticker info fetch
 
             except (
                 yf.exceptions.YFRateLimitError
@@ -541,8 +552,8 @@ class MarketDataProvider:
                             logging.error(
                                 f"Error fetching info for FX pair {yf_symbol}: {e_fx_ticker}"
                             )
-                        time.sleep(0.05)  # Add small delay after each FX info fetch
-                        time.sleep(0.2)  # Add small delay after each FX info fetch
+                        # time.sleep(0.05)  # Add small delay after each FX info fetch
+                        # time.sleep(0.2)  # Add small delay after each FX info fetch
 
                 except yf.exceptions.YFRateLimitError:
                     logging.error(
@@ -814,8 +825,8 @@ class MarketDataProvider:
                             f"Error fetching info for index {yf_symbol}: {e_ticker}"
                         )
                         # Continue trying other symbols
-                    time.sleep(0.05)  # Add small delay after each index info fetch
-                    time.sleep(0.1)  # Add small delay after each index info fetch
+                    # time.sleep(0.05)  # Add small delay after each index info fetch
+                    # time.sleep(0.1)  # Add small delay after each index info fetch
 
             except yf.exceptions.YFRateLimitError:
                 logging.error(
@@ -855,6 +866,7 @@ class MarketDataProvider:
         return results
 
     # --- Historical Data Fetching ---
+    @profile  # <-- ADDED @profile decorator here
     def _fetch_yf_historical_data(
         self, symbols_yf: List[str], start_date: date, end_date: date
     ) -> Dict[str, pd.DataFrame]:
@@ -961,7 +973,7 @@ class MarketDataProvider:
                 )
 
             symbols_processed += len(batch_symbols)
-            time.sleep(0.2)  # Small delay between batches
+            # time.sleep(0.2)  # Small delay between batches
 
         logging.info(
             f"Hist Fetch Helper: Finished fetching ({len(historical_data)} symbols successful)."
