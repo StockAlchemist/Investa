@@ -73,6 +73,7 @@ try:
         DEFAULT_CURRENCY,
         HISTORICAL_DEBUG_USD_CONVERSION,
         HISTORICAL_DEBUG_SET_VALUE,
+        STOCK_QUANTITY_CLOSE_TOLERANCE,  # Import new tolerance
         DEBUG_DATE_VALUE,
         HISTORICAL_DEBUG_DATE_VALUE,
         HISTORICAL_DEBUG_SYMBOL,
@@ -542,7 +543,10 @@ def calculate_portfolio_summary(
             and "Symbol" in summary_df_unfiltered.columns
         ):
             held_mask = (
-                (summary_df_unfiltered["Quantity"].abs() > 1e-9)
+                (
+                    summary_df_unfiltered["Quantity"].abs()
+                    >= STOCK_QUANTITY_CLOSE_TOLERANCE
+                )  # Use new tolerance
                 | (summary_df_unfiltered["Symbol"] == CASH_SYMBOL_CSV)
                 | (summary_df_unfiltered["Symbol"].str.startswith("Cash (", na=False))
             )
@@ -1070,6 +1074,18 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
             pass
 
     cash_summary: Dict[str, Dict] = {}
+    # --- Apply STOCK_QUANTITY_CLOSE_TOLERANCE to stock holdings before valuation ---
+    for holding_key_iter, data_iter in holdings.items():
+        sym_iter, _ = holding_key_iter
+        if sym_iter != CASH_SYMBOL_CSV:  # Only for stocks
+            qty_iter = data_iter.get("qty", 0.0)
+            if 0 < abs(qty_iter) < STOCK_QUANTITY_CLOSE_TOLERANCE:
+                if IS_DEBUG_DATE:
+                    logging.debug(
+                        f"  Applying tolerance to {holding_key_iter}, qty {qty_iter} -> 0"
+                    )
+                data_iter["qty"] = 0.0
+                # Cost basis is not explicitly tracked here for daily valuation, qty is primary
     cash_transactions = transactions_til_date[
         transactions_til_date["Symbol"] == CASH_SYMBOL_CSV
     ].copy()
@@ -1257,6 +1273,7 @@ def _calculate_holdings_numba(
     buy_to_cover_type_id,  # int
     fees_type_id,  # int
     cash_symbol_id,  # int
+    stock_qty_close_tolerance,  # float: new tolerance
     shortable_symbol_ids,  # int64 array
 ):
     # Initialize state arrays (size based on num_symbols, num_accounts)
@@ -1463,6 +1480,15 @@ def _calculate_holdings_numba(
 
         # Ignore other types like dividend for now inside Numba
 
+    # Apply stock quantity close tolerance
+    for s_id in range(num_symbols):
+        if s_id == cash_symbol_id:
+            continue
+        for a_id in range(num_accounts):
+            current_qty = holdings_qty_np[s_id, a_id]
+            if 0 < abs(current_qty) < stock_qty_close_tolerance:
+                holdings_qty_np[s_id, a_id] = 0.0
+                holdings_cost_np[s_id, a_id] = 0.0  # Also zero out cost basis
     # Return the state arrays
     return (
         holdings_qty_np,
@@ -1614,6 +1640,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             buy_to_cover_type_id,
             fees_type_id,
             cash_symbol_id,
+            STOCK_QUANTITY_CLOSE_TOLERANCE,  # Pass the tolerance
             shortable_symbol_ids,
         )
     except Exception as e_numba_call:
@@ -1891,6 +1918,7 @@ def _calculate_daily_metrics_worker(
                 type_to_id,
                 currency_to_id,
                 id_to_currency,
+                # STOCK_QUANTITY_CLOSE_TOLERANCE is implicitly passed to numba version via _calculate_daily_metrics_worker
                 method=calc_method,
             )
         )

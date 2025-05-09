@@ -33,6 +33,7 @@ try:
         CASH_SYMBOL_CSV,
         SHORTABLE_SYMBOLS,  # Used by _process_transactions...
         YFINANCE_EXCLUDED_SYMBOLS,  # Used by _build_summary_rows
+        STOCK_QUANTITY_CLOSE_TOLERANCE,  # New tolerance
         # Add any other config constants used by these specific functions if needed
     )
 except ImportError:
@@ -43,6 +44,7 @@ except ImportError:
     CASH_SYMBOL_CSV = "$CASH"
     SHORTABLE_SYMBOLS = set()
     YFINANCE_EXCLUDED_SYMBOLS = set()
+    STOCK_QUANTITY_CLOSE_TOLERANCE = 1e-9  # Fallback if config fails
 
 # --- Import Utilities ---
 try:
@@ -541,6 +543,30 @@ def _process_transactions_to_holdings(
             # --- END REMOVED DEBUG FLAG USAGE ---
             continue
 
+    # --- Apply STOCK_QUANTITY_CLOSE_TOLERANCE to final holdings ---
+    logging.debug(
+        f"Applying stock quantity close tolerance of {STOCK_QUANTITY_CLOSE_TOLERANCE}..."
+    )
+    for holding_key, data in list(
+        holdings.items()
+    ):  # Use list() for safe iteration if modifying
+        symbol, account = holding_key
+        if symbol == CASH_SYMBOL_CSV:
+            continue  # Skip cash
+
+        current_qty = data.get("qty", 0.0)
+        if 0 < abs(current_qty) < STOCK_QUANTITY_CLOSE_TOLERANCE:
+            logging.info(
+                f"Holding {symbol}/{account} qty {current_qty:.8f} is below tolerance {STOCK_QUANTITY_CLOSE_TOLERANCE}. Setting to 0."
+            )
+            data["qty"] = 0.0
+            data["total_cost_local"] = (
+                0.0  # If qty is zero, cost basis should also be zero
+            )
+            # Potentially zero out other fields if qty becomes zero, e.g., short proceeds if short position closes due to tolerance
+            if data.get("short_original_qty", 0.0) > 0 and data["qty"] == 0.0:
+                data["short_proceeds_local"] = 0.0
+                data["short_original_qty"] = 0.0
     return (
         holdings,
         dict(overall_realized_gains_local),

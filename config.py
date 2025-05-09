@@ -195,3 +195,7 @@ HISTORICAL_CALC_METHOD = "numba"  # Options: 'python', 'numba'
 HISTORICAL_COMPARE_METHODS = (
     False  # If True, worker runs both methods and logs comparison (for debugging)
 )
+
+# --- Position Closing Tolerance ---
+# If a stock's quantity is less than this (but not zero), treat it as closed.
+STOCK_QUANTITY_CLOSE_TOLERANCE = 1e-6
