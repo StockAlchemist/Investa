@@ -223,6 +223,16 @@ try:
     # --- END ADD ---
     MARKET_PROVIDER_AVAILABLE = True  # Assume available if import succeeds
     # Check if the imported function signature actually supports 'exclude_accounts'
+    # --- Import new formatting utilities from finutils ---
+    from finutils import (
+        format_currency_value,
+        format_percentage_value,
+        format_large_number_display,
+        format_integer_with_commas,
+        format_float_with_commas,
+    )
+
+    # --- End Import ---
     import inspect
 
     sig = inspect.signature(calculate_historical_performance)
@@ -1432,14 +1442,15 @@ class FundamentalDataDialog(QDialog):
         )  # Align labels to the right within group boxes
 
         # Helper to format values
-        def format_value(key, value):
+        def _dialog_format_value(
+            key, value
+        ):  # Renamed to avoid conflict if finutils.format_value existed
             if value is None or pd.isna(value):
                 return "N/A"
 
             # Get currency symbol if parent app is available
             currency_symbol = "$"  # Default
             if self._parent_app and hasattr(self._parent_app, "_get_currency_symbol"):
-                # Try to get the local currency of the symbol, fallback to display currency
                 local_curr_code = self._parent_app._get_currency_for_symbol(
                     display_symbol
                 )
@@ -1448,35 +1459,29 @@ class FundamentalDataDialog(QDialog):
                         currency_code=local_curr_code
                     )
                 else:
-                    # Fallback to display currency symbol if local currency lookup fails
                     currency_symbol = self._parent_app._get_currency_symbol()
 
             if key == "marketCap" and isinstance(value, (int, float)):
-                if value >= 1e12:
-                    return f"{currency_symbol}{value/1e12:,.2f} T"
-                elif value >= 1e9:
-                    return f"{currency_symbol}{value/1e9:,.2f} B"
-                elif value >= 1e6:
-                    return f"{currency_symbol}{value/1e6:,.2f} M"
-                else:
-                    return f"{currency_symbol}{value:,.2f}"  # Use .2f for smaller currency values too
+                return format_large_number_display(value, currency_symbol)
             elif key == "dividendYield" and isinstance(value, (int, float)):
-                return f"{value:.2f}%"  # Removed *100, f-string % does it
+                # yfinance dividendYield is a factor (0.02 for 2%). format_percentage_value expects the percentage number.
+                return format_percentage_value(value * 100.0, decimals=2)
             elif key == "dividendRate" and isinstance(value, (int, float)):
-                return f"{currency_symbol}{value:.2f}"  # Dividend rate is per share, in local currency
+                return format_currency_value(value, currency_symbol, decimals=2)
             elif key in ["fiftyTwoWeekHigh", "fiftyTwoWeekLow"] and isinstance(
                 value, (int, float)
             ):
-                return f"{currency_symbol}{value:.2f}"  # Price stats in local currency
+                return format_currency_value(value, currency_symbol, decimals=2)
             elif key in [
                 "regularMarketVolume",
                 "averageVolume",
                 "averageVolume10days",
                 "fullTimeEmployees",
             ] and isinstance(value, (int, float)):
-                return f"{value:,.0f}"  # Integer formatting with commas
+                return format_integer_with_commas(value)
             elif isinstance(value, (int, float)):
-                return f"{value:.2f}"  # Default numeric formatting
+                # For PE, EPS, Beta - general float formatting
+                return format_float_with_commas(value, decimals=2)
             else:
                 return str(value)
 
@@ -1495,7 +1500,8 @@ class FundamentalDataDialog(QDialog):
         for key, friendly_name in overview_fields:
             value = fundamental_data_dict.get(key)
             layout_overview.addRow(
-                QLabel(f"<b>{friendly_name}:</b>"), QLabel(format_value(key, value))
+                QLabel(f"<b>{friendly_name}:</b>"),
+                QLabel(_dialog_format_value(key, value)),
             )
         form_layout.addRow(group_overview)
 
@@ -1515,7 +1521,8 @@ class FundamentalDataDialog(QDialog):
         for key, friendly_name in valuation_fields:
             value = fundamental_data_dict.get(key)
             layout_valuation.addRow(
-                QLabel(f"<b>{friendly_name}:</b>"), QLabel(format_value(key, value))
+                QLabel(f"<b>{friendly_name}:</b>"),
+                QLabel(_dialog_format_value(key, value)),
             )
         form_layout.addRow(group_valuation)
 
@@ -1530,8 +1537,9 @@ class FundamentalDataDialog(QDialog):
         ]
         for key, friendly_name in dividend_fields:
             value = fundamental_data_dict.get(key)
-            layout_dividend.addRow(
-                QLabel(f"<b>{friendly_name}:</b>"), QLabel(format_value(key, value))
+            layout_valuation.addRow(
+                QLabel(f"<b>{friendly_name}:</b>"),
+                QLabel(_dialog_format_value(key, value)),
             )
         form_layout.addRow(group_dividend)
 
@@ -1567,11 +1575,12 @@ class FundamentalDataDialog(QDialog):
                 value_avg = fundamental_data_dict.get("averageVolume")
                 layout_price_stats.addRow(
                     QLabel(f"<b>{friendly_name}:</b>"),
-                    QLabel(format_value("averageVolume", value_avg)),
+                    QLabel(_dialog_format_value("averageVolume", value_avg)),
                 )
             else:
                 layout_price_stats.addRow(
-                    QLabel(f"<b>{friendly_name}:</b>"), QLabel(format_value(key, value))
+                    QLabel(f"<b>{friendly_name}:</b>"),
+                    QLabel(_dialog_format_value(key, value)),
                 )
         form_layout.addRow(group_price_stats)
 

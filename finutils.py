@@ -937,3 +937,110 @@ def safe_sum(df, col):
     except Exception as e:
         logging.error(f"Error in safe_sum for column {col}: {e}")
         return 0.0
+
+
+# --- Value Formatting Utilities ---
+
+
+def format_currency_value(
+    value: Optional[float],
+    currency_symbol: str = "$",
+    decimals: int = 2,
+    show_plus_sign: bool = False,
+    is_abs: bool = False,  # If true, formats absolute value
+) -> str:
+    """Formats a numeric value as a currency string."""
+    if value is None or pd.isna(value):
+        return "N/A"
+    try:
+        val_to_format = abs(float(value)) if is_abs else float(value)
+        if (
+            abs(val_to_format) < 1e-9 and not is_abs
+        ):  # Treat near-zero as zero unless we want absolute display
+            val_to_format = 0.0
+
+        sign = ""
+        if (
+            show_plus_sign and val_to_format > 1e-9
+        ):  # Only show plus for positive non-zero
+            sign = "+"
+        elif (
+            val_to_format < -1e-9
+        ):  # Negative sign is handled by f-string if not is_abs
+            pass  # Negative sign will be part of the number
+
+        formatted_num = f"{val_to_format:,.{decimals}f}"
+        return (
+            f"{sign}{currency_symbol}{formatted_num}"
+            if not is_abs
+            else f"{currency_symbol}{formatted_num}"
+        )
+    except (ValueError, TypeError):
+        return "N/A"
+
+
+def format_percentage_value(
+    value: Optional[float], decimals: int = 2, show_plus_sign: bool = False
+) -> str:
+    """Formats a numeric value (decimal fraction) as a percentage string."""
+    if value is None or pd.isna(value):
+        return "N/A"
+    try:
+        val_float = float(value)
+        if np.isinf(val_float):
+            return "Inf %"
+
+        sign = ""
+        # For percentages, value is already scaled (e.g., 25.0 for 25%).
+        # If it's a factor (e.g., 0.25 for 25%), multiply by 100 first.
+        # Assuming 'value' is already the percentage number (e.g., 2.5 for 2.5%)
+        # If it's a factor (e.g. 0.025 for 2.5%), then it should be multiplied by 100.
+        # Let's assume for now 'value' is the actual percentage number.
+        # If it's consistently a factor, we'd add: val_float *= 100
+
+        if show_plus_sign and val_float > 1e-9:
+            sign = "+"
+
+        return f"{sign}{val_float:,.{decimals}f}%"
+    except (ValueError, TypeError):
+        return "N/A"
+
+
+def format_large_number_display(
+    value: Optional[float], currency_symbol: str = "$", decimals: int = 2
+) -> str:
+    """Formats large numbers with T, B, M suffixes (e.g., for Market Cap)."""
+    if value is None or pd.isna(value):
+        return "N/A"
+    try:
+        val_float = float(value)
+        if val_float >= 1e12:
+            return f"{currency_symbol}{val_float/1e12:,.{decimals}f} T"
+        elif val_float >= 1e9:
+            return f"{currency_symbol}{val_float/1e9:,.{decimals}f} B"
+        elif val_float >= 1e6:
+            return f"{currency_symbol}{val_float/1e6:,.{decimals}f} M"
+        else:
+            return f"{currency_symbol}{val_float:,.{decimals}f}"  # Default to standard currency format
+    except (ValueError, TypeError):
+        return "N/A"
+
+
+def format_integer_with_commas(value: Optional[float]) -> str:
+    """Formats a number as an integer string with commas."""
+    if value is None or pd.isna(value):
+        return "N/A"
+    try:
+        return f"{int(round(float(value))):,}"
+    except (ValueError, TypeError):
+        return "N/A"
+
+
+def format_float_with_commas(value: Optional[float], decimals: int = 2) -> str:
+    """Formats a float string with commas and specified decimal places."""
+    if value is None or pd.isna(value):
+        return "N/A"
+    try:
+        return f"{float(value):,.{decimals}f}"
+    except (ValueError, TypeError):
+        return "N/A"
