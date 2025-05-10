@@ -182,6 +182,10 @@ YFINANCE_EXCLUDED_SYMBOLS = {
     "ES-FIXED_INCOME",
     "ES-TRESURY",
     "BEM:BKK",
+    "DIA",
+    "SPY",
+    "QQQ",
+    "LQD",
 }
 
 # Set of symbols allowed for short selling logic

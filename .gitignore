@@ -45,3 +45,6 @@ style_dark_1.qss
 style_dark_2.qss
 csv_backups/my_transactions_20250505_143412.csv
 csv_backups/my_transactions_20250505_145515.csv
+my_transactions_backup.csv
+modify_csv.py
+my_transactions_processed_v2.csv
