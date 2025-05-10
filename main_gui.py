@@ -396,19 +396,21 @@ DEFAULT_GRAPH_START_DATE = date.today() - timedelta(
 DEFAULT_GRAPH_END_DATE = date.today()  # Default end today
 DEFAULT_GRAPH_INTERVAL = "W"  # Default interval Weekly
 DEFAULT_GRAPH_BENCHMARKS = ["SPY"]  # Default to a list with SPY benchmark
-# --- Benchmark Options ---
-BENCHMARK_OPTIONS = [
-    "SPY",
-    "QQQ",
-    "DIA",
-    "^SP500TR",
-    "^GSPC",
-    "VT",
-    "IWM",
-    "EFA",
-    "TLT",
-    "AGG",
-]  # Available benchmark choices
+# --- Benchmark Definitions ---
+BENCHMARK_MAPPING = {
+    "S&P 500 Index": "^GSPC",
+    "NASDAQ Composite": "^IXIC",
+    "Dow Jones Industrial Avg": "^DJI",
+    "Russell 2000 Index": "^RUT",
+    "SPY (S&P 500 ETF)": "SPY",
+    "QQQ (Nasdaq 100 ETF)": "QQQ",
+    "DIA (Dow Jones ETF)": "DIA",
+    "S&P 500 Total Return": "^SP500TR",
+}
+BENCHMARK_OPTIONS_DISPLAY = sorted(
+    list(BENCHMARK_MAPPING.keys())
+)  # For UI display order
+DEFAULT_GRAPH_BENCHMARKS = ["S&P 500 Index"]  # Default to a user-friendly name
 
 # --- Theme Colors ---
 # Define color palette for styling the UI (Minimal Theme)
@@ -3529,7 +3531,9 @@ class PortfolioApp(QMainWindow):
                         valid_benchmarks = [
                             b
                             for b in config["graph_benchmarks"]
-                            if isinstance(b, str) and b in BENCHMARK_OPTIONS
+                            if isinstance(b, str)
+                            and b
+                            in BENCHMARK_OPTIONS_DISPLAY  # Use display names for validation
                         ]
                         config["graph_benchmarks"] = valid_benchmarks
                     else:
@@ -4331,10 +4335,17 @@ The CSV file should contain the following columns (header names must match exact
         self.selected_benchmarks = self.config.get(
             "graph_benchmarks", DEFAULT_GRAPH_BENCHMARKS
         )
-        if not isinstance(self.selected_benchmarks, list):
+        if not isinstance(self.selected_benchmarks, list) or not all(
+            isinstance(item, str) for item in self.selected_benchmarks
+        ):
             self.selected_benchmarks = DEFAULT_GRAPH_BENCHMARKS
-        elif not self.selected_benchmarks and BENCHMARK_OPTIONS:
-            self.selected_benchmarks = [BENCHMARK_OPTIONS[0]]
+        elif (
+            not self.selected_benchmarks and BENCHMARK_OPTIONS_DISPLAY
+        ):  # Use BENCHMARK_OPTIONS_DISPLAY
+            # If BENCHMARK_OPTIONS_DISPLAY is not empty, use its first item, else empty list
+            self.selected_benchmarks = (
+                [BENCHMARK_OPTIONS_DISPLAY[0]] if BENCHMARK_OPTIONS_DISPLAY else []
+            )
 
         self.all_possible_ui_columns = list(get_column_definitions().keys())
         self.column_visibility: Dict[str, bool] = self.config.get(
@@ -4392,7 +4403,7 @@ The CSV file should contain the following columns (header names must match exact
         if not self.selected_benchmarks:
             text = "Select Benchmarks"
         elif len(self.selected_benchmarks) == 1:
-            text = f"Bench: {self.selected_benchmarks[0]}"
+            text = f"Bench: {self.selected_benchmarks[0]}"  # This is now a display name
         else:
             # Show count and first few benchmarks
             text = f"Bench ({len(self.selected_benchmarks)}): {', '.join(self.selected_benchmarks[:2])}"
@@ -4407,7 +4418,7 @@ The CSV file should contain the following columns (header names must match exact
             self.benchmark_select_button.setToolTip(tooltip_text)
 
     @Slot(str, bool)
-    def toggle_benchmark_selection(self, symbol: str, is_checked: bool):
+    def toggle_benchmark_selection(self, display_name: str, is_checked: bool):
         """
         Adds or removes a benchmark symbol from the selected list.
 
@@ -4417,21 +4428,23 @@ The CSV file should contain the following columns (header names must match exact
         Args:
             symbol (str): The benchmark symbol (e.g., "SPY") being toggled.
             is_checked (bool): True if the benchmark is being selected, False if deselected.
-        """
+        """  # display_name is the user-friendly name
         # ... (IMPORTANT: This should NOT call refresh_data anymore) ...
         if not hasattr(self, "selected_benchmarks"):
             self.selected_benchmarks = DEFAULT_GRAPH_BENCHMARKS
         if is_checked:
-            if symbol not in self.selected_benchmarks:
-                self.selected_benchmarks.append(symbol)
+            if display_name not in self.selected_benchmarks:
+                self.selected_benchmarks.append(display_name)
         else:
-            if symbol in self.selected_benchmarks:
-                self.selected_benchmarks.remove(symbol)
+            if display_name in self.selected_benchmarks:
+                self.selected_benchmarks.remove(display_name)
         try:
             self.selected_benchmarks.sort(
                 key=lambda b: (
-                    BENCHMARK_OPTIONS.index(b)
-                    if b in BENCHMARK_OPTIONS
+                    BENCHMARK_OPTIONS_DISPLAY.index(
+                        b
+                    )  # Sort by the order in BENCHMARK_OPTIONS_DISPLAY
+                    if b in BENCHMARK_OPTIONS_DISPLAY
                     else float("inf")
                 )
             )
@@ -4450,16 +4463,16 @@ The CSV file should contain the following columns (header names must match exact
         menu.setStyleSheet(self.styleSheet())  # Apply style
 
         # Create a checkable action for each available benchmark option
-        for benchmark_symbol in BENCHMARK_OPTIONS:
-            action = QAction(benchmark_symbol, self)
-            action.setCheckable(True)
+        for display_name in BENCHMARK_OPTIONS_DISPLAY:  # Iterate over display names
+            action = QAction(display_name, self)
+            action.setCheckable(True)  # benchmark_symbol here is a display name
             # Check the action if the symbol is currently in our selected list
-            action.setChecked(benchmark_symbol in self.selected_benchmarks)
+            action.setChecked(display_name in self.selected_benchmarks)
             # Connect the action's triggered signal to the toggle function
             # Use a lambda to pass the specific benchmark symbol being toggled
             action.triggered.connect(
-                lambda checked, symbol=benchmark_symbol: self.toggle_benchmark_selection(
-                    symbol, checked
+                lambda checked, name=display_name: self.toggle_benchmark_selection(  # Pass display name
+                    name, checked
                 )
             )
             menu.addAction(action)
@@ -4930,13 +4943,17 @@ The CSV file should contain the following columns (header names must match exact
         self.selected_benchmarks = self.config.get(
             "graph_benchmarks", DEFAULT_GRAPH_BENCHMARKS
         )
-        # Validate and default benchmarks if needed
-        if not isinstance(self.selected_benchmarks, list):
+        if not isinstance(self.selected_benchmarks, list) or not all(
+            isinstance(item, str) for item in self.selected_benchmarks
+        ):  # This line is different from the diff context
             self.selected_benchmarks = DEFAULT_GRAPH_BENCHMARKS
         elif (
-            not self.selected_benchmarks and BENCHMARK_OPTIONS
-        ):  # Ensure default if list is empty
-            self.selected_benchmarks = [BENCHMARK_OPTIONS[0]]
+            not self.selected_benchmarks and BENCHMARK_OPTIONS_DISPLAY
+        ):  # Use BENCHMARK_OPTIONS_DISPLAY
+            # If BENCHMARK_OPTIONS_DISPLAY is not empty, use its first item, else empty list
+            self.selected_benchmarks = (
+                [BENCHMARK_OPTIONS_DISPLAY[0]] if BENCHMARK_OPTIONS_DISPLAY else []
+            )
 
         # --- Column Visibility State ---
         # Initialize self.column_visibility before calling _ensure_all_columns...
@@ -5753,8 +5770,13 @@ The CSV file should contain the following columns (header names must match exact
                 # Validate selected accounts against the newly available ones
                 valid_selected_accounts = [
                     acc
-                    for acc in self.selected_accounts
+                    for acc in self.selected_benchmarks  # This should be self.selected_accounts
                     if acc in self.available_accounts
+                ]
+                valid_selected_benchmarks = [  # Corrected variable name
+                    b
+                    for b in self.selected_benchmarks
+                    if b in BENCHMARK_OPTIONS_DISPLAY
                 ]
                 if len(valid_selected_accounts) != len(self.selected_accounts):
                     logging.warning(
@@ -5819,7 +5841,14 @@ The CSV file should contain the following columns (header names must match exact
         start_date = self.graph_start_date_edit.date().toPython()
         end_date = self.graph_end_date_edit.date().toPython()
         interval = self.graph_interval_combo.currentText()
-        selected_benchmarks_list = self.selected_benchmarks
+
+        # Map selected display names to YF tickers for the worker
+        selected_benchmark_tickers = [
+            BENCHMARK_MAPPING.get(name)
+            for name in self.selected_benchmarks
+            if BENCHMARK_MAPPING.get(name)  # Ensure mapping exists and is not None
+        ]
+
         api_key = self.fmp_api_key
 
         # Use the validated selected_accounts (or None for all)
@@ -5833,10 +5862,15 @@ The CSV file should contain the following columns (header names must match exact
             )
             self.calculation_finished()
             return
-        if not selected_benchmarks_list:
-            selected_benchmarks_list = DEFAULT_GRAPH_BENCHMARKS
+        if not selected_benchmark_tickers:  # Check if the ticker list is empty
+            # If no valid tickers, perhaps default to SPY ticker or an empty list
+            selected_benchmark_tickers = (
+                [BENCHMARK_MAPPING.get(DEFAULT_GRAPH_BENCHMARKS[0], "SPY")]
+                if DEFAULT_GRAPH_BENCHMARKS
+                else ["SPY"]
+            )
             logging.warning(
-                f"No benchmarks selected, using default: {selected_benchmarks_list}"
+                f"No valid benchmarks selected or mapped, using default ticker(s): {selected_benchmark_tickers}"
             )
 
         # Determine accounts to exclude for historical calc if supported
@@ -5861,7 +5895,7 @@ The CSV file should contain the following columns (header names must match exact
             else ""
         )
         logging.info(
-            f"Graph Params: Start={start_date}, End={end_date}, Interval={interval}, Benchmarks={selected_benchmarks_list}{exclude_log_msg}"
+            f"Graph Params: Start={start_date}, End={end_date}, Interval={interval}, Benchmarks (Tickers)={selected_benchmark_tickers}{exclude_log_msg}"
         )
 
         # --- Worker Setup (MODIFIED) ---
@@ -5883,7 +5917,7 @@ The CSV file should contain the following columns (header names must match exact
             "start_date": start_date,
             "end_date": end_date,
             "interval": interval,
-            "benchmark_symbols_yf": selected_benchmarks_list,
+            "benchmark_symbols_yf": selected_benchmark_tickers,  # Pass the list of YF tickers
             "display_currency": display_currency,
             "account_currency_map": account_map,
             "default_currency": def_currency,
@@ -6118,10 +6152,15 @@ The CSV file should contain the following columns (header names must match exact
             and not self.full_historical_data.empty
         ):  # Explicit type check
             logging.info("Calculating periodic returns for bar charts...")
-            # --- ADD TRY-EXCEPT around periodic calculation ---
-            # --- ADDED: Log input to periodic calc ---
+
+            # Map selected display names to YF tickers for calculate_periodic_returns
+            selected_benchmark_tickers_for_periodic = [
+                BENCHMARK_MAPPING.get(name)
+                for name in self.selected_benchmarks
+                if BENCHMARK_MAPPING.get(name)
+            ]
             logging.debug(
-                f"[Handle Results] Calling calculate_periodic_returns with self.full_historical_data:"
+                f"[Handle Results] Calling calculate_periodic_returns with self.full_historical_data and tickers: {selected_benchmark_tickers_for_periodic}"
             )
             if (
                 isinstance(self.full_historical_data, pd.DataFrame)
@@ -6133,12 +6172,12 @@ The CSV file should contain the following columns (header names must match exact
                 logging.debug(
                     f"  Date Range: {self.full_historical_data.index.min()} to {self.full_historical_data.index.max()}"
                 )
-            # --- END ADDED ---
 
             try:
                 self.periodic_returns_data = calculate_periodic_returns(
-                    self.full_historical_data, self.selected_benchmarks  # Use full data
-                )
+                    self.full_historical_data,
+                    selected_benchmark_tickers_for_periodic,  # Pass tickers
+                )  # The returned dict will have keys like "Y", "M", "W" and DFs with ticker-based column names
                 logging.info(
                     f"Periodic returns calculated for intervals: {list(self.periodic_returns_data.keys())}"
                 )
@@ -6152,7 +6191,6 @@ The CSV file should contain the following columns (header names must match exact
                     else:
                         logging.debug(f"  Interval '{key}': Type={type(df_periodic)}")
                 # --- ADDED: Log details of periodic_returns_data ---
-                # --- ADD LOGGING for weekly periodic data ---
                 current_interval = (
                     self.graph_interval_combo.currentText()
                 )  # Get current interval for logging
@@ -6168,7 +6206,6 @@ The CSV file should contain the following columns (header names must match exact
                         logging.info(
                             f"Periodic returns data for 'W' (shape {weekly_periodic_df.shape}):\n{weekly_periodic_df.tail()}"
                         )  # Show tail for recent weeks
-                # --- ADD LOGGING for monthly periodic data ---
                 elif current_interval == "M":
                     monthly_periodic_df = self.periodic_returns_data.get("M")
                     if monthly_periodic_df is None:
@@ -6181,12 +6218,10 @@ The CSV file should contain the following columns (header names must match exact
                         logging.info(
                             f"Periodic returns data for 'M' (shape {monthly_periodic_df.shape}):\n{monthly_periodic_df.tail()}"
                         )  # Show tail for recent months
-                # --- END LOGGING ---
             except Exception as e_periodic:
                 logging.error(f"ERROR calculating periodic returns: {e_periodic}")
                 traceback.print_exc()
                 self.periodic_returns_data = {}  # Ensure it's empty on error
-            # --- END TRY-EXCEPT ---
         else:
             self.periodic_returns_data = {}  # Clear if no historical data
             # Add more detail to the warning
@@ -7845,7 +7880,9 @@ The CSV file should contain the following columns (header names must match exact
 
         # --- Dynamic Titles and Currency ---
         benchmark_display_name = (
-            ", ".join(self.selected_benchmarks) if self.selected_benchmarks else "None"
+            ", ".join(self.selected_benchmarks)
+            if self.selected_benchmarks
+            else "None"  # self.selected_benchmarks are display names
         )
         display_currency = self._get_currency_symbol(get_name=True)
         currency_symbol = self._get_currency_symbol()
@@ -8027,24 +8064,27 @@ The CSV file should contain the following columns (header names must match exact
                 port_plotted_full = True
 
         bench_plotted_count_full = 0
-        for i, b in enumerate(self.selected_benchmarks):
-            bc = f"{b} Accumulated Gain"
-            if bc in results_df.columns:
-                vgb_full = results_df[bc].dropna()  # Plot FULL data
-                if not vgb_full.empty:
-                    pctb_full = (vgb_full - 1) * 100
-                    # Cycle through benchmark colors, skipping the first one used for portfolio
-                    bcol = all_colors[(i + 1) % len(all_colors)]
-                    (line,) = self.perf_return_ax.plot(
-                        pctb_full.index,
-                        pctb_full,
-                        label=f"{b}",
-                        linewidth=1.5,
-                        color=bcol,
-                        alpha=0.8,
-                    )
-                    return_lines_plotted.append(line)
-                    bench_plotted_count_full += 1
+        for i, display_name in enumerate(
+            self.selected_benchmarks
+        ):  # Iterate display names
+            yf_ticker = BENCHMARK_MAPPING.get(display_name)
+            if yf_ticker:
+                benchmark_col_name = f"{yf_ticker} Accumulated Gain"  # Column name in results_df uses ticker
+                if benchmark_col_name in results_df.columns:
+                    vgb_full = results_df[benchmark_col_name].dropna()
+                    if not vgb_full.empty:
+                        pctb_full = (vgb_full - 1) * 100
+                        bcol = all_colors[(i + 1) % len(all_colors)]
+                        (line,) = self.perf_return_ax.plot(
+                            pctb_full.index,
+                            pctb_full,
+                            label=f"{display_name}",  # Use display_name for the label
+                            linewidth=1.5,
+                            color=bcol,
+                            alpha=0.8,
+                        )
+                        return_lines_plotted.append(line)
+                        bench_plotted_count_full += 1
 
         # Add TWR Annotation
         if hasattr(self, "last_hist_twr_factor") and pd.notna(
@@ -9507,7 +9547,12 @@ The CSV file should contain the following columns (header names must match exact
         start_date = self.graph_start_date_edit.date().toPython()
         end_date = self.graph_end_date_edit.date().toPython()
         interval = self.graph_interval_combo.currentText()
-        selected_benchmarks_list = self.selected_benchmarks
+        # Map selected display names to YF tickers for the worker
+        selected_benchmark_tickers = [
+            BENCHMARK_MAPPING.get(name)
+            for name in self.selected_benchmarks
+            if BENCHMARK_MAPPING.get(name)
+        ]
         api_key = self.fmp_api_key
 
         # Use the validated selected_accounts (or None for all)
@@ -9521,10 +9566,14 @@ The CSV file should contain the following columns (header names must match exact
             )
             self.calculation_finished()
             return
-        if not selected_benchmarks_list:
-            selected_benchmarks_list = DEFAULT_GRAPH_BENCHMARKS
+        if not selected_benchmark_tickers:
+            selected_benchmark_tickers = (
+                [BENCHMARK_MAPPING.get(DEFAULT_GRAPH_BENCHMARKS[0], "SPY")]
+                if DEFAULT_GRAPH_BENCHMARKS
+                else ["SPY"]
+            )
             logging.warning(
-                f"No benchmarks selected, using default: {selected_benchmarks_list}"
+                f"No valid benchmarks selected or mapped, using default ticker(s): {selected_benchmark_tickers}"
             )
 
         # Determine accounts to exclude for historical calc if supported
@@ -9549,7 +9598,7 @@ The CSV file should contain the following columns (header names must match exact
             else ""
         )
         logging.info(
-            f"Graph Params: Start={start_date}, End={end_date}, Interval={interval}, Benchmarks={selected_benchmarks_list}{exclude_log_msg}"
+            f"Graph Params: Start={start_date}, End={end_date}, Interval={interval}, Benchmarks (Tickers)={selected_benchmark_tickers}{exclude_log_msg}"
         )
 
         # --- Worker Setup (MODIFIED) ---
@@ -9588,7 +9637,7 @@ The CSV file should contain the following columns (header names must match exact
             "start_date": start_date,
             "end_date": end_date,
             "interval": interval,
-            "benchmark_symbols_yf": selected_benchmarks_list,
+            "benchmark_symbols_yf": selected_benchmark_tickers,  # Pass YF tickers
             "display_currency": display_currency,
             "account_currency_map": account_map,
             "default_currency": def_currency,
@@ -9826,10 +9875,14 @@ The CSV file should contain the following columns (header names must match exact
         }
 
         # Get portfolio and benchmark column names based on current selection
-        portfolio_return_base = (
-            "Portfolio"  # Base name used in calculate_periodic_returns renaming
-        )
-        benchmark_return_bases = [f"{b}" for b in self.selected_benchmarks]
+        portfolio_return_base = "Portfolio"  # Base name used in calculate_periodic_returns renaming  # This should be fine as portfolio_logic.py likely standardizes this.
+
+        # For benchmarks, we need their YF tickers to match columns from calculate_periodic_returns
+        benchmark_yf_tickers_for_cols = [
+            BENCHMARK_MAPPING.get(name)
+            for name in self.selected_benchmarks
+            if BENCHMARK_MAPPING.get(name)
+        ]
 
         for config in intervals_config.values():
             ax = config["ax"]
@@ -9865,10 +9918,14 @@ The CSV file should contain the following columns (header names must match exact
 
             # Select relevant columns and limit bars
             portfolio_col_name = f"{portfolio_return_base} {interval_key}-Return"
+            # Construct column names using YF tickers for data access
             benchmark_col_names = [
-                f"{b_base} {interval_key}-Return" for b_base in benchmark_return_bases
+                f"{yf_ticker} {interval_key}-Return"
+                for yf_ticker in benchmark_yf_tickers_for_cols
             ]
-            cols_to_plot = [portfolio_col_name] + benchmark_col_names
+            cols_to_plot = [
+                portfolio_col_name
+            ] + benchmark_col_names  # These are ticker-based names
             valid_cols = [col for col in cols_to_plot if col in returns_df.columns]
 
             if not valid_cols:
@@ -9907,9 +9964,9 @@ The CSV file should contain the following columns (header names must match exact
             # Define colors for bars
             # Use the first color for the portfolio, the rest for benchmarks
             all_colors = [
-                "red",
-                "blue",
-                "green",
+                "red",  # Portfolio
+                "blue",  # 1st Benchmark
+                "green",  # 2nd Benchmark
                 "orange",
                 "purple",
                 "brown",
@@ -9920,18 +9977,44 @@ The CSV file should contain the following columns (header names must match exact
             color_map = {portfolio_col_name: portfolio_color}
             for i, bm_col in enumerate(benchmark_col_names):
                 if bm_col in plot_data.columns:
-                    # Cycle through benchmark colors, skipping the first one
+                    # Map the YF ticker based column name to its display name for legend and color assignment
+                    # Find which display_name corresponds to this bm_col (which uses yf_ticker)
+                    display_name_for_bm = ""
+                    for dn, yft in BENCHMARK_MAPPING.items():
+                        if f"{yft} {interval_key}-Return" == bm_col:
+                            display_name_for_bm = dn
+                            break
+
                     color_map[bm_col] = all_colors[(i + 1) % len(all_colors)]
 
             for i, col in enumerate(plot_data.columns):
                 offset = (i - (n_series - 1) / 2) * bar_width
+                current_bar_data = plot_data[col].fillna(0.0)
+                # If the interval is Annual ('Y'), assume the data might be a factor (e.g., 0.15 for 15%)
+                # and multiply by 100 to convert to percentage points (e.g., 15.0).
+                # This is a common discrepancy if other intervals already provide percentages.
+                if interval_key == "Y":
+                    current_bar_data = current_bar_data * 100
                 bars = ax.bar(
                     index + offset,
-                    plot_data[col].fillna(0.0),
+                    current_bar_data,  # Use potentially scaled data
                     bar_width,
-                    label=col.replace(
-                        f" {interval_key}-Return", ""
-                    ),  # Clean label for legend
+                    # For label, if it's a benchmark, find its display name. If portfolio, use "Portfolio".
+                    label=(
+                        next(
+                            (
+                                dn
+                                for dn, yft in BENCHMARK_MAPPING.items()
+                                if f"{yft} {interval_key}-Return" == col
+                            ),
+                            col.replace(f" {interval_key}-Return", ""),
+                        )
+                        if col != portfolio_col_name
+                        else portfolio_return_base  # Use "Portfolio" for the portfolio bar
+                    ),
+                    # label=col.replace(
+                    #     f" {interval_key}-Return", ""
+                    # ),  # Clean label for legend
                     color=color_map.get(
                         col, "gray"
                     ),  # Use mapped color, fallback to gray
@@ -9947,6 +10030,13 @@ The CSV file should contain the following columns (header names must match exact
             ax.yaxis.set_major_formatter(
                 mtick.PercentFormatter(xmax=100.0)
             )  # Format Y axis as %
+            # --- ADDED: Explicitly set xlim based on the number of data points ---
+            if not plot_data.empty:
+                ax.set_xlim(-0.5, len(plot_data) - 0.5)
+            else:
+                # Default for an empty plot, though "No Data" text should be shown
+                ax.set_xlim(-0.5, 0.5)
+            # --- END ADDED ---
             ax.grid(
                 True, axis="y", linestyle="--", linewidth=0.5, color=COLOR_BORDER_LIGHT
             )
@@ -9954,7 +10044,8 @@ The CSV file should contain the following columns (header names must match exact
 
             # Legend
             if (
-                n_series > 1 and interval_key == "Y"
+                n_series > 1
+                and interval_key == "Y"  # Use interval_key which is 'Y', 'M', 'W'
             ):  # Only show legend for Annual chart
                 ax.legend(
                     fontsize=7,

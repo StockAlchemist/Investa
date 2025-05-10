@@ -2,15 +2,7 @@
     "transactions_file": "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/my_transactions_processed_v2.csv",
     "display_currency": "USD",
     "show_closed": false,
-    "selected_accounts": [
-        "E*TRADE",
-        "IBKR",
-        "ING Direct",
-        "Penson",
-        "SET",
-        "Sharebuilder",
-        "TD Ameritrade"
-    ],
+    "selected_accounts": [],
     "load_on_startup": true,
     "account_currency_map": {
         "Dime!": "USD",
@@ -23,16 +15,16 @@
         "TD Ameritrade": "USD"
     },
     "default_currency": "USD",
-    "graph_start_date": "2003-10-01",
-    "graph_end_date": "2004-01-16",
+    "graph_start_date": "2002-01-01",
+    "graph_end_date": "2025-05-09",
     "graph_interval": "D",
     "graph_benchmarks": [
-        "SPY",
-        "QQQ",
-        "DIA"
+        "Dow Jones Industrial Avg",
+        "NASDAQ Composite",
+        "S&P 500 Index"
     ],
     "column_visibility": {
-        "Account": true,
+        "Account": false,
         "Symbol": true,
         "Quantity": true,
         "Day Chg": true,
@@ -54,6 +46,6 @@
         "Est. Income": true
     },
     "bar_periods_annual": 10,
-    "bar_periods_monthly": 12,
-    "bar_periods_weekly": 12
+    "bar_periods_monthly": 7,
+    "bar_periods_weekly": 7
 }
