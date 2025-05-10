@@ -1,0 +1,8 @@
+blank_issues_enabled: false # Set to true if you want to allow users to open blank issues
+contact_links:
+  - name: Project Readme
+    url: https://github.com/StockAlchemist/Investa/blob/main/README.md
+    about: Please check the README for general information and setup.
+  - name: Security Policy
+    url: https://github.com/StockAlchemist/Investa/blob/main/SECURITY.md
+    about: Please report security vulnerabilities according to our security policy.

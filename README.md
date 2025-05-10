@@ -171,16 +171,13 @@ If you wish to package Investa as a standalone macOS application (`.app` bundle)
 
 ## Contributing
 
-Contributions are welcome! If you'd like to contribute, please follow these general steps:
+We welcome contributions to Investa! If you're interested in helping out, please take a look at our **[Contributing Guidelines](CONTRIBUTING.md)** for more information on how to get started, coding standards, and how to submit your changes.
 
-1. Fork the repository.
-2. Create a new branch for your feature or bug fix (`git checkout -b feature/your-feature-name`).
-3. Make your changes.
-4. Commit your changes (`git commit -am 'Add some feature'`).
-5. Push to the branch (`git push origin feature/your-feature-name`).
-6. Create a new Pull Request.
+We appreciate your help in making Investa better!
 
-Please ensure your code follows existing style and includes relevant updates to documentation if applicable.
+## Code of Conduct
+
+Please note that this project is released with a Contributor Code of Conduct. By participating in this project you agree to abide by its terms. See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for details.
 
 ## License
 
