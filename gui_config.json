@@ -1,18 +1,21 @@
 {
-    "transactions_file": "my_transactions.csv",
+    "transactions_file": "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/my_test_transactions.csv",
     "display_currency": "USD",
     "show_closed": false,
     "selected_accounts": [],
     "load_on_startup": true,
     "account_currency_map": {
-        "SET": "THB"
+        "EU Stocks": "EUR",
+        "US Stocks": "USD"
     },
     "default_currency": "USD",
-    "graph_start_date": "2023-05-11",
+    "graph_start_date": "2020-01-01",
     "graph_end_date": "2025-05-10",
-    "graph_interval": "W",
+    "graph_interval": "D",
     "graph_benchmarks": [
-        "SPY"
+        "SPY",
+        "QQQ",
+        "DIA"
     ],
     "column_visibility": {
         "Account": true,
