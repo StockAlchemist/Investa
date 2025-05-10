@@ -35,11 +35,10 @@ For a step-by-step guide on how to set up and use Investa, please see our detail
 
 ## Screenshots
 
-*(Placeholder: Add screenshots of the application here to give users a visual idea.)*
-
-* *Main Dashboard View*
-* *Historical Performance Graph*
-* *Transaction Management Dialog*
+![Main Dashboard View](screenshots/main_dashboard.png)
+![Transaction Management Dialog](screenshots/transaction_management.png)
+![Fundamental Data Viewer](screenshots/fundamental_data_viewer.png)
+![New Transactions File Dialog](screenshots/add_new_transactions.png)]
 
 ## Technology Stack
 
