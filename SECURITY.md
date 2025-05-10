@@ -12,7 +12,7 @@ We are committed to ensuring the security of the Investa application. Security u
 
 The Investa team and community take all security vulnerabilities seriously. Thank you for improving the security of our software. We appreciate your efforts and responsible disclosure and will make every effort to acknowledge your contributions.
 
-If you believe you have found a security vulnerability in Investa, please report it to us by emailing **[EMAIL_ADDRESS_FOR_SECURITY_REPORTS]**.
+If you believe you have found a security vulnerability in Investa, please report it to us by emailing **<kittiwit@gmail.com>**.
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
