@@ -60,8 +60,8 @@ For a step-by-step guide on how to set up and use Investa, please see our detail
 1. **Clone the repository:**
 
     ```bash
-    git clone <your-repository-url>
-    cd Investa-Portfolio-Dashboard # Or your repository name
+    git clone https://github.com/StockAlchemist/Investa
+    cd Investa # Or your repository name
     ```
 
 2. **Create a virtual environment (recommended):**
