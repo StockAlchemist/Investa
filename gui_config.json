@@ -1,12 +1,18 @@
 {
-    "transactions_file": "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/my_test_transactions.csv",
-    "display_currency": "USD",
+    "transactions_file": "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/my_transactions.csv",
+    "display_currency": "THB",
     "show_closed": false,
     "selected_accounts": [],
     "load_on_startup": true,
     "account_currency_map": {
-        "EU Stocks": "EUR",
-        "US Stocks": "USD"
+        "Dime!": "USD",
+        "E*TRADE": "USD",
+        "IBKR": "USD",
+        "ING Direct": "USD",
+        "Penson": "USD",
+        "SET": "THB",
+        "Sharebuilder": "USD",
+        "TD Ameritrade": "USD"
     },
     "default_currency": "USD",
     "graph_start_date": "2020-01-01",
