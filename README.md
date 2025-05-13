@@ -82,12 +82,19 @@ For a step-by-step guide on how to set up and use Investa, please see our detail
 
 ## Configuration
 
-* **Application Settings (`gui_config.json`):**
-  * This file is automatically created in your user's application configuration directory (e.g., `~/Library/Application Support/Investa/` on macOS).
-  * It stores the path to your last used transactions CSV, display preferences, column visibility, and graph settings.
-* **Manual Prices (`manual_prices.json`):**
-  * Also stored in the user's application configuration directory.
-  * Allows you to define manual price overrides for specific symbols. This can be managed via `Settings > Manual Prices...` in the app.
+User-specific configuration files (`gui_config.json`, `manual_prices.json`), cache files, and transaction backups are stored in a standard application data directory. The exact location depends on your operating system:
+
+* **macOS:** `~/Library/Application Support/StockAlchemist/Investa/`
+* **Windows:** `C:\Users\<YourUserName>\AppData\Local\StockAlchemist\Investa\` (or potentially in `AppData\Roaming`)
+* **Linux:** `~/.local/share/StockAlchemist/Investa/` (or `~/.config/StockAlchemist/Investa/`)
+
+Key files in this directory:
+
+* **`gui_config.json`**: Stores your UI preferences, such as the path to your last used transactions CSV, display currency, selected accounts, graph settings, and column visibility.
+* **`manual_prices.json`**: Contains any manual price overrides you've set for specific symbols (managed via `Settings > Manual Prices...` in the app).
+* **`csv_backups/` (subfolder)**: Stores timestamped backups of your transactions CSV file, created automatically when you edit or delete transactions through the application.
+* Cache files (e.g., for market data) are also stored here to speed up loading times.
+
 * **Account Currencies:**
   * Managed via `Settings > Account Currencies...` in the app. This allows you to specify the local currency for each of your investment accounts.
 * **Advanced Configuration (`config.py`):**
