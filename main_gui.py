@@ -57,7 +57,7 @@ import logging
 
 # --- Configure Logging Globally (as early as possible) ---
 # Set the desired global level here (e.g., logging.INFO, logging.DEBUG)
-LOGGING_LEVEL = logging.DEBUG  # Or logging.DEBUG for more detail
+LOGGING_LEVEL = logging.WARNING  # Or logging.DEBUG for more detail
 
 logging.basicConfig(
     level=LOGGING_LEVEL,
@@ -103,6 +103,7 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QGroupBox,  # <-- ADDED for grouping
     QTextEdit,  # <-- ADDED for FundamentalDataDialog
+    QSplitter,  # <-- ADDED for Transactions Log tab
     QTabWidget,  # <-- ADDED for main content tabs
     QTableWidgetItem,
     QAbstractItemView,
@@ -838,7 +839,9 @@ class PandasModel(QAbstractTableModel):
     cash rows), and custom cell formatting (alignment, color, currency/percentage).
     """
 
-    def __init__(self, data=pd.DataFrame(), parent=None):
+    def __init__(
+        self, data=pd.DataFrame(), parent=None, log_mode=False
+    ):  # ADDED log_mode
         """
         Initializes the model with optional data and a parent reference.
 
@@ -849,12 +852,13 @@ class PandasModel(QAbstractTableModel):
                                         application window, used to access shared
                                         information like the current currency symbol.
                                         Defaults to None.
+            log_mode (bool, optional): If True, disables special cash row handling during sort.
+                                       Defaults to False.
         """
         super().__init__(parent)
         self._data = data
-        self._parent = (
-            parent  # Store reference to PortfolioApp for currency symbol etc.
-        )
+        self._parent = parent
+        self._log_mode = log_mode  # STORE log_mode
         self._default_text_color = QCOLOR_TEXT_DARK
         self._currency_symbol = "$"  # Default currency symbol
 
@@ -1225,14 +1229,12 @@ class PandasModel(QAbstractTableModel):
             logging.debug("Sort called on empty model. Skipping.")
             return  # Nothing to sort
 
-        try:
-            # Basic validation of column index
+        try:  # Outer try for the whole sort method
             if column < 0 or column >= self.columnCount():
                 logging.warning(
                     f"Warning: Sort called with invalid column index {column}"
                 )
                 return
-
             col_name = self._data.columns[
                 column
             ]  # Get the UI/Actual column name being sorted
@@ -1243,11 +1245,7 @@ class PandasModel(QAbstractTableModel):
 
             self.layoutAboutToBeChanged.emit()  # Notify view about layout change start
 
-            # --- Separate Cash Rows (MODIFIED to handle both symbol column names) ---
-            cash_rows = pd.DataFrame()
-            non_cash_rows = self._data.copy()  # Start assuming all rows are non-cash
-
-            # --- Determine the correct Symbol column name ---
+            # --- Determine key_func (hoisted to be available for both modes) ---
             symbol_col_name_internal = "Symbol"
             symbol_col_name_original = "Stock / ETF Symbol"
             actual_symbol_col = None
@@ -1256,235 +1254,196 @@ class PandasModel(QAbstractTableModel):
             elif symbol_col_name_original in self._data.columns:
                 actual_symbol_col = symbol_col_name_original
             # --- End Symbol column determination ---
+            # --- Column Type Heuristics (applied to self._data[col_name]) ---
+            col_data_for_check = self._data[col_name]
+            is_potentially_numeric_by_name = any(
+                indicator in col_name
+                for indicator in [
+                    "%",
+                    " G/L",
+                    " Price",
+                    " Cost",
+                    " Val",
+                    " Divs",
+                    " Fees",
+                    " Basis",
+                    " Avg",
+                    " Chg",
+                    "Quantity",
+                    "IRR",
+                    " Mkt",
+                    " Ret %",
+                    " Ratio",
+                ]
+            ) or (
+                self._parent
+                and hasattr(self._parent, "_get_currency_symbol")
+                and callable(self._parent._get_currency_symbol)
+                and f"({self._parent._get_currency_symbol(get_name=True)})" in col_name
+            )
+            original_numeric_headers = [
+                "Quantity of Units",
+                "Amount per unit",
+                "Total Amount",
+                "Fees",
+                "Split Ratio (new shares per old share)",
+            ]
+            if col_name in original_numeric_headers:
+                is_potentially_numeric_by_name = True
+            is_numeric_dtype = pd.api.types.is_numeric_dtype(col_data_for_check.dtype)
+            is_potentially_numeric = is_potentially_numeric_by_name or is_numeric_dtype
+            string_col_names = [
+                "Account",
+                "Symbol",
+                "Investment Account",
+                "Stock / ETF Symbol",
+                "Transaction Type",
+                "Price Source",
+                "Note",
+                "Local Currency",
+                "Reason Ignored",
+            ]
+            is_string_col = col_name in string_col_names
+            date_col_name_internal = "Date"
+            date_col_name_original = "Date (MMM DD, YYYY)"
+            is_date_col = col_name in [date_col_name_internal, date_col_name_original]
 
-            if actual_symbol_col:  # Check if we found a symbol column
-                try:
-                    base_cash_symbol = CASH_SYMBOL_CSV
-                    # Check for both possible cash representations
-                    cash_mask = (
-                        self._data[actual_symbol_col].astype(str) == base_cash_symbol
-                    )
+            # Define key functions
+            def numeric_key_func(x_series):
+                if not pd.api.types.is_string_dtype(x_series):
+                    x_series = x_series.astype(str)
+                cleaned_series = x_series.str.replace(
+                    r"[$,฿€£¥]", "", regex=True
+                ).str.replace(",", "", regex=False)
+                return pd.to_numeric(cleaned_series, errors="coerce")
 
-                    # Add check for display format "Cash (CUR)" only if using internal name "Symbol"
-                    # and if the parent application context is available to get the currency name.
-                    if actual_symbol_col == symbol_col_name_internal and self._parent:
-                        try:
-                            # Ensure _get_currency_symbol exists and is callable
-                            if hasattr(
-                                self._parent, "_get_currency_symbol"
-                            ) and callable(self._parent._get_currency_symbol):
-                                display_currency_name = (
-                                    self._parent._get_currency_symbol(get_name=True)
-                                )
-                                cash_display_symbol = f"Cash ({display_currency_name})"
-                                cash_mask |= (
-                                    self._data[actual_symbol_col].astype(str)
-                                    == cash_display_symbol
-                                )
-                            else:
-                                logging.debug(
-                                    "Parent lacks _get_currency_symbol method for cash sort check."
-                                )
-                        except Exception as e_disp_name:
-                            logging.warning(
-                                f"Could not get currency name for cash sort check: {e_disp_name}"
-                            )
-
-                    if cash_mask.any():
-                        cash_rows = self._data[cash_mask].copy()
-                        non_cash_rows = self._data[~cash_mask].copy()
-                        logging.debug(
-                            f"DEBUG Sort: Separated {len(cash_rows)} cash rows using '{actual_symbol_col}'."
-                        )
-                except Exception as e_cash_sep:
-                    logging.warning(
-                        f"Warning: Error separating cash rows during sort: {e_cash_sep}"
-                    )
-                    cash_rows = pd.DataFrame()  # Ensure cash_rows is empty
-                    non_cash_rows = (
-                        self._data.copy()
-                    )  # Reset non_cash_rows to full data
-            else:
-                # This warning will now only appear if NEITHER symbol column name is found
-                logging.warning(
-                    f"Warning: Could not find '{symbol_col_name_internal}' or '{symbol_col_name_original}' column, cannot separate cash for sorting."
+            def date_key_func(x_series):
+                date_format_to_try = (
+                    CSV_DATE_FORMAT if col_name == date_col_name_original else None
                 )
-            # --- End Cash Row Separation Modification ---
+                return pd.to_datetime(
+                    x_series, errors="coerce", format=date_format_to_try
+                )
 
-            # --- Sort Non-Cash Rows using pandas sort_values (MODIFIED Date Handling) ---
-            sorted_non_cash_rows = pd.DataFrame()  # Initialize empty
-            if not non_cash_rows.empty:
+            key_func = None
+            if is_date_col:
+                key_func = date_key_func
+            elif is_potentially_numeric and not is_string_col:
+                key_func = numeric_key_func
+            else:  # Default to string sort key
+                key_func = lambda x: x.astype(str).fillna("")
+            # --- End key_func determination ---
+
+            if self._log_mode:
+                logging.debug(
+                    f"DEBUG Sort (Log Mode): Sorting by '{col_name}' using determined key_func."
+                )
                 try:
-                    # Determine if the column *should* be numeric, date, or string based on name/content
-                    col_data_for_check = non_cash_rows[col_name]
-
-                    # --- Column Type Heuristics ---
-                    # Check based on name first
-                    is_potentially_numeric_by_name = any(
-                        indicator in col_name
-                        for indicator in [
-                            "%",
-                            " G/L",
-                            " Price",
-                            " Cost",
-                            " Val",
-                            " Divs",
-                            " Fees",
-                            " Basis",
-                            " Avg",
-                            " Chg",
-                            "Quantity",
-                            "IRR",
-                            " Mkt",
-                            " Ret %",
-                            " Ratio",
-                        ]
-                    ) or (
-                        self._parent
-                        and hasattr(self._parent, "_get_currency_symbol")
-                        and callable(self._parent._get_currency_symbol)
-                        and f"({self._parent._get_currency_symbol(get_name=True)})"
-                        in col_name
+                    self._data.sort_values(
+                        by=col_name,
+                        ascending=ascending_order,
+                        na_position="last",
+                        key=key_func,
+                        kind="mergesort",
+                        inplace=True,
                     )
-
-                    # Handle original CSV headers that should be numeric
-                    original_numeric_headers = [
-                        "Quantity of Units",
-                        "Amount per unit",
-                        "Total Amount",
-                        "Fees",
-                        "Split Ratio (new shares per old share)",
-                    ]
-                    if col_name in original_numeric_headers:
-                        is_potentially_numeric_by_name = True
-
-                    # Check actual dtype if name didn't trigger
-                    is_numeric_dtype = pd.api.types.is_numeric_dtype(
-                        col_data_for_check.dtype
-                    )
-                    is_potentially_numeric = (
-                        is_potentially_numeric_by_name or is_numeric_dtype
-                    )
-
-                    # Explicitly treat Account and Symbol columns as strings for sorting
-                    string_col_names = [
-                        "Account",
-                        "Symbol",
-                        "Investment Account",
-                        "Stock / ETF Symbol",
-                        "Transaction Type",
-                        "Price Source",
-                        "Note",
-                        "Local Currency",
-                        "Reason Ignored",
-                    ]
-                    is_string_col = col_name in string_col_names
-
-                    # Check for Date Column (using both possible names)
-                    date_col_name_internal = "Date"
-                    date_col_name_original = "Date (MMM DD, YYYY)"
-                    is_date_col = col_name in [
-                        date_col_name_internal,
-                        date_col_name_original,
-                    ]
-                    # --- End Column Type Heuristics ---
-
-                    # Define key functions
-                    # Attempt to strip common currency symbols and commas before numeric conversion
-                    def numeric_key_func(x_series):
-                        if not pd.api.types.is_string_dtype(x_series):
-                            x_series = x_series.astype(
-                                str
-                            )  # Convert to string if not already
-                        # Remove currency symbols (add more if needed) and commas
-                        cleaned_series = x_series.str.replace(
-                            r"[$,฿€£¥]", "", regex=True
-                        ).str.replace(",", "", regex=False)
-                        return pd.to_numeric(cleaned_series, errors="coerce")
-
-                    def date_key_func(x_series):
-                        # Try specific format first if applicable
-                        date_format_to_try = (
-                            CSV_DATE_FORMAT
-                            if col_name == date_col_name_original
-                            else None
-                        )
-                        return pd.to_datetime(
-                            x_series, errors="coerce", format=date_format_to_try
-                        )
-
-                    # --- Sorting Logic ---
-                    if is_date_col:
-                        logging.debug(
-                            f"DEBUG Sort: Using DATE sort strategy for '{col_name}'."
-                        )
-                        sorted_non_cash_rows = non_cash_rows.sort_values(
-                            by=col_name,
-                            ascending=ascending_order,
-                            na_position="last",
-                            key=date_key_func,  # Apply datetime conversion
-                            kind="mergesort",  # Use stable sort
-                        )
-                    elif is_potentially_numeric and not is_string_col:
-                        logging.debug(
-                            f"DEBUG Sort: Using NUMERIC sort strategy for '{col_name}'."
-                        )
-                        # Attempt numeric sort using the key
-                        sorted_non_cash_rows = non_cash_rows.sort_values(
-                            by=col_name,
-                            ascending=ascending_order,
-                            na_position="last",  # Keep NaNs at the bottom
-                            key=numeric_key_func,  # Apply cleaning + numeric conversion before sorting
-                            kind="mergesort",  # Use stable sort
-                        )
-                    else:  # Default to string sort (covers is_string_col and other cases)
-                        logging.debug(
-                            f"DEBUG Sort: Using STRING sort strategy for '{col_name}'."
-                        )
-                        # Sort as strings, fillna ensures consistent sorting
-                        sorted_non_cash_rows = non_cash_rows.sort_values(
-                            by=col_name,
-                            ascending=ascending_order,
-                            na_position="last",  # Keep NaNs at the bottom
-                            key=lambda x: x.astype(str).fillna(
-                                ""
-                            ),  # Ensure string comparison
-                            kind="mergesort",  # Use stable sort
-                        )
-
-                except Exception as e_sort:
+                except Exception as e_log_sort:
                     logging.error(
-                        f"ERROR during primary sorting logic for '{col_name}': {e_sort}"
+                        f"Error during log mode sort for '{col_name}': {e_log_sort}"
                     )
-                    traceback.print_exc()
-                    # Fallback: Attempt simple sort without key if specific sort failed
+                    # Fallback to simple string sort on error
                     try:
-                        logging.warning(
-                            f"Attempting fallback string sort for '{col_name}' after error."
-                        )
-                        sorted_non_cash_rows = non_cash_rows.sort_values(
+                        self._data.sort_values(
                             by=col_name,
                             ascending=ascending_order,
                             na_position="last",
-                            key=lambda x: x.astype(str).fillna(
-                                ""
-                            ),  # Use string key for fallback
-                            kind="mergesort",
+                            key=lambda x: x.astype(str).fillna(""),  # Basic string key
+                            kind="mergesort",  # Use stable sort
+                            inplace=True,
                         )
                     except Exception as e_fallback_sort:
                         logging.error(
-                            f"Fallback sort also failed for '{col_name}': {e_fallback_sort}"
+                            f"Fallback log mode sort also failed for '{col_name}': {e_fallback_sort}"
                         )
-                        sorted_non_cash_rows = (
-                            non_cash_rows  # Fallback to original order on error
-                        )
-            else:
-                logging.debug("DEBUG Sort: No non-cash rows to sort.")
-                pass  # sorted_non_cash_rows remains empty
+            else:  # Original logic for main table (non-log_mode)
+                cash_rows = pd.DataFrame()
+                non_cash_rows = self._data.copy()
 
-            # --- Combine Sorted Rows ---
-            # Concatenate sorted non-cash rows with cash rows (always at the bottom)
-            self._data = pd.concat([sorted_non_cash_rows, cash_rows], ignore_index=True)
+                if actual_symbol_col is None:
+                    # ADDED DEBUG LOG: Log columns when symbol column is not found
+                    logging.debug(
+                        f"DEBUG Sort (Non-Log Mode): Symbol column not found. Current columns: {self._data.columns.tolist()}"
+                    )
+
+                if actual_symbol_col:
+                    try:
+                        base_cash_symbol = CASH_SYMBOL_CSV
+                        cash_mask = (
+                            self._data[actual_symbol_col].astype(str)
+                            == base_cash_symbol
+                        )
+                        if (
+                            actual_symbol_col == symbol_col_name_internal
+                            and self._parent
+                            and hasattr(self._parent, "_get_currency_symbol")
+                            and callable(self._parent._get_currency_symbol)
+                        ):
+                            display_currency_name = self._parent._get_currency_symbol(
+                                get_name=True
+                            )
+                            cash_display_symbol = f"Cash ({display_currency_name})"
+                            cash_mask |= (
+                                self._data[actual_symbol_col].astype(str)
+                                == cash_display_symbol
+                            )
+
+                        if cash_mask.any():
+                            cash_rows = self._data[cash_mask].copy()
+                            non_cash_rows = self._data[~cash_mask].copy()
+                    except Exception as e_cash_sep:
+                        logging.warning(
+                            f"Warning: Error separating cash rows during sort: {e_cash_sep}"
+                        )
+                        cash_rows = pd.DataFrame()
+                        non_cash_rows = self._data.copy()
+                else:
+                    logging.warning(
+                        f"Warning: Could not find symbol column for cash separation in sort."
+                    )
+
+                sorted_non_cash_rows = pd.DataFrame()
+                if not non_cash_rows.empty:
+                    try:
+                        sorted_non_cash_rows = non_cash_rows.sort_values(
+                            by=col_name,
+                            ascending=ascending_order,
+                            na_position="last",
+                            key=key_func,  # Use hoisted key_func
+                            kind="mergesort",
+                        )
+                    except Exception as e_sort:
+                        logging.error(
+                            f"ERROR during non-log mode sorting for '{col_name}': {e_sort}"
+                        )
+                        try:  # Fallback string sort for non_cash_rows
+                            sorted_non_cash_rows = non_cash_rows.sort_values(
+                                by=col_name,
+                                ascending=ascending_order,
+                                na_position="last",
+                                key=lambda x: x.astype(str).fillna(""),
+                                kind="mergesort",
+                            )
+                        except Exception as e_fallback_sort:
+                            logging.error(
+                                f"Fallback non-log sort also failed for '{col_name}': {e_fallback_sort}"
+                            )
+                            sorted_non_cash_rows = (
+                                non_cash_rows  # Keep original order on error
+                            )
+
+                self._data = pd.concat(
+                    [sorted_non_cash_rows, cash_rows], ignore_index=True
+                )
 
             self.layoutChanged.emit()  # Notify view about layout change end
             logging.info(f"Sorting finished for '{col_name}'.")
@@ -5217,6 +5176,12 @@ The CSV file should contain the following columns (header names must match exact
         # The "Holdings Overview" tab is now removed.
         logging.debug("--- _init_ui_structure: END ---")
 
+    def _init_transactions_log_tab_widgets(self):
+        """Initializes widgets for the Transactions Log tab."""
+        # This method will be filled in _init_ui_widgets
+        # It's called from there to set up the content of self.transactions_log_tab
+        pass
+
     def _init_header_frame_widgets(self):
         """Initializes widgets for the Header Frame."""
         if not hasattr(self, "header_frame"):
@@ -5739,7 +5704,7 @@ The CSV file should contain the following columns (header names must match exact
 
     def _init_ui_widgets(self):
         """Orchestrates the initialization of all UI widgets within their frames."""
-        print(
+        logging.debug(
             "DEBUG PRINT: _init_ui_widgets method has been entered."
         )  # <-- ADD THIS PRINT STATEMENT
         logging.debug("--- _init_ui_widgets: START ---")
@@ -5770,6 +5735,7 @@ The CSV file should contain the following columns (header names must match exact
         self._init_table_panel_widgets(content_layout)
         logging.debug("--- _init_ui_widgets: After _init_table_panel_widgets ---")
         # --- Tab 4: Dividend History ---
+        # (This will become Tab 3 after we add Transactions Log as Tab 2)
         logging.debug("--- _init_ui_widgets: Entering Dividend History Tab setup ---")
         self.dividend_history_tab = QWidget()
         dividend_history_layout = QVBoxLayout(self.dividend_history_tab)
@@ -5864,7 +5830,9 @@ The CSV file should contain the following columns (header names must match exact
         # --- ADDED: Dividend Summary Table ---
         self.dividend_summary_table_view = QTableView()
         self.dividend_summary_table_view.setObjectName("DividendSummaryTable")
-        self.dividend_summary_table_model = PandasModel(parent=self)  # New model
+        self.dividend_summary_table_model = PandasModel(
+            parent=self, log_mode=True
+        )  # New model, ADD log_mode=True
         logging.debug(
             "--- _init_ui_widgets: Setting model for Dividend Summary TableView ---"
         )
@@ -5885,7 +5853,9 @@ The CSV file should contain the following columns (header names must match exact
         # Dividend Table View
         self.dividend_table_view = QTableView()
         self.dividend_table_view.setObjectName("DividendHistoryTable")
-        self.dividend_table_model = PandasModel(parent=self)
+        self.dividend_table_model = PandasModel(
+            parent=self, log_mode=True
+        )  # ADD log_mode=True
         logging.debug("--- _init_ui_widgets: Dividend table model created ---")
         self.dividend_table_view.setModel(self.dividend_table_model)
         self.dividend_table_view.setAlternatingRowColors(True)
@@ -5950,9 +5920,77 @@ The CSV file should contain the following columns (header names must match exact
         )
         # --- End Dividend History Tab ---
 
+        # --- Tab 2: Transactions Log ---
+        logging.debug("--- _init_ui_widgets: Entering Transactions Log Tab setup ---")
+        self.transactions_log_tab = QWidget()
+        transactions_log_main_layout = QVBoxLayout(self.transactions_log_tab)
+        transactions_log_main_layout.setContentsMargins(10, 10, 10, 10)
+        transactions_log_main_layout.setSpacing(8)
+
+        # Create a splitter to divide the tab
+        splitter = QSplitter(Qt.Vertical)
+
+        # Group for Stock/ETF Transactions
+        stock_tx_group = QGroupBox("Stock/ETF Transactions")
+        stock_tx_layout = QVBoxLayout(stock_tx_group)
+        self.stock_transactions_table_view = QTableView()
+        self.stock_transactions_table_view.setObjectName("StockTransactionsLogTable")
+        self.stock_transactions_table_model = PandasModel(
+            parent=None, log_mode=True
+        )  # ADD log_mode
+        self.stock_transactions_table_view.setModel(self.stock_transactions_table_model)
+        self.stock_transactions_table_view.setSortingEnabled(True)
+        self.stock_transactions_table_view.setAlternatingRowColors(True)
+        self.stock_transactions_table_view.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Interactive
+        )
+        self.stock_transactions_table_view.verticalHeader().setVisible(False)
+        stock_tx_layout.addWidget(self.stock_transactions_table_view)
+        splitter.addWidget(stock_tx_group)
+
+        # Group for $CASH Transactions
+        cash_tx_group = QGroupBox(f"{CASH_SYMBOL_CSV} Transactions")
+        cash_tx_layout = QVBoxLayout(cash_tx_group)
+        self.cash_transactions_table_view = QTableView()
+        self.cash_transactions_table_view.setObjectName("CashTransactionsLogTable")
+        self.cash_transactions_table_model = PandasModel(
+            parent=None, log_mode=True
+        )  # ADD log_mode
+        self.cash_transactions_table_view.setModel(self.cash_transactions_table_model)
+        self.cash_transactions_table_view.setSortingEnabled(True)
+        self.cash_transactions_table_view.setAlternatingRowColors(True)
+        self.cash_transactions_table_view.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Interactive
+        )
+        self.cash_transactions_table_view.verticalHeader().setVisible(False)
+        cash_tx_layout.addWidget(self.cash_transactions_table_view)
+        splitter.addWidget(cash_tx_group)
+
+        # Set initial sizes for the splitter (optional)
+        splitter.setSizes(
+            [self.height() // 2, self.height() // 2]
+        )  # Roughly equal split
+
+        transactions_log_main_layout.addWidget(splitter)
+        self.transactions_log_tab.setVisible(True)
+
+        # Insert the Transactions Log tab at index 1 (making it the second tab)
+        self.main_tab_widget.insertTab(1, self.transactions_log_tab, "Transactions Log")
+        logging.debug(
+            "--- _init_ui_widgets: Transactions Log Tab added to main_tab_widget ---"
+        )
+        # --- End Transactions Log Tab ---
+
         self._create_status_bar()
         logging.debug("--- _init_ui_widgets: After _create_status_bar ---")
         logging.debug("--- _init_ui_widgets: END ---")
+
+    def _update_transaction_log_tables(self):
+        """Populates the stock and cash transaction log tables."""
+        # This method will be filled in handle_results or a dedicated update sequence
+        # For now, it's a placeholder. The actual population logic will be added
+        # where self.original_data is available and processed.
+        pass
 
     def _update_dividend_spinbox_default(self):
         """Updates the dividend periods spinbox based on the selected aggregation period."""
@@ -6897,6 +6935,7 @@ The CSV file should contain the following columns (header names must match exact
                 self._update_dividend_bar_chart()  # Also update dividend chart
                 # _update_dividend_summary_table will be called by _update_dividend_bar_chart
                 self._update_dividend_table()  # And dividend table
+                self._update_transaction_log_tables_content()  # Update new log tables
             else:
                 logging.info(
                     "Hiding bar charts frame as no periodic data is available."
@@ -8889,7 +8928,10 @@ The CSV file should contain the following columns (header names must match exact
             self.clear_results()  # Clear results including available accounts
             # --- MODIFIED: Only refresh if not initial selection ---
             if not self._initial_file_selection:
-                self.refresh_data()  # Refresh will load new data and accounts
+                self.setWindowTitle(
+                    f"{self.base_window_title} - {os.path.basename(self.transactions_file)}"
+                )
+            self.refresh_data()  # Refresh will load new data and accounts
             # --- END MODIFICATION ---
 
     def clear_results(self):
@@ -8916,12 +8958,91 @@ The CSV file should contain the following columns (header names must match exact
         self.status_label.setText("Ready")
         self._update_table_title()  # Update table title
         self._update_account_button_text()  # Update button text
+        self.stock_transactions_table_model.updateData(
+            pd.DataFrame()
+        )  # Clear log table
+        self.cash_transactions_table_model.updateData(pd.DataFrame())  # Clear log table
         self._update_fx_rate_display(self.currency_combo.currentText())
         self.update_header_info(loading=True)
         if hasattr(self, "view_ignored_button"):
             self.view_ignored_button.setEnabled(False)  # Disable when clearing
         self._update_dividend_bar_chart()  # Clear dividend chart
         self._update_dividend_table()  # Clear dividend table
+
+    def _update_transaction_log_tables_content(self):
+        """Populates the stock and cash transaction log tables using self.original_data."""
+        logging.debug("Updating transaction log tables...")
+
+        if (
+            not hasattr(self, "original_data")
+            or self.original_data is None
+            or self.original_data.empty
+        ):
+            logging.info(
+                "Original data not available, clearing transaction log tables."
+            )
+            self.stock_transactions_table_model.updateData(pd.DataFrame())
+            self.cash_transactions_table_model.updateData(pd.DataFrame())
+            return
+
+        # Ensure required columns exist in original_data
+        symbol_col_name = "Stock / ETF Symbol"  # This is the original CSV header name
+        date_col_name_original = "Date (MMM DD, YYYY)"  # Original CSV date column name
+
+        required_orig_cols = [symbol_col_name, date_col_name_original]
+        if not all(col in self.original_data.columns for col in required_orig_cols):
+            missing = [
+                col
+                for col in required_orig_cols
+                if col not in self.original_data.columns
+            ]
+            logging.error(
+                f"Missing required column(s) {missing} in original_data. Cannot populate transaction logs."
+            )
+            self.stock_transactions_table_model.updateData(pd.DataFrame())
+            self.cash_transactions_table_model.updateData(pd.DataFrame())
+            return
+
+        # Get the column index for the date column in the DataFrame passed to the model
+        # The DataFrames passed to updateData are slices of self.original_data,
+        # so they retain the original column order and names.
+        try:
+            date_col_index = self.original_data.columns.get_loc(date_col_name_original)
+        except KeyError:
+            logging.error(
+                f"Could not find column index for '{date_col_name_original}'. Cannot apply default sort."
+            )
+            # Proceed without sorting if index lookup fails
+            self.stock_transactions_table_model.updateData(pd.DataFrame())
+            self.cash_transactions_table_model.updateData(pd.DataFrame())
+            return
+
+        # Filter for stock transactions (anything not $CASH)
+        stock_tx_df = self.original_data[
+            self.original_data[symbol_col_name] != CASH_SYMBOL_CSV
+        ].copy()
+        # Filter for cash transactions
+        cash_tx_df = self.original_data[
+            self.original_data[symbol_col_name] == CASH_SYMBOL_CSV
+        ].copy()
+
+        self.stock_transactions_table_model.updateData(stock_tx_df)
+        self.cash_transactions_table_model.updateData(cash_tx_df)
+
+        # --- ADDED: Apply default sort by Date (Descending) ---
+        self.stock_transactions_table_view.sortByColumn(
+            date_col_index, Qt.DescendingOrder
+        )
+        self.cash_transactions_table_view.sortByColumn(
+            date_col_index, Qt.DescendingOrder
+        )
+        # --- END ADDED ---
+
+        self.stock_transactions_table_view.resizeColumnsToContents()
+        self.cash_transactions_table_view.resizeColumnsToContents()
+        logging.info(
+            f"Transaction log tables updated. Stock Txs: {len(stock_tx_df)}, Cash Txs: {len(cash_tx_df)}"
+        )
 
     # --- Filter Change Handlers ---
     @Slot()
@@ -9902,7 +10023,29 @@ The CSV file should contain the following columns (header names must match exact
         if not df_summary.empty:
             logging.debug(f"    Head:\n{df_summary.head().to_string()}")
 
+        # --- CORRECTED: Call updateData ONCE, then sort ---
         self.dividend_summary_table_model.updateData(df_summary)
+
+        try:
+            if (
+                not df_summary.empty
+            ):  # Check if df_summary has data before trying to get column index
+                period_col_index = df_summary.columns.get_loc("Period")
+                self.dividend_summary_table_view.sortByColumn(
+                    period_col_index, Qt.DescendingOrder
+                )
+                logging.debug("  Applied default sort to dividend summary table.")
+            else:
+                logging.debug(
+                    "  df_summary is empty, skipping sort for dividend summary table."
+                )
+        except KeyError:
+            logging.warning(
+                "  'Period' column not found in dividend summary table, cannot apply default sort."
+            )
+        except Exception as e_sort:
+            logging.error(f"  Error during dividend summary table sort: {e_sort}")
+        # --- END CORRECTION ---
         self.dividend_summary_table_view.resizeColumnsToContents()
 
     def _update_dividend_table(self):
@@ -9940,7 +10083,27 @@ The CSV file should contain the following columns (header names must match exact
         }
         df_display.rename(columns=rename_map, inplace=True)
 
+        # --- CORRECTED: Call updateData ONCE, then sort ---
         self.dividend_table_model.updateData(df_display)
+
+        try:
+            if not df_display.empty:  # Check if df_display has data
+                date_col_index = df_display.columns.get_loc("Date")
+                self.dividend_table_view.sortByColumn(
+                    date_col_index, Qt.DescendingOrder
+                )
+                logging.debug("  Applied default sort to dividend history table.")
+            else:
+                logging.debug(
+                    "  df_display is empty, skipping sort for dividend history table."
+                )
+        except KeyError:
+            logging.warning(
+                "  'Date' column not found in dividend history table, cannot apply default sort."
+            )
+        except Exception as e_sort:
+            logging.error(f"  Error during dividend history table sort: {e_sort}")
+        # --- END CORRECTION ---
         self.dividend_table_view.resizeColumnsToContents()
 
     # --- Transaction Dialog Methods ---
