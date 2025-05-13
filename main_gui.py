@@ -57,7 +57,7 @@ import logging
 
 # --- Configure Logging Globally (as early as possible) ---
 # Set the desired global level here (e.g., logging.INFO, logging.DEBUG)
-LOGGING_LEVEL = logging.WARNING  # Or logging.DEBUG for more detail
+LOGGING_LEVEL = logging.DEBUG  # Or logging.DEBUG for more detail
 
 logging.basicConfig(
     level=LOGGING_LEVEL,
@@ -103,6 +103,7 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QGroupBox,  # <-- ADDED for grouping
     QTextEdit,  # <-- ADDED for FundamentalDataDialog
+    QTabWidget,  # <-- ADDED for main content tabs
     QTableWidgetItem,
     QAbstractItemView,
     QHeaderView,
@@ -218,6 +219,7 @@ try:
     from portfolio_analyzer import (
         calculate_periodic_returns,
         _AGGREGATE_CASH_ACCOUNT_NAME_,  # Import the constant
+        extract_dividend_history,  # <-- ADDED for dividend history
     )  # Add the new function
 
     # --- END ADD ---
@@ -345,29 +347,12 @@ DEBOUNCE_INTERVAL_MS = 400  # Debounce interval for live table filtering
 # --- User-specific file paths using QStandardPaths ---
 APP_NAME_FOR_QT = "Investa"  # Define your application name for Qt settings
 
-# Configuration File Path (e.g., gui_config.json)
-CONFIG_DIR_PATH = QStandardPaths.writableLocation(QStandardPaths.AppConfigLocation)
-if not CONFIG_DIR_PATH:  # Fallback if AppConfigLocation is not available
-    CONFIG_DIR_PATH = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
-
-if CONFIG_DIR_PATH:  # AppConfigLocation and AppDataLocation are already app-specific
-    USER_SPECIFIC_APP_FOLDER = CONFIG_DIR_PATH
-    os.makedirs(USER_SPECIFIC_APP_FOLDER, exist_ok=True)  # Ensure the directory exists
-    CONFIG_FILE = os.path.join(
-        USER_SPECIFIC_APP_FOLDER, "gui_config.json"
-    )  # gui_config.json in .../Investa/
-    MANUAL_PRICE_FILE = os.path.join(
-        USER_SPECIFIC_APP_FOLDER, "manual_prices.json"
-    )  # manual_prices.json in .../Investa/
-else:  # Fallback if QStandardPaths fails (less likely on macOS)
-    USER_SPECIFIC_APP_FOLDER = os.path.expanduser(f"~/.{APP_NAME_FOR_QT.lower()}")
-    os.makedirs(USER_SPECIFIC_APP_FOLDER, exist_ok=True)
-    CONFIG_FILE = os.path.join(USER_SPECIFIC_APP_FOLDER, "gui_config.json")
-    MANUAL_PRICE_FILE = os.path.join(USER_SPECIFIC_APP_FOLDER, "manual_prices.json")
+# CONFIG_FILE and MANUAL_PRICE_FILE will be initialized as instance attributes
+# in PortfolioApp.__init__ after QApplication is fully configured.
 
 # DEFAULT_API_KEY = os.getenv("FMP_API_KEY")  # Optional API key from environment
 DEFAULT_API_KEY = ""
-CONFIG_FILE = resource_path("gui_config.json")  # Configuration file name
+# CONFIG_FILE = resource_path("gui_config.json")  # Configuration file name
 CHART_MAX_SLICES = 10  # Max slices before grouping into 'Other' in pie charts
 PIE_CHART_FIG_SIZE = (5.0, 2.5)  # Figure size for pie charts
 PERF_CHART_FIG_SIZE = (7.5, 3.0)  # Figure size for performance graphs
@@ -387,7 +372,7 @@ COMMON_CURRENCIES = [
     "HKD",
     "SGD",
 ]
-MANUAL_PRICE_FILE = resource_path("manual_prices.json")
+# MANUAL_PRICE_FILE = resource_path("manual_prices.json")
 
 # --- Graph Defaults ---
 DEFAULT_GRAPH_START_DATE = date.today() - timedelta(
@@ -438,18 +423,6 @@ QCOLOR_GAIN = QColor(COLOR_GAIN)
 QCOLOR_LOSS = QColor(COLOR_LOSS)
 QCOLOR_TEXT_DARK = QColor(COLOR_TEXT_DARK)
 QCOLOR_TEXT_SECONDARY = QColor(COLOR_TEXT_SECONDARY)
-
-
-def resource_path(relative_path):
-    """Get absolute path to resource, works for dev and for PyInstaller"""
-    try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = sys._MEIPASS
-    except Exception:
-        # For development, __file__ is the path to the current script.
-        # os.path.dirname(__file__) gives the directory of the script.
-        base_path = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_path, relative_path)
 
 
 # --- Column Definition Helper ---
@@ -516,7 +489,7 @@ class WorkerSignals(QObject):
     progress = Signal(int)  # <-- ADDED: Percentage complete (0-100)
     error = Signal(str)
     # Args: summary_metrics, holdings_df, ignored_df, account_metrics, index_quotes, historical_data_df
-    result = Signal(  # MODIFIED: 9 arguments
+    result = Signal(  # MODIFIED: 10 arguments
         dict,  # summary_metrics
         pd.DataFrame,  # holdings_df
         dict,  # account_metrics
@@ -526,6 +499,7 @@ class WorkerSignals(QObject):
         dict,  # hist_fx (raw fx rates)
         set,  # combined_ignored_indices
         dict,  # combined_ignored_reasons
+        pd.DataFrame,  # dividend_history_df  <-- NEW
     )
 
     fundamental_data_ready = Signal(str, dict)  # display_symbol, data_dict
@@ -591,6 +565,7 @@ class PortfolioCalculatorWorker(QRunnable):
         full_historical_data_df = (
             pd.DataFrame()
         )  # This will hold the full daily data from backend
+        dividend_history_df = pd.DataFrame()  # <-- NEW for dividend history
         # Initialize raw data dicts
         hist_prices_adj = {}
         hist_fx = {}
@@ -604,9 +579,13 @@ class PortfolioCalculatorWorker(QRunnable):
         try:
             # --- 1. Run Portfolio Summary Calculation ---
             # (No changes needed here, it uses self.portfolio_fn)
+            # Make a copy of portfolio_kwargs to modify for the portfolio_fn call
+            portfolio_fn_kwargs = self.portfolio_kwargs.copy()
+            # Remove the argument not expected by calculate_portfolio_summary
+            # It's still available in self.portfolio_kwargs for extract_dividend_history
+            portfolio_fn_kwargs.pop("all_transactions_df_for_worker", None)
             try:
-                current_portfolio_kwargs = self.portfolio_kwargs.copy()
-                current_portfolio_kwargs["manual_prices_dict"] = self.manual_prices_dict
+                portfolio_fn_kwargs["manual_prices_dict"] = self.manual_prices_dict
 
                 (
                     p_summary,
@@ -615,7 +594,7 @@ class PortfolioCalculatorWorker(QRunnable):
                     p_ignored_idx,
                     p_ignored_rsn,
                     p_status,
-                ) = self.portfolio_fn(*self.portfolio_args, **current_portfolio_kwargs)
+                ) = self.portfolio_fn(*self.portfolio_args, **portfolio_fn_kwargs)
                 portfolio_summary_metrics = p_summary if p_summary is not None else {}
                 holdings_df = p_holdings if p_holdings is not None else pd.DataFrame()
                 account_metrics = p_account if p_account is not None else {}
@@ -734,6 +713,51 @@ class PortfolioCalculatorWorker(QRunnable):
                 hist_prices_adj = {}
                 hist_fx = {}
 
+            # --- 4. Extract Dividend History ---
+            try:
+                logging.debug("DEBUG Worker: Extracting dividend history...")
+                # Ensure historical_fx_yf is available from the historical calculation step
+                # It should be in hist_fx if historical_fn ran successfully
+                if hist_fx:  # Check if hist_fx (which is historical_fx_yf) is populated
+                    dividend_history_df = extract_dividend_history(
+                        all_transactions_df=self.portfolio_kwargs.get(
+                            "all_transactions_df_for_worker"
+                        ),  # Pass the full cleaned df
+                        display_currency=self.portfolio_kwargs.get("display_currency"),
+                        historical_fx_yf=hist_fx,  # Use FX data from historical calc
+                        default_currency=self.portfolio_kwargs.get("default_currency"),
+                        include_accounts=self.portfolio_kwargs.get(
+                            "include_accounts"
+                        ),  # <-- CORRECTLY ADDED HERE
+                    )
+                    logging.debug(
+                        f"DEBUG Worker: Dividend history extracted ({len(dividend_history_df)} records)."
+                    )
+                else:
+                    logging.warning(
+                        "DEBUG Worker: Historical FX data not available, cannot extract dividend history accurately."
+                    )
+                    dividend_history_df = pd.DataFrame()
+            except Exception as div_e:
+                logging.error(
+                    f"--- Error during dividend history extraction in worker: {div_e} ---"
+                )
+                traceback.print_exc()
+                # Optionally, emit an error or set a status part
+                dividend_history_df = pd.DataFrame()  # Ensure it's an empty DF on error
+
+            logging.debug(
+                f"DEBUG Worker: dividend_history_df before emit (shape {dividend_history_df.shape if isinstance(dividend_history_df, pd.DataFrame) else 'Not a DF'}):"
+            )
+            if (
+                isinstance(dividend_history_df, pd.DataFrame)
+                and not dividend_history_df.empty
+            ):
+                logging.debug(f"  Head:\n{dividend_history_df.head().to_string()}")
+                logging.debug(
+                    f"  'DividendAmountDisplayCurrency' NaNs in worker: {dividend_history_df['DividendAmountDisplayCurrency'].isna().sum()} out of {len(dividend_history_df)}"
+                )
+
             # --- 4. Prepare and Emit Combined Results ---
             # (No changes needed here)
             overall_status = (
@@ -749,7 +773,27 @@ class PortfolioCalculatorWorker(QRunnable):
             if portfolio_had_error or historical_had_error:
                 self.signals.error.emit(overall_status)
 
-            self.signals.result.emit(  # MODIFIED: Emit 9 args
+            logging.debug(
+                f"WORKER EMIT: Summary Metrics Keys: {list(portfolio_summary_metrics.keys()) if portfolio_summary_metrics else 'Empty'}"
+            )
+            logging.debug(
+                f"WORKER EMIT: Holdings DF Shape: {holdings_df.shape if isinstance(holdings_df, pd.DataFrame) else 'Not DF'}"
+            )
+            logging.debug(
+                f"WORKER EMIT: Full Historical DF Shape: {full_historical_data_df.shape if isinstance(full_historical_data_df, pd.DataFrame) else 'Not DF'}"
+            )
+            logging.debug(
+                f"WORKER EMIT: Dividend History DF Shape: {dividend_history_df.shape if isinstance(dividend_history_df, pd.DataFrame) else 'Not DF'}"
+            )
+            if (
+                isinstance(dividend_history_df, pd.DataFrame)
+                and not dividend_history_df.empty
+            ):
+                logging.debug(
+                    f"WORKER EMIT: Dividend History Head:\n{dividend_history_df.head().to_string()}"
+                )
+
+            self.signals.result.emit(  # MODIFIED: Emit 10 args
                 portfolio_summary_metrics,
                 holdings_df,
                 account_metrics,
@@ -759,6 +803,7 @@ class PortfolioCalculatorWorker(QRunnable):
                 hist_fx,
                 combined_ignored_indices,
                 combined_ignored_reasons,
+                dividend_history_df,  # <-- NEW
             )
 
         except Exception as e:
@@ -766,8 +811,17 @@ class PortfolioCalculatorWorker(QRunnable):
             traceback.print_exc()
             overall_status = f"CritErr in Worker: {e}"
             # --- EMIT DEFAULT/EMPTY VALUES on critical failure (9 args) ---
-            self.signals.result.emit(
-                {}, pd.DataFrame(), {}, {}, pd.DataFrame(), {}, {}, set(), {}
+            self.signals.result.emit(  # MODIFIED: Emit 10 args
+                {},
+                pd.DataFrame(),
+                {},
+                {},
+                pd.DataFrame(),
+                {},
+                {},
+                set(),
+                {},
+                pd.DataFrame(),
             )
             # --- END EMIT ---
             self.signals.error.emit(overall_status)
@@ -994,25 +1048,76 @@ class PandasModel(QAbstractTableModel):
 
                     # --- MODIFIED Currency Check & Formatting ---
                     elif self._parent and hasattr(self._parent, "_get_currency_symbol"):
-                        currency_ui_names = [
-                            "Avg Cost",
-                            "Price",
-                            "Cost Basis",
-                            "Est. Income",  # New currency column
-                            "Mkt Val",
-                            "Unreal. G/L",
-                            "Real. G/L",
-                            "Divs",
-                            "Fees",
-                            "Total G/L",
-                            f"Day Chg",
-                        ]
+                        # This block is for columns that are likely currency but not explicitly percentage.
+                        # We first check against a list of known UI names that represent currency.
+                        currency_ui_names = (
+                            [  # These are UI-facing names that PandasModel receives
+                                "Avg Cost",
+                                "Price",
+                                "Cost Basis",
+                                "Est. Income",
+                                "Mkt Val",
+                                "Unreal. G/L",
+                                "Real. G/L",
+                                "Divs",
+                                "Fees",
+                                "Total G/L",
+                                "Day Chg",  # "Day Chg" is the UI name
+                            ]
+                        )
                         is_currency_col = col_name in currency_ui_names
-                        if is_currency_col:
-                            current_currency_symbol = self._get_currency_symbol_safe()
-                            return (
-                                f"{current_currency_symbol}{display_value_float:,.2f}"
+
+                        # Then, we check for dynamically generated names, like "Total Dividends ($)"
+                        current_display_currency_symbol_for_check = (
+                            self._get_currency_symbol_safe()
+                        )
+
+                        # --- Start Debug Logging for "Total Dividends" column ---
+                        if "Total Dividends" in col_name:
+                            logging.debug(
+                                f"PandasModel.data: Processing column: '{col_name}' (Row: {row}, Value: {original_value})"
                             )
+                            logging.debug(
+                                f"  Initial is_currency_col: {is_currency_col}"
+                            )
+                            logging.debug(
+                                f"  current_display_currency_symbol_for_check: '{current_display_currency_symbol_for_check}'"
+                            )
+                            logging.debug(
+                                f"  Condition 1 (contains symbol in parens): {f'({current_display_currency_symbol_for_check})' in col_name}"
+                            )
+                            logging.debug(
+                                f"  Condition 2 (startswith Total Dividends): {col_name.startswith('Total Dividends')}"
+                            )
+                            logging.debug(
+                                f"  Condition 3 (endswith symbol in parens): {col_name.endswith(f'({current_display_currency_symbol_for_check})')}"
+                            )
+                        # --- End Debug Logging ---
+
+                        if not is_currency_col and (
+                            f"({current_display_currency_symbol_for_check})" in col_name
+                            or (
+                                col_name.startswith("Total Dividends")
+                                and col_name.endswith(
+                                    f"({current_display_currency_symbol_for_check})"
+                                )
+                            )
+                        ):
+                            is_currency_col = True
+                            if (
+                                "Total Dividends" in col_name
+                            ):  # Log if it becomes true for our target
+                                logging.debug(
+                                    f"  Updated is_currency_col to True for '{col_name}'"
+                                )
+
+                        if is_currency_col:
+                            # current_currency_symbol = self._get_currency_symbol_safe() # Already got it as current_display_currency_symbol_for_check
+                            if "Total Dividends" in col_name:  # Log before returning
+                                logging.debug(
+                                    f"  Formatting '{col_name}' as currency: {current_display_currency_symbol_for_check}{value_float:,.2f}"
+                                )
+                            return f"{current_display_currency_symbol_for_check}{value_float:,.2f}"
                     # --- END MODIFIED Currency Check & Formatting ---
 
                     # Fallback for other numeric types (should be very rare now)
@@ -2494,69 +2599,6 @@ class SymbolChartDialog(QDialog):
 
         self.canvas.draw()
 
-    # --- Helper Method (Optional but Recommended) ---
-    # This method could be added to PortfolioApp to find the currency of a symbol
-    # based on the first account it appears in.
-    def _get_currency_for_symbol(self, symbol_to_find: str) -> Optional[str]:
-        """
-        Finds the local currency code associated with a symbol based on transaction data
-        or the account currency map. Returns the default currency if not found.
-
-        Args:
-            symbol_to_find (str): The internal symbol (e.g., 'AAPL', 'SET:BKK').
-
-        Returns:
-            Optional[str]: The 3-letter currency code (e.g., 'USD', 'THB') or None if lookup fails badly.
-                           Returns default currency as fallback.
-        """
-        # 1. Check Cash Symbol
-        if symbol_to_find == CASH_SYMBOL_CSV:
-            return self.config.get("default_currency", "USD")
-
-        # 2. Check Holdings Data (if available and has Local Currency)
-        if (
-            hasattr(self, "holdings_data")
-            and not self.holdings_data.empty
-            and "Symbol" in self.holdings_data.columns
-            and "Local Currency" in self.holdings_data.columns
-        ):
-            symbol_rows = self.holdings_data[
-                self.holdings_data["Symbol"] == symbol_to_find
-            ]
-            if not symbol_rows.empty:
-                first_currency = symbol_rows["Local Currency"].iloc[0]
-                if (
-                    pd.notna(first_currency)
-                    and isinstance(first_currency, str)
-                    and len(first_currency) == 3
-                ):
-                    return first_currency.upper()
-
-        # 3. Fallback: Check original transactions to find account, then map account to currency
-        if hasattr(self, "original_data") and not self.original_data.empty:
-            if (
-                "Stock / ETF Symbol" in self.original_data.columns
-                and "Investment Account" in self.original_data.columns
-            ):
-                symbol_rows_orig = self.original_data[
-                    self.original_data["Stock / ETF Symbol"] == symbol_to_find
-                ]
-                if not symbol_rows_orig.empty:
-                    first_account = symbol_rows_orig["Investment Account"].iloc[0]
-                    if pd.notna(first_account) and isinstance(first_account, str):
-                        acc_map = self.config.get("account_currency_map", {})
-                        currency_from_map = acc_map.get(first_account)
-                        if (
-                            currency_from_map
-                            and isinstance(currency_from_map, str)
-                            and len(currency_from_map) == 3
-                        ):
-                            return currency_from_map.upper()
-
-        # 4. Final Fallback: Return application's default currency
-        default_curr = self.config.get("default_currency", "USD")
-        return default_curr
-
 
 class ManualPriceDialog(QDialog):
     """Dialog to manage manual prices for symbols."""
@@ -3516,14 +3558,36 @@ class PortfolioApp(QMainWindow):
             "bar_periods_annual": 10,  # Default periods
             "bar_periods_monthly": 12,
             "bar_periods_weekly": 12,
+            "dividend_agg_period": "Annual",  # <-- ADDED: Default dividend aggregation period
+            "dividend_periods_to_show": 10,  # <-- ADDED: Default periods for dividend chart (matches annual)
+            "dividend_chart_default_periods_annual": 10,  # From config.py
+            "dividend_chart_default_periods_quarterly": 12,  # From config.py
+            "dividend_chart_default_periods_monthly": 24,  # From config.py
         }
         config = config_defaults.copy()
-        if os.path.exists(CONFIG_FILE):
+        logging.debug(
+            f"LOAD_CONFIG: Initial config from defaults: dividend_agg_period='{config.get('dividend_agg_period')}', dividend_periods_to_show='{config.get('dividend_periods_to_show')}'"
+        )
+
+        if os.path.exists(self.CONFIG_FILE):  # Use instance attribute
             try:
-                with open(CONFIG_FILE, "r") as f:
-                    loaded_config = json.load(f)
-                config.update(loaded_config)
-                logging.info(f"Config loaded from {CONFIG_FILE}")
+                with open(self.CONFIG_FILE, "r") as f:  # Use instance attribute
+                    loaded_config_from_file = json.load(f)
+                logging.debug(
+                    f"LOAD_CONFIG: From file - loaded_config_from_file['dividend_agg_period'] = '{loaded_config_from_file.get('dividend_agg_period')}'"
+                )
+                logging.debug(
+                    f"LOAD_CONFIG: From file - loaded_config_from_file['dividend_periods_to_show'] = '{loaded_config_from_file.get('dividend_periods_to_show')}'"
+                )
+
+                config.update(loaded_config_from_file)
+                logging.debug(
+                    f"LOAD_CONFIG: After config.update(loaded_config_from_file): dividend_agg_period='{config.get('dividend_agg_period')}', dividend_periods_to_show='{config.get('dividend_periods_to_show')}'"
+                )
+
+                logging.info(
+                    f"Config loaded from {self.CONFIG_FILE}"
+                )  # Use instance attribute
 
                 # --- Validate Benchmarks (unchanged) ---
                 if "graph_benchmarks" in config:
@@ -3595,10 +3659,12 @@ class PortfolioApp(QMainWindow):
 
             except Exception as e:
                 logging.warning(
-                    f"Warn: Load config failed ({CONFIG_FILE}): {e}. Using defaults."
+                    f"Warn: Load config failed ({self.CONFIG_FILE}): {e}. Using defaults."  # Use instance attribute
                 )
         else:
-            logging.info(f"Config file {CONFIG_FILE} not found. Using defaults.")
+            logging.info(
+                f"Config file {self.CONFIG_FILE} not found. Using defaults."
+            )  # Use instance attribute
 
         # Ensure all default keys exist (modified to include new keys)
         for key, default_value in config_defaults.items():
@@ -3631,7 +3697,16 @@ class PortfolioApp(QMainWindow):
             config["graph_end_date"] = DEFAULT_GRAPH_END_DATE.strftime("%Y-%m-%d")
 
         # Validate bar chart periods
-        for key in ["bar_periods_annual", "bar_periods_monthly", "bar_periods_weekly"]:
+        for key in [
+            "bar_periods_annual",
+            "bar_periods_monthly",
+            # "dividend_agg_period", # This is a string, validated separately
+            "dividend_periods_to_show",  # This is numeric
+            "dividend_chart_default_periods_annual",  # Numeric
+            "dividend_chart_default_periods_annual",
+            "dividend_chart_default_periods_quarterly",
+            "dividend_chart_default_periods_monthly",
+        ]:
             if key in config:
                 try:
                     val = int(config[key])
@@ -3639,7 +3714,39 @@ class PortfolioApp(QMainWindow):
                 except (ValueError, TypeError):
                     config[key] = config_defaults[key]  # Reset to default on error
             else:
-                config[key] = config_defaults[key]  # Add if missing
+                config["dividend_periods_to_show"] = config_defaults[
+                    "dividend_periods_to_show"
+                ]  # Correctly use the specific key
+
+        logging.debug(
+            f"LOAD_CONFIG (PRE-VALIDATION for dividend_agg_period): current config['dividend_agg_period'] = '{config.get('dividend_agg_period')}'"
+        )
+        # Validate dividend aggregation period
+        if config.get("dividend_agg_period") not in ["Annual", "Quarterly", "Monthly"]:
+            logging.warning(
+                f"LOAD_CONFIG: Invalid or missing 'dividend_agg_period' ('{config.get('dividend_agg_period')}') in config. Resetting to default '{config_defaults['dividend_agg_period']}'."
+            )
+            config["dividend_agg_period"] = config_defaults["dividend_agg_period"]
+        logging.debug(
+            f"LOAD_CONFIG (POST-VALIDATION for dividend_agg_period): final config['dividend_agg_period'] = '{config.get('dividend_agg_period')}'"
+        )
+
+        # The validation for "dividend_periods_to_show" is now handled by the numeric_keys_to_validate loop.
+        # The separate block for it has been removed.
+
+        # Validate dividend chart periods
+        for key in [
+            "dividend_chart_default_periods_annual",
+            "dividend_chart_default_periods_quarterly",
+            "dividend_chart_default_periods_monthly",
+        ]:
+            if key in config:
+                try:
+                    val = int(config[key])
+                    config[key] = max(1, min(val, 100))  # Clamp
+                except (ValueError, TypeError):
+                    config[key] = config_defaults[key]
+
         return config
 
     # --- UI Update Methods (Define BEFORE __init__ calls them) ---
@@ -4202,7 +4309,7 @@ The CSV file should contain the following columns (header names must match exact
             return False
 
         # MANUAL_PRICE_FILE is already an absolute path from resource_path
-        manual_price_file_path = MANUAL_PRICE_FILE
+        manual_price_file_path = self.MANUAL_PRICE_FILE  # Use instance attribute
         logging.info(f"Saving manual prices to: {manual_price_file_path}")
 
         try:
@@ -4221,7 +4328,9 @@ The CSV file should contain the following columns (header names must match exact
             # Sort keys for consistent file output (optional)
             prices_to_save = dict(sorted(self.manual_prices_dict.items()))
 
-            with open(MANUAL_PRICE_FILE, "w", encoding="utf-8") as f:
+            with open(
+                self.MANUAL_PRICE_FILE, "w", encoding="utf-8"
+            ) as f:  # Use instance attribute
                 json.dump(prices_to_save, f, indent=4, ensure_ascii=False)
             logging.info("Manual prices saved successfully.")
             return True
@@ -4312,32 +4421,153 @@ The CSV file should contain the following columns (header names must match exact
     # --- Initialization Method ---
     def __init__(self):
         """Initializes the main application window, loads config, and sets up UI."""
-        super().__init__()
+        # --- IMPORTANT: Call super().__init__() for QMainWindow ---
+        super().__init__()  # This was missing, important for QMainWindow setup
+        logging.debug("--- PortfolioApp __init__: START ---")
+
+        # --- Initialize CONFIG_FILE and MANUAL_PRICE_FILE here ---
+        # QApplication instance should exist and app name/org should be set by now by the __main__ block
+        self.CONFIG_FILE: Optional[str] = None
+        self.MANUAL_PRICE_FILE: Optional[str] = None
+        try:
+            # QApplication instance should exist and app name/org should be set by now by the __main__ block
+            config_dir_path = ""  # Initialize
+            if sys.platform == "darwin":  # macOS
+                # On macOS, AppDataLocation is often preferred for this type of data
+                # and should point to ~/Library/Application Support/<Org>/<App>
+                config_dir_path = QStandardPaths.writableLocation(
+                    QStandardPaths.AppDataLocation
+                )
+                if (
+                    not config_dir_path
+                ):  # Fallback to AppConfigLocation if AppDataLocation fails
+                    logging.warning(
+                        "macOS: AppDataLocation failed, trying AppConfigLocation."
+                    )
+                    config_dir_path = QStandardPaths.writableLocation(
+                        QStandardPaths.AppConfigLocation
+                    )
+            else:  # Other platforms
+                config_dir_path = QStandardPaths.writableLocation(
+                    QStandardPaths.AppConfigLocation
+                )
+                if not config_dir_path:  # Fallback
+                    config_dir_path = QStandardPaths.writableLocation(
+                        QStandardPaths.AppDataLocation
+                    )
+
+            if config_dir_path:
+                # QStandardPaths.AppConfigLocation is already application-specific (e.g., includes Org/App name)
+                user_specific_app_folder = (
+                    config_dir_path  # This path should now be correct
+                )
+                os.makedirs(user_specific_app_folder, exist_ok=True)
+                self.CONFIG_FILE = os.path.join(
+                    user_specific_app_folder, "gui_config.json"
+                )
+                self.MANUAL_PRICE_FILE = os.path.join(
+                    user_specific_app_folder, "manual_prices.json"
+                )
+            else:  # Further fallback if QStandardPaths fails (less likely)
+                logging.warning(
+                    "QStandardPaths failed to provide a writable location. Using fallback directory."
+                )
+                user_specific_app_folder = os.path.expanduser(
+                    f"~/.{APP_NAME_FOR_QT.lower()}"
+                )  # Fallback to a hidden dir in user's home
+                os.makedirs(user_specific_app_folder, exist_ok=True)
+                self.CONFIG_FILE = os.path.join(
+                    user_specific_app_folder, "gui_config.json"
+                )
+                self.MANUAL_PRICE_FILE = os.path.join(
+                    user_specific_app_folder, "manual_prices.json"
+                )
+        except Exception as e_path_init:
+            logging.exception(
+                f"CRITICAL ERROR during config/manual file path initialization: {e_path_init}"
+            )
+            # As a last resort, set them to relative paths in the current working directory
+            # This might not be ideal for bundled apps but prevents None.
+            self.CONFIG_FILE = "gui_config.json"
+            self.MANUAL_PRICE_FILE = "manual_prices.json"
+            QMessageBox.critical(
+                self,
+                "Path Error",
+                f"Could not determine standard configuration paths. Using local files.\nError: {e_path_init}",
+            )
+
+        logging.info(f"CONFIG_FILE path determined as: {self.CONFIG_FILE}")
+        logging.info(f"MANUAL_PRICE_FILE path determined as: {self.MANUAL_PRICE_FILE}")
+        # --- End path initialization ---
+
         self.app_font = QFont("Arial", 9)  # Or your chosen common font
         logging.info(
             f"Application base font set to: {self.app_font.family()} ({self.app_font.pointSize()}pt)"
         )  # Add this log
         self.setFont(self.app_font)
+        # --- Core App Setup ---
         self.base_window_title = "Investa Portfolio Dashboard"
-        self.index_quote_data: Dict[str, Dict[str, Any]] = {}
         self.setWindowTitle(self.base_window_title)
+        # self.app_font = QFont("Arial", 9) # Already set above
+        # self.setFont(self.app_font) # Already set above
+        self.internal_to_yf_map = {}  # <-- ADD Initialize attribute
+        # --- ADDED: Timer for debounced table filtering ---
+        self.table_filter_timer = QTimer(self)
+        self.table_filter_timer.setSingleShot(True)
+        # --- END ADDED ---
+        self._initial_file_selection = False  # Flag for initial auto-select
+        self.worker_signals = WorkerSignals()  # Central signals object
+
+        # --- Configuration Loading ---
         self.config = self.load_config()
+
+        # --- Load Manual Prices ---
+        self.manual_prices_dict = self._load_manual_prices()  # Load manual_prices.json
+
         self.transactions_file = self.config.get("transactions_file", DEFAULT_CSV)
-        self.fmp_api_key = self.config.get("fmp_api_key", DEFAULT_API_KEY)
+        self.fmp_api_key = self.config.get(
+            "fmp_api_key", DEFAULT_API_KEY
+        )  # Keep for potential future use
+
+        # --- State Variables ---
         self.is_calculating = False
 
+        # --- ADD Raw Historical Data Placeholders ---
+        self.historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}
+        self.historical_prices_yf_unadjusted: Dict[str, pd.DataFrame] = (
+            {}
+        )  # Might need this too if we want unadjusted charts later
+        self.historical_fx_yf: Dict[str, pd.DataFrame] = {}
+        # --- END ADD ---
+
+        self.last_calc_status = ""
+        self.last_hist_twr_factor = np.nan
+
+        # --- Data Placeholders ---
+        self.holdings_data = pd.DataFrame()
+        self.ignored_data = pd.DataFrame()
+        self.summary_metrics_data = {}
+        self.account_metrics_data = {}
+        self.historical_data = pd.DataFrame()
+        self.index_quote_data: Dict[str, Dict[str, Any]] = {}
+        self.full_historical_data = pd.DataFrame()
+        self.periodic_returns_data: Dict[str, pd.DataFrame] = (
+            {}
+        )  # Initialize as empty dict
+        self.dividend_history_data = pd.DataFrame()  # <-- NEW for dividend history
+
         # --- Account Selection State ---
-        self.available_accounts: List[str] = []  # Populated after data load
+        self.available_accounts: List[str] = []
         # Load selected accounts, default to empty list (meaning all)
         self.selected_accounts: List[str] = self.config.get("selected_accounts", [])
-        # --- End Account Selection State ---
 
+        # --- Benchmark Selection State ---
         self.selected_benchmarks = self.config.get(
             "graph_benchmarks", DEFAULT_GRAPH_BENCHMARKS
         )
         if not isinstance(self.selected_benchmarks, list) or not all(
             isinstance(item, str) for item in self.selected_benchmarks
-        ):
+        ):  # This line is different from the diff context
             self.selected_benchmarks = DEFAULT_GRAPH_BENCHMARKS
         elif (
             not self.selected_benchmarks and BENCHMARK_OPTIONS_DISPLAY
@@ -4347,51 +4577,77 @@ The CSV file should contain the following columns (header names must match exact
                 [BENCHMARK_OPTIONS_DISPLAY[0]] if BENCHMARK_OPTIONS_DISPLAY else []
             )
 
-        self.all_possible_ui_columns = list(get_column_definitions().keys())
+        # --- Column Visibility State ---
+        # Initialize self.column_visibility before calling _ensure_all_columns...
         self.column_visibility: Dict[str, bool] = self.config.get(
             "column_visibility", {}
         )
-        self._ensure_all_columns_in_visibility()
+        # Now ensure all possible columns are covered
+        self._ensure_all_columns_in_visibility()  # This needs self.column_visibility to exist
+
+        # --- Background Processing ---
         self.threadpool = QThreadPool()
         logging.info(f"Max threads: {self.threadpool.maxThreadCount()}")
-        self.holdings_data = pd.DataFrame()
-        self.ignored_data = pd.DataFrame()
-        self.summary_metrics_data = {}
-        self.account_metrics_data = {}
-        self.historical_data = pd.DataFrame()
-        self.last_calc_status = ""
-        self.last_hist_twr_factor = np.nan
-        self.app_font = QFont("Arial", 9)
-        self.setFont(self.app_font)
-        self.initUI()
-        self.apply_styles()
-        self.update_header_info(loading=True)
-        self.update_performance_graphs(initial=True)
-        self.return_cursor = None  # For the return graph cursor
-        self.value_cursor = None  # For the value graph cursor
 
-        # --- Initial Load Logic ---
+        logging.debug("--- PortfolioApp __init__: Before UI Structure/Widgets Init ---")
+        # --- Initialize UI ---
+        self._init_ui_structure()  # Setup frames and main layout
+        logging.debug("--- PortfolioApp __init__: After _init_ui_structure ---")
+        self._init_ui_widgets()  # Create widgets within frames
+        logging.debug("--- PortfolioApp __init__: After _init_ui_widgets ---")
+        self._init_menu_bar()
+        self._init_toolbar()  # Initialize toolbar after menu actions are created
+        self._connect_signals()  # Connect signals after all UI elements are initialized
+
+        # --- Apply Styles & Initial Updates ---
+        self._apply_initial_styles_and_updates()
+
+        # --- Initial Data Load Logic ---
         if self.config.get("load_on_startup", True):
             if self.transactions_file and os.path.exists(self.transactions_file):
                 # Need to get available accounts before potentially filtering in refresh_data
                 # Let's trigger a preliminary load just for accounts if needed, or handle in refresh_data
                 logging.info("Triggering initial data refresh on startup...")
 
-                QTimer.singleShot(150, self.refresh_data)
-            else:
-                self.status_label.setText(
-                    "Warn: Startup TX file invalid. Load skipped."
+                QTimer.singleShot(
+                    150, self.refresh_data
+                )  # Delay slightly to ensure UI is fully shown
+            # --- ADDED: Auto-prompt if file is missing ---
+            elif not self.transactions_file or not os.path.exists(
+                self.transactions_file
+            ):
+                logging.info(
+                    f"Startup TX file invalid or not found: '{self.transactions_file}'. Prompting user."
                 )
+                self.status_label.setText(
+                    "Info: Please select your transactions CSV file."
+                )
+                self._initial_file_selection = (
+                    True  # Set flag before calling select_file
+                )
+
+                # Use QTimer to ensure the dialog shows *after* the main window is fully up
+                QTimer.singleShot(100, self.select_file)
+            # --- END ADDED ---
+            else:
+                # Provide specific feedback if the configured file is bad
+                startup_file_msg = f"Warn: Startup TX file invalid or not found: '{self.transactions_file}'. Load skipped."
+                self.status_label.setText(startup_file_msg)
+                logging.info(startup_file_msg)
+                # Update UI elements to reflect no data state
                 self._update_table_view_with_filtered_columns(pd.DataFrame())
                 self.apply_column_visibility()
                 self.update_performance_graphs(initial=True)
-                self._update_account_button_text()  # Update button text even if no data
+                self._update_account_button_text()
+                self._update_table_title()
         else:
+            # User chose not to load on startup
             self.status_label.setText("Ready. Select CSV file and click Refresh.")
             self._update_table_view_with_filtered_columns(pd.DataFrame())
             self.apply_column_visibility()
             self.update_performance_graphs(initial=True)
-            self._update_account_button_text()  # Update button text
+            self._update_account_button_text()
+            self._update_table_title()
 
     # --- Benchmark Selection Methods (Define BEFORE initUI) ---
     def _update_benchmark_button_text(self):
@@ -4643,9 +4899,11 @@ The CSV file should contain the following columns (header names must match exact
     def _load_manual_prices(self) -> Dict[str, float]:
         """Loads manual prices from MANUAL_PRICE_FILE."""
         manual_prices = {}
-        if os.path.exists(MANUAL_PRICE_FILE):
+        if os.path.exists(self.MANUAL_PRICE_FILE):  # Use instance attribute
             try:
-                with open(MANUAL_PRICE_FILE, "r", encoding="utf-8") as f:
+                with open(
+                    self.MANUAL_PRICE_FILE, "r", encoding="utf-8"
+                ) as f:  # Use instance attribute
                     loaded_data = json.load(f)
                 if isinstance(loaded_data, dict):
                     # Basic validation: ensure keys are strings and values are numbers
@@ -4666,25 +4924,27 @@ The CSV file should contain the following columns (header names must match exact
                             )
                     manual_prices = valid_data
                     logging.info(
-                        f"Loaded {len(manual_prices)} valid entries from {MANUAL_PRICE_FILE}."
+                        f"Loaded {len(manual_prices)} valid entries from {self.MANUAL_PRICE_FILE}."  # Use instance attribute
                     )
                     if invalid_count > 0:
                         logging.warning(
-                            f"Skipped {invalid_count} invalid entries from {MANUAL_PRICE_FILE}."
+                            f"Skipped {invalid_count} invalid entries from {self.MANUAL_PRICE_FILE}."  # Use instance attribute
                         )
                 else:
                     logging.warning(
-                        f"Warn: Content of {MANUAL_PRICE_FILE} is not a dictionary. Ignoring."
+                        f"Warn: Content of {self.MANUAL_PRICE_FILE} is not a dictionary. Ignoring."  # Use instance attribute
                     )
             except json.JSONDecodeError as e:
                 logging.error(
-                    f"Error decoding JSON from {MANUAL_PRICE_FILE}: {e}. Ignoring."
+                    f"Error decoding JSON from {self.MANUAL_PRICE_FILE}: {e}. Ignoring."  # Use instance attribute
                 )
             except Exception as e:
-                logging.error(f"Error reading {MANUAL_PRICE_FILE}: {e}. Ignoring.")
+                logging.error(
+                    f"Error reading {self.MANUAL_PRICE_FILE}: {e}. Ignoring."
+                )  # Use instance attribute
         else:
             logging.info(
-                f"{MANUAL_PRICE_FILE} not found. Manual prices will not be used initially."
+                f"{self.MANUAL_PRICE_FILE} not found. Manual prices will not be used initially."  # Use instance attribute
             )
         return manual_prices
 
@@ -4869,160 +5129,22 @@ The CSV file should contain the following columns (header names must match exact
         self.config["bar_periods_annual"] = self.annual_periods_spinbox.value()
         self.config["bar_periods_monthly"] = self.monthly_periods_spinbox.value()
         self.config["bar_periods_weekly"] = self.weekly_periods_spinbox.value()
+        # --- ADDED: Save dividend history settings ---
+        self.config["dividend_agg_period"] = self.dividend_period_combo.currentText()
+        self.config["dividend_periods_to_show"] = self.dividend_periods_spinbox.value()
+        # --- END ADDED ---
 
         try:
-            with open(CONFIG_FILE, "w") as f:
+            with open(self.CONFIG_FILE, "w") as f:  # Use instance attribute
                 json.dump(self.config, f, indent=4)
-            logging.info(f"Config saved to {CONFIG_FILE}")
+            logging.info(
+                f"Config saved to {self.CONFIG_FILE}"
+            )  # Use instance attribute
         except Exception as e:
             logging.warning(f"Warn: Save config failed: {e}")
             QMessageBox.warning(
                 self, "Config Save Error", f"Could not save settings: {e}"
             )
-
-    # --- Initialization Method ---
-    def __init__(self):
-        super().__init__()
-
-        # --- Core App Setup ---
-        self.base_window_title = "Investa Portfolio Dashboard"
-        self.setWindowTitle(self.base_window_title)
-        self.app_font = QFont("Arial", 9)
-        self.setFont(self.app_font)
-        self.internal_to_yf_map = {}  # <-- ADD Initialize attribute
-        # --- ADDED: Timer for debounced table filtering ---
-        self.table_filter_timer = QTimer(self)
-        self.table_filter_timer.setSingleShot(True)
-        # --- END ADDED ---
-        self._initial_file_selection = False  # Flag for initial auto-select
-        self.worker_signals = WorkerSignals()  # Central signals object
-
-        # --- Configuration Loading ---
-        self.config = self.load_config()
-
-        # --- Load Manual Prices ---
-        self.manual_prices_dict = self._load_manual_prices()  # Load manual_prices.json
-
-        self.transactions_file = self.config.get("transactions_file", DEFAULT_CSV)
-        self.fmp_api_key = self.config.get(
-            "fmp_api_key", DEFAULT_API_KEY
-        )  # Keep for potential future use
-
-        # --- State Variables ---
-        self.is_calculating = False
-
-        # --- ADD Raw Historical Data Placeholders ---
-        self.historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}
-        self.historical_prices_yf_unadjusted: Dict[str, pd.DataFrame] = (
-            {}
-        )  # Might need this too if we want unadjusted charts later
-        self.historical_fx_yf: Dict[str, pd.DataFrame] = {}
-        # --- END ADD ---
-
-        self.last_calc_status = ""
-        self.last_hist_twr_factor = np.nan
-
-        # --- Data Placeholders ---
-        self.holdings_data = pd.DataFrame()
-        self.ignored_data = pd.DataFrame()
-        self.summary_metrics_data = {}
-        self.account_metrics_data = {}
-        self.historical_data = pd.DataFrame()
-        self.index_quote_data: Dict[str, Dict[str, Any]] = {}
-        self.full_historical_data = pd.DataFrame()
-        self.periodic_returns_data: Dict[str, pd.DataFrame] = (
-            {}
-        )  # Initialize as empty dict
-
-        # --- Account Selection State ---
-        self.available_accounts: List[str] = []
-        # Load selected accounts, default to empty list (meaning all)
-        self.selected_accounts: List[str] = self.config.get("selected_accounts", [])
-
-        # --- Benchmark Selection State ---
-        self.selected_benchmarks = self.config.get(
-            "graph_benchmarks", DEFAULT_GRAPH_BENCHMARKS
-        )
-        if not isinstance(self.selected_benchmarks, list) or not all(
-            isinstance(item, str) for item in self.selected_benchmarks
-        ):  # This line is different from the diff context
-            self.selected_benchmarks = DEFAULT_GRAPH_BENCHMARKS
-        elif (
-            not self.selected_benchmarks and BENCHMARK_OPTIONS_DISPLAY
-        ):  # Use BENCHMARK_OPTIONS_DISPLAY
-            # If BENCHMARK_OPTIONS_DISPLAY is not empty, use its first item, else empty list
-            self.selected_benchmarks = (
-                [BENCHMARK_OPTIONS_DISPLAY[0]] if BENCHMARK_OPTIONS_DISPLAY else []
-            )
-
-        # --- Column Visibility State ---
-        # Initialize self.column_visibility before calling _ensure_all_columns...
-        self.column_visibility: Dict[str, bool] = self.config.get(
-            "column_visibility", {}
-        )
-        # Now ensure all possible columns are covered
-        self._ensure_all_columns_in_visibility()  # This needs self.column_visibility to exist
-
-        # --- Background Processing ---
-        self.threadpool = QThreadPool()
-        logging.info(f"Max threads: {self.threadpool.maxThreadCount()}")
-
-        # --- Initialize UI ---
-        self._init_ui_structure()  # Setup frames and main layout
-        self._init_ui_widgets()  # Create widgets within frames
-        self._init_menu_bar()
-        self._init_toolbar()  # Initialize toolbar after menu actions are created
-        self._connect_signals()  # Connect signals after all UI elements are initialized
-
-        # --- Apply Styles & Initial Updates ---
-        self._apply_initial_styles_and_updates()
-
-        # --- Initial Data Load Logic ---
-        if self.config.get("load_on_startup", True):
-            if self.transactions_file and os.path.exists(self.transactions_file):
-                # Need to get available accounts before potentially filtering in refresh_data
-                # Let's trigger a preliminary load just for accounts if needed, or handle in refresh_data
-                logging.info("Triggering initial data refresh on startup...")
-
-                QTimer.singleShot(
-                    150, self.refresh_data
-                )  # Delay slightly to ensure UI is fully shown
-            # --- ADDED: Auto-prompt if file is missing ---
-            elif not self.transactions_file or not os.path.exists(
-                self.transactions_file
-            ):
-                logging.info(
-                    f"Startup TX file invalid or not found: '{self.transactions_file}'. Prompting user."
-                )
-                self.status_label.setText(
-                    "Info: Please select your transactions CSV file."
-                )
-                self._initial_file_selection = (
-                    True  # Set flag before calling select_file
-                )
-
-                # Use QTimer to ensure the dialog shows *after* the main window is fully up
-                QTimer.singleShot(100, self.select_file)
-            # --- END ADDED ---
-            else:
-                # Provide specific feedback if the configured file is bad
-                startup_file_msg = f"Warn: Startup TX file invalid or not found: '{self.transactions_file}'. Load skipped."
-                self.status_label.setText(startup_file_msg)
-                logging.info(startup_file_msg)
-                # Update UI elements to reflect no data state
-                self._update_table_view_with_filtered_columns(pd.DataFrame())
-                self.apply_column_visibility()
-                self.update_performance_graphs(initial=True)
-                self._update_account_button_text()
-                self._update_table_title()
-        else:
-            # User chose not to load on startup
-            self.status_label.setText("Ready. Select CSV file and click Refresh.")
-            self._update_table_view_with_filtered_columns(pd.DataFrame())
-            self.apply_column_visibility()
-            self.update_performance_graphs(initial=True)
-            self._update_account_button_text()
-            self._update_table_title()
 
     def _apply_initial_styles_and_updates(self):
         """Applies styles and initial UI states after widgets are created."""
@@ -5036,6 +5158,7 @@ The CSV file should contain the following columns (header names must match exact
 
     def _init_ui_structure(self):
         """Sets up the main window layout using QFrames for structure."""
+        logging.debug("--- _init_ui_structure: START ---")
         self.setWindowTitle(self.base_window_title)
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -5043,33 +5166,56 @@ The CSV file should contain the following columns (header names must match exact
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Create main frames/panels
+        # --- Header and Controls (remain outside tabs) ---
         self.header_frame = QFrame()
         self.header_frame.setObjectName("HeaderFrame")
         self.controls_frame = QFrame()
         self.controls_frame.setObjectName("ControlsFrame")
-        self.summary_and_graphs_frame = QFrame()
-        self.summary_and_graphs_frame.setObjectName("SummaryAndGraphsFrame")
-        self.content_frame = QFrame()
-        # --- ADD Bar Charts Frame ---
-        self.bar_charts_frame = QFrame()
-        self.bar_charts_frame.setObjectName("BarChartsFrame")
-        self.bar_charts_frame.setVisible(False)  # Initially hidden until data is ready
-        # --- END ADD ---
-        self.content_frame.setObjectName("ContentFrame")
-
-        # Add frames to main layout
         main_layout.addWidget(self.header_frame)
         main_layout.addWidget(self.controls_frame)
+
+        # --- Main Tab Widget ---
+        self.main_tab_widget = QTabWidget()
+        self.main_tab_widget.setObjectName("MainTabWidget")
         main_layout.addWidget(
-            self.summary_and_graphs_frame, 5
-        )  # Add summary/graphs frame with stretch 5
-        main_layout.addWidget(
-            self.bar_charts_frame, 3
-        )  # Add bar charts frame with stretch 3
-        main_layout.addWidget(
-            self.content_frame, 6  # Add content frame with stretch factor 6
-        )  # Content frame takes more relative space
+            self.main_tab_widget, 1
+        )  # Tab widget takes remaining space
+
+        # --- Tab 1: Performance & Summary ---
+        self.performance_summary_tab = QWidget()
+        self.summary_and_graphs_frame = QFrame()
+        self.summary_and_graphs_frame.setObjectName("SummaryAndGraphsFrame")
+
+        # Create the bar_charts_frame here as it's now part of this tab's content
+        self.bar_charts_frame = QFrame()
+        self.bar_charts_frame.setObjectName("BarChartsFrame")
+        self.bar_charts_frame.setVisible(False)  # Initially hidden
+
+        # Create the content_frame (for pie charts and holdings table) here
+        # It will be added to the performance_summary_tab's layout
+        self.content_frame = QFrame()
+        self.summary_and_graphs_frame.setObjectName("SummaryAndGraphsFrame")
+
+        perf_summary_layout = QVBoxLayout(self.performance_summary_tab)
+        perf_summary_layout.setContentsMargins(0, 0, 0, 0)
+        perf_summary_layout.addWidget(
+            self.summary_and_graphs_frame, 2  # Summary grid and line graphs
+        )
+        # --- MODIFIED ORDER: Bar charts now above content_frame ---
+        perf_summary_layout.addWidget(
+            self.bar_charts_frame, 1
+        )  # Periodic return bar charts
+        perf_summary_layout.addWidget(
+            self.content_frame, 3  # Pie charts and holdings table
+        )
+        # --- END MODIFIED ORDER ---
+        self.main_tab_widget.addTab(
+            self.performance_summary_tab, "Performance & Summary"
+        )
+
+        # Tab 4 for Dividend History will be initialized in _init_ui_widgets
+        # The "Holdings Overview" tab is now removed.
+        logging.debug("--- _init_ui_structure: END ---")
 
     def _init_header_frame_widgets(self):
         """Initializes widgets for the Header Frame."""
@@ -5545,7 +5691,11 @@ The CSV file should contain the following columns (header names must match exact
         # self.apply_table_filter_button = QPushButton("Apply")
         # self.apply_table_filter_button.setToolTip("Apply table filters")
         # self.apply_table_filter_button.setObjectName("ApplyTableFilterButton")
-        # table_filter_layout.addWidget(self.apply_table_filter_button)        self.clear_table_filter_button = QPushButton("Clear")
+        # table_filter_layout.addWidget(self.apply_table_filter_button)
+        self.clear_table_filter_button = QPushButton(
+            "Clear"
+        )  # <-- MOVED/ADDED CREATION HERE
+        # self.clear_table_filter_button.setToolTip("Clear table filters")
         self.clear_table_filter_button.setToolTip("Clear table filters")
         self.clear_table_filter_button.setObjectName("ClearTableFilterButton")
         table_filter_layout.addWidget(self.clear_table_filter_button)
@@ -5589,22 +5739,236 @@ The CSV file should contain the following columns (header names must match exact
 
     def _init_ui_widgets(self):
         """Orchestrates the initialization of all UI widgets within their frames."""
+        print(
+            "DEBUG PRINT: _init_ui_widgets method has been entered."
+        )  # <-- ADD THIS PRINT STATEMENT
+        logging.debug("--- _init_ui_widgets: START ---")
         self._init_header_frame_widgets()
+        logging.debug("--- _init_ui_widgets: After _init_header_frame_widgets ---")
         self._init_controls_frame_widgets()
-
+        logging.debug("--- _init_ui_widgets: After _init_controls_frame_widgets ---")
         # Summary & Graphs Frame (needs its own layout passed to helpers)
         summary_graphs_layout = QHBoxLayout(self.summary_and_graphs_frame)
+        summary_graphs_layout.setContentsMargins(
+            0, 0, 0, 0
+        )  # Let content widgets handle margins
         self._init_summary_grid_widgets(summary_graphs_layout)
         self._init_performance_graph_widgets(summary_graphs_layout)
-
+        logging.debug(
+            "--- _init_ui_widgets: After _init_summary_grid_widgets & _init_performance_graph_widgets ---"
+        )
+        # Bar Charts Frame (Periodic Returns Tab)
         self._init_bar_charts_frame_widgets()
-
+        logging.debug("--- _init_ui_widgets: After _init_bar_charts_frame_widgets ---")
         # Content Frame (needs its own layout passed to helpers)
         content_layout = QHBoxLayout(self.content_frame)
+        content_layout.setContentsMargins(
+            0, 0, 0, 0
+        )  # Let content widgets handle margins
         self._init_pie_chart_widgets(content_layout)
+        logging.debug("--- _init_ui_widgets: After _init_pie_chart_widgets ---")
         self._init_table_panel_widgets(content_layout)
+        logging.debug("--- _init_ui_widgets: After _init_table_panel_widgets ---")
+        # --- Tab 4: Dividend History ---
+        logging.debug("--- _init_ui_widgets: Entering Dividend History Tab setup ---")
+        self.dividend_history_tab = QWidget()
+        dividend_history_layout = QVBoxLayout(self.dividend_history_tab)
+        dividend_history_layout.setContentsMargins(10, 10, 10, 10)  # Add some padding
+        dividend_history_layout.setSpacing(8)
+
+        # --- TEMPORARY DIAGNOSTIC: Simplify tab content ---
+        # Comment out the original complex content and add a simple label
+        # to see if the tab itself can be rendered.
+        # simple_test_label = QLabel("Dividend History Tab - Test Content")
+        # simple_test_label.setAlignment(Qt.AlignCenter)
+        # dividend_history_layout.addWidget(simple_test_label)
+        # --- END TEMPORARY DIAGNOSTIC ---
+
+        logging.debug("--- _init_ui_widgets: Dividend History Tab layout created ---")
+        # Controls for Dividend Bar Graph
+        dividend_controls_layout = QHBoxLayout()
+        dividend_controls_layout.addWidget(QLabel("Aggregate by:"))
+        logging.debug(
+            "--- _init_ui_widgets: BEFORE self.dividend_period_combo creation ---"
+        )
+        # """ # Original Content Start (Commented out for testing) # Keep this line if you want to easily re-comment
+        self.dividend_period_combo = QComboBox()
+        logging.debug(
+            "--- _init_ui_widgets: AFTER self.dividend_period_combo creation ---"
+            "--- _init_ui_widgets: AFTER self.dividend_period_combo creation ---"
+        )
+        self.dividend_period_combo.setObjectName("DividendPeriodCombo")
+        self.dividend_period_combo.addItems(["Annual", "Quarterly", "Monthly"])
+        # --- MODIFIED: Set dividend period combo from config ---
+        logging.debug(
+            f"_INIT_UI_WIDGETS: self.config['dividend_agg_period'] from load_config = {self.config.get('dividend_agg_period')}"
+        )
+        saved_div_agg_period = self.config.get("dividend_agg_period", "Annual")
+        logging.debug(
+            f"_INIT_UI_WIDGETS: saved_div_agg_period = {saved_div_agg_period}"
+        )
+        dividend_controls_layout.addWidget(self.dividend_period_combo)
+
+        dividend_controls_layout.addWidget(QLabel("  Periods to Show:"))
+        self.dividend_period_combo.setMinimumWidth(100)  # <-- SET MINIMUM WIDTH
+        self.dividend_periods_spinbox = QSpinBox()
+        # ... (rest of spinbox setup) ...
+        logging.debug(
+            "--- _init_ui_widgets: AFTER self.dividend_periods_spinbox creation ---"
+        )
+        self.dividend_periods_spinbox.setObjectName("DividendPeriodsSpinbox")
+        self.dividend_periods_spinbox.setMinimum(1)
+        self.dividend_periods_spinbox.setMaximum(50)
+        # Initialize based on default period (Annual)
+        # --- MODIFIED: Set dividend periods spinbox from config ---
+        # The _update_dividend_spinbox_default will be called once due to setCurrentText above,
+        # then we set the specific saved value.
+        saved_div_periods_to_show = self.config.get(
+            "dividend_periods_to_show", 10
+        )  # Default to 10 if key missing
+        # --- END MODIFICATION ---
+        self.dividend_periods_spinbox.setFixedWidth(60)
+        dividend_controls_layout.addWidget(self.dividend_periods_spinbox)
+        dividend_controls_layout.addStretch()
+        dividend_history_layout.addLayout(dividend_controls_layout)
+        logging.debug("--- _init_ui_widgets: Dividend controls layout added ---")
+        # Dividend Bar Graph Canvas
+        self.dividend_bar_fig = Figure(
+            figsize=(7, 3), dpi=CHART_DPI
+        )  # Adjust size as needed
+        # --- Set combo box text AFTER spinbox is created and its value potentially set by _update_dividend_spinbox_default ---
+        if saved_div_agg_period in ["Annual", "Quarterly", "Monthly"]:
+            self.dividend_period_combo.setCurrentText(saved_div_agg_period)
+        else:
+            self.dividend_period_combo.setCurrentText("Annual")  # Fallback
+        logging.debug(
+            f"_INIT_UI_WIDGETS: After setCurrentText('{saved_div_agg_period}'), combo.currentText() is now '{self.dividend_period_combo.currentText()}'"
+        )
+        self.dividend_periods_spinbox.setValue(
+            saved_div_periods_to_show
+        )  # Ensure saved value is set after combo triggers default
+        self.dividend_bar_fig = (
+            Figure(  # This line was duplicated, removing the second instance
+                figsize=(7, 3), dpi=CHART_DPI
+            )
+        )  # Adjust size as needed
+        self.dividend_bar_ax = self.dividend_bar_fig.add_subplot(111)
+        self.dividend_bar_canvas = FigureCanvas(self.dividend_bar_fig)
+        logging.debug("--- _init_ui_widgets: Dividend bar canvas created ---")
+        self.dividend_bar_canvas.setObjectName("DividendBarCanvas")
+        dividend_history_layout.addWidget(
+            self.dividend_bar_canvas, 1
+        )  # Stretch factor 1
+        logging.debug("--- _init_ui_widgets: Dividend bar canvas added to layout ---")
+
+        # --- ADDED: Dividend Summary Table ---
+        self.dividend_summary_table_view = QTableView()
+        self.dividend_summary_table_view.setObjectName("DividendSummaryTable")
+        self.dividend_summary_table_model = PandasModel(parent=self)  # New model
+        logging.debug(
+            "--- _init_ui_widgets: Setting model for Dividend Summary TableView ---"
+        )
+        self.dividend_summary_table_view.setModel(self.dividend_summary_table_model)
+        logging.debug(
+            "--- _init_ui_widgets: Configuring Dividend Summary TableView properties ---"
+        )
+        self.dividend_summary_table_view.setAlternatingRowColors(True)
+        self.dividend_summary_table_view.setSelectionBehavior(QTableView.SelectRows)
+        self.dividend_summary_table_view.setWordWrap(False)
+        self.dividend_summary_table_view.setSortingEnabled(True)  # Allow sorting
+        self.dividend_summary_table_view.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Stretch
+        )  # Stretch columns
+        self.dividend_summary_table_view.verticalHeader().setVisible(False)
+        # self.dividend_summary_table_view.setFixedHeight(150)  # REMOVE fixed height
+
+        # Dividend Table View
+        self.dividend_table_view = QTableView()
+        self.dividend_table_view.setObjectName("DividendHistoryTable")
+        self.dividend_table_model = PandasModel(parent=self)
+        logging.debug("--- _init_ui_widgets: Dividend table model created ---")
+        self.dividend_table_view.setModel(self.dividend_table_model)
+        self.dividend_table_view.setAlternatingRowColors(True)
+        self.dividend_table_view.setSelectionBehavior(QTableView.SelectRows)
+        self.dividend_table_view.setWordWrap(False)
+        self.dividend_table_view.setSortingEnabled(True)
+        self.dividend_table_view.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Interactive
+        )
+        self.dividend_table_view.verticalHeader().setVisible(False)
+
+        # --- Horizontal Layout for Tables ---
+        tables_horizontal_layout = QHBoxLayout()
+
+        # Dividend Summary GroupBox
+        summary_group = QGroupBox("Dividend Summary (as plotted)")
+        summary_group_layout = QVBoxLayout(summary_group)
+        summary_group_layout.addWidget(
+            self.dividend_summary_table_view, 1
+        )  # ADD stretch factor
+        self.dividend_summary_table_view.setVisible(True)  # Ensure visible
+        tables_horizontal_layout.addWidget(
+            summary_group, 1
+        )  # Stretch factor 1 for summary
+        logging.debug(
+            f"--- _init_ui_widgets: Dividend summary table group added. Visible: {self.dividend_summary_table_view.isVisible()}, Geometry: {self.dividend_summary_table_view.geometry()} ---"
+        )
+
+        # Dividend Transaction History GroupBox
+        transaction_group = QGroupBox("Dividend Transaction History")
+        transaction_group_layout = QVBoxLayout(transaction_group)
+        transaction_group_layout.addWidget(
+            self.dividend_table_view, 1
+        )  # Table takes all vertical space in group
+        self.dividend_table_view.setVisible(True)  # Ensure visible
+        tables_horizontal_layout.addWidget(
+            transaction_group, 2
+        )  # Stretch factor 2 for transaction history
+        logging.debug(
+            "--- _init_ui_widgets: Dividend transaction table group added ---"
+        )
+
+        # Add the horizontal layout of tables directly
+        # to the main vertical layout for the tab.
+        dividend_history_layout.addLayout(  # This now adds tables_horizontal_layout directly
+            tables_horizontal_layout, 2
+        )  # Give tables area a stretch factor of 2
+
+        logging.debug(
+            "--- _init_ui_widgets: Dividend transaction table view added to layout ---"
+        )
+        # """ # Original Content End (Commented out for testing) # Keep this line if you want to easily re-comment
+
+        # Explicitly set the tab content widget to visible before adding to QTabWidget
+        self.dividend_history_tab.setVisible(
+            True
+        )  # Ensure the page widget itself is visible
+
+        self.main_tab_widget.addTab(self.dividend_history_tab, "Dividend History")
+        logging.debug(
+            "--- _init_ui_widgets: Dividend History Tab added to main_tab_widget ---"
+        )
+        # --- End Dividend History Tab ---
 
         self._create_status_bar()
+        logging.debug("--- _init_ui_widgets: After _create_status_bar ---")
+        logging.debug("--- _init_ui_widgets: END ---")
+
+    def _update_dividend_spinbox_default(self):
+        """Updates the dividend periods spinbox based on the selected aggregation period."""
+        period = self.dividend_period_combo.currentText()
+        if period == "Annual":
+            self.dividend_periods_spinbox.setValue(
+                self.config.get("dividend_chart_default_periods_annual", 10)
+            )
+        elif period == "Quarterly":
+            self.dividend_periods_spinbox.setValue(
+                self.config.get("dividend_chart_default_periods_quarterly", 12)
+            )
+        elif period == "Monthly":
+            self.dividend_periods_spinbox.setValue(
+                self.config.get("dividend_chart_default_periods_monthly", 24)
+            )
 
     def _create_status_bar(self):
         """Creates and configures the application's status bar."""
@@ -5770,14 +6134,14 @@ The CSV file should contain the following columns (header names must match exact
                 # Validate selected accounts against the newly available ones
                 valid_selected_accounts = [
                     acc
-                    for acc in self.selected_benchmarks  # This should be self.selected_accounts
+                    for acc in self.selected_accounts  # This was self.selected_benchmarks before, corrected
                     if acc in self.available_accounts
                 ]
-                valid_selected_benchmarks = [  # Corrected variable name
-                    b
-                    for b in self.selected_benchmarks
-                    if b in BENCHMARK_OPTIONS_DISPLAY
-                ]
+                # valid_selected_benchmarks = [  # This block seems to be a copy-paste error, removing
+                #     b
+                #     for b in self.selected_benchmarks
+                #     if b in BENCHMARK_OPTIONS_DISPLAY
+                # ]
                 if len(valid_selected_accounts) != len(self.selected_accounts):
                     logging.warning(
                         "Some selected accounts were not found in the loaded data. Adjusting selection."
@@ -5841,14 +6205,12 @@ The CSV file should contain the following columns (header names must match exact
         start_date = self.graph_start_date_edit.date().toPython()
         end_date = self.graph_end_date_edit.date().toPython()
         interval = self.graph_interval_combo.currentText()
-
         # Map selected display names to YF tickers for the worker
         selected_benchmark_tickers = [
             BENCHMARK_MAPPING.get(name)
             for name in self.selected_benchmarks
-            if BENCHMARK_MAPPING.get(name)  # Ensure mapping exists and is not None
+            if BENCHMARK_MAPPING.get(name)
         ]
-
         api_key = self.fmp_api_key
 
         # Use the validated selected_accounts (or None for all)
@@ -5862,8 +6224,7 @@ The CSV file should contain the following columns (header names must match exact
             )
             self.calculation_finished()
             return
-        if not selected_benchmark_tickers:  # Check if the ticker list is empty
-            # If no valid tickers, perhaps default to SPY ticker or an empty list
+        if not selected_benchmark_tickers:
             selected_benchmark_tickers = (
                 [BENCHMARK_MAPPING.get(DEFAULT_GRAPH_BENCHMARKS[0], "SPY")]
                 if DEFAULT_GRAPH_BENCHMARKS
@@ -5901,23 +6262,44 @@ The CSV file should contain the following columns (header names must match exact
         # --- Worker Setup (MODIFIED) ---
         portfolio_args = ()
         portfolio_kwargs = {
-            "transactions_csv_file": self.transactions_file,  # This is the path string
+            "transactions_csv_file": self.transactions_file,
             "display_currency": display_currency,
             "show_closed_positions": show_closed,
             "account_currency_map": account_map,
             "default_currency": def_currency,
-            "cache_file_path": "portfolio_cache_yf.json",  # Pass current cache path
             "fmp_api_key": api_key,  # Pass API key (though likely unused)
             "include_accounts": selected_accounts_for_worker,
             # manual_prices_dict passed directly below
+            # cache_file_path will be added by the block below
+            # --- MOVED: Add all_transactions_df_for_worker BEFORE worker instantiation ---
+            "all_transactions_df_for_worker": (
+                all_tx_df_temp if all_tx_df_temp is not None else pd.DataFrame()
+            ),
         }
+        # Construct current quotes cache path using QStandardPaths
+        current_cache_dir_base = QStandardPaths.writableLocation(
+            QStandardPaths.CacheLocation
+        )
+        if (
+            current_cache_dir_base
+        ):  # Assuming CacheLocation is also app-specific (e.g., ~/Library/Caches/Investa)
+            current_cache_dir = current_cache_dir_base  # Use the path directly
+            os.makedirs(current_cache_dir, exist_ok=True)
+            portfolio_kwargs["cache_file_path"] = os.path.join(
+                current_cache_dir, "portfolio_cache_yf.json"
+            )  # portfolio_cache_yf.json in .../Investa/
+        else:  # Fallback if CacheLocation is not available
+            portfolio_kwargs["cache_file_path"] = (
+                "portfolio_cache_yf.json"  # Relative path as last resort
+            )
+
         historical_args = ()
         historical_kwargs = {
             "transactions_csv_file": self.transactions_file,
             "start_date": start_date,
             "end_date": end_date,
             "interval": interval,
-            "benchmark_symbols_yf": selected_benchmark_tickers,  # Pass the list of YF tickers
+            "benchmark_symbols_yf": selected_benchmark_tickers,  # Pass YF tickers
             "display_currency": display_currency,
             "account_currency_map": account_map,
             "default_currency": def_currency,
@@ -5930,6 +6312,9 @@ The CSV file should contain the following columns (header names must match exact
         if HISTORICAL_FN_SUPPORTS_EXCLUDE:
             historical_kwargs["exclude_accounts"] = accounts_to_exclude
 
+        # --- Create signals object FIRST ---
+        worker_signals = WorkerSignals()
+
         # --- Instantiate worker WITHOUT index_fn ---
         worker = PortfolioCalculatorWorker(
             portfolio_fn=calculate_portfolio_summary,
@@ -5939,28 +6324,17 @@ The CSV file should contain the following columns (header names must match exact
             historical_fn=calculate_historical_performance,  # type: ignore
             historical_args=historical_args,
             historical_kwargs=historical_kwargs,
-            worker_signals=self.worker_signals,  # <-- PASS THE CENTRAL SIGNALS OBJECT
+            worker_signals=worker_signals,  # <-- PASS THE CREATED SIGNALS OBJECT
             manual_prices_dict=self.manual_prices_dict,
         )
         # --- END MODIFICATION ---
 
         # --- Connect signals using the created signals object ---
-        # Ensure connections are made only once or are robust to multiple calls if refresh_data is called again
-        # For simplicity, we assume refresh_data isn't called while a worker is active.
-        # If it could be, connections might need to be managed more carefully (e.g., disconnect previous).
-        try:
-            self.worker_signals.result.disconnect(self.handle_results)
-            self.worker_signals.error.disconnect(self.handle_error)
-            self.worker_signals.progress.disconnect(self.update_progress)
-            self.worker_signals.finished.disconnect(self.calculation_finished)
-        except RuntimeError:  # No connections to disconnect
-            pass
-
-        self.worker_signals.result.connect(self.handle_results)
-        self.worker_signals.error.connect(self.handle_error)
-        self.worker_signals.progress.connect(self.update_progress)
-        self.worker_signals.finished.connect(
-            lambda: self.calculation_finished()  # Default call without error message
+        worker_signals.result.connect(self.handle_results)
+        worker_signals.error.connect(self.handle_error)
+        worker_signals.progress.connect(self.update_progress)
+        worker_signals.finished.connect(
+            self.calculation_finished
         )  # Connect finished from the signals object
         # --- END Connect signals ---
 
@@ -6013,6 +6387,7 @@ The CSV file should contain the following columns (header names must match exact
         hist_fx,
         combined_ignored_indices,
         combined_ignored_reasons,
+        dividend_history_df,  # <-- NEW: Add to signature
     ):
         """Stores data received from the worker into self attributes and handles status.
         Args:
@@ -6026,6 +6401,7 @@ The CSV file should contain the following columns (header names must match exact
             combined_ignored_indices (set): Set of original indices ignored during load or processing.
             combined_ignored_reasons (dict): Maps 'original_index' to a string describing the reason the row was ignored.
         """
+
         # --- Handle Status Messages and TWR ---
         portfolio_status = summary_metrics.pop("status_msg", "Status Unknown")
         historical_status = summary_metrics.pop(
@@ -6051,6 +6427,20 @@ The CSV file should contain the following columns (header names must match exact
         self.account_metrics_data = account_metrics if account_metrics else {}
         self.index_quote_data = index_quotes if index_quotes else {}
         # self.historical_data = ... # Removed - will be created later by filtering full data
+        self.dividend_history_data = (  # <-- Store dividend history
+            dividend_history_df if dividend_history_df is not None else pd.DataFrame()
+        )
+        logging.debug(
+            f"  _store_worker_data assigned self.dividend_history_data (shape {self.dividend_history_data.shape if isinstance(self.dividend_history_data, pd.DataFrame) else 'Not a DF'}):"
+        )
+        if (
+            isinstance(self.dividend_history_data, pd.DataFrame)
+            and not self.dividend_history_data.empty
+        ):
+            logging.debug(f"    Head:\n{self.dividend_history_data.head().to_string()}")
+            logging.debug(
+                f"    'DividendAmountDisplayCurrency' NaNs in stored data: {self.dividend_history_data['DividendAmountDisplayCurrency'].isna().sum()} out of {len(self.dividend_history_data)}"
+            )
 
         # --- ADDED: Store full historical data ---
         self.full_historical_data = (
@@ -6504,6 +6894,9 @@ The CSV file should contain the following columns (header names must match exact
             # --- END MODIFY ---
             if bar_charts_have_data:  # Only call plot if there's data
                 self._update_periodic_bar_charts()
+                self._update_dividend_bar_chart()  # Also update dividend chart
+                # _update_dividend_summary_table will be called by _update_dividend_bar_chart
+                self._update_dividend_table()  # And dividend table
             else:
                 logging.info(
                     "Hiding bar charts frame as no periodic data is available."
@@ -6521,551 +6914,6 @@ The CSV file should contain the following columns (header names must match exact
             )
 
         logging.debug("Exiting handle_results.")
-
-    def _init_ui_structure(self):
-        """Sets up the main window layout using QFrames for structure."""
-        self.setWindowTitle(self.base_window_title)
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-
-        # Create main frames/panels
-        self.header_frame = QFrame()
-        self.header_frame.setObjectName("HeaderFrame")
-        self.controls_frame = QFrame()
-        self.controls_frame.setObjectName("ControlsFrame")
-        self.summary_and_graphs_frame = QFrame()
-        self.summary_and_graphs_frame.setObjectName("SummaryAndGraphsFrame")
-        self.content_frame = QFrame()
-        # --- ADD Bar Charts Frame ---
-        self.bar_charts_frame = QFrame()
-        self.bar_charts_frame.setObjectName("BarChartsFrame")
-        self.bar_charts_frame.setVisible(False)  # Initially hidden until data is ready
-        # --- END ADD ---
-        self.content_frame.setObjectName("ContentFrame")
-
-        # Add frames to main layout
-        main_layout.addWidget(self.header_frame)
-        main_layout.addWidget(self.controls_frame)
-        main_layout.addWidget(
-            self.summary_and_graphs_frame, 2.5
-        )  # Add summary/graphs frame with stretch 1
-        main_layout.addWidget(
-            self.bar_charts_frame, 1.5
-        )  # Add bar charts frame with stretch 2
-        main_layout.addWidget(
-            self.content_frame, 3  # Add content frame with stretch factor 3
-        )  # Content frame takes more relative space
-
-    def _init_ui_widgets(self):
-        """Creates and places all UI widgets within their respective frames."""
-        # --- Header ---
-        header_layout = QHBoxLayout(self.header_frame)
-        header_layout.setContentsMargins(15, 8, 15, 8)
-        self.main_title_label = QLabel("📈 <b>Investa Portfolio Dashboard</b> ✨")
-        self.main_title_label.setObjectName("MainTitleLabel")
-        self.main_title_label.setTextFormat(Qt.RichText)
-        self.header_info_label = QLabel("<i>Initializing...</i>")
-        self.header_info_label.setObjectName("HeaderInfoLabel")
-        self.header_info_label.setTextFormat(Qt.RichText)
-        self.header_info_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        header_layout.addWidget(self.main_title_label)
-        header_layout.addStretch(1)
-        header_layout.addWidget(self.header_info_label)
-
-        # --- Controls ---
-        controls_layout = QHBoxLayout(self.controls_frame)
-        controls_layout.setContentsMargins(10, 8, 10, 8)
-        controls_layout.setSpacing(8)
-
-        # Helper function to create a vertical separator
-        def create_separator():
-            separator = QFrame()
-            separator.setFrameShape(QFrame.Shape.VLine)
-            separator.setFrameShadow(QFrame.Shadow.Sunken)
-            return separator
-
-        # Buttons
-        self.select_file_button = QPushButton("Select CSV")
-        self.select_file_button.setObjectName("SelectFileButton")
-        self.select_file_button.setIcon(
-            self.style().standardIcon(QStyle.SP_DirOpenIcon)
-        )
-        # controls_layout.addWidget(self.select_file_button) # REMOVED from controls bar
-        self.add_transaction_button = QPushButton("Add Tx")
-        self.add_transaction_button.setObjectName("AddTransactionButton")
-        self.add_transaction_button.setIcon(
-            self.style().standardIcon(QStyle.SP_FileIcon)
-        )
-        self.manage_transactions_button = QPushButton(
-            "Manage Tx"
-        )  # Keep button instance for menu/toolbar
-        self.manage_transactions_button.setObjectName("ManageTransactionsButton")
-        self.manage_transactions_button.setIcon(
-            self.style().standardIcon(QStyle.SP_DialogSaveButton)
-        )  # Example icon
-        self.manage_transactions_button.setToolTip(
-            "Edit or delete existing transactions"
-        )
-        # controls_layout.addWidget(self.manage_transactions_button) # REMOVED from controls bar
-
-        self.view_ignored_button = QPushButton("View Log")
-        self.view_ignored_button.setObjectName("ViewIgnoredButton")
-        self.view_ignored_button.setIcon(
-            self.style().standardIcon(QStyle.SP_MessageBoxWarning)
-        )  # Example icon
-        self.view_ignored_button.setToolTip(
-            "View transactions ignored during the last calculation"
-        )
-        self.view_ignored_button.setEnabled(False)  # Initially disabled
-        # controls_layout.addWidget(self.view_ignored_button) # REMOVED from left group
-
-        self.add_transaction_button.setToolTip("Manually add a new transaction")
-        # controls_layout.addWidget(self.add_transaction_button) # REMOVED from controls bar
-
-        # --- Separator 1 ---
-        controls_layout.addWidget(create_separator())
-
-        self.account_select_button = QPushButton("Accounts")
-        self.account_select_button.setObjectName("AccountSelectButton")
-        self.account_select_button.setMinimumWidth(130)
-        controls_layout.addWidget(self.account_select_button)
-        self.update_accounts_button = QPushButton("Update Accounts")
-        self.update_accounts_button.setObjectName("UpdateAccountsButton")
-        self.update_accounts_button.setIcon(
-            self.style().standardIcon(QStyle.SP_DialogApplyButton)
-        )
-        self.update_accounts_button.setToolTip(
-            "Apply selected accounts and recalculate"
-        )
-        controls_layout.addWidget(self.update_accounts_button)
-        # Filters & Combos
-        controls_layout.addWidget(QLabel("Currency:"))
-        self.currency_combo = QComboBox()
-        self.currency_combo.setObjectName("CurrencyCombo")
-        self.currency_combo.addItems(["USD", "THB", "JPY", "EUR", "GBP"])
-        self.currency_combo.setCurrentText(self.config.get("display_currency", "USD"))
-        self.currency_combo.setMinimumWidth(80)
-        controls_layout.addWidget(self.currency_combo)
-        self.show_closed_check = QCheckBox("Show Closed")
-        self.show_closed_check.setObjectName("ShowClosedCheck")
-        self.show_closed_check.setChecked(self.config.get("show_closed", False))
-        controls_layout.addWidget(self.show_closed_check)
-
-        # --- Separator 2 (Between Account/Display and Graph Controls) ---
-        controls_layout.addWidget(create_separator())
-
-        # --- Separator 2 ---
-        controls_layout.addWidget(create_separator())
-
-        # Graph Controls
-        controls_layout.addWidget(QLabel("Graphs:"))
-        self.graph_start_date_edit = QDateEdit()
-        self.graph_start_date_edit.setObjectName("GraphDateEdit")
-        self.graph_start_date_edit.setCalendarPopup(True)
-        self.graph_start_date_edit.setDisplayFormat("yyyy-MM-dd")
-        self.graph_start_date_edit.setDate(
-            QDate.fromString(self.config.get("graph_start_date"), "yyyy-MM-dd")
-        )
-        controls_layout.addWidget(self.graph_start_date_edit)
-        controls_layout.addWidget(QLabel("to"))
-        self.graph_end_date_edit = QDateEdit()
-        self.graph_end_date_edit.setObjectName("GraphDateEdit")
-        self.graph_end_date_edit.setCalendarPopup(True)
-        self.graph_end_date_edit.setDisplayFormat("yyyy-MM-dd")
-        self.graph_end_date_edit.setDate(
-            QDate.fromString(self.config.get("graph_end_date"), "yyyy-MM-dd")
-        )
-        controls_layout.addWidget(self.graph_end_date_edit)
-        self.graph_interval_combo = QComboBox()
-        self.graph_interval_combo.setObjectName("GraphIntervalCombo")
-        self.graph_interval_combo.addItems(["D", "W", "M"])
-        self.graph_interval_combo.setCurrentText(
-            self.config.get("graph_interval", DEFAULT_GRAPH_INTERVAL)
-        )
-        self.graph_interval_combo.setMinimumWidth(60)
-        controls_layout.addWidget(self.graph_interval_combo)
-        self.benchmark_select_button = QPushButton()
-        self.benchmark_select_button.setObjectName("BenchmarkSelectButton")
-        self.benchmark_select_button.setMinimumWidth(100)
-        controls_layout.addWidget(self.benchmark_select_button)  # Text set later
-        self.graph_update_button = QPushButton("Update Graphs")
-        self.graph_update_button.setObjectName("GraphUpdateButton")
-        self.graph_update_button.setIcon(
-            self.style().standardIcon(QStyle.SP_BrowserReload)
-        )
-        self.graph_update_button.setToolTip(
-            "Recalculate and redraw performance graphs."
-        )
-        controls_layout.addWidget(self.graph_update_button)
-
-        # --- Separator 3 ---
-        controls_layout.addWidget(create_separator())
-
-        # Spacer & Right Aligned Controls
-        controls_layout.addStretch(1)
-        self.exchange_rate_display_label = QLabel("")
-        self.exchange_rate_display_label.setObjectName("ExchangeRateLabel")
-        self.exchange_rate_display_label.setVisible(False)
-        controls_layout.addWidget(self.view_ignored_button)  # ADDED to right group
-        controls_layout.addWidget(self.exchange_rate_display_label)
-        self.refresh_button = QPushButton("Refresh All")
-        self.refresh_button.setObjectName("RefreshButton")
-        self.refresh_button.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
-        # controls_layout.addWidget(self.refresh_button) # REMOVED from controls bar
-
-        # --- Summary & Graphs ---
-        summary_graphs_layout = QHBoxLayout(self.summary_and_graphs_frame)
-        summary_graphs_layout.setContentsMargins(10, 5, 10, 5)
-        summary_graphs_layout.setSpacing(10)
-        # Summary Grid
-        summary_grid_widget = QWidget()
-        summary_layout = QGridLayout(summary_grid_widget)
-        summary_layout.setContentsMargins(10, 25, 10, 10)
-        summary_layout.setHorizontalSpacing(15)
-        summary_layout.setVerticalSpacing(30)
-        self.summary_net_value = self.create_summary_item("Net Value", True)
-        self.summary_day_change = self.create_summary_item("Day's G/L", True)
-        self.summary_total_gain = self.create_summary_item("Total G/L")
-        self.summary_realized_gain = self.create_summary_item("Realized G/L")
-        self.summary_unrealized_gain = self.create_summary_item("Unrealized G/L")
-        self.summary_dividends = self.create_summary_item("Dividends")
-        self.summary_commissions = self.create_summary_item("Fees")
-        self.summary_cash = self.create_summary_item("Cash Balance")
-        self.summary_total_return_pct = self.create_summary_item("Total Ret %")
-        self.summary_annualized_twr = self.create_summary_item("Ann. TWR %")
-        summary_layout.addWidget(self.summary_net_value[0], 0, 0, Qt.AlignRight)
-        summary_layout.addWidget(self.summary_net_value[1], 0, 1)
-        summary_layout.addWidget(self.summary_day_change[0], 0, 2, Qt.AlignRight)
-        summary_layout.addWidget(self.summary_day_change[1], 0, 3)
-        summary_layout.addWidget(self.summary_total_gain[0], 1, 0, Qt.AlignRight)
-        summary_layout.addWidget(self.summary_total_gain[1], 1, 1)
-        summary_layout.addWidget(self.summary_realized_gain[0], 1, 2, Qt.AlignRight)
-        summary_layout.addWidget(self.summary_realized_gain[1], 1, 3)
-        summary_layout.addWidget(self.summary_unrealized_gain[0], 2, 0, Qt.AlignRight)
-        summary_layout.addWidget(self.summary_unrealized_gain[1], 2, 1)
-        summary_layout.addWidget(self.summary_dividends[0], 2, 2, Qt.AlignRight)
-        summary_layout.addWidget(self.summary_dividends[1], 2, 3)
-        summary_layout.addWidget(self.summary_commissions[0], 3, 0, Qt.AlignRight)
-        summary_layout.addWidget(self.summary_commissions[1], 3, 1)
-        summary_layout.addWidget(self.summary_cash[0], 3, 2, Qt.AlignRight)
-        summary_layout.addWidget(self.summary_cash[1], 3, 3)
-        summary_layout.addWidget(self.summary_total_return_pct[0], 4, 0, Qt.AlignRight)
-        summary_layout.addWidget(self.summary_total_return_pct[1], 4, 1)
-        summary_layout.addWidget(self.summary_annualized_twr[0], 4, 2, Qt.AlignRight)
-        summary_layout.addWidget(self.summary_annualized_twr[1], 4, 3)
-        summary_layout.setColumnStretch(1, 1)
-        summary_layout.setColumnStretch(3, 1)
-        summary_layout.setRowStretch(5, 1)
-        summary_graphs_layout.addWidget(summary_grid_widget, 9)
-
-        # --- Performance Graphs Container (Using QHBoxLayout for side-by-side) ---
-        perf_graphs_container_widget = QWidget()
-        perf_graphs_container_widget.setObjectName("PerfGraphsContainer")
-        # This layout holds the two vertical (Graph+Toolbar) widgets side-by-side
-        perf_graphs_main_layout = QHBoxLayout(perf_graphs_container_widget)
-        perf_graphs_main_layout.setContentsMargins(0, 0, 0, 0)
-        perf_graphs_main_layout.setSpacing(8)  # Spacing between the two graph columns
-
-        # -- Layout for Return Graph + Toolbar (Left Column) --
-        perf_return_widget = QWidget()  # Container for left graph + toolbar
-        perf_return_layout = QVBoxLayout(perf_return_widget)
-        perf_return_layout.setContentsMargins(0, 0, 0, 0)
-        perf_return_layout.setSpacing(2)  # Spacing between graph and its toolbar
-
-        self.perf_return_fig = Figure(figsize=PERF_CHART_FIG_SIZE, dpi=CHART_DPI)
-        self.perf_return_ax = self.perf_return_fig.add_subplot(111)
-        self.perf_return_canvas = FigureCanvas(self.perf_return_fig)
-        self.perf_return_canvas.setObjectName("PerfReturnCanvas")
-        self.perf_return_canvas.setSizePolicy(
-            QSizePolicy.Expanding, QSizePolicy.Expanding
-        )
-        perf_return_layout.addWidget(
-            self.perf_return_canvas, 1
-        )  # Canvas takes vertical space
-
-        # Create and configure the toolbar for the return graph
-        self.perf_return_toolbar = NavigationToolbar(
-            self.perf_return_canvas, perf_return_widget
-        )
-        # --- OR use the Compact Toolbar if you implemented it ---
-        # self.perf_return_toolbar = CompactNavigationToolbar(self.perf_return_canvas, perf_return_widget, coordinates=False)
-        self.perf_return_toolbar.setObjectName("PerfReturnToolbar")
-        self.perf_return_toolbar.setIconSize(
-            QSize(18, 18)
-        )  # Adjust (width, height) as needed
-
-        perf_return_layout.addWidget(
-            self.perf_return_toolbar
-        )  # Add toolbar below graph
-        perf_graphs_main_layout.addWidget(
-            perf_return_widget
-        )  # Add left column to main layout
-
-        # -- Layout for Absolute Value Graph + Toolbar (Right Column) --
-        abs_value_widget = QWidget()  # Container for right graph + toolbar
-        abs_value_layout = QVBoxLayout(abs_value_widget)
-        abs_value_layout.setContentsMargins(0, 0, 0, 0)
-        abs_value_layout.setSpacing(2)  # Spacing between graph and its toolbar
-
-        self.abs_value_fig = Figure(figsize=PERF_CHART_FIG_SIZE, dpi=CHART_DPI)
-        self.abs_value_ax = self.abs_value_fig.add_subplot(111)
-        self.abs_value_canvas = FigureCanvas(self.abs_value_fig)
-        self.abs_value_canvas.setObjectName("AbsValueCanvas")
-        self.abs_value_canvas.setSizePolicy(
-            QSizePolicy.Expanding, QSizePolicy.Expanding
-        )
-        abs_value_layout.addWidget(
-            self.abs_value_canvas, 1
-        )  # Canvas takes vertical space
-
-        # Create and configure the toolbar for the value graph
-        self.abs_value_toolbar = NavigationToolbar(
-            self.abs_value_canvas, abs_value_widget
-        )
-        # --- OR use the Compact Toolbar ---
-        # self.abs_value_toolbar = CompactNavigationToolbar(self.abs_value_canvas, abs_value_widget, coordinates=False)
-        self.abs_value_toolbar.setObjectName("AbsValueToolbar")
-        self.abs_value_toolbar.setIconSize(
-            QSize(18, 18)
-        )  # Adjust (width, height) as needed
-
-        abs_value_layout.addWidget(self.abs_value_toolbar)  # Add toolbar below graph
-        perf_graphs_main_layout.addWidget(
-            abs_value_widget
-        )  # Add right column to main layout
-
-        # Add the main performance graphs container to the summary/graphs frame
-        summary_graphs_layout.addWidget(perf_graphs_container_widget, 20)
-        # --- End Performance Graphs Container Modification ---
-
-        # --- Bar Charts Frame Setup ---
-        bar_charts_main_layout = QHBoxLayout(self.bar_charts_frame)
-        bar_charts_main_layout.setContentsMargins(10, 5, 10, 5)
-        bar_charts_main_layout.setSpacing(10)
-
-        # Function to create a single bar chart widget
-        def create_bar_chart_widget(  # Modified signature
-            title,
-            canvas_attr_name,
-            fig_attr_name,
-            ax_attr_name,
-            spinbox_attr_name,
-            default_periods,
-        ):
-            widget = QWidget()
-            layout = QVBoxLayout(widget)
-            layout.setContentsMargins(0, 0, 0, 0)
-            layout.setSpacing(2)
-
-            # --- Title and Input Row ---
-            title_input_layout = QHBoxLayout()
-            title_input_layout.setContentsMargins(0, 0, 0, 0)
-            title_input_layout.setSpacing(5)
-
-            title_label = QLabel(f"<b>{title}</b>")
-            title_label.setObjectName("BarChartTitleLabel")
-            title_input_layout.addWidget(title_label)
-            title_input_layout.addStretch()  # Push input to the right
-
-            title_input_layout.addWidget(QLabel("Periods:"))
-            spinbox = QSpinBox()
-            spinbox.setObjectName(f"{spinbox_attr_name}")  # e.g., annualPeriodsSpinBox
-            spinbox.setMinimum(1)
-            spinbox.setMaximum(100)  # Adjust max as needed
-            spinbox.setValue(default_periods)
-            spinbox.setToolTip(f"Number of {title.split()[0].lower()} to display")
-            spinbox.setFixedWidth(50)  # Keep it compact
-            setattr(
-                self, spinbox_attr_name, spinbox
-            )  # Store reference, e.g., self.annual_periods_spinbox
-            title_input_layout.addWidget(spinbox)
-
-            layout.addLayout(title_input_layout)  # Add the title/input row
-
-            setattr(
-                self, fig_attr_name, Figure(figsize=(4, 2.5), dpi=CHART_DPI)
-            )  # Smaller figsize
-            fig = getattr(self, fig_attr_name)
-            setattr(self, ax_attr_name, fig.add_subplot(111))
-            setattr(self, canvas_attr_name, FigureCanvas(fig))
-            canvas = getattr(self, canvas_attr_name)
-            canvas.setObjectName(canvas_attr_name)
-            canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-            layout.addWidget(canvas, 1)
-            # No toolbar for bar charts for now
-            return widget
-
-        # Create the three bar chart widgets
-        self.annual_bar_widget = create_bar_chart_widget(
-            "Annual Returns",
-            "annual_bar_canvas",
-            "annual_bar_fig",
-            "annual_bar_ax",
-            "annual_periods_spinbox",
-            self.config.get("bar_periods_annual", 10),
-        )
-        self.monthly_bar_widget = create_bar_chart_widget(
-            "Monthly Returns",
-            "monthly_bar_canvas",
-            "monthly_bar_fig",
-            "monthly_bar_ax",
-            "monthly_periods_spinbox",
-            self.config.get("bar_periods_monthly", 12),
-        )
-        self.weekly_bar_widget = create_bar_chart_widget(
-            "Weekly Returns",
-            "weekly_bar_canvas",
-            "weekly_bar_fig",
-            "weekly_bar_ax",
-            "weekly_periods_spinbox",
-            self.config.get("bar_periods_weekly", 12),
-        )
-
-        # Add widgets to the layout
-        bar_charts_main_layout.addWidget(self.annual_bar_widget, 1)
-        bar_charts_main_layout.addWidget(self.monthly_bar_widget, 1)
-        bar_charts_main_layout.addWidget(self.weekly_bar_widget, 1)
-        # --- End Bar Charts Frame Setup ---
-
-        # --- Content (Pies & Table) ---
-        content_layout = QHBoxLayout(self.content_frame)
-        content_layout.setContentsMargins(10, 5, 10, 10)
-        content_layout.setSpacing(10)
-        # Pie Charts
-        pie_charts_container_widget = QWidget()
-        pie_charts_container_widget.setObjectName("PieChartsContainer")
-        pie_charts_layout = QVBoxLayout(pie_charts_container_widget)
-        pie_charts_layout.setContentsMargins(0, 0, 0, 0)
-        pie_charts_layout.setSpacing(10)
-        account_chart_widget = QWidget()
-        account_chart_layout = QVBoxLayout(account_chart_widget)
-        account_chart_layout.setContentsMargins(0, 0, 0, 0)
-        self.account_pie_title_label = QLabel(
-            "<b>Value by Account</b>"
-        )  # <-- RESTORED Title
-        self.account_pie_title_label.setObjectName("AccountPieTitleLabel")
-        self.account_pie_title_label.setTextFormat(Qt.RichText)
-        account_chart_layout.addWidget(
-            self.account_pie_title_label, alignment=Qt.AlignCenter
-        )  # <-- RESTORED Title
-        self.account_fig = Figure(figsize=PIE_CHART_FIG_SIZE, dpi=CHART_DPI)
-        self.account_ax = self.account_fig.add_subplot(111)
-        self.account_canvas = FigureCanvas(self.account_fig)
-        self.account_canvas.setObjectName("AccountPieCanvas")
-        self.account_canvas.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        account_chart_layout.addWidget(self.account_canvas)
-        pie_charts_layout.addWidget(account_chart_widget)
-        holdings_chart_widget = QWidget()
-        holdings_chart_layout = QVBoxLayout(holdings_chart_widget)
-        holdings_chart_layout.setContentsMargins(0, 0, 0, 0)
-        self.holdings_pie_title_label = QLabel("<b>Value by Holding</b>")
-        self.holdings_pie_title_label.setObjectName("HoldingsPieTitleLabel")
-        self.holdings_pie_title_label.setTextFormat(Qt.RichText)
-        holdings_chart_layout.addWidget(
-            self.holdings_pie_title_label, alignment=Qt.AlignCenter
-        )  # <-- RESTORED Title AddWidget Call
-        self.holdings_fig = Figure(figsize=PIE_CHART_FIG_SIZE, dpi=CHART_DPI)
-        self.holdings_ax = self.holdings_fig.add_subplot(111)
-        self.holdings_canvas = FigureCanvas(self.holdings_fig)
-        self.holdings_canvas.setObjectName("HoldingsPieCanvas")
-        self.holdings_canvas.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        holdings_chart_layout.addWidget(self.holdings_canvas)
-        pie_charts_layout.addWidget(holdings_chart_widget)
-        content_layout.addWidget(pie_charts_container_widget, 1)
-
-        # Table Panel
-        table_panel = QFrame()
-        table_panel.setObjectName("TablePanel")
-        table_layout = QVBoxLayout(table_panel)
-        table_layout.setContentsMargins(0, 0, 0, 0)
-        table_layout.setSpacing(5)
-
-        # --- Table Header Layout (MODIFIED for Filters) ---
-        table_header_and_filter_layout = (
-            QVBoxLayout()
-        )  # Use QVBoxLayout to stack title and filters
-        table_header_and_filter_layout.setContentsMargins(5, 5, 5, 0)  # Adjust margins
-        table_header_and_filter_layout.setSpacing(4)  # Add spacing
-
-        # Title Row (Original HBox)
-        table_title_layout = QHBoxLayout()
-        self.table_title_label_left = QLabel("")
-        self.table_title_label_left.setObjectName("TableScopeLabel")
-        self.table_title_label_left.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.table_title_label_right = QLabel("Holdings Detail")
-        self.table_title_label_right.setObjectName("TableTitleLabel")
-        self.table_title_label_right.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        table_title_layout.addWidget(self.table_title_label_left)
-        table_title_layout.addStretch(1)
-        table_title_layout.addWidget(self.table_title_label_right)
-        table_header_and_filter_layout.addLayout(table_title_layout)  # Add title row
-
-        # Filter Row (New HBox)
-        table_filter_layout = QHBoxLayout()
-        table_filter_layout.addWidget(QLabel("Filter:"))
-        self.filter_symbol_table_edit = QLineEdit()
-        self.filter_symbol_table_edit.setPlaceholderText("Symbol contains...")
-        self.filter_symbol_table_edit.setClearButtonEnabled(True)
-        table_filter_layout.addWidget(
-            self.filter_symbol_table_edit, 1
-        )  # Give symbol more stretch
-        self.filter_account_table_edit = QLineEdit()
-        self.filter_account_table_edit.setPlaceholderText("Account contains...")
-        self.filter_account_table_edit.setClearButtonEnabled(True)
-        table_filter_layout.addWidget(
-            self.filter_account_table_edit, 1
-        )  # Give account more stretch
-        self.apply_table_filter_button = QPushButton("Apply")
-        self.apply_table_filter_button.setToolTip("Apply table filters")
-        self.apply_table_filter_button.setObjectName("ApplyTableFilterButton")
-        table_filter_layout.addWidget(self.apply_table_filter_button)
-        self.clear_table_filter_button = QPushButton("Clear")
-        self.clear_table_filter_button.setToolTip("Clear table filters")
-        self.clear_table_filter_button.setObjectName("ClearTableFilterButton")
-        table_filter_layout.addWidget(self.clear_table_filter_button)
-        table_header_and_filter_layout.addLayout(table_filter_layout)  # Add filter row
-        # --- End Header/Filter Modification ---
-
-        # Add the combined header/filter layout to the main table layout
-        table_layout.addLayout(table_header_and_filter_layout)
-
-        # Table View
-        self.table_view = QTableView()
-        self.table_view.setObjectName("HoldingsTable")
-        self.table_view.setAlternatingRowColors(True)
-        self.table_view.setSelectionBehavior(QTableView.SelectRows)
-        self.table_view.setWordWrap(False)
-        self.table_view.setSortingEnabled(True)
-        self.table_model = PandasModel(parent=self)
-        self.table_view.setModel(self.table_model)
-        table_font = QFont(self.app_font)
-        table_font.setPointSize(self.app_font.pointSize() + 1)
-        self.table_view.setFont(table_font)
-        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        self.table_view.horizontalHeader().setStretchLastSection(False)
-        self.table_view.verticalHeader().setVisible(False)
-        self.table_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        # --- CONTEXT MENU SETUP ---
-        # Make sure context menu policy is set for the TABLE VIEW itself
-        self.table_view.setContextMenuPolicy(Qt.CustomContextMenu)
-        # Remove or ensure no connection for the HORIZONTAL HEADER's context menu
-        self.table_view.horizontalHeader().setContextMenuPolicy(
-            Qt.CustomContextMenu
-        )  # Remove if exists
-        # --- END CONTEXT MENU SETUP ---
-        table_layout.addWidget(self.table_view, 1)
-        content_layout.addWidget(table_panel, 4)
-
-        self.view_ignored_button.clicked.connect(self.show_ignored_log)
-        self.manage_transactions_button.clicked.connect(
-            self.show_manage_transactions_dialog
-        )
-
-        # --- Status Bar ---
-        self._create_status_bar()
 
     def _create_status_bar(self):
         """Creates and configures the application's status bar."""
@@ -7301,6 +7149,16 @@ The CSV file should contain the following columns (header names must match exact
         )
         self.weekly_periods_spinbox.valueChanged.connect(
             self._update_periodic_bar_charts
+        )
+        # Dividend Chart Controls
+        self.dividend_period_combo.currentTextChanged.connect(
+            self._update_dividend_spinbox_default
+        )
+        self.dividend_period_combo.currentTextChanged.connect(
+            self._update_dividend_bar_chart
+        )
+        self.dividend_periods_spinbox.valueChanged.connect(
+            self._update_dividend_bar_chart
         )
 
     def _update_table_display(self):
@@ -8309,7 +8167,15 @@ The CSV file should contain the following columns (header names must match exact
             (self.abs_value_fig, self.abs_value_ax),
         ]:
             try:
-                fig.tight_layout(pad=0.3)
+                # Option 1: Increase padding for tight_layout
+                # fig.tight_layout(
+                #     pad=0.5, h_pad=0.7
+                # )  # Increased pad and added h_pad for height
+
+                # Option 2: Or, more explicitly, adjust subplot parameters
+                # You might need to experiment with the 'top' value (0.0 to 1.0)
+                fig.subplots_adjust(top=0.90)  # e.g., leave 10% margin at the top
+
                 fig.autofmt_xdate(rotation=15)
                 # --- MODIFIED: Adjust x-axis start limit ---
                 if (
@@ -9039,6 +8905,7 @@ The CSV file should contain the following columns (header names must match exact
         self.historical_data = pd.DataFrame()
         self.last_hist_twr_factor = np.nan
         self.available_accounts = []  # Clear available accounts
+        self.dividend_history_data = pd.DataFrame()  # Clear dividend data
         # Keep selected_accounts as loaded from config, validation happens on load
         self._update_table_view_with_filtered_columns(pd.DataFrame())
         self.apply_column_visibility()
@@ -9053,6 +8920,8 @@ The CSV file should contain the following columns (header names must match exact
         self.update_header_info(loading=True)
         if hasattr(self, "view_ignored_button"):
             self.view_ignored_button.setEnabled(False)  # Disable when clearing
+        self._update_dividend_bar_chart()  # Clear dividend chart
+        self._update_dividend_table()  # Clear dividend table
 
     # --- Filter Change Handlers ---
     @Slot()
@@ -9336,348 +9205,6 @@ The CSV file should contain the following columns (header names must match exact
 
     # --- End New Helper ---
 
-    # --- Main Data Refresh Logic ---
-    @Slot()
-    def refresh_data(self):
-        """
-        Initiates the background calculation process via the worker thread.
-
-        Gathers current UI settings (file path, currency, filters, graph parameters),
-        prepares arguments for the portfolio logic functions, creates a
-        `PortfolioCalculatorWorker`, and starts it in the thread pool. Disables
-        UI controls during calculation.
-        """
-        if self.is_calculating:
-            # Reset flag if refresh is attempted while calculating (shouldn't happen often)
-            self._initial_file_selection = False
-
-            logging.info("Calculation already in progress. Ignoring refresh request.")
-            return
-
-        if not self.transactions_file or not os.path.exists(self.transactions_file):
-            QMessageBox.warning(
-                self,
-                "Missing File",
-                f"Transactions CSV file not found:\n{self.transactions_file}",
-            )
-            self.status_label.setText("Error: Select a valid transactions CSV file.")
-            return
-
-        # Reset initial selection flag when a valid refresh starts
-        self._initial_file_selection = False
-
-        # --- Load original data FIRST and PREPARE INPUTS to get the map ---
-        # Get current account map and default currency from config
-        account_map = self.config.get("account_currency_map", {"SET": "THB"})
-        def_currency = self.config.get("default_currency", "USD")
-        logging.info("Loading original transaction data and preparing inputs...")
-        (
-            all_tx_df_temp,
-            orig_df_temp,
-            ignored_indices_load,
-            ignored_reasons_load,
-            err_load_orig,
-            warn_load_orig,
-        ) = load_and_clean_transactions(
-            self.transactions_file, account_map, def_currency
-        )
-        self.ignored_data = pd.DataFrame()  # Reset ignored data display
-        self.temp_ignored_reasons = (
-            ignored_reasons_load.copy()
-        )  # Store reasons temporarily
-
-        if err_load_orig or all_tx_df_temp is None:
-            QMessageBox.critical(
-                self, "Load Error", "Failed to load/clean transaction data."
-            )
-            self.original_data = (
-                pd.DataFrame()
-            )  # Ensure original data is empty on failure
-            self.internal_to_yf_map = {}  # Clear map on failure
-            self.calculation_finished()  # Re-enable controls etc.
-            # Construct ignored_data from load errors if possible
-            if (
-                ignored_indices_load
-                and orig_df_temp is not None
-                and "original_index" in orig_df_temp.columns
-            ):
-                try:
-                    valid_ignored_indices = {
-                        int(i) for i in ignored_indices_load if pd.notna(i)
-                    }
-                    valid_indices_mask = orig_df_temp["original_index"].isin(
-                        valid_ignored_indices
-                    )
-                    ignored_rows_df = orig_df_temp[valid_indices_mask].copy()
-                    if not ignored_rows_df.empty:
-                        reasons_mapped = (
-                            ignored_rows_df["original_index"]
-                            .map(self.temp_ignored_reasons)
-                            .fillna("Load/Clean Issue")
-                        )
-                        ignored_rows_df["Reason Ignored"] = reasons_mapped
-                        self.ignored_data = ignored_rows_df.sort_values(
-                            by="original_index"
-                        )
-                        if hasattr(self, "view_ignored_button"):
-                            self.view_ignored_button.setEnabled(True)
-                except Exception as e_ignored_err:
-                    logging.error(
-                        f"Error constructing ignored_data after load failure: {e_ignored_err}"
-                    )
-                    self.ignored_data = pd.DataFrame()
-            return
-        else:
-            # Store original data on successful load
-            self.original_data = (
-                orig_df_temp.copy() if orig_df_temp is not None else pd.DataFrame()
-            )
-            # Ensure original_index exists
-            if (
-                "original_index" not in self.original_data.columns
-                and not self.original_data.empty
-            ):
-                self.original_data["original_index"] = self.original_data.index
-
-            # Construct initial ignored_data from load/clean phase
-            if ignored_indices_load and not self.original_data.empty:
-                try:
-                    valid_ignored_indices = {
-                        int(i) for i in ignored_indices_load if pd.notna(i)
-                    }
-                    valid_indices_mask = self.original_data["original_index"].isin(
-                        valid_ignored_indices
-                    )
-                    ignored_rows_df = self.original_data[valid_indices_mask].copy()
-                    if not ignored_rows_df.empty:
-                        reasons_mapped = (
-                            ignored_rows_df["original_index"]
-                            .map(self.temp_ignored_reasons)
-                            .fillna("Load/Clean Issue")
-                        )
-                        ignored_rows_df["Reason Ignored"] = reasons_mapped
-                        self.ignored_data = ignored_rows_df.sort_values(
-                            by="original_index"
-                        )
-                except Exception as e_ignored_init:
-                    logging.error(
-                        f"Error constructing initial ignored_data: {e_ignored_init}"
-                    )
-                    self.ignored_data = pd.DataFrame()
-            else:
-                self.ignored_data = pd.DataFrame()  # Ensure empty if no ignored indices
-
-            # Generate internal_to_yf_map based on the successfully loaded transactions
-            try:
-                # Update available accounts list based on the loaded data
-                current_available_accounts = (
-                    list(all_tx_df_temp["Account"].unique())
-                    if "Account" in all_tx_df_temp
-                    else []
-                )
-                self.available_accounts = sorted(current_available_accounts)
-                self._update_account_button_text()  # Update button now that accounts are known
-
-                # Validate selected accounts against the newly available ones
-                valid_selected_accounts = [
-                    acc
-                    for acc in self.selected_accounts
-                    if acc in self.available_accounts
-                ]
-                if len(valid_selected_accounts) != len(self.selected_accounts):
-                    logging.warning(
-                        "Some selected accounts were not found in the loaded data. Adjusting selection."
-                    )
-                    self.selected_accounts = valid_selected_accounts
-                    # If selection becomes empty, default back to all
-                    if not self.selected_accounts and self.available_accounts:
-                        self.selected_accounts = []  # Represent "All" as empty list
-                        logging.info(
-                            "Selection became empty after validation, defaulting to all accounts."
-                        )
-                    self._update_account_button_text()  # Update button again if selection changed
-
-                # Determine effective transactions based on current selection
-                selected_accounts_for_logic = (
-                    self.selected_accounts if self.selected_accounts else None
-                )  # None means all
-
-                transactions_df_effective = (
-                    all_tx_df_temp[
-                        all_tx_df_temp["Account"].isin(selected_accounts_for_logic)
-                    ].copy()
-                    if selected_accounts_for_logic
-                    else all_tx_df_temp.copy()
-                )
-
-                if not transactions_df_effective.empty:
-                    all_symbols_internal = list(
-                        set(transactions_df_effective["Symbol"].unique())
-                    )
-                    temp_internal_to_yf_map = {}
-                    # Use map_to_yf_symbol from finutils (should be imported at top)
-                    for internal_sym in all_symbols_internal:
-                        if internal_sym == CASH_SYMBOL_CSV:
-                            continue
-                        yf_sym = map_to_yf_symbol(internal_sym)  # Use helper
-                        if yf_sym:
-                            temp_internal_to_yf_map[internal_sym] = yf_sym
-                    self.internal_to_yf_map = temp_internal_to_yf_map
-                    logging.info(
-                        f"Generated internal_to_yf_map: {self.internal_to_yf_map}"
-                    )
-                else:
-                    self.internal_to_yf_map = {}
-                    logging.info(
-                        "No effective transactions for selected scope, clearing symbol map."
-                    )
-            except Exception as e_prep:
-                logging.error(
-                    f"Error generating symbol map during refresh prep: {e_prep}"
-                )
-                self.internal_to_yf_map = {}
-
-        # --- Continue with worker setup ---
-        self.is_calculating = True
-        now_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-        self.status_label.setText(f"Refreshing data... ({now_str})")
-        self.set_controls_enabled(False)
-        display_currency = self.currency_combo.currentText()
-        show_closed = self.show_closed_check.isChecked()
-        start_date = self.graph_start_date_edit.date().toPython()
-        end_date = self.graph_end_date_edit.date().toPython()
-        interval = self.graph_interval_combo.currentText()
-        # Map selected display names to YF tickers for the worker
-        selected_benchmark_tickers = [
-            BENCHMARK_MAPPING.get(name)
-            for name in self.selected_benchmarks
-            if BENCHMARK_MAPPING.get(name)
-        ]
-        api_key = self.fmp_api_key
-
-        # Use the validated selected_accounts (or None for all)
-        selected_accounts_for_worker = (
-            self.selected_accounts if self.selected_accounts else None
-        )
-
-        if start_date >= end_date:
-            QMessageBox.warning(
-                self, "Invalid Date Range", "Graph start date must be before end date."
-            )
-            self.calculation_finished()
-            return
-        if not selected_benchmark_tickers:
-            selected_benchmark_tickers = (
-                [BENCHMARK_MAPPING.get(DEFAULT_GRAPH_BENCHMARKS[0], "SPY")]
-                if DEFAULT_GRAPH_BENCHMARKS
-                else ["SPY"]
-            )
-            logging.warning(
-                f"No valid benchmarks selected or mapped, using default ticker(s): {selected_benchmark_tickers}"
-            )
-
-        # Determine accounts to exclude for historical calc if supported
-        accounts_to_exclude = []
-        if HISTORICAL_FN_SUPPORTS_EXCLUDE:
-            if selected_accounts_for_worker:  # If specific accounts are included
-                accounts_to_exclude = [
-                    acc
-                    for acc in self.available_accounts
-                    if acc not in selected_accounts_for_worker
-                ]
-            # If selected_accounts_for_worker is None (all included), then exclude list remains empty
-
-        logging.info(f"Starting calculation & data fetch:")
-        logging.info(
-            f"File='{os.path.basename(self.transactions_file)}', Currency='{display_currency}', ShowClosed={show_closed}, SelectedAccounts={selected_accounts_for_worker if selected_accounts_for_worker else 'All'}"
-        )
-        logging.info(f"Default Currency: {def_currency}, Account Map: {account_map}")
-        exclude_log_msg = (
-            f", ExcludeHist={accounts_to_exclude}"
-            if HISTORICAL_FN_SUPPORTS_EXCLUDE and accounts_to_exclude
-            else ""
-        )
-        logging.info(
-            f"Graph Params: Start={start_date}, End={end_date}, Interval={interval}, Benchmarks (Tickers)={selected_benchmark_tickers}{exclude_log_msg}"
-        )
-
-        # --- Worker Setup (MODIFIED) ---
-        portfolio_args = ()
-        portfolio_kwargs = {
-            "transactions_csv_file": self.transactions_file,
-            "display_currency": display_currency,
-            "show_closed_positions": show_closed,
-            "account_currency_map": account_map,
-            "default_currency": def_currency,
-            "fmp_api_key": api_key,  # Pass API key (though likely unused)
-            "include_accounts": selected_accounts_for_worker,
-            # manual_prices_dict passed directly below
-            # cache_file_path will be added by the block below
-        }
-        # Construct current quotes cache path using QStandardPaths
-        current_cache_dir_base = QStandardPaths.writableLocation(
-            QStandardPaths.CacheLocation
-        )
-        if (
-            current_cache_dir_base
-        ):  # Assuming CacheLocation is also app-specific (e.g., ~/Library/Caches/Investa)
-            current_cache_dir = current_cache_dir_base  # Use the path directly
-            os.makedirs(current_cache_dir, exist_ok=True)
-            portfolio_kwargs["cache_file_path"] = os.path.join(
-                current_cache_dir, "portfolio_cache_yf.json"
-            )  # portfolio_cache_yf.json in .../Investa/
-        else:  # Fallback if CacheLocation is not available
-            portfolio_kwargs["cache_file_path"] = (
-                "portfolio_cache_yf.json"  # Relative path as last resort
-            )
-
-        historical_args = ()
-        historical_kwargs = {
-            "transactions_csv_file": self.transactions_file,
-            "start_date": start_date,
-            "end_date": end_date,
-            "interval": interval,
-            "benchmark_symbols_yf": selected_benchmark_tickers,  # Pass YF tickers
-            "display_currency": display_currency,
-            "account_currency_map": account_map,
-            "default_currency": def_currency,
-            "use_raw_data_cache": True,
-            "use_daily_results_cache": True,
-            "include_accounts": selected_accounts_for_worker,
-            # worker_signals passed directly below
-        }
-        # Add exclude_accounts only if supported by the function
-        if HISTORICAL_FN_SUPPORTS_EXCLUDE:
-            historical_kwargs["exclude_accounts"] = accounts_to_exclude
-
-        # --- Create signals object FIRST ---
-        worker_signals = WorkerSignals()
-
-        # --- Instantiate worker WITHOUT index_fn ---
-        worker = PortfolioCalculatorWorker(
-            portfolio_fn=calculate_portfolio_summary,
-            portfolio_args=portfolio_args,
-            portfolio_kwargs=portfolio_kwargs,
-            # index_fn=fetch_index_quotes_yfinance, <-- REMOVED
-            historical_fn=calculate_historical_performance,  # type: ignore
-            historical_args=historical_args,
-            historical_kwargs=historical_kwargs,
-            worker_signals=worker_signals,  # <-- PASS THE CREATED SIGNALS OBJECT
-            manual_prices_dict=self.manual_prices_dict,
-        )
-        # --- END MODIFICATION ---
-
-        # --- Connect signals using the created signals object ---
-        worker_signals.result.connect(self.handle_results)
-        worker_signals.error.connect(self.handle_error)
-        worker_signals.progress.connect(self.update_progress)
-        worker_signals.finished.connect(
-            self.calculation_finished
-        )  # Connect finished from the signals object
-        # --- END Connect signals ---
-
-        self.threadpool.start(worker)
-
     # --- Control Enabling/Disabling ---
     def set_controls_enabled(self, enabled: bool):
         """
@@ -9711,10 +9238,19 @@ The CSV file should contain the following columns (header names must match exact
         self.setCursor(Qt.WaitCursor if not enabled else Qt.ArrowCursor)
 
     # --- Signal Handlers from Worker ---
-    @Slot(  # MODIFIED: Signature matches WorkerSignals.result (9 args)
-        dict, pd.DataFrame, dict, dict, pd.DataFrame, dict, dict, set, dict
+    @Slot(  # MODIFIED: Signature matches WorkerSignals.result (10 args)
+        dict,
+        pd.DataFrame,
+        dict,
+        dict,
+        pd.DataFrame,
+        dict,
+        dict,
+        set,
+        dict,
+        pd.DataFrame,
     )
-    def handle_results(  # MODIFIED: Signature matches Slot decorator (9 args)
+    def handle_results(  # MODIFIED: Signature matches Slot decorator (10 args)
         self,  # Don't forget self!
         summary_metrics,
         holdings_df,
@@ -9725,12 +9261,43 @@ The CSV file should contain the following columns (header names must match exact
         hist_fx,
         combined_ignored_indices,
         combined_ignored_reasons,
+        dividend_history_df,  # <-- NEW from worker
     ):
         """
         Slot to process results received from the PortfolioCalculatorWorker.
         Orchestrates data storage, processing, and UI updates.
         """
         logging.debug("Entering handle_results orchestrator...")
+        logging.debug(
+            f"  handle_results received dividend_history_df (shape {dividend_history_df.shape if isinstance(dividend_history_df, pd.DataFrame) else 'Not a DF'}):"
+        )
+
+        logging.debug("HANDLE_RESULTS: Entered")
+        logging.debug(
+            f"HANDLE_RESULTS: Summary Metrics Keys: {list(summary_metrics.keys()) if summary_metrics else 'Empty'}"
+        )
+        logging.debug(
+            f"HANDLE_RESULTS: Holdings DF Shape: {holdings_df.shape if isinstance(holdings_df, pd.DataFrame) else 'Not DF'}"
+        )
+        logging.debug(
+            f"HANDLE_RESULTS: Full Historical DF Shape: {full_historical_data_df.shape if isinstance(full_historical_data_df, pd.DataFrame) else 'Not DF'}"
+        )
+        logging.debug(
+            f"HANDLE_RESULTS: Dividend History DF Shape: {dividend_history_df.shape if isinstance(dividend_history_df, pd.DataFrame) else 'Not DF'}"
+        )
+        if (
+            isinstance(dividend_history_df, pd.DataFrame)
+            and not dividend_history_df.empty
+        ):
+            logging.debug(
+                f"HANDLE_RESULTS: Dividend History Head:\n{dividend_history_df.head().to_string()}"
+            )
+
+        if (
+            isinstance(dividend_history_df, pd.DataFrame)
+            and not dividend_history_df.empty
+        ):
+            logging.debug(f"    Head:\n{dividend_history_df.head().to_string()}")
 
         self._store_worker_data(
             summary_metrics,
@@ -9742,6 +9309,7 @@ The CSV file should contain the following columns (header names must match exact
             hist_fx,
             combined_ignored_indices,
             combined_ignored_reasons,
+            dividend_history_df,  # <-- Pass it to _store_worker_data
         )
 
         self._process_historical_and_periodic_data()
@@ -10098,6 +9666,282 @@ The CSV file should contain the following columns (header names must match exact
             fig = config["ax"].get_figure()
             fig.tight_layout(pad=0.5)
             canvas.draw()
+
+    def _update_dividend_bar_chart(self):
+        """Updates the dividend history bar chart based on selected period and count."""
+        logging.debug("Updating dividend bar chart...")
+        ax = self.dividend_bar_ax
+        canvas = self.dividend_bar_canvas
+        ax.clear()
+
+        if (
+            not hasattr(self, "dividend_history_data")
+            or self.dividend_history_data.empty
+            or not hasattr(
+                self, "dividend_summary_table_model"
+            )  # Check if summary table model exists
+        ):
+            logging.debug(
+                "  _update_dividend_bar_chart: No dividend_history_data or empty."
+            )
+            ax.text(
+                0.5,
+                0.5,
+                "No Dividend Data",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                color=COLOR_TEXT_SECONDARY,
+            )
+            ax.set_title("Dividend History", fontsize=9, weight="bold")
+            canvas.draw()
+            self._update_dividend_summary_table(
+                pd.Series(dtype=float)
+            )  # Clear summary table
+            return
+        logging.debug(
+            f"  _update_dividend_bar_chart: self.dividend_history_data (shape {self.dividend_history_data.shape}):"
+        )
+        if not self.dividend_history_data.empty:
+            logging.debug(f"    Head:\n{self.dividend_history_data.head().to_string()}")
+
+        if (
+            not hasattr(self, "dividend_history_data")
+            or self.dividend_history_data.empty
+        ):
+
+            # This case is handled above, but defensive check
+            return
+
+        df_dividends = self.dividend_history_data.copy()
+        if (
+            "Date" not in df_dividends.columns
+            or "DividendAmountDisplayCurrency" not in df_dividends.columns
+        ):
+            logging.error("Dividend data missing required Date or Amount columns.")
+            ax.text(
+                0.5,
+                0.5,
+                "Invalid Dividend Data",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                color=COLOR_TEXT_SECONDARY,
+            )
+            ax.set_title("Dividend History", fontsize=9, weight="bold")
+            canvas.draw()
+            self._update_dividend_summary_table(
+                pd.Series(dtype=float)
+            )  # Clear summary table
+            return
+
+        df_dividends["Date"] = pd.to_datetime(df_dividends["Date"])
+        df_dividends.set_index("Date", inplace=True)
+
+        period_type = self.dividend_period_combo.currentText()
+        num_periods_to_show = self.dividend_periods_spinbox.value()
+        display_currency_symbol = self._get_currency_symbol()
+
+        resample_freq = "YE"  # Annual
+        date_format_str = "%Y"
+        if period_type == "Quarterly":
+            resample_freq = "QE"
+            date_format_str = "%Y-Q%q"
+        elif period_type == "Monthly":
+            resample_freq = "ME"
+            date_format_str = "%Y-%m"
+
+        try:
+            # Resample and sum dividends
+            aggregated_dividends = (
+                df_dividends["DividendAmountDisplayCurrency"]
+                .resample(resample_freq)
+                .sum()
+                .dropna()
+            )
+            logging.debug(
+                f"    Aggregated dividends before positive filter (summed & dropna):\n{aggregated_dividends.to_string()}"
+            )
+            aggregated_dividends = aggregated_dividends[
+                aggregated_dividends > 1e-9
+            ]  # Keep only positive sums
+            # logging.debug(
+            #     f"    Aggregated dividends after positive filter (>1e-9):\n{aggregated_dividends.to_string()}"
+            # )
+
+            if aggregated_dividends.empty:
+                ax.text(
+                    0.5,
+                    0.5,
+                    f"No Dividends for {period_type} Periods",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                    color=COLOR_TEXT_SECONDARY,
+                )
+                plot_data_for_table = pd.Series(dtype=float)  # Empty series for table
+            else:
+                plot_data = aggregated_dividends.tail(num_periods_to_show)
+                if plot_data.empty:
+                    ax.text(
+                        0.5,
+                        0.5,
+                        f"No Dividends for Last {num_periods_to_show} {period_type} Periods",
+                        ha="center",
+                        va="center",
+                        transform=ax.transAxes,
+                        color=COLOR_TEXT_SECONDARY,
+                    )
+                    plot_data_for_table = pd.Series(
+                        dtype=float
+                    )  # Empty series for table
+                else:
+                    # --- MODIFIED: Generate x_labels for quarterly directly ---
+                    if period_type == "Quarterly":
+                        x_labels = [
+                            f"{dt.year}-Q{dt.quarter}" for dt in plot_data.index
+                        ]
+                    else:
+                        x_labels = plot_data.index.strftime(date_format_str)
+                    # --- END MODIFICATION ---
+                    bars = ax.bar(
+                        x_labels, plot_data.values, color=COLOR_ACCENT_TEAL, width=0.6
+                    )
+
+                    # Add value labels on top of bars
+                    for bar in bars:
+                        yval = bar.get_height()
+                        if (
+                            pd.notna(yval) and abs(yval) > 1e-9
+                        ):  # Only label non-zero bars
+                            ax.text(
+                                bar.get_x() + bar.get_width() / 2.0,
+                                yval + (plot_data.max() * 0.01),  # Slight offset
+                                f"{display_currency_symbol}{yval:,.0f}",
+                                ha="center",
+                                va="bottom",
+                                fontsize=7,
+                                color=COLOR_TEXT_DARK,
+                            )
+
+                    ax.yaxis.set_major_formatter(
+                        mtick.FuncFormatter(
+                            lambda x, p: f"{display_currency_symbol}{x:,.0f}"
+                        )
+                    )
+                    ax.tick_params(axis="x", labelrotation=45, labelsize=7)
+                    ax.tick_params(axis="y", labelsize=7)
+                    plot_data_for_table = plot_data  # Data for summary table
+
+        except Exception as e:
+            logging.error(f"Error generating dividend bar chart: {e}")
+            traceback.print_exc()  # Add traceback
+            ax.text(
+                0.5,
+                0.5,
+                "Error Plotting Dividends",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                color=COLOR_LOSS,
+            )
+
+        ax.set_title(
+            f"{period_type} Dividend Totals ({display_currency_symbol})",
+            fontsize=9,
+            weight="bold",
+        )
+        ax.set_xlabel("")  # Clear x-axis label as dates are on ticks
+        ax.set_ylabel(f"Total Dividends ({display_currency_symbol})", fontsize=8)
+        ax.grid(True, axis="y", linestyle="--", linewidth=0.5, color=COLOR_BORDER_LIGHT)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        self.dividend_bar_fig.tight_layout(pad=0.5)
+        canvas.draw()
+
+        # Update the summary table with the plotted data
+        self._update_dividend_summary_table(plot_data_for_table)
+
+    def _update_dividend_summary_table(self, plot_data: pd.Series):
+        """Updates the dividend summary table view with aggregated data."""
+        logging.debug("Updating dividend summary table...")
+        if not hasattr(self, "dividend_summary_table_model"):
+            logging.error("_update_dividend_summary_table: Model not initialized.")
+            return
+
+        if plot_data is None or plot_data.empty:
+            logging.debug("  _update_dividend_summary_table: No plot_data or empty.")
+            self.dividend_summary_table_model.updateData(pd.DataFrame())
+            return
+
+        # Convert Series to DataFrame for table display
+        # Ensure index is named for clarity if it's a DatetimeIndex
+        df_summary = plot_data.to_frame(
+            name=f"Total Dividends ({self._get_currency_symbol()})"
+        )
+        # --- MODIFIED: Direct formatting for quarterly period string ---
+        if isinstance(df_summary.index, pd.DatetimeIndex):
+            period_type = self.dividend_period_combo.currentText()
+            if period_type == "Quarterly":
+                df_summary.index = [
+                    f"{dt.year}-Q{dt.quarter}" for dt in df_summary.index
+                ]
+            else:  # Monthly or Annual
+                date_format_str_table = "%Y"
+                if period_type == "Monthly":  # Should be "Monthly" from combo box
+                    date_format_str_table = "%Y-%m"
+                df_summary.index = df_summary.index.strftime(date_format_str_table)
+        # --- END MODIFICATION ---
+
+        df_summary.index.name = "Period"
+        df_summary = df_summary.reset_index()  # Make 'Period' a column
+
+        logging.debug(
+            f"  _update_dividend_summary_table: df_summary to be set in model (shape {df_summary.shape}):"
+        )
+        if not df_summary.empty:
+            logging.debug(f"    Head:\n{df_summary.head().to_string()}")
+
+        self.dividend_summary_table_model.updateData(df_summary)
+        self.dividend_summary_table_view.resizeColumnsToContents()
+
+    def _update_dividend_table(self):
+        """Updates the dividend history table view."""
+        logging.debug("Updating dividend table...")
+        if (
+            not hasattr(self, "dividend_history_data")
+            or self.dividend_history_data.empty
+        ):
+            logging.debug(
+                "  _update_dividend_table: No dividend_history_data or empty."
+            )
+            self.dividend_table_model.updateData(pd.DataFrame())
+            return
+
+        logging.debug(
+            f"  _update_dividend_table: self.dividend_history_data (shape {self.dividend_history_data.shape}):"
+        )
+        if not self.dividend_history_data.empty:
+            logging.debug(f"    Head:\n{self.dividend_history_data.head().to_string()}")
+
+        df_display = self.dividend_history_data.copy()
+
+        # Format columns for display if needed (e.g., date, currency)
+        if "Date" in df_display.columns:
+            df_display["Date"] = pd.to_datetime(df_display["Date"]).dt.strftime(
+                "%Y-%m-%d"
+            )
+
+        # Rename columns for UI friendliness
+        rename_map = {
+            "DividendAmountLocal": f'Amount ({self._get_currency_symbol(currency_code=df_display["LocalCurrency"].iloc[0] if not df_display.empty and "LocalCurrency" in df_display.columns and not df_display["LocalCurrency"].empty else self.config.get("default_currency"))})',
+            "FXRateUsed": "FX Rate",
+            "DividendAmountDisplayCurrency": f"Amount ({self._get_currency_symbol()})",
+        }
+        df_display.rename(columns=rename_map, inplace=True)
+
+        self.dividend_table_model.updateData(df_display)
+        self.dividend_table_view.resizeColumnsToContents()
 
     # --- Transaction Dialog Methods ---
     @Slot()
@@ -10526,60 +10370,6 @@ The CSV file should contain the following columns (header names must match exact
 
     # --- End Fundamental Data Slots ---
 
-    @Slot(str, dict)
-    def _show_fundamental_data_dialog_from_worker(
-        self, display_symbol: str, data: dict
-    ):
-        """Shows the FundamentalDataDialog with data received from the worker."""
-        self.lookup_symbol_edit.setEnabled(True)
-        self.lookup_button.setEnabled(True)
-        self.status_label.setText("Ready")  # Reset status
-
-        if (
-            not data
-        ):  # data is an empty dict if yfinance found nothing or error during fetch by worker
-            QMessageBox.warning(
-                self,
-                "Data Not Found",
-                f"Could not retrieve fundamental data for {display_symbol}.",
-            )
-            return
-
-        dialog = FundamentalDataDialog(display_symbol, data, self)
-        dialog.exec()
-
-    @Slot(str)
-    def _handle_context_menu_fundamental_lookup(self, internal_symbol: str):
-        """Handles fundamental lookup triggered from the table's context menu."""
-        if not internal_symbol or internal_symbol == CASH_SYMBOL_CSV:
-            return
-
-        yf_symbol = self.internal_to_yf_map.get(internal_symbol)
-        if not yf_symbol:
-            # Fallback if not in map (e.g., if map wasn't populated for some reason)
-            yf_symbol_fallback = map_to_yf_symbol(internal_symbol)
-            if not yf_symbol_fallback:
-                QMessageBox.warning(
-                    self,
-                    "Symbol Error",
-                    f"Could not map '{internal_symbol}' to a Yahoo Finance ticker for fundamentals.",
-                )
-                return
-            yf_symbol = yf_symbol_fallback
-            logging.warning(
-                f"Used fallback YF symbol mapping for context menu fundamental lookup: {internal_symbol} -> {yf_symbol}"
-            )
-
-        logging.info(
-            f"Context menu fundamental lookup for: {internal_symbol} (YF: {yf_symbol})"
-        )
-        self.status_label.setText(f"Fetching fundamentals for {internal_symbol}...")
-        # Optionally disable some UI elements, though dialog will be modal
-        # self.set_controls_enabled(False) # Might be too broad
-
-        worker = FundamentalDataWorker(yf_symbol, internal_symbol, self.worker_signals)
-        self.threadpool.start(worker)
-
     # --- End Fundamental Data Slots ---
 
     @Slot()
@@ -10767,7 +10557,13 @@ if __name__ == "__main__":
     if app is None:
         app = QApplication(sys.argv)
 
-    # --->>> IT MUST BE HERE <<<---
+    # --->>> SET ORG AND APP NAME EARLY <<<---
+    # This ensures QStandardPaths uses the correct names when PortfolioApp initializes its paths.
+    app.setOrganizationName("StockAlchemist")  # Or your desired organization name
+    app.setApplicationName(APP_NAME_FOR_QT)  # APP_NAME_FOR_QT is "Investa"
+    # --->>> ------------ <<<---
+
+    # --->>> IT MUST BE HERE <<<---s
     # Name does not show up in the menu bar
     app.setApplicationName(APP_NAME_FOR_QT)  # <--- Use the constant
     # --->>> ------------ <<<---
@@ -10778,7 +10574,7 @@ if __name__ == "__main__":
     main_window = PortfolioApp()
 
     # Set initial size and minimum size
-    main_window.resize(1600, 900)  # Adjust initial size as needed
+    main_window.resize(1600, 1000)  # Adjust initial size as needed
     main_window.setMinimumSize(1200, 700)  # Set minimum reasonable size
 
     # --- Center the window on the primary screen ---

@@ -1,5 +1,5 @@
 {
-    "transactions_file": "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/my_transactions_processed_v2.csv",
+    "transactions_file": "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/my_transactions.csv",
     "display_currency": "USD",
     "show_closed": false,
     "selected_accounts": [],
@@ -45,7 +45,12 @@
         "Yield (Mkt) %": true,
         "Est. Income": true
     },
-    "bar_periods_annual": 10,
+    "bar_periods_annual": 9,
     "bar_periods_monthly": 7,
-    "bar_periods_weekly": 7
+    "bar_periods_weekly": 7,
+    "dividend_agg_period": "Annual",
+    "dividend_periods_to_show": 10,
+    "dividend_chart_default_periods_annual": 10,
+    "dividend_chart_default_periods_quarterly": 12,
+    "dividend_chart_default_periods_monthly": 24
 }

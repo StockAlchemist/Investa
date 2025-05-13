@@ -203,3 +203,10 @@ HISTORICAL_COMPARE_METHODS = (
 # --- Position Closing Tolerance ---
 # If a stock's quantity is less than this (but not zero), treat it as closed.
 STOCK_QUANTITY_CLOSE_TOLERANCE = 1e-6
+
+# --- Dividend Chart Configuration ---
+DIVIDEND_CHART_DEFAULT_PERIODS_ANNUAL = (
+    10  # Default number of years for annual dividend chart
+)
+DIVIDEND_CHART_DEFAULT_PERIODS_QUARTERLY = 12  # Default number of quarters (3 years)
+DIVIDEND_CHART_DEFAULT_PERIODS_MONTHLY = 24  # Default number of months (2 years)

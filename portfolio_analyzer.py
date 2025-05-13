@@ -53,6 +53,7 @@ try:
         calculate_irr,  # Used by _build_summary_rows
         get_cash_flows_for_symbol_account,  # Used by _build_summary_rows
         safe_sum,  # Used by _calculate_aggregate_metrics
+        get_historical_rate_via_usd_bridge,  # Added for dividend history
         # Add any other finutils functions used by the moved functions
     )
 except ImportError:
@@ -1646,3 +1647,152 @@ def calculate_periodic_returns(
     )
     # --- END ADDED ---
     return periodic_returns
+
+
+def extract_dividend_history(
+    all_transactions_df: pd.DataFrame,
+    display_currency: str,  # <-- Keep existing parameters
+    historical_fx_yf: Dict[str, pd.DataFrame],  # YF Ticker -> DataFrame
+    default_currency: str,
+    include_accounts: Optional[List[str]] = None,  # <-- ADD NEW PARAMETER
+) -> pd.DataFrame:
+    """
+       Extracts dividend history from transactions and converts amounts to the display currency.
+
+       Args:
+           all_transactions_df (pd.DataFrame): The full, cleaned transactions DataFrame.
+           display_currency (str): The target currency for displaying dividend amounts.
+           historical_fx_yf (Dict[str, pd.DataFrame]): Dictionary mapping YF FX pair tickers
+               (e.g., 'EUR=X') to DataFrames containing historical rates vs USD.
+           default_currency (str): The default currency if a transaction's local currency is missing.
+
+    include_accounts (Optional[List[str]], optional): A list of account names to include. If None, includes all accounts. Defaults to None.
+
+       Returns:
+           pd.DataFrame: A DataFrame with dividend history, including:
+               'Date', 'Symbol', 'Account', 'LocalCurrency', 'DividendAmountLocal',
+               'FXRateUsed', 'DividendAmountDisplayCurrency'.
+               Returns an empty DataFrame if no dividend transactions or on critical error.
+    """
+    logging.info(f"Extracting dividend history for display in {display_currency}...")
+    logging.debug(
+        f"  Input all_transactions_df shape: {all_transactions_df.shape if isinstance(all_transactions_df, pd.DataFrame) else 'Not a DF'}"
+    )
+    logging.debug(
+        f"  Historical FX data keys: {list(historical_fx_yf.keys()) if historical_fx_yf else 'Empty'}"
+    )
+    if not isinstance(all_transactions_df, pd.DataFrame) or all_transactions_df.empty:
+        logging.warning("Dividend history: Input transactions DataFrame is empty.")
+        return pd.DataFrame()
+
+    dividend_transactions = all_transactions_df[
+        all_transactions_df["Type"].str.lower() == "dividend"
+    ].copy()
+
+    # --- ADDED: Filter by include_accounts if specified ---
+    if include_accounts is not None and isinstance(include_accounts, list):
+        if "Account" in dividend_transactions.columns:
+            dividend_transactions = dividend_transactions[
+                dividend_transactions["Account"].isin(include_accounts)
+            ].copy()
+    # --- END ADDED ---
+
+    logging.debug(f"  Found {len(dividend_transactions)} dividend transactions.")
+
+    if dividend_transactions.empty:
+        logging.info("No dividend transactions found.")
+        return pd.DataFrame()
+
+    results = []
+    for i, (_, row) in enumerate(
+        dividend_transactions.iterrows()
+    ):  # Added index for logging
+        try:
+            tx_date = row["Date"].date()  # Convert to date object
+            symbol = row["Symbol"]
+            account = row["Account"]
+            local_curr = row.get("Local Currency", default_currency)
+
+            # Dividend amount in local currency (Net: Total Amount - Commission)
+            # For dividends, 'Total Amount' is typically the net received.
+            # 'Price/Share' can also be 'Dividend/Share'. 'Quantity' is shares.
+            # Let's prioritize 'Total Amount'. If not present, use Qty * Price.
+            dividend_local = pd.to_numeric(row.get("Total Amount"), errors="coerce")
+            if pd.isna(dividend_local):
+                qty = pd.to_numeric(row.get("Quantity"), errors="coerce")
+                price_per_share = pd.to_numeric(row.get("Price/Share"), errors="coerce")
+                if pd.notna(qty) and pd.notna(price_per_share):
+                    dividend_local = qty * price_per_share
+                else:
+                    logging.warning(
+                        f"Could not determine dividend amount for row: {row.get('original_index', 'N/A')}"
+                    )
+                    continue  # Skip if amount cannot be determined
+
+            commission_local = pd.to_numeric(row.get("Commission"), errors="coerce")
+            if pd.notna(commission_local):
+                dividend_local -= commission_local  # Subtract commission if present
+
+            fx_rate = get_historical_rate_via_usd_bridge(
+                local_curr, display_currency, tx_date, historical_fx_yf
+            )
+            dividend_display_curr = (
+                dividend_local * fx_rate
+                if pd.notna(fx_rate) and pd.notna(dividend_local)
+                else np.nan
+            )
+
+            if i < 5:  # Log first few processed rows
+                logging.debug(
+                    f"    Processed dividend row (orig_idx: {row.get('original_index', 'N/A')}):"
+                )
+                logging.debug(
+                    f"      Date: {tx_date}, Symbol: {symbol}, Account: {account}, LocalCurr: {local_curr}"
+                )
+                logging.debug(
+                    f"      DividendLocal: {dividend_local}, FXRateUsed: {fx_rate}, DividendDisplayCurr: {dividend_display_curr}"
+                )
+
+            results.append(
+                [
+                    tx_date,
+                    symbol,
+                    account,
+                    local_curr,
+                    dividend_local,
+                    fx_rate,
+                    dividend_display_curr,
+                ]
+            )
+        except Exception as e:
+            logging.error(
+                f"Error processing dividend row {row.get('original_index', 'N/A')}: {e}"
+            )
+            continue
+
+    if not results:
+        logging.warning("  No results after processing dividend transactions.")
+        return pd.DataFrame()
+
+    df_dividends = pd.DataFrame(
+        results,
+        columns=[
+            "Date",
+            "Symbol",
+            "Account",
+            "LocalCurrency",
+            "DividendAmountLocal",
+            "FXRateUsed",
+            "DividendAmountDisplayCurrency",
+        ],
+    )
+    df_dividends.sort_values(by="Date", ascending=False, inplace=True)
+    logging.info(f"Extracted {len(df_dividends)} dividend records.")
+    if not df_dividends.empty:
+        logging.debug(
+            f"  Returned df_dividends head:\n{df_dividends.head().to_string()}"
+        )
+        logging.debug(
+            f"  'DividendAmountDisplayCurrency' NaNs: {df_dividends['DividendAmountDisplayCurrency'].isna().sum()} out of {len(df_dividends)}"
+        )
+    return df_dividends
