@@ -47,43 +47,43 @@ Before you can start crunching numbers, there are a couple of preliminary steps:
 
 ### Understanding `$CASH` Transactions
 
-    The special symbol **`$CASH`** plays a vital role in accurately tracking your portfolio's value and performance. Here's how it works and when to use it:
+The special symbol **`$CASH`** plays a vital role in accurately tracking your portfolio's value and performance. Here's how it works and when to use it:
 
-    *   **What it Represents:** `$CASH` is used to denote monetary movements or balances within your investment accounts that are not directly tied to a specific stock or ETF. Think of it as the cash component of your account.
-    *   **When to Use `$CASH`:**
-        *   **Deposits:** When you add funds to your brokerage account (e.g., `Transaction Type: Deposit`, `Stock / ETF Symbol: $CASH`).
-        *   **Withdrawals:** When you take funds out of your brokerage account (e.g., `Transaction Type: Withdrawal`, `Stock / ETF Symbol: $CASH`).
-        *   **Cash Dividends (Not Reinvested into the Same Stock):** If a dividend is paid out as cash to your account and not automatically reinvested into the stock that paid it, you can record it as a `Dividend` for `$CASH`. For example, `Transaction Type: Dividend`, `Stock / ETF Symbol: $CASH`, `Total Amount: [dividend amount]`. (Alternatively, if a stock pays a dividend and you want to track it against that stock, use the stock's symbol and `Transaction Type: Dividend`).
-        *   **Fees (Not Tied to a Specific Trade):** For general account maintenance fees, record them as `Transaction Type: Fees`, `Stock / ETF Symbol: $CASH`, `Total Amount: [fee amount]`. For trade-specific fees, include them in the `Fees` column of the Buy/Sell transaction for the specific stock.
-        *   **Interest Received:** If your account earns interest on its cash balance, you can record this as `Transaction Type: Deposit` (or `Dividend`) for `$CASH`.
-    *   **How It's Treated:**
-        *   `$CASH` is treated like any other holding in terms of contributing to your portfolio's market value.
-        *   Its "price per unit" is always considered **1.00** in the currency of the investment account it belongs to. So, a `Quantity of Units` of 100 for `$CASH` means $100 (or 100 units of the account's currency).
-        *   **`$CASH` Buy/Sell Transactions:** These are crucial for modeling internal cash movements within an account:
-            *   A **`$CASH` `Buy`** transaction typically signifies cash *increasing* in your account's cash balance from an internal source. For example, when you sell a stock, the proceeds can be represented as a `$CASH` `Buy` (or a `$CASH` `Deposit` if you prefer to view proceeds as an inflow to cash).
-            *   A **`$CASH` `Sell`** transaction signifies cash *decreasing* from your account's cash balance to be used for an internal purpose, most commonly to fund the purchase of a stock or ETF.
-    *   **Impact on Calculations (Especially TWR Daily Gain):**
-        *   Accurate `$CASH` transactions are crucial for correctly calculating your portfolio's total value, cost basis (for cash itself, it's usually just its face value), and especially for performance metrics like Time-Weighted Return (TWR), as they represent external cash flows (contributions and withdrawals).
-        *   **External Flows for TWR:**
-            *   `$CASH` `Deposit` (e.g., transferring new money into your brokerage account) and `$CASH` `Withdrawal` (e.g., taking money out of your brokerage account) are treated as **external cash flows**.
-            *   These external flows directly impact the capital base upon which TWR is calculated. A deposit increases the investment base; a withdrawal decreases it. TWR aims to measure performance *excluding* the effect of these contributions or withdrawals.
-        *   **Internal Conversions for TWR:**
-            *   When you `Buy` a stock: If you model this with an accompanying `$CASH` `Sell` transaction, this represents an **internal asset conversion**. Cash in your account decreases, and your holding in the new stock increases by the same amount (at cost). This is *not* an external cash flow for TWR purposes.
-            *   When you `Sell` a stock: If you model the proceeds with an accompanying `$CASH` `Buy` (or `$CASH` `Deposit`), this is also an internal asset conversion. Your stock holding decreases, and your cash balance increases. This is *not* an external cash flow for TWR.
-        *   **Daily Gain and TWR:**
-            *   The TWR formula is designed to isolate the performance of your investments from the timing and size of when you add or remove funds.
-            *   For any given day (or sub-period used in TWR calculation), the return is essentially `(End Market Value - Start Market Value - Net External Cash Flow) / (Start Market Value + Weighted Cash Flows during the period)`.
-            *   `$CASH` `Buy`/`Sell` transactions that represent these internal asset reallocations do *not* count as "Net External Cash Flow." Their immediate effect on the day of the transaction is a shift in value between the `$CASH` asset and the stock/ETF involved.
-            *   For example, if you start a day with $1000 cash and no stocks, and then buy $500 of SPY:
-                1.  Optional: `$CASH` `Deposit` $1000 (if this is new money for the day - this IS an external flow).
-                2.  `$CASH` `Sell` $500 (internal conversion - cash balance reduces).
-                3.  `SPY` `Buy` $500 (internal conversion - SPY holding increases).
-                *   Immediately after these internal conversions, the total portfolio value (cash + SPY) remains unchanged by the act of buying SPY itself (assuming SPY is valued at its purchase price initially).
-                *   The daily gain for TWR will then depend on how the *remaining cash* and the *market value of SPY* change from this point until the end of the day. If SPY's price increases or decreases, that contributes to the investment performance measured by TWR. The `$CASH` asset itself (with a fixed price of 1.00) does not generate capital gains or losses, though it can receive interest (recorded as a separate transaction).
+* **What it Represents:** `$CASH` is used to denote monetary movements or balances within your investment accounts that are not directly tied to a specific stock or ETF. Think of it as the cash component of your account.
+* **When to Use `$CASH`:**
+  * **Deposits:** When you add funds to your brokerage account (e.g., `Transaction Type: Deposit`, `Stock / ETF Symbol: $CASH`).
+  * **Withdrawals:** When you take funds out of your brokerage account (e.g., `Transaction Type: Withdrawal`, `Stock / ETF Symbol: $CASH`).
+  * **Cash Dividends (Not Reinvested into the Same Stock):** If a dividend is paid out as cash to your account and not automatically reinvested into the stock that paid it, you can record it as a `Dividend` for `$CASH`. For example, `Transaction Type: Dividend`, `Stock / ETF Symbol: $CASH`, `Total Amount: [dividend amount]`. (Alternatively, if a stock pays a dividend and you want to track it against that stock, use the stock's symbol and `Transaction Type: Dividend`).
+  * **Fees (Not Tied to a Specific Trade):** For general account maintenance fees, record them as `Transaction Type: Fees`, `Stock / ETF Symbol: $CASH`, `Total Amount: [fee amount]`. For trade-specific fees, include them in the `Fees` column of the Buy/Sell transaction for the specific stock.
+  * **Interest Received:** If your account earns interest on its cash balance, you can record this as `Transaction Type: Deposit` (or `Dividend`) for `$CASH`.
+* **How It's Treated:**
+  * `$CASH` is treated like any other holding in terms of contributing to your portfolio's market value.
+  * Its "price per unit" is always considered **1.00** in the currency of the investment account it belongs to. So, a `Quantity of Units` of 100 for `$CASH` means $100 (or 100 units of the account's currency).
+  * **`$CASH` Buy/Sell Transactions:** These are crucial for modeling internal cash movements within an account:
+    * A **`$CASH` `Buy`** transaction typically signifies cash *increasing* in your account's cash balance from an internal source. For example, when you sell a stock, the proceeds can be represented as a `$CASH` `Buy` (or a `$CASH` `Deposit` if you prefer to view proceeds as an inflow to cash).
+    * A **`$CASH` `Sell`** transaction signifies cash *decreasing* from your account's cash balance to be used for an internal purpose, most commonly to fund the purchase of a stock or ETF.
+* **Impact on Calculations (Especially TWR Daily Gain):**
+  * Accurate `$CASH` transactions are crucial for correctly calculating your portfolio's total value, cost basis (for cash itself, it's usually just its face value), and especially for performance metrics like Time-Weighted Return (TWR), as they represent external cash flows (contributions and withdrawals).
+  * **External Flows for TWR:**
+    * `$CASH` `Deposit` (e.g., transferring new money into your brokerage account) and `$CASH` `Withdrawal` (e.g., taking money out of your brokerage account) are treated as **external cash flows**.
+    * These external flows directly impact the capital base upon which TWR is calculated. A deposit increases the investment base; a withdrawal decreases it. TWR aims to measure performance *excluding* the effect of these contributions or withdrawals.
+  * **Internal Conversions for TWR:**
+    * When you `Buy` a stock: If you model this with an accompanying `$CASH` `Sell` transaction, this represents an **internal asset conversion**. Cash in your account decreases, and your holding in the new stock increases by the same amount (at cost). This is *not* an external cash flow for TWR purposes.
+    * When you `Sell` a stock: If you model the proceeds with an accompanying `$CASH` `Buy` (or `$CASH` `Deposit`), this is also an internal asset conversion. Your stock holding decreases, and your cash balance increases. This is *not* an external cash flow for TWR.
+  * **Daily Gain and TWR:**
+    * The TWR formula is designed to isolate the performance of your investments from the timing and size of when you add or remove funds.
+    * For any given day (or sub-period used in TWR calculation), the return is essentially `(End Market Value - Start Market Value - Net External Cash Flow) / (Start Market Value + Weighted Cash Flows during the period)`.
+    * `$CASH` `Buy`/`Sell` transactions that represent these internal asset reallocations do *not* count as "Net External Cash Flow." Their immediate effect on the day of the transaction is a shift in value between the `$CASH` asset and the stock/ETF involved.
+    * For example, if you start a day with $1000 cash and no stocks, and then buy $500 of SPY:
+            1. Optional: `$CASH` `Deposit` $1000 (if this is new money for the day - this IS an external flow).
+            2. `$CASH` `Sell` $500 (internal conversion - cash balance reduces).
+            3. `SPY` `Buy` $500 (internal conversion - SPY holding increases).
+      * Immediately after these internal conversions, the total portfolio value (cash + SPY) remains unchanged by the act of buying SPY itself (assuming SPY is valued at its purchase price initially).
+      * The daily gain for TWR will then depend on how the *remaining cash* and the *market value of SPY* change from this point until the end of the day. If SPY's price increases or decreases, that contributes to the investment performance measured by TWR. The `$CASH` asset itself (with a fixed price of 1.00) does not generate capital gains or losses, though it can receive interest (recorded as a separate transaction).
 
-    By diligently recording your `$CASH` movements, including internal `Buy`/`Sell` transactions for cash when appropriate, Investa can provide a more complete and accurate picture of your investment activities, cash flow, and true investment performance.
+By diligently recording your `$CASH` movements, including internal `Buy`/`Sell` transactions for cash when appropriate, Investa can provide a more complete and accurate picture of your investment activities, cash flow, and true investment performance.
 
-    *   **Tip:** For detailed examples and specific requirements for each transaction type, once the app is running, check out the **Help > CSV Format Help...** menu.
+* **Tip:** For detailed examples and specific requirements for each transaction type, once the app is running, check out the **Help > CSV Format Help...** menu.
 
 ## Part 2: Your First Launch and Loading Data
 
