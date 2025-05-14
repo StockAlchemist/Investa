@@ -166,7 +166,7 @@ def calculate_portfolio_summary(
     default_currency: str = "USD",
     cache_file_path: str = DEFAULT_CURRENT_CACHE_FILE_PATH,  # Used by provider
     include_accounts: Optional[List[str]] = None,
-    manual_prices_dict: Optional[Dict[str, float]] = None,
+    manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]] = None,  # MODIFIED
 ) -> Tuple[
     Optional[Dict[str, Any]],
     Optional[pd.DataFrame],
@@ -194,7 +194,7 @@ def calculate_portfolio_summary(
         default_currency (str, optional): The default currency used when a transaction doesn't specify one. Defaults to "USD".
         cache_file_path (str, optional): Path to the cache file used by MarketDataProvider. Defaults to DEFAULT_CURRENT_CACHE_FILE_PATH.
         include_accounts (Optional[List[str]], optional): A list of account names to include in the calculation. If None, includes all accounts. Defaults to None.
-        manual_prices_dict (Optional[Dict[str, float]], optional): Dictionary of manual price overrides (symbol: price). Defaults to None.
+        manual_overrides_dict (Optional[Dict[str, Dict[str, Any]]], optional): Dictionary of manual overrides (symbol: {"price": float, "asset_type": str, "sector": str, "geography": str}). Defaults to None.
 
     Returns:
         Tuple[Optional[Dict[str, Any]], Optional[pd.DataFrame], Optional[Dict[str, Dict[str, float]]], Set[int], Dict[int, str], str]:
@@ -216,8 +216,8 @@ def calculate_portfolio_summary(
     all_transactions_df: Optional[pd.DataFrame] = None
     combined_ignored_indices = set()
     combined_ignored_reasons = {}
-    manual_prices_effective = (
-        manual_prices_dict if manual_prices_dict is not None else {}
+    manual_overrides_effective = (  # MODIFIED
+        manual_overrides_dict if manual_overrides_dict is not None else {}
     )
     report_date = datetime.now().date()
 
@@ -395,7 +395,9 @@ def calculate_portfolio_summary(
         report_date=report_date,
         shortable_symbols=SHORTABLE_SYMBOLS,
         excluded_symbols=YFINANCE_EXCLUDED_SYMBOLS,
-        manual_prices_dict=manual_prices_effective,
+        manual_prices_dict=manual_overrides_effective.get(
+            "price", {}
+        ),  # Pass only price part for now, or update _build_summary_rows
     )
     if err_build:
         has_errors = True
@@ -422,6 +424,181 @@ def calculate_portfolio_summary(
         logging.warning(msg)
         has_warnings = True
         status_parts.append("Summary Build Failed")
+
+    # --- ADDED: Fetch Sector information and add to summary_df_unfiltered ---
+    if portfolio_summary_rows:  # Only proceed if we have rows
+        summary_df_unfiltered_temp = pd.DataFrame(portfolio_summary_rows)
+        if "Symbol" in summary_df_unfiltered_temp.columns:
+            symbols_in_summary = summary_df_unfiltered_temp["Symbol"].unique()
+            sector_map = {}
+            quote_type_map = {}
+            country_map = {}  # ADDED: To store country
+            industry_map = {}  # ADDED: To store industry
+            for internal_symbol in symbols_in_summary:
+                # Get manual overrides for this symbol
+                symbol_overrides = manual_overrides_effective.get(
+                    internal_symbol.upper(), {}
+                )
+                manual_asset_type = symbol_overrides.get("asset_type", "").strip()
+                manual_sector = symbol_overrides.get("sector", "").strip()
+                manual_geography = symbol_overrides.get("geography", "").strip()
+                manual_industry = symbol_overrides.get("industry", "").strip()  # ADDED
+
+                logging.debug(f"Processing symbol: {internal_symbol}")
+                logging.debug(
+                    f"  Manual Overrides found for {internal_symbol}: {symbol_overrides}"
+                )
+                logging.debug(
+                    f"  Parsed Manual - Asset Type: '{manual_asset_type}', Sector: '{manual_sector}', Geography: '{manual_geography}'"
+                )
+
+                if internal_symbol == CASH_SYMBOL_CSV or internal_symbol.startswith(
+                    "Cash ("
+                ):
+                    sector_map[internal_symbol] = (
+                        "Cash"  # Assign a specific category for cash
+                    )
+                    quote_type_map[internal_symbol] = "CASH"
+                    country_map[internal_symbol] = (
+                        "Cash"  # ADDED: Assign country for cash
+                    )
+                    industry_map[internal_symbol] = "Cash"  # ADDED
+                    logging.debug(
+                        f"  Assigned for CASH: Sector='{sector_map[internal_symbol]}', quoteType='{quote_type_map[internal_symbol]}', Country='{country_map[internal_symbol]}'"
+                    )
+                    continue
+
+                yf_ticker_for_sector = map_to_yf_symbol(internal_symbol)
+                logging.debug(
+                    f"  YF Ticker for {internal_symbol}: {yf_ticker_for_sector}"
+                )
+
+                # Initialize with manual overrides if they exist and are non-empty, otherwise placeholder
+                sector_map[internal_symbol] = (
+                    manual_sector if manual_sector else "N/A (No YF / Manual Empty)"
+                )
+                quote_type_map[internal_symbol] = (
+                    manual_asset_type
+                    if manual_asset_type
+                    else "N/A (No YF / Manual Empty)"  # Shortened
+                )
+                country_map[internal_symbol] = (
+                    manual_geography
+                    if manual_geography
+                    else "N/A (No YF / Manual Empty)"  # Shortened
+                )
+                industry_map[internal_symbol] = (  # ADDED
+                    manual_industry if manual_industry else "N/A (No YF / Manual Empty)"
+                )
+                logging.debug(
+                    f"  Initial map values - Sector: '{sector_map[internal_symbol]}', quoteType: '{quote_type_map[internal_symbol]}', Country: '{country_map[internal_symbol]}'"
+                )
+
+                if yf_ticker_for_sector:
+                    # Only fetch if any of the manual fields were initially empty (now "N/A...")
+                    should_fetch_fundamentals = (
+                        not manual_sector
+                        or not manual_asset_type
+                        or not manual_geography
+                        or not manual_industry  # ADDED industry
+                    )
+                    logging.debug(
+                        f"  Should fetch fundamentals for {internal_symbol}: {should_fetch_fundamentals}"
+                    )
+
+                    if should_fetch_fundamentals:
+                        fundamental_info = market_provider.get_fundamental_data(
+                            yf_ticker_for_sector
+                        )
+                        logging.debug(
+                            f"  Fetched fundamental_info for {yf_ticker_for_sector}: {str(fundamental_info)[:200]}..."
+                        )  # Log snippet
+                        if fundamental_info and isinstance(fundamental_info, dict):
+                            # Sector: Use YF if no manual override or manual was placeholder
+                            if not manual_sector:  # If manual_sector was empty
+                                yf_sector = fundamental_info.get("sector")
+                                sector_map[internal_symbol] = (
+                                    yf_sector if yf_sector else "Unknown Sector"
+                                )
+                                logging.debug(
+                                    f"    Using YF Sector for {internal_symbol}: '{sector_map[internal_symbol]}'"
+                                )
+
+                            # Quote Type: Use YF if no manual override or manual was placeholder
+                            if not manual_asset_type:  # If manual_asset_type was empty
+                                yf_quote_type = fundamental_info.get("quoteType")
+                                quote_type_map[internal_symbol] = (
+                                    yf_quote_type if yf_quote_type else "UNKNOWN"
+                                )
+                                logging.debug(
+                                    f"    Using YF quoteType for {internal_symbol}: '{quote_type_map[internal_symbol]}'"
+                                )
+
+                            # Country: Use YF if no manual override or manual was placeholder
+                            if not manual_geography:  # If manual_geography was empty
+                                yf_country = fundamental_info.get("country")
+                                country_map[internal_symbol] = (
+                                    yf_country if yf_country else "Unknown Region"
+                                )
+                                logging.debug(
+                                    f"    Using YF Country for {internal_symbol}: '{country_map[internal_symbol]}'"
+                                )
+
+                            # ADDED: Industry
+                            if not manual_industry:  # If manual_industry was empty
+                                yf_industry = fundamental_info.get("industry")
+                                industry_map[internal_symbol] = (
+                                    yf_industry if yf_industry else "Unknown Industry"
+                                )
+                                logging.debug(
+                                    f"    Using YF Industry for {internal_symbol}: '{industry_map[internal_symbol]}'"
+                                )
+
+                        else:  # Fetch failed
+                            logging.debug(
+                                f"  Fundamental fetch FAILED for {yf_ticker_for_sector}"
+                            )
+                            if not manual_sector:
+                                sector_map[internal_symbol] = "N/A (Fetch Error)"
+                            if not manual_asset_type:
+                                quote_type_map[internal_symbol] = "N/A (Fetch Error)"
+                            if not manual_geography:
+                                country_map[internal_symbol] = "N/A (Fetch Error)"
+                            if not manual_industry:
+                                industry_map[internal_symbol] = (
+                                    "N/A (Fetch Error)"  # ADDED
+                                )
+
+                logging.debug(
+                    f"  Final map values for {internal_symbol} - Sector: '{sector_map[internal_symbol]}', quoteType: '{quote_type_map[internal_symbol]}', Country: '{country_map[internal_symbol]}'"
+                )
+
+            summary_df_unfiltered_temp["Sector"] = (
+                summary_df_unfiltered_temp["Symbol"]
+                .map(sector_map)
+                .fillna("Unknown Sector")
+            )
+            portfolio_summary_rows = summary_df_unfiltered_temp.to_dict(
+                orient="records"
+            )
+            summary_df_unfiltered_temp["quoteType"] = (
+                summary_df_unfiltered_temp["Symbol"]
+                .map(quote_type_map)
+                .fillna("UNKNOWN")
+            )
+            summary_df_unfiltered_temp["Country"] = summary_df_unfiltered_temp[
+                "Symbol"
+            ].map(country_map)
+            # ADDED: Add Industry column
+            summary_df_unfiltered_temp["Industry"] = (  # ADDED
+                summary_df_unfiltered_temp["Symbol"]
+                .map(industry_map)
+                .fillna("Unknown Industry")
+            )
+            portfolio_summary_rows = summary_df_unfiltered_temp.to_dict(
+                orient="records"
+            )
+    # --- END ADDED ---
 
     # --- 7. Create DataFrame & Calculate Aggregates (using imported function) ---
     summary_df_unfiltered = pd.DataFrame()

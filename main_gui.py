@@ -345,6 +345,7 @@ def resource_path(relative_path):
 DEFAULT_CSV = "my_transactions.csv"
 DEBOUNCE_INTERVAL_MS = 400  # Debounce interval for live table filtering
 
+MANUAL_OVERRIDES_FILENAME = "manual_overrides.json"  # New filename
 # --- User-specific file paths using QStandardPaths ---
 APP_NAME_FOR_QT = "Investa"  # Define your application name for Qt settings
 
@@ -525,7 +526,7 @@ class PortfolioCalculatorWorker(QRunnable):
         historical_args,
         historical_kwargs,
         worker_signals: WorkerSignals,  # <-- ADDED: Pass signals objec
-        manual_prices_dict,
+        manual_overrides_dict,  # MODIFIED: Expect new dict name
     ):
         """
         Initializes the worker with calculation functions and arguments.
@@ -538,7 +539,7 @@ class PortfolioCalculatorWorker(QRunnable):
             historical_fn (callable): The function to calculate historical performance.
             historical_args (tuple): Positional arguments for historical_fn.
             historical_kwargs (dict): Keyword arguments for historical_fn.
-            manual_prices_dict (dict): Dictionary of manual price overrides.
+            manual_overrides_dict (dict): Dictionary of manual overrides (price, asset_type, sector, geography).
         """
         super().__init__()
         self.portfolio_fn = portfolio_fn
@@ -550,7 +551,7 @@ class PortfolioCalculatorWorker(QRunnable):
         self.historical_args = historical_args
         # historical_kwargs will contain account_currency_map and default_currency
         self.historical_kwargs = historical_kwargs
-        self.manual_prices_dict = manual_prices_dict  # <-- STORE IT
+        self.manual_overrides_dict = manual_overrides_dict  # MODIFIED: Store new dict
         self.signals = worker_signals  # <-- USE PASSED SIGNALS
         self.original_data = pd.DataFrame()
 
@@ -586,7 +587,9 @@ class PortfolioCalculatorWorker(QRunnable):
             # It's still available in self.portfolio_kwargs for extract_dividend_history
             portfolio_fn_kwargs.pop("all_transactions_df_for_worker", None)
             try:
-                portfolio_fn_kwargs["manual_prices_dict"] = self.manual_prices_dict
+                portfolio_fn_kwargs["manual_overrides_dict"] = (
+                    self.manual_overrides_dict
+                )  # MODIFIED: Pass new dict
 
                 (
                     p_summary,
@@ -2560,20 +2563,20 @@ class SymbolChartDialog(QDialog):
 
 
 class ManualPriceDialog(QDialog):
-    """Dialog to manage manual prices for symbols."""
+    """Dialog to manage manual overrides (price, asset type, sector, geography) for symbols."""
 
-    def __init__(self, current_prices: Dict[str, float], parent=None):
+    def __init__(self, current_overrides: Dict[str, Dict[str, Any]], parent=None):
         super().__init__(parent)
         self._parent_app = parent
-        self.setWindowTitle("Manual Price Overrides")
-        self.setMinimumSize(500, 400)
+        self.setWindowTitle("Manual Overrides")  # Renamed title
+        self.setMinimumSize(700, 500)  # Increased size for more columns
 
         # Store original values and prepare for updates
         # Ensure keys are uppercase for consistency
-        self._original_prices = {
-            k.upper().strip(): v for k, v in current_prices.items()
+        self._original_overrides = {  # Renamed attribute
+            k.upper().strip(): v for k, v in current_overrides.items()
         }
-        self.updated_prices = self._original_prices.copy()  # Start with a copy
+        self.updated_overrides = self._original_overrides.copy()  # Start with a copy
 
         # --- Layout ---
         main_layout = QVBoxLayout(self)
@@ -2581,9 +2584,20 @@ class ManualPriceDialog(QDialog):
         # --- Table ---
         main_layout.addWidget(QLabel("Edit manual prices (used as fallback):"))
         self.table_widget = QTableWidget()
-        self.table_widget.setObjectName("ManualPriceTable")
-        self.table_widget.setColumnCount(2)
-        self.table_widget.setHorizontalHeaderLabels(["Symbol", "Manual Price"])
+        self.table_widget.setObjectName("ManualOverridesTable")
+        self.table_widget.setColumnCount(
+            6
+        )  # Symbol, Price, Asset Type, Sector, Geography, Industry
+        self.table_widget.setHorizontalHeaderLabels(
+            [
+                "Symbol",
+                "Manual Price",
+                "Manual Asset Type",
+                "Manual Sector",
+                "Manual Geography",
+                "Manual Industry",  # ADDED
+            ]
+        )
         self.table_widget.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table_widget.setSelectionMode(
             QAbstractItemView.SingleSelection
@@ -2605,10 +2619,14 @@ class ManualPriceDialog(QDialog):
         self.table_widget.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.Stretch
         )  # Symbol stretches
-        self.table_widget.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeToContents
-        )  # Price fits
-
+        for col_idx in range(1, 5):  # Other columns resize to contents
+            self.table_widget.horizontalHeader().setSectionResizeMode(
+                col_idx, QHeaderView.ResizeToContents
+            )
+        self.table_widget.setColumnWidth(2, 120)  # Asset Type
+        self.table_widget.setColumnWidth(3, 120)  # Sector
+        self.table_widget.setColumnWidth(4, 120)  # Geography
+        self.table_widget.setColumnWidth(5, 120)  # ADDED: Industry
         main_layout.addWidget(self.table_widget)
 
         # --- Buttons ---
@@ -2642,23 +2660,41 @@ class ManualPriceDialog(QDialog):
     def _populate_table(self):
         """Fills the table with current manual prices."""
         # Ensure keys are sorted for consistent display
-        sorted_symbols = sorted(self._original_prices.keys())
+        sorted_symbols = sorted(self._original_overrides.keys())
         self.table_widget.setRowCount(len(sorted_symbols))
         self.table_widget.setSortingEnabled(False)
 
         for row_idx, symbol in enumerate(sorted_symbols):
-            price = self._original_prices[symbol]
+            override_data = self._original_overrides.get(symbol, {})
+            price = override_data.get("price")
+            asset_type = override_data.get("asset_type", "")
+            sector = override_data.get("sector", "")
+            geography = override_data.get("geography", "")
+            industry = override_data.get("industry", "")  # ADDED
 
             # Symbol Item (Editable)
             item_symbol = QTableWidgetItem(symbol)
             self.table_widget.setItem(row_idx, 0, item_symbol)
 
             # Price Item (Editable with Validation)
-            item_price = QTableWidgetItem(f"{price:.8f}")  # Format consistently
-            # item_price.setData(Qt.EditRole, price) # Store float for editor if needed
+            price_str = f"{price:.8f}" if price is not None and pd.notna(price) else ""
+            item_price = QTableWidgetItem(price_str)
             self.table_widget.setItem(row_idx, 1, item_price)
 
+            # Asset Type, Sector, Geography (Editable strings)
+            self.table_widget.setItem(row_idx, 2, QTableWidgetItem(asset_type))
+            self.table_widget.setItem(row_idx, 3, QTableWidgetItem(sector))
+            self.table_widget.setItem(row_idx, 4, QTableWidgetItem(geography))
+
+            # ADDED: Industry item
+            self.table_widget.setItem(row_idx, 5, QTableWidgetItem(industry))
+
         self.table_widget.setSortingEnabled(True)
+        self.table_widget.resizeColumnsToContents()  # Resize after populating
+        self.table_widget.horizontalHeader().setStretchLastSection(
+            False
+        )  # Prevent last col stretch
+
         # Connect itemChanged AFTER populating to avoid signals during setup
         self.table_widget.itemChanged.connect(self._validate_cell_change)
 
@@ -2679,7 +2715,7 @@ class ManualPriceDialog(QDialog):
                     item.setText(f"{float(text):.8f}")
                 except ValueError:
                     pass  # Should not happen if Acceptable
-        elif item.column() == 0:  # Symbol column
+        elif item.column() == 0:  # Symbol column (basic validation)
             text = item.text().strip().upper()
             item.setText(text)  # Force uppercase and strip whitespace
             if not text:
@@ -2688,6 +2724,15 @@ class ManualPriceDialog(QDialog):
             else:
                 item.setBackground(QColor("white"))
                 item.setToolTip("")
+        elif item.column() in [
+            2,
+            3,
+            4,
+            5,
+        ]:  # Asset Type, Sector, Geography, ADDED Industry
+            # Simple string validation: just strip whitespace
+            item.setText(item.text().strip())
+            # No background change for these for now, unless specific validation rules are added
 
     def _add_empty_row(self):
         """Adds a new empty row to the table for adding a new entry."""
@@ -2696,9 +2741,17 @@ class ManualPriceDialog(QDialog):
 
         item_symbol = QTableWidgetItem("")
         item_price = QTableWidgetItem("")
+        item_asset_type = QTableWidgetItem("")
+        item_sector = QTableWidgetItem("")
+        item_industry = QTableWidgetItem("")  # ADDED
+        item_geography = QTableWidgetItem("")
 
         self.table_widget.setItem(current_row_count, 0, item_symbol)
         self.table_widget.setItem(current_row_count, 1, item_price)
+        self.table_widget.setItem(current_row_count, 2, item_asset_type)
+        self.table_widget.setItem(current_row_count, 3, item_sector)
+        self.table_widget.setItem(current_row_count, 4, item_geography)
+        self.table_widget.setItem(current_row_count, 5, item_industry)  # ADDED
 
         # Optionally scroll to and select the new row for editing
         self.table_widget.scrollToItem(item_symbol, QAbstractItemView.PositionAtTop)
@@ -2732,7 +2785,7 @@ class ManualPriceDialog(QDialog):
 
     def accept(self):
         """Overrides accept to validate all data and store results."""
-        new_prices = {}
+        new_overrides: Dict[str, Dict[str, Any]] = {}
         has_errors = False
         duplicate_symbols = set()
         seen_symbols = set()
@@ -2741,7 +2794,22 @@ class ManualPriceDialog(QDialog):
             symbol_item = self.table_widget.item(row_idx, 0)
             price_item = self.table_widget.item(row_idx, 1)
 
-            if not symbol_item or not price_item:
+            asset_type_item = self.table_widget.item(row_idx, 2)
+            sector_item = self.table_widget.item(row_idx, 3)
+            geography_item = self.table_widget.item(row_idx, 4)
+            industry_item = self.table_widget.item(row_idx, 5)  # ADDED
+
+            # Ensure all items exist for the row
+            if not all(
+                [
+                    symbol_item,
+                    price_item,
+                    asset_type_item,
+                    sector_item,
+                    geography_item,
+                    industry_item,
+                ]  # ADDED industry_item
+            ):
                 QMessageBox.warning(
                     self, "Save Error", f"Error reading data from row {row_idx+1}."
                 )
@@ -2750,6 +2818,11 @@ class ManualPriceDialog(QDialog):
 
             symbol = symbol_item.text().strip().upper()
             price_text = price_item.text().strip().replace(",", "")
+            asset_type_text = asset_type_item.text().strip()
+            sector_text = sector_item.text().strip()
+            geography_text = geography_item.text().strip()
+            industry_text = industry_item.text().strip()  # ADDED
+            current_override_entry: Dict[str, Any] = {}
 
             # Validate Symbol
             if not symbol:
@@ -2764,21 +2837,38 @@ class ManualPriceDialog(QDialog):
                 has_errors = True  # Mark as error but continue checking all rows
             seen_symbols.add(symbol)
 
-            # Validate Price
-            try:
-                price = float(price_text)
-                if price <= 0:
-                    raise ValueError("Price must be positive")
-                new_prices[symbol] = price
-            except (ValueError, TypeError):
-                QMessageBox.warning(
-                    self,
-                    "Save Error",
-                    f"Invalid price '{price_text}' for symbol '{symbol}' in row {row_idx+1}. Must be a positive number.",
-                )
-                has_errors = True
-                self.table_widget.setCurrentItem(price_item)  # Highlight error
-                break  # Stop on first price error
+            # Validate Price (only if text is not empty)
+            if price_text:  # Only validate if user entered something
+                try:
+                    price = float(price_text)
+                    if price <= 0:
+                        raise ValueError("Price must be positive")
+                    current_override_entry["price"] = price
+                except (ValueError, TypeError):
+                    QMessageBox.warning(
+                        self,
+                        "Save Error",
+                        f"Invalid price '{price_text}' for symbol '{symbol}' in row {row_idx+1}. Must be a positive number if entered.",
+                    )
+                    has_errors = True
+                    self.table_widget.setCurrentItem(price_item)
+                    break
+
+            # Store other fields if they are not empty
+            if asset_type_text:
+                current_override_entry["asset_type"] = asset_type_text
+            if sector_text:
+                current_override_entry["sector"] = sector_text
+            if geography_text:
+                current_override_entry["geography"] = geography_text
+
+            # ADDED: Store industry if not empty
+            if industry_text:
+                current_override_entry["industry"] = industry_text
+            if (
+                current_override_entry
+            ):  # Only add if there's at least one override value
+                new_overrides[symbol] = current_override_entry
 
         if duplicate_symbols:
             QMessageBox.warning(
@@ -2789,22 +2879,24 @@ class ManualPriceDialog(QDialog):
             has_errors = True
 
         if not has_errors:
-            self.updated_prices = new_prices
+            self.updated_overrides = new_overrides  # Store the validated overrides
             logging.info(
-                f"ManualPriceDialog accepted. Updated Prices: {self.updated_prices}"
+                f"ManualPriceDialog accepted. Updated Overrides: {self.updated_overrides}"  # Corrected attribute name
             )
             super().accept()  # Close dialog if validation passes
 
     # --- Static method to retrieve results cleanly ---
     @staticmethod
-    def get_prices(parent=None, current_prices=None) -> Optional[Dict[str, float]]:
+    def get_manual_overrides(
+        parent=None, current_overrides=None
+    ) -> Optional[Dict[str, Dict[str, Any]]]:  # Renamed and updated signature
         """Creates, shows dialog, and returns updated prices if saved."""
-        if current_prices is None:
-            current_prices = {}
+        if current_overrides is None:
+            current_overrides = {}
 
-        dialog = ManualPriceDialog(current_prices, parent)
+        dialog = ManualPriceDialog(current_overrides, parent)
         if dialog.exec():  # Returns 1 if accepted (Save clicked), 0 if rejected
-            return dialog.updated_prices
+            return dialog.updated_overrides  # Return the new structure
         return None  # Return None if Cancel was clicked
 
 
@@ -3880,7 +3972,7 @@ class PortfolioApp(QMainWindow):
             "Set manual price overrides for specific symbols"
         )
         manual_price_action.triggered.connect(
-            self.show_manual_price_dialog
+            self.show_manual_overrides_dialog  # Renamed slot
         )  # Connect to new slot
         settings_menu.addAction(manual_price_action)
         # --- END ADD ---
@@ -4238,24 +4330,25 @@ The CSV file should contain the following columns (header names must match exact
         )
 
     @Slot()
-    def show_manual_price_dialog(self):
+    def show_manual_overrides_dialog(self):  # Renamed method
         """Shows the dialog to edit manual prices."""
-        # self.manual_prices_dict should be populated during __init__ by _load_manual_prices
-        if not hasattr(self, "manual_prices_dict"):
-            logging.error("Manual prices dictionary not initialized.")
-            QMessageBox.critical(self, "Error", "Manual price data is not loaded.")
+        # self.manual_overrides_dict should be populated during __init__ by _load_manual_overrides
+        if not hasattr(self, "manual_overrides_dict"):
+            logging.error("Manual overrides dictionary not initialized.")
+            QMessageBox.critical(self, "Error", "Manual override data is not loaded.")
             return
 
-        updated_prices = ManualPriceDialog.get_prices(
-            parent=self, current_prices=self.manual_prices_dict
+        updated_overrides = (
+            ManualPriceDialog.get_manual_overrides(  # Renamed static call
+                parent=self, current_overrides=self.manual_overrides_dict
+            )
         )
 
-        if updated_prices is not None:  # User clicked Save and validation passed
-            # Check if prices actually changed
-            if updated_prices != self.manual_prices_dict:
-                logging.info("Manual prices changed. Saving and refreshing...")
-                self.manual_prices_dict = updated_prices  # Update internal dict
-                if self._save_manual_prices_to_json():  # Save to file
+        if updated_overrides is not None:  # User clicked Save and validation passed
+            if updated_overrides != self.manual_overrides_dict:
+                logging.info("Manual overrides changed. Saving and refreshing...")
+                self.manual_overrides_dict = updated_overrides  # Update internal dict
+                if self._save_manual_overrides_to_json():  # Save to file
                     self.refresh_data()  # Trigger refresh only if save succeeded
                 # Else: Error message shown by _save_manual_prices_to_json
             else:
@@ -4263,20 +4356,20 @@ The CSV file should contain the following columns (header names must match exact
 
     def _save_manual_prices_to_json(self) -> bool:
         """Saves the current self.manual_prices_dict to MANUAL_PRICE_FILE."""
-        if not hasattr(self, "manual_prices_dict"):
+        if not hasattr(self, "manual_overrides_dict"):
             logging.error("Cannot save manual prices, dictionary attribute missing.")
             return False
 
         # MANUAL_PRICE_FILE is already an absolute path from resource_path
-        manual_price_file_path = self.MANUAL_PRICE_FILE  # Use instance attribute
+        manual_price_file_path = self.MANUAL_OVERRIDES_FILE  # Use instance attribute
         logging.info(f"Saving manual prices to: {manual_price_file_path}")
 
         try:
             # For bundled apps, resource_path might point inside the app bundle,
             # which might not be writable. For config/manual prices that are user-editable
             # and persistent, QStandardPaths.AppConfigLocation or AppDataLocation is better.
-            # However, resource_path() as defined will use the script's dir in dev,
-            # and _MEIPASS in bundle. If MANUAL_PRICE_FILE is meant to be bundled and read-only,
+            # However, resource_path() as defined will use the script's dir in dev, # type: ignore
+            # and _MEIPASS in bundle. If MANUAL_OVERRIDES_FILE is meant to be bundled and read-only,
             # then saving to it in a bundle is problematic.
             # For simplicity here, we'll assume it's writable or this is dev mode.
             # A more robust solution would save user-modifiable files to user directories.
@@ -4285,13 +4378,19 @@ The CSV file should contain the following columns (header names must match exact
                 os.makedirs(manual_price_dir, exist_ok=True)
 
             # Sort keys for consistent file output (optional)
-            prices_to_save = dict(sorted(self.manual_prices_dict.items()))
+            overrides_to_save = dict(sorted(self.manual_overrides_dict.items()))
 
             with open(
-                self.MANUAL_PRICE_FILE, "w", encoding="utf-8"
+                self.MANUAL_OVERRIDES_FILE,
+                "w",
+                encoding="utf-8",  # Use instance attribute
             ) as f:  # Use instance attribute
-                json.dump(prices_to_save, f, indent=4, ensure_ascii=False)
-            logging.info("Manual prices saved successfully.")
+                json.dump(
+                    overrides_to_save, f, indent=4, ensure_ascii=False
+                )  # Corrected variable name
+            logging.info(
+                "Manual overrides saved successfully."
+            )  # Corrected log message
             return True
         except TypeError as e:
             logging.error(f"TypeError writing manual prices JSON: {e}")
@@ -4386,7 +4485,7 @@ The CSV file should contain the following columns (header names must match exact
 
         # --- Initialize CONFIG_FILE and MANUAL_PRICE_FILE here ---
         # QApplication instance should exist and app name/org should be set by now by the __main__ block
-        self.CONFIG_FILE: Optional[str] = None
+        self.CONFIG_FILE: Optional[str] = None  # type: ignore
         self.MANUAL_PRICE_FILE: Optional[str] = None
         try:
             # QApplication instance should exist and app name/org should be set by now by the __main__ block
@@ -4424,8 +4523,9 @@ The CSV file should contain the following columns (header names must match exact
                 self.CONFIG_FILE = os.path.join(
                     user_specific_app_folder, "gui_config.json"
                 )
-                self.MANUAL_PRICE_FILE = os.path.join(
-                    user_specific_app_folder, "manual_prices.json"
+                self.MANUAL_OVERRIDES_FILE = os.path.join(  # Renamed attribute
+                    user_specific_app_folder,
+                    MANUAL_OVERRIDES_FILENAME,  # Use new filename
                 )
             else:  # Further fallback if QStandardPaths fails (less likely)
                 logging.warning(
@@ -4438,8 +4538,9 @@ The CSV file should contain the following columns (header names must match exact
                 self.CONFIG_FILE = os.path.join(
                     user_specific_app_folder, "gui_config.json"
                 )
-                self.MANUAL_PRICE_FILE = os.path.join(
-                    user_specific_app_folder, "manual_prices.json"
+                self.MANUAL_OVERRIDES_FILE = os.path.join(  # Renamed attribute
+                    user_specific_app_folder,
+                    MANUAL_OVERRIDES_FILENAME,  # Use new filename
                 )
         except Exception as e_path_init:
             logging.exception(
@@ -4448,7 +4549,7 @@ The CSV file should contain the following columns (header names must match exact
             # As a last resort, set them to relative paths in the current working directory
             # This might not be ideal for bundled apps but prevents None.
             self.CONFIG_FILE = "gui_config.json"
-            self.MANUAL_PRICE_FILE = "manual_prices.json"
+            self.MANUAL_OVERRIDES_FILE = MANUAL_OVERRIDES_FILENAME  # Use new filename
             QMessageBox.critical(
                 self,
                 "Path Error",
@@ -4456,7 +4557,9 @@ The CSV file should contain the following columns (header names must match exact
             )
 
         logging.info(f"CONFIG_FILE path determined as: {self.CONFIG_FILE}")
-        logging.info(f"MANUAL_PRICE_FILE path determined as: {self.MANUAL_PRICE_FILE}")
+        logging.info(
+            f"MANUAL_OVERRIDES_FILE path determined as: {self.MANUAL_OVERRIDES_FILE}"
+        )
         # --- End path initialization ---
 
         self.app_font = QFont("Arial", 9)  # Or your chosen common font
@@ -4480,8 +4583,8 @@ The CSV file should contain the following columns (header names must match exact
         # --- Configuration Loading ---
         self.config = self.load_config()
 
-        # --- Load Manual Prices ---
-        self.manual_prices_dict = self._load_manual_prices()  # Load manual_prices.json
+        # --- Load Manual Overrides ---
+        self.manual_overrides_dict = self._load_manual_overrides()
 
         self.transactions_file = self.config.get("transactions_file", DEFAULT_CSV)
         self.fmp_api_key = self.config.get(
@@ -4855,57 +4958,163 @@ The CSV file should contain the following columns (header names must match exact
 
     # --- End Account Selection Methods ---
 
-    def _load_manual_prices(self) -> Dict[str, float]:
-        """Loads manual prices from MANUAL_PRICE_FILE."""
-        manual_prices = {}
-        if os.path.exists(self.MANUAL_PRICE_FILE):  # Use instance attribute
+    def _load_manual_overrides(self) -> Dict[str, Dict[str, Any]]:
+        """Loads manual overrides from MANUAL_OVERRIDES_FILE.
+        Handles migration from old price-only format if necessary."""
+        manual_overrides: Dict[str, Dict[str, Any]] = {}
+
+        # Try loading new format first
+        if os.path.exists(self.MANUAL_OVERRIDES_FILE):
             try:
                 with open(
-                    self.MANUAL_PRICE_FILE, "r", encoding="utf-8"
+                    self.MANUAL_OVERRIDES_FILE, "r", encoding="utf-8"
                 ) as f:  # Use instance attribute
                     loaded_data = json.load(f)
                 if isinstance(loaded_data, dict):
-                    # Basic validation: ensure keys are strings and values are numbers
-                    valid_data = {}
+                    # Validate new structure
+                    valid_data: Dict[str, Dict[str, Any]] = {}
                     invalid_count = 0
-                    for key, value in loaded_data.items():
-                        if (
-                            isinstance(key, str)
-                            and isinstance(value, (int, float))
-                            and value > 0
-                        ):
-                            # Convert key to upper for consistency if needed, assuming symbols are keys
-                            valid_data[key.upper().strip()] = float(value)
+                    for key, value_dict in loaded_data.items():
+                        if isinstance(key, str) and isinstance(value_dict, dict):
+                            entry: Dict[str, Any] = {}
+                            price = value_dict.get("price")
+                            if (
+                                price is not None
+                                and isinstance(price, (int, float))
+                                and price > 0
+                            ):
+                                entry["price"] = float(price)
+
+                            entry["asset_type"] = str(
+                                value_dict.get("asset_type", "")
+                            ).strip()
+                            entry["sector"] = str(value_dict.get("sector", "")).strip()
+                            entry["geography"] = str(
+                                value_dict.get("geography", "")
+                            ).strip()
+
+                            valid_data[key.upper().strip()] = entry
                         else:
                             invalid_count += 1
                             logging.warning(
-                                f"Warn: Invalid manual price entry skipped: Key='{key}' (Type: {type(key)}), Value='{value}' (Type: {type(value)})"
+                                f"Warn: Invalid manual override entry skipped: Key='{key}' (Type: {type(key)}), Value='{value_dict}' (Type: {type(value_dict)})"
                             )
-                    manual_prices = valid_data
+                    manual_overrides = valid_data
                     logging.info(
-                        f"Loaded {len(manual_prices)} valid entries from {self.MANUAL_PRICE_FILE}."  # Use instance attribute
+                        f"Loaded {len(manual_overrides)} valid entries from {self.MANUAL_OVERRIDES_FILE}."
                     )
                     if invalid_count > 0:
                         logging.warning(
-                            f"Skipped {invalid_count} invalid entries from {self.MANUAL_PRICE_FILE}."  # Use instance attribute
+                            f"Skipped {invalid_count} invalid entries from {self.MANUAL_OVERRIDES_FILE}."
                         )
+                    return manual_overrides  # Return new format
                 else:
                     logging.warning(
-                        f"Warn: Content of {self.MANUAL_PRICE_FILE} is not a dictionary. Ignoring."  # Use instance attribute
+                        f"Warn: Content of {self.MANUAL_OVERRIDES_FILE} is not a dictionary. Ignoring."
                     )
             except json.JSONDecodeError as e:
                 logging.error(
-                    f"Error decoding JSON from {self.MANUAL_PRICE_FILE}: {e}. Ignoring."  # Use instance attribute
+                    f"Error decoding JSON from {self.MANUAL_OVERRIDES_FILE}: {e}. Ignoring."
                 )
             except Exception as e:
                 logging.error(
-                    f"Error reading {self.MANUAL_PRICE_FILE}: {e}. Ignoring."
-                )  # Use instance attribute
+                    f"Error reading {self.MANUAL_OVERRIDES_FILE}: {e}. Ignoring."
+                )
+
+        # If new file doesn't exist or failed to load, try migrating old manual_prices.json
+        # This assumes self.MANUAL_PRICE_FILE was the old attribute name for the old file.
+        # For simplicity, let's assume the old file was also named "manual_prices.json"
+        # and we construct its path similarly if self.MANUAL_OVERRIDES_FILE is different.
+        old_manual_prices_file_path = self.MANUAL_OVERRIDES_FILE.replace(
+            MANUAL_OVERRIDES_FILENAME, "manual_prices.json"
+        )
+
+        if os.path.exists(old_manual_prices_file_path):
+            logging.info(
+                f"Old manual_prices.json found at {old_manual_prices_file_path}. Attempting migration."
+            )
+            try:
+                with open(old_manual_prices_file_path, "r", encoding="utf-8") as f_old:
+                    old_loaded_data = json.load(f_old)
+                if isinstance(old_loaded_data, dict):
+                    migrated_count = 0
+                    for key, price_val in old_loaded_data.items():
+                        if (
+                            isinstance(key, str)
+                            and isinstance(price_val, (int, float))
+                            and price_val > 0
+                        ):
+                            manual_overrides[key.upper().strip()] = {
+                                "price": float(price_val),
+                                "asset_type": "",
+                                "sector": "",
+                                "geography": "",
+                            }
+                            migrated_count += 1
+                        else:
+                            logging.warning(
+                                f"Skipping invalid entry during migration: {key}: {price_val}"
+                            )
+                    if migrated_count > 0:
+                        logging.info(
+                            f"Migrated {migrated_count} entries from old manual_prices.json. Please re-save settings to update to new format."
+                        )
+                        # Optionally, save the migrated data to the new file format here
+                        # self._save_manual_overrides_to_json() # Be careful with calling save during load
+                else:
+                    logging.warning(
+                        "Old manual_prices.json content is not a dictionary. Migration failed."
+                    )
+            except Exception as e_migrate:
+                logging.error(f"Error migrating old manual_prices.json: {e_migrate}")
         else:
             logging.info(
-                f"{self.MANUAL_PRICE_FILE} not found. Manual prices will not be used initially."  # Use instance attribute
+                f"{self.MANUAL_OVERRIDES_FILE} not found. Manual overrides will not be used initially."
             )
-        return manual_prices
+        return manual_overrides
+
+    def _save_manual_overrides_to_json(self) -> bool:
+        """Saves the current self.manual_overrides_dict to MANUAL_OVERRIDES_FILE."""
+        if not hasattr(self, "manual_overrides_dict"):
+            logging.error("Cannot save manual overrides, dictionary attribute missing.")
+            return False
+
+        overrides_file_path = self.MANUAL_OVERRIDES_FILE
+        logging.info(f"Saving manual overrides to: {overrides_file_path}")
+
+        try:
+            overrides_dir = os.path.dirname(overrides_file_path)
+            if overrides_dir:
+                os.makedirs(overrides_dir, exist_ok=True)
+
+            overrides_to_save = dict(sorted(self.manual_overrides_dict.items()))
+
+            with open(overrides_file_path, "w", encoding="utf-8") as f:
+                json.dump(overrides_to_save, f, indent=4, ensure_ascii=False)
+            logging.info("Manual overrides saved successfully.")
+            return True
+        except TypeError as e:
+            logging.error(f"TypeError writing manual overrides JSON: {e}")
+            QMessageBox.critical(
+                self, "Save Error", f"Data error saving manual overrides:\n{e}"
+            )
+            return False
+        except IOError as e:
+            logging.error(f"IOError writing manual overrides JSON: {e}")
+            QMessageBox.critical(
+                self,
+                "Save Error",
+                f"Could not write to file:\n{overrides_file_path}\n{e}",
+            )
+            return False
+        except Exception as e:
+            logging.exception("Unexpected error writing manual overrides JSON")
+            QMessageBox.critical(
+                self,
+                "Save Error",
+                f"An unexpected error occurred saving manual overrides:\n{e}",
+            )
+            return False
 
     # --- Helper to create summary items (moved from initUI) ---
     def create_summary_item(self, label_text, is_large=False):
@@ -5180,6 +5389,12 @@ The CSV file should contain the following columns (header names must match exact
         """Initializes widgets for the Transactions Log tab."""
         # This method will be filled in _init_ui_widgets
         # It's called from there to set up the content of self.transactions_log_tab
+        pass
+
+    def _init_asset_allocation_tab_widgets(self):
+        """Initializes widgets for the Asset Allocation tab."""
+        # This method will be filled in _init_ui_widgets
+        # It's called from there to set up the content of self.asset_allocation_tab
         pass
 
     def _init_header_frame_widgets(self):
@@ -5735,7 +5950,7 @@ The CSV file should contain the following columns (header names must match exact
         self._init_table_panel_widgets(content_layout)
         logging.debug("--- _init_ui_widgets: After _init_table_panel_widgets ---")
         # --- Tab 4: Dividend History ---
-        # (This will become Tab 3 after we add Transactions Log as Tab 2)
+        # (This will become Tab 4 after we add Transactions Log and Asset Allocation)
         logging.debug("--- _init_ui_widgets: Entering Dividend History Tab setup ---")
         self.dividend_history_tab = QWidget()
         dividend_history_layout = QVBoxLayout(self.dividend_history_tab)
@@ -5980,6 +6195,85 @@ The CSV file should contain the following columns (header names must match exact
             "--- _init_ui_widgets: Transactions Log Tab added to main_tab_widget ---"
         )
         # --- End Transactions Log Tab ---
+
+        # --- Tab 3: Asset Allocation ---
+        logging.debug("--- _init_ui_widgets: Entering Asset Allocation Tab setup ---")
+        self.asset_allocation_tab = QWidget()
+        asset_allocation_main_layout = QVBoxLayout(self.asset_allocation_tab)
+        asset_allocation_main_layout.setContentsMargins(10, 10, 10, 10)
+        asset_allocation_main_layout.setSpacing(8)
+
+        # --- Row 1 for Pie Charts ---
+        row1_charts_container = QWidget()
+        row1_charts_layout = QHBoxLayout(
+            row1_charts_container
+        )  # Arrange pie charts horizontally
+
+        # Asset Type Pie Chart
+        asset_type_group = QGroupBox("Allocation by Asset Type")
+        asset_type_layout = QVBoxLayout(asset_type_group)
+        self.asset_type_pie_fig = Figure(figsize=PIE_CHART_FIG_SIZE, dpi=CHART_DPI)
+        self.asset_type_pie_ax = self.asset_type_pie_fig.add_subplot(111)
+        self.asset_type_pie_canvas = FigureCanvas(self.asset_type_pie_fig)
+        self.asset_type_pie_canvas.setObjectName("AssetTypePieCanvas")
+        asset_type_layout.addWidget(self.asset_type_pie_canvas)
+        row1_charts_layout.addWidget(asset_type_group, 1)  # Equal stretch factor
+
+        # Sector Allocation Chart
+        sector_allocation_group = QGroupBox("Allocation by Sector")  # Renamed
+        sector_allocation_layout = QVBoxLayout(sector_allocation_group)
+        self.sector_pie_fig = Figure(
+            figsize=PIE_CHART_FIG_SIZE, dpi=CHART_DPI
+        )  # New Figure
+        self.sector_pie_ax = self.sector_pie_fig.add_subplot(111)  # New Axes
+        self.sector_pie_canvas = FigureCanvas(self.sector_pie_fig)  # New Canvas
+        self.sector_pie_canvas.setObjectName("SectorPieCanvas")
+        sector_allocation_layout.addWidget(
+            self.sector_pie_canvas
+        )  # Add canvas instead of placeholder
+        row1_charts_layout.addWidget(sector_allocation_group, 1)  # Equal stretch factor
+        asset_allocation_main_layout.addWidget(row1_charts_container)
+
+        # --- Row 2 for Pie Charts (Geography) ---
+        row2_charts_container = QWidget()
+        row2_charts_layout = QHBoxLayout(row2_charts_container)
+
+        # Placeholder for Geographical Allocation
+        geo_allocation_group = QGroupBox("Allocation by Geography")
+        geo_allocation_layout = QVBoxLayout(geo_allocation_group)
+        self.geo_pie_fig = Figure(
+            figsize=PIE_CHART_FIG_SIZE, dpi=CHART_DPI
+        )  # New Figure
+        self.geo_pie_ax = self.geo_pie_fig.add_subplot(111)  # New Axes
+        self.geo_pie_canvas = FigureCanvas(self.geo_pie_fig)  # New Canvas
+        self.geo_pie_canvas.setObjectName("GeoPieCanvas")
+        geo_allocation_layout.addWidget(self.geo_pie_canvas)  # Add canvas
+
+        row2_charts_layout.addWidget(geo_allocation_group, 1)
+
+        # Industry Allocation Chart (New)
+        industry_allocation_group = QGroupBox("Allocation by Industry")
+        industry_allocation_layout = QVBoxLayout(industry_allocation_group)
+        self.industry_pie_fig = Figure(figsize=PIE_CHART_FIG_SIZE, dpi=CHART_DPI)
+        self.industry_pie_ax = self.industry_pie_fig.add_subplot(111)
+        self.industry_pie_canvas = FigureCanvas(self.industry_pie_fig)
+        self.industry_pie_canvas.setObjectName("IndustryPieCanvas")
+        industry_allocation_layout.addWidget(self.industry_pie_canvas)
+        row2_charts_layout.addWidget(industry_allocation_group, 1)  # Add to row 2
+        row2_charts_layout.addWidget(
+            geo_allocation_group, 1
+        )  # Takes up its row, adjust stretch if more items
+        asset_allocation_main_layout.addWidget(row2_charts_container)
+
+        asset_allocation_main_layout.addStretch(1)  # Add stretch at the bottom
+        self.asset_allocation_tab.setVisible(True)
+
+        # Insert the Asset Allocation tab at index 2 (making it the third tab)
+        self.main_tab_widget.insertTab(2, self.asset_allocation_tab, "Asset Allocation")
+        logging.debug(
+            "--- _init_ui_widgets: Asset Allocation Tab added to main_tab_widget ---"
+        )
+        # --- End Asset Allocation Tab ---
 
         self._create_status_bar()
         logging.debug("--- _init_ui_widgets: After _create_status_bar ---")
@@ -6362,8 +6656,8 @@ The CSV file should contain the following columns (header names must match exact
             historical_fn=calculate_historical_performance,  # type: ignore
             historical_args=historical_args,
             historical_kwargs=historical_kwargs,
-            worker_signals=worker_signals,  # <-- PASS THE CREATED SIGNALS OBJECT
-            manual_prices_dict=self.manual_prices_dict,
+            worker_signals=worker_signals,
+            manual_overrides_dict=self.manual_overrides_dict,  # Pass new dict
         )
         # --- END MODIFICATION ---
 
@@ -6936,6 +7230,7 @@ The CSV file should contain the following columns (header names must match exact
                 # _update_dividend_summary_table will be called by _update_dividend_bar_chart
                 self._update_dividend_table()  # And dividend table
                 self._update_transaction_log_tables_content()  # Update new log tables
+                self._update_asset_allocation_charts()  # Update new allocation charts
             else:
                 logging.info(
                     "Hiding bar charts frame as no periodic data is available."
@@ -8964,6 +9259,7 @@ The CSV file should contain the following columns (header names must match exact
         self.cash_transactions_table_model.updateData(pd.DataFrame())  # Clear log table
         self._update_fx_rate_display(self.currency_combo.currentText())
         self.update_header_info(loading=True)
+        self._clear_asset_allocation_charts()  # Clear allocation charts
         if hasattr(self, "view_ignored_button"):
             self.view_ignored_button.setEnabled(False)  # Disable when clearing
         self._update_dividend_bar_chart()  # Clear dividend chart
@@ -9043,6 +9339,594 @@ The CSV file should contain the following columns (header names must match exact
         logging.info(
             f"Transaction log tables updated. Stock Txs: {len(stock_tx_df)}, Cash Txs: {len(cash_tx_df)}"
         )
+
+    # Ensure this method is part of the PortfolioApp class and correctly indented
+    def _clear_asset_allocation_charts(self):
+        """Clears the asset allocation pie charts."""
+        if hasattr(self, "asset_type_pie_ax"):
+            self.asset_type_pie_ax.clear()
+            self.asset_type_pie_ax.axis("on")  # Default to axis 'on' after clearing
+            # Clear any previous title or legend explicitly if needed
+            # self.asset_type_pie_ax.set_title("")
+            # if self.asset_type_pie_ax.legend_ is not None:
+            #     self.asset_type_pie_ax.legend_.remove()
+            self.asset_type_pie_canvas.draw()
+
+        if hasattr(self, "sector_pie_ax"):  # Clear sector pie chart
+            self.sector_pie_ax.clear()
+            self.sector_pie_ax.axis("on")
+            self.sector_pie_canvas.draw()
+
+        if hasattr(self, "geo_pie_ax"):  # Clear geo pie chart
+            self.geo_pie_ax.clear()
+            self.geo_pie_ax.axis("on")
+            self.geo_pie_canvas.draw()
+
+        if hasattr(self, "industry_pie_ax"):  # ADDED: Clear industry pie chart
+            self.industry_pie_ax.clear()
+            self.industry_pie_ax.axis("on")
+            self.industry_pie_canvas.draw()
+
+    def _update_asset_allocation_charts(self):  # Method name was already correct
+        """Populates the asset allocation charts using self.holdings_data."""
+        logging.debug(
+            "Updating asset allocation charts (Asset Type, Sector, Geography)..."
+        )
+        self._clear_asset_allocation_charts()  # Clear existing charts first
+
+        if not hasattr(self, "holdings_data") or self.holdings_data.empty:
+            logging.info(
+                "Holdings data not available, cannot update asset allocation charts."
+            )
+            if hasattr(self, "asset_type_pie_ax"):
+                self.asset_type_pie_ax.axis("off")  # Turn off axis for "No Data" text
+                self.asset_type_pie_ax.text(
+                    0.5,
+                    0.5,
+                    "No Data Available",
+                    ha="center",
+                    va="center",
+                    transform=self.asset_type_pie_ax.transAxes,
+                    color=COLOR_TEXT_SECONDARY,
+                )
+                self.asset_type_pie_canvas.draw()
+            if hasattr(self, "sector_pie_ax"):  # Also show No Data for sector chart
+                self.sector_pie_ax.axis("off")
+                self.sector_pie_ax.text(
+                    0.5,
+                    0.5,
+                    "No Data Available",
+                    ha="center",
+                    va="center",
+                    transform=self.sector_pie_ax.transAxes,
+                    color=COLOR_TEXT_SECONDARY,
+                )
+                self.sector_pie_canvas.draw()
+            if hasattr(self, "geo_pie_ax"):  # Also show No Data for geo chart
+                self.geo_pie_ax.axis("off")
+                self.geo_pie_ax.text(
+                    0.5,
+                    0.5,
+                    "No Data Available",
+                    ha="center",
+                    va="center",
+                    transform=self.geo_pie_ax.transAxes,
+                    color=COLOR_TEXT_SECONDARY,
+                )
+                self.geo_pie_canvas.draw()
+            if hasattr(self, "industry_pie_ax"):  # ADDED
+                self.industry_pie_ax.axis("off")
+                self.industry_pie_ax.text(
+                    0.5,
+                    0.5,
+                    "No Data Available",
+                    ha="center",
+                    va="center",
+                    transform=self.industry_pie_ax.transAxes,
+                    color=COLOR_TEXT_SECONDARY,
+                )
+                self.industry_pie_canvas.draw()
+            return
+
+        df_alloc = self.holdings_data.copy()
+        display_currency = self.currency_combo.currentText()
+        col_defs = get_column_definitions(display_currency)
+        value_col_actual = col_defs.get("Mkt Val")
+
+        # --- MOVED: Log df_alloc columns and head AFTER it's defined ---
+        logging.debug(
+            f"[_update_asset_allocation_charts] df_alloc columns: {df_alloc.columns.tolist()}"
+        )
+        if not df_alloc.empty:  # Log head only if not empty
+            logging.debug(
+                f"[_update_asset_allocation_charts] df_alloc head (first 5 rows):\n{df_alloc.head().to_string()}"
+            )
+            for col_check in ["Sector", "quoteType", "Country"]:
+                logging.debug(
+                    f"  Column '{col_check}' in df_alloc: {col_check in df_alloc.columns}"
+                )
+        # --- END MOVED ---
+
+        if not value_col_actual or value_col_actual not in df_alloc.columns:
+            logging.error(
+                f"Market Value column '{value_col_actual}' not found for asset allocation."
+            )
+            if hasattr(self, "asset_type_pie_ax"):
+                self.asset_type_pie_ax.axis("off")  # Turn off axis for error text
+                self.asset_type_pie_ax.text(
+                    0.5,
+                    0.5,
+                    "Data Error",
+                    ha="center",
+                    va="center",
+                    transform=self.asset_type_pie_ax.transAxes,
+                    color=COLOR_LOSS,
+                )
+                self.asset_type_pie_canvas.draw()
+            if hasattr(self, "sector_pie_ax"):  # Also show Data Error for sector chart
+                self.sector_pie_ax.axis("off")
+                self.sector_pie_ax.text(
+                    0.5,
+                    0.5,
+                    "Data Error",
+                    ha="center",
+                    va="center",
+                    transform=self.sector_pie_ax.transAxes,
+                    color=COLOR_LOSS,
+                )
+                self.sector_pie_canvas.draw()
+            if hasattr(self, "geo_pie_ax"):  # Also show Data Error for geo chart
+                self.geo_pie_ax.axis("off")
+                self.geo_pie_ax.text(
+                    0.5,
+                    0.5,
+                    "Data Error",
+                    ha="center",
+                    va="center",
+                    transform=self.geo_pie_ax.transAxes,
+                    color=COLOR_LOSS,
+                )
+                self.geo_pie_canvas.draw()
+            return
+
+        # --- Simple Asset Type Classification ---
+        def classify_asset(symbol):
+            # Assumes df_alloc has a 'quoteType' column from portfolio_logic
+            if symbol == CASH_SYMBOL_CSV or symbol.startswith("Cash ("):
+                return "Cash"
+
+            quote_type_series = df_alloc.loc[df_alloc["Symbol"] == symbol, "quoteType"]
+            if not quote_type_series.empty:
+                quote_type = quote_type_series.iloc[0]
+                if quote_type == "EQUITY":
+                    return "Stock"
+                elif quote_type == "ETF":
+                    return "ETF"
+                elif quote_type:  # Other known quote types
+                    return quote_type.capitalize()
+            return "Other Assets"  # Fallback for missing quoteType or unhandled types
+
+        df_alloc["Asset Type"] = df_alloc["Symbol"].apply(classify_asset)
+        asset_type_values = df_alloc.groupby("Asset Type", observed=False)[
+            value_col_actual
+        ].sum()
+        asset_type_values = asset_type_values[
+            asset_type_values.abs() > 1e-3
+        ]  # Filter out tiny values
+
+        if not asset_type_values.empty:
+            # Axis should be 'on' from the _clear_asset_allocation_charts call
+            labels = asset_type_values.index.tolist()
+            values = asset_type_values.values
+            total_value = np.sum(values)
+
+            # Use a predefined color map or generate colors
+            cmap = plt.get_cmap("Spectral")  # CHANGED colormap
+            colors = cmap(np.linspace(0, 1, len(values)))
+
+            wedges, texts, autotexts = self.asset_type_pie_ax.pie(
+                values,
+                labels=None,  # We'll use a legend or custom labels
+                autopct="",  # CHANGED: Remove autopct for internal labels
+                startangle=90,
+                counterclock=False,
+                colors=colors,
+                wedgeprops={"edgecolor": "white", "linewidth": 0.7},
+            )
+            # plt.setp(autotexts, size=8, weight="bold", color="black") # No longer needed for internal
+
+            # Create legend from labels and values
+            legend_labels = [
+                f"{l} ({self._get_currency_symbol()}{v:,.0f})"
+                for l, v in asset_type_values.items()
+            ]
+            self.asset_type_pie_ax.legend(
+                wedges,
+                legend_labels,
+                title="Asset Types",
+                loc="center left",
+                bbox_to_anchor=(0.95, 0, 0.5, 1),
+                fontsize=8,
+            )
+
+            # Add percentage labels outside the pie
+            for i, wedge in enumerate(wedges):
+                ang = (wedge.theta2 - wedge.theta1) / 2.0 + wedge.theta1
+                x = wedge.r * 1.15 * np.cos(np.deg2rad(ang))  # Position outside
+                y = wedge.r * 1.15 * np.sin(np.deg2rad(ang))
+                percent = (values[i] / total_value) * 100
+                if percent > 0.5:  # Only label significant slices
+                    horizontalalignment = {-1: "right", 1: "left"}[int(np.sign(x))]
+                    self.asset_type_pie_ax.text(
+                        x,
+                        y,
+                        f"{percent:.1f}%",
+                        ha=horizontalalignment,
+                        va="center",
+                        fontsize=7,
+                        color=COLOR_TEXT_DARK,
+                    )
+
+            self.asset_type_pie_fig.subplots_adjust(
+                left=0.05, right=0.75
+            )  # Adjust to make space for legend
+            self.asset_type_pie_canvas.draw()
+        else:
+            logging.info("No asset type values to plot after filtering.")
+            if hasattr(self, "asset_type_pie_ax"):
+                self.asset_type_pie_ax.axis(
+                    "off"
+                )  # Turn off axis for "No Allocation Data" text
+                self.asset_type_pie_ax.text(
+                    0.5,
+                    0.5,
+                    "No Allocation Data",
+                    ha="center",
+                    va="center",
+                    transform=self.asset_type_pie_ax.transAxes,
+                    color=COLOR_TEXT_SECONDARY,
+                )
+                self.asset_type_pie_canvas.draw()
+
+        # --- Sector Allocation Chart ---
+        # For now, we'll assume 'Sector' column might exist in self.holdings_data
+        # or we'll fetch it. If not, we show a placeholder message.
+        if "Sector" in df_alloc.columns:  # Check if 'Sector' column exists
+            # Prepare sector data: fill NaNs and empty strings, ensure string type for robust grouping
+            df_alloc_for_sector_chart = df_alloc.copy()
+            df_alloc_for_sector_chart["Sector"] = (
+                df_alloc_for_sector_chart["Sector"]
+                .astype(str)
+                .fillna("Unknown Sector")
+                .str.strip()
+            )
+            df_alloc_for_sector_chart.loc[
+                df_alloc_for_sector_chart["Sector"] == "", "Sector"
+            ] = "Unknown Sector"
+
+            sector_values = df_alloc_for_sector_chart.groupby("Sector", observed=False)[
+                value_col_actual
+            ].sum()
+            sector_values = sector_values[sector_values.abs() > 1e-3].sort_values(
+                ascending=False
+            )
+
+            if not sector_values.empty:
+                self.sector_pie_ax.axis("on")  # Turn axis on for plotting
+
+                # Group small slices into "Other"
+                if len(sector_values) > CHART_MAX_SLICES:
+                    top_sectors = sector_values.head(CHART_MAX_SLICES - 1)
+                    other_value = sector_values.iloc[CHART_MAX_SLICES - 1 :].sum()
+                    if other_value > 1e-3:  # Only add "Other" if it's significant
+                        top_sectors.loc["Other"] = other_value
+                    sector_values_to_plot = top_sectors
+                else:
+                    sector_values_to_plot = sector_values
+
+                labels = sector_values_to_plot.index.tolist()
+                values = sector_values_to_plot.values
+
+                cmap_sector = plt.get_cmap("Spectral")  # CHANGED colormap
+                colors_sector = cmap_sector(np.linspace(0, 1, len(values)))
+
+                wedges_s, texts_s, autotexts_s = self.sector_pie_ax.pie(
+                    values,
+                    labels=None,
+                    autopct="",  # CHANGED: Remove autopct for internal labels
+                    startangle=90,
+                    counterclock=False,
+                    colors=colors_sector,
+                    wedgeprops={"edgecolor": "white", "linewidth": 0.7},
+                )
+                # plt.setp(autotexts_s, size=8, weight="bold", color="black") # No longer needed
+
+                legend_labels_s = [
+                    f"{l} ({self._get_currency_symbol()}{v:,.0f})"
+                    for l, v in sector_values_to_plot.items()
+                ]
+                self.sector_pie_ax.legend(
+                    wedges_s,
+                    legend_labels_s,
+                    title="Sectors",
+                    loc="center left",
+                    bbox_to_anchor=(0.95, 0, 0.5, 1),
+                    fontsize=8,
+                )
+
+                # Add percentage labels outside the pie for sector chart
+                total_sector_value = np.sum(values)
+                for i, wedge in enumerate(wedges_s):
+                    ang = (wedge.theta2 - wedge.theta1) / 2.0 + wedge.theta1
+                    x = wedge.r * 1.15 * np.cos(np.deg2rad(ang))  # Position outside
+                    y = wedge.r * 1.15 * np.sin(np.deg2rad(ang))
+                    percent = (values[i] / total_sector_value) * 100
+                    if percent > 0.5:  # Only label significant slices
+                        horizontalalignment = {-1: "right", 1: "left"}[int(np.sign(x))]
+                        self.sector_pie_ax.text(
+                            x,
+                            y,
+                            f"{percent:.1f}%",
+                            ha=horizontalalignment,
+                            va="center",
+                            fontsize=7,
+                            color=COLOR_TEXT_DARK,
+                        )
+                self.sector_pie_fig.subplots_adjust(left=0.05, right=0.75)
+                self.sector_pie_canvas.draw()
+            else:
+                self.sector_pie_ax.axis("off")
+                self.sector_pie_ax.text(
+                    0.5,
+                    0.5,
+                    "No Sector Data",
+                    ha="center",
+                    va="center",
+                    transform=self.sector_pie_ax.transAxes,
+                    color=COLOR_TEXT_SECONDARY,
+                )
+                self.sector_pie_canvas.draw()
+        else:
+            self.sector_pie_ax.axis("off")
+            self.sector_pie_ax.text(
+                0.5,
+                0.5,
+                "Sector Data Unavailable\n(Requires Fundamentals)",
+                ha="center",
+                va="center",
+                transform=self.sector_pie_ax.transAxes,
+                color=COLOR_TEXT_SECONDARY,
+                wrap=True,
+            )
+            self.sector_pie_canvas.draw()
+
+        # --- Geographical Allocation Chart ---
+        if "Country" in df_alloc.columns:
+            df_alloc_for_geo_chart = df_alloc.copy()
+            df_alloc_for_geo_chart["Country"] = (
+                df_alloc_for_geo_chart["Country"]
+                .astype(str)
+                .fillna("Unknown Region")
+                .str.strip()
+            )
+            df_alloc_for_geo_chart.loc[
+                df_alloc_for_geo_chart["Country"] == "", "Country"
+            ] = "Unknown Region"
+
+            # Special handling for "Cash" country to keep it separate if desired
+            # Or map it to a specific region based on display currency, e.g., "Domestic Cash"
+            # For now, "Cash" will be its own slice if it exists as a "Country".
+
+            country_values = df_alloc_for_geo_chart.groupby("Country", observed=False)[
+                value_col_actual
+            ].sum()
+            country_values = country_values[country_values.abs() > 1e-3].sort_values(
+                ascending=False
+            )
+
+            if not country_values.empty:
+                self.geo_pie_ax.axis("on")
+
+                if len(country_values) > CHART_MAX_SLICES:
+                    top_countries = country_values.head(CHART_MAX_SLICES - 1)
+                    other_value_geo = country_values.iloc[CHART_MAX_SLICES - 1 :].sum()
+                    if other_value_geo > 1e-3:
+                        top_countries.loc["Other Regions"] = other_value_geo
+                    country_values_to_plot = top_countries
+                else:
+                    country_values_to_plot = country_values
+
+                labels_g = country_values_to_plot.index.tolist()
+                values_g = country_values_to_plot.values
+
+                cmap_geo = plt.get_cmap(
+                    "Spectral"
+                )  # Using Spectral again, or choose another like "Paired"
+                colors_geo = cmap_geo(np.linspace(0, 1, len(values_g)))
+
+                wedges_g, _, _ = self.geo_pie_ax.pie(
+                    values_g,
+                    labels=None,
+                    autopct="",
+                    startangle=90,
+                    counterclock=False,
+                    colors=colors_geo,
+                    wedgeprops={"edgecolor": "white", "linewidth": 0.7},
+                )
+                legend_labels_g = [
+                    f"{l} ({self._get_currency_symbol()}{v:,.0f})"
+                    for l, v in country_values_to_plot.items()
+                ]
+                self.geo_pie_ax.legend(
+                    wedges_g,
+                    legend_labels_g,
+                    title="Geography",
+                    loc="center left",
+                    bbox_to_anchor=(0.95, 0, 0.5, 1),
+                    fontsize=8,
+                )
+
+                total_geo_value = np.sum(values_g)
+                for i, wedge in enumerate(wedges_g):
+                    ang = (wedge.theta2 - wedge.theta1) / 2.0 + wedge.theta1
+                    x = wedge.r * 1.15 * np.cos(np.deg2rad(ang))
+                    y = wedge.r * 1.15 * np.sin(np.deg2rad(ang))
+                    percent = (values_g[i] / total_geo_value) * 100
+                    if percent > 0.5:
+                        horizontalalignment = {-1: "right", 1: "left"}[int(np.sign(x))]
+                        self.geo_pie_ax.text(
+                            x,
+                            y,
+                            f"{percent:.1f}%",
+                            ha=horizontalalignment,
+                            va="center",
+                            fontsize=7,
+                            color=COLOR_TEXT_DARK,
+                        )
+                self.geo_pie_fig.subplots_adjust(left=0.05, right=0.75)
+                self.geo_pie_canvas.draw()
+            else:  # No country values to plot
+                self.geo_pie_ax.axis("off")
+                self.geo_pie_ax.text(
+                    0.5,
+                    0.5,
+                    "No Geographical Data",
+                    ha="center",
+                    va="center",
+                    transform=self.geo_pie_ax.transAxes,
+                    color=COLOR_TEXT_SECONDARY,
+                )
+                self.geo_pie_canvas.draw()
+            if hasattr(self, "industry_pie_ax"):  # ADDED
+                self.industry_pie_ax.axis("off")
+                self.industry_pie_ax.text(
+                    0.5,
+                    0.5,
+                    "Data Error",
+                    ha="center",
+                    va="center",
+                    transform=self.industry_pie_ax.transAxes,
+                    color=COLOR_LOSS,
+                )
+                self.geo_pie_canvas.draw()
+        else:  # "Country" column not in df_alloc
+            self.geo_pie_ax.axis("off")
+            self.geo_pie_ax.text(
+                0.5,
+                0.5,
+                "Geographical Data Unavailable\n(Requires Fundamentals)",
+                ha="center",
+                va="center",
+                transform=self.geo_pie_ax.transAxes,
+                color=COLOR_TEXT_SECONDARY,
+                wrap=True,
+            )
+            self.geo_pie_canvas.draw()
+
+        # --- Industry Allocation Chart (New) ---
+        if "Industry" in df_alloc.columns:
+            df_alloc_for_industry_chart = df_alloc.copy()
+            df_alloc_for_industry_chart["Industry"] = (
+                df_alloc_for_industry_chart["Industry"]
+                .astype(str)
+                .fillna("Unknown Industry")
+                .str.strip()
+            )
+            df_alloc_for_industry_chart.loc[
+                df_alloc_for_industry_chart["Industry"] == "", "Industry"
+            ] = "Unknown Industry"
+
+            industry_values = df_alloc_for_industry_chart.groupby(
+                "Industry", observed=False
+            )[value_col_actual].sum()
+            industry_values = industry_values[industry_values.abs() > 1e-3].sort_values(
+                ascending=False
+            )
+
+            if not industry_values.empty:
+                self.industry_pie_ax.axis("on")
+
+                if len(industry_values) > CHART_MAX_SLICES:
+                    top_industries = industry_values.head(CHART_MAX_SLICES - 1)
+                    other_value_ind = industry_values.iloc[CHART_MAX_SLICES - 1 :].sum()
+                    if other_value_ind > 1e-3:
+                        top_industries.loc["Other Industries"] = other_value_ind
+                    industry_values_to_plot = top_industries
+                else:
+                    industry_values_to_plot = industry_values
+
+                labels_i = industry_values_to_plot.index.tolist()
+                values_i = industry_values_to_plot.values
+
+                cmap_ind = plt.get_cmap("Spectral")  # Or "tab20", "Set3"
+                colors_ind = cmap_ind(np.linspace(0, 1, len(values_i)))
+
+                wedges_i, _, _ = self.industry_pie_ax.pie(
+                    values_i,
+                    labels=None,
+                    autopct="",
+                    startangle=90,
+                    counterclock=False,
+                    colors=colors_ind,
+                    wedgeprops={"edgecolor": "white", "linewidth": 0.7},
+                )
+                legend_labels_i = [
+                    f"{l} ({self._get_currency_symbol()}{v:,.0f})"
+                    for l, v in industry_values_to_plot.items()
+                ]
+                self.industry_pie_ax.legend(
+                    wedges_i,
+                    legend_labels_i,
+                    title="Industry",
+                    loc="center left",
+                    bbox_to_anchor=(0.95, 0, 0.5, 1),
+                    fontsize=8,
+                )
+
+                total_industry_value = np.sum(values_i)
+                for i, wedge in enumerate(wedges_i):
+                    ang = (wedge.theta2 - wedge.theta1) / 2.0 + wedge.theta1
+                    x = wedge.r * 1.15 * np.cos(np.deg2rad(ang))
+                    y = wedge.r * 1.15 * np.sin(np.deg2rad(ang))
+                    percent = (values_i[i] / total_industry_value) * 100
+                    if percent > 0.5:
+                        horizontalalignment = {-1: "right", 1: "left"}[int(np.sign(x))]
+                        self.industry_pie_ax.text(
+                            x,
+                            y,
+                            f"{percent:.1f}%",
+                            ha=horizontalalignment,
+                            va="center",
+                            fontsize=7,
+                            color=COLOR_TEXT_DARK,
+                        )
+                self.industry_pie_fig.subplots_adjust(left=0.05, right=0.75)
+                self.industry_pie_canvas.draw()
+            else:  # No industry values to plot
+                self.industry_pie_ax.axis("off")
+                self.industry_pie_ax.text(
+                    0.5,
+                    0.5,
+                    "No Industry Data",
+                    ha="center",
+                    va="center",
+                    transform=self.industry_pie_ax.transAxes,
+                    color=COLOR_TEXT_SECONDARY,
+                )
+                self.industry_pie_canvas.draw()
+        else:  # "Industry" column not in df_alloc
+            self.industry_pie_ax.axis("off")
+            self.industry_pie_ax.text(
+                0.5,
+                0.5,
+                "Industry Data Unavailable\n(Requires Fundamentals)",
+                ha="center",
+                va="center",
+                transform=self.industry_pie_ax.transAxes,
+                color=COLOR_TEXT_SECONDARY,
+                wrap=True,
+            )
+            self.geo_pie_canvas.draw()
 
     # --- Filter Change Handlers ---
     @Slot()
