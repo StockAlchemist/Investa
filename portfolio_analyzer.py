@@ -24,6 +24,17 @@ from datetime import (
     date,
     datetime,
 )  # Used in _build_summary_rows, _process_transactions...
+
+# --- ADDED: Import line_profiler if available, otherwise create dummy decorator ---
+try:
+    from line_profiler import profile
+except ImportError:
+
+    def profile(func):
+        return func  # No-op decorator if line_profiler not installed
+
+
+# --- END ADDED ---
 from typing import List, Tuple, Dict, Optional, Any, Set
 from collections import defaultdict
 
@@ -82,6 +93,7 @@ _AGGREGATE_CASH_ACCOUNT_NAME_ = "Cash"
 
 
 # --- REVISED: _process_transactions_to_holdings (Split applied to all accounts) ---
+@profile
 def _process_transactions_to_holdings(
     transactions_df: pd.DataFrame, default_currency: str, shortable_symbols: Set[str]
 ) -> Tuple[
@@ -580,6 +592,7 @@ def _process_transactions_to_holdings(
 
 
 # --- REVISED: _calculate_cash_balances ---
+@profile
 def _calculate_cash_balances(
     transactions_df: pd.DataFrame, default_currency: str
 ) -> Tuple[Dict[str, Dict], bool, bool]:
@@ -699,6 +712,7 @@ def _calculate_cash_balances(
 
 
 # --- REVISED: _build_summary_rows (uses MarketDataProvider) ---
+@profile
 def _build_summary_rows(
     holdings: Dict[Tuple[str, str], Dict],
     cash_summary: Dict[str, Dict],
@@ -1271,6 +1285,7 @@ def _build_summary_rows(
 
 
 # --- REVISED: _calculate_aggregate_metrics (Removed transactions_df parameter) ---
+@profile
 def _calculate_aggregate_metrics(
     full_summary_df: pd.DataFrame,
     display_currency: str,

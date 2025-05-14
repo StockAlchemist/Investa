@@ -3,11 +3,17 @@ import pandas as pd
 import numpy as np
 import logging
 from typing import Tuple, Optional, Set, Dict
-from io import StringIO  # Keep if used in tests or function
+import os  # <-- ADDED for path operations
+from io import StringIO
 
 # Import constants from config.py (assuming it's in the same directory)
 try:
     from config import CASH_SYMBOL_CSV, LOGGING_LEVEL  # Add others if needed
+
+    # --- ADDED: Import QStandardPaths for cache directory ---
+    from PySide6.QtCore import QStandardPaths
+
+    PYSIDE_AVAILABLE = True
 except ImportError:
     logging.error(
         "CRITICAL: Could not import constants from config.py in data_loader.py"
@@ -15,6 +21,8 @@ except ImportError:
     # Define fallbacks if absolutely necessary, but fixing the import path is better
     CASH_SYMBOL_CSV = "$CASH"
     LOGGING_LEVEL = logging.INFO
+    QStandardPaths = None  # Fallback
+    PYSIDE_AVAILABLE = False
 
 # Add a basic module docstring (optional but good practice)
 """
@@ -31,9 +39,67 @@ SPDX-License-Identifier: MIT
 # Constants
 SHORTABLE_SYMBOLS = {"AAPL", "RIMM"}
 
+# --- ADDED: Import line_profiler if available, otherwise create dummy decorator ---
+try:
+    from line_profiler import profile
+except ImportError:
 
-# --- REVISED: load_and_clean_transactions (Correct na_values Scope) ---
-def load_and_clean_transactions(
+    def profile(func):
+        return func  # No-op decorator if line_profiler not installed
+
+
+# --- END ADDED ---
+
+FEATHER_CACHE_ENABLED = True  # Global flag to enable/disable this caching
+
+
+def get_feather_cache_path(transactions_csv_file: str) -> Optional[str]:
+    """
+    Determines the path for the Feather cache file.
+    It will be stored in the application's standard cache directory.
+    e.g., ~/Library/Caches/Investa/my_transactions_cache.feather
+    """
+    if not PYSIDE_AVAILABLE or QStandardPaths is None:
+        logging.warning(
+            "PySide6.QtCore.QStandardPaths not available. Feather cache will be local to CSV."
+        )
+        base_name = os.path.basename(transactions_csv_file)
+        name_no_ext = os.path.splitext(base_name)[0]
+        return os.path.join(
+            os.path.dirname(transactions_csv_file), f"{name_no_ext}_tx_cache.feather"
+        )
+
+    cache_dir_base = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
+    if cache_dir_base:
+        # Assuming APP_NAME is set in main_gui.py for QStandardPaths
+        # If not, QStandardPaths might use a generic name or the executable name.
+        # For robustness, let's create an "Investa" subfolder if not already part of cache_dir_base.
+        # QStandardPaths.CacheLocation often already includes AppName on macOS/Windows.
+        app_cache_dir = cache_dir_base  # Directly use CacheLocation
+        if "Investa" not in app_cache_dir:  # Simple check, might need refinement
+            app_cache_dir = os.path.join(cache_dir_base, "Investa")
+
+        os.makedirs(app_cache_dir, exist_ok=True)
+
+        # Create a unique name based on the CSV file's name (without extension)
+        csv_filename_no_ext = os.path.splitext(os.path.basename(transactions_csv_file))[
+            0
+        ]
+        cache_filename = f"{csv_filename_no_ext}_tx_cache.feather"
+        return os.path.join(app_cache_dir, cache_filename)
+    else:
+        logging.warning(
+            "Could not determine standard cache location. Feather cache will be local to CSV."
+        )
+        base_name = os.path.basename(transactions_csv_file)
+        name_no_ext = os.path.splitext(base_name)[0]
+        return os.path.join(
+            os.path.dirname(transactions_csv_file), f"{name_no_ext}_tx_cache.feather"
+        )
+
+
+@profile
+def _load_and_clean_from_csv_actual(  # Renamed original function
     transactions_csv_file: str,
     account_currency_map: Dict,  # Now required
     default_currency: str,  # Now required
@@ -44,7 +110,7 @@ def load_and_clean_transactions(
     Loads transactions from CSV, performs cleaning, validation, and adds 'Local Currency'.
 
     Reads a CSV file containing transaction data, renames columns, cleans data types
-    (dates, numerics), validates essential fields based on transaction type, and adds
+    (dates, numerics), validates essential fields based on transaction type, and adds a
     a 'Local Currency' column based on the account mapping. Rows with critical errors
     (e.g., unparseable dates, missing essential data for a transaction type) are
     dropped.
@@ -610,3 +676,111 @@ def load_and_clean_transactions(
             has_warnings,
         )
     # --- End Refined Exception Handling ---
+
+
+@profile
+def load_and_clean_transactions(
+    transactions_csv_file: str,
+    account_currency_map: Dict,
+    default_currency: str,
+) -> Tuple[
+    Optional[pd.DataFrame], Optional[pd.DataFrame], Set[int], Dict[int, str], bool, bool
+]:
+    """
+    Loads transactions, trying a Feather cache first, then falling back to CSV.
+    Caches the cleaned DataFrame to Feather format if loaded from CSV.
+    """
+    if not FEATHER_CACHE_ENABLED:
+        logging.info("Feather cache is disabled. Loading directly from CSV.")
+        return _load_and_clean_from_csv_actual(
+            transactions_csv_file, account_currency_map, default_currency
+        )
+
+    feather_cache_path = get_feather_cache_path(transactions_csv_file)
+    if (
+        feather_cache_path is None
+    ):  # Should not happen if QStandardPaths works or fallback is used
+        logging.error(
+            "Could not determine Feather cache path. Loading directly from CSV."
+        )
+        return _load_and_clean_from_csv_actual(
+            transactions_csv_file, account_currency_map, default_currency
+        )
+
+    if os.path.exists(feather_cache_path) and os.path.exists(transactions_csv_file):
+        try:
+            csv_mtime = os.path.getmtime(transactions_csv_file)
+            cache_mtime = os.path.getmtime(feather_cache_path)
+
+            if cache_mtime >= csv_mtime:  # Use >= to be safe if mtimes are identical
+                logging.info(
+                    f"Loading cleaned transactions from Feather cache: {feather_cache_path}"
+                )
+                cleaned_df = pd.read_feather(feather_cache_path)
+
+                # Ensure 'original_index' column exists, as it's crucial.
+                # If loading from an older cache that didn't save it, this is a fallback.
+                if "original_index" not in cleaned_df.columns and not cleaned_df.empty:
+                    logging.warning(
+                        "Feather cache missing 'original_index'. Re-adding based on current index. Cache might be from an older version or save process."
+                    )
+                    cleaned_df["original_index"] = cleaned_df.index
+
+                # When loading from cache, we assume it's already cleaned and validated from a previous CSV load.
+                # So, 'original_transactions_df' can be a copy of the cleaned_df for consistency in return type.
+                # Ignored indices/reasons for *this specific load operation* are empty because it's from cache.
+                # Overall ignored rows from other processing steps will still be handled by the caller.
+                return (
+                    cleaned_df,
+                    cleaned_df.copy(),
+                    set(),
+                    {},
+                    False,
+                    False,
+                )  # df, original_df, ignored_indices, ignored_reasons, err_load, warn_load
+            else:
+                logging.info(
+                    f"Feather cache '{feather_cache_path}' is older than CSV. Reloading from CSV."
+                )
+        except FileNotFoundError:  # Should be caught by os.path.exists, but defensive
+            logging.warning(
+                f"Cache or CSV file disappeared during mtime check. Reloading from CSV."
+            )
+        except Exception as e:
+            logging.warning(
+                f"Error reading from Feather cache '{feather_cache_path}': {e}. Will load from CSV."
+            )
+
+    # If cache not used, doesn't exist, is older, or failed to load:
+    logging.info(f"Loading and cleaning transactions from CSV: {transactions_csv_file}")
+    (
+        all_transactions_df,
+        original_transactions_df,
+        ignored_indices_load,
+        ignored_reasons_load,
+        err_load,
+        warn_load,
+    ) = _load_and_clean_from_csv_actual(
+        transactions_csv_file, account_currency_map, default_currency
+    )
+
+    if not err_load and all_transactions_df is not None:
+        try:
+            logging.info(
+                f"Saving cleaned transactions to Feather cache: {feather_cache_path}"
+            )
+            # Ensure 'original_index' is present before saving. It should be added by _load_and_clean_from_csv_actual.
+            all_transactions_df.to_feather(feather_cache_path)
+        except Exception as e:
+            logging.warning(
+                f"Error writing to Feather cache '{feather_cache_path}': {e}"
+            )
+
+    return (
+        all_transactions_df,
+        original_transactions_df,
+        ignored_indices_load,
+        ignored_reasons_load,
+        err_load,
+        warn_load,
+    )

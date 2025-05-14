@@ -133,12 +133,14 @@ class MarketDataProvider:
 
     def __init__(
         self,
-        hist_raw_cache_basename=HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,  # Changed prefix to basename
+        hist_data_cache_dir_name="historical_data_cache",  # Name of the subdirectory for historical data
         current_cache_file=None,  # Default to None, path constructed if not absolute
-        fundamentals_cache_file="fundamentals_cache.json",  # New cache file for fundamentals
+        fundamentals_cache_dir="fundamentals_cache",  # Changed to directory name
     ):
-        self.hist_raw_cache_basename = hist_raw_cache_basename  # Store basename
-        self._session = None  # Initialize session attribute
+        self.hist_data_cache_dir_name = (
+            hist_data_cache_dir_name  # Store historical cache subdirectory name
+        )
+        self._session = None
         self.historical_fx_for_fallback: Dict[str, pd.DataFrame] = (
             {}
         )  # Store recently fetched historical FX
@@ -174,26 +176,66 @@ class MarketDataProvider:
                     DEFAULT_CURRENT_CACHE_FILE_PATH  # Relative path fallback
                 )
 
-        # Construct full path for fundamentals_cache_file
-        if fundamentals_cache_file and not os.path.isabs(fundamentals_cache_file):
+        # Construct full path for fundamentals_cache_dir
+        if fundamentals_cache_dir and not os.path.isabs(fundamentals_cache_dir):
             cache_dir_base_fund = QStandardPaths.writableLocation(
                 QStandardPaths.CacheLocation
             )
             if cache_dir_base_fund:
                 app_cache_dir_fund = cache_dir_base_fund
-                os.makedirs(app_cache_dir_fund, exist_ok=True)
-                self.fundamentals_cache_file = os.path.join(
-                    app_cache_dir_fund, fundamentals_cache_file
+                # Join the base cache dir with the specified fundamentals dir name
+                self.fundamentals_cache_dir = os.path.join(
+                    app_cache_dir_fund, fundamentals_cache_dir
                 )
             else:
-                self.fundamentals_cache_file = fundamentals_cache_file  # Relative path
-        elif fundamentals_cache_file:  # Already absolute
-            self.fundamentals_cache_file = fundamentals_cache_file
+                # Fallback to relative path if standard location not found
+                self.fundamentals_cache_dir = fundamentals_cache_dir
+        elif fundamentals_cache_dir:  # Already absolute
+            self.fundamentals_cache_dir = fundamentals_cache_dir
         else:  # Should not happen if default is provided
-            self.fundamentals_cache_file = "fundamentals_cache.json"  # Fallback
+            self.fundamentals_cache_dir = (
+                "fundamentals_cache"  # Fallback directory name
+            )
+
+        # Ensure the fundamentals cache directory exists
+        os.makedirs(self.fundamentals_cache_dir, exist_ok=True)
 
         logging.info("MarketDataProvider initialized.")
 
+    def _get_historical_cache_dir(self) -> str:
+        """Constructs and returns the full path to the historical data cache subdirectory."""
+        cache_dir_base = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
+        if cache_dir_base:
+            app_specific_cache_dir = (
+                cache_dir_base  # QStandardPaths.CacheLocation is already app-specific
+            )
+            hist_dir = os.path.join(
+                app_specific_cache_dir, self.hist_data_cache_dir_name
+            )
+        else:  # Fallback
+            hist_dir = self.hist_data_cache_dir_name  # Relative path
+        os.makedirs(hist_dir, exist_ok=True)
+        return hist_dir
+
+    def _get_historical_manifest_path(self) -> str:
+        """Returns the full path to the manifest.json file for historical data."""
+        return os.path.join(self._get_historical_cache_dir(), "manifest.json")
+
+    def _get_historical_symbol_data_path(
+        self, yf_symbol: str, data_type: str = "price"
+    ) -> str:
+        """
+        Returns the full path for an individual symbol's historical data file.
+        data_type can be 'price' or 'fx'.
+        """
+        # Sanitize symbol for filename (replace characters not suitable for filenames)
+        safe_yf_symbol = "".join(
+            c if c.isalnum() or c in [".", "_", "-"] else "_" for c in yf_symbol
+        )  # Allow . _ -
+        filename = f"{safe_yf_symbol}_{data_type}.json"
+        return os.path.join(self._get_historical_cache_dir(), filename)
+
+    @profile
     def get_current_quotes(
         self,
         internal_stock_symbols: List[str],
@@ -600,7 +642,6 @@ class MarketDataProvider:
                     start_date=start_fallback_date,
                     end_date=end_fallback_date,  # cache_file will be constructed by get_historical_fx_rates
                     use_cache=True,  # cache_file will be constructed by get_historical_fx_rates
-                    cache_file=None,  # Let get_historical_fx_rates construct its default
                     cache_key=f"FALLBACK_FX::{'_'.join(sorted(fx_pairs_needing_fallback_after_primary_fetch))}",
                 )
 
@@ -655,6 +696,7 @@ class MarketDataProvider:
         # --- 7. Return results (either from cache or fresh fetch) ---
         return results, fx_rates_vs_usd, has_errors, has_warnings
 
+    @profile
     def get_index_quotes(
         self, index_symbols: List[str] = DEFAULT_INDEX_QUERY_SYMBOLS
     ) -> Dict[str, Dict]:
@@ -865,8 +907,7 @@ class MarketDataProvider:
 
         return results
 
-    # --- Historical Data Fetching ---
-    @profile  # <-- ADDED @profile decorator here
+    @profile
     def _fetch_yf_historical_data(
         self, symbols_yf: List[str], start_date: date, end_date: date
     ) -> Dict[str, pd.DataFrame]:
@@ -980,74 +1021,223 @@ class MarketDataProvider:
         )
         return historical_data
 
-    def _load_historical_cache(
-        self, cache_file: str, cache_key: str
-    ) -> Tuple[Optional[Dict], bool]:
+    def _load_historical_manifest_and_data(
+        self,
+        expected_cache_key: str,
+        symbols_to_load: List[str],
+        data_type: str = "price",  # "price" or "fx"
+    ) -> Tuple[Dict[str, pd.DataFrame], bool]:
         """
-        Loads historical data (prices and FX) from a JSON cache file if the key matches.
+        Loads historical data for specified symbols by first checking a manifest file
+        and then loading individual symbol data files.
+
+        Args:
+            expected_cache_key (str): The cache key expected for the current data request.
+            symbols_to_load (List[str]): List of YF tickers to load data for.
+            data_type (str): "price" for stock/benchmark prices, "fx" for FX rates.
+
+        Returns:
+            Tuple[Dict[str, pd.DataFrame], bool]:
+                - loaded_symbol_data (Dict): DataFrames loaded, keyed by symbol.
+                - manifest_is_valid_and_complete (bool): True if manifest was valid and all
+                                                        requested symbols were found and loaded.
+        """
+        loaded_symbol_data: Dict[str, pd.DataFrame] = {}
+        manifest_path = self._get_historical_manifest_path()
+        manifest_data_section_key = (
+            "historical_prices" if data_type == "price" else "historical_fx_rates"
+        )
+
+        logging.info(
+            f"Hist Cache Load ({data_type}): Attempting to load manifest. File='{manifest_path}', Expected Key='{expected_cache_key[:50]}...'"
+        )
+
+        if not os.path.exists(manifest_path):
+            logging.info(
+                f"Hist Cache Load ({data_type}): Manifest MISS (file not found)."
+            )
+            return loaded_symbol_data, False
+
+        manifest = {}
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+        except Exception as e:
+            logging.error(
+                f"Hist Cache Load ({data_type}): Error reading manifest '{manifest_path}': {e}. Ignoring cache."
+            )
+            return loaded_symbol_data, False
+
+        loaded_manifest_cache_key = manifest.get("cache_key")
+        logging.info(
+            f"Hist Cache Load ({data_type}): Manifest exists. Found Key='{str(loaded_manifest_cache_key)[:50]}...'"
+        )
+
+        if loaded_manifest_cache_key != expected_cache_key:
+            logging.info(
+                f"Hist Cache Load ({data_type}): Manifest MISS (key MISMATCH). Ignoring cache."
+            )
+            return loaded_symbol_data, False
+
+        logging.info(
+            f"Hist Cache Load ({data_type}): Manifest HIT (key MATCH). Loading individual symbol files..."
+        )
+        manifest_data_section = manifest.get(manifest_data_section_key, {})
+        all_symbols_found_and_loaded = True
+
+        for yf_symbol in symbols_to_load:
+            if (
+                yf_symbol in manifest_data_section
+            ):  # Check if symbol is listed in manifest
+                symbol_file_path = self._get_historical_symbol_data_path(
+                    yf_symbol, data_type
+                )
+                if os.path.exists(symbol_file_path):
+                    try:
+                        with open(symbol_file_path, "r", encoding="utf-8") as sf:
+                            symbol_data_json_str = sf.read()  # Read as string
+                        # Deserialize this single symbol's data
+                        df_symbol = self._deserialize_single_historical_df(
+                            symbol_data_json_str
+                        )
+                        if not df_symbol.empty:
+                            loaded_symbol_data[yf_symbol] = df_symbol
+                        else:
+                            logging.warning(
+                                f"Hist Cache Load ({data_type}): Empty data after deserializing {symbol_file_path} for {yf_symbol}."
+                            )
+                            all_symbols_found_and_loaded = (
+                                False  # Mark as incomplete if a file is empty
+                            )
+                    except Exception as e_sym_load:
+                        logging.error(
+                            f"Hist Cache Load ({data_type}): Error loading/deserializing file {symbol_file_path} for {yf_symbol}: {e_sym_load}"
+                        )
+                        all_symbols_found_and_loaded = False
+                else:
+                    logging.warning(
+                        f"Hist Cache Load ({data_type}): Symbol file {symbol_file_path} for {yf_symbol} listed in manifest but not found."
+                    )
+                    all_symbols_found_and_loaded = False
+            else:
+                logging.info(
+                    f"Hist Cache Load ({data_type}): Symbol {yf_symbol} not listed in manifest's '{manifest_data_section_key}' section."
+                )
+                all_symbols_found_and_loaded = False  # Symbol not in manifest means cache is incomplete for this request
+
+        if all_symbols_found_and_loaded:
+            logging.info(
+                f"Hist Cache Load ({data_type}): Successfully loaded all {len(symbols_to_load)} requested symbols from individual files."
+            )
+        else:
+            logging.warning(
+                f"Hist Cache Load ({data_type}): Not all requested symbols were successfully loaded from cache."
+            )
+
+        return loaded_symbol_data, all_symbols_found_and_loaded
+
+    def _save_historical_data_and_manifest(
+        self,
+        cache_key_to_save: str,
+        data_to_save_map: Dict[
+            str, pd.DataFrame
+        ],  # Keyed by symbol, value is DataFrame
+        data_type: str = "price",  # "price" or "fx"
+        existing_other_type_data_from_manifest: Optional[
+            Dict
+        ] = None,  # e.g., existing FX data if saving prices
+    ):
+        """Saves individual symbol historical data files and updates the manifest.json."""
+        manifest_path = self._get_historical_manifest_path()
+        manifest_data_section_key = (
+            "historical_prices" if data_type == "price" else "historical_fx_rates"
+        )
+        other_manifest_data_section_key = (
+            "historical_fx_rates" if data_type == "price" else "historical_prices"
+        )
+
+        logging.info(
+            f"Hist Cache Save ({data_type}): Saving {len(data_to_save_map)} symbols and updating manifest. Key='{cache_key_to_save[:50]}...'"
+        )
+
+        current_manifest_symbol_entries = {}
+        for yf_symbol, df_data in data_to_save_map.items():
+            if df_data.empty:
+                logging.debug(
+                    f"Hist Cache Save ({data_type}): Skipping empty DataFrame for {yf_symbol}."
+                )
+                continue
+            symbol_file_path = self._get_historical_symbol_data_path(
+                yf_symbol, data_type
+            )
+            try:
+                # Serialize DataFrame to JSON string
+                json_str = df_data.to_json(orient="split", date_format="iso")
+                with open(symbol_file_path, "w", encoding="utf-8") as sf:
+                    sf.write(json_str)
+                current_manifest_symbol_entries[yf_symbol] = (
+                    True  # Could store mtime or hash here later
+                )
+            except Exception as e_sym_save:
+                logging.error(
+                    f"Hist Cache Save ({data_type}): Error saving data for {yf_symbol} to {symbol_file_path}: {e_sym_save}"
+                )
+
+        # Update manifest
+        manifest_content = {
+            "cache_key": cache_key_to_save,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            manifest_data_section_key: current_manifest_symbol_entries,
+            # Preserve the other data type if it was passed
+            other_manifest_data_section_key: existing_other_type_data_from_manifest
+            or {},
+        }
+
+        try:
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest_content, f, indent=2)
+            logging.info(
+                f"Hist Cache Save ({data_type}): Manifest updated at {manifest_path}"
+            )
+        except Exception as e_manifest_save:
+            logging.error(
+                f"Hist Cache Save ({data_type}): Error writing manifest file '{manifest_path}': {e_manifest_save}"
+            )
+
+    def _deserialize_single_historical_df(self, data_json_str: str) -> pd.DataFrame:
+        """Deserializes a single historical DataFrame from its JSON string representation."""
+        df = pd.DataFrame()
+        if not data_json_str:
+            return df
+        try:
+            # Using StringIO as pd.read_json expects a file-like object or path for string input
+            df_temp = pd.read_json(
+                StringIO(data_json_str), orient="split", dtype={"price": float}
+            )
+            df_temp.index = pd.to_datetime(df_temp.index, errors="coerce").date
+            df_temp = df_temp.dropna(
+                subset=["price"]
+            )  # Ensure 'price' column has valid data
+            df_temp = df_temp[pd.notnull(df_temp.index)]  # Ensure index is valid dates
+            if not df_temp.empty:
+                df = df_temp.sort_index()
+        except Exception as e_deser:
+            logging.debug(
+                f"DEBUG: Error deserializing single historical DataFrame: {e_deser}"
+            )
+        return df
+
+    def _deserialize_historical_data(  # This method might become less used or simplified
+        self, cached_data: Dict, key_name: str, expected_keys: List[str]
+    ) -> Dict[str, pd.DataFrame]:
+        """
+        Deserializes cached historical data (prices or FX) from JSON strings.
+        NOTE: With per-symbol files, this is mostly for the old cache format or specific internal uses.
         Logs detailed information about the cache loading attempt.
         """
         logging.info(
-            f"Hist Cache Load: Attempting to load cache. File='{cache_file}', Expected Key='{cache_key[:50]}...'"
+            f"Hist Cache Deserialize (old format): Section='{key_name}', Expected Keys='{len(expected_keys)}'"
         )
-        if not cache_file or not os.path.exists(cache_file):
-            logging.info("Hist Cache Load: Cache MISS (file not found).")
-            return None, False  # Cache doesn't exist
-
-        try:
-            with open(cache_file, "r") as f:
-                cached_data = json.load(f)
-
-            loaded_cache_key = cached_data.get("cache_key")
-            logging.info(
-                f"Hist Cache Load: File exists. Found Key='{str(loaded_cache_key)[:50]}...'"
-            )
-
-            if loaded_cache_key == cache_key:
-                logging.info("Hist Cache Load: Cache HIT (key MATCH). Data loaded.")
-                return cached_data, True  # Return loaded data and valid flag
-            else:
-                logging.info(
-                    "Hist Cache Load: Cache MISS (key MISMATCH). Ignoring cache."
-                )
-                return None, False
-        except Exception as e:
-            logging.error(
-                f"Hist Cache Load: Cache MISS (Error reading file '{cache_file}'): {e}. Ignoring cache."
-            )
-            return None, False
-
-    def _save_historical_cache(
-        self, cache_file: str, cache_key: str, data_to_cache: Dict
-    ):
-        """Saves historical data (prices and FX) to a JSON cache file."""
-        if not cache_file or not cache_key or not data_to_cache:
-            logging.error("Hist Cache: Invalid arguments for saving cache.")
-            return
-
-        cache_content = {
-            "cache_key": cache_key,
-            "timestamp": datetime.now().isoformat(),
-            **data_to_cache,  # Merge the data (e.g., {"historical_prices": ..., "historical_fx_rates": ...})
-        }
-        logging.info(
-            f"Hist Cache Save: Saving data to cache. File='{cache_file}', Key='{cache_key[:50]}...', Sections: {list(data_to_cache.keys())}"
-        )
-        try:
-            cache_dir = os.path.dirname(cache_file)
-            if cache_dir:
-                os.makedirs(cache_dir, exist_ok=True)
-            with open(cache_file, "w") as f:
-                json.dump(cache_content, f, indent=2)  # Use indent for readability
-        except Exception as e:
-            logging.error(
-                f"Hist Cache Save: Error writing cache file '{cache_file}': {e}"
-            )
-
-    def _deserialize_historical_data(
-        self, cached_data: Dict, key_name: str, expected_keys: List[str]
-    ) -> Dict[str, pd.DataFrame]:
-        """Deserializes cached historical data (prices or FX) from JSON strings."""
         deserialized_dict = {}
         data_section = cached_data.get(key_name, {})
         if not isinstance(data_section, dict):
@@ -1061,14 +1251,7 @@ class MarketDataProvider:
             df = pd.DataFrame()  # Default to empty
             if data_json:
                 try:
-                    df_temp = pd.read_json(
-                        StringIO(data_json), orient="split", dtype={"price": float}
-                    )
-                    df_temp.index = pd.to_datetime(df_temp.index, errors="coerce").date
-                    df_temp = df_temp.dropna(subset=["price"])
-                    df_temp = df_temp[pd.notnull(df_temp.index)]
-                    if not df_temp.empty:
-                        df = df_temp.sort_index()
+                    df = self._deserialize_single_historical_df(data_json)
                 except Exception as e_deser:
                     logging.debug(
                         f"DEBUG: Error deserializing cached {key_name} for {expected_key}: {e_deser}"
@@ -1083,20 +1266,21 @@ class MarketDataProvider:
             deserialized_dict[expected_key] = df  # Store df (even if empty)
         return deserialized_dict
 
+    @profile
     def get_historical_data(
         self,
         symbols_yf: List[str],
         start_date: date,
         end_date: date,
         use_cache: bool = True,
-        cache_key: Optional[str] = None,  # Key for validation
-        cache_file: Optional[str] = None,  # Specific file path
+        cache_key: Optional[str] = None,  # Key for validation (used for manifest)
+        cache_file: Optional[
+            str
+        ] = None,  # This parameter is now mostly for API consistency, path derived internally
     ) -> Tuple[Dict[str, pd.DataFrame], bool]:
         """Loads/fetches ADJUSTED historical price data using cache.
 
-        If cache_file is not provided or is relative, it constructs a default path
-        in the standard user cache directory using self.hist_raw_cache_basename.
-        Example default path: ~/Library/Caches/Investa/yf_portfolio_hist_raw_adjusted_YYYY-MM-DD_YYYY-MM-DD.json
+        Uses a directory-based cache with a manifest file.
 
         (Replaces parts of _load_or_fetch_raw_historical_data related to price fetching)
         Args:
@@ -1104,8 +1288,8 @@ class MarketDataProvider:
             start_date (date): Start date for historical data.
             end_date (date): End date for historical data.
             use_cache (bool): Flag to enable reading/writing the raw data cache.
-            cache_file (str): Path to the raw historical data cache file.
-            cache_key (str): Cache validation key generated by `_prepare_historical_inputs`.
+            cache_key (str): Cache validation key for the manifest.
+            cache_file (str, optional): Not directly used for path, for API consistency.
 
         Returns:
             Tuple containing:
@@ -1114,63 +1298,37 @@ class MarketDataProvider:
             - fetch_failed (bool): True if fetching/loading critical data failed.
         """
         historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}
-        cache_valid_raw = False
+        cache_is_valid_and_complete = False
         fetch_failed = False
-        cache_data_loaded = None
-
-        # --- Construct cache_file path if not absolute ---
-        # Assuming QStandardPaths.CacheLocation gives an app-specific dir like ~/Library/Caches/Investa
-        if not cache_file or not os.path.isabs(cache_file):
-            cache_dir_base = QStandardPaths.writableLocation(
-                QStandardPaths.CacheLocation
-            )
-            if cache_dir_base:
-                app_cache_dir = cache_dir_base  # Use the path directly
-                os.makedirs(app_cache_dir, exist_ok=True)
-                # Use basename and date range for a more specific default cache file name
-                cache_file = os.path.join(
-                    app_cache_dir,
-                    f"{self.hist_raw_cache_basename}_{start_date.isoformat()}_{end_date.isoformat()}.json",
-                )
-            else:  # Fallback
-                cache_file = f"{self.hist_raw_cache_basename}_{start_date.isoformat()}_{end_date.isoformat()}.json"  # Relative path
-            logging.info(
-                f"Hist Prices: Using constructed cache file path: {cache_file}"
-            )
+        manifest_path = self._get_historical_manifest_path()  # For logging
 
         # --- 1. Try Loading Cache ---
-        if use_cache and cache_file and cache_key:
-            cache_data_loaded, cache_valid_raw = self._load_historical_cache(
-                cache_file, cache_key
+        if use_cache and cache_key:
+            loaded_data, manifest_ok = self._load_historical_manifest_and_data(
+                expected_cache_key=cache_key,
+                symbols_to_load=symbols_yf,
+                data_type="price",
             )
-            if cache_valid_raw and cache_data_loaded:
-                historical_prices_yf_adjusted = self._deserialize_historical_data(
-                    cache_data_loaded, "historical_prices", symbols_yf
+            if manifest_ok:  # Manifest key matched and all symbols loaded
+                historical_prices_yf_adjusted = loaded_data
+                cache_is_valid_and_complete = True
+                logging.info(
+                    f"Hist Prices: Successfully loaded all {len(symbols_yf)} price series from individual cache files via manifest."
+                )
+            else:  # Manifest key mismatch, or not all symbols found/loaded
+                historical_prices_yf_adjusted = (
+                    loaded_data  # Use partially loaded data if any
                 )
                 logging.info(
-                    f"Hist Prices: Loaded {len(historical_prices_yf_adjusted)} price series from cache for {len(symbols_yf)} requested symbols."
+                    f"Hist Prices: Manifest not fully valid or cache incomplete. Loaded {len(loaded_data)} symbols. Will fetch missing."
                 )
-                # Check if all requested symbols were actually loaded from cache
-                if not all(s in historical_prices_yf_adjusted for s in symbols_yf):
-                    logging.warning(
-                        "Hist Prices Cache: Price cache valid but seems incomplete based on initial symbol list. Will verify and fetch missing if needed."
-                    )
-                    cache_valid_raw = False  # Mark as invalid to trigger fetch
-            elif cache_data_loaded is None and cache_valid_raw is False:
-                # This case is already logged by _load_historical_cache
-                pass
-            elif cache_valid_raw is True and cache_data_loaded is None:
-                logging.error(
-                    "Hist Prices Cache: Logic error - cache marked valid but no data loaded."
-                )
-                cache_valid_raw = False  # Treat as invalid
-            else:  # Cache was not valid
-                logging.info(
-                    "Hist Prices: Cache not valid or not used. Will proceed to fetch logic."
-                )
+        else:
+            logging.info(
+                "Hist Prices: Cache not used or cache_key not provided. Will fetch all."
+            )
 
         # --- 2. Fetch Missing Data if Cache Invalid/Incomplete ---
-        if not cache_valid_raw:
+        if not cache_is_valid_and_complete:
             logging.info("Hist Prices: Fetching required data...")
             symbols_needing_fetch = [
                 s
@@ -1181,7 +1339,7 @@ class MarketDataProvider:
 
             if (
                 symbols_needing_fetch
-            ):  # This block will run if cache_valid_raw is False OR if symbols_needing_fetch is non-empty
+            ):  # Only fetch if there are symbols actually needing it
                 logging.info(
                     f"Hist Prices: Fetching {len(symbols_needing_fetch)} stock/benchmark symbols..."
                 )
@@ -1211,23 +1369,33 @@ class MarketDataProvider:
                 # Don't mark fetch_failed=True here, let caller decide if missing stock is critical
 
             # --- 3. Update Cache if Fetch Occurred and Cache Enabled ---
-            if use_cache and cache_file and cache_key and symbols_needing_fetch:
-                # Prepare data for saving (only prices for this method)
-                prices_to_cache = {
-                    symbol: df.to_json(orient="split", date_format="iso")
-                    for symbol, df in historical_prices_yf_adjusted.items()
-                    if not df.empty
-                }
-                # If cache was loaded partially, merge existing FX data
-                existing_fx_data = {}
-                if cache_data_loaded:
-                    existing_fx_data = cache_data_loaded.get("historical_fx_rates", {})
+            if (
+                use_cache and cache_key
+            ):  # Always try to save if cache is enabled and key exists
+                # We need to load existing FX data from manifest if we are to preserve it
+                # For simplicity now, if we fetched prices, we assume FX might also be refetched by its own call.
+                # A more robust solution would merge, but let's keep it focused.
+                # If this call is ONLY for prices, we can load the FX part of the manifest to preserve it.
+                existing_fx_from_manifest = {}
+                if os.path.exists(manifest_path):
+                    try:
+                        with open(manifest_path, "r") as f_m:
+                            m_data = json.load(f_m)
+                            if (
+                                m_data.get("cache_key") == cache_key
+                            ):  # Only use if key matches
+                                existing_fx_from_manifest = m_data.get(
+                                    "historical_fx_rates", {}
+                                )
+                    except:
+                        pass
 
-                data_to_save = {
-                    "historical_prices": prices_to_cache,
-                    "historical_fx_rates": existing_fx_data,  # Preserve existing FX
-                }
-                self._save_historical_cache(cache_file, cache_key, data_to_save)
+                self._save_historical_data_and_manifest(
+                    cache_key_to_save=cache_key,
+                    data_to_save_map=historical_prices_yf_adjusted,  # Save all currently held price data
+                    data_type="price",
+                    existing_other_type_data_from_manifest=existing_fx_from_manifest,
+                )
 
         # --- 4. Final Check and Return ---
         # Check if any requested symbol is still missing
@@ -1246,20 +1414,21 @@ class MarketDataProvider:
             fetch_failed,
         )  # fetch_failed is currently always False here
 
+    @profile
     def get_historical_fx_rates(
         self,
         fx_pairs_yf: List[str],  # e.g., ['EUR=X', 'JPY=X']
         start_date: date,
         end_date: date,
         use_cache: bool = True,
-        cache_key: Optional[str] = None,  # Key for validation
-        cache_file: Optional[str] = None,  # Specific file path
+        cache_key: Optional[str] = None,  # Key for validation (used for manifest)
+        cache_file: Optional[
+            str
+        ] = None,  # Not directly used for path, for API consistency
     ) -> Tuple[Dict[str, pd.DataFrame], bool]:
         """Loads/fetches historical FX rates (vs USD) using cache.
 
-        If cache_file is not provided or is relative, it constructs a default path
-        in the standard user cache directory using self.hist_raw_cache_basename.
-        Example default path: ~/Library/Caches/Investa/yf_portfolio_hist_raw_adjusted_YYYY-MM-DD_YYYY-MM-DD.json
+        Uses a directory-based cache with a manifest file.
         (Note: FX data is often stored in the same raw data cache file as prices).
 
         Args:
@@ -1267,8 +1436,8 @@ class MarketDataProvider:
             start_date (date): Start date for historical data.
             end_date (date): End date for historical data.
             use_cache (bool): Flag to enable reading/writing the raw data cache.
-            cache_file (str): Path to the raw historical data cache file.
-            cache_key (str): Cache validation key generated by `_prepare_historical_inputs`.
+            cache_key (str): Cache validation key for the manifest.
+            cache_file (str, optional): Not directly used for path, for API consistency.
 
         Returns:
             Tuple containing:
@@ -1277,121 +1446,94 @@ class MarketDataProvider:
             - fetch_failed (bool): True if fetching/loading ANY required FX rate failed.
         """
         historical_fx_yf: Dict[str, pd.DataFrame] = {}
-        cache_valid_initially = False  # Flag for initial key match
-        fetch_occurred = False  # Flag if we actually fetched new data
+        cache_is_valid_and_complete = False
         fetch_failed = False
-        cache_data_loaded = None
-        fx_needing_fetch = []  # Initialize list of pairs to fetch
-
-        # --- Construct cache_file path if not absolute (same logic as get_historical_data) ---
-        if not cache_file or not os.path.isabs(cache_file):
-            cache_dir_base = QStandardPaths.writableLocation(
-                QStandardPaths.CacheLocation
-            )
-            if cache_dir_base:
-                app_cache_dir = cache_dir_base  # Use the path directly
-                os.makedirs(app_cache_dir, exist_ok=True)
-                cache_file = os.path.join(
-                    app_cache_dir,
-                    f"{self.hist_raw_cache_basename}_{start_date.isoformat()}_{end_date.isoformat()}.json",
-                )
-            else:  # Fallback
-                cache_file = f"{self.hist_raw_cache_basename}_{start_date.isoformat()}_{end_date.isoformat()}.json"
-            logging.info(f"Hist FX: Using constructed cache file path: {cache_file}")
+        manifest_path = self._get_historical_manifest_path()  # For logging
 
         # --- 1. Try Loading Cache ---
-        if use_cache and cache_file and cache_key:
-            cache_data_loaded, cache_valid_initially = self._load_historical_cache(
-                cache_file, cache_key
+        if use_cache and cache_key:
+            loaded_data, manifest_ok = self._load_historical_manifest_and_data(
+                expected_cache_key=cache_key,
+                symbols_to_load=fx_pairs_yf,
+                data_type="fx",
             )
-            if cache_valid_initially and cache_data_loaded:
-                logging.info("Hist FX: Cache key matched. Deserializing FX data...")
-                historical_fx_yf = self._deserialize_historical_data(
-                    cache_data_loaded, "historical_fx_rates", fx_pairs_yf
-                )
-                # --- MODIFICATION START: Check completeness immediately after load ---
-                fx_needing_fetch = [
-                    p
-                    for p in fx_pairs_yf  # Check against all originally requested pairs
-                    if p not in historical_fx_yf or historical_fx_yf[p].empty
-                ]
-                if fx_needing_fetch:
-                    logging.info(  # Changed from warning to info
-                        f"Hist FX Cache: Cache valid but incomplete for originally requested pairs. Missing/empty: {fx_needing_fetch}. Will attempt to fetch these."
-                    )
-                    # Keep cache_valid_initially=True, but fx_needing_fetch will trigger fetch below
-                else:
-                    logging.info(
-                        "Hist FX Cache: All required FX pairs found in valid cache."
-                    )
-                # --- MODIFICATION END ---
-            elif cache_data_loaded is None and not cache_valid_initially:
-                # This case is already logged by _load_historical_cache
-                fx_needing_fetch = list(fx_pairs_yf)  # Need to fetch all
-            elif cache_valid_initially and cache_data_loaded is None:
-                logging.error(
-                    "Hist FX Cache: Logic error - cache marked valid but no data loaded."
-                )
-                fx_needing_fetch = list(fx_pairs_yf)  # Need to fetch all
-            else:  # Cache was not valid (e.g. key mismatch)
+            if manifest_ok:  # Manifest key matched and all symbols loaded
+                historical_fx_yf = loaded_data
+                cache_is_valid_and_complete = True
                 logging.info(
-                    "Hist FX: Cache not valid. Will fetch all required FX pairs."
+                    f"Hist FX: Successfully loaded all {len(fx_pairs_yf)} FX series from individual cache files via manifest."
                 )
-                fx_needing_fetch = list(fx_pairs_yf)  # Need to fetch all
-
-        else:  # Cache disabled or file/key invalid
+            else:  # Manifest key mismatch, or not all symbols found/loaded
+                historical_fx_yf = loaded_data  # Use partially loaded data if any
+                logging.info(
+                    f"Hist FX: Manifest not fully valid or cache incomplete. Loaded {len(loaded_data)} FX series. Will fetch missing."
+                )
+        else:
             logging.info(
-                "Hist FX Cache: Cache disabled or file/key not provided. Will fetch all."
+                "Hist FX: Cache not used or cache_key not provided. Will fetch all."
             )
-            fx_needing_fetch = list(fx_pairs_yf)  # Need to fetch all
 
         # --- 2. Fetch Missing Data if Needed ---
-        # --- MODIFICATION: Trigger fetch if cache was initially invalid OR if pairs are missing ---
-        if fx_needing_fetch:
-            logging.info(
-                f"Hist FX: Fetching {len(fx_needing_fetch)} required FX pairs..."
-            )
-            fetch_occurred = True  # Mark that we are attempting a fetch
-            fetched_fx_data = self._fetch_yf_historical_data(
-                fx_needing_fetch, start_date, end_date
-            )
-            historical_fx_yf.update(fetched_fx_data)  # Update dict with fetched data
-            logging.info(
-                f"Hist FX: Fetch completed. Total FX series in memory now: {len(historical_fx_yf)}."
-            )
-
-            # --- Validation after fetch ---
-            final_fx_missing_after_fetch = [
-                p
-                for p in fx_needing_fetch  # Only check pairs we tried to fetch
-                if p not in historical_fx_yf or historical_fx_yf[p].empty
+        if not cache_is_valid_and_complete:
+            fx_needing_fetch = [
+                s
+                for s in fx_pairs_yf
+                if s not in historical_fx_yf or historical_fx_yf[s].empty
             ]
-            if final_fx_missing_after_fetch:
-                logging.error(  # Log as error because fetch failed for required pairs
-                    f"Hist FX ERROR: Failed to fetch required FX rates for: {', '.join(final_fx_missing_after_fetch)}"
+            if fx_needing_fetch:  # Only fetch if there are symbols actually needing it
+                logging.info(
+                    f"Hist FX: Fetching {len(fx_needing_fetch)} required FX pairs..."
                 )
-                fetch_failed = True  # Missing ANY required FX is critical
-        else:
-            logging.info("Hist FX: No FX pairs needed fetching.")
+                fetched_fx_data = self._fetch_yf_historical_data(
+                    fx_needing_fetch, start_date, end_date
+                )
+                historical_fx_yf.update(
+                    fetched_fx_data
+                )  # Update dict with fetched data
+                logging.info(
+                    f"Hist FX: Fetch completed. Total FX series in memory now: {len(historical_fx_yf)}."
+                )
 
-        # --- 3. Update Cache if Fetch Occurred and Cache Enabled ---
-        if fetch_occurred and use_cache and cache_file and cache_key:
-            # Prepare data for saving (only FX for this method)
-            fx_to_cache = {
-                pair: df.to_json(orient="split", date_format="iso")
-                for pair, df in historical_fx_yf.items()
-                if not df.empty
-            }
-            # If cache was loaded partially, merge existing price data
-            existing_price_data = {}
-            if cache_data_loaded:
-                existing_price_data = cache_data_loaded.get("historical_prices", {})
+                # --- Validation after fetch ---
+                final_fx_missing_after_fetch = [
+                    p
+                    for p in fx_needing_fetch  # Only check pairs we tried to fetch
+                    if p not in historical_fx_yf or historical_fx_yf[p].empty
+                ]
+                if final_fx_missing_after_fetch:
+                    logging.error(  # Log as error because fetch failed for required pairs
+                        f"Hist FX ERROR: Failed to fetch required FX rates for: {', '.join(final_fx_missing_after_fetch)}"
+                    )
+                    fetch_failed = True  # Missing ANY required FX is critical
+            else:
+                logging.info(
+                    "Hist FX: No FX pairs needed fetching (all were present or cache was complete)."
+                )
 
-            data_to_save = {
-                "historical_prices": existing_price_data,  # Preserve existing prices
-                "historical_fx_rates": fx_to_cache,
-            }
-            self._save_historical_cache(cache_file, cache_key, data_to_save)
+            # --- 3. Update Cache if Fetch Occurred (or if cache was incomplete) and Cache Enabled ---
+            if (
+                use_cache and cache_key
+            ):  # Always try to save if cache is enabled and key exists
+                existing_prices_from_manifest = {}
+                if os.path.exists(manifest_path):
+                    try:
+                        with open(manifest_path, "r") as f_m:
+                            m_data = json.load(f_m)
+                            if (
+                                m_data.get("cache_key") == cache_key
+                            ):  # Only use if key matches
+                                existing_prices_from_manifest = m_data.get(
+                                    "historical_prices", {}
+                                )
+                    except:
+                        pass
+
+                self._save_historical_data_and_manifest(
+                    cache_key_to_save=cache_key,
+                    data_to_save_map=historical_fx_yf,  # Save all currently held FX data
+                    data_type="fx",
+                    existing_other_type_data_from_manifest=existing_prices_from_manifest,
+                )
 
         # --- 4. Final Check and Return ---
         # Check again if critical data is missing (redundant if fetch_failed already True, but safe)
@@ -1407,10 +1549,11 @@ class MarketDataProvider:
 
         return historical_fx_yf, fetch_failed
 
+    @profile
     def get_fundamental_data(self, yf_symbol: str) -> Optional[Dict[str, Any]]:
         """
         Fetches fundamental data (ticker.info) for a given Yahoo Finance symbol.
-        Uses a JSON file-based cache.
+        Uses a directory of JSON files for caching (one file per symbol).
 
         Args:
             yf_symbol (str): The Yahoo Finance ticker symbol (e.g., "AAPL").
@@ -1422,24 +1565,31 @@ class MarketDataProvider:
         if not YFINANCE_AVAILABLE:
             logging.error("yfinance not available. Cannot fetch fundamental data.")
             return None
-        if not yf_symbol or not isinstance(yf_symbol, str):
+        if not yf_symbol or not isinstance(yf_symbol, str) or not yf_symbol.strip():
             logging.warning(f"Invalid yf_symbol provided for fundamentals: {yf_symbol}")
             return None
 
-        logging.info(f"Requesting fundamental data for YF symbol: {yf_symbol}")
+        logging.debug(f"Requesting fundamental data for YF symbol: {yf_symbol}")
 
-        # --- Caching Logic ---
-        # Cache key is just the symbol for fundamentals
-        # The cache file stores a dictionary: { "symbol1": {"timestamp": "...", "data": {...}}, ... }
+        # --- Construct cache file path for this specific symbol ---
+        # Ensure the cache directory exists (already done in __init__, but safe to repeat)
+        os.makedirs(self.fundamentals_cache_dir, exist_ok=True)
+        # Create the file path for this symbol's data
+        symbol_cache_file = os.path.join(
+            self.fundamentals_cache_dir, f"{yf_symbol}.json"
+        )
+
+        # --- Caching Logic (per symbol file) ---
         cached_data = None
-        cache_valid = False
+        cache_valid = False  # Flag for the *specific symbol's file*
 
-        if os.path.exists(self.fundamentals_cache_file):
+        if os.path.exists(symbol_cache_file):
             try:
-                with open(self.fundamentals_cache_file, "r", encoding="utf-8") as f:
-                    full_cache_content = json.load(f)
+                # MODIFIED: Load only the specific symbol's cache file
+                with open(symbol_cache_file, "r", encoding="utf-8") as f:
+                    symbol_cache_entry = json.load(f)
 
-                symbol_cache_entry = full_cache_content.get(yf_symbol)
+                # Check timestamp within the loaded entry
                 if symbol_cache_entry and isinstance(symbol_cache_entry, dict):
                     cache_timestamp_str = symbol_cache_entry.get("timestamp")
                     if cache_timestamp_str:
@@ -1452,23 +1602,29 @@ class MarketDataProvider:
                                 cached_data is not None
                             ):  # Could be an empty dict if that was cached
                                 cache_valid = True
-                                logging.info(
-                                    f"Using valid fundamentals cache for {yf_symbol}."
+                                logging.debug(
+                                    f"Using valid fundamentals cache for {yf_symbol} from file: {symbol_cache_file}"
                                 )
                         else:
-                            logging.info(f"Fundamentals cache expired for {yf_symbol}.")
+                            logging.info(
+                                f"Fundamentals cache expired for {yf_symbol} (file: {symbol_cache_file})."
+                            )
                     else:
                         logging.warning(
-                            f"Fundamentals cache for {yf_symbol} missing timestamp."
+                            f"Fundamentals cache file for {yf_symbol} missing timestamp: {symbol_cache_file}"
                         )
             except (json.JSONDecodeError, IOError, Exception) as e:
-                logging.warning(f"Error reading fundamentals cache: {e}. Will refetch.")
+                logging.warning(
+                    f"Error reading fundamentals cache file '{symbol_cache_file}': {e}. Will refetch."
+                )
 
         if cache_valid and cached_data is not None:
             return cached_data
 
         # --- Fetching Logic ---
-        logging.info(f"Fetching fresh fundamental data for {yf_symbol}...")
+        logging.info(
+            f"Fetching fresh fundamental data for {yf_symbol} (cache miss/stale)..."
+        )
         try:
             ticker = yf.Ticker(yf_symbol)
             data = ticker.info  # This is the main call
@@ -1480,31 +1636,25 @@ class MarketDataProvider:
                     {}
                 )  # Store empty dict to avoid refetching invalid symbol immediately
 
-            # Save to cache
+            # Save to cache (only this symbol's file)
             try:
-                full_cache_content = {}
-                if os.path.exists(
-                    self.fundamentals_cache_file
-                ):  # Load existing to update
-                    with open(
-                        self.fundamentals_cache_file, "r", encoding="utf-8"
-                    ) as f_read:
-                        full_cache_content = json.load(f_read)
-
-                full_cache_content[yf_symbol] = {
+                # MODIFIED: Save only the specific symbol's data to its file
+                symbol_cache_content = {
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "data": data,
                 }
-                with open(
-                    self.fundamentals_cache_file, "w", encoding="utf-8"
-                ) as f_write:
+                # Ensure the directory exists before writing (redundant but safe)
+                os.makedirs(self.fundamentals_cache_dir, exist_ok=True)
+                with open(symbol_cache_file, "w", encoding="utf-8") as f_write:
                     json.dump(
-                        full_cache_content, f_write, indent=2, cls=NpEncoder
+                        symbol_cache_content, f_write, indent=2, cls=NpEncoder
                     )  # Use NpEncoder for numpy types
-                logging.info(f"Saved fundamentals for {yf_symbol} to cache.")
+                logging.debug(
+                    f"Saved fundamentals for {yf_symbol} to cache file: {symbol_cache_file}"
+                )
             except Exception as e_cache_write:
                 logging.warning(
-                    f"Failed to write fundamentals cache for {yf_symbol}: {e_cache_write}"
+                    f"Failed to write fundamentals cache file for {yf_symbol} ('{symbol_cache_file}'): {e_cache_write}"
                 )
             return data
         except Exception as e_fetch:

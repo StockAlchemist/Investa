@@ -157,6 +157,7 @@ except ImportError:
 
 # --- Main Calculation Function (Current Portfolio Summary) ---
 # --- This function now orchestrates calls to portfolio_analyzer.py ---
+@profile
 def calculate_portfolio_summary(
     transactions_csv_file: str,
     fmp_api_key: Optional[str] = None,  # Unused
@@ -787,6 +788,7 @@ def calculate_portfolio_summary(
 
 
 # --- Function to Unadjust Prices (Keep as is) ---
+@profile
 def _unadjust_prices(
     adjusted_prices_yf: Dict[str, pd.DataFrame],
     yf_to_internal_map: Dict[str, str],
@@ -2010,6 +2012,7 @@ def _calculate_portfolio_value_at_date_unadjusted(
         )
 
 
+@profile
 def _calculate_daily_metrics_worker(
     eval_date: date,
     transactions_df: pd.DataFrame,
@@ -2197,6 +2200,7 @@ def _calculate_daily_metrics_worker(
 
 
 # --- Historical Input Preparation (Keep as is) ---
+@profile
 def _prepare_historical_inputs(
     transactions_csv_file: str,
     account_currency_map: Dict,
@@ -2210,6 +2214,7 @@ def _prepare_historical_inputs(
     current_hist_version: str = "v10",
     raw_cache_prefix: str = HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
     daily_cache_prefix: str = DAILY_RESULTS_CACHE_PATH_PREFIX,
+    preloaded_transactions_df: Optional[pd.DataFrame] = None,  # <-- ADD NEW PARAMETER
 ) -> Tuple[
     Optional[pd.DataFrame],
     Optional[pd.DataFrame],
@@ -2510,6 +2515,7 @@ def _prepare_historical_inputs(
 
 
 # --- Daily Results Calculation (Keep as is) ---
+@profile
 def _load_or_calculate_daily_results(
     use_daily_results_cache: bool,
     daily_results_cache_file: Optional[str],
@@ -3276,6 +3282,7 @@ def _calculate_accumulated_gains_and_resample(
     return final_df_output, final_twr_factor, status_update
 
 
+@profile
 def calculate_historical_performance(
     transactions_csv_file: str,
     start_date: date,
@@ -3291,6 +3298,7 @@ def calculate_historical_performance(
     include_accounts: Optional[List[str]] = None,
     worker_signals: Optional[Any] = None,  # <-- ADDED: Accept signals object
     exclude_accounts: Optional[List[str]] = None,
+    all_transactions_df_cleaned: Optional[pd.DataFrame] = None,  # <-- ADD NEW PARAMETER
 ) -> Tuple[
     pd.DataFrame, Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], str
 ]:  # MODIFIED RETURN SIG (4 items)
@@ -3386,6 +3394,7 @@ def calculate_historical_performance(
         current_hist_version=CURRENT_HIST_VERSION,
         raw_cache_prefix=HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
         daily_cache_prefix=DAILY_RESULTS_CACHE_PATH_PREFIX,
+        preloaded_transactions_df=all_transactions_df_cleaned,  # <-- PASS IT HERE
     )
     (
         transactions_df_effective,  # <-- DEFINED HERE
@@ -3436,7 +3445,7 @@ def calculate_historical_performance(
 
     # --- 2. Instantiate MarketDataProvider ---
     market_provider = MarketDataProvider(
-        hist_raw_cache_basename=HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX  # Pass basename as expected
+        hist_data_cache_dir_name="historical_data_cache",  # Use new argument name and default dir name
     )
 
     # --- 3. Load or Fetch ADJUSTED Historical Raw Data using Provider ---

@@ -52,6 +52,18 @@ if project_root not in sys.path:
 # --- End Path Addition ---
 
 from datetime import datetime, date, timedelta
+
+# --- ADDED: Import line_profiler if available, otherwise create dummy decorator ---
+try:
+    from line_profiler import profile
+except ImportError:
+
+    def profile(func):
+        return func  # No-op decorator if line_profiler not installed
+
+
+# --- END ADDED ---
+
 from typing import Dict, Any, Optional, List, Tuple, Set  # Added Set
 import logging
 
@@ -355,8 +367,10 @@ APP_NAME_FOR_QT = "Investa"  # Define your application name for Qt settings
 # DEFAULT_API_KEY = os.getenv("FMP_API_KEY")  # Optional API key from environment
 DEFAULT_API_KEY = ""
 # CONFIG_FILE = resource_path("gui_config.json")  # Configuration file name
-CHART_MAX_SLICES = 10  # Max slices before grouping into 'Other' in pie charts
-PIE_CHART_FIG_SIZE = (5.0, 2.5)  # Figure size for pie charts
+CHART_MAX_SLICES = (
+    10  # Max slices before grouping into 'Other' in pie charts # type: ignore
+)
+PIE_CHART_FIG_SIZE = (6.5, 3.25)  # Figure size for pie charts - Increased size
 PERF_CHART_FIG_SIZE = (7.5, 3.0)  # Figure size for performance graphs
 CHART_DPI = 95  # Dots per inch for charts
 INDICES_FOR_HEADER = [".DJI", "IXIC", ".INX"]
@@ -669,6 +683,9 @@ class PortfolioCalculatorWorker(QRunnable):
                 current_historical_kwargs["worker_signals"] = (
                     self.signals
                 )  # <-- PASS SIGNALS DOWN
+                current_historical_kwargs["all_transactions_df_cleaned"] = (
+                    self.portfolio_kwargs.get("all_transactions_df_for_worker")
+                )  # <-- PASS THE PRELOADED DF
 
                 # MODIFIED: Unpack 4 items (full_daily_df, prices, fx, status)
                 full_hist_df, h_prices_adj, h_fx, hist_status = self.historical_fn(
@@ -2569,7 +2586,7 @@ class ManualPriceDialog(QDialog):
         super().__init__(parent)
         self._parent_app = parent
         self.setWindowTitle("Manual Overrides")  # Renamed title
-        self.setMinimumSize(700, 500)  # Increased size for more columns
+        self.setMinimumSize(800, 500)  # Increased width from 700 to 800
 
         # Store original values and prepare for updates
         # Ensure keys are uppercase for consistency
@@ -2677,7 +2694,9 @@ class ManualPriceDialog(QDialog):
             self.table_widget.setItem(row_idx, 0, item_symbol)
 
             # Price Item (Editable with Validation)
-            price_str = f"{price:.8f}" if price is not None and pd.notna(price) else ""
+            price_str = (
+                f"{price:.4f}" if price is not None and pd.notna(price) else ""
+            )  # Changed to .4f
             item_price = QTableWidgetItem(price_str)
             self.table_widget.setItem(row_idx, 1, item_price)
 
@@ -2712,7 +2731,7 @@ class ManualPriceDialog(QDialog):
                 item.setToolTip("")
                 # Optional: Format the valid number back into the cell
                 try:
-                    item.setText(f"{float(text):.8f}")
+                    item.setText(f"{float(text):.4f}")  # Changed to .4f
                 except ValueError:
                     pass  # Should not happen if Acceptable
         elif item.column() == 0:  # Symbol column (basic validation)
@@ -4992,6 +5011,11 @@ The CSV file should contain the following columns (header names must match exact
                             entry["geography"] = str(
                                 value_dict.get("geography", "")
                             ).strip()
+                            entry["industry"] = (
+                                str(  # <-- ADDED: Load industry from JSON
+                                    value_dict.get("industry", "")
+                                ).strip()
+                            )
 
                             valid_data[key.upper().strip()] = entry
                         else:
@@ -6323,6 +6347,7 @@ The CSV file should contain the following columns (header names must match exact
         self.status_bar.addPermanentWidget(self.exchange_rate_display_label)  # RESTORED
 
     @Slot()
+    @profile
     def refresh_data(self):
         """
         Initiates the background calculation process via the worker thread.
@@ -9265,6 +9290,7 @@ The CSV file should contain the following columns (header names must match exact
         self._update_dividend_bar_chart()  # Clear dividend chart
         self._update_dividend_table()  # Clear dividend table
 
+    @profile
     def _update_transaction_log_tables_content(self):
         """Populates the stock and cash transaction log tables using self.original_data."""
         logging.debug("Updating transaction log tables...")
@@ -9282,18 +9308,29 @@ The CSV file should contain the following columns (header names must match exact
             return
 
         # Ensure required columns exist in original_data
-        symbol_col_name = "Stock / ETF Symbol"  # This is the original CSV header name
-        date_col_name_original = "Date (MMM DD, YYYY)"  # Original CSV date column name
-
-        required_orig_cols = [symbol_col_name, date_col_name_original]
-        if not all(col in self.original_data.columns for col in required_orig_cols):
-            missing = [
-                col
-                for col in required_orig_cols
-                if col not in self.original_data.columns
-            ]
+        # Determine which set of column names to use
+        # Prioritize original CSV headers if they exist
+        if "Stock / ETF Symbol" in self.original_data.columns:
+            symbol_col_name_to_use = "Stock / ETF Symbol"
+        elif "Symbol" in self.original_data.columns:
+            symbol_col_name_to_use = "Symbol"
+        else:
             logging.error(
-                f"Missing required column(s) {missing} in original_data. Cannot populate transaction logs."
+                "Missing 'Stock / ETF Symbol' or 'Symbol' column in original_data. Cannot populate transaction logs."
+            )
+            self.stock_transactions_table_model.updateData(pd.DataFrame())
+            self.cash_transactions_table_model.updateData(pd.DataFrame())
+            return
+
+        if "Date (MMM DD, YYYY)" in self.original_data.columns:
+            date_col_name_to_use_for_sort = "Date (MMM DD, YYYY)"
+        elif "Date" in self.original_data.columns:
+            date_col_name_to_use_for_sort = (
+                "Date"  # This will be a datetime object if from cleaned data
+            )
+        else:
+            logging.error(
+                "Missing 'Date (MMM DD, YYYY)' or 'Date' column in original_data. Cannot populate transaction logs or sort."
             )
             self.stock_transactions_table_model.updateData(pd.DataFrame())
             self.cash_transactions_table_model.updateData(pd.DataFrame())
@@ -9302,36 +9339,48 @@ The CSV file should contain the following columns (header names must match exact
         # Get the column index for the date column in the DataFrame passed to the model
         # The DataFrames passed to updateData are slices of self.original_data,
         # so they retain the original column order and names.
-        try:
-            date_col_index = self.original_data.columns.get_loc(date_col_name_original)
-        except KeyError:
-            logging.error(
-                f"Could not find column index for '{date_col_name_original}'. Cannot apply default sort."
-            )
-            # Proceed without sorting if index lookup fails
-            self.stock_transactions_table_model.updateData(pd.DataFrame())
-            self.cash_transactions_table_model.updateData(pd.DataFrame())
-            return
 
         # Filter for stock transactions (anything not $CASH)
         stock_tx_df = self.original_data[
-            self.original_data[symbol_col_name] != CASH_SYMBOL_CSV
+            self.original_data[symbol_col_name_to_use] != CASH_SYMBOL_CSV
         ].copy()
         # Filter for cash transactions
         cash_tx_df = self.original_data[
-            self.original_data[symbol_col_name] == CASH_SYMBOL_CSV
+            self.original_data[symbol_col_name_to_use] == CASH_SYMBOL_CSV
         ].copy()
 
         self.stock_transactions_table_model.updateData(stock_tx_df)
         self.cash_transactions_table_model.updateData(cash_tx_df)
 
         # --- ADDED: Apply default sort by Date (Descending) ---
-        self.stock_transactions_table_view.sortByColumn(
-            date_col_index, Qt.DescendingOrder
-        )
-        self.cash_transactions_table_view.sortByColumn(
-            date_col_index, Qt.DescendingOrder
-        )
+        # So, we find the index of `date_col_name_to_use_for_sort` in the respective DataFrames.
+        try:
+            if (
+                not stock_tx_df.empty
+                and date_col_name_to_use_for_sort in stock_tx_df.columns
+            ):
+                stock_date_col_idx = stock_tx_df.columns.get_loc(
+                    date_col_name_to_use_for_sort
+                )
+                self.stock_transactions_table_view.sortByColumn(
+                    stock_date_col_idx, Qt.DescendingOrder
+                )
+            if (
+                not cash_tx_df.empty
+                and date_col_name_to_use_for_sort in cash_tx_df.columns
+            ):
+                cash_date_col_idx = cash_tx_df.columns.get_loc(
+                    date_col_name_to_use_for_sort
+                )
+                self.cash_transactions_table_view.sortByColumn(
+                    cash_date_col_idx, Qt.DescendingOrder
+                )
+        except KeyError:
+            logging.error(
+                f"Could not find column index for '{date_col_name_to_use_for_sort}' in log tables. Cannot apply default sort."
+            )
+        except Exception as e_sort:
+            logging.error(f"Error during log table sort: {e_sort}")
         # --- END ADDED ---
 
         self.stock_transactions_table_view.resizeColumnsToContents()
@@ -9544,8 +9593,8 @@ The CSV file should contain the following columns (header names must match exact
                 wedges,
                 legend_labels,
                 title="Asset Types",
-                loc="center left",
-                bbox_to_anchor=(0.95, 0, 0.5, 1),
+                loc="upper right",  # Changed from center left
+                bbox_to_anchor=(2.38, 1.1),  # Adjusted anchor for top-right
                 fontsize=8,
             )
 
@@ -9649,8 +9698,8 @@ The CSV file should contain the following columns (header names must match exact
                     wedges_s,
                     legend_labels_s,
                     title="Sectors",
-                    loc="center left",
-                    bbox_to_anchor=(0.95, 0, 0.5, 1),
+                    loc="upper right",  # Changed
+                    bbox_to_anchor=(2.38, 1.1),  # Adjusted
                     fontsize=8,
                 )
 
@@ -9761,8 +9810,8 @@ The CSV file should contain the following columns (header names must match exact
                     wedges_g,
                     legend_labels_g,
                     title="Geography",
-                    loc="center left",
-                    bbox_to_anchor=(0.95, 0, 0.5, 1),
+                    loc="upper right",  # Changed
+                    bbox_to_anchor=(2.38, 1.1),  # Adjusted
                     fontsize=8,
                 )
 
@@ -9878,8 +9927,8 @@ The CSV file should contain the following columns (header names must match exact
                     wedges_i,
                     legend_labels_i,
                     title="Industry",
-                    loc="center left",
-                    bbox_to_anchor=(0.95, 0, 0.5, 1),
+                    loc="upper right",  # Changed
+                    bbox_to_anchor=(2.38, 1.1),  # Adjusted
                     fontsize=8,
                 )
 
@@ -10243,6 +10292,7 @@ The CSV file should contain the following columns (header names must match exact
         self.setCursor(Qt.WaitCursor if not enabled else Qt.ArrowCursor)
 
     # --- Signal Handlers from Worker ---
+    @profile
     @Slot(  # MODIFIED: Signature matches WorkerSignals.result (10 args)
         dict,
         pd.DataFrame,
