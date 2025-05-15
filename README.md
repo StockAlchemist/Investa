@@ -42,10 +42,9 @@ For a step-by-step guide on how to set up and use Investa, please see our detail
 
 ## Screenshots
 
-![Main Dashboard View](screenshots/main_dashboard.png)
-<!--[Transaction Management Dialog](screenshots/transaction_management.png)
-![Fundamental Data Viewer](screenshots/fundamental_data_viewer.png)
-![New Transactions File Dialog](screenshots/add_new_transactions.png)]-->
+![Main Dashboard View](screenshots/Investa_screen_1.png)
+![Transaction Log](screenshots/Investa_screen_2.png)
+![Asset Allocation](screenshots/Investa_screen_3.png)
 
 ## Technology Stack
 
