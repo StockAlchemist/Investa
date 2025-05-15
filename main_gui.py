@@ -2024,7 +2024,10 @@ class ManageTransactionsDialog(QDialog):
         self.table_view = QTableView()
         self.table_view.setObjectName("ManageTransactionsTable")
         # Use the original data with original column names
-        self.table_model = PandasModel(self._original_data, parent=parent)
+        # MODIFIED: Use a copy and log_mode=True for general display
+        self.table_model = PandasModel(
+            self._original_data.copy(), parent=parent, log_mode=True
+        )
         self.table_view.setModel(self.table_model)
 
         self.table_view.setSelectionBehavior(QTableView.SelectRows)
@@ -2120,6 +2123,7 @@ class ManageTransactionsDialog(QDialog):
                     f"'{original_index_col_name}' column not found in the ManageTransactionsDialog model's data."
                 )
                 QMessageBox.warning(
+                    # MODIFIED: Use self as parent for QMessageBox
                     self,
                     "Internal Error",
                     f"Required column '{original_index_col_name}' is missing.",
@@ -2181,6 +2185,22 @@ class ManageTransactionsDialog(QDialog):
             )
             return None
 
+    def _format_for_edit_dialog(self, value, precision=8) -> str:
+        """Helper to format numeric values from CSV for QLineEdit display."""
+        if pd.isna(value) or value == "":
+            return ""
+        try:
+            float_val = float(value)
+            # Format with desired precision, remove trailing zeros/decimal if integer
+            # e.g., 10.00 -> "10", 10.50 -> "10.5"
+            formatted_str = f"{float_val:.{precision}f}".rstrip("0").rstrip(".")
+            return (
+                formatted_str if formatted_str else "0"
+            )  # Return "0" if it became empty (e.g. "0.00" -> "0")
+        except (ValueError, TypeError):
+            # If it's not a number (e.g. already a string like '$CASH' or malformed), return as is
+            return str(value)
+
     @Slot()
     def edit_selected_transaction(self):
         original_index = self.get_selected_original_index()
@@ -2214,82 +2234,157 @@ class ManageTransactionsDialog(QDialog):
 
         # --- Pre-fill the dialog ---
         try:
+            logging.debug(f"--- Starting Pre-fill for Edit Dialog ---")
+            logging.debug(
+                f"Pre-filling edit dialog with data: {transaction_dict_for_dialog}"
+            )
+            logging.debug(f"CSV_DATE_FORMAT constant is: '{CSV_DATE_FORMAT}'")
+
             # Date
-            date_str = transaction_dict_for_dialog.get("Date (MMM DD, YYYY)")
-            if date_str:
+            date_val_from_dict = transaction_dict_for_dialog.get(
+                "Date"
+            )  # Use internal name 'Date'
+            logging.debug(
+                f"  Date from dict: '{date_val_from_dict}' (type: {type(date_val_from_dict)})"
+            )
+            if pd.notna(date_val_from_dict) and isinstance(
+                date_val_from_dict, pd.Timestamp
+            ):
                 # Try parsing with the specific CSV format first
-                qdate = QDate()
-                parsed_dt = datetime.strptime(date_str, CSV_DATE_FORMAT)
-                qdate.setDate(parsed_dt.year, parsed_dt.month, parsed_dt.day)
-                if qdate.isValid():
-                    edit_dialog.date_edit.setDate(qdate)
-                else:  # Fallback parsing
-                    qdate = QDate.fromString(
-                        date_str, "yyyy-MM-dd"
-                    )  # Try another common format
+                try:
+                    parsed_dt = (
+                        date_val_from_dict.to_pydatetime()
+                    )  # Convert Timestamp to datetime
+                    qdate = QDate(parsed_dt.year, parsed_dt.month, parsed_dt.day)
                     if qdate.isValid():
                         edit_dialog.date_edit.setDate(qdate)
-
+                        logging.debug(
+                            f"    Set date_edit to: {edit_dialog.date_edit.date().toString('yyyy-MM-dd')}"
+                        )
+                    else:
+                        logging.warning(
+                            f"    Parsed QDate '{qdate.toString()}' is invalid from date_val '{date_val_from_dict}'."
+                        )
+                except ValueError as e_date:
+                    logging.error(
+                        f"    ValueError processing date_val '{date_val_from_dict}': {e_date}"
+                    )
+                except Exception as e_date_other:
+                    logging.error(
+                        f"    Unexpected error processing date_val '{date_val_from_dict}': {e_date_other}"
+                    )
+            else:
+                logging.warning("    Date string is missing or None from dict.")
+            logging.debug(
+                f"  date_edit after attempt: {edit_dialog.date_edit.date().toString('yyyy-MM-dd')}"
+            )
             # Type (match case-insensitively)
-            tx_type_str = transaction_dict_for_dialog.get("Transaction Type", "")
+            tx_type_str = transaction_dict_for_dialog.get(
+                "Type", ""
+            )  # Use internal name 'Type'
+            logging.debug(f"  Transaction Type from dict: '{tx_type_str}'")
+            original_type_index = edit_dialog.type_combo.currentIndex()
+            found_type = False
             for i in range(edit_dialog.type_combo.count()):
-                if edit_dialog.type_combo.itemText(i).lower() == tx_type_str.lower():
+                if (
+                    edit_dialog.type_combo.itemText(i).lower()
+                    == str(tx_type_str).lower()
+                ):  # Ensure tx_type_str is string
                     edit_dialog.type_combo.setCurrentIndex(i)
+                    logging.debug(
+                        f"  Set type_combo to index {i} ('{edit_dialog.type_combo.itemText(i)}')"
+                    )
+                    found_type = True
                     break
-
-            edit_dialog.symbol_edit.setText(
-                str(transaction_dict_for_dialog.get("Stock / ETF Symbol", ""))
+            if not found_type:
+                logging.warning(
+                    f"  Transaction type '{tx_type_str}' not found in combo box."
+                )
+            logging.debug(
+                f"  type_combo after attempt: '{edit_dialog.type_combo.currentText()}' (index: {edit_dialog.type_combo.currentIndex()})"
             )
 
+            # Symbol
+            symbol_val = transaction_dict_for_dialog.get(
+                "Symbol", ""
+            )  # Use internal name 'Symbol'
+            logging.debug(f"  Symbol from dict: '{symbol_val}'")
+            edit_dialog.symbol_edit.setText(str(symbol_val))  # Ensure string
+            logging.debug(
+                f"  symbol_edit after attempt: '{edit_dialog.symbol_edit.text()}'"
+            )
             # Account (exact match)
-            acc_str = transaction_dict_for_dialog.get("Investment Account", "")
-            index = edit_dialog.account_combo.findText(acc_str, Qt.MatchFixedString)
+            acc_str = transaction_dict_for_dialog.get(
+                "Account", ""
+            )  # Use internal name 'Account'
+            logging.debug(f"  Account from dict: '{acc_str}'")
+            original_acc_index = edit_dialog.account_combo.currentIndex()
+            index = edit_dialog.account_combo.findText(
+                str(acc_str), Qt.MatchFixedString
+            )  # Ensure string
             if index >= 0:
                 edit_dialog.account_combo.setCurrentIndex(index)
+                logging.debug(
+                    f"  Set account_combo to index {index} ('{edit_dialog.account_combo.itemText(index)}')"
+                )
+            else:
+                logging.warning(
+                    f"    Account '{acc_str}' not found in combo box. Setting editable text. Index remains {original_acc_index}."
+                )
+                edit_dialog.account_combo.setEditText(
+                    str(acc_str)  # Ensure string
+                )  # Set text if not found, relies on AddTxDialog logic for new accounts
+            logging.debug(
+                f"  account_combo after attempt: '{edit_dialog.account_combo.currentText()}' (index: {edit_dialog.account_combo.currentIndex()})"
+            )
 
             # Numeric fields (handle potential formatting issues)
-            def format_for_edit(value, precision=8):
-                if pd.isna(value):
-                    return ""
-                try:
-                    # Format with desired precision, remove trailing zeros/decimal if integer
-                    formatted = f"{float(value):.{precision}f}".rstrip("0").rstrip(".")
-                    return (
-                        formatted if formatted else "0"
-                    )  # Return "0" if it became empty
-                except (ValueError, TypeError):
-                    return str(value)  # Fallback
+            fields_to_set = {
+                "Quantity": edit_dialog.quantity_edit,  # Use internal name 'Quantity'
+                "Price/Share": edit_dialog.price_edit,  # Use internal name 'Price/Share'
+                "Total Amount": edit_dialog.total_amount_edit,
+                "Commission": edit_dialog.commission_edit,  # Use internal name 'Commission'
+                "Split Ratio": edit_dialog.split_ratio_edit,  # Use internal name 'Split Ratio'
+            }
+            for key, widget in fields_to_set.items():
+                raw_val = transaction_dict_for_dialog.get(key)
+                logging.debug(f"  {key} from dict: '{raw_val}' (type: {type(raw_val)})")
+                precision = 2 if key in ["Total Amount", "Fees"] else 8
+                formatted_val = self._format_for_edit_dialog(
+                    raw_val, precision=precision
+                )
+                widget.setText(formatted_val)
+                # Use objectName for logging if available, otherwise use the key
+                widget_name_for_log = (
+                    widget.objectName() if widget.objectName() else key
+                )
+                logging.debug(f"    Set {widget_name_for_log} to: '{formatted_val}'")
+                logging.debug(
+                    f"  {widget_name_for_log} after attempt: '{widget.text()}'"
+                )
 
-            edit_dialog.quantity_edit.setText(
-                format_for_edit(transaction_dict_for_dialog.get("Quantity of Units"))
-            )
-            edit_dialog.price_edit.setText(
-                format_for_edit(transaction_dict_for_dialog.get("Amount per unit"))
-            )
-            edit_dialog.total_amount_edit.setText(
-                format_for_edit(
-                    transaction_dict_for_dialog.get("Total Amount"), precision=2
-                )
-            )
-            edit_dialog.commission_edit.setText(
-                format_for_edit(transaction_dict_for_dialog.get("Fees"), precision=2)
-            )
-            edit_dialog.split_ratio_edit.setText(
-                format_for_edit(
-                    transaction_dict_for_dialog.get(
-                        "Split Ratio (new shares per old share)"
-                    )
-                )
-            )
-            edit_dialog.note_edit.setText(
-                str(transaction_dict_for_dialog.get("Note", ""))
+            # Note
+            note_val = transaction_dict_for_dialog.get(
+                "Note", ""
+            )  # Use internal name 'Note'
+            logging.debug(f"  Note from dict: '{note_val}'")
+            edit_dialog.note_edit.setText(str(note_val))  # Ensure string
+            logging.debug(
+                f"  note_edit after attempt: '{edit_dialog.note_edit.text()}'"
             )
 
+            logging.debug(
+                f"--- Pre-fill complete. Calling _update_field_states with type: '{edit_dialog.type_combo.currentText()}' ---"
+            )
             edit_dialog._update_field_states(
                 edit_dialog.type_combo.currentText()
             )  # Ensure fields are correctly enabled/disabled
+            logging.debug(f"--- _update_field_states called. ---")
 
         except Exception as e_fill:
+            logging.exception(
+                f"CRITICAL ERROR during pre-fill: {e_fill}"
+            )  # Log full exception
             QMessageBox.critical(
                 self, "Dialog Error", f"Error pre-filling edit dialog:\n{e_fill}"
             )
@@ -9102,6 +9197,8 @@ The CSV file should contain the following columns (header names must match exact
                 if not backup_ok:
                     QMessageBox.critical(
                         self,
+                        # MODIFIED: Use self as parent for QMessageBox
+                        self,
                         "Backup Error",
                         f"Failed to backup CSV before saving:\n{backup_msg}",
                     )
@@ -9109,6 +9206,7 @@ The CSV file should contain the following columns (header names must match exact
 
             # --- Write to CSV ---
             df_ordered.to_csv(
+                # MODIFIED: Use self.transactions_file
                 self.transactions_file,
                 index=False,
                 encoding="utf-8",
@@ -9138,6 +9236,11 @@ The CSV file should contain the following columns (header names must match exact
     def _edit_transaction_in_csv(
         self, original_index_to_edit: int, new_data_dict: Dict[str, str]
     ) -> bool:
+        """
+        Finds a transaction by its 'original_index', updates it with new_data_dict,
+        and rewrites the entire CSV file.
+        Triggers a data refresh via ManageTransactionsDialog's data_changed signal if successful.
+        """
         """Finds a transaction by original_index, updates it, and rewrites the CSV."""
         if not hasattr(self, "original_data") or self.original_data.empty:
             QMessageBox.critical(
@@ -9147,6 +9250,9 @@ The CSV file should contain the following columns (header names must match exact
             )
             return False
 
+        logging.info(
+            f"Attempting to edit transaction with original_index: {original_index_to_edit}"
+        )
         # Work on a copy
         df_modified = self.original_data.copy()
 
@@ -9171,17 +9277,25 @@ The CSV file should contain the following columns (header names must match exact
                 # Or just set the string value? Pandas might handle it on write.
                 # Let's set the string value directly for simplicity, to_csv handles quoting.
                 df_modified.loc[df_row_index, csv_header] = new_value_str
-            # else: Column from dialog doesn't exist in original_data? Should not happen.
+            else:
+                logging.warning(
+                    f"Header '{csv_header}' from edit dialog not found in original_data columns during edit."
+                )
 
         # Rewrite the entire CSV
-        if self._rewrite_csv(df_modified):
+        # The _rewrite_csv method should handle dropping 'original_index' if it's still there
+        rewrite_successful = self._rewrite_csv(df_modified)
+
+        if rewrite_successful:
+            # Update the main app's original_data immediately
+            self.original_data = df_modified.copy()
             QMessageBox.information(
                 self, "Success", "Transaction updated successfully."
             )
-            self.refresh_data()  # Refresh data after successful edit
+            # The ManageTransactionsDialog will emit data_changed, which triggers self.refresh_data()
             return True
         else:
-            # Rewrite failed, error message shown in _rewrite_csv
+            # _rewrite_csv would have shown its own error message
             return False
 
     def _delete_transactions_from_csv(
