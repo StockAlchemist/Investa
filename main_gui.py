@@ -370,7 +370,7 @@ DEFAULT_API_KEY = ""
 CHART_MAX_SLICES = (
     10  # Max slices before grouping into 'Other' in pie charts # type: ignore
 )
-PIE_CHART_FIG_SIZE = (6.5, 3.25)  # Figure size for pie charts - Increased size
+PIE_CHART_FIG_SIZE = (6.5, 4.25)  # Figure size for pie charts - Increased size
 PERF_CHART_FIG_SIZE = (7.5, 3.0)  # Figure size for performance graphs
 CHART_DPI = 95  # Dots per inch for charts
 INDICES_FOR_HEADER = [".DJI", "IXIC", ".INX"]
@@ -1551,8 +1551,10 @@ class FundamentalDataDialog(QDialog):
             if key == "marketCap" and isinstance(value, (int, float)):
                 return format_large_number_display(value, currency_symbol)
             elif key == "dividendYield" and isinstance(value, (int, float)):
-                # yfinance dividendYield is a factor (0.02 for 2%). format_percentage_value expects the percentage number.
-                return format_percentage_value(value * 100.0, decimals=2)
+                # yfinance dividendYield is a factor (e.g., 0.02 for 2%).
+                return format_percentage_value(
+                    value, decimals=2
+                )  # Pass the factor directly
             elif key == "dividendRate" and isinstance(value, (int, float)):
                 return format_currency_value(value, currency_symbol, decimals=2)
             elif key in ["fiftyTwoWeekHigh", "fiftyTwoWeekLow"] and isinstance(
@@ -9707,8 +9709,8 @@ The CSV file should contain the following columns (header names must match exact
                 wedges,
                 legend_labels,
                 title="Asset Types",
-                loc="upper right",  # Changed from center left
-                bbox_to_anchor=(2.38, 1.1),  # Adjusted anchor for top-right
+                loc="upper left",  # Anchor point of the legend box
+                bbox_to_anchor=(1.10, 1.05),
                 fontsize=8,
             )
 
@@ -9812,8 +9814,8 @@ The CSV file should contain the following columns (header names must match exact
                     wedges_s,
                     legend_labels_s,
                     title="Sectors",
-                    loc="upper right",  # Changed
-                    bbox_to_anchor=(2.38, 1.1),  # Adjusted
+                    loc="upper left",
+                    bbox_to_anchor=(1.1, 1.05),
                     fontsize=8,
                 )
 
@@ -9924,8 +9926,8 @@ The CSV file should contain the following columns (header names must match exact
                     wedges_g,
                     legend_labels_g,
                     title="Geography",
-                    loc="upper right",  # Changed
-                    bbox_to_anchor=(2.38, 1.1),  # Adjusted
+                    loc="upper left",
+                    bbox_to_anchor=(1.1, 1.05),
                     fontsize=8,
                 )
 
@@ -9958,18 +9960,6 @@ The CSV file should contain the following columns (header names must match exact
                     va="center",
                     transform=self.geo_pie_ax.transAxes,
                     color=COLOR_TEXT_SECONDARY,
-                )
-                self.geo_pie_canvas.draw()
-            if hasattr(self, "industry_pie_ax"):  # ADDED
-                self.industry_pie_ax.axis("off")
-                self.industry_pie_ax.text(
-                    0.5,
-                    0.5,
-                    "Data Error",
-                    ha="center",
-                    va="center",
-                    transform=self.industry_pie_ax.transAxes,
-                    color=COLOR_LOSS,
                 )
                 self.geo_pie_canvas.draw()
         else:  # "Country" column not in df_alloc
@@ -10041,8 +10031,8 @@ The CSV file should contain the following columns (header names must match exact
                     wedges_i,
                     legend_labels_i,
                     title="Industry",
-                    loc="upper right",  # Changed
-                    bbox_to_anchor=(2.38, 1.1),  # Adjusted
+                    loc="upper left",
+                    bbox_to_anchor=(1.1, 1.05),
                     fontsize=8,
                 )
 
@@ -10089,7 +10079,7 @@ The CSV file should contain the following columns (header names must match exact
                 color=COLOR_TEXT_SECONDARY,
                 wrap=True,
             )
-            self.geo_pie_canvas.draw()
+            self.industry_pie_canvas.draw()  # Corrected canvas to draw on
 
     # --- Filter Change Handlers ---
     @Slot()
