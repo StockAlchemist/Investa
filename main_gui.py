@@ -232,6 +232,7 @@ try:
     from portfolio_analyzer import (
         calculate_periodic_returns,
         _AGGREGATE_CASH_ACCOUNT_NAME_,  # Import the constant
+        # --- ADDED: Import extract_dividend_history ---
         extract_dividend_history,  # <-- ADDED for dividend history
     )  # Add the new function
 
@@ -1505,74 +1506,193 @@ class FundamentalDataDialog(QDialog):
     ):
         super().__init__(parent)
         self.setWindowTitle(f"Fundamental Data: {display_symbol}")
-        self.setMinimumSize(600, 650)  # Adjusted minimum size
+        self.setMinimumSize(700, 750)  # Increased size for tabs
         self.setFont(
             parent.font() if parent else QFont("Arial", 10)
         )  # Inherit font from parent app
         self._parent_app = parent  # Store parent reference to access methods
+        self.display_symbol_for_title = (
+            display_symbol  # Store for use in _dialog_format_value
+        )
 
         main_layout = QVBoxLayout(self)
 
-        scroll_area = QScrollArea(self)
+        # --- Tab Widget ---
+        self.tab_widget = QTabWidget()
+        main_layout.addWidget(self.tab_widget)
+
+        # --- Tab 1: Overview (Existing Content) ---
+        overview_tab = QWidget()
+        self._populate_overview_tab(
+            overview_tab, fundamental_data_dict
+        )  # display_symbol removed from call
+        self.tab_widget.addTab(overview_tab, "Overview")
+
+        # --- Tab 2: Financials ---
+        financials_tab = QWidget()
+        financials_data = fundamental_data_dict.get("financials")
+        self._populate_financial_data_tab(financials_tab, financials_data)
+        self.tab_widget.addTab(financials_tab, "Financials")
+
+        # --- Tab 3: Balance Sheet ---
+        balance_sheet_tab = QWidget()
+        self._populate_financial_data_tab(
+            balance_sheet_tab, fundamental_data_dict.get("balance_sheet")
+        )
+        self.tab_widget.addTab(balance_sheet_tab, "Balance Sheet")
+
+        # --- Tab 4: Cash Flow ---
+        cash_flow_tab = QWidget()
+        self._populate_financial_data_tab(
+            cash_flow_tab, fundamental_data_dict.get("cashflow")
+        )
+        self.tab_widget.addTab(cash_flow_tab, "Cash Flow")
+
+        # --- Dialog Buttons ---
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok)
+        button_box.accepted.connect(self.accept)
+        main_layout.addWidget(button_box)
+
+        if parent and hasattr(parent, "styleSheet"):
+            self.setStyleSheet(parent.styleSheet())
+
+    def _get_dialog_currency_symbol(self):
+        """Helper to get currency symbol based on the dialog's main symbol."""
+        currency_symbol = "$"  # Default
+        if self._parent_app and hasattr(self._parent_app, "_get_currency_symbol"):
+            local_curr_code = self._parent_app._get_currency_for_symbol(
+                self.display_symbol_for_title
+            )
+            if local_curr_code:
+                currency_symbol = self._parent_app._get_currency_symbol(
+                    currency_code=local_curr_code
+                )
+            else:  # Fallback to app's default display currency
+                currency_symbol = self._parent_app._get_currency_symbol()
+        return currency_symbol
+
+    def _dialog_format_value(self, key, value):
+        if value is None or pd.isna(value):
+            return "N/A"
+
+        currency_symbol = self._get_dialog_currency_symbol()
+
+        if key == "marketCap" and isinstance(value, (int, float)):
+            return format_large_number_display(value, currency_symbol)
+        elif key == "dividendYield" and isinstance(value, (int, float)):
+            return format_percentage_value(value, decimals=2)
+        elif key == "dividendRate" and isinstance(value, (int, float)):
+            return format_currency_value(value, currency_symbol, decimals=2)
+        elif key in ["fiftyTwoWeekHigh", "fiftyTwoWeekLow"] and isinstance(
+            value, (int, float)
+        ):
+            return format_currency_value(value, currency_symbol, decimals=2)
+        elif key in [
+            "regularMarketVolume",
+            "averageVolume",
+            "averageVolume10days",
+            "fullTimeEmployees",
+        ] and isinstance(value, (int, float)):
+            return format_integer_with_commas(value)
+        elif isinstance(value, (int, float)):
+            return format_float_with_commas(value, decimals=2)
+        else:
+            return str(value)
+
+    def _create_scrollable_form_tab(self) -> Tuple[QWidget, QFormLayout]:
+        """Creates a scrollable tab with a QFormLayout."""
+        tab_widget = QWidget()
+        scroll_area = QScrollArea(tab_widget)
         scroll_area.setWidgetResizable(True)
-        main_layout.addWidget(scroll_area)
 
         content_widget = QWidget()
         scroll_area.setWidget(content_widget)
+
         form_layout = QFormLayout(content_widget)
-        form_layout.setFieldGrowthPolicy(
-            QFormLayout.ExpandingFieldsGrow
-        )  # Allow fields to expand
+        form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        form_layout.setLabelAlignment(Qt.AlignRight)
 
-        form_layout.setLabelAlignment(
-            Qt.AlignRight
-        )  # Align labels to the right within group boxes
+        # Set the scroll_area as the layout for the tab_widget
+        tab_main_layout = QVBoxLayout(tab_widget)
+        tab_main_layout.addWidget(scroll_area)
+        tab_main_layout.setContentsMargins(
+            5, 5, 5, 5
+        )  # Add some margins to the tab itself
 
-        # Helper to format values
-        def _dialog_format_value(
-            key, value
-        ):  # Renamed to avoid conflict if finutils.format_value existed
-            if value is None or pd.isna(value):
-                return "N/A"
+        return tab_widget, form_layout
 
-            # Get currency symbol if parent app is available
-            currency_symbol = "$"  # Default
-            if self._parent_app and hasattr(self._parent_app, "_get_currency_symbol"):
-                local_curr_code = self._parent_app._get_currency_for_symbol(
-                    display_symbol
-                )
-                if local_curr_code:
-                    currency_symbol = self._parent_app._get_currency_symbol(
-                        currency_code=local_curr_code
-                    )
-                else:
-                    currency_symbol = self._parent_app._get_currency_symbol()
+    def _populate_financial_data_tab(
+        self, tab_widget: QWidget, data_df: Optional[pd.DataFrame]
+    ):
+        """Populates a tab with financial data from a DataFrame (e.g., financials, balance sheet, cash flow)."""
+        layout = QVBoxLayout(tab_widget)
+        layout.setContentsMargins(5, 5, 5, 5)
 
-            if key == "marketCap" and isinstance(value, (int, float)):
-                return format_large_number_display(value, currency_symbol)
-            elif key == "dividendYield" and isinstance(value, (int, float)):
-                # yfinance dividendYield is a factor (e.g., 0.02 for 2%).
-                return format_percentage_value(
-                    value, decimals=2
-                )  # Pass the factor directly
-            elif key == "dividendRate" and isinstance(value, (int, float)):
-                return format_currency_value(value, currency_symbol, decimals=2)
-            elif key in ["fiftyTwoWeekHigh", "fiftyTwoWeekLow"] and isinstance(
-                value, (int, float)
-            ):
-                return format_currency_value(value, currency_symbol, decimals=2)
-            elif key in [
-                "regularMarketVolume",
-                "averageVolume",
-                "averageVolume10days",
-                "fullTimeEmployees",
-            ] and isinstance(value, (int, float)):
-                return format_integer_with_commas(value)
-            elif isinstance(value, (int, float)):
-                # For PE, EPS, Beta - general float formatting
-                return format_float_with_commas(value, decimals=2)
-            else:
-                return str(value)
+        if data_df is None or not isinstance(data_df, pd.DataFrame) or data_df.empty:
+            layout.addWidget(QLabel("Data not available for this section."))
+            return
+
+        table_view = QTableView()
+        table_view.setObjectName(
+            f"{tab_widget.objectName()}Table"
+        )  # For potential styling
+
+        # Transpose the DataFrame: yfinance often has dates as columns and items as rows.
+        # We want items as rows and dates as columns for better readability in a QFormLayout-like view,
+        # or keep as is for QTableView. For QTableView, original format is better.
+        # model_df = data_df.transpose() # Uncomment if you prefer items as columns
+        model_df = data_df
+
+        # Convert index (dates) to string for display if it's a DatetimeIndex
+        if isinstance(model_df.index, pd.DatetimeIndex):
+            model_df.index = model_df.index.strftime("%Y-%m-%d")
+
+        # For QTableView, we want the items as rows and dates as columns.
+        # yfinance often returns financials with items in the index and dates as columns.
+        # If it's the other way around (dates in index, items as columns), transpose it.
+        # Let's assume data_df is already in the format: Index=Items, Columns=Dates
+
+        # Create a PandasModel. We need to reset index to make items a column.
+        display_df = model_df.reset_index()
+        # Rename the new 'index' column to something meaningful like 'Metric' or 'Item'
+        display_df.rename(columns={"index": "Metric"}, inplace=True)
+
+        model = PandasModel(
+            display_df, parent=self, log_mode=True
+        )  # log_mode for general display
+        table_view.setModel(model)
+
+        table_view.setAlternatingRowColors(True)
+        table_view.setSelectionBehavior(QTableView.SelectRows)
+        table_view.setWordWrap(False)  # Keep true if descriptions are long
+        table_view.setSortingEnabled(True)
+        table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        table_view.verticalHeader().setVisible(False)  # Hide row numbers
+        table_view.resizeColumnsToContents()
+
+        # Make the 'Metric' column wider
+        try:
+            metric_col_idx = display_df.columns.get_loc("Metric")
+            table_view.setColumnWidth(metric_col_idx, 250)
+        except KeyError:
+            pass
+
+        layout.addWidget(table_view)
+
+    def _populate_overview_tab(
+        self, overview_tab_page: QWidget, fundamental_data_dict: Dict[str, Any]
+    ):
+        """Populates the Overview tab with company details and summary."""
+        scrollable_widget_container, form_layout_to_populate = (
+            self._create_scrollable_form_tab()
+        )
+
+        page_main_layout = QVBoxLayout(overview_tab_page)
+        page_main_layout.setContentsMargins(0, 0, 0, 0)
+        page_main_layout.addWidget(scrollable_widget_container)
+
+        # Use self._dialog_format_value which is now a class method
+        # The form_layout_to_populate is where QGroupBoxes will be added.
 
         # --- Group 1: Company Overview ---
         group_overview = QGroupBox("Company Overview")
@@ -1590,9 +1710,9 @@ class FundamentalDataDialog(QDialog):
             value = fundamental_data_dict.get(key)
             layout_overview.addRow(
                 QLabel(f"<b>{friendly_name}:</b>"),
-                QLabel(_dialog_format_value(key, value)),
+                QLabel(self._dialog_format_value(key, value)),  # Use self method
             )
-        form_layout.addRow(group_overview)
+        form_layout_to_populate.addRow(group_overview)  # Add to the correct form layout
 
         # --- Group 2: Valuation Metrics ---
         group_valuation = QGroupBox("Valuation Metrics")
@@ -1611,9 +1731,11 @@ class FundamentalDataDialog(QDialog):
             value = fundamental_data_dict.get(key)
             layout_valuation.addRow(
                 QLabel(f"<b>{friendly_name}:</b>"),
-                QLabel(_dialog_format_value(key, value)),
+                QLabel(self._dialog_format_value(key, value)),  # Use self method
             )
-        form_layout.addRow(group_valuation)
+        form_layout_to_populate.addRow(
+            group_valuation
+        )  # Add to the correct form layout
 
         # --- Group 3: Dividend Information ---
         group_dividend = QGroupBox("Dividend Information")
@@ -1626,11 +1748,11 @@ class FundamentalDataDialog(QDialog):
         ]
         for key, friendly_name in dividend_fields:
             value = fundamental_data_dict.get(key)
-            layout_valuation.addRow(
+            layout_dividend.addRow(  # Corrected layout variable
                 QLabel(f"<b>{friendly_name}:</b>"),
-                QLabel(_dialog_format_value(key, value)),
+                QLabel(self._dialog_format_value(key, value)),  # Use self method
             )
-        form_layout.addRow(group_dividend)
+        form_layout_to_populate.addRow(group_dividend)  # Add to the correct form layout
 
         # --- Group 4: Price Statistics ---
         group_price_stats = QGroupBox("Price Statistics")
@@ -1664,14 +1786,18 @@ class FundamentalDataDialog(QDialog):
                 value_avg = fundamental_data_dict.get("averageVolume")
                 layout_price_stats.addRow(
                     QLabel(f"<b>{friendly_name}:</b>"),
-                    QLabel(_dialog_format_value("averageVolume", value_avg)),
+                    QLabel(
+                        self._dialog_format_value("averageVolume", value_avg)
+                    ),  # Use self method
                 )
             else:
                 layout_price_stats.addRow(
                     QLabel(f"<b>{friendly_name}:</b>"),
-                    QLabel(_dialog_format_value(key, value)),
+                    QLabel(self._dialog_format_value(key, value)),  # Use self method
                 )
-        form_layout.addRow(group_price_stats)
+        form_layout_to_populate.addRow(
+            group_price_stats
+        )  # Add to the correct form layout
 
         # --- Group 5: Business Summary ---
         group_summary = QGroupBox("Business Summary")
@@ -1691,41 +1817,9 @@ class FundamentalDataDialog(QDialog):
         else:
             layout_summary.addWidget(QLabel("N/A"))
 
-        form_layout.addRow(group_summary)
+        form_layout_to_populate.addRow(group_summary)  # Add to the correct form layout
 
         # --- End Groups ---
-
-        # Add a stretch to push groups to the top if needed
-        # form_layout.addRow(QLabel(""), None) # Add a final empty row for spacing - QFormLayout doesn't need this for stretch
-        # QFormLayout does not have setRowStretch. The QScrollArea handles content height.
-
-        # --- Dialog Buttons ---
-        # The following lines were likely a copy-paste error from within the loop
-        # and are not needed here as the button_box is added directly.
-        # label_widget = QLabel(f"<b>{friendly_name}:</b>") # friendly_name might be out of scope or hold last loop value
-        # value_str_fallback = "N/A" # Ensure value_str is defined
-        # value_widget = QLabel(value_str_fallback)
-        # value_widget.setWordWrap(True)
-        # form_layout.addRow(label_widget, value_widget) # This would add an extra incorrect row
-
-        # Business Summary (special handling)
-        summary_text = fundamental_data_dict.get("longBusinessSummary", "N/A")
-        if summary_text and summary_text != "N/A":
-            form_layout.addRow(QLabel(""), None)  # Spacer
-            summary_label = QLabel("<b>Business Summary:</b>")
-            form_layout.addRow(summary_label)
-            summary_text_edit = QTextEdit()
-            summary_text_edit.setPlainText(summary_text)
-            summary_text_edit.setReadOnly(True)
-            summary_text_edit.setFixedHeight(150)  # Adjust height as needed
-            form_layout.addRow(summary_text_edit)
-
-        button_box = QDialogButtonBox(QDialogButtonBox.Ok)
-        button_box.accepted.connect(self.accept)
-        main_layout.addWidget(button_box)
-
-        if parent and hasattr(parent, "styleSheet"):
-            self.setStyleSheet(parent.styleSheet())
 
 
 class FundamentalDataWorker(QRunnable):

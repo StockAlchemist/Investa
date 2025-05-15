@@ -14,8 +14,11 @@ Investa is a desktop application designed to help you track, analyze, and visual
   * Plot accumulated Time-Weighted Return (TWR) against popular benchmarks (e.g., SPY, QQQ).
   * Visualize absolute portfolio value over time.
   * Adjustable date ranges and intervals (Daily, Weekly, Monthly).
-* **Periodic Returns Bar Charts:** View portfolio and benchmark returns for annual, monthly, and weekly periods.
-* **Portfolio Allocation Pie Charts:** Understand your portfolio's composition by account and by individual holding.
+* **Periodic Returns Bar Charts:** View portfolio and benchmark returns for annual, monthly, and weekly periods with adjustable lookback.
+* **Dividend History:** Visualize dividend income over time (Annual, Quarterly, Monthly) and view a detailed dividend transaction table.
+* **Portfolio Allocation Pie Charts:**
+  * Understand your portfolio's composition by account and by individual holding.
+  * View allocation by Asset Type, Sector, Geography, and Industry (requires fundamental data).
 * **Market Data Fetching:** Retrieves near real-time stock quotes, index prices, and FX rates using Yahoo Finance.
 * **Data Caching:** Caches fetched market data to speed up subsequent loads and reduce API calls.
 * **Transaction Management:**
@@ -23,7 +26,11 @@ Investa is a desktop application designed to help you track, analyze, and visual
   * View, edit, and delete existing transactions directly from the application (modifies the source CSV).
 * **Manual Price Overrides:** Set manual prices for symbols where API data might be unavailable or incorrect.
 * **Fundamental Data Viewer:** Look up and display key fundamental data for stock symbols.
-* **Configuration Persistence:** Saves UI settings (file paths, currency, column visibility, etc.) for convenience.
+  * **Financials Tab:** Income Statement, Balance Sheet, Cash Flow statements.
+* **Configuration Persistence:** Saves UI settings (file paths, currency, column visibility, account currencies, manual overrides, etc.) for convenience.
+* **Account Currency Management:** Assign specific currencies to different investment accounts.
+* **Manual Overrides:** Beyond just price, manually override Asset Type, Sector, Geography, and Industry for holdings.
+* **Table Filtering:** Live text-based filtering for the main holdings table.
 * **CSV Format Help:** In-app guide for the required transaction CSV format.
 * **Numba Optimization:** Utilizes Numba for accelerating historical portfolio value calculations.
 
@@ -92,7 +99,7 @@ Key files in this directory:
 
 * **`gui_config.json`**: Stores your UI preferences, such as the path to your last used transactions CSV, display currency, selected accounts, graph settings, and column visibility.
 * **`manual_prices.json`**: Contains any manual price overrides you've set for specific symbols (managed via `Settings > Manual Prices...` in the app).
-* **`csv_backups/` (subfolder)**: Stores timestamped backups of your transactions CSV file, created automatically when you edit or delete transactions through the application.
+* **`csv_backups/` (subfolder)**: Stores timestamped backups of your transactions CSV file, created automatically when you add, edit, or delete transactions through the application.
 * Cache files (e.g., for market data) are also stored here to speed up loading times.
 
 * **Account Currencies:**
