@@ -24,6 +24,7 @@ Investa is a desktop application designed to help you track, analyze, and visual
 * **Transaction Management:**
   * Manually add new transactions.
   * View, edit, and delete existing transactions directly from the application (modifies the source CSV).
+  * Utility to standardize CSV headers to the application's preferred internal format.
 * **Manual Price Overrides:** Set manual prices for symbols where API data might be unavailable or incorrect.
 * **Fundamental Data Viewer:** Look up and display key fundamental data for stock symbols.
   * **Financials Tab:** Income Statement, Balance Sheet, Cash Flow statements.
@@ -111,18 +112,34 @@ Key files in this directory:
 
 ## Input Data Format (Transactions CSV)
 
-The application requires a CSV file with your transaction history. The expected columns are:
+The application requires a CSV file with your transaction history.
+Investa can read CSV files with either verbose, descriptive headers or its preferred cleaned, internal headers.
+A utility is provided within the application (`Settings > Standardize CSV Headers...`) to convert your CSV to the cleaned header format, which is recommended for optimal consistency.
 
-1. `Date (MMM DD, YYYY)` (e.g., *Jan 01, 2023*)
-2. `Transaction Type` (e.g., *Buy, Sell, Dividend, Split, Deposit, Withdrawal, Fees*)
-3. `Stock / ETF Symbol` (e.g., *AAPL, GOOG*. Use **`$CASH`** for cash-related transactions like deposits/withdrawals into an account, or cash dividends/fees not tied to a specific holding.)
-4. `Quantity of Units`
-5. `Amount per unit`
-6. `Total Amount` (Optional for Buy/Sell if Quantity and Amount per unit are provided)
-7. `Fees` (Commissions)
-8. `Investment Account` (Name of your brokerage account, e.g., *Brokerage A, IRA*)
-9. `Split Ratio (new shares per old share)` (Required only for 'Split' type, e.g., *2* for a 2-for-1 split)
+**Preferred (Cleaned) CSV Headers:**
+
+1. `Date` (e.g., *Jan 01, 2023* or other common date formats)
+2. `Type` (e.g., *Buy, Sell, Dividend, Split, Deposit, Withdrawal, Fees*)
+3. `Symbol` (e.g., *AAPL, GOOG*. Use **`$CASH`** for cash-related transactions.)
+4. `Quantity`
+5. `Price/Share`
+6. `Total Amount` (Optional for Buy/Sell if Quantity and Price/Share are provided)
+7. `Commission` (Fees)
+8. `Account` (Name of your brokerage account, e.g., *Brokerage A, IRA*)
+9. `Split Ratio` (Required only for 'Split' type, e.g., *2* for a 2-for-1 split)
 10. `Note` (Optional)
+
+**Compatible (Verbose) CSV Headers (will be mapped internally):**
+
+* `Date (MMM DD, YYYY)` maps to `Date`
+* `Transaction Type` maps to `Type`
+* `Stock / ETF Symbol` maps to `Symbol`
+* `Quantity of Units` maps to `Quantity`
+* `Amount per unit` maps to `Price/Share`
+* `Fees` maps to `Commission`
+* `Investment Account` maps to `Account`
+* `Split Ratio (new shares per old share)` maps to `Split Ratio`
+    *(`Total Amount` and `Note` are typically the same)*
 
 For detailed examples and specific requirements for each transaction type, please refer to the **Help > CSV Format Help...** menu within the application.
 

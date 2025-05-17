@@ -34,16 +34,33 @@ Before you can start crunching numbers, there are a couple of preliminary steps:
 2. **Prepare Your Transaction Data (The CSV File):**
     This is the most crucial step! Investa needs your transaction history in a specific CSV format. Here are the columns it expects, in order:
 
-    1. `Date (MMM DD, YYYY)`: e.g., *Jan 01, 2023*
-    2. `Transaction Type`: *Buy, Sell, Dividend, Split, Deposit, Withdrawal, Fees*
-    3. `Stock / ETF Symbol`: e.g., *AAPL, VTI*. Use **`$CASH`** for general cash movements (like deposits into your brokerage account) or cash dividends/fees not tied to a specific stock.
-    4. `Quantity of Units`: Number of shares or units.
-    5. `Amount per unit`: Price per share/unit.
-    6. `Total Amount`: (Optional for Buy/Sell if Quantity and Amount per unit are provided). For dividends, this is the total dividend amount.
-    7. `Fees`: Any commissions or fees for the transaction.
-    8. `Investment Account`: The name of your brokerage account (e.g., *My Brokerage, Roth IRA*). This helps you filter later.
-    9. `Split Ratio (new shares per old share)`: Only needed for 'Split' transactions (e.g., *2* for a 2-for-1 split).
+    Investa can read CSV files with either verbose, descriptive headers (listed below under "Compatible Verbose Headers") or its preferred cleaned, internal headers.
+    It's recommended to use the cleaned header format for optimal consistency. You can convert an existing CSV with verbose headers to the cleaned format using the in-app utility found under **Settings > Standardize CSV Headers...** after loading your file.
+
+    **Preferred (Cleaned) CSV Headers:**
+
+    1. `Date`: e.g., *Jan 01, 2023* (other common date formats are also supported)
+    2. `Type`: *Buy, Sell, Dividend, Split, Deposit, Withdrawal, Fees*
+    3. `Symbol`: e.g., *AAPL, VTI*. Use **`$CASH`** for general cash movements.
+    4. `Quantity`
+    5. `Price/Share`
+    6. `Total Amount`: (Optional for Buy/Sell if Quantity and Price/Share are provided). For dividends, this is the total dividend amount.
+    7. `Commission`: Any commissions or fees for the transaction.
+    8. `Account`: The name of your brokerage account (e.g., *My Brokerage, Roth IRA*).
+    9. `Split Ratio`: Only needed for 'Split' transactions (e.g., *2* for a 2-for-1 split).
     10. `Note`: Any personal notes about the transaction (optional).
+
+    **Compatible (Verbose) CSV Headers (will be mapped internally if your CSV uses these):**
+
+    * `Date (MMM DD, YYYY)` (maps to `Date`)
+    * `Transaction Type` (maps to `Type`)
+    * `Stock / ETF Symbol` (maps to `Symbol`)
+    * `Quantity of Units` (maps to `Quantity`)
+    * `Amount per unit` (maps to `Price/Share`)
+    * `Fees` (maps to `Commission`)
+    * `Investment Account` (maps to `Account`)
+    * `Split Ratio (new shares per old share)` (maps to `Split Ratio`)
+        *(`Total Amount` and `Note` are typically the same in both formats)*
 
 ### Understanding `$CASH` Transactions
 
