@@ -60,7 +60,7 @@ FUNDAMENTALS_CACHE_DURATION_HOURS = 24  # Max age in hours for yfinance Ticker.i
 
 # --- ADDED: Cache duration for CURRENT quotes (stock/index) ---
 # How long (in minutes) to keep current quote data before refetching
-CURRENT_QUOTE_CACHE_DURATION_MINUTES = 1
+CURRENT_QUOTE_CACHE_DURATION_MINUTES = 60
 
 # --- Yahoo Finance Mappings & Configuration ---
 # Mapping for specific index symbols used in the header/logic to YF tickers

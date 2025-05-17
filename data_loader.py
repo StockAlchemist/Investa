@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import logging
 from typing import Tuple, Optional, Set, Dict
-import os  # <-- ADDED for path operations
+import os
 from io import StringIO
 
 # Import constants from config.py (assuming it's in the same directory)
@@ -104,8 +104,14 @@ def _load_and_clean_from_csv_actual(  # Renamed original function
     account_currency_map: Dict,  # Now required
     default_currency: str,  # Now required
 ) -> Tuple[
-    Optional[pd.DataFrame], Optional[pd.DataFrame], Set[int], Dict[int, str], bool, bool
-]:  # Added has_errors, has_warnings
+    Optional[pd.DataFrame],
+    Optional[pd.DataFrame],
+    Set[int],
+    Dict[int, str],
+    bool,
+    bool,
+    Dict[str, str],
+]:  # Added has_errors, has_warnings, and the map
     """
     Loads transactions from CSV, performs cleaning, validation, and adds 'Local Currency'.
 
@@ -135,6 +141,8 @@ def _load_and_clean_from_csv_actual(  # Renamed original function
                                  further processing; False otherwise.
             - bool: has_warnings - True if recoverable issues occurred (e.g., bad dates ignored,
                                      numeric coercion failures, missing non-critical data); False otherwise.
+            - Dict[str, str]: A dictionary mapping original CSV header names to their cleaned,
+                              standardized names (e.g., {"Date (MMM DD, YYYY)": "Date"}).
     """
     original_transactions_df: Optional[pd.DataFrame] = None
     transactions_df: Optional[pd.DataFrame] = None
@@ -142,6 +150,7 @@ def _load_and_clean_from_csv_actual(  # Renamed original function
     ignored_reasons: Dict[int, str] = {}  # Maps ORIGINAL index to first reason ignored
     has_errors = False  # Flag for critical loading errors
     has_warnings = False  # Flag for recoverable issues
+    original_to_cleaned_header_map: Dict[str, str] = {}  # Initialize the map
 
     # --- Define na_values at the top level of the function ---
     na_values_list = [
@@ -211,6 +220,7 @@ def _load_and_clean_from_csv_actual(  # Renamed original function
             ignored_reasons,
             has_errors,
             has_warnings,
+            original_to_cleaned_header_map,  # Return empty map on critical error
         )
     except pd.errors.EmptyDataError:
         logging.warning(f"Warning: Input CSV file is empty: {transactions_csv_file}")
@@ -222,6 +232,7 @@ def _load_and_clean_from_csv_actual(  # Renamed original function
             ignored_reasons,
             has_errors,  # Should still be False here
             has_warnings,
+            original_to_cleaned_header_map,  # Return empty map
         )
     except pd.errors.ParserError as e:
         logging.error(f"Error parsing CSV file {transactions_csv_file}: {e}")
@@ -233,6 +244,7 @@ def _load_and_clean_from_csv_actual(  # Renamed original function
             ignored_reasons,
             has_errors,
             has_warnings,
+            original_to_cleaned_header_map,  # Return empty map on error
         )
     except UnicodeDecodeError as e:
         logging.error(
@@ -246,6 +258,7 @@ def _load_and_clean_from_csv_actual(  # Renamed original function
             ignored_reasons,
             has_errors,
             has_warnings,
+            original_to_cleaned_header_map,  # Return empty map on error
         )
     except PermissionError:
         logging.error(f"Permission denied reading CSV file: {transactions_csv_file}")
@@ -257,6 +270,7 @@ def _load_and_clean_from_csv_actual(  # Renamed original function
             ignored_reasons,
             has_errors,
             has_warnings,
+            original_to_cleaned_header_map,  # Return empty map on error
         )
     except Exception as e:
         logging.exception(
@@ -270,6 +284,7 @@ def _load_and_clean_from_csv_actual(  # Renamed original function
             ignored_reasons,
             has_errors,
             has_warnings,
+            original_to_cleaned_header_map,  # Return empty map on error
         )
 
     # If loading failed critically earlier, transactions_df will be None.
@@ -286,6 +301,7 @@ def _load_and_clean_from_csv_actual(  # Renamed original function
             ignored_reasons,
             has_errors,
             has_warnings,
+            original_to_cleaned_header_map,  # Return empty map
         )
 
     # Check if the DataFrame is empty *after* successful loading (e.g., header only)
@@ -314,31 +330,119 @@ def _load_and_clean_from_csv_actual(  # Renamed original function
             "Investment Account": "Account",
             "Note": "Note",
         }
-        required_original_cols = [
+        # Define essential columns using their original verbose names
+        ESSENTIAL_VERBOSE_CSV_COLUMNS: list[str] = [
             "Date (MMM DD, YYYY)",
             "Transaction Type",
             "Stock / ETF Symbol",
             "Investment Account",
         ]
-        actual_columns = [col.strip() for col in transactions_df.columns]
-        required_stripped_cols = {col: col.strip() for col in required_original_cols}
-        missing_original = [
-            orig_col
-            for orig_col, stripped_col in required_stripped_cols.items()
-            if stripped_col not in actual_columns
+        # Define essential columns using their cleaned/internal names
+        ESSENTIAL_CLEANED_CSV_COLUMNS: list[str] = [
+            "Date",
+            "Type",
+            "Symbol",
+            "Account",
         ]
-        if missing_original:
-            raise ValueError(
-                f"Missing essential CSV columns: {missing_original}. Found: {transactions_df.columns.tolist()}"
-            )
 
-        rename_dict = {
-            stripped_csv_header: internal_name
-            for csv_header, internal_name in column_mapping.items()
-            if (stripped_csv_header := csv_header.strip()) in actual_columns
-        }
-        transactions_df.columns = actual_columns
+        actual_columns_stripped = [col.strip() for col in transactions_df.columns]
+        found_columns_stripped_set = set(actual_columns_stripped)
+
+        # --- Data Integrity Check: Determine if CSV uses verbose or cleaned headers ---
+        # Check if all essential CLEANED columns are present
+        missing_essential_cleaned_cols = [
+            col
+            for col in ESSENTIAL_CLEANED_CSV_COLUMNS
+            if col not in found_columns_stripped_set
+        ]
+        using_cleaned_headers = not missing_essential_cleaned_cols
+        logging.info(
+            f"CSV appears to be using {'cleaned' if using_cleaned_headers else 'verbose/mixed'} headers based on essential check."
+        )
+
+        if not using_cleaned_headers:
+            # If not all essential cleaned headers are present, check for essential VERBOSE headers
+            # (after stripping whitespace from them for comparison)
+            essential_verbose_stripped = {
+                col.strip() for col in ESSENTIAL_VERBOSE_CSV_COLUMNS
+            }
+            missing_essential_verbose_cols_stripped = [
+                col
+                for col in essential_verbose_stripped
+                if col not in found_columns_stripped_set
+            ]
+            if missing_essential_verbose_cols_stripped:
+                # Construct the error message using the original verbose names for clarity to the user
+                original_missing_verbose_names = [
+                    orig_v_col
+                    for orig_v_col in ESSENTIAL_VERBOSE_CSV_COLUMNS
+                    if orig_v_col.strip() in missing_essential_verbose_cols_stripped
+                ]
+                error_msg = (
+                    f"Data integrity error during cleaning: Missing essential CSV columns. "
+                    f"Attempted verbose (missing): {original_missing_verbose_names}. "
+                    f"Attempted cleaned (missing): {missing_essential_cleaned_cols}. "
+                    f"Found (stripped): {list(found_columns_stripped_set)}"
+                )
+                logging.error(error_msg)
+                raise ValueError(error_msg)
+        # If using_cleaned_headers is True, or if verbose check passed, continue.
+
+        rename_dict = {}
+        # Build rename_dict based on whether verbose or cleaned headers are primarily used
+        if not using_cleaned_headers:  # CSV has verbose headers
+            for verbose_header, cleaned_name in column_mapping.items():
+                stripped_verbose_header = verbose_header.strip()
+                if stripped_verbose_header in actual_columns_stripped:
+                    rename_dict[stripped_verbose_header] = cleaned_name
+                    original_to_cleaned_header_map[verbose_header] = (
+                        cleaned_name  # Map original verbose to cleaned
+                    )
+        else:  # CSV has cleaned headers
+            for verbose_header, cleaned_name in column_mapping.items():
+                if cleaned_name in actual_columns_stripped:
+                    # If cleaned name is already there, no rename needed from verbose.
+                    # The map should reflect that the original (which is now clean) maps to the clean name.
+                    original_to_cleaned_header_map[cleaned_name] = cleaned_name
+                elif verbose_header.strip() in actual_columns_stripped:
+                    # This case is less likely if using_cleaned_headers is true,
+                    # but handles mixed scenarios or if a "cleaned" header was actually a verbose one.
+                    rename_dict[verbose_header.strip()] = cleaned_name
+                    original_to_cleaned_header_map[verbose_header] = cleaned_name
+
+        transactions_df.columns = (
+            actual_columns_stripped  # Ensure df uses stripped headers before rename
+        )
         transactions_df.rename(columns=rename_dict, inplace=True)
+
+        # For any columns that were already cleaned and thus not in rename_dict,
+        # ensure they are in original_to_cleaned_header_map mapping to themselves.
+        for col_name in transactions_df.columns:
+            if (
+                col_name not in original_to_cleaned_header_map.values()
+            ):  # If this cleaned name isn't a target of a map
+                if col_name in column_mapping.values():  # And it's a known cleaned name
+                    # Find its original verbose counterpart to see if it should have been mapped
+                    original_verbose_for_this_clean = next(
+                        (
+                            v_orig
+                            for v_orig, c_clean in column_mapping.items()
+                            if c_clean == col_name
+                        ),
+                        None,
+                    )
+                    if original_verbose_for_this_clean:
+                        original_to_cleaned_header_map[
+                            original_verbose_for_this_clean
+                        ] = col_name
+                    else:  # Should not happen if column_mapping is complete
+                        original_to_cleaned_header_map[col_name] = col_name
+                elif col_name not in column_mapping:  # Custom column
+                    original_to_cleaned_header_map[col_name] = col_name
+
+        logging.debug(
+            f"Final Original to Cleaned Header Map: {original_to_cleaned_header_map}"
+        )
 
         # --- Basic Cleaning ---
         transactions_df["Symbol"] = (
@@ -592,6 +696,7 @@ def _load_and_clean_from_csv_actual(  # Renamed original function
                 ignored_reasons,
                 has_errors,
                 has_warnings,
+                original_to_cleaned_header_map,  # Return map on error
             )
 
         # --- FINAL Drop rows using the collected DATAFRAME indices ---
@@ -628,6 +733,7 @@ def _load_and_clean_from_csv_actual(  # Renamed original function
             ignored_reasons,
             has_errors,
             has_warnings,
+            original_to_cleaned_header_map,  # Return the map
         )
 
     # --- (Refined Exception Handling for Cleaning Block remains the same) ---
@@ -641,6 +747,7 @@ def _load_and_clean_from_csv_actual(  # Renamed original function
             ignored_reasons,
             has_errors,
             has_warnings,
+            original_to_cleaned_header_map,  # Return map on error
         )
     except KeyError as e:
         logging.error(f"Missing expected column during cleaning: {e}")
@@ -652,6 +759,7 @@ def _load_and_clean_from_csv_actual(  # Renamed original function
             ignored_reasons,
             has_errors,
             has_warnings,
+            original_to_cleaned_header_map,  # Return map on error
         )
     except TypeError as e:
         logging.error(f"Type error during cleaning checks: {e}")
@@ -663,6 +771,7 @@ def _load_and_clean_from_csv_actual(  # Renamed original function
             ignored_reasons,
             has_errors,
             has_warnings,
+            original_to_cleaned_header_map,  # Return map on error
         )
     except Exception as e:
         logging.exception(f"CRITICAL ERROR during data cleaning helper")
@@ -674,6 +783,7 @@ def _load_and_clean_from_csv_actual(  # Renamed original function
             ignored_reasons,
             has_errors,
             has_warnings,
+            original_to_cleaned_header_map,  # Return map on error
         )
     # --- End Refined Exception Handling ---
 
@@ -684,7 +794,13 @@ def load_and_clean_transactions(
     account_currency_map: Dict,
     default_currency: str,
 ) -> Tuple[
-    Optional[pd.DataFrame], Optional[pd.DataFrame], Set[int], Dict[int, str], bool, bool
+    Optional[pd.DataFrame],
+    Optional[pd.DataFrame],
+    Set[int],
+    Dict[int, str],
+    bool,
+    bool,
+    Dict[str, str],
 ]:
     """
     Loads transactions, trying a Feather cache first, then falling back to CSV.
@@ -707,6 +823,9 @@ def load_and_clean_transactions(
             transactions_csv_file, account_currency_map, default_currency
         )
 
+    # Initialize map for cache loading case
+    original_to_cleaned_header_map: Dict[str, str] = {}
+
     if os.path.exists(feather_cache_path) and os.path.exists(transactions_csv_file):
         try:
             csv_mtime = os.path.getmtime(transactions_csv_file)
@@ -727,7 +846,55 @@ def load_and_clean_transactions(
                     cleaned_df["original_index"] = cleaned_df.index
 
                 # When loading from cache, we assume it's already cleaned and validated from a previous CSV load.
-                # So, 'original_transactions_df' can be a copy of the cleaned_df for consistency in return type.
+                # We don't have the original headers directly from the cache.
+                # We can reconstruct a basic map based on the standard column mapping.
+                # This might not be perfect if the user's original headers were non-standard
+                # but it's the best we can do without re-reading the CSV.
+                standard_column_mapping = {
+                    "Date (MMM DD, YYYY)": "Date",
+                    "Transaction Type": "Type",
+                    "Stock / ETF Symbol": "Symbol",
+                    "Quantity of Units": "Quantity",
+                    "Amount per unit": "Price/Share",
+                    "Total Amount": "Total Amount",
+                    "Fees": "Commission",
+                    "Split Ratio (new shares per old share)": "Split Ratio",
+                    "Investment Account": "Account",
+                    "Note": "Note",
+                }
+                # If the cached DataFrame has cleaned headers, map them to themselves.
+                # If it somehow has verbose headers (less likely for a cleaned cache), map verbose to cleaned.
+                for col_in_cache in cleaned_df.columns:
+                    found_match = False
+                    for verbose_orig, cleaned_std in standard_column_mapping.items():
+                        if (
+                            col_in_cache == cleaned_std
+                        ):  # Cache has a known cleaned header
+                            original_to_cleaned_header_map[verbose_orig] = (
+                                cleaned_std  # Map its verbose original to it
+                            )
+                            original_to_cleaned_header_map[cleaned_std] = (
+                                cleaned_std  # And map itself to itself
+                            )
+                            found_match = True
+                            break
+                        elif (
+                            col_in_cache == verbose_orig.strip()
+                        ):  # Cache has a known verbose header
+                            original_to_cleaned_header_map[verbose_orig] = cleaned_std
+                            found_match = True
+                            break
+                    if (
+                        not found_match
+                        and col_in_cache not in standard_column_mapping.values()
+                    ):  # Custom column
+                        original_to_cleaned_header_map[col_in_cache] = col_in_cache
+
+                logging.debug(
+                    f"Reconstructed Original to Cleaned Header Map from standard mapping for cache load: {original_to_cleaned_header_map}"
+                )
+
+                # 'original_transactions_df' can be a copy of the cleaned_df for consistency in return type.
                 # Ignored indices/reasons for *this specific load operation* are empty because it's from cache.
                 # Overall ignored rows from other processing steps will still be handled by the caller.
                 return (
@@ -737,7 +904,8 @@ def load_and_clean_transactions(
                     {},
                     False,
                     False,
-                )  # df, original_df, ignored_indices, ignored_reasons, err_load, warn_load
+                    original_to_cleaned_header_map,  # Return the reconstructed map
+                )
             else:
                 logging.info(
                     f"Feather cache '{feather_cache_path}' is older than CSV. Reloading from CSV."
@@ -760,6 +928,7 @@ def load_and_clean_transactions(
         ignored_reasons_load,
         err_load,
         warn_load,
+        original_to_cleaned_header_map,  # Get the map from the actual load
     ) = _load_and_clean_from_csv_actual(
         transactions_csv_file, account_currency_map, default_currency
     )
@@ -783,4 +952,5 @@ def load_and_clean_transactions(
         ignored_reasons_load,
         err_load,
         warn_load,
+        original_to_cleaned_header_map,  # Return the map from the actual load
     )

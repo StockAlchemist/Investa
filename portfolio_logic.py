@@ -66,8 +66,6 @@ try:
         DAILY_RESULTS_CACHE_PATH_PREFIX,
         YFINANCE_CACHE_DURATION_HOURS,
         YFINANCE_INDEX_TICKER_MAP,
-        DEFAULT_INDEX_QUERY_SYMBOLS,
-        SYMBOL_MAP_TO_YFINANCE,
         YFINANCE_EXCLUDED_SYMBOLS,
         SHORTABLE_SYMBOLS,
         DEFAULT_CURRENCY,
@@ -168,6 +166,8 @@ def calculate_portfolio_summary(
     cache_file_path: str = DEFAULT_CURRENT_CACHE_FILE_PATH,  # Used by provider
     include_accounts: Optional[List[str]] = None,
     manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]] = None,  # MODIFIED
+    user_symbol_map: Optional[Dict[str, str]] = None,
+    user_excluded_symbols: Optional[Set[str]] = None,
 ) -> Tuple[
     Optional[Dict[str, Any]],
     Optional[pd.DataFrame],
@@ -196,6 +196,8 @@ def calculate_portfolio_summary(
         cache_file_path (str, optional): Path to the cache file used by MarketDataProvider. Defaults to DEFAULT_CURRENT_CACHE_FILE_PATH.
         include_accounts (Optional[List[str]], optional): A list of account names to include in the calculation. If None, includes all accounts. Defaults to None.
         manual_overrides_dict (Optional[Dict[str, Dict[str, Any]]], optional): Dictionary of manual overrides (symbol: {"price": float, "asset_type": str, "sector": str, "geography": str}). Defaults to None.
+        user_symbol_map (Optional[Dict[str, str]], optional): User-defined symbol map. Defaults to None.
+        user_excluded_symbols (Optional[Set[str]], optional): User-defined excluded symbols. Defaults to None.
 
     Returns:
         Tuple[Optional[Dict[str, Any]], Optional[pd.DataFrame], Optional[Dict[str, Dict[str, float]]], Set[int], Dict[int, str], str]:
@@ -220,6 +222,11 @@ def calculate_portfolio_summary(
     manual_overrides_effective = (  # MODIFIED
         manual_overrides_dict if manual_overrides_dict is not None else {}
     )
+    effective_user_symbol_map = user_symbol_map if user_symbol_map is not None else {}
+    effective_user_excluded_symbols = (
+        user_excluded_symbols if user_excluded_symbols is not None else set()
+    )
+
     report_date = datetime.now().date()
 
     # --- Check if dependencies are available ---
@@ -235,7 +242,8 @@ def calculate_portfolio_summary(
         ignored_indices_load,
         ignored_reasons_load,
         err_load,
-        warn_load,
+        warn_load,  # This is the 6th item
+        _,  # Add a placeholder for the 7th item (original_to_cleaned_header_map)
     ) = load_and_clean_transactions(
         transactions_csv_file, account_currency_map, default_currency
     )
@@ -347,6 +355,8 @@ def calculate_portfolio_summary(
         market_provider.get_current_quotes(
             internal_stock_symbols=all_stock_symbols_internal,
             required_currencies=required_currencies,
+            user_symbol_map=effective_user_symbol_map,
+            user_excluded_symbols=effective_user_excluded_symbols,
         )
     )
     if err_fetch:
@@ -395,8 +405,9 @@ def calculate_portfolio_summary(
         transactions_df=transactions_df_filtered,
         report_date=report_date,
         shortable_symbols=SHORTABLE_SYMBOLS,
-        excluded_symbols=YFINANCE_EXCLUDED_SYMBOLS,
-        manual_prices_dict=manual_overrides_effective.get(
+        user_excluded_symbols=effective_user_excluded_symbols,
+        user_symbol_map=effective_user_symbol_map,  # Pass user symbol map
+        manual_prices_dict=manual_overrides_effective.get(  # This is the 'manual_price_overrides' part
             "price", {}
         ),  # Pass only price part for now, or update _build_summary_rows
     )
@@ -469,7 +480,9 @@ def calculate_portfolio_summary(
                     )
                     continue
 
-                yf_ticker_for_sector = map_to_yf_symbol(internal_symbol)
+                yf_ticker_for_sector = map_to_yf_symbol(
+                    internal_symbol, user_symbol_map, user_excluded_symbols
+                )  # Pass user settings
                 logging.debug(
                     f"  YF Ticker for {internal_symbol}: {yf_ticker_for_sector}"
                 )
@@ -2215,6 +2228,8 @@ def _prepare_historical_inputs(
     raw_cache_prefix: str = HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
     daily_cache_prefix: str = DAILY_RESULTS_CACHE_PATH_PREFIX,
     preloaded_transactions_df: Optional[pd.DataFrame] = None,  # <-- ADD NEW PARAMETER
+    user_symbol_map: Optional[Dict[str, str]] = None,
+    user_excluded_symbols: Optional[Set[str]] = None,
 ) -> Tuple[
     Optional[pd.DataFrame],
     Optional[pd.DataFrame],
@@ -2256,6 +2271,8 @@ def _prepare_historical_inputs(
         current_hist_version (str): Version string for daily results cache key.
         raw_cache_prefix (str): Prefix for the raw historical data cache file.
         daily_cache_prefix (str): Prefix for the daily results cache file.
+        user_symbol_map (Optional[Dict[str, str]], optional): User-defined symbol map.
+        user_excluded_symbols (Optional[Set[str]], optional): User-defined excluded symbols.
 
     Returns:
         Tuple containing:
@@ -2299,13 +2316,19 @@ def _prepare_historical_inputs(
         "",
     )
 
+    effective_user_symbol_map = user_symbol_map if user_symbol_map is not None else {}
+    effective_user_excluded_symbols = (
+        user_excluded_symbols if user_excluded_symbols is not None else set()
+    )
+
     (
         all_transactions_df,
         original_transactions_df,
         ignored_indices,
         ignored_reasons,
         err_load,
-        warn_load,
+        warn_load,  # This is the 6th item
+        _,  # Add a placeholder for the 7th item (original_to_cleaned_header_map)
     ) = load_and_clean_transactions(
         transactions_csv_file, account_currency_map, default_currency
     )
@@ -2414,13 +2437,20 @@ def _prepare_historical_inputs(
     internal_to_yf_map = {}
     yf_to_internal_map_hist = {}
     for internal_sym in all_symbols_internal:
-        if internal_sym == CASH_SYMBOL_CSV:
+        if (
+            internal_sym == CASH_SYMBOL_CSV
+        ):  # This check is redundant with the one inside map_to_yf_symbol, but harmless
             continue
-        yf_sym = map_to_yf_symbol(internal_sym)
+        yf_sym = map_to_yf_symbol(
+            internal_sym, effective_user_symbol_map, effective_user_excluded_symbols
+        )
         if yf_sym:
             symbols_to_fetch_yf_portfolio.append(yf_sym)
             internal_to_yf_map[internal_sym] = yf_sym
-            yf_to_internal_map_hist[yf_sym] = internal_sym
+
+    yf_to_internal_map_hist = {
+        v: k for k, v in internal_to_yf_map.items()
+    }  # Populate reverse map after loop
     symbols_to_fetch_yf_portfolio = sorted(list(set(symbols_to_fetch_yf_portfolio)))
     symbols_for_stocks_and_benchmarks_yf = sorted(
         list(set(symbols_to_fetch_yf_portfolio + benchmark_symbols_yf))
@@ -3299,6 +3329,8 @@ def calculate_historical_performance(
     worker_signals: Optional[Any] = None,  # <-- ADDED: Accept signals object
     exclude_accounts: Optional[List[str]] = None,
     all_transactions_df_cleaned: Optional[pd.DataFrame] = None,  # <-- ADD NEW PARAMETER
+    user_symbol_map: Optional[Dict[str, str]] = None,
+    user_excluded_symbols: Optional[Set[str]] = None,
 ) -> Tuple[
     pd.DataFrame, Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], str
 ]:  # MODIFIED RETURN SIG (4 items)
@@ -3330,6 +3362,8 @@ def calculate_historical_performance(
         worker_signals (Optional[Any]): The signals object from the GUI worker (or None).
         transactions_csv_file (str): Path to the source transactions CSV file.
         exclude_accounts (Optional[List[str]]): Accounts to exclude.
+        user_symbol_map (Optional[Dict[str, str]], optional): User-defined symbol map.
+        user_excluded_symbols (Optional[Set[str]], optional): User-defined excluded symbols.
 
     Returns:
         Tuple[pd.DataFrame, Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], str]: # MODIFIED RETURN DOC (4 items)
@@ -3395,6 +3429,8 @@ def calculate_historical_performance(
         raw_cache_prefix=HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
         daily_cache_prefix=DAILY_RESULTS_CACHE_PATH_PREFIX,
         preloaded_transactions_df=all_transactions_df_cleaned,  # <-- PASS IT HERE
+        user_symbol_map=user_symbol_map,
+        user_excluded_symbols=user_excluded_symbols,
     )
     (
         transactions_df_effective,  # <-- DEFINED HERE
@@ -3764,6 +3800,8 @@ if __name__ == "__main__":
             default_currency=test_default_currency,
             include_accounts=None,  # Test all accounts
             manual_prices_dict=test_manual_prices,
+            user_symbol_map={},
+            user_excluded_symbols=set(),  # Add empty user settings
         )
         logging.info(f"Current Summary Status (All Accounts): {status}")
         if summary_metrics:
@@ -3810,6 +3848,8 @@ if __name__ == "__main__":
             include_accounts=None,
             worker_signals=None,  # Pass None for standalone test
             exclude_accounts=None,
+            user_symbol_map={},  # Add empty user settings
+            user_excluded_symbols=set(),  # Add empty user settings
         )
         end_time_run = time.time()
         logging.info(f"Test 'All Accounts' Status: {hist_status}")
@@ -3846,6 +3886,8 @@ if __name__ == "__main__":
             end_date=profile_target_date,  # Fetch up to target date
             benchmark_symbols_yf=[],  # No benchmarks needed for value calc
             display_currency=profile_display_currency,
+            user_symbol_map={},  # Add empty user settings
+            user_excluded_symbols=set(),  # Add empty user settings
         )
         (
             profile_tx_df,

@@ -43,7 +43,6 @@ try:
     from config import (
         CASH_SYMBOL_CSV,
         SHORTABLE_SYMBOLS,  # Used by _process_transactions...
-        YFINANCE_EXCLUDED_SYMBOLS,  # Used by _build_summary_rows
         STOCK_QUANTITY_CLOSE_TOLERANCE,  # New tolerance
         # Add any other config constants used by these specific functions if needed
     )
@@ -54,7 +53,6 @@ except ImportError:
     # Define fallbacks if absolutely necessary
     CASH_SYMBOL_CSV = "$CASH"
     SHORTABLE_SYMBOLS = set()
-    YFINANCE_EXCLUDED_SYMBOLS = set()
     STOCK_QUANTITY_CLOSE_TOLERANCE = 1e-9  # Fallback if config fails
 
 # --- Import Utilities ---
@@ -725,8 +723,11 @@ def _build_summary_rows(
     transactions_df: pd.DataFrame,  # Filtered transactions for IRR/fallback
     report_date: date,
     shortable_symbols: Set[str],
-    excluded_symbols: Set[str],
-    manual_prices_dict: Dict[str, float],
+    user_excluded_symbols: Set[str],
+    user_symbol_map: Dict[str, str],  # New: Accept user symbol map
+    manual_prices_dict: Dict[
+        str, float
+    ],  # This is just the price part of manual_overrides
 ) -> Tuple[List[Dict[str, Any]], Dict[str, float], Dict[str, str], bool, bool]:
     """
     Builds the detailed list of portfolio summary rows, converting values to the display currency.
@@ -772,7 +773,7 @@ def _build_summary_rows(
         day_change_local = np.nan
         day_change_pct = np.nan
 
-        is_excluded = symbol in excluded_symbols
+        is_excluded = symbol in user_excluded_symbols
         current_price_local_raw = stock_data.get("price")
         is_yahoo_price_valid = (
             pd.notna(current_price_local_raw)

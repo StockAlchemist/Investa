@@ -69,7 +69,7 @@ import logging
 
 # --- Configure Logging Globally (as early as possible) ---
 # Set the desired global level here (e.g., logging.INFO, logging.DEBUG)
-LOGGING_LEVEL = logging.WARNING  # Or logging.DEBUG for more detail
+LOGGING_LEVEL = logging.DEBUG  # Or logging.DEBUG for more detail
 
 logging.basicConfig(
     level=LOGGING_LEVEL,
@@ -211,7 +211,7 @@ import matplotlib.dates as mdates  # Needed for date formatting in tooltips
 # --- Import Business Logic from portfolio_logic ---
 try:
     # --- MODIFICATION: Check if the imported function actually supports exclude_accounts ---
-    # We assume it might not, based on the error. The GUI will pass include_accounts,
+    # We assume it might not, based on the error. The GUI will pass include_accounts, # type: ignore
     # but we will NOT pass exclude_accounts for now.
     # --- REMOVED fetch_index_quotes_yfinance from this import ---
     from portfolio_logic import (
@@ -222,7 +222,7 @@ try:
 
     # --- ADDED Import for MarketDataProvider ---
     from market_data import MarketDataProvider
-    from finutils import map_to_yf_symbol
+    from finutils import map_to_yf_symbol  # Keep this import for direct lookups
 
     LOGIC_AVAILABLE = True
     # --- ADDED Import from data_loader ---
@@ -235,6 +235,7 @@ try:
         # --- ADDED: Import extract_dividend_history ---
         extract_dividend_history,  # <-- ADDED for dividend history
     )  # Add the new function
+    import config  # <-- ADDED IMPORT FOR CONFIG MODULE
 
     # --- END ADD ---
     MARKET_PROVIDER_AVAILABLE = True  # Assume available if import succeeds
@@ -335,6 +336,18 @@ except Exception as import_err:
         return pd.DataFrame(), {}, {}, "Error: Logic import failed"  # Return 4 items
 
     logging.warning(f"Warning: Using fallback CASH_SYMBOL_CSV: {CASH_SYMBOL_CSV}")
+
+
+# --- ADDED: Import the new CSV utility ---
+try:
+    from csv_utils import convert_csv_headers_to_cleaned_format
+
+    CSV_UTILS_AVAILABLE = True
+except ImportError:
+    logging.error(
+        "ERROR: csv_utils.py not found. CSV header standardization will not be available."
+    )
+    CSV_UTILS_AVAILABLE = False
 
 
 # --- Constants ---
@@ -541,7 +554,9 @@ class PortfolioCalculatorWorker(QRunnable):
         historical_args,
         historical_kwargs,
         worker_signals: WorkerSignals,  # <-- ADDED: Pass signals objec
-        manual_overrides_dict,  # MODIFIED: Expect new dict name
+        manual_overrides_dict: Dict[str, Dict[str, Any]],  # For prices, sectors etc.
+        user_symbol_map: Dict[str, str],  # New
+        user_excluded_symbols: Set[str],  # New
     ):
         """
         Initializes the worker with calculation functions and arguments.
@@ -554,7 +569,9 @@ class PortfolioCalculatorWorker(QRunnable):
             historical_fn (callable): The function to calculate historical performance.
             historical_args (tuple): Positional arguments for historical_fn.
             historical_kwargs (dict): Keyword arguments for historical_fn.
-            manual_overrides_dict (dict): Dictionary of manual overrides (price, asset_type, sector, geography).
+            manual_overrides_dict (dict): Dictionary of manual overrides (price, asset_type, sector, geography, industry).
+            user_symbol_map (Dict[str, str]): User-defined symbol map.
+            user_excluded_symbols (Set[str]): User-defined excluded symbols.
         """
         super().__init__()
         self.portfolio_fn = portfolio_fn
@@ -566,7 +583,9 @@ class PortfolioCalculatorWorker(QRunnable):
         self.historical_args = historical_args
         # historical_kwargs will contain account_currency_map and default_currency
         self.historical_kwargs = historical_kwargs
-        self.manual_overrides_dict = manual_overrides_dict  # MODIFIED: Store new dict
+        self.manual_overrides_dict = manual_overrides_dict
+        self.user_symbol_map = user_symbol_map
+        self.user_excluded_symbols = user_excluded_symbols
         self.signals = worker_signals  # <-- USE PASSED SIGNALS
         self.original_data = pd.DataFrame()
 
@@ -603,8 +622,14 @@ class PortfolioCalculatorWorker(QRunnable):
             portfolio_fn_kwargs.pop("all_transactions_df_for_worker", None)
             try:
                 portfolio_fn_kwargs["manual_overrides_dict"] = (
-                    self.manual_overrides_dict
+                    self.manual_overrides_dict  # Pass price/sector overrides
                 )  # MODIFIED: Pass new dict
+                portfolio_fn_kwargs["user_symbol_map"] = (
+                    self.user_symbol_map
+                )  # Pass symbol map
+                portfolio_fn_kwargs["user_excluded_symbols"] = (
+                    self.user_excluded_symbols
+                )  # Pass excluded symbols
 
                 (
                     p_summary,
@@ -649,6 +674,9 @@ class PortfolioCalculatorWorker(QRunnable):
                 # --- Instantiate and call MarketDataProvider ---
                 if MARKET_PROVIDER_AVAILABLE:
                     market_provider = MarketDataProvider()
+                    # get_index_quotes does not need user_symbol_map or user_excluded_symbols
+                    # as it uses its own predefined list from config.py (YFINANCE_INDEX_TICKER_MAP)
+                    # If index symbols were to become user-configurable, this would need to change.
                     index_quotes = (
                         market_provider.get_index_quotes()
                     )  # Uses defaults from config
@@ -687,6 +715,10 @@ class PortfolioCalculatorWorker(QRunnable):
                 current_historical_kwargs["all_transactions_df_cleaned"] = (
                     self.portfolio_kwargs.get("all_transactions_df_for_worker")
                 )  # <-- PASS THE PRELOADED DF
+                current_historical_kwargs["user_symbol_map"] = self.user_symbol_map
+                current_historical_kwargs["user_excluded_symbols"] = (
+                    self.user_excluded_symbols
+                )
 
                 # MODIFIED: Unpack 4 items (full_daily_df, prices, fx, status)
                 full_hist_df, h_prices_adj, h_fx, hist_status = self.historical_fn(
@@ -751,6 +783,7 @@ class PortfolioCalculatorWorker(QRunnable):
                         include_accounts=self.portfolio_kwargs.get(
                             "include_accounts"
                         ),  # <-- CORRECTLY ADDED HERE
+                        # extract_dividend_history does not need user_symbol_map or user_excluded_symbols
                     )
                     logging.debug(
                         f"DEBUG Worker: Dividend history extracted ({len(dividend_history_df)} records)."
@@ -2308,21 +2341,51 @@ class ManageTransactionsDialog(QDialog):
 
         # Find the row data from the original full dataset
         try:
-            transaction_row = self._original_data[
+            # Get the specific row from the DataFrame
+            transaction_row_series = self._original_data[
                 self._original_data["original_index"] == original_index
-            ].iloc[0]
-            transaction_dict_for_dialog = transaction_row.to_dict()
-        except (IndexError, KeyError):
+            ].iloc[
+                0
+            ]  # This is a pandas Series
+
+            # --- ADDED: Log the Series ---
+            logging.debug(
+                f"--- Transaction Series for original_index {original_index} (before to_dict): ---"
+            )
+            logging.debug(
+                f"Series Data:\n{transaction_row_series.to_string()}"
+            )  # Log the full series content
+            logging.debug(
+                f"  Series index (should be original CSV headers): {transaction_row_series.index.tolist()}"
+            )
+            logging.debug(f"  Series values: {transaction_row_series.values.tolist()}")
+            # --- END ADDED ---
+
+            transaction_dict_for_dialog = transaction_row_series.to_dict()
+        except (IndexError, KeyError) as e:
+            logging.error(
+                f"Error finding transaction row for original_index {original_index}: {e}"
+            )
             QMessageBox.warning(
                 self, "Data Error", "Could not find the selected transaction data."
             )
             return
 
+        # --- ADDED: Log the raw data dictionary immediately after retrieval ---
+        logging.debug(
+            f"--- Full transaction_dict_for_dialog for original_index {original_index}: ---"
+        )
+        for key, value in transaction_dict_for_dialog.items():
+            logging.debug(f"  Dict Key: '{key}', Value: '{value}', Type: {type(value)}")
+        logging.debug(
+            f"--- Raw transaction data retrieved for original_index {original_index}: {transaction_dict_for_dialog} ---"
+        )
+
         # Reuse AddTransactionDialog
         # Need the list of existing accounts for the dropdown
         accounts = (
-            list(self._original_data["Investment Account"].unique())
-            if "Investment Account" in self._original_data
+            list(self._original_data["Investment Account"].unique().tolist())
+            if "Investment Account" in self._original_data.columns
             else []
         )
         edit_dialog = AddTransactionDialog(existing_accounts=accounts, parent=self)
@@ -2331,27 +2394,53 @@ class ManageTransactionsDialog(QDialog):
         # --- Pre-fill the dialog ---
         try:
             logging.debug(f"--- Starting Pre-fill for Edit Dialog ---")
+            # --- ADDED: Temporarily disconnect auto-calculation signals ---
+            try:
+                edit_dialog.quantity_edit.textChanged.disconnect(
+                    edit_dialog._auto_calculate_total
+                )
+                edit_dialog.price_edit.textChanged.disconnect(
+                    edit_dialog._auto_calculate_total
+                )
+                logging.debug(
+                    "Temporarily disconnected auto-calculation signals for pre-fill."
+                )
+            except RuntimeError:  # Signals might not be connected if dialog is fresh
+                logging.debug(
+                    "Auto-calculation signals were not connected, no need to disconnect."
+                )
             logging.debug(
                 f"Pre-filling edit dialog with data: {transaction_dict_for_dialog}"
             )
             logging.debug(f"CSV_DATE_FORMAT constant is: '{CSV_DATE_FORMAT}'")
+            edit_dialog.total_amount_locked_by_user = False  # Default to not locked
 
             # Date
-            date_val_from_dict = transaction_dict_for_dialog.get(
-                "Date"
-            )  # Use internal name 'Date'
+            # Use the key that is actually in transaction_dict_for_dialog (cleaned name)
+            date_val_from_csv = transaction_dict_for_dialog.get("Date")
             logging.debug(
-                f"  Date from dict: '{date_val_from_dict}' (type: {type(date_val_from_dict)})"
+                f"  Date value from CSV dict: '{date_val_from_csv}' (type: {type(date_val_from_csv)})"
             )
-            if pd.notna(date_val_from_dict) and isinstance(
-                date_val_from_dict, pd.Timestamp
-            ):
-                # Try parsing with the specific CSV format first
+            if pd.notna(date_val_from_csv) and date_val_from_csv:
                 try:
-                    parsed_dt = (
-                        date_val_from_dict.to_pydatetime()
-                    )  # Convert Timestamp to datetime
-                    qdate = QDate(parsed_dt.year, parsed_dt.month, parsed_dt.day)
+                    # MODIFIED: Handle pandas Timestamp directly
+                    if isinstance(date_val_from_csv, pd.Timestamp):
+                        parsed_dt = date_val_from_csv.to_pydatetime()
+                        qdate = QDate(parsed_dt.year, parsed_dt.month, parsed_dt.day)
+                    elif isinstance(date_val_from_csv, (datetime, date)):
+                        qdate = QDate(
+                            date_val_from_csv.year,
+                            date_val_from_csv.month,
+                            date_val_from_csv.day,
+                        )
+                    else:  # Fallback to string parsing if it's not a Timestamp or datetime object
+                        date_str_for_parsing = str(date_val_from_csv)
+                        parsed_dt = datetime.strptime(
+                            date_str_for_parsing, CSV_DATE_FORMAT
+                        )
+                        qdate = QDate(parsed_dt.year, parsed_dt.month, parsed_dt.day)
+                    # END MODIFICATION
+
                     if qdate.isValid():
                         edit_dialog.date_edit.setDate(qdate)
                         logging.debug(
@@ -2359,33 +2448,36 @@ class ManageTransactionsDialog(QDialog):
                         )
                     else:
                         logging.warning(
-                            f"    Parsed QDate '{qdate.toString()}' is invalid from date_val '{date_val_from_dict}'."
-                        )
+                            f"    Parsed QDate '{qdate.toString()}' is invalid from date_str '{date_str_for_parsing}'."
+                        )  # date_str_for_parsing might be undefined here if timestamp path taken
                 except ValueError as e_date:
-                    logging.error(
-                        f"    ValueError processing date_val '{date_val_from_dict}': {e_date}"
+                    logging.error(  # date_str_for_parsing might be undefined here
+                        f"    ValueError processing date value '{date_val_from_csv}': {e_date}"
                     )
                 except Exception as e_date_other:
                     logging.error(
-                        f"    Unexpected error processing date_val '{date_val_from_dict}': {e_date_other}"
+                        f"    Unexpected error processing date_str '{date_str_for_parsing}': {e_date_other}"
                     )
             else:
-                logging.warning("    Date string is missing or None from dict.")
+                logging.warning("    Date string is missing, None, or NaN from dict.")
             logging.debug(
                 f"  date_edit after attempt: {edit_dialog.date_edit.date().toString('yyyy-MM-dd')}"
             )
             # Type (match case-insensitively)
-            tx_type_str = transaction_dict_for_dialog.get(
-                "Type", ""
-            )  # Use internal name 'Type'
-            logging.debug(f"  Transaction Type from dict: '{tx_type_str}'")
+            # Use the key that is actually in transaction_dict_for_dialog (cleaned name)
+            tx_type_val_from_csv = transaction_dict_for_dialog.get("Type")
+            tx_type_str = (
+                str(tx_type_val_from_csv)
+                if pd.notna(tx_type_val_from_csv) and tx_type_val_from_csv is not None
+                else ""
+            )
+            logging.debug(
+                f"  Transaction Type from dict: '{tx_type_str}' (original value from CSV: '{tx_type_val_from_csv}')"
+            )
             original_type_index = edit_dialog.type_combo.currentIndex()
             found_type = False
             for i in range(edit_dialog.type_combo.count()):
-                if (
-                    edit_dialog.type_combo.itemText(i).lower()
-                    == str(tx_type_str).lower()
-                ):  # Ensure tx_type_str is string
+                if edit_dialog.type_combo.itemText(i).lower() == tx_type_str.lower():
                     edit_dialog.type_combo.setCurrentIndex(i)
                     logging.debug(
                         f"  Set type_combo to index {i} ('{edit_dialog.type_combo.itemText(i)}')"
@@ -2401,23 +2493,38 @@ class ManageTransactionsDialog(QDialog):
             )
 
             # Symbol
-            symbol_val = transaction_dict_for_dialog.get(
-                "Symbol", ""
-            )  # Use internal name 'Symbol'
-            logging.debug(f"  Symbol from dict: '{symbol_val}'")
-            edit_dialog.symbol_edit.setText(str(symbol_val))  # Ensure string
+            # Use the key that is actually in transaction_dict_for_dialog (cleaned name)
+            symbol_val_from_csv = transaction_dict_for_dialog.get("Symbol")
+            symbol_str_for_edit = (
+                str(symbol_val_from_csv)
+                if pd.notna(symbol_val_from_csv) and symbol_val_from_csv is not None
+                else ""
+            )
+            logging.debug(
+                f"  Symbol from dict: '{symbol_str_for_edit}' (original value from CSV: '{symbol_val_from_csv}')"
+            )
+            edit_dialog.symbol_edit.setText(symbol_str_for_edit)
             logging.debug(
                 f"  symbol_edit after attempt: '{edit_dialog.symbol_edit.text()}'"
             )
+            # ADDED: Log state after setting Symbol
+            logging.debug(
+                f"  Pre-fill state (after Symbol): Symbol='{edit_dialog.symbol_edit.text()}'"
+            )
+
             # Account (exact match)
-            acc_str = transaction_dict_for_dialog.get(
-                "Account", ""
-            )  # Use internal name 'Account'
-            logging.debug(f"  Account from dict: '{acc_str}'")
+            # Use the key that is actually in transaction_dict_for_dialog (cleaned name)
+            acc_val_from_csv = transaction_dict_for_dialog.get("Account")
+            acc_str = (
+                str(acc_val_from_csv)
+                if pd.notna(acc_val_from_csv) and acc_val_from_csv is not None
+                else ""
+            )
+            logging.debug(
+                f"  Account from dict: '{acc_str}' (original value from CSV: '{acc_val_from_csv}')"
+            )
             original_acc_index = edit_dialog.account_combo.currentIndex()
-            index = edit_dialog.account_combo.findText(
-                str(acc_str), Qt.MatchFixedString
-            )  # Ensure string
+            index = edit_dialog.account_combo.findText(acc_str, Qt.MatchFixedString)
             if index >= 0:
                 edit_dialog.account_combo.setCurrentIndex(index)
                 logging.debug(
@@ -2427,20 +2534,23 @@ class ManageTransactionsDialog(QDialog):
                 logging.warning(
                     f"    Account '{acc_str}' not found in combo box. Setting editable text. Index remains {original_acc_index}."
                 )
-                edit_dialog.account_combo.setEditText(
-                    str(acc_str)  # Ensure string
-                )  # Set text if not found, relies on AddTxDialog logic for new accounts
+                edit_dialog.account_combo.setEditText(acc_str)
             logging.debug(
                 f"  account_combo after attempt: '{edit_dialog.account_combo.currentText()}' (index: {edit_dialog.account_combo.currentIndex()})"
             )
+            # ADDED: Log state after setting Account
+            logging.debug(
+                f"  Pre-fill state (after Account): Account='{edit_dialog.account_combo.currentText()}'"
+            )
 
             # Numeric fields (handle potential formatting issues)
+            # Use the keys that are actually in transaction_dict_for_dialog (cleaned names)
             fields_to_set = {
-                "Quantity": edit_dialog.quantity_edit,  # Use internal name 'Quantity'
-                "Price/Share": edit_dialog.price_edit,  # Use internal name 'Price/Share'
-                "Total Amount": edit_dialog.total_amount_edit,
-                "Commission": edit_dialog.commission_edit,  # Use internal name 'Commission'
-                "Split Ratio": edit_dialog.split_ratio_edit,  # Use internal name 'Split Ratio'
+                "Quantity": edit_dialog.quantity_edit,
+                "Price/Share": edit_dialog.price_edit,
+                "Total Amount": edit_dialog.total_amount_edit,  # This key was already cleaned
+                "Commission": edit_dialog.commission_edit,
+                "Split Ratio": edit_dialog.split_ratio_edit,
             }
             for key, widget in fields_to_set.items():
                 raw_val = transaction_dict_for_dialog.get(key)
@@ -2458,15 +2568,35 @@ class ManageTransactionsDialog(QDialog):
                 logging.debug(
                     f"  {widget_name_for_log} after attempt: '{widget.text()}'"
                 )
+                # ADDED: Log state after setting numeric field
+                logging.debug(
+                    f"  Pre-fill state (after {key}): {key}='{widget.text()}'"
+                )
+                # If Total Amount is being pre-filled and has a valid value, lock it
+                if key == "Total Amount" and formatted_val:
+                    logging.debug(
+                        f"  Locking Total Amount as it was pre-filled with '{formatted_val}'"
+                    )
+                    edit_dialog.total_amount_locked_by_user = True
 
             # Note
-            note_val = transaction_dict_for_dialog.get(
-                "Note", ""
-            )  # Use internal name 'Note'
-            logging.debug(f"  Note from dict: '{note_val}'")
-            edit_dialog.note_edit.setText(str(note_val))  # Ensure string
+            # Use the key that is actually in transaction_dict_for_dialog (cleaned name)
+            note_val_from_csv = transaction_dict_for_dialog.get("Note")
+            note_str_for_edit = (
+                str(note_val_from_csv)
+                if pd.notna(note_val_from_csv) and note_val_from_csv is not None
+                else ""
+            )
+            logging.debug(
+                f"  Note from dict: '{note_str_for_edit}' (original value from CSV: '{note_val_from_csv}')"
+            )
+            edit_dialog.note_edit.setText(note_str_for_edit)
             logging.debug(
                 f"  note_edit after attempt: '{edit_dialog.note_edit.text()}'"
+            )
+            # ADDED: Log state after setting Note
+            logging.debug(
+                f"  Pre-fill state (after Note): Note='{edit_dialog.note_edit.text()}'"
             )
 
             logging.debug(
@@ -2475,6 +2605,20 @@ class ManageTransactionsDialog(QDialog):
             edit_dialog._update_field_states(
                 edit_dialog.type_combo.currentText()
             )  # Ensure fields are correctly enabled/disabled
+            # --- ADDED: Reconnect auto-calculation signals ---
+            try:
+                edit_dialog.quantity_edit.textChanged.connect(
+                    edit_dialog._auto_calculate_total
+                )
+                edit_dialog.price_edit.textChanged.connect(
+                    edit_dialog._auto_calculate_total
+                )
+                logging.debug("Reconnected auto-calculation signals after pre-fill.")
+            except Exception as e_reconnect:
+                logging.error(
+                    f"Error reconnecting auto-calculation signals: {e_reconnect}"
+                )
+            # --- END ADDED ---
             logging.debug(f"--- _update_field_states called. ---")
 
         except Exception as e_fill:
@@ -2771,12 +2915,18 @@ class SymbolChartDialog(QDialog):
 
 
 class ManualPriceDialog(QDialog):
-    """Dialog to manage manual overrides (price, asset type, sector, geography) for symbols."""
+    """Dialog to manage manual overrides, symbol mappings, and excluded symbols."""
 
-    def __init__(self, current_overrides: Dict[str, Dict[str, Any]], parent=None):
+    def __init__(
+        self,
+        current_overrides: Dict[str, Dict[str, Any]],
+        current_symbol_map: Dict[str, str],
+        current_excluded_symbols: Set[str],
+        parent=None,
+    ):
         super().__init__(parent)
         self._parent_app = parent
-        self.setWindowTitle("Manual Overrides")  # Renamed title
+        self.setWindowTitle("Symbol Settings")
         self.setMinimumSize(800, 500)  # Increased width from 700 to 800
 
         # Store original values and prepare for updates
@@ -2784,58 +2934,127 @@ class ManualPriceDialog(QDialog):
         self._original_overrides = {  # Renamed attribute
             k.upper().strip(): v for k, v in current_overrides.items()
         }
-        self.updated_overrides = self._original_overrides.copy()  # Start with a copy
+        self._original_symbol_map = {
+            k.upper().strip(): v.upper().strip() for k, v in current_symbol_map.items()
+        }
+        self._original_excluded_symbols = {
+            s.upper().strip() for s in current_excluded_symbols
+        }
+
+        # This will hold all updated settings
+        self.updated_settings = {
+            "manual_price_overrides": self._original_overrides.copy(),
+            "user_symbol_map": self._original_symbol_map.copy(),
+            "user_excluded_symbols": list(
+                self._original_excluded_symbols
+            ),  # Store as list for dialog return
+        }
 
         # --- Layout ---
         main_layout = QVBoxLayout(self)
 
-        # --- Table ---
-        main_layout.addWidget(QLabel("Edit manual prices (used as fallback):"))
-        self.table_widget = QTableWidget()
-        self.table_widget.setObjectName("ManualOverridesTable")
-        self.table_widget.setColumnCount(
+        # --- Tab Widget ---
+        self.tab_widget = QTabWidget()
+        main_layout.addWidget(self.tab_widget)
+
+        # --- Tab 1: Manual Overrides (Price, Sector, etc.) ---
+        self.overrides_tab = QWidget()
+        overrides_layout = QVBoxLayout(self.overrides_tab)
+        overrides_layout.addWidget(QLabel("Edit manual overrides (used as fallback):"))
+        self.overrides_table_widget = QTableWidget()
+        self.overrides_table_widget.setObjectName("ManualOverridesTable")
+        self.overrides_table_widget.setColumnCount(
             6
         )  # Symbol, Price, Asset Type, Sector, Geography, Industry
-        self.table_widget.setHorizontalHeaderLabels(
+        self.overrides_table_widget.setHorizontalHeaderLabels(
             [
                 "Symbol",
                 "Manual Price",
                 "Manual Asset Type",
                 "Manual Sector",
                 "Manual Geography",
-                "Manual Industry",  # ADDED
+                "Manual Industry",
             ]
         )
-        self.table_widget.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table_widget.setSelectionMode(
+        self.overrides_table_widget.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.overrides_table_widget.setSelectionMode(
             QAbstractItemView.SingleSelection
         )  # Easier for delete
-        self.table_widget.verticalHeader().setVisible(False)
-        self.table_widget.setSortingEnabled(True)
+        self.overrides_table_widget.verticalHeader().setVisible(False)
+        self.overrides_table_widget.setSortingEnabled(True)
 
-        # --- Validator for Price Column ---
-        # Allow positive floats with reasonable decimals
-        self.price_validator = QDoubleValidator(
-            0.00000001, 1000000000.0, 8, self
-        )  # Min > 0, Max large, 8 decimals
+        self.price_validator = QDoubleValidator(0.00000001, 1000000000.0, 8, self)
         self.price_validator.setNotation(QDoubleValidator.StandardNotation)
 
-        # Populate table
-        self._populate_table()
-
-        # Resize columns
-        self.table_widget.horizontalHeader().setSectionResizeMode(
+        self._populate_overrides_table()
+        self.overrides_table_widget.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.Stretch
-        )  # Symbol stretches
-        for col_idx in range(1, 5):  # Other columns resize to contents
-            self.table_widget.horizontalHeader().setSectionResizeMode(
+        )
+        for col_idx in range(1, 6):
+            self.overrides_table_widget.horizontalHeader().setSectionResizeMode(
                 col_idx, QHeaderView.ResizeToContents
             )
-        self.table_widget.setColumnWidth(2, 120)  # Asset Type
-        self.table_widget.setColumnWidth(3, 120)  # Sector
-        self.table_widget.setColumnWidth(4, 120)  # Geography
-        self.table_widget.setColumnWidth(5, 120)  # ADDED: Industry
-        main_layout.addWidget(self.table_widget)
+        overrides_layout.addWidget(self.overrides_table_widget)
+        self.tab_widget.addTab(self.overrides_tab, "Manual Overrides")
+
+        # --- Tab 2: Symbol Mapping ---
+        self.symbol_map_tab = QWidget()
+        symbol_map_layout = QVBoxLayout(self.symbol_map_tab)
+        symbol_map_layout.addWidget(
+            QLabel("Define custom symbol mappings to Yahoo Finance tickers:")
+        )
+        self.symbol_map_table_widget = QTableWidget()
+        self.symbol_map_table_widget.setObjectName("SymbolMapTable")
+        self.symbol_map_table_widget.setColumnCount(2)
+        self.symbol_map_table_widget.setHorizontalHeaderLabels(
+            ["Internal Symbol", "Yahoo Finance Ticker"]
+        )
+        self.symbol_map_table_widget.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.symbol_map_table_widget.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.symbol_map_table_widget.verticalHeader().setVisible(False)
+        self.symbol_map_table_widget.setSortingEnabled(True)
+        self._populate_symbol_map_table()
+        self.symbol_map_table_widget.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.Stretch
+        )
+        self.symbol_map_table_widget.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.Stretch
+        )
+        symbol_map_layout.addWidget(self.symbol_map_table_widget)
+        self.tab_widget.addTab(self.symbol_map_tab, "Symbol Mapping")
+
+        # --- Tab 3: Excluded Symbols ---
+        self.excluded_symbols_tab = QWidget()
+        excluded_symbols_layout = QVBoxLayout(self.excluded_symbols_tab)
+        excluded_symbols_layout.addWidget(
+            QLabel("Define symbols to exclude from Yahoo Finance fetching:")
+        )
+        self.excluded_symbols_table_widget = QTableWidget()
+        self.excluded_symbols_table_widget.setObjectName("ExcludedSymbolsTable")
+        self.excluded_symbols_table_widget.setColumnCount(1)
+        self.excluded_symbols_table_widget.setHorizontalHeaderLabels(
+            ["Excluded Symbol"]
+        )
+        self.excluded_symbols_table_widget.setSelectionBehavior(
+            QAbstractItemView.SelectRows
+        )
+        self.excluded_symbols_table_widget.setSelectionMode(
+            QAbstractItemView.SingleSelection
+        )
+        self.excluded_symbols_table_widget.verticalHeader().setVisible(False)
+        self.excluded_symbols_table_widget.setSortingEnabled(True)
+        self._populate_excluded_symbols_table()
+        self.excluded_symbols_table_widget.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.Stretch
+        )
+        excluded_symbols_layout.addWidget(self.excluded_symbols_table_widget)
+        self.tab_widget.addTab(self.excluded_symbols_tab, "Excluded Symbols")
+
+        # Common Add/Delete buttons (could be per tab or one set if context is clear)
+        # For simplicity, let's assume they act on the currently visible tab's table.
+        # This requires connecting them dynamically or having separate buttons per tab.
+        # For now, let's add them outside the tab widget, acting on the current tab.
+        # A better UX might be per-tab buttons.
 
         # --- Buttons ---
         table_buttons_layout = QHBoxLayout()
@@ -2853,10 +3072,14 @@ class ManualPriceDialog(QDialog):
         main_layout.addWidget(self.button_box)
 
         # --- Connections ---
-        self.add_row_button.clicked.connect(self._add_empty_row)
-        self.delete_row_button.clicked.connect(self._delete_selected_row)
+        self.add_row_button.clicked.connect(self._add_row_to_current_tab)
+        self.delete_row_button.clicked.connect(self._delete_row_from_current_tab)
         self.button_box.accepted.connect(self.accept)  # Override accept
         self.button_box.rejected.connect(self.reject)
+
+        self.tab_widget.currentChanged.connect(
+            self._update_button_states
+        )  # Optional: disable buttons if table not focused
 
         # Apply parent's style and font
         if parent:
@@ -2865,12 +3088,13 @@ class ManualPriceDialog(QDialog):
             if hasattr(parent, "font"):
                 self.setFont(parent.font())
 
-    def _populate_table(self):
-        """Fills the table with current manual prices."""
-        # Ensure keys are sorted for consistent display
+    def _populate_overrides_table(self):
+        """Fills the manual overrides table."""
+        table = self.overrides_table_widget
+        table.setSortingEnabled(False)
+        table.setRowCount(0)  # Clear existing rows
         sorted_symbols = sorted(self._original_overrides.keys())
-        self.table_widget.setRowCount(len(sorted_symbols))
-        self.table_widget.setSortingEnabled(False)
+        table.setRowCount(len(sorted_symbols))
 
         for row_idx, symbol in enumerate(sorted_symbols):
             override_data = self._original_overrides.get(symbol, {})
@@ -2878,38 +3102,86 @@ class ManualPriceDialog(QDialog):
             asset_type = override_data.get("asset_type", "")
             sector = override_data.get("sector", "")
             geography = override_data.get("geography", "")
-            industry = override_data.get("industry", "")  # ADDED
+            industry = override_data.get("industry", "")
 
-            # Symbol Item (Editable)
             item_symbol = QTableWidgetItem(symbol)
-            self.table_widget.setItem(row_idx, 0, item_symbol)
-
-            # Price Item (Editable with Validation)
-            price_str = (
-                f"{price:.4f}" if price is not None and pd.notna(price) else ""
-            )  # Changed to .4f
+            table.setItem(row_idx, 0, item_symbol)
+            price_str = f"{price:.4f}" if price is not None and pd.notna(price) else ""
             item_price = QTableWidgetItem(price_str)
-            self.table_widget.setItem(row_idx, 1, item_price)
+            table.setItem(row_idx, 1, item_price)
+            table.setItem(row_idx, 2, QTableWidgetItem(asset_type))
+            table.setItem(row_idx, 3, QTableWidgetItem(sector))
+            table.setItem(row_idx, 4, QTableWidgetItem(geography))
+            table.setItem(row_idx, 5, QTableWidgetItem(industry))
 
-            # Asset Type, Sector, Geography (Editable strings)
-            self.table_widget.setItem(row_idx, 2, QTableWidgetItem(asset_type))
-            self.table_widget.setItem(row_idx, 3, QTableWidgetItem(sector))
-            self.table_widget.setItem(row_idx, 4, QTableWidgetItem(geography))
+        table.setSortingEnabled(True)
+        table.resizeColumnsToContents()
+        table.horizontalHeader().setStretchLastSection(False)
+        table.itemChanged.connect(self._validate_overrides_cell_change)
 
-            # ADDED: Industry item
-            self.table_widget.setItem(row_idx, 5, QTableWidgetItem(industry))
+    def _populate_symbol_map_table(self):
+        table = self.symbol_map_table_widget
+        table.setSortingEnabled(False)
+        table.setRowCount(0)
+        sorted_internal_symbols = sorted(self._original_symbol_map.keys())
+        table.setRowCount(len(sorted_internal_symbols))
 
-        self.table_widget.setSortingEnabled(True)
-        self.table_widget.resizeColumnsToContents()  # Resize after populating
-        self.table_widget.horizontalHeader().setStretchLastSection(
-            False
-        )  # Prevent last col stretch
+        for row_idx, internal_symbol in enumerate(sorted_internal_symbols):
+            yf_ticker = self._original_symbol_map.get(internal_symbol, "")
+            table.setItem(row_idx, 0, QTableWidgetItem(internal_symbol))
+            table.setItem(row_idx, 1, QTableWidgetItem(yf_ticker))
 
-        # Connect itemChanged AFTER populating to avoid signals during setup
-        self.table_widget.itemChanged.connect(self._validate_cell_change)
+        table.setSortingEnabled(True)
+        table.resizeColumnsToContents()
+        table.itemChanged.connect(self._validate_map_cell_change)
+
+    def _populate_excluded_symbols_table(self):
+        table = self.excluded_symbols_table_widget
+        table.setSortingEnabled(False)
+        table.setRowCount(0)
+        sorted_excluded = sorted(list(self._original_excluded_symbols))
+        table.setRowCount(len(sorted_excluded))
+
+        for row_idx, excluded_symbol in enumerate(sorted_excluded):
+            table.setItem(row_idx, 0, QTableWidgetItem(excluded_symbol))
+
+        table.setSortingEnabled(True)
+        table.resizeColumnsToContents()
+        table.itemChanged.connect(self._validate_excluded_cell_change)
 
     @Slot(QTableWidgetItem)
-    def _validate_cell_change(self, item: QTableWidgetItem):
+    def _validate_map_cell_change(self, item: QTableWidgetItem):
+        """Validates changes in the symbol map table."""
+        text = item.text().strip().upper()
+        item.setText(text)  # Force uppercase and strip
+        if not text:
+            item.setBackground(QColor("salmon"))
+            item.setToolTip("Symbol cannot be empty.")
+        else:
+            item.setBackground(QColor("white"))
+            item.setToolTip("")
+
+    @Slot(QTableWidgetItem)
+    def _validate_excluded_cell_change(self, item: QTableWidgetItem):
+        """Validates changes in the excluded symbols table."""
+        text = item.text().strip().upper()
+        item.setText(text)  # Force uppercase and strip
+        if not text:
+            item.setBackground(QColor("salmon"))
+            item.setToolTip("Symbol cannot be empty.")
+        else:
+            item.setBackground(QColor("white"))
+            item.setToolTip("")
+
+    @Slot()
+    def _update_button_states(self):
+        # This is a placeholder if you want to enable/disable add/delete
+        # buttons based on which tab is active or if a table is focused.
+        # For now, they will always be enabled.
+        pass
+
+    @Slot(QTableWidgetItem)
+    def _validate_overrides_cell_change(self, item: QTableWidgetItem):
         """Validates changes made directly in the table cells."""
         if item.column() == 1:  # Price column
             text = item.text().strip().replace(",", "")  # Allow commas during input
@@ -2944,33 +3216,50 @@ class ManualPriceDialog(QDialog):
             item.setText(item.text().strip())
             # No background change for these for now, unless specific validation rules are added
 
-    def _add_empty_row(self):
-        """Adds a new empty row to the table for adding a new entry."""
-        current_row_count = self.table_widget.rowCount()
-        self.table_widget.insertRow(current_row_count)
+    def _add_row_to_current_tab(self):
+        current_tab_index = self.tab_widget.currentIndex()
+        table_widget = None
+        num_cols = 0
 
-        item_symbol = QTableWidgetItem("")
-        item_price = QTableWidgetItem("")
-        item_asset_type = QTableWidgetItem("")
-        item_sector = QTableWidgetItem("")
-        item_industry = QTableWidgetItem("")  # ADDED
-        item_geography = QTableWidgetItem("")
+        if current_tab_index == 0:  # Manual Overrides
+            table_widget = self.overrides_table_widget
+            num_cols = 6
+        elif current_tab_index == 1:  # Symbol Mapping
+            table_widget = self.symbol_map_table_widget
+            num_cols = 2
+        elif current_tab_index == 2:  # Excluded Symbols
+            table_widget = self.excluded_symbols_table_widget
+            num_cols = 1
 
-        self.table_widget.setItem(current_row_count, 0, item_symbol)
-        self.table_widget.setItem(current_row_count, 1, item_price)
-        self.table_widget.setItem(current_row_count, 2, item_asset_type)
-        self.table_widget.setItem(current_row_count, 3, item_sector)
-        self.table_widget.setItem(current_row_count, 4, item_geography)
-        self.table_widget.setItem(current_row_count, 5, item_industry)  # ADDED
+        if table_widget:
+            current_row_count = table_widget.rowCount()
+            table_widget.insertRow(current_row_count)
+            first_item = None
+            for col in range(num_cols):
+                item = QTableWidgetItem("")
+                table_widget.setItem(current_row_count, col, item)
+                if col == 0:
+                    first_item = item
+            if first_item:
+                table_widget.scrollToItem(first_item, QAbstractItemView.PositionAtTop)
+                table_widget.setCurrentItem(first_item)
+                table_widget.editItem(first_item)
 
-        # Optionally scroll to and select the new row for editing
-        self.table_widget.scrollToItem(item_symbol, QAbstractItemView.PositionAtTop)
-        self.table_widget.setCurrentItem(item_symbol)
-        self.table_widget.editItem(item_symbol)  # Start editing symbol
+    def _delete_row_from_current_tab(self):
+        current_tab_index = self.tab_widget.currentIndex()
+        table_widget = None
 
-    def _delete_selected_row(self):
-        """Deletes the currently selected row from the table."""
-        selected_items = self.table_widget.selectedItems()
+        if current_tab_index == 0:  # Manual Overrides
+            table_widget = self.overrides_table_widget
+        elif current_tab_index == 1:  # Symbol Mapping
+            table_widget = self.symbol_map_table_widget
+        elif current_tab_index == 2:  # Excluded Symbols
+            table_widget = self.excluded_symbols_table_widget
+
+        if not table_widget:
+            return
+
+        selected_items = table_widget.selectedItems()
         if not selected_items:
             QMessageBox.warning(
                 self, "Selection Error", "Please select a cell in the row to delete."
@@ -2978,36 +3267,39 @@ class ManualPriceDialog(QDialog):
             return
 
         row_to_delete = selected_items[0].row()  # Get row from the first selected item
-        symbol_item = self.table_widget.item(row_to_delete, 0)
+        symbol_item = table_widget.item(row_to_delete, 0)
         symbol = symbol_item.text() if symbol_item else "this row"
 
         reply = QMessageBox.question(
             self,
             "Confirm Delete",
-            f"Are you sure you want to delete the manual price for '{symbol}'?",
+            f"Are you sure you want to delete the entry for '{symbol}'?",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
 
         if reply == QMessageBox.Yes:
-            self.table_widget.removeRow(row_to_delete)
-            logging.info(f"Row for '{symbol}' removed from manual price dialog.")
+            table_widget.removeRow(row_to_delete)
+            logging.info(f"Row for '{symbol}' removed from dialog.")
 
     def accept(self):
         """Overrides accept to validate all data and store results."""
         new_overrides: Dict[str, Dict[str, Any]] = {}
+        new_symbol_map: Dict[str, str] = {}
+        new_excluded_symbols: Set[str] = set()  # Use set for uniqueness check
         has_errors = False
+
+        # --- Process Manual Overrides Tab ---
         duplicate_symbols = set()
         seen_symbols = set()
 
-        for row_idx in range(self.table_widget.rowCount()):
-            symbol_item = self.table_widget.item(row_idx, 0)
-            price_item = self.table_widget.item(row_idx, 1)
-
-            asset_type_item = self.table_widget.item(row_idx, 2)
-            sector_item = self.table_widget.item(row_idx, 3)
-            geography_item = self.table_widget.item(row_idx, 4)
-            industry_item = self.table_widget.item(row_idx, 5)  # ADDED
+        for row_idx in range(self.overrides_table_widget.rowCount()):
+            symbol_item = self.overrides_table_widget.item(row_idx, 0)
+            price_item = self.overrides_table_widget.item(row_idx, 1)
+            asset_type_item = self.overrides_table_widget.item(row_idx, 2)
+            sector_item = self.overrides_table_widget.item(row_idx, 3)
+            geography_item = self.overrides_table_widget.item(row_idx, 4)
+            industry_item = self.overrides_table_widget.item(row_idx, 5)
 
             # Ensure all items exist for the row
             if not all(
@@ -3018,7 +3310,7 @@ class ManualPriceDialog(QDialog):
                     sector_item,
                     geography_item,
                     industry_item,
-                ]  # ADDED industry_item
+                ]
             ):
                 QMessageBox.warning(
                     self, "Save Error", f"Error reading data from row {row_idx+1}."
@@ -3031,7 +3323,7 @@ class ManualPriceDialog(QDialog):
             asset_type_text = asset_type_item.text().strip()
             sector_text = sector_item.text().strip()
             geography_text = geography_item.text().strip()
-            industry_text = industry_item.text().strip()  # ADDED
+            industry_text = industry_item.text().strip()
             current_override_entry: Dict[str, Any] = {}
 
             # Validate Symbol
@@ -3040,7 +3332,9 @@ class ManualPriceDialog(QDialog):
                     self, "Save Error", f"Symbol cannot be empty in row {row_idx+1}."
                 )
                 has_errors = True
-                self.table_widget.setCurrentItem(symbol_item)  # Highlight error
+                self.overrides_table_widget.setCurrentItem(
+                    symbol_item
+                )  # Highlight error
                 break
             if symbol in seen_symbols:
                 duplicate_symbols.add(symbol)
@@ -3061,7 +3355,7 @@ class ManualPriceDialog(QDialog):
                         f"Invalid price '{price_text}' for symbol '{symbol}' in row {row_idx+1}. Must be a positive number if entered.",
                     )
                     has_errors = True
-                    self.table_widget.setCurrentItem(price_item)
+                    self.overrides_table_widget.setCurrentItem(price_item)
                     break
 
             # Store other fields if they are not empty
@@ -3072,7 +3366,6 @@ class ManualPriceDialog(QDialog):
             if geography_text:
                 current_override_entry["geography"] = geography_text
 
-            # ADDED: Store industry if not empty
             if industry_text:
                 current_override_entry["industry"] = industry_text
             if (
@@ -3088,25 +3381,123 @@ class ManualPriceDialog(QDialog):
             )
             has_errors = True
 
+        if has_errors:
+            super().reject()  # Don't close if errors on this tab
+            return
+
+        # --- Process Symbol Mapping Tab ---
+        seen_internal_symbols_map = set()
+        duplicate_internal_symbols_map = set()
+        for row_idx in range(self.symbol_map_table_widget.rowCount()):
+            internal_sym_item = self.symbol_map_table_widget.item(row_idx, 0)
+            yf_ticker_item = self.symbol_map_table_widget.item(row_idx, 1)
+
+            if not internal_sym_item or not yf_ticker_item:
+                QMessageBox.warning(
+                    self,
+                    "Save Error",
+                    f"Error reading symbol map data from row {row_idx+1}.",
+                )
+                has_errors = True
+                break
+
+            internal_sym = internal_sym_item.text().strip().upper()
+            yf_ticker = yf_ticker_item.text().strip().upper()
+
+            if not internal_sym or not yf_ticker:
+                QMessageBox.warning(
+                    self,
+                    "Save Error",
+                    f"Internal Symbol and YF Ticker cannot be empty in Symbol Mapping row {row_idx+1}.",
+                )
+                has_errors = True
+                self.symbol_map_table_widget.setCurrentItem(internal_sym_item)
+                break
+
+            if internal_sym in seen_internal_symbols_map:
+                duplicate_internal_symbols_map.add(internal_sym)
+                has_errors = True
+            seen_internal_symbols_map.add(internal_sym)
+            new_symbol_map[internal_sym] = yf_ticker
+
+        if duplicate_internal_symbols_map:
+            QMessageBox.warning(
+                self,
+                "Save Error",
+                f"Duplicate Internal Symbols found in Symbol Mapping: {', '.join(sorted(list(duplicate_internal_symbols_map)))}. Please correct.",
+            )
+            has_errors = True
+
+        if has_errors:
+            super().reject()
+            return
+
+        # --- Process Excluded Symbols Tab ---
+        for row_idx in range(self.excluded_symbols_table_widget.rowCount()):
+            excluded_sym_item = self.excluded_symbols_table_widget.item(row_idx, 0)
+            if not excluded_sym_item:
+                QMessageBox.warning(
+                    self,
+                    "Save Error",
+                    f"Error reading excluded symbol data from row {row_idx+1}.",
+                )
+                has_errors = True
+                break
+
+            excluded_sym = excluded_sym_item.text().strip().upper()
+            if not excluded_sym:
+                QMessageBox.warning(
+                    self,
+                    "Save Error",
+                    f"Excluded Symbol cannot be empty in row {row_idx+1}.",
+                )
+                has_errors = True
+                self.excluded_symbols_table_widget.setCurrentItem(excluded_sym_item)
+                break
+
+            new_excluded_symbols.add(
+                excluded_sym
+            )  # Add to set, duplicates handled automatically
+
+        if has_errors:
+            super().reject()
+            return
+
+        # --- If all validations pass ---
         if not has_errors:
-            self.updated_overrides = new_overrides  # Store the validated overrides
+            self.updated_settings["manual_price_overrides"] = new_overrides
+            self.updated_settings["user_symbol_map"] = new_symbol_map
+            self.updated_settings["user_excluded_symbols"] = sorted(
+                list(new_excluded_symbols)
+            )  # Convert set to sorted list for saving
+
             logging.info(
-                f"ManualPriceDialog accepted. Updated Overrides: {self.updated_overrides}"  # Corrected attribute name
+                f"SymbolSettingsDialog accepted. Updated Settings: {self.updated_settings}"
             )
             super().accept()  # Close dialog if validation passes
 
     # --- Static method to retrieve results cleanly ---
     @staticmethod
-    def get_manual_overrides(
-        parent=None, current_overrides=None
-    ) -> Optional[Dict[str, Dict[str, Any]]]:  # Renamed and updated signature
+    def get_symbol_settings(  # Renamed method
+        parent=None,
+        current_overrides=None,
+        current_symbol_map=None,
+        current_excluded_symbols=None,
+    ) -> Optional[Dict[str, Any]]:  # Return type is now a more general dict
         """Creates, shows dialog, and returns updated prices if saved."""
         if current_overrides is None:
             current_overrides = {}
 
-        dialog = ManualPriceDialog(current_overrides, parent)
+        if current_symbol_map is None:
+            current_symbol_map = {}
+        if current_excluded_symbols is None:
+            current_excluded_symbols = set()
+
+        dialog = ManualPriceDialog(  # Class name is still ManualPriceDialog, will rename later
+            current_overrides, current_symbol_map, current_excluded_symbols, parent
+        )
         if dialog.exec():  # Returns 1 if accepted (Save clicked), 0 if rejected
-            return dialog.updated_overrides  # Return the new structure
+            return dialog.updated_settings  # Return the new structure
         return None  # Return None if Cancel was clicked
 
 
@@ -3134,6 +3525,10 @@ class AddTransactionDialog(QDialog):
         # --- Removed separate label_font and self.label_font ---
 
         self.transaction_types = [
+            # --- ADDED: Short Sell and Buy to Cover ---
+            "Short Sell",
+            "Buy to Cover",
+            # --- END ADDED ---
             "Buy",
             "Sell",
             "Dividend",
@@ -3142,6 +3537,9 @@ class AddTransactionDialog(QDialog):
             "Withdrawal",
             "Fees",
         ]
+        # --- ADDED: Initialize total_amount_locked_by_user ---
+        self.total_amount_locked_by_user = False  # Default to not locked
+        # --- END ADDED ---
 
         # --- Layout Modifications ---
         main_dialog_layout = QVBoxLayout(self)
@@ -3283,63 +3681,102 @@ class AddTransactionDialog(QDialog):
         self.quantity_edit.textChanged.connect(self._auto_calculate_total)
         self.price_edit.textChanged.connect(self._auto_calculate_total)
 
-    def _update_field_states(self, tx_type):
+    def _update_field_states(self, tx_type: str = None, symbol: str = None):
         """Enables/disables input fields based on the selected transaction type.
-
-        For example, 'Split Ratio' is only enabled for 'Split' type, 'Price/Unit'
-        is disabled for cash deposits/withdrawals. Clears disabled fields.
 
         Args:
             tx_type (str): The currently selected transaction type (e.g., "Buy", "Split").
+            symbol (str, optional): The currently entered symbol. Defaults to None.
         """
-        # ... (logic remains the same) ...
-        tx_type = tx_type.lower()
-        is_split = tx_type == "split"
-        is_fee = tx_type == "fees"
-        # Check symbol text directly, case-insensitive compare
-        is_cash_flow = (tx_type in ["deposit", "withdrawal"]) and (
-            self.symbol_edit.text().strip().upper() == CASH_SYMBOL_CSV
+        logging.debug(
+            f"_update_field_states: Called with tx_type='{tx_type}', symbol='{symbol}'. Current Total Amount: '{self.total_amount_edit.text()}'"
         )
-        is_dividend = tx_type == "dividend"  # Explicit check for dividend
-        is_buy_sell = tx_type in ["buy", "sell", "short sell", "buy to cover"]
+        # Determine transaction characteristics
+        tx_type_lower = tx_type.lower() if tx_type else ""
+        symbol_upper = symbol.upper() if symbol else ""
+        # Ensure self.cash_symbol_csv is available. It should be set in AddTransactionDialog's __init__
+        # or passed in if it's dynamic. For now, assuming it's an attribute.
+        cash_symbol_to_use = getattr(
+            self, "cash_symbol_csv", CASH_SYMBOL_CSV
+        )  # Fallback to global
+        is_cash_symbol = symbol_upper == cash_symbol_to_use
 
-        # Enable/disable based on type
-        self.quantity_edit.setEnabled(not is_split and not is_fee and not is_dividend)
+        is_buy_sell = tx_type_lower in ["buy", "sell"]
+        is_buy_sell_stock = is_buy_sell and not is_cash_symbol
+        is_cash_deposit_withdrawal = is_cash_symbol and tx_type_lower in [
+            "deposit",
+            "withdrawal",
+        ]
+        is_dividend_fees = tx_type_lower in ["dividend", "fees"]
+        is_split = tx_type_lower in ["split", "stock split"]
+        is_short_sell_cover = tx_type_lower in ["short sell", "buy to cover"]
+
+        # Enable/disable and clear fields based on type
+        self.quantity_edit.setEnabled(
+            is_buy_sell_stock or is_cash_deposit_withdrawal or is_short_sell_cover
+        )
         self.price_edit.setEnabled(
-            not is_split and not is_fee and not is_cash_flow and not is_dividend
+            is_buy_sell_stock or is_dividend_fees or is_short_sell_cover
         )
-
         self.total_amount_edit.setEnabled(
-            is_dividend or is_buy_sell
-        )  # Enabled for dividend (editable) or buy/sell (read-only)
-        self.total_amount_edit.setReadOnly(
-            is_buy_sell
-        )  # Read-only if buy/sell (auto-calculated)
-
+            is_buy_sell_stock
+            or is_dividend_fees
+            or is_short_sell_cover
+            or is_cash_deposit_withdrawal
+        )
+        self.commission_edit.setEnabled(
+            is_buy_sell_stock
+            or is_dividend_fees
+            or is_short_sell_cover
+            or is_split
+            or is_cash_deposit_withdrawal
+        )
         self.split_ratio_edit.setEnabled(is_split)
         self.split_ratio_label.setEnabled(is_split)  # Also enable/disable label
 
-        # Clear disabled fields
+        # Set Total Amount read-only for buy/sell of stock/ETF, but not for cash/dividend/fees
+        self.total_amount_edit.setReadOnly(is_buy_sell_stock or is_short_sell_cover)
+
+        # Clear fields that are not relevant for the current transaction type
         if not self.quantity_edit.isEnabled():
             self.quantity_edit.clear()
         if not self.price_edit.isEnabled():
+            logging.debug(
+                f"_update_field_states: Price edit NOT enabled. Current text: '{self.price_edit.text()}' -> Clearing."
+            )
             self.price_edit.clear()
-        # Clear total_amount_edit if it's neither for dividend (editable) nor buy/sell (auto-filled read-only)
-        if not is_dividend and not is_buy_sell:  # i.e. it's disabled
+        if not self.total_amount_edit.isEnabled():
+            logging.debug(
+                f"_update_field_states: Total Amount edit NOT enabled. Current text: '{self.total_amount_edit.text()}' -> Clearing."
+            )
             self.total_amount_edit.clear()
+        if not self.commission_edit.isEnabled():
+            self.commission_edit.clear()
         if not self.split_ratio_edit.isEnabled():
             self.split_ratio_edit.clear()
 
-        # Symbol handling for cash flow
-        if is_cash_flow:
-            # Don't force symbol if user might be changing type *from* cash flow
-            # self.symbol_edit.setText(CASH_SYMBOL_CSV)
-            self.price_edit.clear()
-            self.price_edit.setEnabled(False)
-        else:
-            # Re-enable price edit if not cash flow
-            if not is_dividend:
-                self.price_edit.setEnabled(not is_split and not is_fee)
+        # --- MOVED: If editing and Total Amount was pre-filled, ensure it's locked before auto-calc ---
+        # This addresses the case where pre-filled Total Amount might be cleared by auto-calc
+        # triggered at the end of _update_field_states.
+        if (
+            is_buy_sell_stock or is_short_sell_cover
+        ) and self.total_amount_edit.text():  # Now these flags are defined
+            self.total_amount_locked_by_user = True
+            logging.debug(
+                "_update_field_states: Total Amount is populated for buy/sell/short, locking."
+            )
+
+        logging.debug(
+            f"_update_field_states: After conditional clears. Current Total Amount: '{self.total_amount_edit.text()}'"
+        )
+        # Auto-calculate if relevant fields are now enabled and not locked
+        logging.debug(
+            f"_update_field_states: Calling _auto_calculate_total. Lock: {self.total_amount_locked_by_user}"
+        )
+        self._auto_calculate_total()
+        logging.debug(
+            f"_update_field_states: After final _auto_calculate_total. Current Total Amount: '{self.total_amount_edit.text()}'"
+        )
 
     # --- ADDED: Slot for live validation feedback ---
     @Slot()
@@ -3376,28 +3813,43 @@ class AddTransactionDialog(QDialog):
                 header names and values are the validated and formatted user input
                 strings. Returns None if validation fails.
         """
-        # ... (Validation logic remains exactly the same as before) ...
         data = {}
         tx_type = self.type_combo.currentText().lower()
         symbol = self.symbol_edit.text().strip().upper()
         account = self.account_combo.currentText()
         date_val = self.date_edit.date().toPython()
+
         if not symbol:
             QMessageBox.warning(self, "Input Error", "Symbol cannot be empty.")
             return None
         if not account:
             QMessageBox.warning(self, "Input Error", "Account cannot be empty.")
             return None
+
         qty_str = self.quantity_edit.text().strip().replace(",", "")
         price_str = self.price_edit.text().strip().replace(",", "")
-        total_str = self.total_amount_edit.text().strip().replace(",", "")
+        total_str_from_field = (
+            self.total_amount_edit.text().strip().replace(",", "")
+        )  # Value from the QLineEdit
         comm_str = self.commission_edit.text().strip().replace(",", "")
         split_str = self.split_ratio_edit.text().strip().replace(",", "")
         note_str = self.note_edit.text().strip()
-        qty, price, total, comm, split = None, None, None, 0.0, None
+
+        # Numeric variables for internal calculation
+        qty: Optional[float] = None
+        price: Optional[float] = None
+        total: Optional[float] = None  # This will hold the *numeric* total
+        comm: float = 0.0
+        split: Optional[float] = None
+
         if comm_str:
             try:
                 comm = float(comm_str)
+                if comm < 0:
+                    QMessageBox.warning(
+                        self, "Input Error", "Commission cannot be negative."
+                    )
+                    return None
             except ValueError:
                 QMessageBox.warning(
                     self, "Input Error", "Commission must be a valid number."
@@ -3405,16 +3857,22 @@ class AddTransactionDialog(QDialog):
                 return None
         else:
             comm = 0.0
+
         if tx_type in ["buy", "sell", "short sell", "buy to cover"]:
             if not qty_str or not price_str:
                 QMessageBox.warning(
                     self,
                     "Input Error",
-                    f"Quantity and Price/Unit are required for '{tx_type}'.",
+                    f"Quantity and Price/Unit are required for '{self.type_combo.currentText()}'.",
                 )
                 return None
             try:
                 qty = float(qty_str)
+                if qty <= 0:
+                    QMessageBox.warning(
+                        self, "Input Error", "Quantity must be positive for this type."
+                    )
+                    return None
             except ValueError:
                 QMessageBox.warning(
                     self, "Input Error", "Quantity must be a valid number."
@@ -3422,39 +3880,54 @@ class AddTransactionDialog(QDialog):
                 return None
             try:
                 price = float(price_str)
+                if price <= 0:
+                    QMessageBox.warning(
+                        self,
+                        "Input Error",
+                        "Price/Unit must be positive for this type.",
+                    )
+                    return None
             except ValueError:
                 QMessageBox.warning(
                     self, "Input Error", "Price/Unit must be a valid number."
                 )
                 return None
-            if qty <= 0:
-                QMessageBox.warning(
-                    self, "Input Error", "Quantity must be positive for buy/sell."
-                )
-                return None
-            if price <= 0:
-                QMessageBox.warning(
-                    self, "Input Error", "Price/Unit must be positive for buy/sell."
-                )
-                return None
+            # --- CORRECTED: Calculate numeric total for these types ---
+            if qty is not None and price is not None:
+                total = qty * price
+            # --- END CORRECTION ---
+
         elif tx_type in ["deposit", "withdrawal"]:
+            # For stock deposit/withdrawal (non-$CASH symbol)
             if symbol != CASH_SYMBOL_CSV:
-                if not qty_str or not price_str:
+                if not qty_str or not price_str:  # Price is cost basis
                     QMessageBox.warning(
                         self,
                         "Input Error",
-                        f"Quantity and Price/Unit (cost basis) are required for stock '{tx_type}'.",
+                        f"Quantity and Price/Unit (cost basis) are required for stock '{self.type_combo.currentText()}'.",
                     )
                     return None
                 try:
                     qty = float(qty_str)
+                    if qty <= 0:
+                        QMessageBox.warning(
+                            self, "Input Error", "Quantity must be positive."
+                        )
+                        return None
                 except ValueError:
                     QMessageBox.warning(
                         self, "Input Error", "Quantity must be a valid number."
                     )
                     return None
                 try:
-                    price = float(price_str)
+                    price = float(price_str)  # Cost basis per unit
+                    if price < 0:  # Cost basis can be zero
+                        QMessageBox.warning(
+                            self,
+                            "Input Error",
+                            "Price/Unit (cost basis) cannot be negative.",
+                        )
+                        return None
                 except ValueError:
                     QMessageBox.warning(
                         self,
@@ -3462,80 +3935,107 @@ class AddTransactionDialog(QDialog):
                         "Price/Unit (cost basis) must be a valid number.",
                     )
                     return None
-                if qty <= 0:
-                    QMessageBox.warning(
-                        self, "Input Error", "Quantity must be positive."
-                    )
-                    return None
-                if price < 0:
-                    QMessageBox.warning(
-                        self,
-                        "Input Error",
-                        "Price/Unit (cost basis) cannot be negative.",
-                    )
-                    return None
-            else:
+                # --- CORRECTED: Calculate numeric total for stock deposit/withdrawal ---
+                if qty is not None and price is not None:
+                    total = qty * price  # Total cost basis
+                # --- END CORRECTION ---
+            else:  # For $CASH deposit/withdrawal
                 if not qty_str:
                     QMessageBox.warning(
                         self,
                         "Input Error",
-                        f"Quantity (amount) is required for cash '{tx_type}'.",
+                        f"Quantity (amount) is required for cash '{self.type_combo.currentText()}'.",
                     )
                     return None
                 try:
                     qty = float(qty_str)
+                    if qty <= 0:
+                        QMessageBox.warning(
+                            self, "Input Error", "Quantity (amount) must be positive."
+                        )
+                        return None
                 except ValueError:
                     QMessageBox.warning(
                         self, "Input Error", "Quantity (amount) must be a valid number."
                     )
                     return None
-                if qty <= 0:
-                    QMessageBox.warning(
-                        self, "Input Error", "Quantity (amount) must be positive."
-                    )
-                    return None
-                price = 1.0
+                price = 1.0  # Price for $CASH is always 1.0
+                # --- CORRECTED: Calculate numeric total for cash deposit/withdrawal ---
+                if qty is not None:
+                    total = qty  # For cash, total amount is the quantity
+                # --- END CORRECTION ---
+
         elif tx_type == "dividend":
-            qty_ok, price_ok, total_ok = False, False, False
-            if qty_str and price_str:
+            qty_ok, price_ok, total_ok_from_field = False, False, False
+            if qty_str:
                 try:
                     qty = float(qty_str)
+                    if qty < 0:
+                        QMessageBox.warning(
+                            self, "Input Error", "Dividend quantity cannot be negative."
+                        )
+                        return None
                     qty_ok = True
                 except ValueError:
-                    pass
+                    pass  # Let main validation catch it if needed
+            if price_str:
                 try:
                     price = float(price_str)
+                    if price < 0:
+                        QMessageBox.warning(
+                            self,
+                            "Input Error",
+                            "Dividend price/unit cannot be negative.",
+                        )
+                        return None
                     price_ok = True
                 except ValueError:
                     pass
-            if total_str:
+            if total_str_from_field:  # Check the string from the field
                 try:
-                    total = float(total_str)
-                    total_ok = True
+                    total_numeric_from_field = float(total_str_from_field)
+                    if total_numeric_from_field < 0:
+                        QMessageBox.warning(
+                            self,
+                            "Input Error",
+                            "Dividend total amount cannot be negative.",
+                        )
+                        return None
+                    total_ok_from_field = True
+                    total = (
+                        total_numeric_from_field  # Prioritize total from field if valid
+                    )
                 except ValueError:
                     pass
-            if not ((qty_ok and price_ok) or total_ok):
-                QMessageBox.warning(
-                    self,
-                    "Input Error",
-                    "Dividend requires Quantity & Price/Unit OR Total Amount.",
-                )
-                return None
-            if qty is not None and qty < 0:
-                QMessageBox.warning(
-                    self, "Input Error", "Dividend quantity cannot be negative."
-                )
-                return None
-            if price is not None and price < 0:
-                QMessageBox.warning(
-                    self, "Input Error", "Dividend price/unit cannot be negative."
-                )
-                return None
-            if total is not None and total < 0:
-                QMessageBox.warning(
-                    self, "Input Error", "Dividend total amount cannot be negative."
-                )
-                return None
+
+            if not total_ok_from_field:  # If total from field wasn't valid or provided
+                if qty_ok and price_ok and qty is not None and price is not None:
+                    total = qty * price  # Calculate total if qty and price are valid
+                elif (
+                    qty_ok and qty is not None and price_str == ""
+                ):  # Qty provided, price empty
+                    # This case is ambiguous, could be total dividend = qty if price is implied as 1 (unlikely for stock)
+                    # Or it's an error. For now, assume error if price is also missing.
+                    QMessageBox.warning(
+                        self,
+                        "Input Error",
+                        "Dividend requires Price/Unit if Quantity is entered and Total Amount is not.",
+                    )
+                    return None
+                elif (
+                    price_ok and price is not None and qty_str == ""
+                ):  # Price provided, qty empty
+                    # This implies total dividend = price (e.g. fixed dividend amount entered as price)
+                    total = price
+                else:
+                    QMessageBox.warning(
+                        self,
+                        "Input Error",
+                        "Dividend requires (Quantity & Price/Unit) OR Total Amount.",
+                    )
+                    return None
+            # If total_ok_from_field was true, 'total' variable is already set.
+
         elif tx_type == "split":
             if not split_str:
                 QMessageBox.warning(
@@ -3544,61 +4044,76 @@ class AddTransactionDialog(QDialog):
                 return None
             try:
                 split = float(split_str)
+                if split <= 0:
+                    QMessageBox.warning(
+                        self, "Input Error", "Split Ratio must be positive."
+                    )
+                    return None
             except ValueError:
                 QMessageBox.warning(
                     self, "Input Error", "Split Ratio must be a valid number."
                 )
                 return None
-            if split <= 0:
+            # For split, qty, price, total are not directly used for the primary effect
+            qty_str, price_str, total_str_from_field = (
+                "",
+                "",
+                "",
+            )  # Clear these for formatting
+
+        elif tx_type == "fees":
+            if not comm_str:  # For fees, commission IS the amount
                 QMessageBox.warning(
-                    self, "Input Error", "Split Ratio must be positive."
+                    self,
+                    "Input Error",
+                    "Commission (fee amount) is required for 'fees' type.",
                 )
                 return None
-            qty_str, price_str, total_str = "", "", ""
-        elif tx_type == "fees":
-            qty_str, price_str, total_str, split_str = "", "", "", ""
+            # For fees, qty, price, total, split are not applicable
+            qty_str, price_str, total_str_from_field, split_str = "", "", "", ""
 
-        # Format for CSV (using corrected version)
-        # --- Apply Conditional Formatting ---
-        def format_sig(value_float: Optional[float], value_str: str) -> str:
-            """Formats float based on original string's decimal places."""
+        def format_sig(
+            value_float: Optional[float], original_str_for_precision: str
+        ) -> str:
+            """Formats float based on original string's decimal places, ensuring at least 2dp for non-zero."""
             if value_float is None or pd.isna(value_float):
                 return ""
             try:
-                # Use the float for calculation, but the string for precision check
-                cleaned_str = value_str.strip().replace(",", "")
+                # If the float value is effectively zero, format as "0.00"
+                if abs(value_float) < 1e-9:  # Using a small tolerance for zero
+                    return "0.00"
+
+                cleaned_str = original_str_for_precision.strip().replace(",", "")
                 if "." in cleaned_str:
                     _, decimal_part = cleaned_str.split(".", 1)
-                    # Count significant digits after decimal (ignoring trailing zeros)
-                    significant_decimal_part = decimal_part.rstrip("0")
-                    num_significant_decimals = len(significant_decimal_part)
-
-                    if num_significant_decimals <= 2:
-                        return f"{value_float:.2f}"  # Format float to 2dp
-                    else:
-                        return cleaned_str  # Return original cleaned string to preserve precision
-                else:
-                    # Integer input, format float to 2dp
-                    return f"{value_float:.2f}"
+                    num_decimals_in_original = len(decimal_part.rstrip("0"))
+                    # Ensure at least 2 decimal places, but preserve more if original had more
+                    decimals_to_format = max(2, num_decimals_in_original)
+                    return f"{value_float:.{decimals_to_format}f}"
+                else:  # Original was an integer or had no decimal part
+                    return f"{value_float:.2f}"  # Default to 2 decimal places
             except (ValueError, TypeError):
-                # Fallback if something unexpected happens
                 return f"{value_float:.2f}" if value_float is not None else ""
-
-        # Format numeric values before creating the final dict
 
         data = {
             "Date (MMM DD, YYYY)": date_val.strftime(CSV_DATE_FORMAT),
-            "Transaction Type": self.type_combo.currentText(),
+            "Transaction Type": self.type_combo.currentText(),  # Use original case from combo
             "Stock / ETF Symbol": symbol,
             "Quantity of Units": format_sig(qty, qty_str),
             "Amount per unit": format_sig(price, price_str),
-            "Total Amount": format_sig(total, total_str),
-            "Fees": format_sig(comm, comm_str),  # Apply to fees too
+            "Total Amount": format_sig(
+                total,
+                (
+                    total_str_from_field
+                    if total_str_from_field
+                    else (f"{total:.8f}" if total is not None else "")
+                ),
+            ),  # Use field string for precision if available
+            "Fees": format_sig(comm, comm_str),
             "Investment Account": account,
             "Split Ratio (new shares per old share)": format_sig(split, split_str),
             "Note": note_str,
         }
-        # Return only the validated data dictionary
         return data
 
     def accept(self):
@@ -3647,30 +4162,61 @@ class AddTransactionDialog(QDialog):
                 widget.setStyleSheet("")
             super().accept()
 
-    # Inside AddTransactionDialog class...
-
     @Slot()
     def _auto_calculate_total(self):
         """Automatically calculates Total Amount from Quantity and Price."""
+        # If total amount is locked (e.g. pre-filled during edit, or manually entered), skip auto-calc
+        if self.total_amount_locked_by_user:
+            logging.debug(
+                f"_auto_calculate_total: SKIPPED due to lock. Lock: {self.total_amount_locked_by_user}"
+            )
+            return
+
+        logging.debug(
+            f"_auto_calculate_total: Called. Lock: {self.total_amount_locked_by_user}, Qty: '{self.quantity_edit.text()}', Price: '{self.price_edit.text()}'"
+        )
+
         # Only calculate if Quantity and Price fields are enabled (relevant for Buy/Sell)
         if not self.quantity_edit.isEnabled() or not self.price_edit.isEnabled():
+            logging.debug(
+                "_auto_calculate_total: SKIPPED because Qty or Price field is not enabled."
+            )
             return
 
         qty_str = self.quantity_edit.text().strip().replace(",", "")
         price_str = self.price_edit.text().strip().replace(",", "")
 
         try:
-            qty = float(qty_str)
-            price = float(price_str)
-            if qty > 0 and price > 0:
-                total = qty * price
-                # Update the Total Amount field, formatted to 2 decimal places
-                self.total_amount_edit.setText(f"{total:.2f}")
-            # else: # Optional: Clear total if qty/price are zero or negative?
-            #     self.total_amount_edit.clear()
+            # Attempt conversion only if both strings have content
+            if qty_str and price_str:
+                qty = float(qty_str)
+                price = float(price_str)
+                if qty > 0 and price > 0:
+                    total = qty * price
+                    logging.debug(
+                        f"_auto_calculate_total: Calculated total {total:.2f}. Setting text."
+                    )
+                    # Update the Total Amount field, formatted to 2 decimal places
+                    self.total_amount_edit.setText(f"{total:.2f}")
+                else:
+                    logging.debug(
+                        f"_auto_calculate_total: Qty or Price not > 0. Qty={qty}, Price={price}. Current Total Amount: '{self.total_amount_edit.text()}'"
+                    )
+            # If qty_str or price_str is empty, do nothing, let existing total_amount_edit text remain.
+            # This prevents clearing if user deletes qty/price while total was pre-filled or manually entered.
+            elif not qty_str or not price_str:
+                logging.debug(
+                    "_auto_calculate_total: Qty or Price string is empty. No calculation performed."
+                )
+
         except ValueError:
-            # If either input is not a valid number, do nothing (or clear total)
-            # self.total_amount_edit.clear() # Optional: Clear if inputs invalid
+            # If quantity or price are not valid numbers (e.g., non-numeric text),
+            # do nothing. The QLineEdit validators will handle visual feedback for those fields.
+            # We don't want to clear total_amount_edit if the user is just starting to type
+            # or if it was pre-filled and qty/price are temporarily invalid during an edit.
+            logging.debug(
+                f"_auto_calculate_total: ValueError during float conversion. Qty_str='{qty_str}', Price_str='{price_str}'. Current Total Amount: '{self.total_amount_edit.text()}'"
+            )
             pass
 
 
@@ -4543,85 +5089,95 @@ The CSV file should contain the following columns (header names must match exact
     def show_manual_overrides_dialog(self):  # Renamed method
         """Shows the dialog to edit manual prices."""
         # self.manual_overrides_dict should be populated during __init__ by _load_manual_overrides
-        if not hasattr(self, "manual_overrides_dict"):
-            logging.error("Manual overrides dictionary not initialized.")
+        if (
+            not hasattr(self, "manual_overrides_dict")
+            or not hasattr(self, "user_symbol_map_config")
+            or not hasattr(self, "user_excluded_symbols_config")
+        ):
+            logging.error("Symbol settings dictionaries not initialized.")
             QMessageBox.critical(self, "Error", "Manual override data is not loaded.")
             return
 
-        updated_overrides = (
-            ManualPriceDialog.get_manual_overrides(  # Renamed static call
-                parent=self, current_overrides=self.manual_overrides_dict
-            )
+        # Call the renamed static method
+        updated_settings = ManualPriceDialog.get_symbol_settings(
+            parent=self,
+            current_overrides=self.manual_overrides_dict,
+            current_symbol_map=self.user_symbol_map_config,
+            current_excluded_symbols=self.user_excluded_symbols_config,
         )
 
-        if updated_overrides is not None:  # User clicked Save and validation passed
-            if updated_overrides != self.manual_overrides_dict:
-                logging.info("Manual overrides changed. Saving and refreshing...")
-                self.manual_overrides_dict = updated_overrides  # Update internal dict
-                if self._save_manual_overrides_to_json():  # Save to file
-                    self.refresh_data()  # Trigger refresh only if save succeeded
-                # Else: Error message shown by _save_manual_prices_to_json
-            else:
-                logging.info("Manual prices unchanged.")
+        if updated_settings is not None:  # User clicked Save and validation passed
+            new_manual_overrides = updated_settings.get("manual_price_overrides", {})
+            new_symbol_map = updated_settings.get("user_symbol_map", {})
+            new_excluded_symbols = set(
+                updated_settings.get("user_excluded_symbols", [])
+            )  # Convert list to set
 
-    def _save_manual_prices_to_json(self) -> bool:
-        """Saves the current self.manual_prices_dict to MANUAL_PRICE_FILE."""
-        if not hasattr(self, "manual_overrides_dict"):
-            logging.error("Cannot save manual prices, dictionary attribute missing.")
+            if (
+                new_manual_overrides != self.manual_overrides_dict
+                or new_symbol_map != self.user_symbol_map_config
+                or new_excluded_symbols != self.user_excluded_symbols_config
+            ):
+                logging.info("Symbol settings changed. Saving and refreshing...")
+                self.manual_overrides_dict = new_manual_overrides
+                self.user_symbol_map_config = new_symbol_map
+                self.user_excluded_symbols_config = new_excluded_symbols
+                if self._save_manual_overrides_to_json():  # Save all parts to JSON
+                    self.refresh_data()
+            else:
+                logging.info("Symbol settings unchanged.")
+
+    def _save_manual_overrides_to_json(
+        self,
+    ) -> bool:  # Renamed from _save_manual_prices_to_json
+        """Saves all manual settings (prices, symbol map, exclusions) to MANUAL_OVERRIDES_FILE."""
+        if (
+            not hasattr(self, "manual_overrides_dict")
+            or not hasattr(self, "user_symbol_map_config")
+            or not hasattr(self, "user_excluded_symbols_config")
+        ):
+            logging.error("Cannot save symbol settings, dictionary attributes missing.")
             return False
 
-        # MANUAL_PRICE_FILE is already an absolute path from resource_path
-        manual_price_file_path = self.MANUAL_OVERRIDES_FILE  # Use instance attribute
-        logging.info(f"Saving manual prices to: {manual_price_file_path}")
+        overrides_file_path = self.MANUAL_OVERRIDES_FILE
+        logging.info(f"Saving symbol settings to: {overrides_file_path}")
+
+        data_to_save = {
+            "manual_price_overrides": dict(sorted(self.manual_overrides_dict.items())),
+            "user_symbol_map": dict(sorted(self.user_symbol_map_config.items())),
+            "user_excluded_symbols": sorted(
+                list(self.user_excluded_symbols_config)
+            ),  # Save set as sorted list
+        }
 
         try:
-            # For bundled apps, resource_path might point inside the app bundle,
-            # which might not be writable. For config/manual prices that are user-editable
-            # and persistent, QStandardPaths.AppConfigLocation or AppDataLocation is better.
-            # However, resource_path() as defined will use the script's dir in dev, # type: ignore
-            # and _MEIPASS in bundle. If MANUAL_OVERRIDES_FILE is meant to be bundled and read-only,
-            # then saving to it in a bundle is problematic.
-            # For simplicity here, we'll assume it's writable or this is dev mode.
-            # A more robust solution would save user-modifiable files to user directories.
-            manual_price_dir = os.path.dirname(manual_price_file_path)
-            if manual_price_dir:
-                os.makedirs(manual_price_dir, exist_ok=True)
+            overrides_dir = os.path.dirname(overrides_file_path)
+            if overrides_dir:
+                os.makedirs(overrides_dir, exist_ok=True)
 
-            # Sort keys for consistent file output (optional)
-            overrides_to_save = dict(sorted(self.manual_overrides_dict.items()))
-
-            with open(
-                self.MANUAL_OVERRIDES_FILE,
-                "w",
-                encoding="utf-8",  # Use instance attribute
-            ) as f:  # Use instance attribute
-                json.dump(
-                    overrides_to_save, f, indent=4, ensure_ascii=False
-                )  # Corrected variable name
-            logging.info(
-                "Manual overrides saved successfully."
-            )  # Corrected log message
+            with open(overrides_file_path, "w", encoding="utf-8") as f:
+                json.dump(data_to_save, f, indent=4, ensure_ascii=False)
+            logging.info("Symbol settings saved successfully.")
             return True
         except TypeError as e:
-            logging.error(f"TypeError writing manual prices JSON: {e}")
+            logging.error(f"TypeError writing symbol settings JSON: {e}")
             QMessageBox.critical(
-                self, "Save Error", f"Data error saving manual prices:\n{e}"
+                self, "Save Error", f"Data error saving symbol settings:\n{e}"
             )
-            return False
         except IOError as e:
-            logging.error(f"IOError writing manual prices JSON: {e}")
+            logging.error(f"IOError writing symbol settings JSON: {e}")
             QMessageBox.critical(
                 self,
                 "Save Error",
-                f"Could not write to file:\n{manual_price_file_path}\n{e}",
+                f"Could not write to file:\n{overrides_file_path}\n{e}",
             )
             return False
         except Exception as e:
-            logging.exception("Unexpected error writing manual prices JSON")
+            logging.exception("Unexpected error writing symbol settings JSON")
             QMessageBox.critical(
                 self,
                 "Save Error",
-                f"An unexpected error occurred saving manual prices:\n{e}",
+                f"An unexpected error occurred saving symbol settings:\n{e}",
             )
             return False
 
@@ -4795,6 +5351,10 @@ The CSV file should contain the following columns (header names must match exact
 
         # --- Load Manual Overrides ---
         self.manual_overrides_dict = self._load_manual_overrides()
+        # Initialize user-defined symbol map and exclusions (will be populated by _load_manual_overrides)
+        self.user_symbol_map_config: Dict[str, str] = {}
+        self.user_excluded_symbols_config: Set[str] = set()
+        self._load_manual_overrides()  # Call again to ensure new attributes are populated
 
         self.transactions_file = self.config.get("transactions_file", DEFAULT_CSV)
         self.fmp_api_key = self.config.get(
@@ -5168,10 +5728,14 @@ The CSV file should contain the following columns (header names must match exact
 
     # --- End Account Selection Methods ---
 
-    def _load_manual_overrides(self) -> Dict[str, Dict[str, Any]]:
-        """Loads manual overrides from MANUAL_OVERRIDES_FILE.
-        Handles migration from old price-only format if necessary."""
-        manual_overrides: Dict[str, Dict[str, Any]] = {}
+    def _load_manual_overrides(self):  # No longer returns, sets instance attributes
+        """Loads manual overrides, symbol map, and excluded symbols from MANUAL_OVERRIDES_FILE.
+        Handles migration from old price-only format if necessary for price overrides.
+        """
+        # Initialize with defaults from config.py
+        self.manual_overrides_dict = {}  # For prices, sectors, etc.
+        self.user_symbol_map_config = config.SYMBOL_MAP_TO_YFINANCE.copy()
+        self.user_excluded_symbols_config = set(config.YFINANCE_EXCLUDED_SYMBOLS.copy())
 
         # Try loading new format first
         if os.path.exists(self.MANUAL_OVERRIDES_FILE):
@@ -5181,141 +5745,174 @@ The CSV file should contain the following columns (header names must match exact
                 ) as f:  # Use instance attribute
                     loaded_data = json.load(f)
                 if isinstance(loaded_data, dict):
-                    # Validate new structure
-                    valid_data: Dict[str, Dict[str, Any]] = {}
-                    invalid_count = 0
-                    for key, value_dict in loaded_data.items():
-                        if isinstance(key, str) and isinstance(value_dict, dict):
-                            entry: Dict[str, Any] = {}
-                            price = value_dict.get("price")
-                            if (
-                                price is not None
-                                and isinstance(price, (int, float))
-                                and price > 0
-                            ):
-                                entry["price"] = float(price)
+                    # Load manual price overrides
+                    price_overrides_loaded = loaded_data.get(
+                        "manual_price_overrides", {}
+                    )
+                    if isinstance(price_overrides_loaded, dict):
+                        valid_price_overrides: Dict[str, Dict[str, Any]] = {}
+                        invalid_count = 0
+                        for key, value_dict in price_overrides_loaded.items():
+                            if isinstance(key, str) and isinstance(value_dict, dict):
+                                entry: Dict[str, Any] = {}
+                                price = value_dict.get("price")
+                                if (
+                                    price is not None
+                                    and isinstance(price, (int, float))
+                                    and price > 0
+                                ):
+                                    entry["price"] = float(price)
 
-                            entry["asset_type"] = str(
-                                value_dict.get("asset_type", "")
-                            ).strip()
-                            entry["sector"] = str(value_dict.get("sector", "")).strip()
-                            entry["geography"] = str(
-                                value_dict.get("geography", "")
-                            ).strip()
-                            entry["industry"] = (
-                                str(  # <-- ADDED: Load industry from JSON
+                                entry["asset_type"] = str(
+                                    value_dict.get("asset_type", "")
+                                ).strip()
+                                entry["sector"] = str(
+                                    value_dict.get("sector", "")
+                                ).strip()
+                                entry["geography"] = str(
+                                    value_dict.get("geography", "")
+                                ).strip()
+                                entry["industry"] = str(
                                     value_dict.get("industry", "")
                                 ).strip()
-                            )
-
-                            valid_data[key.upper().strip()] = entry
-                        else:
-                            invalid_count += 1
-                            logging.warning(
-                                f"Warn: Invalid manual override entry skipped: Key='{key}' (Type: {type(key)}), Value='{value_dict}' (Type: {type(value_dict)})"
-                            )
-                    manual_overrides = valid_data
-                    logging.info(
-                        f"Loaded {len(manual_overrides)} valid entries from {self.MANUAL_OVERRIDES_FILE}."
-                    )
-                    if invalid_count > 0:
-                        logging.warning(
-                            f"Skipped {invalid_count} invalid entries from {self.MANUAL_OVERRIDES_FILE}."
+                                valid_price_overrides[key.upper().strip()] = entry
+                            else:
+                                invalid_count += 1
+                                logging.warning(
+                                    f"Warn: Invalid manual price override entry skipped: Key='{key}', Value='{value_dict}'"
+                                )
+                        self.manual_overrides_dict = valid_price_overrides
+                        logging.info(
+                            f"Loaded {len(self.manual_overrides_dict)} valid price overrides."
                         )
-                    return manual_overrides  # Return new format
-                else:
-                    logging.warning(
-                        f"Warn: Content of {self.MANUAL_OVERRIDES_FILE} is not a dictionary. Ignoring."
-                    )
-            except json.JSONDecodeError as e:
-                logging.error(
-                    f"Error decoding JSON from {self.MANUAL_OVERRIDES_FILE}: {e}. Ignoring."
-                )
-            except Exception as e:
-                logging.error(
-                    f"Error reading {self.MANUAL_OVERRIDES_FILE}: {e}. Ignoring."
-                )
+                        if invalid_count > 0:
+                            logging.warning(
+                                f"Skipped {invalid_count} invalid price override entries."
+                            )
+                    else:
+                        logging.warning(
+                            "Manual price overrides in JSON is not a dictionary. Using defaults."
+                        )
 
-        # If new file doesn't exist or failed to load, try migrating old manual_prices.json
-        # This assumes self.MANUAL_PRICE_FILE was the old attribute name for the old file.
-        # For simplicity, let's assume the old file was also named "manual_prices.json"
-        # and we construct its path similarly if self.MANUAL_OVERRIDES_FILE is different.
-        old_manual_prices_file_path = self.MANUAL_OVERRIDES_FILE.replace(
-            MANUAL_OVERRIDES_FILENAME, "manual_prices.json"
-        )
+                    # Load user symbol map
+                    user_map_loaded = loaded_data.get("user_symbol_map", {})
+                    if isinstance(user_map_loaded, dict) and all(
+                        isinstance(k, str) and isinstance(v, str)
+                        for k, v in user_map_loaded.items()
+                    ):
+                        self.user_symbol_map_config = {
+                            k.upper().strip(): v.upper().strip()
+                            for k, v in user_map_loaded.items()
+                        }
+                        logging.info(
+                            f"Loaded {len(self.user_symbol_map_config)} user symbol mappings."
+                        )
+                    else:
+                        logging.warning(
+                            "User symbol map in JSON is not a valid dictionary. Using defaults."
+                        )
 
-        if os.path.exists(old_manual_prices_file_path):
-            logging.info(
-                f"Old manual_prices.json found at {old_manual_prices_file_path}. Attempting migration."
-            )
-            try:
-                with open(old_manual_prices_file_path, "r", encoding="utf-8") as f_old:
-                    old_loaded_data = json.load(f_old)
-                if isinstance(old_loaded_data, dict):
-                    migrated_count = 0
-                    for key, price_val in old_loaded_data.items():
+                    # Load user excluded symbols
+                    user_excluded_loaded = loaded_data.get("user_excluded_symbols", [])
+                    if isinstance(user_excluded_loaded, list) and all(
+                        isinstance(s, str) for s in user_excluded_loaded
+                    ):
+                        self.user_excluded_symbols_config = {
+                            s.upper().strip() for s in user_excluded_loaded
+                        }
+                        logging.info(
+                            f"Loaded {len(self.user_excluded_symbols_config)} user excluded symbols."
+                        )
+                    else:
+                        logging.warning(
+                            "User excluded symbols in JSON is not a valid list. Using defaults."
+                        )
+                    return  # Successfully loaded from new format
+
+                # --- Migration from old format (if new format load failed or file was old format) ---
+                # This part is for migrating old "manual_prices.json" which only had symbol:price
+                # If the current MANUAL_OVERRIDES_FILE was an old format, this will try to parse it.
+                elif isinstance(loaded_data, dict) and all(
+                    isinstance(v, (int, float)) for v in loaded_data.values()
+                ):
+                    logging.info("Attempting to migrate old manual price format...")
+                    migrated_prices: Dict[str, Dict[str, Any]] = {}
+                    for key, price_val in loaded_data.items():
                         if (
                             isinstance(key, str)
                             and isinstance(price_val, (int, float))
                             and price_val > 0
                         ):
-                            manual_overrides[key.upper().strip()] = {
-                                "price": float(price_val),
-                                "asset_type": "",
-                                "sector": "",
-                                "geography": "",
+                            migrated_prices[key.upper().strip()] = {
+                                "price": float(price_val)
                             }
-                            migrated_count += 1
-                        else:
-                            logging.warning(
-                                f"Skipping invalid entry during migration: {key}: {price_val}"
-                            )
-                    if migrated_count > 0:
+                    if migrated_prices:
+                        self.manual_overrides_dict = migrated_prices
                         logging.info(
-                            f"Migrated {migrated_count} entries from old manual_prices.json. Please re-save settings to update to new format."
+                            f"Migrated {len(migrated_prices)} entries from old price format. Other settings use defaults."
                         )
-                        # Optionally, save the migrated data to the new file format here
-                        # self._save_manual_overrides_to_json() # Be careful with calling save during load
+                        # Save in new format immediately after migration
+                        self._save_manual_overrides_to_json()
+                    return
                 else:
                     logging.warning(
-                        "Old manual_prices.json content is not a dictionary. Migration failed."
+                        f"Warn: Content of {self.MANUAL_OVERRIDES_FILE} is not a recognized dictionary format. Using defaults."
                     )
-            except Exception as e_migrate:
-                logging.error(f"Error migrating old manual_prices.json: {e_migrate}")
-        else:
-            logging.info(
-                f"{self.MANUAL_OVERRIDES_FILE} not found. Manual overrides will not be used initially."
-            )
-        return manual_overrides
+            except json.JSONDecodeError as e:
+                logging.error(
+                    f"Error decoding JSON from {self.MANUAL_OVERRIDES_FILE}: {e}. Using defaults."
+                )
+            except Exception as e:
+                logging.error(
+                    f"Error reading {self.MANUAL_OVERRIDES_FILE}: {e}. Using defaults."
+                )
 
-    def _save_manual_overrides_to_json(self) -> bool:
-        """Saves the current self.manual_overrides_dict to MANUAL_OVERRIDES_FILE."""
-        if not hasattr(self, "manual_overrides_dict"):
-            logging.error("Cannot save manual overrides, dictionary attribute missing.")
+        # If new file didn't exist or load failed, and no migration happened, defaults are already set.
+        logging.info(
+            f"Using default symbol settings (or migrated prices if applicable). "
+            f"Overrides: {len(self.manual_overrides_dict)}, Map: {len(self.user_symbol_map_config)}, Excluded: {len(self.user_excluded_symbols_config)}"
+        )
+
+    def _save_manual_overrides_to_json(
+        self,
+    ) -> bool:  # Renamed from _save_manual_prices_to_json
+        """Saves all manual settings (prices, symbol map, exclusions) to MANUAL_OVERRIDES_FILE."""
+        if (
+            not hasattr(self, "manual_overrides_dict")
+            or not hasattr(self, "user_symbol_map_config")
+            or not hasattr(self, "user_excluded_symbols_config")
+        ):
+            logging.error("Cannot save symbol settings, dictionary attributes missing.")
             return False
 
         overrides_file_path = self.MANUAL_OVERRIDES_FILE
-        logging.info(f"Saving manual overrides to: {overrides_file_path}")
+        logging.info(f"Saving symbol settings to: {overrides_file_path}")
+
+        data_to_save = {
+            "manual_price_overrides": dict(sorted(self.manual_overrides_dict.items())),
+            "user_symbol_map": dict(sorted(self.user_symbol_map_config.items())),
+            "user_excluded_symbols": sorted(
+                list(self.user_excluded_symbols_config)
+            ),  # Save set as sorted list
+        }
 
         try:
             overrides_dir = os.path.dirname(overrides_file_path)
             if overrides_dir:
                 os.makedirs(overrides_dir, exist_ok=True)
 
-            overrides_to_save = dict(sorted(self.manual_overrides_dict.items()))
-
             with open(overrides_file_path, "w", encoding="utf-8") as f:
-                json.dump(overrides_to_save, f, indent=4, ensure_ascii=False)
-            logging.info("Manual overrides saved successfully.")
+                json.dump(data_to_save, f, indent=4, ensure_ascii=False)
+            logging.info("Symbol settings saved successfully.")
             return True
         except TypeError as e:
-            logging.error(f"TypeError writing manual overrides JSON: {e}")
+            logging.error(f"TypeError writing symbol settings JSON: {e}")
             QMessageBox.critical(
-                self, "Save Error", f"Data error saving manual overrides:\n{e}"
+                self, "Save Error", f"Data error saving symbol settings:\n{e}"
             )
             return False
         except IOError as e:
-            logging.error(f"IOError writing manual overrides JSON: {e}")
+            logging.error(f"IOError writing symbol settings JSON: {e}")
             QMessageBox.critical(
                 self,
                 "Save Error",
@@ -5323,11 +5920,1128 @@ The CSV file should contain the following columns (header names must match exact
             )
             return False
         except Exception as e:
-            logging.exception("Unexpected error writing manual overrides JSON")
+            logging.exception("Unexpected error writing symbol settings JSON")
             QMessageBox.critical(
                 self,
                 "Save Error",
-                f"An unexpected error occurred saving manual overrides:\n{e}",
+                f"An unexpected error occurred saving symbol settings:\n{e}",
+            )
+            return False
+
+    # --- Helper Methods (Define BEFORE they are called in __init__) ---
+    def _ensure_all_columns_in_visibility(self):
+        """
+        Ensures self.column_visibility covers all possible UI columns.
+
+        Updates the `self.column_visibility` dictionary to include entries for all
+        columns defined by `get_column_definitions` based on the current display
+        currency, preserving existing visibility states where possible.
+        """
+        current_currency = "USD"
+        if hasattr(self, "currency_combo") and self.currency_combo:
+            current_currency = self.currency_combo.currentText()
+        self.all_possible_ui_columns = list(
+            get_column_definitions(current_currency).keys()
+        )
+        current_visibility = self.column_visibility.copy()
+        self.column_visibility = {}
+        for col_name in self.all_possible_ui_columns:
+            is_visible = current_visibility.get(col_name, True)
+            if not isinstance(is_visible, bool):
+                is_visible = True
+            self.column_visibility[col_name] = is_visible
+
+    def _get_currency_symbol(
+        self, get_name=False, currency_code=None
+    ):  # <-- Add currency_code=None
+        """
+        Gets the currency symbol (e.g., "$") or 3-letter name (e.g., "USD").
+
+        If currency_code is provided, it returns the symbol/name for that code.
+        Otherwise, it uses the currently selected display currency from the UI or config.
+
+        Args:
+            get_name (bool, optional): If True, returns the 3-letter currency code.
+                                       Defaults to False.
+            currency_code (str | None, optional): If provided, get the symbol/name for
+                                                  this specific code. Defaults to None.
+
+        Returns:
+            str: The currency symbol or name.
+        """
+        target_currency_code = None
+        if currency_code and isinstance(currency_code, str):
+            target_currency_code = currency_code.upper()
+        else:
+            # Fallback to display currency if no code provided
+            if (
+                hasattr(self, "currency_combo")
+                and self.currency_combo
+                and self.currency_combo.count() > 0
+            ):
+                target_currency_code = self.currency_combo.currentText()
+            elif hasattr(self, "config"):
+                target_currency_code = self.config.get("display_currency", "USD")
+            else:
+                target_currency_code = "USD"  # Final fallback
+
+        if get_name:
+            return target_currency_code  # Return the 3-letter code
+
+        # Map code to symbol
+        symbol_map = {
+            "USD": "$",
+            "THB": "฿",
+            "EUR": "€",
+            "GBP": "£",
+            "JPY": "¥",
+            "CAD": "$",
+            "AUD": "$",
+            "CHF": "Fr",
+            "CNY": "¥",
+            "HKD": "$",
+            "SGD": "$",
+        }  # Added more common ones
+        return symbol_map.get(
+            target_currency_code, target_currency_code
+        )  # Return code itself if no symbol mapped
+
+    def _calculate_annualized_twr(self, total_twr_factor, start_date, end_date):
+        """
+        Calculates the annualized Time-Weighted Return (TWR) percentage.
+
+        Args:
+            total_twr_factor (float | np.nan): The total TWR factor (1 + total TWR)
+                                               over the period.
+            start_date (date | None): The start date of the period.
+            end_date (date | None): The end date of the period.
+
+        Returns:
+            float | np.nan: The annualized TWR as a percentage, or np.nan if inputs
+                            are invalid or calculation fails.
+        """
+        if pd.isna(total_twr_factor) or total_twr_factor <= 0:
+            return np.nan
+        if start_date is None or end_date is None or start_date >= end_date:
+            return np.nan
+        try:
+            num_days = (end_date - start_date).days
+            if num_days <= 0:
+                return np.nan
+            annualized_twr_factor = total_twr_factor ** (365.25 / num_days)
+            return (annualized_twr_factor - 1) * 100.0
+        except (TypeError, ValueError, OverflowError):
+            return np.nan
+
+    def load_config(self):
+        """
+        Loads application configuration from a JSON file (gui_config.json).
+
+        Loads settings like the transaction file path, display currency, selected
+        accounts, graph parameters, and column visibility. Uses default values if
+        the file doesn't exist or if specific settings are missing or invalid.
+        Performs validation on loaded values.
+
+        Returns:
+            dict: The loaded (and potentially validated/defaulted) configuration dictionary.
+        """
+        default_display_currency = "USD"
+        default_column_visibility = {
+            col: True for col in get_column_definitions(default_display_currency).keys()
+        }
+        # --- Define Default Account Currency Map ---
+        default_account_currency_map = {"SET": "THB"}  # Example default
+
+        config_defaults = {
+            "transactions_file": DEFAULT_CSV,
+            "display_currency": default_display_currency,
+            "show_closed": False,
+            "selected_accounts": [],
+            "load_on_startup": True,
+            "fmp_api_key": DEFAULT_API_KEY,
+            "account_currency_map": default_account_currency_map,  # <-- ADDED
+            "default_currency": "USD",  # <-- ADDED Default base currency
+            "graph_start_date": DEFAULT_GRAPH_START_DATE.strftime("%Y-%m-%d"),
+            "graph_end_date": DEFAULT_GRAPH_END_DATE.strftime("%Y-%m-%d"),
+            "graph_interval": DEFAULT_GRAPH_INTERVAL,
+            "graph_benchmarks": DEFAULT_GRAPH_BENCHMARKS,
+            "column_visibility": default_column_visibility,
+            "bar_periods_annual": 10,  # Default periods
+            "bar_periods_monthly": 12,
+            "bar_periods_weekly": 12,
+            "dividend_agg_period": "Annual",  # <-- ADDED: Default dividend aggregation period
+            "dividend_periods_to_show": 10,  # <-- ADDED: Default periods for dividend chart (matches annual)
+            "dividend_chart_default_periods_annual": 10,  # From config.py
+            "dividend_chart_default_periods_quarterly": 12,  # From config.py
+            "dividend_chart_default_periods_monthly": 24,  # From config.py
+        }
+        config = config_defaults.copy()
+        logging.debug(
+            f"LOAD_CONFIG: Initial config from defaults: dividend_agg_period='{config.get('dividend_agg_period')}', dividend_periods_to_show='{config.get('dividend_periods_to_show')}'"
+        )
+
+        if os.path.exists(self.CONFIG_FILE):  # Use instance attribute
+            try:
+                with open(self.CONFIG_FILE, "r") as f:  # Use instance attribute
+                    loaded_config_from_file = json.load(f)
+                logging.debug(
+                    f"LOAD_CONFIG: From file - loaded_config_from_file['dividend_agg_period'] = '{loaded_config_from_file.get('dividend_agg_period')}'"
+                )
+                logging.debug(
+                    f"LOAD_CONFIG: From file - loaded_config_from_file['dividend_periods_to_show'] = '{loaded_config_from_file.get('dividend_periods_to_show')}'"
+                )
+
+                config.update(loaded_config_from_file)
+                logging.debug(
+                    f"LOAD_CONFIG: After config.update(loaded_config_from_file): dividend_agg_period='{config.get('dividend_agg_period')}', dividend_periods_to_show='{config.get('dividend_periods_to_show')}'"
+                )
+
+                logging.info(
+                    f"Config loaded from {self.CONFIG_FILE}"
+                )  # Use instance attribute
+
+                # --- Validate Benchmarks (unchanged) ---
+                if "graph_benchmarks" in config:
+                    if isinstance(config["graph_benchmarks"], list):
+                        valid_benchmarks = [
+                            b
+                            for b in config["graph_benchmarks"]
+                            if isinstance(b, str)
+                            and b
+                            in BENCHMARK_OPTIONS_DISPLAY  # Use display names for validation
+                        ]
+                        config["graph_benchmarks"] = valid_benchmarks
+                    else:
+                        config["graph_benchmarks"] = DEFAULT_GRAPH_BENCHMARKS
+
+                # --- Validate Selected Accounts (unchanged) ---
+                if "selected_accounts" in config and not isinstance(
+                    config["selected_accounts"], list
+                ):
+                    logging.warning(
+                        "Warn: Invalid 'selected_accounts' type in config. Resetting to empty list."
+                    )
+                    config["selected_accounts"] = []
+
+                # --- Validate Column Visibility (unchanged) ---
+                if "column_visibility" in config and isinstance(
+                    config["column_visibility"], dict
+                ):
+                    # Ensure keys are strings and values are booleans
+                    validated_visibility = {}
+                    all_cols = get_column_definitions(
+                        config.get("display_currency", default_display_currency)
+                    ).keys()
+                    for col in all_cols:
+                        # Get value from loaded config, default to True if missing or invalid type
+                        val = config["column_visibility"].get(col)
+                        validated_visibility[col] = (
+                            val if isinstance(val, bool) else True
+                        )
+                    config["column_visibility"] = validated_visibility
+                else:
+                    config["column_visibility"] = default_column_visibility
+
+                # --- Validate Account Currency Map ---
+                if "account_currency_map" in config:
+                    if not isinstance(config["account_currency_map"], dict) or not all(
+                        isinstance(k, str) and isinstance(v, str)
+                        for k, v in config["account_currency_map"].items()
+                    ):
+                        logging.warning(
+                            "Warn: Invalid 'account_currency_map' type in config. Resetting to default."
+                        )
+                        config["account_currency_map"] = default_account_currency_map
+                else:
+                    config["account_currency_map"] = default_account_currency_map
+
+                # --- Validate Default Currency ---
+                if "default_currency" in config:
+                    if (
+                        not isinstance(config["default_currency"], str)
+                        or len(config["default_currency"]) != 3
+                    ):
+                        logging.warning(
+                            "Warn: Invalid 'default_currency' type/format in config. Resetting to 'USD'."
+                        )
+                        config["default_currency"] = "USD"
+                else:
+                    config["default_currency"] = "USD"
+
+            except Exception as e:
+                logging.warning(
+                    f"Warn: Load config failed ({self.CONFIG_FILE}): {e}. Using defaults."  # Use instance attribute
+                )
+        else:
+            logging.info(
+                f"Config file {self.CONFIG_FILE} not found. Using defaults."
+            )  # Use instance attribute
+
+        # Ensure all default keys exist (modified to include new keys)
+        for key, default_value in config_defaults.items():
+            if key not in config:
+                config[key] = default_value
+            # Type check (allow list for selected_accounts, dict for map)
+            elif not isinstance(config[key], type(default_value)):
+                if key not in [
+                    "fmp_api_key",
+                    "selected_accounts",
+                    "account_currency_map",
+                    "graph_benchmarks",
+                ] or (
+                    config[key] is not None
+                    and not isinstance(config[key], (str, list, dict))
+                ):
+                    logging.warning(
+                        f"Warn: Config type mismatch for '{key}'. Loaded: {type(config[key])}, Default: {type(default_value)}. Using default."
+                    )
+                    config[key] = default_value
+
+        # Final date format validation (unchanged)
+        try:
+            QDate.fromString(config["graph_start_date"], "yyyy-MM-dd")
+        except:
+            config["graph_start_date"] = DEFAULT_GRAPH_START_DATE.strftime("%Y-%m-%d")
+        try:
+            QDate.fromString(config["graph_end_date"], "yyyy-MM-dd")
+        except:
+            config["graph_end_date"] = DEFAULT_GRAPH_END_DATE.strftime("%Y-%m-%d")
+
+        # Validate bar chart periods
+        for key in [
+            "bar_periods_annual",
+            "bar_periods_monthly",
+            # "dividend_agg_period", # This is a string, validated separately
+            "dividend_periods_to_show",  # This is numeric
+            "dividend_chart_default_periods_annual",  # Numeric
+            "dividend_chart_default_periods_annual",
+            "dividend_chart_default_periods_quarterly",
+            "dividend_chart_default_periods_monthly",
+        ]:
+            if key in config:
+                try:
+                    val = int(config[key])
+                    config[key] = max(1, min(val, 100))  # Clamp between 1 and 100
+                except (ValueError, TypeError):
+                    config[key] = config_defaults[key]  # Reset to default on error
+            else:
+                config["dividend_periods_to_show"] = config_defaults[
+                    "dividend_periods_to_show"
+                ]  # Correctly use the specific key
+
+        logging.debug(
+            f"LOAD_CONFIG (PRE-VALIDATION for dividend_agg_period): current config['dividend_agg_period'] = '{config.get('dividend_agg_period')}'"
+        )
+        # Validate dividend aggregation period
+        if config.get("dividend_agg_period") not in ["Annual", "Quarterly", "Monthly"]:
+            logging.warning(
+                f"LOAD_CONFIG: Invalid or missing 'dividend_agg_period' ('{config.get('dividend_agg_period')}') in config. Resetting to default '{config_defaults['dividend_agg_period']}'."
+            )
+            config["dividend_agg_period"] = config_defaults["dividend_agg_period"]
+        logging.debug(
+            f"LOAD_CONFIG (POST-VALIDATION for dividend_agg_period): final config['dividend_agg_period'] = '{config.get('dividend_agg_period')}'"
+        )
+
+        # The validation for "dividend_periods_to_show" is now handled by the numeric_keys_to_validate loop.
+        # The separate block for it has been removed.
+
+        # Validate dividend chart periods
+        for key in [
+            "dividend_chart_default_periods_annual",
+            "dividend_chart_default_periods_quarterly",
+            "dividend_chart_default_periods_monthly",
+        ]:
+            if key in config:
+                try:
+                    val = int(config[key])
+                    config[key] = max(1, min(val, 100))  # Clamp
+                except (ValueError, TypeError):
+                    config[key] = config_defaults[key]
+
+        return config
+
+    # --- UI Update Methods (Define BEFORE __init__ calls them) ---
+
+    def update_header_info(
+        self, loading=False
+    ):  # Keep loading param for now, though logic relies on self.index_quote_data
+        """Updates the header label with index quotes or a loading message.
+
+        Formats and displays data for indices specified in `INDICES_FOR_HEADER`
+        using data stored in `self.index_quote_data`. Shows price, change, and
+        percentage change with appropriate coloring for gains/losses.
+
+        Args:
+            loading (bool, optional): If True, displays a "Loading..." message
+                                      instead of attempting to show quotes.
+                                      Defaults to False.
+        """
+        if not hasattr(self, "header_info_label") or not self.header_info_label:
+            return  # Label not ready
+
+        if loading or not self.index_quote_data:
+            self.header_info_label.setText("<i>Loading indices...</i>")
+            return
+
+        header_parts = []
+        # logging.debug(f"DEBUG update_header_info: Data = {self.index_quote_data}") # Optional debug print
+        for index_symbol in INDICES_FOR_HEADER:
+            data = self.index_quote_data.get(index_symbol)
+            if data and isinstance(data, dict):
+                price = data.get("price")
+                change = data.get("change")
+                # --- FIX: Use 'changesPercentage' which should be decimal/fraction ---
+                change_pct_decimal = data.get("changesPercentage")
+                name = data.get("name", index_symbol).split(" ")[
+                    0
+                ]  # Use short name part
+
+                price_str = f"{price:,.2f}" if pd.notna(price) else "N/A"
+                change_str = "N/A"
+                change_color = COLOR_TEXT_DARK  # Default color
+
+                if pd.notna(change) and pd.notna(change_pct_decimal):
+                    change_val = float(change)
+                    change_pct_val = float(
+                        change_pct_decimal
+                    )  # already in decimal form %
+                    sign = (
+                        "+" if change_val >= -1e-9 else ""
+                    )  # Add '+' for positive/zero change
+                    change_str = (
+                        f"{sign}{change_val:,.2f} ({sign}{change_pct_val:.2f}%)"
+                    )
+                    if change_val > 1e-9:
+                        change_color = COLOR_GAIN
+                    elif change_val < -1e-9:
+                        change_color = COLOR_LOSS
+                    # else: keep default color for zero change
+                # --- END FIX ---
+
+                # Use HTML for coloring
+                header_parts.append(
+                    f"<b>{name}:</b> {price_str} <font color='{change_color}'>{change_str}</font>"
+                )
+            else:
+                # Handle case where index data is missing
+                header_parts.append(
+                    f"<b>{index_symbol.split('.')[0] if '.' in index_symbol else index_symbol}:</b> N/A"
+                )
+
+        if header_parts:
+            self.header_info_label.setText(" | ".join(header_parts))
+            # logging.debug(f"DEBUG update_header_info: Set text to: {' | '.join(header_parts)}") # Optional debug print
+        else:
+            self.header_info_label.setText("<i>Index data unavailable.</i>")
+
+    def _init_menu_bar(self):
+        """Creates the main menu bar."""
+        menu_bar = self.menuBar()  # QMainWindow has a menuBar method
+        menu_bar.setObjectName("MenuBar")  # Apply object name for styling
+
+        # --- File Menu ---
+        file_menu = menu_bar.addMenu("&File")
+        self.select_action = QAction(  # Store as attribute
+            QIcon.fromTheme("document-open"), "Open &Transactions File...", self
+        )  # Use standard icon if possible
+
+        self.select_action.setStatusTip("Select the transaction CSV file to load")
+        self.select_action.triggered.connect(
+            self.select_file
+        )  # Keep existing connection
+        file_menu.addAction(self.select_action)
+
+        # --- ADDED: New Transaction File Action ---
+        self.new_transactions_file_action = QAction(
+            QIcon.fromTheme("document-new"), "&New Transactions File...", self
+        )
+        self.new_transactions_file_action.setStatusTip(
+            "Create a new, empty transactions CSV file"
+        )
+        self.new_transactions_file_action.triggered.connect(
+            self.create_new_transactions_file
+        )
+        file_menu.addAction(self.new_transactions_file_action)
+
+        save_as_action = QAction(
+            QIcon.fromTheme("document-save-as"), "Save Transactions &As...", self
+        )
+        save_as_action.setStatusTip("Save current transaction data to a new CSV file")
+        save_as_action.triggered.connect(
+            self.save_transactions_as
+        )  # Need to implement save_transactions_as
+        file_menu.addAction(save_as_action)
+
+        file_menu.addSeparator()
+
+        exit_action = QAction(QIcon.fromTheme("application-exit"), "E&xit", self)
+        exit_action.setStatusTip("Exit application")
+        exit_action.triggered.connect(
+            self.close
+        )  # Connect to the window's close method
+        file_menu.addAction(exit_action)
+
+        # --- View Menu ---
+        view_menu = menu_bar.addMenu("&View")
+        self.refresh_action = QAction(
+            QIcon.fromTheme("view-refresh"), "&Refresh Data", self
+        )  # Store as attribute
+        self.refresh_action.setStatusTip("Reload data and recalculate")
+        self.refresh_action.setShortcut("F5")  # Common shortcut for refresh
+        self.refresh_action.triggered.connect(self.refresh_data)
+        view_menu.addAction(self.refresh_action)
+
+        # --- ADDED: Transactions Menu ---
+        tx_menu = menu_bar.addMenu("&Transactions")
+        self.add_transaction_action = QAction(
+            QIcon.fromTheme("list-add"), "&Add Transaction...", self
+        )  # Store as attribute
+        self.add_transaction_action.setStatusTip("Manually add a new transaction")
+        self.add_transaction_action.triggered.connect(self.open_add_transaction_dialog)
+        tx_menu.addAction(self.add_transaction_action)
+
+        self.manage_transactions_action = QAction(
+            QIcon.fromTheme("document-edit"), "&Manage Transactions...", self
+        )  # Store as attribute
+        self.manage_transactions_action.setStatusTip(
+            "Edit or delete existing transactions"
+        )
+        self.manage_transactions_action.triggered.connect(
+            self.show_manage_transactions_dialog
+        )
+        tx_menu.addAction(self.manage_transactions_action)
+        # --- END ADDED ---
+
+        # --- ADDED: View Log Action (moved from button logic) ---
+        # (Could also go in View menu)
+
+        # --- Settings Menu ---
+        settings_menu = menu_bar.addMenu("&Settings")
+        acc_currency_action = QAction("Account &Currencies...", self)
+        acc_currency_action.setStatusTip(
+            "Configure currency for each investment account"
+        )
+        acc_currency_action.triggered.connect(
+            self.show_account_currency_dialog
+        )  # Connect to new slot
+        settings_menu.addAction(acc_currency_action)
+
+        # --- ADDED: Standardize CSV Headers Action ---
+        if CSV_UTILS_AVAILABLE:  # Only add if the utility was imported
+            standardize_headers_action = QAction("Standardize CSV Headers...", self)
+            standardize_headers_action.setStatusTip(
+                "Convert headers in the current CSV to the standard internal format"
+            )
+            standardize_headers_action.triggered.connect(
+                self.run_standardize_csv_headers
+            )
+            settings_menu.addAction(standardize_headers_action)
+        # --- END ADDED ---
+
+        # --- MODIFIED: Manual Prices action to Symbol Settings action ---
+        symbol_settings_action = QAction("&Symbol Settings...", self)  # Renamed
+        symbol_settings_action.setStatusTip(
+            "Set manual overrides, symbol mappings, and excluded symbols"  # Updated tip
+        )
+        symbol_settings_action.triggered.connect(
+            self.show_symbol_settings_dialog  # Renamed slot
+        )
+        settings_menu.addAction(symbol_settings_action)  # Add new action
+        # --- END MODIFICATION ---
+        settings_menu.addSeparator()
+        clear_cache_action = QAction("Clear &Cache Files...", self)
+        clear_cache_action.setStatusTip(
+            "Delete all application cache files (market data, etc.)"
+        )
+        clear_cache_action.triggered.connect(self.clear_cache_files_action_triggered)
+        settings_menu.addAction(clear_cache_action)
+
+        # --- Add Help Menu (Optional) ---
+        help_menu = menu_bar.addMenu("&Help")
+        about_action = QAction("&About", self)
+        about_action.triggered.connect(
+            self.show_about_dialog
+        )  # Need to implement show_about_dialog
+        # --- ADDED: CSV Format Help Action ---
+        csv_help_action = QAction("CSV Format Help...", self)
+        csv_help_action.setStatusTip("Show required CSV file format and headers")
+        csv_help_action.triggered.connect(self.show_csv_format_help)
+        help_menu.addAction(csv_help_action)
+        help_menu.addAction(about_action)
+
+    # --- ADDED: Slot for CSV Format Help ---
+    @Slot()
+    def show_csv_format_help(self):
+        """Displays a message box with information about the expected CSV format."""
+        help_text = """
+<b>Required CSV File Format</b>
+
+The CSV file should contain the following columns (header names must match exactly):
+
+<ol>
+    <li><b>"Date (MMM DD, YYYY)"</b>: Transaction date (e.g., <i>Jan 01, 2023</i>, <i>Dec 31, 2024</i>)</li>
+    <li><b>Transaction Type</b>: Type of transaction (e.g., <i>Buy, Sell, Dividend, Split, Deposit, Withdrawal, Fees</i>)</li>
+    <li><b>Stock / ETF Symbol</b>: Ticker symbol (e.g., <i>AAPL, GOOG</i>). Use <i>$CASH</i> for cash deposits/withdrawals.</li>
+    <li><b>Quantity of Units</b>: Number of shares/units (positive). Required for most types.</li>
+    <li><b>Amount per unit</b>: Price per share/unit (positive). Required for Buy/Sell.</li>
+    <li><b>Total Amount</b>: Total value of the transaction (optional, can be calculated for Buy/Sell). Required for some Dividends.</li>
+    <li><b>Fees</b>: Transaction fees/commissions (positive).</li>
+    <li><b>Investment Account</b>: Name of the account (e.g., <i>Brokerage A, IRA</i>).</li>
+    <li><b>Split Ratio (new shares per old share)</b>: Required only for 'Split' type (e.g., <i>2</i> for 2-for-1).</li>
+    <li><b>Note</b>: Optional text note for the transaction.</li>
+</ol>
+
+<b>Example Rows:</b>
+<pre>
+"Date (MMM DD, YYYY)",Transaction Type,Stock / ETF Symbol,Quantity of Units,Amount per unit,Total Amount,Fees,Investment Account,Split Ratio (new shares per old share),Note
+"Jan 15, 2023",Buy,AAPL,10,150.25,1502.50,5.95,Brokerage A,,Bought Apple shares
+"Feb 01, 2023",Dividend,MSFT,,,50.00,,Brokerage A,,Microsoft dividend received
+"Mar 10, 2023",Deposit,$CASH,1000,,1000.00,,IRA,,Initial IRA contribution
+</pre>
+"""
+        QMessageBox.information(self, "CSV Format Help", help_text)
+
+    # --- END ADDED ---
+
+    @Slot(str)  # Ensure Slot decorator is imported
+    def _chart_holding_history(self, symbol: str):
+        """Handles 'Chart History' context menu action by showing a price chart dialog."""
+        logging.info(f"Action triggered: Chart History for {symbol}")
+
+        if symbol == CASH_SYMBOL_CSV:
+            QMessageBox.information(self, "Info", "Cannot chart history for Cash.")
+            return
+
+        # --- Get required data ---
+        yf_symbol = None
+        price_data_df = None
+
+        # --- Use the stored map ---
+        if hasattr(self, "internal_to_yf_map") and isinstance(
+            self.internal_to_yf_map, dict
+        ):
+            yf_symbol = self.internal_to_yf_map.get(symbol)
+            if not yf_symbol:
+                # Fallback: Check if the symbol itself is a valid-looking ticker
+                if "." not in symbol and ":" not in symbol and " " not in symbol:
+                    logging.debug(
+                        f"Symbol '{symbol}' not in map, trying as direct YF ticker."
+                    )
+                    yf_symbol = symbol.upper()
+                else:
+                    logging.warning(
+                        f"No YF symbol mapping found for internal symbol: {symbol}"
+                    )
+        else:
+            logging.warning(
+                "internal_to_yf_map attribute not found or invalid. Cannot look up YF ticker."
+            )
+            # Attempt to use symbol directly as YF symbol as a last resort
+            if "." not in symbol and ":" not in symbol and " " not in symbol:
+                logging.debug(
+                    f"Symbol map missing, trying '{symbol}' as direct YF ticker."
+                )
+                yf_symbol = symbol.upper()
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Mapping Error",
+                    f"Could not determine Yahoo Finance ticker for '{symbol}'.",
+                )
+                return  # Cannot proceed without a YF ticker
+        # --- End Use the stored map ---
+
+        # Use ADJUSTED prices for single symbol history chart
+        if (
+            yf_symbol
+            and hasattr(self, "historical_prices_yf_adjusted")
+            and isinstance(self.historical_prices_yf_adjusted, dict)
+        ):
+            price_data_df = self.historical_prices_yf_adjusted.get(yf_symbol)
+            if price_data_df is None:
+                logging.warning(
+                    f"No adjusted historical price data found for YF symbol: {yf_symbol} (Internal: {symbol})"
+                )
+        else:
+            if not yf_symbol:
+                logging.warning("No YF symbol determined.")  # Already logged above
+            else:
+                logging.warning(
+                    "historical_prices_yf_adjusted attribute not found or invalid."
+                )
+
+        if price_data_df is None or price_data_df.empty:
+            QMessageBox.warning(
+                self,
+                "No Data",
+                f"Could not find historical price data for symbol '{symbol}' (Ticker: {yf_symbol or 'N/A'}).",
+            )
+            return
+
+        # 2. Date Range (from main UI controls)
+        try:
+            start_date = self.graph_start_date_edit.date().toPython()
+            end_date = self.graph_end_date_edit.date().toPython()
+            if start_date >= end_date:
+                QMessageBox.warning(
+                    self,
+                    "Invalid Date Range",
+                    "Graph start date must be before end date.",
+                )
+                return
+        except Exception as e:
+            logging.error(f"Error getting date range for symbol chart: {e}")
+            QMessageBox.critical(
+                self, "Error", "Could not get date range from UI controls."
+            )
+            return
+
+        # 3. Get Local Currency Code for Labeling
+        display_currency_code = self._get_currency_for_symbol(symbol)
+        if (
+            not display_currency_code
+        ):  # Should return default, but handle None just in case
+            display_currency_code = self.config.get("default_currency", "USD")
+
+        # --- Create and Show Dialog ---
+        try:
+            dialog = SymbolChartDialog(
+                symbol=symbol,  # Pass internal symbol for title
+                start_date=start_date,
+                end_date=end_date,
+                price_data=price_data_df.copy(),  # Pass a copy of the data
+                display_currency=display_currency_code,  # Pass currency CODE
+                parent=self,
+            )
+            dialog.exec()  # Show modal
+
+        except Exception as e_dialog:
+            logging.exception(
+                f"Error creating or showing SymbolChartDialog for {symbol}"
+            )
+            QMessageBox.critical(
+                self,
+                "Chart Error",
+                f"Failed to display chart for {symbol}:\n{e_dialog}",
+            )
+
+    def _get_currency_for_symbol(self, symbol_to_find: str) -> Optional[str]:
+        """
+        Finds the local currency code associated with a symbol based on transaction data
+        or the account currency map. Returns the default currency if not found.
+
+        Args:
+            symbol_to_find (str): The internal symbol (e.g., 'AAPL', 'SET:BKK').
+
+        Returns:
+            Optional[str]: The 3-letter currency code (e.g., 'USD', 'THB') or None if lookup fails badly.
+                           Returns default currency as fallback.
+        """
+        # 1. Check Cash Symbol
+        if symbol_to_find == CASH_SYMBOL_CSV:
+            # Cash usually takes the display currency context, but might be linked
+            # to specific accounts. Let's return the app's default for simplicity.
+            return self.config.get("default_currency", "USD")
+
+        # 2. Check Holdings Data (most reliable if data is loaded)
+        # This requires holdings_data to have the 'Local Currency' column correctly populated.
+        if (
+            hasattr(self, "holdings_data")
+            and not self.holdings_data.empty
+            and "Symbol" in self.holdings_data.columns
+        ):
+            symbol_rows = self.holdings_data[
+                self.holdings_data["Symbol"] == symbol_to_find
+            ]
+            if not symbol_rows.empty and "Local Currency" in symbol_rows.columns:
+                first_currency = symbol_rows["Local Currency"].iloc[0]
+                if (
+                    pd.notna(first_currency)
+                    and isinstance(first_currency, str)
+                    and len(first_currency) == 3
+                ):
+                    # logging.debug(f"Found currency '{first_currency}' for symbol '{symbol_to_find}' via holdings_data.")
+                    return first_currency.upper()
+
+        # 3. Fallback: Check original transactions (less efficient but broader)
+        # This requires original_data to have 'Investment Account' and 'Stock / ETF Symbol'
+        if hasattr(self, "original_data") and not self.original_data.empty:
+            if (
+                "Stock / ETF Symbol" in self.original_data.columns
+                and "Investment Account" in self.original_data.columns
+            ):
+                symbol_rows_orig = self.original_data[
+                    self.original_data["Stock / ETF Symbol"] == symbol_to_find
+                ]
+                if not symbol_rows_orig.empty:
+                    first_account = symbol_rows_orig["Investment Account"].iloc[0]
+                    if pd.notna(first_account) and isinstance(first_account, str):
+                        # Get currency from the account map
+                        acc_map = self.config.get("account_currency_map", {})
+                        currency_from_map = acc_map.get(first_account)
+                        if (
+                            currency_from_map
+                            and isinstance(currency_from_map, str)
+                            and len(currency_from_map) == 3
+                        ):
+                            # logging.debug(f"Found currency '{currency_from_map}' for symbol '{symbol_to_find}' via original_data/account_map (Account: {first_account}).")
+                            return currency_from_map.upper()
+
+        # 4. Final Fallback: Return application's default currency
+        default_curr = self.config.get("default_currency", "USD")
+        # logging.debug(f"Could not find specific currency for symbol '{symbol_to_find}'. Using default: {default_curr}")
+        return default_curr
+
+    # Add this NEW slot method to PortfolioApp
+    @Slot()
+    def show_account_currency_dialog(self):
+        """Shows the dialog to edit account currencies."""
+        current_map = self.config.get("account_currency_map", {})
+        current_default = self.config.get("default_currency", "USD")
+        # Use all accounts detected during the last load/refresh
+        accounts_to_show = (
+            self.available_accounts
+            if self.available_accounts
+            else list(current_map.keys())
+        )
+
+        updated_settings = AccountCurrencyDialog.get_settings(
+            parent=self,
+            current_map=current_map,
+            current_default=current_default,
+            all_accounts=accounts_to_show,
+        )
+
+        if updated_settings:  # If user clicked Save
+            new_map, new_default = updated_settings
+            # Check if settings actually changed
+            map_changed = new_map != self.config.get("account_currency_map", {})
+            default_changed = new_default != self.config.get("default_currency", "USD")
+
+            if map_changed or default_changed:
+                logging.info(
+                    "Account currency settings changed. Saving and refreshing..."
+                )
+                self.config["account_currency_map"] = new_map
+                self.config["default_currency"] = new_default
+                self.save_config()  # Save the updated config
+                self.refresh_data()  # Trigger a full refresh as currencies impact calculations
+            else:
+                logging.info("Account currency settings unchanged.")
+
+    # --- Need to implement these methods used in the menu ---
+    def save_transactions_as(self):
+        # Placeholder - opens save dialog, writes self.original_data (or maybe filtered?) to new CSV
+        if not hasattr(self, "original_data") or self.original_data.empty:
+            QMessageBox.warning(self, "No Data", "No transaction data loaded to save.")
+            return
+
+        start_dir = (
+            os.path.dirname(self.transactions_file)
+            if self.transactions_file
+            else os.getcwd()
+        )
+        fname, _ = QFileDialog.getSaveFileName(
+            self, "Save Transactions As", start_dir, "CSV Files (*.csv)"
+        )
+
+        if fname:
+            if not fname.lower().endswith(".csv"):
+                fname += ".csv"
+            logging.info(f"Attempting to save transactions to: {fname}")
+
+            # --- Backup the ORIGINAL file FIRST ---
+            original_file_to_backup = self.transactions_file
+            if original_file_to_backup and os.path.exists(original_file_to_backup):
+                backup_ok, backup_msg = self._backup_csv(
+                    filename_to_backup=original_file_to_backup
+                )  # Pass original filename
+                if not backup_ok:
+                    QMessageBox.critical(
+                        self,
+                        "Backup Error",
+                        f"Failed to backup original CSV before saving:\n{backup_msg}",
+                    )
+                    return  # Stop if backup fails
+            else:
+                logging.info(
+                    "Original transaction file not set or found, skipping backup for 'Save As'."
+                )
+            # --- End Backup ---
+
+            # Use the same rewrite logic, but with the new filename
+            temp_orig_file = self.transactions_file  # Store original
+            self.transactions_file = fname  # Temporarily set filename for rewrite
+            # Modify _rewrite_csv to optionally skip its internal backup call
+            success = self._rewrite_csv(
+                self.original_data.drop(columns=["original_index"], errors="ignore"),
+                skip_backup=True,  # Add flag to skip internal backup
+            )
+            self.transactions_file = temp_orig_file  # Restore original filename
+
+            if success:
+                QMessageBox.information(
+                    self, "Save Successful", f"Transactions saved to:\n{fname}"
+                )
+            # Error message shown by _rewrite_csv if it failed
+            else:
+                QMessageBox.critical(
+                    self, "Save Failed", f"Could not save transactions to:\n{fname}"
+                )
+
+    def show_about_dialog(self):
+        # Placeholder - shows a simple message box with app info
+        QMessageBox.about(
+            self,
+            "About Investa",
+            "<b>Investa Portfolio Dashboard</b><br><br>"
+            "Version: 0.3.0 (Features: Tx Edit/Delete, Ignored Log, Table Filter, Settings Edit)<br>"
+            "Author: Kit Matan<br>"
+            "License: MIT<br><br>"
+            "Data provided by Yahoo Finance. Use at your own risk.",
+        )
+
+    @Slot()
+    def show_symbol_settings_dialog(self):  # Renamed from show_manual_overrides_dialog
+        """Shows the dialog to edit symbol settings (overrides, map, exclusions)."""
+        if (
+            not hasattr(self, "manual_overrides_dict")
+            or not hasattr(self, "user_symbol_map_config")
+            or not hasattr(self, "user_excluded_symbols_config")
+        ):
+            logging.error("Symbol settings dictionaries not initialized.")
+            QMessageBox.critical(self, "Error", "Symbol settings data is not loaded.")
+            return
+
+        updated_settings = ManualPriceDialog.get_symbol_settings(  # Renamed static call
+            parent=self,
+            current_overrides=self.manual_overrides_dict,
+            current_symbol_map=self.user_symbol_map_config,
+            current_excluded_symbols=self.user_excluded_symbols_config,
+        )
+
+        if updated_settings is not None:
+            new_manual_overrides = updated_settings.get("manual_price_overrides", {})
+            new_symbol_map = updated_settings.get("user_symbol_map", {})
+            new_excluded_symbols = set(
+                updated_settings.get("user_excluded_symbols", [])
+            )
+
+            settings_changed = (
+                new_manual_overrides != self.manual_overrides_dict
+                or new_symbol_map != self.user_symbol_map_config
+                or new_excluded_symbols != self.user_excluded_symbols_config
+            )
+
+            if settings_changed:
+                logging.info("Symbol settings changed. Saving and refreshing...")
+                self.manual_overrides_dict = new_manual_overrides
+                self.user_symbol_map_config = new_symbol_map
+                self.user_excluded_symbols_config = new_excluded_symbols
+                if self._save_manual_overrides_to_json():  # Save all parts
+                    self.refresh_data()
+            else:
+                logging.info("Symbol settings unchanged.")
+
+    def _load_manual_overrides(self):  # No longer returns, sets instance attributes
+        """Loads manual overrides, symbol map, and excluded symbols from MANUAL_OVERRIDES_FILE.
+        Handles migration from old price-only format if necessary for price overrides.
+        """
+        # Initialize with defaults from config.py
+        # These will be overwritten if data is found in the JSON file.
+        self.manual_overrides_dict = {}  # For prices, sectors, etc.
+        self.user_symbol_map_config = config.SYMBOL_MAP_TO_YFINANCE.copy()
+        self.user_excluded_symbols_config = set(config.YFINANCE_EXCLUDED_SYMBOLS.copy())
+
+        if os.path.exists(self.MANUAL_OVERRIDES_FILE):
+            try:
+                with open(self.MANUAL_OVERRIDES_FILE, "r", encoding="utf-8") as f:
+                    loaded_data = json.load(f)
+
+                if isinstance(loaded_data, dict):
+                    # Load manual price overrides (existing logic)
+                    price_overrides_loaded = loaded_data.get(
+                        "manual_price_overrides", {}
+                    )
+                    if isinstance(price_overrides_loaded, dict):
+                        valid_price_overrides: Dict[str, Dict[str, Any]] = {}
+                        # ... (validation logic for price_overrides_loaded as before) ...
+                        for key, value_dict in price_overrides_loaded.items():
+                            if isinstance(key, str) and isinstance(value_dict, dict):
+                                entry: Dict[str, Any] = {}
+                                price = value_dict.get("price")
+                                if (
+                                    price is not None
+                                    and isinstance(price, (int, float))
+                                    and price > 0
+                                ):
+                                    entry["price"] = float(price)
+                                entry["asset_type"] = str(
+                                    value_dict.get("asset_type", "")
+                                ).strip()
+                                entry["sector"] = str(
+                                    value_dict.get("sector", "")
+                                ).strip()
+                                entry["geography"] = str(
+                                    value_dict.get("geography", "")
+                                ).strip()
+                                entry["industry"] = str(
+                                    value_dict.get("industry", "")
+                                ).strip()
+                                valid_price_overrides[key.upper().strip()] = entry
+                        self.manual_overrides_dict = valid_price_overrides
+                        logging.info(
+                            f"Loaded {len(self.manual_overrides_dict)} manual price overrides."
+                        )
+                    else:
+                        logging.warning(
+                            "Manual price overrides in JSON is not a dictionary. Using defaults for prices."
+                        )
+
+                    # Load user symbol map
+                    user_map_loaded = loaded_data.get(
+                        "user_symbol_map", None
+                    )  # Default to None to distinguish from empty dict
+                    if isinstance(user_map_loaded, dict):
+                        self.user_symbol_map_config = {
+                            k.upper().strip(): v.upper().strip()
+                            for k, v in user_map_loaded.items()
+                        }
+                        logging.info(
+                            f"Loaded {len(self.user_symbol_map_config)} user symbol mappings from JSON."
+                        )
+                    elif (
+                        user_map_loaded is None
+                    ):  # Key not present, keep default from config
+                        logging.info(
+                            "No 'user_symbol_map' key in JSON, using defaults from config.py."
+                        )
+                    else:  # Invalid type
+                        logging.warning(
+                            "User symbol map in JSON is not a valid dictionary. Using defaults from config.py."
+                        )
+
+                    # Load user excluded symbols
+                    user_excluded_loaded = loaded_data.get(
+                        "user_excluded_symbols", None
+                    )  # Default to None
+                    if isinstance(user_excluded_loaded, list):
+                        self.user_excluded_symbols_config = {
+                            s.upper().strip()
+                            for s in user_excluded_loaded
+                            if isinstance(s, str)
+                        }
+                        logging.info(
+                            f"Loaded {len(self.user_excluded_symbols_config)} user excluded symbols from JSON."
+                        )
+                    elif (
+                        user_excluded_loaded is None
+                    ):  # Key not present, keep default from config
+                        logging.info(
+                            "No 'user_excluded_symbols' key in JSON, using defaults from config.py."
+                        )
+                    else:  # Invalid type
+                        logging.warning(
+                            "User excluded symbols in JSON is not a valid list. Using defaults from config.py."
+                        )
+
+                # --- Migration from old format (if new format load failed or file was old format) ---
+                elif isinstance(loaded_data, dict) and all(
+                    isinstance(v, (int, float)) for v in loaded_data.values()
+                ):
+                    logging.info("Attempting to migrate old manual price format...")
+                    migrated_prices: Dict[str, Dict[str, Any]] = {}
+                    for key, price_val in loaded_data.items():
+                        if (
+                            isinstance(key, str)
+                            and isinstance(price_val, (int, float))
+                            and price_val > 0
+                        ):
+                            migrated_prices[key.upper().strip()] = {
+                                "price": float(price_val)
+                            }
+                    if migrated_prices:
+                        self.manual_overrides_dict = (
+                            migrated_prices  # Only overrides prices
+                        )
+                        # user_symbol_map_config and user_excluded_symbols_config retain their defaults from config.py
+                        logging.info(
+                            f"Migrated {len(migrated_prices)} entries from old price format. Other settings use defaults."
+                        )
+                        self._save_manual_overrides_to_json()  # Save in new format immediately
+                else:
+                    logging.warning(
+                        f"Content of {self.MANUAL_OVERRIDES_FILE} is not a recognized dictionary format. Using defaults for all settings."
+                    )
+            except json.JSONDecodeError as e:
+                logging.error(
+                    f"Error decoding JSON from {self.MANUAL_OVERRIDES_FILE}: {e}. Using defaults for all settings."
+                )
+            except Exception as e:
+                logging.error(
+                    f"Error reading {self.MANUAL_OVERRIDES_FILE}: {e}. Using defaults for all settings."
+                )
+        else:  # File does not exist
+            logging.info(
+                f"{self.MANUAL_OVERRIDES_FILE} not found. Using default symbol settings from config.py."
+            )
+        # Log final state after load/default
+        logging.info(
+            f"Final loaded settings: Overrides={len(self.manual_overrides_dict)}, Map={len(self.user_symbol_map_config)}, Excluded={len(self.user_excluded_symbols_config)}"
+        )
+
+    def _save_manual_overrides_to_json(
+        self,
+    ) -> bool:  # Renamed from _save_manual_prices_to_json
+        """Saves all manual settings (prices, symbol map, exclusions) to MANUAL_OVERRIDES_FILE."""
+        if (
+            not hasattr(self, "manual_overrides_dict")
+            or not hasattr(self, "user_symbol_map_config")
+            or not hasattr(self, "user_excluded_symbols_config")
+        ):
+            logging.error("Cannot save symbol settings, dictionary attributes missing.")
+            return False
+
+        overrides_file_path = self.MANUAL_OVERRIDES_FILE
+        logging.info(f"Saving symbol settings to: {overrides_file_path}")
+
+        data_to_save = {
+            "manual_price_overrides": dict(sorted(self.manual_overrides_dict.items())),
+            "user_symbol_map": dict(sorted(self.user_symbol_map_config.items())),
+            "user_excluded_symbols": sorted(
+                list(self.user_excluded_symbols_config)
+            ),  # Save set as sorted list
+        }
+
+        try:
+            overrides_dir = os.path.dirname(overrides_file_path)
+            if overrides_dir:
+                os.makedirs(overrides_dir, exist_ok=True)
+
+            with open(overrides_file_path, "w", encoding="utf-8") as f:
+                json.dump(data_to_save, f, indent=4, ensure_ascii=False)
+            logging.info("Symbol settings saved successfully.")
+            return True
+        except TypeError as e:
+            logging.error(f"TypeError writing symbol settings JSON: {e}")
+            QMessageBox.critical(
+                self, "Save Error", f"Data error saving symbol settings:\n{e}"
+            )
+            return False
+        except IOError as e:
+            logging.error(f"IOError writing symbol settings JSON: {e}")
+            QMessageBox.critical(
+                self,
+                "Save Error",
+                f"Could not write to file:\n{overrides_file_path}\n{e}",
+            )
+            return False
+        except Exception as e:
+            logging.exception("Unexpected error writing symbol settings JSON")
+            QMessageBox.critical(
+                self,
+                "Save Error",
+                f"An unexpected error occurred saving symbol settings:\n{e}",
             )
             return False
 
@@ -6578,7 +8292,8 @@ The CSV file should contain the following columns (header names must match exact
             ignored_indices_load,
             ignored_reasons_load,
             err_load_orig,
-            warn_load_orig,
+            warn_load_orig,  # <-- NEW: Unpack the map
+            original_to_cleaned_header_map,  # <-- NEW: Unpack the map
         ) = load_and_clean_transactions(
             self.transactions_file, account_map, def_currency
         )
@@ -6673,7 +8388,8 @@ The CSV file should contain the following columns (header names must match exact
                 # Update available accounts list based on the loaded data
                 current_available_accounts = (
                     list(all_tx_df_temp["Account"].unique())
-                    if "Account" in all_tx_df_temp
+                    if all_tx_df_temp is not None
+                    and "Account" in all_tx_df_temp.columns
                     else []
                 )
                 self.available_accounts = sorted(current_available_accounts)
@@ -6725,7 +8441,11 @@ The CSV file should contain the following columns (header names must match exact
                     for internal_sym in all_symbols_internal:
                         if internal_sym == CASH_SYMBOL_CSV:
                             continue
-                        yf_sym = map_to_yf_symbol(internal_sym)  # Use helper
+                        yf_sym = map_to_yf_symbol(  # Pass user settings
+                            internal_sym,
+                            self.user_symbol_map_config,
+                            self.user_excluded_symbols_config,
+                        )
                         if yf_sym:
                             temp_internal_to_yf_map[internal_sym] = yf_sym
                     self.internal_to_yf_map = temp_internal_to_yf_map
@@ -6741,7 +8461,18 @@ The CSV file should contain the following columns (header names must match exact
                 logging.error(
                     f"Error generating symbol map during refresh prep: {e_prep}"
                 )
-                self.internal_to_yf_map = {}
+                self.internal_to_yf_map = {}  # Ensure map is cleared on error
+
+            # Store the header map after the try-except for symbol map generation,
+            # ensuring it's stored if load_and_clean_transactions was successful.
+            self.original_to_cleaned_header_map = (
+                original_to_cleaned_header_map
+                if original_to_cleaned_header_map is not None
+                else {}
+            )
+            logging.debug(
+                f"Stored original_to_cleaned_header_map: {self.original_to_cleaned_header_map}"
+            )
 
         # --- Continue with worker setup ---
         self.is_calculating = True
@@ -6872,8 +8603,10 @@ The CSV file should contain the following columns (header names must match exact
             historical_fn=calculate_historical_performance,  # type: ignore
             historical_args=historical_args,
             historical_kwargs=historical_kwargs,
-            worker_signals=worker_signals,
-            manual_overrides_dict=self.manual_overrides_dict,  # Pass new dict
+            worker_signals=worker_signals,  # Pass signals object
+            manual_overrides_dict=self.manual_overrides_dict,  # Pass price/sector overrides
+            user_symbol_map=self.user_symbol_map_config,  # Pass symbol map
+            user_excluded_symbols=self.user_excluded_symbols_config,  # Pass excluded symbols
         )
         # --- END MODIFICATION ---
 
@@ -9239,41 +10972,74 @@ The CSV file should contain the following columns (header names must match exact
             return False
 
         # Define headers in the correct order
-        csv_headers = [
-            "Date (MMM DD, YYYY)",
-            "Transaction Type",
-            "Stock / ETF Symbol",
-            "Quantity of Units",
-            "Amount per unit",
+        # This order should ideally match DESIRED_CLEANED_COLUMN_ORDER from csv_utils.py
+        # For now, let's define it here.
+        cleaned_csv_headers_in_order = [
+            "Date",
+            "Type",
+            "Symbol",
+            "Quantity",
+            "Price/Share",
             "Total Amount",
-            "Fees",
-            "Investment Account",
-            "Split Ratio (new shares per old share)",
-            "Note",  # Removed "Calculated Total Value" header
+            "Commission",
+            "Account",
+            "Split Ratio",
+            "Note",
         ]
-        df_ordered = pd.DataFrame(
-            columns=csv_headers
-        )  # Start with an empty df with correct columns
-        for header in csv_headers:
-            # Find the corresponding column in df_to_write (handle potential renames/missing)
-            # This assumes df_to_write uses the *original* CSV headers
+
+        df_ordered = pd.DataFrame()
+        # df_to_write contains the actual headers from the CSV (which are cleaned if standardized)
+        for header in cleaned_csv_headers_in_order:
             if header in df_to_write.columns:
                 df_ordered[header] = df_to_write[header]
             else:
-                df_ordered[header] = ""  # Add empty column if missing in source
+                # If a standard column is missing, add it as empty.
+                # This could happen if the original CSV was missing a column.
+                df_ordered[header] = ""
+                logging.warning(
+                    f"_rewrite_csv: Standard CSV header '{header}' not found in df_to_write. Added as empty column."
+                )
 
         # --- Ensure correct data types before saving ---
         try:
-            # Convert Date column ONLY (needed for date_format)
-            date_col_name = "Date (MMM DD, YYYY)"
+            # Convert Date column ONLY (needed for date_format) - Use CLEANED name
+            date_col_name = "Date"
             if date_col_name in df_ordered.columns:
-                # Convert to datetime objects first, coercing errors
-                df_ordered[date_col_name] = pd.to_datetime(
-                    df_ordered[date_col_name], errors="coerce"
-                )
-                # Drop rows where date conversion failed
-                df_ordered.dropna(subset=[date_col_name], inplace=True)
+                original_date_strings = df_ordered[
+                    date_col_name
+                ].copy()  # Keep original strings
 
+                # Attempt to convert to datetime
+                converted_dates = pd.to_datetime(original_date_strings, errors="coerce")
+
+                # Identify where conversion failed (became NaT) but original was not NaT/None/empty string
+                failed_conversion_mask = (
+                    converted_dates.isna()
+                    & original_date_strings.notna()
+                    & (original_date_strings != "")
+                )
+
+                if failed_conversion_mask.any():
+                    num_failed = failed_conversion_mask.sum()
+                    logging.warning(
+                        f"_rewrite_csv: {num_failed} date string(s) could not be parsed by pd.to_datetime and will be written as original strings."
+                    )
+                    # For failed conversions, revert to the original string.
+                    # For successful conversions or original NaNs/empty strings, keep the (converted) datetime object or NaT.
+                    df_ordered[date_col_name] = converted_dates.where(
+                        ~failed_conversion_mask, original_date_strings
+                    )
+                else:
+                    # All conversions successful or original values were already NaN/None/empty
+                    df_ordered[date_col_name] = converted_dates
+
+                # DO NOT DROP ROWS WITH NaT DATES ANYMORE.
+                # NaT values (from originally empty cells or truly unparseable strings not reverted)
+                # will be written as empty strings by to_csv.
+            else:
+                logging.warning(
+                    f"_rewrite_csv: Date column '{date_col_name}' not found in df_ordered."
+                )
         except Exception as e_dtype:
             logging.error(f"Error converting Date dtype before CSV rewrite: {e_dtype}")
             QMessageBox.critical(
@@ -9368,15 +11134,72 @@ The CSV file should contain the following columns (header names must match exact
 
         # Update the row
         for csv_header, new_value_str in new_data_dict.items():
-            if csv_header in df_modified.columns:
-                # Convert back to appropriate type before setting?
-                # Or just set the string value? Pandas might handle it on write.
-                # Let's set the string value directly for simplicity, to_csv handles quoting.
-                df_modified.loc[df_row_index, csv_header] = new_value_str
+            # csv_header is the standard original CSV header, e.g., "Date (MMM DD, YYYY)"
+            # self.original_data (and thus df_modified) has actual headers from the CSV file.
+            # self.original_to_cleaned_header_map maps standard original CSV headers to cleaned names.
+            # If the CSV uses cleaned names, then df_modified.columns contains these cleaned names.
+
+            # Get the cleaned name corresponding to the standard CSV header
+            # This map should have been populated correctly by data_loader.py
+            actual_col_name_in_df = self.original_to_cleaned_header_map.get(csv_header)
+
+            if actual_col_name_in_df:
+                if actual_col_name_in_df in df_modified.columns:
+                    col_dtype = df_modified[actual_col_name_in_df].dtype
+                    try:
+                        if pd.api.types.is_numeric_dtype(col_dtype):
+                            # Attempt to convert to float, if it fails, set to NaN and handle drop
+                            numeric_value = pd.to_numeric(
+                                new_value_str, errors="coerce"
+                            )
+                            if pd.isna(numeric_value):
+                                # If it's not a valid numeric, it goes to NaN and will effectively be set to "" when we save the CSV (which saves all float cols)
+                                df_modified.loc[df_row_index, actual_col_name_in_df] = (
+                                    numeric_value
+                                )
+                            else:
+                                df_modified.loc[df_row_index, actual_col_name_in_df] = (
+                                    numeric_value
+                                )
+                            logging.debug(
+                                f"Updated numeric column '{actual_col_name_in_df}' (from std header '{csv_header}') with value '{new_value_str}' (converted to float)"
+                            )
+                        else:
+                            # String column
+                            df_modified.loc[df_row_index, actual_col_name_in_df] = (
+                                new_value_str
+                            )
+                            logging.debug(
+                                f"Updated string column '{actual_col_name_in_df}' (from std header '{csv_header}') with value '{new_value_str}'"
+                            )
+                    except Exception as e_set_value:
+                        logging.error(
+                            f"Error setting value for column '{actual_col_name_in_df}' (from std header '{csv_header}') at index {df_row_index}: {e_set_value}"
+                        )
+                        # Continue with other columns
+                else:
+                    logging.warning(
+                        f"Mapped column name '{actual_col_name_in_df}' (from std header '{csv_header}') not found in df_modified columns: {df_modified.columns.tolist()}."
+                    )
             else:
-                logging.warning(
-                    f"Header '{csv_header}' from edit dialog not found in original_data columns during edit."
-                )
+                # This case means the standard_csv_header from new_data_dict wasn't in original_to_cleaned_header_map
+                # which would be unusual if original_to_cleaned_header_map is built from the same standard mapping.
+                # However, it's also possible the CSV has a completely unexpected header that doesn't map.
+                # More robust: try direct match if map fails, as a fallback if CSV *did* use standard headers.
+                if csv_header in df_modified.columns:
+                    logging.warning(
+                        f"Standard header '{csv_header}' not in original_to_cleaned_header_map, but found directly in df_modified.columns. Updating directly."
+                    )
+                    try:
+                        df_modified.loc[df_row_index, csv_header] = new_value_str
+                    except Exception as e_set_value_direct:
+                        logging.error(
+                            f"Error setting value directly for column '{csv_header}' at index {df_row_index}: {e_set_value_direct}"
+                        )
+                else:
+                    logging.warning(
+                        f"Header '{csv_header}' from edit dialog could not be mapped to a column in original_data and was not found directly."
+                    )
 
         # Rewrite the entire CSV
         # The _rewrite_csv method should handle dropping 'original_index' if it's still there
@@ -11577,6 +13400,88 @@ The CSV file should contain the following columns (header names must match exact
 
     # --- End moved method ---
 
+    # --- ADDED: Method to run CSV header standardization ---
+    @Slot()
+    def run_standardize_csv_headers(self):
+        if not CSV_UTILS_AVAILABLE:
+            QMessageBox.critical(self, "Error", "CSV Utilities are not available.")
+            return
+
+        if not self.transactions_file or not os.path.exists(self.transactions_file):
+            QMessageBox.warning(
+                self, "No File Loaded", "Please open a transactions CSV file first."
+            )
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm Header Standardization",
+            f"This will attempt to convert the headers in your currently loaded CSV file:\n"
+            f"<b>{os.path.basename(self.transactions_file)}</b>\n"
+            f"to the standard internal format (e.g., 'Date', 'Symbol').\n\n"
+            f"<b>A backup of the original file will be created.</b>\n\n"
+            f"Do you want to proceed?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+
+        if reply == QMessageBox.No:
+            return
+
+        # 1. Backup the current CSV file
+        backup_success, backup_msg = self._backup_csv(
+            filename_to_backup=self.transactions_file
+        )
+        if not backup_success:
+            QMessageBox.critical(
+                self,
+                "Backup Failed",
+                f"Could not backup the CSV file before standardization:\n{backup_msg}",
+            )
+            return
+        else:
+            QMessageBox.information(
+                self,
+                "Backup Created",
+                f"Original file backed up successfully:\n{backup_msg}",
+            )
+
+        # 2. Perform the conversion (overwrite the original file)
+        self.status_label.setText(
+            f"Standardizing headers in {os.path.basename(self.transactions_file)}..."
+        )
+        QApplication.processEvents()  # Update UI
+
+        convert_success, convert_msg = convert_csv_headers_to_cleaned_format(
+            self.transactions_file,
+            self.transactions_file,  # Input and output are the same
+        )
+
+        if convert_success:
+            QMessageBox.information(
+                self,
+                "Standardization Successful",
+                convert_msg + "\n\nReloading data...",
+            )
+            logging.info(
+                f"CSV headers standardized for '{self.transactions_file}'. Triggering refresh."
+            )
+            # Important: After modifying the file, the application needs to reload it.
+            self.refresh_data()
+        else:
+            QMessageBox.critical(
+                self,
+                "Standardization Failed",
+                f"Could not standardize CSV headers:\n{convert_msg}",
+            )
+            self.status_label.setText("Header standardization failed.")
+
+        self.status_label.setText(
+            "Ready" if convert_success else "Header standardization failed."
+        )
+
+    # --- END ADDED ---
+
     # --- Slots for Fundamental Data Lookup ---
     @Slot()
     def _handle_direct_symbol_lookup(self):
@@ -11586,8 +13491,12 @@ The CSV file should contain the following columns (header names must match exact
             QMessageBox.warning(self, "Input Error", "Please enter a stock symbol.")
             return
 
-        yf_symbol = map_to_yf_symbol(input_symbol)  # Use existing utility from finutils
-        if not yf_symbol:
+        # For direct lookup, we use the user-defined map
+        yf_symbol = map_to_yf_symbol(
+            input_symbol, self.user_symbol_map_config, self.user_excluded_symbols_config
+        )
+
+        if not yf_symbol:  # Check after applying user map
             QMessageBox.warning(
                 self,
                 "Symbol Error",
@@ -11637,8 +13546,12 @@ The CSV file should contain the following columns (header names must match exact
 
         yf_symbol = self.internal_to_yf_map.get(internal_symbol)
         if not yf_symbol:
-            # Fallback if not in map (e.g., if map wasn't populated for some reason)
-            yf_symbol_fallback = map_to_yf_symbol(internal_symbol)
+            # Fallback if not in map (e.g., if map wasn't populated for some reason) - use user map
+            yf_symbol_fallback = map_to_yf_symbol(
+                internal_symbol,
+                self.user_symbol_map_config,
+                self.user_excluded_symbols_config,
+            )
             if not yf_symbol_fallback:
                 QMessageBox.warning(
                     self,

@@ -54,9 +54,8 @@ try:
         DEFAULT_CURRENT_CACHE_FILE_PATH,
         YFINANCE_CACHE_DURATION_HOURS,
         CURRENT_QUOTE_CACHE_DURATION_MINUTES,
-        YFINANCE_INDEX_TICKER_MAP,
-        DEFAULT_INDEX_QUERY_SYMBOLS,
-        SYMBOL_MAP_TO_YFINANCE,
+        YFINANCE_INDEX_TICKER_MAP,  # Still needed for get_index_quotes
+        DEFAULT_INDEX_QUERY_SYMBOLS,  # Still needed for get_index_quotes
         FUNDAMENTALS_CACHE_DURATION_HOURS,  # <-- ADDED
         YFINANCE_EXCLUDED_SYMBOLS,
         CASH_SYMBOL_CSV,  # DEFAULT_CURRENT_CACHE_FILE_PATH is used by main_gui now
@@ -72,8 +71,7 @@ except ImportError:
     CURRENT_QUOTE_CACHE_DURATION_MINUTES = 15
     YFINANCE_INDEX_TICKER_MAP = {}
     DEFAULT_INDEX_QUERY_SYMBOLS = []
-    SYMBOL_MAP_TO_YFINANCE = {}
-    FUNDAMENTALS_CACHE_DURATION_HOURS = 24  # <-- ADDED Fallback
+    FUNDAMENTALS_CACHE_DURATION_HOURS = 24
     YFINANCE_EXCLUDED_SYMBOLS = set()
     CASH_SYMBOL_CSV = "$CASH"
     HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = (
@@ -240,7 +238,8 @@ class MarketDataProvider:
         self,
         internal_stock_symbols: List[str],
         required_currencies: Set[str],
-        manual_prices_dict: Optional[Dict[str, float]] = None,
+        user_symbol_map: Dict[str, str],
+        user_excluded_symbols: Set[str],
     ) -> Tuple[Dict[str, Dict], Dict[str, float], bool, bool]:
         """
         Fetches current market quotes (price, change, currency) for given stock symbols
@@ -249,7 +248,8 @@ class MarketDataProvider:
         Args:
             internal_stock_symbols (List[str]): List of internal stock symbols (e.g., 'AAPL', 'SET:BKK').
             required_currencies (Set[str]): Set of all currency codes needed (e.g., {'USD', 'THB', 'EUR'}).
-            manual_prices_dict (Optional[Dict[str, float]]): Dictionary of manual price overrides.
+            user_symbol_map (Dict[str, str]): User-defined mapping of internal symbols to YF tickers.
+            user_excluded_symbols (Set[str]): User-defined set of symbols to exclude from YF fetching.
 
         Returns:
             Tuple[Dict[str, Dict], Dict[str, float], bool, bool]:
@@ -273,7 +273,9 @@ class MarketDataProvider:
         for internal_symbol in internal_stock_symbols:
             if internal_symbol == CASH_SYMBOL_CSV:
                 continue
-            yf_symbol = map_to_yf_symbol(internal_symbol)
+            yf_symbol = map_to_yf_symbol(
+                internal_symbol, user_symbol_map, user_excluded_symbols
+            )
             if yf_symbol:
                 yf_symbols_to_fetch.add(yf_symbol)
                 internal_to_yf_map_local[internal_symbol] = yf_symbol

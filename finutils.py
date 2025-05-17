@@ -28,7 +28,10 @@ from collections import defaultdict
 # Import constants needed within these utility functions
 # Assuming config.py is in the same directory or accessible via PYTHONPATH
 try:
-    from config import CASH_SYMBOL_CSV, SHORTABLE_SYMBOLS
+    from config import (
+        CASH_SYMBOL_CSV,
+        SHORTABLE_SYMBOLS,
+    )  # YFINANCE_EXCLUDED_SYMBOLS, SYMBOL_MAP_TO_YFINANCE removed
 except ImportError:
     # Fallback values if config import fails (should not happen in normal execution)
     logging.error("CRITICAL: Could not import constants from config.py in finutils.py")
@@ -815,31 +818,28 @@ def get_historical_rate_via_usd_bridge(
 
 
 # --- Symbol Mapping Helper ---
-def map_to_yf_symbol(internal_symbol: str) -> Optional[str]:
+def map_to_yf_symbol(
+    internal_symbol: str,
+    user_symbol_map: Dict[str, str],
+    user_excluded_symbols: Set[str],
+) -> Optional[str]:
     """
     Maps an internal symbol to a Yahoo Finance compatible ticker, handling specific cases.
 
-    Checks the explicit map (SYMBOL_MAP_TO_YFINANCE) first, then handles excluded symbols,
+    Checks the user-defined explicit map first, then handles excluded symbols,
     the cash symbol, and converts BKK (Thailand) stock exchange symbols
     (e.g., 'ADVANC:BKK' -> 'ADVANC.BK'). Returns None for symbols that should be excluded
     or cannot be reliably mapped.
 
     Args:
         internal_symbol (str): The internal symbol used in the transaction data.
+        user_symbol_map (Dict[str, str]): User-defined mapping of internal symbols to YF tickers.
+        user_excluded_symbols (Set[str]): User-defined set of symbols to exclude from YF fetching.
 
     Returns:
         Optional[str]: The corresponding Yahoo Finance ticker (e.g., 'AAPL', 'BRK-B', 'ADVANC.BK'),
                        or None if the symbol is excluded, is cash, or has an invalid format.
     """
-    # Assuming YFINANCE_EXCLUDED_SYMBOLS and SYMBOL_MAP_TO_YFINANCE are accessible
-    # (e.g., imported from config or defined globally in this module if not moved)
-    try:
-        from config import YFINANCE_EXCLUDED_SYMBOLS, SYMBOL_MAP_TO_YFINANCE
-    except ImportError:
-        logging.error("CRITICAL: Could not import config for map_to_yf_symbol.")
-        # Define fallbacks if config import fails
-        YFINANCE_EXCLUDED_SYMBOLS = set()
-        SYMBOL_MAP_TO_YFINANCE = {}
 
     if not internal_symbol or not isinstance(internal_symbol, str):
         return None
@@ -854,7 +854,7 @@ def map_to_yf_symbol(internal_symbol: str) -> Optional[str]:
     # --- 1. Check Excluded and Cash Symbols FIRST ---
     if (
         normalized_symbol == CASH_SYMBOL_CSV
-        or normalized_symbol in YFINANCE_EXCLUDED_SYMBOLS
+        or normalized_symbol in user_excluded_symbols  # Use user-defined exclusions
     ):
         logging.debug(
             f"  Symbol '{normalized_symbol}' is CASH or EXCLUDED. Returning None."
@@ -863,7 +863,9 @@ def map_to_yf_symbol(internal_symbol: str) -> Optional[str]:
 
     # --- 2. Check Explicit Map (if not excluded) ---
     # Ensure keys in the map are also normalized for comparison
-    normalized_map = {k.upper().strip(): v for k, v in SYMBOL_MAP_TO_YFINANCE.items()}
+    normalized_map = {
+        k.upper().strip(): v.upper().strip() for k, v in user_symbol_map.items()
+    }  # Use user-defined map
     if normalized_symbol in normalized_map:
         mapped_symbol = normalized_map[normalized_symbol]
         logging.debug(
