@@ -3,7 +3,6 @@
 import pytest
 import pandas as pd
 import numpy as np
-from datetime import date
 from io import StringIO  # To simulate CSV files from strings
 import os
 
@@ -34,32 +33,39 @@ DEFAULT_CURRENCY = "USD"
 # --- Test Cases ---
 
 
-def test_load_clean_basic_success():
+def test_load_clean_basic_success(tmp_path):
     """Tests loading a simple, valid CSV string with various transaction types."""
-    # --- CORRECTED csv_data format (Dates Quoted) ---
     csv_data = """\"Date (MMM DD, YYYY)\",Transaction Type,Stock / ETF Symbol,Quantity of Units,Amount per unit,Total Amount,Fees,Investment Account,Split Ratio (new shares per old share),Note
 \"Jun 29, 2002\",Buy,IDIOX,180.000000000,6.027600000,1084.970000000,0.000000000,ING Direct,,
 \"Jun 29, 2002\",Buy,IDLOX,153.000000000,11.854200000,1813.690000000,0.000000000,ING Direct,,
 \"Jun 29, 2002\",Buy,IDMOX,162.000000000,11.268100000,1825.430000000,0.000000000,ING Direct,,
 \"Nov 11, 2003\",Buy,SPY,28.480000000,105.320400000,2999.950000000,0.000000000,Sharebuilder,,
 \"Nov 25, 2003\",Buy,DIA,15.310000000,97.962400000,1500.000000000,0.000000000,Sharebuilder,,
-"""  # Note: This data has 5 rows
-    # --- END CORRECTION ---
-    csv_file_like = StringIO(csv_data)
+"""
+    temp_csv_file = tmp_path / "basic_success.csv"
+    temp_csv_file.write_text(csv_data)
 
-    df, orig_df, ignored_idx, ignored_rsn, has_errors, has_warnings = (
-        load_and_clean_transactions(
-            csv_file_like, DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
-        )
+    (
+        df,
+        orig_df,
+        ignored_idx,
+        ignored_rsn,
+        has_errors,
+        has_warnings,
+        header_map,
+    ) = load_and_clean_transactions(
+        str(temp_csv_file), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
     )
 
-    # --- Assertions (Should remain mostly the same) ---
+    # --- Assertions ---
     assert not has_errors, "Should not have critical errors on valid data"
+    assert not has_warnings, "Should not have warnings on this valid data"
     assert isinstance(df, pd.DataFrame), "Result should be a DataFrame"
     assert not df.empty, "DataFrame should not be empty"
-    assert len(df) == 5, "Should have 5 valid rows from the string"
+    assert len(df) == 5, "Should have 5 valid rows"
     assert ignored_idx == set(), "No rows should be ignored"
     assert ignored_rsn == {}, "No ignore reasons should exist"
+
     expected_cols = {
         "Date",
         "Type",
@@ -77,6 +83,22 @@ def test_load_clean_basic_success():
     assert (
         set(df.columns) == expected_cols
     ), f"DataFrame columns mismatch. Got: {set(df.columns)}"
+
+    expected_header_map = {
+        "Date (MMM DD, YYYY)": "Date",
+        "Transaction Type": "Type",
+        "Stock / ETF Symbol": "Symbol",
+        "Quantity of Units": "Quantity",
+        "Amount per unit": "Price/Share",
+        "Total Amount": "Total Amount",
+        "Fees": "Commission",
+        "Investment Account": "Account",
+        "Split Ratio (new shares per old share)": "Split Ratio",
+        "Note": "Note",
+        "original_index": "original_index",  # Added to reflect actual behavior
+    }
+    assert header_map == expected_header_map, "Header map mismatch"
+
     assert pd.api.types.is_datetime64_any_dtype(
         df["Date"]
     ), "'Date' column should be datetime"
@@ -97,22 +119,20 @@ def test_load_clean_basic_success():
     ), "Original index should match row numbers"
 
 
-def test_load_clean_column_rename():
+def test_load_clean_column_rename(tmp_path):
     """Verify specific column renaming works."""
-    # --- CORRECTED csv_data format (Removed quotes from data row date) ---
     csv_data = """\"Date (MMM DD, YYYY)\",Transaction Type,Stock / ETF Symbol,Quantity of Units,Amount per unit,Total Amount,Fees,Investment Account,Split Ratio (new shares per old share),Note
 \"Jan 15, 2023\",Buy,AAPL,10,150,,,IBKR,, 
 """
-    # --- END CORRECTION ---
-    csv_file_like = StringIO(csv_data)
-    df, _, _, _, has_errors, _ = load_and_clean_transactions(
-        csv_file_like, DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
+    temp_csv_file = tmp_path / "col_rename.csv"
+    temp_csv_file.write_text(csv_data)
+
+    df, _, _, _, has_errors, _, header_map = load_and_clean_transactions(
+        str(temp_csv_file), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
     )
-    # --- Assertions should now pass ---
+
     assert not has_errors
-    assert (
-        df is not None
-    ), "DataFrame should not be None after successful load"  # Add check
+    assert df is not None, "DataFrame should not be None after successful load"
     assert "Type" in df.columns
     assert "Symbol" in df.columns
     assert "Account" in df.columns
@@ -120,10 +140,24 @@ def test_load_clean_column_rename():
     assert "Date (MMM DD, YYYY)" not in df.columns  # Original date name should be gone
     assert "Date" in df.columns  # Renamed date column should exist
 
+    expected_header_map = {
+        "Date (MMM DD, YYYY)": "Date",
+        "Transaction Type": "Type",
+        "Stock / ETF Symbol": "Symbol",
+        "Quantity of Units": "Quantity",
+        "Amount per unit": "Price/Share",
+        "Total Amount": "Total Amount",
+        "Fees": "Commission",
+        "Investment Account": "Account",
+        "Split Ratio (new shares per old share)": "Split Ratio",
+        "Note": "Note",
+        "original_index": "original_index",  # Added to reflect actual behavior
+    }
+    assert header_map == expected_header_map, "Header map mismatch"
 
-def test_load_clean_date_parsing_formats():
+
+def test_load_clean_date_parsing_formats(tmp_path):
     """Test different valid date formats (assuming fallback parsing works)."""
-    # --- CORRECTED csv_data format (Dates Quoted) ---
     csv_data = """\"Date (MMM DD, YYYY)\",Transaction Type,Stock / ETF Symbol,Quantity of Units,Amount per unit,Total Amount,Fees,Investment Account,Split Ratio (new shares per old share),Note
 "Jan 15, 2023",Buy,T1,10,10,,,IBKR,,
 "02/20/2023",Buy,T2,10,10,,,IBKR,,
@@ -131,12 +165,15 @@ def test_load_clean_date_parsing_formats():
 "25-Apr-2023",Buy,T4,10,10,,,IBKR,,
 "20230530",Buy,T5,10,10,,,IBKR,,
 """
-    # --- END CORRECTION ---
-    csv_file_like = StringIO(csv_data)
-    df, _, ignored_idx, _, has_errors, _ = load_and_clean_transactions(
-        csv_file_like, DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
+    temp_csv_file = tmp_path / "date_formats.csv"
+    temp_csv_file.write_text(csv_data)
+
+    df, _, ignored_idx, _, has_errors, has_warnings, _ = load_and_clean_transactions(
+        str(temp_csv_file), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
     )
+
     assert not has_errors
+    # has_warnings might be true if date inference logs warnings, but data should be correct
     assert len(df) == 5, "All valid dates should be parsed"
     assert ignored_idx == set()
     assert df["Date"].tolist() == [
@@ -148,66 +185,95 @@ def test_load_clean_date_parsing_formats():
     ]
 
 
-def test_ignore_missing_qty_price_buy_sell():
+def test_ignore_missing_qty_price_buy_sell(tmp_path):
     """Test ignoring buy/sell without quantity or price."""
-    # --- CORRECTED csv_data format (Dates Quoted) ---
     csv_data = """\"Date (MMM DD, YYYY)\",Transaction Type,Stock / ETF Symbol,Quantity of Units,Amount per unit,Total Amount,Fees,Investment Account,Split Ratio (new shares per old share),Note
 \"Jan 15, 2023\",Buy,SYM1,,100,,,IBKR,,
 \"Jan 16, 2023\",Sell,SYM2,10,,,,IBKR,,
 \"Jan 17, 2023\",Buy,SYM3,10,100,,,IBKR,,
 """
-    # --- END CORRECTION ---
-    csv_file_like = StringIO(csv_data)
-    df, _, ignored_idx, ignored_rsn, _, _ = load_and_clean_transactions(
-        csv_file_like, DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
+    temp_csv_file = tmp_path / "missing_qty_price.csv"
+    temp_csv_file.write_text(csv_data)
+
+    df, _, ignored_idx, ignored_rsn, _, has_warnings, _ = load_and_clean_transactions(
+        str(temp_csv_file), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
     )
+
+    assert has_warnings, "Warnings should be present for dropped rows"
     assert len(df) == 1
     assert df.iloc[0]["Symbol"] == "SYM3"
     assert ignored_idx == {0, 1}
-    assert "Missing Qty/Price" in ignored_rsn[0]
-    assert "Missing Qty/Price" in ignored_rsn[1]
+    assert ignored_rsn[0] == "Missing Qty/Price Stock"
+    assert ignored_rsn[1] == "Missing Qty/Price Stock"
 
 
-def test_ignore_missing_dividend_amount():
+def test_ignore_missing_dividend_amount(tmp_path):
     """Test ignoring dividend without Total Amount or Price."""
-    # --- CORRECTED csv_data format (Dates Quoted) ---
     csv_data = """\"Date (MMM DD, YYYY)\",Transaction Type,Stock / ETF Symbol,Quantity of Units,Amount per unit,Total Amount,Fees,Investment Account,Split Ratio (new shares per old share),Note
 \"Jan 15, 2023\",Dividend,AAPL,10,,,,IBKR,,
 \"Jan 16, 2023\",Dividend,MSFT,10,0.5,,,IBKR,,
 \"Jan 17, 2023\",Dividend,GOOG,,,10.0,,IBKR,,
 """
-    # --- END CORRECTION ---
-    csv_file_like = StringIO(csv_data)
-    df, _, ignored_idx, ignored_rsn, _, _ = load_and_clean_transactions(
-        csv_file_like, DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
+    temp_csv_file = tmp_path / "missing_dividend.csv"
+    temp_csv_file.write_text(csv_data)
+
+    df, _, ignored_idx, ignored_rsn, _, has_warnings, _ = load_and_clean_transactions(
+        str(temp_csv_file), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
     )
+
+    assert has_warnings, "Warnings should be present for dropped rows"
     assert len(df) == 2
     assert df["Symbol"].tolist() == ["MSFT", "GOOG"]
     assert ignored_idx == {0}
-    assert "Missing Dividend Amt/Price" in ignored_rsn[0]
+    assert ignored_rsn[0] == "Missing Dividend Amt/Price"
 
 
-def test_load_empty_csv():
+def test_load_empty_csv(tmp_path):
     """Test loading an empty or header-only CSV."""
     csv_data_empty = ""
-    # --- CORRECTED csv_data format (Header Only) ---
     csv_data_header = """\"Date (MMM DD, YYYY)",Transaction Type,Stock / ETF Symbol,Quantity of Units,Amount per unit,Total Amount,Fees,Investment Account,Split Ratio (new shares per old share),Note\n"""
-    # --- END CORRECTION ---
 
-    df1, _, ignored1, _, err1, warn1 = load_and_clean_transactions(
-        StringIO(csv_data_empty), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
+    temp_empty_file = tmp_path / "empty.csv"
+    temp_empty_file.write_text(csv_data_empty)
+
+    df1, _, ignored1, _, err1, warn1, header_map1 = load_and_clean_transactions(
+        str(temp_empty_file), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
     )
+
     assert not err1
     assert warn1
     assert df1 is None
+    assert ignored1 == set()
+    assert header_map1 == {}, "Header map should be empty for empty data error"
 
-    df2, _, ignored2, _, err2, warn2 = load_and_clean_transactions(
-        StringIO(csv_data_header), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
+    temp_header_file = tmp_path / "header_only.csv"
+    temp_header_file.write_text(csv_data_header)
+
+    df2, _, ignored2, _, err2, warn2, header_map2 = load_and_clean_transactions(
+        str(temp_header_file), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
     )
+
     assert not err2
     assert warn2
     assert df2 is not None and df2.empty
     assert ignored2 == set()
+
+    expected_header_map_for_header_only = {
+        "Date (MMM DD, YYYY)": "Date",
+        "Transaction Type": "Type",
+        "Stock / ETF Symbol": "Symbol",
+        "Quantity of Units": "Quantity",
+        "Amount per unit": "Price/Share",
+        "Total Amount": "Total Amount",
+        "Fees": "Commission",
+        "Investment Account": "Account",
+        "Split Ratio (new shares per old share)": "Split Ratio",
+        "Note": "Note",
+        "original_index": "original_index",  # Added to reflect actual behavior
+    }
+    assert (
+        header_map2 == expected_header_map_for_header_only
+    ), "Header map mismatch for header-only file"
 
 
 # Add more tests as needed for edge cases, specific cleaning rules, etc.

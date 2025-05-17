@@ -348,10 +348,10 @@ def test_get_conversion_rate_missing(sample_fx_rates):
 
 
 def test_get_conversion_rate_invalid_input(sample_fx_rates):
-    assert get_conversion_rate(None, "USD", sample_fx_rates) == 1.0
-    assert get_conversion_rate("USD", "", sample_fx_rates) == 1.0
-    assert get_conversion_rate("USD", "EUR", None) == 1.0
-    assert get_conversion_rate("USD", "EUR", "not_a_dict") == 1.0
+    assert np.isnan(get_conversion_rate(None, "USD", sample_fx_rates))
+    assert np.isnan(get_conversion_rate("USD", "", sample_fx_rates))
+    assert np.isnan(get_conversion_rate("USD", "EUR", None))
+    assert np.isnan(get_conversion_rate("USD", "EUR", "not_a_dict"))
 
 
 # --- Tests for get_historical_price ---
