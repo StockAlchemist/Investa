@@ -217,7 +217,7 @@ SPDX-License-Identifier: MIT
 
 ## Author
 
-* **Kit Matan** - <kittiwit@gmail.com>
+* **Google Gemini and Kit Matan** - <kittiwit@gmail.com>
 
 ---
 
