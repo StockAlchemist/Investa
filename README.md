@@ -209,17 +209,17 @@ If you wish to package Investa as a standalone macOS application (`.app` bundle)
 
 ## Contributing
 
-We welcome contributions to Investa! If you're interested in helping out, please take a look at our **Contributing Guidelines** for more information on how to get started, coding standards, and how to submit your changes.
+We welcome contributions to Investa! If you're interested in helping out, please take a look at our **[Contributing Guidelines] (CONTRUBUTING.md)** for more information on how to get started, coding standards, and how to submit your changes.
 
 We appreciate your help in making Investa better!
 
 ## Code of Conduct
 
-Please note that this project is released with a Contributor Code of Conduct. By participating in this project you agree to abide by its terms. See CODE_OF_CONDUCT.md for details.
+Please note that this project is released with a Contributor Code of Conduct. By participating in this project you agree to abide by its terms. See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for details.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details (or include the MIT license text directly if no separate file).
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details (or include the MIT license text directly if no separate file).
 
 SPDX-License-Identifier: MIT
 
