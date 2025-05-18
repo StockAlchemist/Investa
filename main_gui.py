@@ -2194,28 +2194,61 @@ class ManageTransactionsDialog(QDialog):
 
     def _apply_filter(self):
         """Filters the table view based on symbol/account input."""
-        symbol_filter = self.filter_symbol_edit.text().strip().upper()
-        account_filter = self.filter_account_edit.text().strip()
+        symbol_filter_text = self.filter_symbol_edit.text().strip().upper()
+        account_filter_text = self.filter_account_edit.text().strip()
         df_filtered = self._original_data.copy()
 
-        if symbol_filter:
+        # Determine which symbol column to use for filtering
+        actual_symbol_col_name = None
+        if "Symbol" in df_filtered.columns:  # Prioritize cleaned name
+            actual_symbol_col_name = "Symbol"
+        elif (
+            "Stock / ETF Symbol" in df_filtered.columns
+        ):  # Fallback to original standard
+            actual_symbol_col_name = "Stock / ETF Symbol"
+
+        if symbol_filter_text and actual_symbol_col_name:
             try:
+                # Ensure the column is treated as string for robust filtering
                 df_filtered = df_filtered[
-                    df_filtered["Stock / ETF Symbol"].str.contains(
-                        symbol_filter, case=False, na=False
-                    )
+                    df_filtered[actual_symbol_col_name]
+                    .astype(str)
+                    .str.contains(symbol_filter_text, case=False, na=False)
                 ]
-            except KeyError:
-                pass  # Ignore if column doesn't exist
-        if account_filter:
+            except Exception as e:
+                logging.warning(
+                    f"Error applying symbol filter on column '{actual_symbol_col_name}': {e}"
+                )
+        elif symbol_filter_text:  # If filter text is present but no column was found
+            logging.warning(
+                "Symbol filter text provided, but no known symbol column ('Symbol' or 'Stock / ETF Symbol') found in data."
+            )
+
+        # Determine which account column to use for filtering
+        actual_account_col_name = None
+        if "Account" in df_filtered.columns:  # Prioritize cleaned name
+            actual_account_col_name = "Account"
+        elif (
+            "Investment Account" in df_filtered.columns
+        ):  # Fallback to original standard
+            actual_account_col_name = "Investment Account"
+
+        if account_filter_text and actual_account_col_name:
             try:
+                # Ensure the column is treated as string for robust filtering
                 df_filtered = df_filtered[
-                    df_filtered["Investment Account"].str.contains(
-                        account_filter, case=False, na=False
-                    )
+                    df_filtered[actual_account_col_name]
+                    .astype(str)
+                    .str.contains(account_filter_text, case=False, na=False)
                 ]
-            except KeyError:
-                pass
+            except Exception as e:
+                logging.warning(
+                    f"Error applying account filter on column '{actual_account_col_name}': {e}"
+                )
+        elif account_filter_text:  # If filter text is present but no column was found
+            logging.warning(
+                "Account filter text provided, but no known account column ('Account' or 'Investment Account') found in data."
+            )
 
         self.table_model.updateData(df_filtered)
         self.table_view.resizeColumnsToContents()
