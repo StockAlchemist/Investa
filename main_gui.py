@@ -719,6 +719,15 @@ class PortfolioCalculatorWorker(QRunnable):
                 current_historical_kwargs["user_excluded_symbols"] = (
                     self.user_excluded_symbols
                 )
+                # --- ADDED: Pass manual_overrides_dict to historical_fn ---
+                current_historical_kwargs["manual_overrides_dict"] = (
+                    self.manual_overrides_dict
+                )
+                # --- ADD DEBUG LOG ---
+                logging.debug(
+                    f"WORKER: Passing to historical_fn, manual_overrides_dict: {self.manual_overrides_dict}"
+                )
+                # --- END DEBUG LOG ---
 
                 # MODIFIED: Unpack 4 items (full_daily_df, prices, fx, status)
                 full_hist_df, h_prices_adj, h_fx, hist_status = self.historical_fn(

@@ -223,6 +223,27 @@ def calculate_portfolio_summary(
         manual_overrides_dict if manual_overrides_dict is not None else {}
     )
     effective_user_symbol_map = user_symbol_map if user_symbol_map is not None else {}
+
+    # --- CORRECTLY PREPARE manual_prices_for_build_rows ---
+    # manual_overrides_effective is Dict[symbol_str, Dict[field_str, Any_value]]
+    # We need to extract just Dict[symbol_str, float_price] for _build_summary_rows
+    manual_prices_for_build_rows = {}
+    if manual_overrides_effective:
+        for symbol_key, override_values_dict in manual_overrides_effective.items():
+            if (
+                isinstance(override_values_dict, dict)
+                and "price" in override_values_dict
+            ):
+                price_val = override_values_dict["price"]
+                if price_val is not None and pd.notna(price_val):
+                    try:
+                        manual_prices_for_build_rows[symbol_key] = float(price_val)
+                    except (ValueError, TypeError):
+                        logging.warning(
+                            f"Could not convert manual price for {symbol_key} to float: {price_val}"
+                        )
+    # --- END PREPARATION ---
+
     effective_user_excluded_symbols = (
         user_excluded_symbols if user_excluded_symbols is not None else set()
     )
@@ -407,9 +428,7 @@ def calculate_portfolio_summary(
         shortable_symbols=SHORTABLE_SYMBOLS,
         user_excluded_symbols=effective_user_excluded_symbols,
         user_symbol_map=effective_user_symbol_map,  # Pass user symbol map
-        manual_prices_dict=manual_overrides_effective.get(  # This is the 'manual_price_overrides' part
-            "price", {}
-        ),  # Pass only price part for now, or update _build_summary_rows
+        manual_prices_dict=manual_prices_for_build_rows,  # Pass the correctly structured dict
     )
     if err_build:
         has_errors = True
@@ -1126,6 +1145,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
     internal_to_yf_map: Dict[str, str],
     account_currency_map: Dict[str, str],
     default_currency: str,
+    manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]],  # ADDED
     processed_warnings: set,
 ) -> Tuple[float, bool]:
     """
@@ -1150,6 +1170,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
         internal_to_yf_map (Dict[str, str]): Dictionary mapping internal symbols to YF tickers.
         account_currency_map (Dict[str, str]): Mapping of account names to their local currencies.
         default_currency (str): Default currency if not found.
+        manual_overrides_dict (Optional[Dict[str, Dict[str, Any]]]): Manual overrides for price, etc.
         processed_warnings (set): A set used to track and avoid logging duplicate warnings.
 
     Returns:
@@ -1361,10 +1382,41 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
             break
 
         current_price_local = np.nan
+        manual_price_override_applied = False
+
+        # --- ADDED: Check for manual price override ---
+        if manual_overrides_dict and internal_symbol in manual_overrides_dict:
+            symbol_override_data = manual_overrides_dict[internal_symbol]
+            manual_price = symbol_override_data.get("price")
+            if manual_price is not None and pd.notna(manual_price):
+                try:
+                    manual_price_float = float(manual_price)
+                    if manual_price_float > 1e-9:  # Ensure positive price
+                        current_price_local = manual_price_float
+                        manual_price_override_applied = True
+                        if DO_DETAILED_LOG:
+                            logging.debug(
+                                f"      Using MANUAL OVERRIDE Price for {internal_symbol}: {current_price_local}"
+                            )
+                    elif DO_DETAILED_LOG:
+                        logging.debug(
+                            f"      Manual override price for {internal_symbol} is not positive: {manual_price_float}. Ignoring."
+                        )
+                except (ValueError, TypeError) as e_manual_price:
+                    if DO_DETAILED_LOG:
+                        logging.debug(
+                            f"      Manual override price for {internal_symbol} ('{manual_price}') is not a valid number: {e_manual_price}. Ignoring."
+                        )
+        # --- END ADDED ---
+
         force_fallback = internal_symbol in YFINANCE_EXCLUDED_SYMBOLS
-        if not is_stock:
+        if (
+            pd.isna(current_price_local) and not is_stock
+        ):  # If no manual override and it's cash
             current_price_local = 1.0
-        elif not force_fallback:
+        elif (
+            pd.isna(current_price_local) and not force_fallback and is_stock
+        ):  # If no manual override, not forced fallback, and is stock
             yf_symbol_for_lookup = internal_to_yf_map.get(internal_symbol)
             if yf_symbol_for_lookup:
                 price_val = get_historical_price(
@@ -1372,7 +1424,13 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
                 )
                 if price_val is not None and pd.notna(price_val) and price_val > 1e-9:
                     current_price_local = float(price_val)
+                    if DO_DETAILED_LOG:
+                        logging.debug(
+                            f"      Using YFinance Price for {internal_symbol}: {current_price_local}"
+                        )
+
         if (pd.isna(current_price_local) or force_fallback) and is_stock:
+            # Fallback to last transaction price if still no price, or if yfinance is excluded (and no manual override was applied for it)
             try:
                 fallback_tx = transactions_df[
                     (transactions_df["Symbol"] == internal_symbol)
@@ -1395,7 +1453,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
                     if pd.notna(last_tx_price) and last_tx_price > 1e-9:
                         current_price_local = float(last_tx_price)
                         if DO_DETAILED_LOG:
-                            logging.debug(
+                            logging.debug(  # This log might be hit if force_fallback=True and no manual price
                                 f"      Using Fallback Price: {current_price_local}"
                             )
             except Exception:
@@ -1704,6 +1762,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     internal_to_yf_map: Dict[str, str],
     account_currency_map: Dict[str, str],
     default_currency: str,
+    manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]],  # ADDED
     processed_warnings: set,
     # --- ADD MAPPINGS ---
     symbol_to_id: Dict[str, int],
@@ -1720,6 +1779,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     Prepares NumPy arrays from transactions, calls the Numba-compiled helper function
     `_calculate_holdings_numba` to determine holdings, and then performs valuation
     using the results.
+    Manual price overrides are applied in the Python valuation loop.
     """
     IS_DEBUG_DATE = (
         target_date == HISTORICAL_DEBUG_DATE_VALUE
@@ -1864,14 +1924,36 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             break
 
         current_price_local = np.nan
+        manual_price_override_applied = False
+
+        # --- ADDED: Check for manual price override (similar to Python version) ---
+        if manual_overrides_dict and internal_symbol in manual_overrides_dict:
+            symbol_override_data = manual_overrides_dict[internal_symbol]
+            manual_price = symbol_override_data.get("price")
+            if manual_price is not None and pd.notna(manual_price):
+                try:
+                    manual_price_float = float(manual_price)
+                    if manual_price_float > 1e-9:
+                        current_price_local = manual_price_float
+                        manual_price_override_applied = True
+                        # Add IS_DEBUG_DATE logging if needed here
+                except (ValueError, TypeError):
+                    pass  # Ignore invalid manual price
+        # --- END ADDED ---
+
         force_fallback = internal_symbol in YFINANCE_EXCLUDED_SYMBOLS
-        if not force_fallback:
+
+        if (
+            pd.isna(current_price_local) and not force_fallback
+        ):  # If no manual override and not forced fallback
             yf_symbol_for_lookup = internal_to_yf_map.get(internal_symbol)
             if yf_symbol_for_lookup:
                 price_val = get_historical_price(
                     yf_symbol_for_lookup, target_date, historical_prices_yf_unadjusted
                 )
-                if price_val is not None and pd.notna(price_val) and price_val > 1e-9:
+                if (
+                    price_val is not None and pd.notna(price_val) and price_val > 1e-9
+                ):  # Check price_val > 0
                     current_price_local = float(price_val)
 
         if pd.isna(current_price_local) or force_fallback:
@@ -1963,6 +2045,7 @@ def _calculate_portfolio_value_at_date_unadjusted(
     internal_to_yf_map: Dict[str, str],
     account_currency_map: Dict[str, str],
     default_currency: str,
+    manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]],  # ADDED
     processed_warnings: set,
     # --- ADD MAPPINGS and METHOD ---
     symbol_to_id: Dict[str, int],
@@ -1987,6 +2070,7 @@ def _calculate_portfolio_value_at_date_unadjusted(
             internal_to_yf_map,
             account_currency_map,
             default_currency,
+            manual_overrides_dict,  # Pass through
             processed_warnings,
             symbol_to_id,
             id_to_symbol,
@@ -2006,6 +2090,7 @@ def _calculate_portfolio_value_at_date_unadjusted(
             internal_to_yf_map,
             account_currency_map,
             default_currency,
+            manual_overrides_dict,  # Pass through
             processed_warnings,
         )
     else:
@@ -2021,6 +2106,7 @@ def _calculate_portfolio_value_at_date_unadjusted(
             internal_to_yf_map,
             account_currency_map,
             default_currency,
+            manual_overrides_dict,  # Pass through
             processed_warnings,
         )
 
@@ -2036,6 +2122,7 @@ def _calculate_daily_metrics_worker(
     internal_to_yf_map: Dict[str, str],
     account_currency_map: Dict[str, str],
     default_currency: str,
+    manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]],  # ADDED
     benchmark_symbols_yf: List[str],
     # --- ADD MAPPINGS and METHOD --- # type: ignore
     symbol_to_id: Dict[str, int],
@@ -2066,6 +2153,7 @@ def _calculate_daily_metrics_worker(
         internal_to_yf_map (Dict): Mapping from internal symbols to YF tickers.
         account_currency_map (Dict): Mapping of accounts to local currencies.
         default_currency (str): Default currency.
+        manual_overrides_dict (Optional[Dict[str, Dict[str, Any]]]): Manual overrides for price, etc.
         benchmark_symbols_yf (List[str]): List of YF tickers for benchmark symbols.
         symbol_to_id (Dict): Map internal symbol string to int ID.
         account_to_id (Dict): Map account string to int ID.
@@ -2102,6 +2190,7 @@ def _calculate_daily_metrics_worker(
                 internal_to_yf_map,
                 account_currency_map,
                 default_currency,
+                manual_overrides_dict,  # Pass through
                 dummy_warnings_set,
                 # --- PASS MAPPINGS and METHOD ---
                 symbol_to_id,
@@ -2131,6 +2220,7 @@ def _calculate_daily_metrics_worker(
                         internal_to_yf_map,
                         account_currency_map,
                         default_currency,
+                        manual_overrides_dict,  # Pass through to Python version for comparison
                         dummy_warnings_set,
                     )
                 )
@@ -2568,6 +2658,7 @@ def _load_or_calculate_daily_results(
     id_to_symbol: Dict[int, str],
     account_to_id: Dict[str, int],
     id_to_account: Dict[int, str],
+    manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]],  # ADDED
     type_to_id: Dict[str, int],
     currency_to_id: Dict[str, int],
     id_to_currency: Dict[int, str],
@@ -2603,6 +2694,7 @@ def _load_or_calculate_daily_results(
         internal_to_yf_map (Dict): Internal symbol to YF ticker map.
         account_currency_map (Dict): Account to currency map.
         default_currency (str): Default currency.
+        manual_overrides_dict (Optional[Dict[str, Dict[str, Any]]]): Manual overrides for price, etc.
         clean_benchmark_symbols_yf (List[str]): List of YF benchmark tickers.
         num_processes (Optional[int]): Number of parallel processes to use. Defaults to CPU count - 1.
         current_hist_version (str): Version string used in cache key generation.
@@ -2838,6 +2930,7 @@ def _load_or_calculate_daily_results(
             internal_to_yf_map=internal_to_yf_map,
             account_currency_map=account_currency_map,
             default_currency=default_currency,
+            manual_overrides_dict=manual_overrides_dict,  # Pass through
             benchmark_symbols_yf=clean_benchmark_symbols_yf,
             # --- PASS MAPPINGS and METHOD ---
             symbol_to_id=symbol_to_id,
@@ -3330,6 +3423,7 @@ def calculate_historical_performance(
     exclude_accounts: Optional[List[str]] = None,
     all_transactions_df_cleaned: Optional[pd.DataFrame] = None,  # <-- ADD NEW PARAMETER
     user_symbol_map: Optional[Dict[str, str]] = None,
+    manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]] = None,  # ADDED
     user_excluded_symbols: Optional[Set[str]] = None,
 ) -> Tuple[
     pd.DataFrame, Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], str
@@ -3362,6 +3456,7 @@ def calculate_historical_performance(
         worker_signals (Optional[Any]): The signals object from the GUI worker (or None).
         transactions_csv_file (str): Path to the source transactions CSV file.
         exclude_accounts (Optional[List[str]]): Accounts to exclude.
+        manual_overrides_dict (Optional[Dict[str, Dict[str, Any]]], optional): Dictionary of manual overrides.
         user_symbol_map (Optional[Dict[str, str]], optional): User-defined symbol map.
         user_excluded_symbols (Optional[Set[str]], optional): User-defined excluded symbols.
 
@@ -3587,6 +3682,7 @@ def calculate_historical_performance(
             internal_to_yf_map=internal_to_yf_map,
             account_currency_map=account_currency_map,
             default_currency=default_currency,
+            manual_overrides_dict=manual_overrides_dict,  # Pass through
             clean_benchmark_symbols_yf=clean_benchmark_symbols_yf,
             # --- PASS MAPPINGS ---
             symbol_to_id=symbol_to_id,
@@ -3849,6 +3945,7 @@ if __name__ == "__main__":
             worker_signals=None,  # Pass None for standalone test
             exclude_accounts=None,
             user_symbol_map={},  # Add empty user settings
+            manual_overrides_dict=None,  # Add for standalone test
             user_excluded_symbols=set(),  # Add empty user settings
         )
         end_time_run = time.time()
@@ -3958,6 +4055,7 @@ if __name__ == "__main__":
                 internal_to_yf_map=profile_internal_to_yf,
                 account_currency_map=test_account_currency_map,  # Use test map
                 default_currency=test_default_currency,  # Use test default
+                manual_overrides_dict=None,  # Pass None for profiling
                 processed_warnings=set(),
                 symbol_to_id=prof_sym_id,
                 id_to_symbol=prof_id_sym,
@@ -3982,6 +4080,7 @@ if __name__ == "__main__":
                 internal_to_yf_map=profile_internal_to_yf,
                 account_currency_map=test_account_currency_map,  # Use test map
                 default_currency=test_default_currency,  # Use test default
+                manual_overrides_dict=None,  # Pass None for profiling
                 processed_warnings=set(),
                 symbol_to_id=prof_sym_id,
                 id_to_symbol=prof_id_sym,
