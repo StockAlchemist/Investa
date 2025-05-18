@@ -12671,7 +12671,8 @@ The CSV file should contain the following columns (header names must match exact
                 # and multiply by 100 to convert to percentage points (e.g., 15.0).
                 # This is a common discrepancy if other intervals already provide percentages.
                 if interval_key == "Y":
-                    current_bar_data = current_bar_data * 100
+                    # current_bar_data = current_bar_data * 100
+                    current_bar_data = current_bar_data
                 bars = ax.bar(
                     index + offset,
                     current_bar_data,  # Use potentially scaled data
