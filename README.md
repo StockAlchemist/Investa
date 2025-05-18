@@ -145,7 +145,7 @@ For detailed examples and specific requirements for each transaction type, pleas
 
 ## Usage
 
-For a detailed step-by-step guide on using Investa, check out our **[User Tutorial](TUTORIAL.md)**.
+For a detailed step-by-step guide on using Investa, check out our **User Tutorial**.
 
 Here's a quick overview:
 
@@ -180,34 +180,42 @@ If you wish to package Investa as a standalone macOS application (`.app` bundle)
     ```
 
 2. **Prepare an App Icon:** Create an icon in `.icns` format (e.g., `app_icon.icns`).
-3. **Generate a Spec File:**
+3. **Build the App:**
+    Navigate to your project directory in the terminal (e.g., `/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/`). Then, run PyInstaller with options suitable for a macOS GUI application.
 
     ```bash
-    pyi-makespec --name Investa --windowed --noconfirm main_gui.py
-    ```
-
-4. **Modify `Investa.spec`:**
-    * Add necessary `datas` (e.g., `style.qss`, your icon file).
-    * Include `hiddenimports` for libraries PyInstaller might miss (especially for pandas, numpy, scipy, matplotlib, PySide6, numba).
-    * Configure the `BUNDLE` section for macOS specifics (bundle identifier, `Info.plist` details).
-    * Refer to the PyInstaller documentation for detailed spec file options.
-5. **Build the App:**
-
-    ```bash
-    pyinstaller Investa.spec
+    pyinstaller --name Investa \
+                --onefile \
+                --windowed \
+                --icon=Investa.icns \
+                --add-data "style.qss:." \
+                --collect-data matplotlib \
+                main_gui.py
     ```
 
     The bundled app will be in the `dist` folder.
 
+    **Explanation of options:**
+    * `--name Investa`: Sets the application name.
+    * `--onefile`: Bundles everything into a single executable.
+    * `--windowed`: Prevents a terminal window from opening (essential for GUI apps).
+    * `--icon=app_icon.icns`: Specifies your application icon (replace `app_icon.icns` with your actual icon file name/path).
+    * `--add-data "style.qss:."`: Includes your stylesheet. The `:.` copies it to the root of the bundle.
+    * `--collect-data matplotlib`: Helps PyInstaller find data files required by Matplotlib.
+    * `main_gui.py`: Your main application script.
+
+4. **Further Customization (Optional):**
+    * PyInstaller generates a `.spec` file (e.g., `Investa.spec`) the first time you run it. For more complex projects or if you need to fine-tune the build (e.g., add more data files, manage hidden imports for libraries like pandas, numpy, scipy, PySide6, numba), you can edit this `.spec` file and then run `pyinstaller Investa.spec` for subsequent builds.
+
 ## Contributing
 
-We welcome contributions to Investa! If you're interested in helping out, please take a look at our **[Contributing Guidelines](CONTRIBUTING.md)** for more information on how to get started, coding standards, and how to submit your changes.
+We welcome contributions to Investa! If you're interested in helping out, please take a look at our **Contributing Guidelines** for more information on how to get started, coding standards, and how to submit your changes.
 
 We appreciate your help in making Investa better!
 
 ## Code of Conduct
 
-Please note that this project is released with a Contributor Code of Conduct. By participating in this project you agree to abide by its terms. See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for details.
+Please note that this project is released with a Contributor Code of Conduct. By participating in this project you agree to abide by its terms. See CODE_OF_CONDUCT.md for details.
 
 ## License
 

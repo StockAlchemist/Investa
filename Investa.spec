@@ -1,11 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_data_files
+
+datas = [('style.qss', '.')]
+datas += collect_data_files('matplotlib')
 
 
 a = Analysis(
     ['main_gui.py'],
     pathex=[],
     binaries=[],
-    datas=[('style.qss', '.'), ('gui_config.json', '.'),('manual_prices.json', '.')],
+    datas=datas,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -19,13 +23,16 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.datas,
     [],
-    exclude_binaries=True,
     name='Investa',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -34,17 +41,8 @@ exe = EXE(
     entitlements_file=None,
     icon=['Investa.icns'],
 )
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='Investa',
-)
 app = BUNDLE(
-    coll,
+    exe,
     name='Investa.app',
     icon='Investa.icns',
     bundle_identifier=None,
