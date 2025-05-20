@@ -56,3 +56,5 @@ gui_config_1.json
 my_new_transactions_1.csv
 manual_overrides.json
 gui_config.json
+test_icon.png
+minimal_toolbar_test.py

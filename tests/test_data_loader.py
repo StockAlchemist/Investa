@@ -52,7 +52,7 @@ def test_load_clean_basic_success(tmp_path):
         ignored_rsn,
         has_errors,
         has_warnings,
-        header_map,
+        original_to_cleaned_header_map,  # Added to match new signature
     ) = load_and_clean_transactions(
         str(temp_csv_file), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
     )
@@ -79,18 +79,17 @@ def test_load_clean_basic_success(tmp_path):
         "Note",
         "Local Currency",
         "original_index",
-    }
+    }  # original_index is added after mapping
     assert (
         set(df.columns) == expected_cols
     ), f"DataFrame columns mismatch. Got: {set(df.columns)}"
 
     expected_header_map = {
-        "Date (MMM DD, YYYY)": "Date",
-        "Transaction Type": "Type",
-        "Stock / ETF Symbol": "Symbol",
-        "Quantity of Units": "Quantity",
-        "Amount per unit": "Price/Share",
-        "Total Amount": "Total Amount",
+        "Date (MMM DD, YYYY)": "Date",  # Original header -> Cleaned header
+        "Transaction Type": "Type",  # Original header -> Cleaned header
+        "Stock / ETF Symbol": "Symbol",  # Original header -> Cleaned header
+        "Quantity of Units": "Quantity",  # Original header -> Cleaned header
+        "Amount per unit": "Price/Share",  # Original header -> Cleaned header
         "Fees": "Commission",
         "Investment Account": "Account",
         "Split Ratio (new shares per old share)": "Split Ratio",
@@ -98,7 +97,9 @@ def test_load_clean_basic_success(tmp_path):
         "original_index": "original_index",  # Added to reflect actual behavior
     }
     assert header_map == expected_header_map, "Header map mismatch"
-
+    assert isinstance(
+        original_to_cleaned_header_map, dict
+    ), "Header map should be a dictionary"
     assert pd.api.types.is_datetime64_any_dtype(
         df["Date"]
     ), "'Date' column should be datetime"
@@ -126,14 +127,16 @@ def test_load_clean_column_rename(tmp_path):
 """
     temp_csv_file = tmp_path / "col_rename.csv"
     temp_csv_file.write_text(csv_data)
-
-    df, _, _, _, has_errors, _, header_map = load_and_clean_transactions(
-        str(temp_csv_file), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
+    # Added original_to_cleaned_header_map to unpacking
+    df, _, _, _, has_errors, _, original_to_cleaned_header_map = (
+        load_and_clean_transactions(
+            str(temp_csv_file), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
+        )
     )
 
     assert not has_errors
     assert df is not None, "DataFrame should not be None after successful load"
-    assert "Type" in df.columns
+    assert "Type" in df.columns  # Should be renamed
     assert "Symbol" in df.columns
     assert "Account" in df.columns
     assert "Transaction Type" not in df.columns  # Original name should be gone
@@ -141,18 +144,17 @@ def test_load_clean_column_rename(tmp_path):
     assert "Date" in df.columns  # Renamed date column should exist
 
     expected_header_map = {
-        "Date (MMM DD, YYYY)": "Date",
-        "Transaction Type": "Type",
-        "Stock / ETF Symbol": "Symbol",
-        "Quantity of Units": "Quantity",
-        "Amount per unit": "Price/Share",
-        "Total Amount": "Total Amount",
+        "Date (MMM DD, YYYY)": "Date",  # Original header -> Cleaned header
+        "Transaction Type": "Type",  # Original header -> Cleaned header
+        "Stock / ETF Symbol": "Symbol",  # Original header -> Cleaned header
+        "Quantity of Units": "Quantity",  # Original header -> Cleaned header
+        "Amount per unit": "Price/Share",  # Original header -> Cleaned header
         "Fees": "Commission",
         "Investment Account": "Account",
         "Split Ratio (new shares per old share)": "Split Ratio",
         "Note": "Note",
-        "original_index": "original_index",  # Added to reflect actual behavior
     }
+    # The map should only contain entries for columns actually present in the CSV
     assert header_map == expected_header_map, "Header map mismatch"
 
 
@@ -168,8 +170,11 @@ def test_load_clean_date_parsing_formats(tmp_path):
     temp_csv_file = tmp_path / "date_formats.csv"
     temp_csv_file.write_text(csv_data)
 
-    df, _, ignored_idx, _, has_errors, has_warnings, _ = load_and_clean_transactions(
-        str(temp_csv_file), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
+    # Added original_to_cleaned_header_map to unpacking
+    df, _, ignored_idx, _, has_errors, has_warnings, original_to_cleaned_header_map = (
+        load_and_clean_transactions(
+            str(temp_csv_file), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
+        )
     )
 
     assert not has_errors
@@ -195,8 +200,11 @@ def test_ignore_missing_qty_price_buy_sell(tmp_path):
     temp_csv_file = tmp_path / "missing_qty_price.csv"
     temp_csv_file.write_text(csv_data)
 
-    df, _, ignored_idx, ignored_rsn, _, has_warnings, _ = load_and_clean_transactions(
-        str(temp_csv_file), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
+    # Added original_to_cleaned_header_map to unpacking
+    df, _, ignored_idx, ignored_rsn, _, has_warnings, original_to_cleaned_header_map = (
+        load_and_clean_transactions(
+            str(temp_csv_file), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
+        )
     )
 
     assert has_warnings, "Warnings should be present for dropped rows"
@@ -217,8 +225,11 @@ def test_ignore_missing_dividend_amount(tmp_path):
     temp_csv_file = tmp_path / "missing_dividend.csv"
     temp_csv_file.write_text(csv_data)
 
-    df, _, ignored_idx, ignored_rsn, _, has_warnings, _ = load_and_clean_transactions(
-        str(temp_csv_file), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
+    # Added original_to_cleaned_header_map to unpacking
+    df, _, ignored_idx, ignored_rsn, _, has_warnings, original_to_cleaned_header_map = (
+        load_and_clean_transactions(
+            str(temp_csv_file), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
+        )
     )
 
     assert has_warnings, "Warnings should be present for dropped rows"
@@ -236,18 +247,24 @@ def test_load_empty_csv(tmp_path):
     temp_empty_file = tmp_path / "empty.csv"
     temp_empty_file.write_text(csv_data_empty)
 
-    df1, _, ignored1, _, err1, warn1, header_map1 = load_and_clean_transactions(
-        str(temp_empty_file), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
+    # Added original_to_cleaned_header_map to unpacking
+    df1, _, ignored1, _, err1, warn1, original_to_cleaned_header_map1 = (
+        load_and_clean_transactions(
+            str(temp_empty_file), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
+        )
     )
 
     assert not err1
     assert warn1
     assert df1 is None
     assert ignored1 == set()
-    assert header_map1 == {}, "Header map should be empty for empty data error"
+    assert (
+        original_to_cleaned_header_map1 == {}
+    ), "Header map should be empty for empty data error"
 
     temp_header_file = tmp_path / "header_only.csv"
     temp_header_file.write_text(csv_data_header)
+    # Added original_to_cleaned_header_map to unpacking
 
     df2, _, ignored2, _, err2, warn2, header_map2 = load_and_clean_transactions(
         str(temp_header_file), DEFAULT_ACCOUNT_MAP, DEFAULT_CURRENCY
@@ -259,17 +276,16 @@ def test_load_empty_csv(tmp_path):
     assert ignored2 == set()
 
     expected_header_map_for_header_only = {
-        "Date (MMM DD, YYYY)": "Date",
-        "Transaction Type": "Type",
-        "Stock / ETF Symbol": "Symbol",
-        "Quantity of Units": "Quantity",
-        "Amount per unit": "Price/Share",
-        "Total Amount": "Total Amount",
+        "Date (MMM DD, YYYY)": "Date",  # Original header -> Cleaned header
+        "Transaction Type": "Type",  # Original header -> Cleaned header
+        "Stock / ETF Symbol": "Symbol",  # Original header -> Cleaned header
+        "Quantity of Units": "Quantity",  # Original header -> Cleaned header
+        "Amount per unit": "Price/Share",  # Original header -> Cleaned header
+        "Total Amount": "Total Amount",  # Original header -> Cleaned header
         "Fees": "Commission",
         "Investment Account": "Account",
         "Split Ratio (new shares per old share)": "Split Ratio",
         "Note": "Note",
-        "original_index": "original_index",  # Added to reflect actual behavior
     }
     assert (
         header_map2 == expected_header_map_for_header_only

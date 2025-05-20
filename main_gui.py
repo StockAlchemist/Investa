@@ -70,7 +70,7 @@ import logging
 
 # --- Configure Logging Globally (as early as possible) ---
 # Set the desired global level here (e.g., logging.INFO, logging.DEBUG)
-LOGGING_LEVEL = logging.DEBUG  # Or logging.DEBUG for more detail
+LOGGING_LEVEL = logging.WARNING  # Or logging.DEBUG for more detail
 
 logging.basicConfig(
     level=LOGGING_LEVEL,
@@ -120,6 +120,7 @@ from PySide6.QtWidgets import (
     QTabWidget,  # <-- ADDED for main content tabs
     QTableWidgetItem,
     QAbstractItemView,
+    QToolBar,  # <-- ADDED QToolBar
     QHeaderView,
     QScrollArea,
     QSpinBox,  # <-- Import QSpinBox
@@ -3214,51 +3215,80 @@ class AddTransactionDialog(QDialog):
         logging.debug(
             f"_update_field_states: Called with tx_type='{tx_type}', symbol='{symbol}'. Current Total Amount: '{self.total_amount_edit.text()}'"
         )
-        # Determine transaction characteristics
-        tx_type_lower = tx_type.lower() if tx_type else ""
-        symbol_upper = symbol.upper() if symbol else ""
-        # Ensure self.cash_symbol_csv is available. It should be set in AddTransactionDialog's __init__
+        # Use current values if None passed, and normalize
+        tx_type_lower = (tx_type or self.type_combo.currentText()).lower()
+        symbol_upper = (symbol or self.symbol_edit.text()).upper().strip()
+
         # or passed in if it's dynamic. For now, assuming it's an attribute.
         cash_symbol_to_use = getattr(
             self, "cash_symbol_csv", CASH_SYMBOL_CSV
         )  # Fallback to global
         is_cash_symbol = symbol_upper == cash_symbol_to_use
 
-        is_buy_sell = tx_type_lower in ["buy", "sell"]
-        is_buy_sell_stock = is_buy_sell and not is_cash_symbol
-        is_cash_deposit_withdrawal = is_cash_symbol and tx_type_lower in [
-            "deposit",
-            "withdrawal",
-        ]
-        is_dividend_fees = tx_type_lower in ["dividend", "fees"]
-        is_split = tx_type_lower in ["split", "stock split"]
-        is_short_sell_cover = tx_type_lower in ["short sell", "buy to cover"]
+        # Default states
+        qty_enabled, price_enabled, total_enabled, commission_enabled, split_enabled = (
+            False,
+            False,
+            False,
+            True,
+            False,
+        )
+        price_readonly, total_readonly = False, False
+        price_text_override = None
+
+        if is_cash_symbol:
+            if tx_type_lower in [
+                "deposit",
+                "withdrawal",
+                "buy",
+                "sell",
+            ]:  # 'buy'/'sell' for $CASH are cash movements
+                qty_enabled = True
+                price_text_override = "1.00"  # Price of cash is 1
+                price_readonly = True
+                price_enabled = False  # Field itself is not interactive for $CASH price
+                total_enabled = True  # Total is same as quantity
+                total_readonly = True  # Auto-calculated from quantity
+            elif tx_type_lower == "dividend":  # Cash dividend (e.g. interest)
+                total_enabled = True  # User enters total dividend amount
+                # Qty/Price not typically used for cash dividend entry if total is given
+            elif tx_type_lower == "fees":  # Cash fees
+                # Commission field is used for fee amount
+                pass  # commission_enabled is already True by default
+        elif tx_type_lower in [
+            "buy",
+            "sell",
+            "short sell",
+            "buy to cover",
+        ]:  # Stock/ETF trades
+            qty_enabled = True
+            price_enabled = True
+            total_enabled = True
+            total_readonly = True  # Auto-calculated from Qty * Price
+        elif tx_type_lower == "dividend":  # Stock/ETF dividend
+            qty_enabled = True  # Optional, if per-share dividend
+            price_enabled = True  # Dividend per share
+            total_enabled = True  # Or total dividend amount
+        elif tx_type_lower in ["split", "stock split"]:
+            split_enabled = True
+        elif tx_type_lower == "fees":  # Fees on a stock holding (rare)
+            pass  # commission_enabled is True
 
         # Enable/disable and clear fields based on type
-        self.quantity_edit.setEnabled(
-            is_buy_sell_stock or is_cash_deposit_withdrawal or is_short_sell_cover
-        )
+        self.quantity_edit.setEnabled(qty_enabled)
         self.price_edit.setEnabled(
-            is_buy_sell_stock or is_dividend_fees or is_short_sell_cover
-        )
-        self.total_amount_edit.setEnabled(
-            is_buy_sell_stock
-            or is_dividend_fees
-            or is_short_sell_cover
-            or is_cash_deposit_withdrawal
-        )
-        self.commission_edit.setEnabled(
-            is_buy_sell_stock
-            or is_dividend_fees
-            or is_short_sell_cover
-            or is_split
-            or is_cash_deposit_withdrawal
-        )
-        self.split_ratio_edit.setEnabled(is_split)
-        self.split_ratio_label.setEnabled(is_split)  # Also enable/disable label
+            price_enabled
+        )  # For stocks, this is true. For cash, false.
+        self.price_edit.setReadOnly(price_readonly)
+        if price_text_override is not None:
+            self.price_edit.setText(price_text_override)
 
-        # Set Total Amount read-only for buy/sell of stock/ETF, but not for cash/dividend/fees
-        self.total_amount_edit.setReadOnly(is_buy_sell_stock or is_short_sell_cover)
+        self.total_amount_edit.setEnabled(total_enabled)
+        self.total_amount_edit.setReadOnly(total_readonly)
+
+        self.commission_edit.setEnabled(commission_enabled)
+        self.split_ratio_edit.setEnabled(split_enabled)
+        self.split_ratio_label.setEnabled(split_enabled)
 
         # Clear fields that are not relevant for the current transaction type
         if not self.quantity_edit.isEnabled():
@@ -3266,8 +3296,9 @@ class AddTransactionDialog(QDialog):
         if not self.price_edit.isEnabled():
             logging.debug(
                 f"_update_field_states: Price edit NOT enabled. Current text: '{self.price_edit.text()}' -> Clearing."
-            )
-            self.price_edit.clear()
+            )  # Don't clear if it's readonly and has a value (e.g. $CASH price=1.00)
+            if not self.price_edit.isReadOnly():
+                self.price_edit.clear()
         if not self.total_amount_edit.isEnabled():
             logging.debug(
                 f"_update_field_states: Total Amount edit NOT enabled. Current text: '{self.total_amount_edit.text()}' -> Clearing."
@@ -3278,25 +3309,14 @@ class AddTransactionDialog(QDialog):
         if not self.split_ratio_edit.isEnabled():
             self.split_ratio_edit.clear()
 
-        # --- MOVED: If editing and Total Amount was pre-filled, ensure it's locked before auto-calc ---
-        # This addresses the case where pre-filled Total Amount might be cleared by auto-calc
-        # triggered at the end of _update_field_states.
-        if (
-            is_buy_sell_stock or is_short_sell_cover
-        ) and self.total_amount_edit.text():  # Now these flags are defined
-            self.total_amount_locked_by_user = True
-            logging.debug(
-                "_update_field_states: Total Amount is populated for buy/sell/short, locking."
-            )
-
         logging.debug(
             f"_update_field_states: After conditional clears. Current Total Amount: '{self.total_amount_edit.text()}'"
         )
-        # Auto-calculate if relevant fields are now enabled and not locked
-        logging.debug(
-            f"_update_field_states: Calling _auto_calculate_total. Lock: {self.total_amount_locked_by_user}"
-        )
-        self._auto_calculate_total()
+        # Auto-calculate if total is readonly and not locked by user (e.g. not an edit where total was manually set)
+        if total_readonly and not self.total_amount_locked_by_user:
+            self._auto_calculate_total()
+        elif not total_readonly:  # If total is editable by user, ensure lock is false
+            self.total_amount_locked_by_user = False
         logging.debug(
             f"_update_field_states: After final _auto_calculate_total. Current Total Amount: '{self.total_amount_edit.text()}'"
         )
@@ -3515,70 +3535,138 @@ class AddTransactionDialog(QDialog):
             total = qty  # For cash, total amount is the quantity itself.
 
         elif tx_type_lower == "dividend":
-            qty_ok, price_ok, total_ok_from_field_val = False, False, False
-            if self.quantity_edit.isEnabled() and qty_str:
-                try:
-                    qty = float(qty_str)
-                    qty_ok = qty >= 0  # Allow 0 qty if total is given
-                except ValueError:
-                    QMessageBox.warning(
-                        self, "Input Error", "Dividend Quantity invalid."
-                    )
-                    self.quantity_edit.setFocus()
-                    return None
-            if self.price_edit.isEnabled() and price_str:
-                try:
-                    price = float(price_str)
-                    price_ok = price >= 0  # Allow 0 price if total is given
-                except ValueError:
-                    QMessageBox.warning(
-                        self, "Input Error", "Dividend Price/Unit invalid."
-                    )
-                    self.price_edit.setFocus()
-                    return None
+            # Initialize to None, they will be set if fields are valid and populated
+            # qty, price, total are already initialized to None or 0.0 further up
+
+            # Try to parse Total Amount first
             if self.total_amount_edit.isEnabled() and total_str_from_field:
                 try:
-                    total = float(total_str_from_field)
-                    total_ok_from_field_val = total >= 0
+                    parsed_total = float(total_str_from_field)
+                    if parsed_total < 0:  # Dividends are typically non-negative
+                        QMessageBox.warning(
+                            self,
+                            "Input Error",
+                            "Dividend Total Amount cannot be negative.",
+                        )
+                        self.total_amount_edit.setFocus()
+                        return None
+                    total = parsed_total  # total is now set
                 except ValueError:
                     QMessageBox.warning(
-                        self, "Input Error", "Dividend Total Amount invalid."
+                        self,
+                        "Input Error",
+                        "Dividend Total Amount is not a valid number.",
                     )
                     self.total_amount_edit.setFocus()
                     return None
 
-            if not total_ok_from_field_val:  # If total wasn't provided or was invalid
-                if qty_ok and price_ok and qty is not None and price is not None:
-                    total = qty * price
-                elif (
-                    price_ok and price is not None and not qty_str
-                ):  # Price given, no Qty (e.g. fixed dividend amount)
-                    total = (
-                        price  # Assuming price field was used for total dividend amount
-                    )
-                elif (
-                    qty_ok and qty is not None and not price_str
-                ):  # Qty given, no Price
+            # If Total Amount was NOT provided (i.e., total is still None or was invalidly parsed before this point)
+            if total is None:
+                # Quantity and Price/Unit become mandatory
+                if not qty_str:
                     QMessageBox.warning(
                         self,
                         "Input Error",
-                        "Dividend: Price/Unit required if Quantity entered and Total Amount is not.",
+                        "Dividend: Quantity is required if Total Amount is not provided.",
+                    )
+                    self.quantity_edit.setFocus()
+                    return None
+                try:
+                    qty = float(qty_str)
+                    if qty <= 0:  # If calculating total, qty should be positive
+                        QMessageBox.warning(
+                            self,
+                            "Input Error",
+                            "Dividend Quantity must be positive if Total Amount is not provided.",
+                        )
+                        self.quantity_edit.setFocus()
+                        return None
+                except ValueError:
+                    QMessageBox.warning(
+                        self, "Input Error", "Dividend Quantity is not a valid number."
+                    )
+                    self.quantity_edit.setFocus()
+                    return None
+
+                if not price_str:
+                    QMessageBox.warning(
+                        self,
+                        "Input Error",
+                        "Dividend: Price/Unit is required if Total Amount is not provided.",
                     )
                     self.price_edit.setFocus()
                     return None
-                else:
+                try:
+                    price = float(price_str)
+                    if price <= 0:  # If calculating total, price should be positive
+                        QMessageBox.warning(
+                            self,
+                            "Input Error",
+                            "Dividend Price/Unit must be positive if Total Amount is not provided.",
+                        )
+                        self.price_edit.setFocus()
+                        return None
+                except ValueError:
                     QMessageBox.warning(
                         self,
                         "Input Error",
-                        "Dividend: Provide (Quantity & Price/Unit) OR Total Amount.",
+                        "Dividend Price/Unit is not a valid number.",
                     )
-                    self.total_amount_edit.setFocus()
+                    self.price_edit.setFocus()
                     return None
-            # If total_ok_from_field_val was true, 'total' is already set from the field.
-            # If dividend is on $CASH, qty/price might not be relevant if total is set.
+
+                total = qty * price  # Calculate total since it wasn't provided
+            else:  # Total Amount WAS provided and is valid
+                # Quantity and Price/Unit are optional. If provided, parse and validate them.
+                if qty_str:  # If qty is provided, validate it
+                    try:
+                        qty = float(qty_str)
+                        if qty < 0:  # Allow 0 quantity if total is given
+                            QMessageBox.warning(
+                                self,
+                                "Input Error",
+                                "Dividend Quantity cannot be negative.",
+                            )
+                            self.quantity_edit.setFocus()
+                            return None
+                    except ValueError:
+                        QMessageBox.warning(
+                            self,
+                            "Input Error",
+                            "Dividend Quantity is not a valid number.",
+                        )
+                        self.quantity_edit.setFocus()
+                        return None
+                # else qty remains None (or its initial value if parsed from an empty string earlier)
+
+                if price_str:  # If price is provided, validate it
+                    try:
+                        price = float(price_str)
+                        if price < 0:  # Allow 0 price if total is given
+                            QMessageBox.warning(
+                                self,
+                                "Input Error",
+                                "Dividend Price/Unit cannot be negative.",
+                            )
+                            self.price_edit.setFocus()
+                            return None
+                    except ValueError:
+                        QMessageBox.warning(
+                            self,
+                            "Input Error",
+                            "Dividend Price/Unit is not a valid number.",
+                        )
+                        self.price_edit.setFocus()
+                        return None
+                # else price remains None (or its initial value)
+
+            # Special handling for $CASH dividend (interest)
             if symbol == CASH_SYMBOL_CSV and total is not None:
-                qty = total  # For $CASH dividend, qty can be same as total, price=1
-                price = 1.0
+                # If total is given for $CASH dividend, qty can be total and price 1.
+                if qty is None:
+                    qty = total  # If qty wasn't provided, set it to total
+                if price is None:
+                    price = 1.0  # If price wasn't provided, set it to 1.0
 
         elif tx_type_lower in ["split", "stock split"]:
             if not self.split_ratio_edit.isEnabled() or not split_str:
@@ -3654,6 +3742,24 @@ class AddTransactionDialog(QDialog):
         Calls `get_transaction_data` for validation. If validation passes, the
         dialog is accepted; otherwise, it remains open.
         """
+        tx_type_lower = self.type_combo.currentText().lower()
+        total_amount_text_raw = self.total_amount_edit.text()  # Get raw text
+        total_amount_text_stripped = total_amount_text_raw.strip()
+
+        total_amount_is_filled_and_valid = False
+        if self.total_amount_edit.isEnabled() and total_amount_text_stripped:
+            # Validate against its own validator, considering potential commas
+            total_validator_state = self.total_amount_edit.validator().validate(
+                total_amount_text_raw, 0
+            )[0]
+            if total_validator_state == QValidator.Acceptable:
+                try:  # Final check for non-negativity for relevant types
+                    if (
+                        float(total_amount_text_stripped.replace(",", "")) >= 0
+                    ):  # Allow 0
+                        total_amount_is_filled_and_valid = True
+                except ValueError:
+                    pass  # Validator should have caught non-numeric
         # --- ADDED: Explicit Validator Check Before Accept ---
         invalid_fields = []
         fields_to_check = [
@@ -3666,14 +3772,32 @@ class AddTransactionDialog(QDialog):
 
         for widget, name in fields_to_check:
             if widget.isEnabled():  # Only check enabled fields
+                # logging.debug(f"Validating field: {name}, Enabled: {widget.isEnabled()}")
                 validator = widget.validator()
                 if validator:
-                    text = widget.text()
-                    state = validator.validate(text, 0)[0]
+                    text_raw = widget.text()  # Get raw text for validator
+                    text_stripped = text_raw.strip()
+
+                    # --- Start of new conditional validation logic ---
+                    is_optional_due_to_dividend_total = False
+                    if tx_type_lower == "dividend" and total_amount_is_filled_and_valid:
+                        if name in ["Quantity", "Price/Unit"]:
+                            is_optional_due_to_dividend_total = True
+
+                    is_commission_field = name == "Commission"
+
+                    if not text_stripped:  # Field is empty
+                        # Commission is optional (defaults to 0) UNLESS tx_type is "Fees"
+                        if is_commission_field and tx_type_lower != "fees":
+                            # logging.debug(f"Field {name} is empty and optional (Commission not for Fees). Skipping strict validation.")
+                            continue
+                        if is_optional_due_to_dividend_total:
+                            # logging.debug(f"Field {name} is empty and optional (Dividend Qty/Price with Total). Skipping strict validation.")
+                            continue
+                    # --- End of new conditional validation logic ---
+                    state = validator.validate(text_raw, 0)[0]  # Validate raw text
                     if state != QValidator.Acceptable:
-                        # Even if Intermediate is allowed during typing, it's not acceptable for saving
                         invalid_fields.append(name)
-                        # Ensure background is red if somehow it wasn't set by textChanged
                         widget.setStyleSheet("background-color: #ffe0e0;")
 
         if invalid_fields:
@@ -3696,10 +3820,12 @@ class AddTransactionDialog(QDialog):
     @Slot()
     def _auto_calculate_total(self):
         """Automatically calculates Total Amount from Quantity and Price."""
-        # If total amount is locked (e.g. pre-filled during edit, or manually entered), skip auto-calc
-        if self.total_amount_locked_by_user:
+        # If the Total Amount field is itself read-only, it implies it's always auto-calculated.
+        # The total_amount_locked_by_user flag is more for when Total Amount is editable by the user
+        # and they have manually entered a value.
+        if not self.total_amount_edit.isReadOnly() and self.total_amount_locked_by_user:
             logging.debug(
-                f"_auto_calculate_total: SKIPPED due to lock. Lock: {self.total_amount_locked_by_user}"
+                f"_auto_calculate_total: SKIPPED. Total Amount is editable and locked by user. Lock: {self.total_amount_locked_by_user}"
             )
             return
 
@@ -3863,25 +3989,43 @@ class AddTransactionDialog(QDialog):
         # If Total Amount was pre-filled and is relevant for the transaction type, lock it
         # to prevent auto-calculation from overwriting it during the initial _update_field_states call.
         current_tx_type_lower = self.type_combo.currentText().lower()
-        if self.total_amount_edit.text() and current_tx_type_lower in [
-            "buy",
-            "sell",
-            "short sell",
-            "buy to cover",
-        ]:
-            self.total_amount_locked_by_user = True
-            logging.debug(
-                "  Locked Total Amount as it was pre-filled for a relevant transaction type."
-            )
-        elif (
-            current_tx_type_lower in ["dividend", "fees"]
-            and self.total_amount_edit.text()
-        ):
-            # For dividend/fees, if total amount is provided, it's user input.
-            self.total_amount_locked_by_user = True
-            logging.debug(
-                "  Locked Total Amount for dividend/fees as it was pre-filled."
-            )
+        current_symbol_upper = self.symbol_edit.text().upper().strip()  # Get symbol
+        cash_symbol_to_use_edit = getattr(self, "cash_symbol_csv", CASH_SYMBOL_CSV)
+        is_cash_symbol_edit = current_symbol_upper == cash_symbol_to_use_edit
+
+        self.total_amount_locked_by_user = False  # Default to not locked
+
+        if self.total_amount_edit.text():  # If there's pre-filled total amount
+            if not is_cash_symbol_edit and current_tx_type_lower in [
+                "buy",
+                "sell",
+                "short sell",
+                "buy to cover",
+                "dividend",
+                "fees",
+            ]:
+                # For non-cash stock operations where total might be manually entered or important
+                self.total_amount_locked_by_user = True
+                logging.debug(
+                    "  Locked Total Amount as it was pre-filled for a relevant non-cash transaction type."
+                )
+            elif is_cash_symbol_edit and current_tx_type_lower in ["dividend", "fees"]:
+                # For $CASH dividend/fees, total is the primary input
+                self.total_amount_locked_by_user = True
+                logging.debug(
+                    "  Locked Total Amount for $CASH dividend/fees as it was pre-filled."
+                )
+            # For $CASH buy/sell (deposit/withdrawal), total is always Qty * 1,
+            # so total_amount_locked_by_user remains False to allow _auto_calculate_total to run.
+            elif is_cash_symbol_edit and current_tx_type_lower in [
+                "buy",
+                "sell",
+                "deposit",
+                "withdrawal",
+            ]:
+                logging.debug(
+                    "  Total Amount for $CASH buy/sell/deposit/withdrawal will be auto-calculated."
+                )
 
         # --- Call _update_field_states AFTER all fields are populated ---
         # This ensures correct enabling/disabling based on the pre-filled type and symbol.
@@ -4039,7 +4183,16 @@ class ManageTransactionsDialogDB(QDialog):
     def _refresh_dialog_table(self):
         """Reloads data from DB and updates this dialog's table view."""
         logging.debug("ManageTransactionsDialogDB: Refreshing table from database...")
-        df_updated, success = load_all_transactions_from_db(self._db_conn)
+        # --- MODIFIED: Pass account_currency_map and default_currency ---
+        acc_map_config_refresh = self._parent_app.config.get("account_currency_map", {})
+        def_curr_config_refresh = self._parent_app.config.get(
+            "default_currency", config.DEFAULT_CURRENCY
+        )
+        df_updated, success = load_all_transactions_from_db(
+            self._db_conn,
+            account_currency_map=acc_map_config_refresh,
+            default_currency=def_curr_config_refresh,
+        )
         if success and df_updated is not None:
             self._current_data_df = df_updated.copy()
             self._apply_filter_to_dialog_view()  # Re-apply any active filters to the new data
@@ -4087,6 +4240,21 @@ class ManageTransactionsDialogDB(QDialog):
 
         self.table_model.updateData(df_to_display)
         self.table_view.resizeColumnsToContents()
+        self.table_view.viewport().update()  # Force viewport repaint
+
+        # --- ADDED: Re-apply sort after data update ---
+        if "Date" in df_to_display.columns:
+            try:
+                date_col_idx = df_to_display.columns.get_loc("Date")
+                self.table_view.sortByColumn(date_col_idx, Qt.DescendingOrder)
+                logging.debug(
+                    "ManageTransactionsDialogDB: Re-applied sort by Date descending."
+                )
+            except KeyError:
+                logging.warning(
+                    "ManageTransactionsDialogDB: 'Date' column not found for re-sorting."
+                )
+        # --- END ADDED ---
 
     def _clear_filter_in_dialog_view(self):
         """Clears filters and shows all current data loaded from the DB."""
@@ -4793,11 +4961,21 @@ class PortfolioApp(QMainWindow):
 
         # Import Transactions from CSV
         self.import_csv_action = QAction(
-            QIcon.fromTheme("document-import"), "&Import Transactions from CSV...", self
+            self.style().standardIcon(QStyle.SP_DialogOpenButton),
+            "&Import Transactions from CSV...",
+            self,
         )
         self.import_csv_action.setStatusTip(
             "Import transactions from a CSV file into the current database"
         )
+        if self.import_csv_action.icon().isNull():
+            logging.warning(
+                f"Menu Action Icon for '{self.import_csv_action.text()}' is NULL. Check icon theme for 'document-import'."
+            )
+        else:
+            logging.debug(
+                f"Menu Action Icon for '{self.import_csv_action.text()}' is VALID."
+            )
         self.import_csv_action.triggered.connect(self.import_transactions_from_csv)
         file_menu.addAction(self.import_csv_action)
 
@@ -4854,11 +5032,21 @@ class PortfolioApp(QMainWindow):
         tx_menu.addAction(self.add_transaction_action)
 
         self.manage_transactions_action = QAction(
-            QIcon.fromTheme("document-edit"), "&Manage Transactions...", self
+            self.style().standardIcon(QStyle.SP_FileDialogDetailedView),
+            "&Manage Transactions...",
+            self,
         )
         self.manage_transactions_action.setStatusTip(
             "Edit or delete existing transactions in the database"
         )  # MODIFIED Tip
+        if self.manage_transactions_action.icon().isNull():
+            logging.warning(
+                f"Menu Action Icon for '{self.manage_transactions_action.text()}' is NULL. Check icon theme for 'document-edit'."
+            )
+        else:
+            logging.debug(
+                f"Menu Action Icon for '{self.manage_transactions_action.text()}' is VALID."
+            )
         self.manage_transactions_action.triggered.connect(
             self.show_manage_transactions_dialog
         )
@@ -5633,6 +5821,7 @@ The CSV file should contain the following columns (header names must match exact
         self.holdings_data = pd.DataFrame()  # Initialize as empty DataFrame
         self.ignored_data = (
             pd.DataFrame()
+            # This will store rows from DB load issues or processing issues
         )  # This will store rows from DB load issues or processing issues
         self.summary_metrics_data = {}
         self.account_metrics_data = {}
@@ -5667,6 +5856,9 @@ The CSV file should contain the following columns (header names must match exact
         # This will store the full, cleaned DataFrame loaded from the DB (or migrated CSV)
         # It's the primary source for portfolio_logic functions.
         self.all_transactions_df_cleaned_for_logic = pd.DataFrame()
+        self.original_data = (
+            pd.DataFrame()
+        )  # Holds the most recently loaded full dataset
         # This stores the DataFrame representing the original source data, primarily for context
         # when displaying ignored rows if they originated from a CSV with different headers.
         # If data is purely from DB, this might be similar/identical to all_transactions_df_cleaned_for_logic.
@@ -6362,157 +6554,6 @@ The CSV file should contain the following columns (header names must match exact
             # logging.debug(f"DEBUG update_header_info: Set text to: {' | '.join(header_parts)}") # Optional debug print
         else:
             self.header_info_label.setText("<i>Index data unavailable.</i>")
-
-    def _init_menu_bar(self):
-        """Creates the main menu bar."""
-        menu_bar = self.menuBar()
-        menu_bar.setObjectName("MenuBar")  # Apply object name for styling
-
-        # --- File Menu ---
-        file_menu = menu_bar.addMenu("&File")
-
-        # Open Database File
-        # Ensure self.select_db_action is created correctly before connecting
-        self.select_db_action = QAction(
-            QIcon.fromTheme("document-open"), "Open &Database File...", self
-        )
-        self.select_db_action.setStatusTip("Select the SQLite database file to load")
-        self.select_db_action.triggered.connect(
-            self.select_database_file
-        )  # CORRECTED: Connect to the correct method
-        file_menu.addAction(self.select_db_action)
-
-        # New Database File
-        self.new_database_file_action = QAction(
-            QIcon.fromTheme("document-new"), "&New Database File...", self
-        )
-        self.new_database_file_action.setStatusTip(
-            "Create a new, empty SQLite database file"
-        )
-        self.new_database_file_action.triggered.connect(self.create_new_database_file)
-        file_menu.addAction(self.new_database_file_action)
-
-        file_menu.addSeparator()
-
-        # Import Transactions from CSV
-        self.import_csv_action = QAction(
-            QIcon.fromTheme("document-import"), "&Import Transactions from CSV...", self
-        )
-        self.import_csv_action.setStatusTip(
-            "Import transactions from a CSV file into the current database"
-        )
-        self.import_csv_action.triggered.connect(self.import_transactions_from_csv)
-        file_menu.addAction(self.import_csv_action)
-
-        # Export Transactions to CSV
-        self.export_csv_action = QAction(
-            QIcon.fromTheme("document-export"), "&Export Transactions to CSV...", self
-        )  # Stored as attribute if needed elsewhere
-        self.export_csv_action.setStatusTip(
-            "Export current transaction data from database to a CSV file"
-        )
-        self.export_csv_action.triggered.connect(self.export_transactions_to_csv)
-        file_menu.addAction(self.export_csv_action)
-
-        file_menu.addSeparator()
-
-        # Exit
-        exit_action = QAction(QIcon.fromTheme("application-exit"), "E&xit", self)
-        exit_action.setStatusTip("Exit application")
-        exit_action.triggered.connect(self.close)  # QMainWindow's close method
-        file_menu.addAction(exit_action)
-
-        # --- View Menu ---
-        view_menu = menu_bar.addMenu("&View")
-        self.refresh_action = QAction(
-            QIcon.fromTheme("view-refresh"), "&Refresh Data", self
-        )
-        self.refresh_action.setStatusTip("Reload data from database and recalculate")
-        self.refresh_action.setShortcut("F5")
-        self.refresh_action.triggered.connect(self.refresh_data)
-        view_menu.addAction(self.refresh_action)
-
-        # View Ignored Log
-        self.view_ignored_log_action = QAction(
-            QIcon.fromTheme("dialog-warning"), "View &Ignored Log", self
-        )
-        self.view_ignored_log_action.setStatusTip(
-            "View transactions ignored during the last calculation"
-        )
-        self.view_ignored_log_action.triggered.connect(self.show_ignored_log)
-        self.view_ignored_log_action.setEnabled(False)  # Initially disabled
-        view_menu.addAction(self.view_ignored_log_action)
-
-        # --- Transactions Menu ---
-        tx_menu = menu_bar.addMenu("&Transactions")
-        self.add_transaction_action = QAction(
-            QIcon.fromTheme("list-add"), "&Add Transaction...", self
-        )
-        self.add_transaction_action.setStatusTip(
-            "Manually add a new transaction to the database"
-        )
-        self.add_transaction_action.triggered.connect(self.open_add_transaction_dialog)
-        tx_menu.addAction(self.add_transaction_action)
-
-        self.manage_transactions_action = QAction(
-            QIcon.fromTheme("document-edit"), "&Manage Transactions...", self
-        )
-        self.manage_transactions_action.setStatusTip(
-            "Edit or delete existing transactions in the database"
-        )
-        self.manage_transactions_action.triggered.connect(
-            self.show_manage_transactions_dialog
-        )
-        tx_menu.addAction(self.manage_transactions_action)
-
-        # --- Settings Menu ---
-        settings_menu = menu_bar.addMenu("&Settings")
-        acc_currency_action = QAction("Account &Currencies...", self)
-        acc_currency_action.setStatusTip(
-            "Configure currency for each investment account"
-        )
-        acc_currency_action.triggered.connect(self.show_account_currency_dialog)
-        settings_menu.addAction(acc_currency_action)
-
-        if CSV_UTILS_AVAILABLE:  # Check if csv_utils was imported successfully
-            standardize_headers_action = QAction(
-                "Standardize &External CSV Headers...", self
-            )
-            standardize_headers_action.setStatusTip(
-                "Convert headers in a selected CSV file (for import help)"
-            )
-            standardize_headers_action.triggered.connect(
-                self.run_standardize_external_csv_headers
-            )
-            settings_menu.addAction(standardize_headers_action)
-
-        symbol_settings_action = QAction("&Symbol Settings...", self)
-        symbol_settings_action.setStatusTip(
-            "Set manual overrides, symbol mappings, and excluded symbols"
-        )
-        symbol_settings_action.triggered.connect(self.show_symbol_settings_dialog)
-        settings_menu.addAction(symbol_settings_action)
-
-        settings_menu.addSeparator()
-        clear_cache_action = QAction("Clear &Cache Files...", self)
-        clear_cache_action.setStatusTip(
-            "Delete all application cache files (market data, etc.)"
-        )
-        clear_cache_action.triggered.connect(self.clear_cache_files_action_triggered)
-        settings_menu.addAction(clear_cache_action)
-
-        # --- Help Menu ---
-        help_menu = menu_bar.addMenu("&Help")
-        csv_help_action = QAction("CSV Import Format Help...", self)
-        csv_help_action.setStatusTip(
-            "Show required CSV file format and headers for import"
-        )
-        csv_help_action.triggered.connect(self.show_csv_format_help)
-        help_menu.addAction(csv_help_action)
-
-        about_action = QAction("&About", self)
-        about_action.triggered.connect(self.show_about_dialog)
-        help_menu.addAction(about_action)
 
     # --- ADDED: Slot for CSV Format Help ---
     @Slot()
@@ -8430,6 +8471,8 @@ The CSV file should contain the following columns (header names must match exact
             self.original_transactions_df_for_ignored_context = (
                 df_original_for_ignored_context.copy()
             )
+            # Ensure self.original_data is also updated with the latest from DB
+            self.original_data = df_all_transactions.copy()
             # `original_to_cleaned_header_map` is not relevant for DB source in this context
             self.original_to_cleaned_header_map_from_csv = {}
 
@@ -12115,6 +12158,12 @@ The CSV file should contain the following columns (header names must match exact
             self.original_data[symbol_col_name_to_use] == CASH_SYMBOL_CSV
         ].copy()
 
+        # Drop the 'original_index' column before displaying in logs
+        if "original_index" in stock_tx_df.columns:
+            stock_tx_df.drop(columns=["original_index"], inplace=True)
+        if "original_index" in cash_tx_df.columns:
+            cash_tx_df.drop(columns=["original_index"], inplace=True)
+
         self.stock_transactions_table_model.updateData(stock_tx_df)
         self.cash_transactions_table_model.updateData(cash_tx_df)
 
@@ -14193,25 +14242,206 @@ The CSV file should contain the following columns (header names must match exact
         self.toolbar.setObjectName("MainToolBar")
         self.toolbar.setIconSize(QSize(20, 20))  # Standard icon size
 
-        # Add DB-related actions first
-        if hasattr(self, "select_db_action"):  # Check if the action attribute exists
-            self.toolbar.addAction(self.select_db_action)
-        if hasattr(self, "new_database_file_action"):
-            self.toolbar.addAction(self.new_database_file_action)
-        if hasattr(self, "import_csv_action"):  # Add Import CSV action
-            self.toolbar.addAction(self.import_csv_action)
+        # --- Diagnostic: Check toolbar instance and add a simple test action ---
+        logging.debug(f"Toolbar instance: {self.toolbar}, type: {type(self.toolbar)}")
+        if not isinstance(self.toolbar, QToolBar):
+            logging.critical("CRITICAL: self.toolbar is NOT a QToolBar instance!")
+            return
+        """
+        test_action_diag = QAction("Test Diag Action", self)
+        diag_icon = self.style().standardIcon(QStyle.SP_DialogApplyButton)
+        if diag_icon.isNull():
+            logging.warning(
+                "Diagnostic action: SP_DialogApplyButton icon is NULL. Trying SP_MessageBoxInformation."
+            )
+            diag_icon = self.style().standardIcon(QStyle.SP_MessageBoxInformation)
+            if diag_icon.isNull():
+                logging.warning(
+                    "Diagnostic action: SP_MessageBoxInformation icon is also NULL. Creating a placeholder QPixmap."
+                )
+                pixmap = QPixmap(24, 24)
+                pixmap.fill(QColor("red"))  # Placeholder, changed size to 24x24
+                diag_icon = QIcon(pixmap)
+        test_action_diag.setIcon(diag_icon)
 
-        # Refresh action
+        test_action_diag_icon_null = test_action_diag.icon().isNull()
+        logging.debug(
+            f"TEST_DIAG_ACTION: Icon is {'NULL' if test_action_diag_icon_null else 'VALID'}. Action: {test_action_diag}"
+        )
+
+        added_test_action_diag = self.toolbar.addAction(test_action_diag)
+        if added_test_action_diag:
+            logging.info(
+                f"Successfully added TEST_DIAG_ACTION to toolbar. Widget: {self.toolbar.widgetForAction(added_test_action_diag)}"
+            )
+            test_button_diag = self.toolbar.widgetForAction(added_test_action_diag)
+            if test_button_diag:
+                # test_button_diag.setToolButtonStyle(Qt.ToolButtonIconOnly) # Reverted to default
+                logging.info("TEST_DIAG_ACTION added to toolbar (default style).")
+            else:
+                logging.warning(
+                    "Could not get QToolButton for TEST_DIAG_ACTION from toolbar."
+                )
+        else:
+            logging.error(
+                f"Failed to add TEST_DIAG_ACTION to toolbar. Toolbar: {self.toolbar}, Action: {test_action_diag}"
+            )
+        # --- End Diagnostic ---
+        """
+
+        # Add DB-related actions first
+        if hasattr(self, "select_db_action") and self.select_db_action:
+            self.toolbar.addAction(self.select_db_action)
+        if hasattr(self, "new_database_file_action") and self.new_database_file_action:
+            self.toolbar.addAction(self.new_database_file_action)  # Add New DB action
+
+        # Import CSV action - make it icon-only
+        if hasattr(self, "import_csv_action") and self.import_csv_action:
+            # Log icon state before attempting to make it icon-only in toolbar
+            import_icon = self.import_csv_action.icon()
+            if import_icon.isNull():  # Check current icon
+                logging.warning(
+                    f"Toolbar: Original icon for '{self.import_csv_action.text()}' is NULL. Attempting fallbacks."
+                )
+                import_icon = QIcon.fromTheme("document-import")
+                if import_icon.isNull():
+                    logging.warning(
+                        "Toolbar: QIcon.fromTheme('document-import') is NULL. Trying SP_ArrowDown."
+                    )
+                    import_icon = self.style().standardIcon(QStyle.SP_ArrowDown)
+                    if import_icon.isNull():
+                        logging.warning(
+                            "Toolbar: SP_ArrowDown icon is also NULL for import_csv_action. Creating placeholder."
+                        )
+                        pixmap = QPixmap(24, 24)
+                        pixmap.fill(
+                            QColor("blue")
+                        )  # Placeholder, changed size to 24x24
+                        import_icon = QIcon(pixmap)
+                self.import_csv_action.setIcon(import_icon)
+
+            # Re-check icon status after attempting to set it
+            if self.import_csv_action.icon().isNull():
+                logging.error(  # Changed to error as it's problematic
+                    f"Toolbar: Icon for 'import_csv_action' ({self.import_csv_action.text()}) is STILL NULL after fallbacks."
+                )
+            try:
+                action_in_toolbar_import = self.toolbar.addAction(
+                    self.import_csv_action
+                )
+            except Exception as e:
+                logging.exception(
+                    f"Exception while adding import_csv_action to toolbar: {e}"
+                )
+                # action_in_toolbar_import = self.toolbar.addAction(self.import_csv_action)
+
+            # Check if the action was successfully added and get the corresponding tool button
+            """
+            if action_in_toolbar_import:
+                tool_button_import = self.toolbar.widgetForAction(
+                    action_in_toolbar_import
+                )
+                if tool_button_import:
+                    # Reverted to default style, icon may or may not show based on toolbar style
+                    # tool_button_import.setToolButtonStyle(Qt.ToolButtonIconOnly)
+                    # Ensure the tooltip is set on the button as well
+                    tool_button_import.setToolTip(self.import_csv_action.statusTip())
+                    # logging.debug( # Log message might be slightly inaccurate now
+                    #     f"Successfully added tool button for '{self.import_csv_action.text()}' (default style)."
+                    # )
+                else:
+                    # This case is unexpected if addAction succeeded, but handle defensively
+                    logging.warning(
+                        f"toolbar.widgetForAction returned None for '{self.import_csv_action.text()}' after addAction succeeded."
+                    )
+            else:
+                logging.error(
+                    f"toolbar.addAction for 'import_csv_action' failed. Action object: {self.import_csv_action}"
+                )
+            """
+        elif hasattr(self, "import_csv_action") and not self.import_csv_action:
+            logging.error("'import_csv_action' attribute exists but is None.")
+
         if hasattr(self, "refresh_action"):
             self.toolbar.addAction(self.refresh_action)
 
         self.toolbar.addSeparator()  # Separator
 
         # Transaction management actions
-        if hasattr(self, "add_transaction_action"):
+        if hasattr(self, "add_transaction_action") and self.add_transaction_action:
             self.toolbar.addAction(self.add_transaction_action)
-        if hasattr(self, "manage_transactions_action"):
-            self.toolbar.addAction(self.manage_transactions_action)
+
+        # Manage Transactions action - make it icon-only
+        if (
+            hasattr(self, "manage_transactions_action")
+            and self.manage_transactions_action
+        ):
+            manage_icon = self.manage_transactions_action.icon()
+            if manage_icon.isNull():
+                logging.warning(
+                    f"Toolbar: Original icon for '{self.manage_transactions_action.text()}' is NULL. Attempting fallbacks."
+                )
+                manage_icon = QIcon.fromTheme(
+                    "document-edit"
+                )  # Simplified theme icon name
+                if manage_icon.isNull():
+                    logging.warning(
+                        "Toolbar: QIcon.fromTheme('document-edit') is NULL. Trying SP_DirIcon."
+                    )  # Changed standard icon fallback
+                    manage_icon = self.style().standardIcon(QStyle.SP_DirIcon)
+                    if manage_icon.isNull():
+                        logging.warning(
+                            "Toolbar: SP_DirIcon icon is also NULL for manage_transactions_action. Creating placeholder."
+                        )
+                        pixmap = QPixmap(24, 24)
+                        pixmap.fill(
+                            QColor("green")
+                        )  # Placeholder, changed size to 24x24
+                        manage_icon = QIcon(pixmap)
+                self.manage_transactions_action.setIcon(manage_icon)
+
+            if self.manage_transactions_action.icon().isNull():
+                logging.error(  # Changed to error
+                    f"Toolbar: Icon for 'manage_transactions_action' ({self.manage_transactions_action.text()}) is STILL NULL after fallbacks."
+                )
+            try:
+                action_in_toolbar_manage = self.toolbar.addAction(
+                    self.manage_transactions_action
+                )
+            except Exception as e:
+                logging.exception(
+                    f"Exception while adding manage_transactions_action to toolbar: {e}"
+                )
+            # action_in_toolbar_manage = self.toolbar.addAction(
+            #     self.manage_transactions_action
+            # )
+            """
+            if action_in_toolbar_manage:
+                tool_button_manage = self.toolbar.widgetForAction(
+                    action_in_toolbar_manage
+                )
+                if tool_button_manage:
+                    # tool_button_manage.setToolButtonStyle(Qt.ToolButtonIconOnly) # Reverted to default
+                    tool_button_manage.setToolTip(
+                        self.manage_transactions_action.statusTip()
+                    )
+                    # logging.debug( # Log message might be slightly inaccurate now
+                    #     f"Successfully added tool button for '{self.manage_transactions_action.text()}' (default style)."
+                    # )
+                else:
+                    logging.warning(
+                        f"Toolbar.widgetForAction returned None for '{self.manage_transactions_action.text()}' after addAction succeeded."
+                    )
+            else:
+                logging.error(
+                    f"toolbar.addAction for 'manage_transactions_action' failed. Action object: {self.manage_transactions_action}"
+                )
+            """
+        elif (
+            hasattr(self, "manage_transactions_action")
+            and not self.manage_transactions_action
+        ):
+            logging.error("'manage_transactions_action' attribute exists but is None.")
 
         # Spacer to push subsequent items to the right
         spacer = QWidget()
