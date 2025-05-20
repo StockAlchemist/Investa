@@ -1,798 +1,249 @@
-# data_loader.py
-import pandas as pd
-import numpy as np
-import logging
-from typing import Tuple, Optional, Set, Dict
-import os
-from io import StringIO
-
-# Import constants from config.py (assuming it's in the same directory)
-try:
-    from config import CASH_SYMBOL_CSV, LOGGING_LEVEL  # Add others if needed
-
-    # --- ADDED: Import QStandardPaths for cache directory ---
-    from PySide6.QtCore import QStandardPaths
-
-    PYSIDE_AVAILABLE = True
-except ImportError:
-    logging.error(
-        "CRITICAL: Could not import constants from config.py in data_loader.py"
-    )
-    # Define fallbacks if absolutely necessary, but fixing the import path is better
-    CASH_SYMBOL_CSV = "$CASH"
-    LOGGING_LEVEL = logging.INFO
-    QStandardPaths = None  # Fallback
-    PYSIDE_AVAILABLE = False
-
-# Add a basic module docstring (optional but good practice)
+# -*- coding: utf-8 -*-
 """
 -------------------------------------------------------------------------------
  Name:          data_loader.py
- Purpose:       Handles loading and cleaning of transaction data from CSV.
+ Purpose:       Handles loading and cleaning of transaction data from CSV or SQLite.
+                *** MODIFIED: Now primarily loads from SQLite, with CSV as a fallback/migration source. ***
 
- Author:        Kit Matan (Derived from portfolio_logic.py) and Google Gemini 2.5
+ Author:        Kit Matan and Google Gemini 2.5
+ Author Email:  kittiwit@gmail.com
+
+ Created:       28/04/2025
+ Modified:      02/05/2025
  Copyright:     (c) Kittiwit Matan 2025
  Licence:       MIT
 -------------------------------------------------------------------------------
 SPDX-License-Identifier: MIT
 """
-# Constants
-SHORTABLE_SYMBOLS = {"AAPL", "RIMM"}
+import pandas as pd
+import numpy as np
+import os
+import logging
+from typing import List, Tuple, Dict, Optional, Any, Set
+import re  # For robust date parsing
+from datetime import datetime
 
-# --- ADDED: Import line_profiler if available, otherwise create dummy decorator ---
+# --- Import Configuration ---
 try:
-    from line_profiler import profile
+    from config import CASH_SYMBOL_CSV, DEFAULT_CURRENCY
 except ImportError:
+    logging.critical(
+        "CRITICAL ERROR: Could not import from config.py in data_loader.py."
+    )
+    CASH_SYMBOL_CSV = "$CASH"
+    DEFAULT_CURRENCY = "USD"
 
-    def profile(func):
-        return func  # No-op decorator if line_profiler not installed
+# --- ADDED: Import DB Utilities ---
+try:
+    from db_utils import (
+        initialize_database,
+        load_all_transactions_from_db,
+        migrate_csv_to_db,
+        check_if_db_empty_and_csv_exists,
+    )
+
+    DB_UTILS_AVAILABLE = True
+except ImportError:
+    logging.error(
+        "CRITICAL ERROR: Could not import from db_utils.py in data_loader.py. Database functionality will be unavailable."
+    )
+    DB_UTILS_AVAILABLE = False
+
+    # Define dummy functions if needed for structure, though this indicates a problem
+    def initialize_database(*args, **kwargs):
+        return None
+
+    def load_all_transactions_from_db(*args, **kwargs):
+        return None, False
+
+    def migrate_csv_to_db(*args, **kwargs):
+        return 0, 1
+
+    def check_if_db_empty_and_csv_exists(*args, **kwargs):
+        return False
 
 
 # --- END ADDED ---
 
-FEATHER_CACHE_ENABLED = True  # Global flag to enable/disable this caching
+
+# Standard expected column names after cleaning/mapping (used internally)
+# These are the names portfolio_logic.py and other modules expect.
+EXPECTED_CLEANED_COLUMNS = [
+    "Date",
+    "Type",
+    "Symbol",
+    "Quantity",
+    "Price/Share",
+    "Total Amount",
+    "Commission",
+    "Account",
+    "Split Ratio",
+    "Note",
+    "Local Currency",
+    "original_index",  # original_index is crucial
+]
+
+# --- Column Mapping (for CSV loading if still used) ---
+# This map defines how various original CSV headers map to our internal standard names.
+# Keys are potential original CSV headers (case-insensitive matching will be applied).
+# Values are the standardized internal column names from EXPECTED_CLEANED_COLUMNS.
+COLUMN_MAPPING_CSV_TO_INTERNAL: Dict[str, str] = {
+    # Standardized Headers (already clean)
+    "Date": "Date",
+    "Type": "Type",
+    "Symbol": "Symbol",
+    "Quantity": "Quantity",
+    "Price/Share": "Price/Share",  # Keep for Price/Share
+    "Price per Share": "Price/Share",  # Alias
+    "Price / Share": "Price/Share",  # Alias
+    "Price": "Price/Share",  # Common alias
+    "Total Amount": "Total Amount",
+    "Commission": "Commission",
+    "Fees": "Commission",  # Alias
+    "Account": "Account",
+    "Split Ratio": "Split Ratio",
+    "Note": "Note",
+    "Local Currency": "Local Currency",
+    "Currency": "Local Currency",  # Alias
+    # Original Verbose Headers (from previous projects or common formats)
+    "Date (MMM DD, YYYY)": "Date",
+    "Transaction Type": "Type",
+    "Stock / ETF Symbol": "Symbol",
+    "Quantity of Units": "Quantity",
+    "Amount per unit": "Price/Share",
+    # "Total Amount": "Total Amount", # Already covered
+    # "Fees": "Commission", # Already covered
+    "Investment Account": "Account",
+    "Split Ratio (new shares per old share)": "Split Ratio",
+    # "Note": "Note", # Already covered
+    # Add other common variations as needed
+    "Transaction Date": "Date",
+    "Ticker": "Symbol",
+    "Shares": "Quantity",
+    "Cost Basis": "Total Amount",  # Can sometimes mean total cost
+    "Broker": "Account",
+}
 
 
-def get_feather_cache_path(transactions_csv_file: str) -> Optional[str]:
+# --- Helper function to normalize CSV headers ---
+def _normalize_header(header: str) -> str:
+    """Normalizes a header string by stripping whitespace and converting to title case for matching."""
+    if not isinstance(header, str):
+        return ""
+    return (
+        header.strip()
+    )  # Keep original case for matching against COLUMN_MAPPING_CSV_TO_INTERNAL keys
+
+
+def _map_headers_and_drop_unwanted(
+    df: pd.DataFrame, col_mapping: Dict[str, str], expected_cols: List[str]
+) -> Tuple[pd.DataFrame, Dict[str, str]]:
     """
-    Determines the path for the Feather cache file.
-    It will be stored in the application's standard cache directory.
-    e.g., ~/Library/Caches/Investa/my_transactions_cache.feather
-    """
-    if not PYSIDE_AVAILABLE or QStandardPaths is None:
-        logging.warning(
-            "PySide6.QtCore.QStandardPaths not available. Feather cache will be local to CSV."
-        )
-        base_name = os.path.basename(transactions_csv_file)
-        name_no_ext = os.path.splitext(base_name)[0]
-        return os.path.join(
-            os.path.dirname(transactions_csv_file), f"{name_no_ext}_tx_cache.feather"
-        )
-
-    cache_dir_base = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
-    if cache_dir_base:
-        # Assuming APP_NAME is set in main_gui.py for QStandardPaths
-        # If not, QStandardPaths might use a generic name or the executable name.
-        # For robustness, let's create an "Investa" subfolder if not already part of cache_dir_base.
-        # QStandardPaths.CacheLocation often already includes AppName on macOS/Windows.
-        app_cache_dir = cache_dir_base  # Directly use CacheLocation
-        if "Investa" not in app_cache_dir:  # Simple check, might need refinement
-            app_cache_dir = os.path.join(cache_dir_base, "Investa")
-
-        os.makedirs(app_cache_dir, exist_ok=True)
-
-        # Create a unique name based on the CSV file's name (without extension)
-        csv_filename_no_ext = os.path.splitext(os.path.basename(transactions_csv_file))[
-            0
-        ]
-        cache_filename = f"{csv_filename_no_ext}_tx_cache.feather"
-        return os.path.join(app_cache_dir, cache_filename)
-    else:
-        logging.warning(
-            "Could not determine standard cache location. Feather cache will be local to CSV."
-        )
-        base_name = os.path.basename(transactions_csv_file)
-        name_no_ext = os.path.splitext(base_name)[0]
-        return os.path.join(
-            os.path.dirname(transactions_csv_file), f"{name_no_ext}_tx_cache.feather"
-        )
-
-
-@profile
-def _load_and_clean_from_csv_actual(  # Renamed original function
-    transactions_csv_file: str,
-    account_currency_map: Dict,  # Now required
-    default_currency: str,  # Now required
-) -> Tuple[
-    Optional[pd.DataFrame],
-    Optional[pd.DataFrame],
-    Set[int],
-    Dict[int, str],
-    bool,
-    bool,
-    Dict[str, str],
-]:  # Added has_errors, has_warnings, and the map
-    """
-    Loads transactions from CSV, performs cleaning, validation, and adds 'Local Currency'.
-
-    Reads a CSV file containing transaction data, renames columns, cleans data types
-    (dates, numerics), validates essential fields based on transaction type, and adds a
-    a 'Local Currency' column based on the account mapping. Rows with critical errors
-    (e.g., unparseable dates, missing essential data for a transaction type) are
-    dropped.
+    Maps DataFrame column headers to standard internal names using col_mapping,
+    and drops columns not in expected_cols (after mapping).
 
     Args:
-        transactions_csv_file (str): Path to the transactions CSV file.
-        account_currency_map (Dict): Mapping from account name (str) to its local currency (str)
-                                     (e.g., {'SET': 'THB'}).
-        default_currency (str): Default currency (str) to use if an account is not found in the map.
+        df (pd.DataFrame): The input DataFrame with original headers.
+        col_mapping (Dict[str, str]): Mapping from original (normalized) headers to internal standard names.
+        expected_cols (List[str]): List of internal standard column names that should be kept.
 
     Returns:
-        Tuple containing:
-            - pd.DataFrame | None: Cleaned and validated transactions DataFrame, sorted by Date
-                                   and original index. Returns None if a critical loading error occurs.
-            - pd.DataFrame | None: Original loaded DataFrame (before cleaning), with an added
-                                   'original_index' column. Returns None if loading fails.
-            - Set[int]: Set of original 0-based indices of rows ignored due to validation errors
-                        or unparseable dates.
-            - Dict[int, str]: Dictionary mapping ignored original index (int) to the reason (str)
-                              why it was ignored.
-            - bool: has_errors - True if critical loading/parsing errors occurred that prevent
-                                 further processing; False otherwise.
-            - bool: has_warnings - True if recoverable issues occurred (e.g., bad dates ignored,
-                                     numeric coercion failures, missing non-critical data); False otherwise.
-            - Dict[str, str]: A dictionary mapping original CSV header names to their cleaned,
-                              standardized names (e.g., {"Date (MMM DD, YYYY)": "Date"}).
+        Tuple[pd.DataFrame, Dict[str, str]]:
+            - The DataFrame with standardized and filtered columns.
+            - A dictionary mapping the original CSV headers found in the input df
+              to the cleaned internal names that were applied.
     """
-    original_transactions_df: Optional[pd.DataFrame] = None
-    transactions_df: Optional[pd.DataFrame] = None
-    ignored_row_indices = set()  # Collects ORIGINAL indices of ALL ignored rows
-    ignored_reasons: Dict[int, str] = {}  # Maps ORIGINAL index to first reason ignored
-    has_errors = False  # Flag for critical loading errors
-    has_warnings = False  # Flag for recoverable issues
-    original_to_cleaned_header_map: Dict[str, str] = {}  # Initialize the map
+    original_to_cleaned_applied_map: Dict[str, str] = {}
+    rename_dict: Dict[str, str] = {}
+    df_columns_normalized = {col: _normalize_header(col) for col in df.columns}
 
-    # --- Define na_values at the top level of the function ---
-    na_values_list = [
-        "",
-        "#N/A",
-        "#N/A N/A",
-        "#NA",
-        "-1.#IND",
-        "-1.#QNAN",
-        "-NaN",
-        "-nan",
-        "1.#IND",
-        "1.#QNAN",
-        "<NA>",
-        "N/A",
-        "NA",
-        "NULL",
-        "NaN",
-        "n/a",
-        "nan",
-        "null",
+    for original_col_raw, normalized_original_col in df_columns_normalized.items():
+        # Try direct match in mapping first (case-sensitive, as mapping keys are specific)
+        if normalized_original_col in col_mapping:
+            cleaned_name = col_mapping[normalized_original_col]
+            rename_dict[original_col_raw] = cleaned_name
+            original_to_cleaned_applied_map[original_col_raw] = cleaned_name
+        # Fallback: if the normalized original col IS ALREADY a standard expected name
+        elif (
+            normalized_original_col in expected_cols
+            and original_col_raw not in rename_dict
+        ):
+            # This means the CSV already used a cleaned name for this column.
+            # We don't need to rename it, but we record the "mapping" (identity).
+            original_to_cleaned_applied_map[original_col_raw] = normalized_original_col
+        # No explicit mapping and not already a cleaned name - it will be dropped later if not in expected_cols
+
+    df_renamed = df.rename(columns=rename_dict)
+
+    # Keep only the expected columns (now that they are renamed)
+    # and any other columns that were already standard and not in rename_dict
+    final_columns_to_keep = [col for col in expected_cols if col in df_renamed.columns]
+
+    # Add any columns that were ALREADY standard but not explicitly in expected_cols if needed,
+    # though typically expected_cols should be comprehensive.
+    # For now, strict filtering to expected_cols.
+    df_final = df_renamed[final_columns_to_keep].copy()
+
+    return df_final, original_to_cleaned_applied_map
+
+
+def _parse_date_robustly(date_series: pd.Series) -> pd.Series:
+    """Attempts to parse a Series of date strings using multiple common formats."""
+    # Define a list of common date formats to try
+    common_formats = [
+        "%Y-%m-%d",  # Standard ISO
+        "%m/%d/%Y",  # US common
+        "%d/%m/%Y",  # EU common
+        "%Y/%m/%d",
+        "%m-%d-%Y",
+        "%d-%m-%Y",
+        "%b %d, %Y",  # E.g., Jan 01, 2023 (this is Investa's standard CSV output)
+        "%B %d, %Y",  # E.g., January 01, 2023
+        "%Y%m%d",  # E.g., 20230101
+        # Add more formats if needed
     ]
+    # Attempt direct conversion first (pandas is good at inferring)
+    # errors='coerce' will turn unparseable dates into NaT (Not a Time)
+    parsed_dates = pd.to_datetime(date_series, errors="coerce")
 
-    logging.info(
-        f"Helper: Attempting to load transactions from: {transactions_csv_file}"
-    )
-    try:
-        dtype_spec = {
-            "Quantity of Units": str,
-            "Amount per unit": str,
-            "Total Amount": str,
-            "Fees": str,
-            "Split Ratio (new shares per old share)": str,
-        }
-        if isinstance(transactions_csv_file, str):
-            file_source = transactions_csv_file
-        else:
-            file_source = transactions_csv_file
-        original_transactions_df_no_index = pd.read_csv(
-            file_source,
-            header=0,
-            skipinitialspace=True,
-            keep_default_na=True,
-            na_values=na_values_list,
-            dtype=dtype_spec,
-            encoding="utf-8",
-        )  # Use na_values_list
-
-        # print("--- RAW DATAFRAME DEBUG ---")
-        # print(original_transactions_df_no_index[original_transactions_df_no_index['Stock / ETF Symbol'] == 'AAPL'].to_string())
-        # print("--- END RAW DATAFRAME DEBUG ---")
-
-        original_transactions_df = original_transactions_df_no_index.copy()
-        # --- Assign 0-based index as original_index ---
-        original_transactions_df["original_index"] = original_transactions_df.index
-        transactions_df = original_transactions_df.copy()
-
-        logging.info(f"Helper: Successfully loaded {len(transactions_df)} records.")
-    # --- (Exception handling for load) ---
-    except FileNotFoundError:
-        logging.error(f"Transaction file not found: {transactions_csv_file}")
-        has_errors = True
-        return (
-            None,
-            None,
-            ignored_row_indices,
-            ignored_reasons,
-            has_errors,
-            has_warnings,
-            original_to_cleaned_header_map,  # Return empty map on critical error
-        )
-    except pd.errors.EmptyDataError:
-        logging.warning(f"Warning: Input CSV file is empty: {transactions_csv_file}")
-        has_warnings = True  # It's a warning, not a critical error
-        return (
-            None,
-            None,  # No original DF either
-            ignored_row_indices,
-            ignored_reasons,
-            has_errors,  # Should still be False here
-            has_warnings,
-            original_to_cleaned_header_map,  # Return empty map
-        )
-    except pd.errors.ParserError as e:
-        logging.error(f"Error parsing CSV file {transactions_csv_file}: {e}")
-        has_errors = True
-        return (
-            None,
-            original_transactions_df,
-            ignored_row_indices,
-            ignored_reasons,
-            has_errors,
-            has_warnings,
-            original_to_cleaned_header_map,  # Return empty map on error
-        )
-    except UnicodeDecodeError as e:
-        logging.error(
-            f"Encoding error reading CSV file {transactions_csv_file}: {e}. Try saving as UTF-8."
-        )
-        has_errors = True
-        return (
-            None,
-            original_transactions_df,
-            ignored_row_indices,
-            ignored_reasons,
-            has_errors,
-            has_warnings,
-            original_to_cleaned_header_map,  # Return empty map on error
-        )
-    except PermissionError:
-        logging.error(f"Permission denied reading CSV file: {transactions_csv_file}")
-        has_errors = True
-        return (
-            None,
-            original_transactions_df,
-            ignored_row_indices,
-            ignored_reasons,
-            has_errors,
-            has_warnings,
-            original_to_cleaned_header_map,  # Return empty map on error
-        )
-    except Exception as e:
-        logging.exception(
-            f"Unexpected error loading transactions from {transactions_csv_file}"
-        )
-        has_errors = True
-        return (
-            None,
-            original_transactions_df,
-            ignored_row_indices,
-            ignored_reasons,
-            has_errors,
-            has_warnings,
-            original_to_cleaned_header_map,  # Return empty map on error
-        )
-
-    # If loading failed critically earlier, transactions_df will be None.
-    # An empty DataFrame (e.g., header-only file) should proceed to cleaning.
-    if transactions_df is None:
-        logging.warning(
-            "Warning: Transactions DataFrame is None after loading attempt."
-        )
-        has_warnings = True
-        return (
-            None,
-            original_transactions_df,
-            ignored_row_indices,
-            ignored_reasons,
-            has_errors,
-            has_warnings,
-            original_to_cleaned_header_map,  # Return empty map
-        )
-
-    # Check if the DataFrame is empty *after* successful loading (e.g., header only)
-    # This is different from EmptyDataError which means the file itself was empty.
-    if transactions_df is not None and transactions_df.empty:
-        logging.warning(
-            "Warning: CSV loaded successfully but contains no data rows (header only?)."
-        )
-        # Set warning flag, but allow the empty DataFrame to be returned
-        # as it's technically a valid load result.
-        has_warnings = True
-        # We don't return here, let the empty DF proceed through the (no-op) cleaning
-        # and be returned at the end.
-
-    try:
-        # --- Rename Columns ---
-        column_mapping = {
-            "Date (MMM DD, YYYY)": "Date",
-            "Transaction Type": "Type",
-            "Stock / ETF Symbol": "Symbol",
-            "Quantity of Units": "Quantity",
-            "Amount per unit": "Price/Share",
-            "Total Amount": "Total Amount",
-            "Fees": "Commission",
-            "Split Ratio (new shares per old share)": "Split Ratio",
-            "Investment Account": "Account",
-            "Note": "Note",
-        }
-        # Define essential columns using their original verbose names
-        ESSENTIAL_VERBOSE_CSV_COLUMNS: list[str] = [
-            "Date (MMM DD, YYYY)",
-            "Transaction Type",
-            "Stock / ETF Symbol",
-            "Investment Account",
-        ]
-        # Define essential columns using their cleaned/internal names
-        ESSENTIAL_CLEANED_CSV_COLUMNS: list[str] = [
-            "Date",
-            "Type",
-            "Symbol",
-            "Account",
-        ]
-
-        actual_columns_stripped = [col.strip() for col in transactions_df.columns]
-        found_columns_stripped_set = set(actual_columns_stripped)
-
-        # --- Data Integrity Check: Determine if CSV uses verbose or cleaned headers ---
-        # Check if all essential CLEANED columns are present
-        missing_essential_cleaned_cols = [
-            col
-            for col in ESSENTIAL_CLEANED_CSV_COLUMNS
-            if col not in found_columns_stripped_set
-        ]
-        using_cleaned_headers = not missing_essential_cleaned_cols
-        logging.info(
-            f"CSV appears to be using {'cleaned' if using_cleaned_headers else 'verbose/mixed'} headers based on essential check."
-        )
-
-        if not using_cleaned_headers:
-            # If not all essential cleaned headers are present, check for essential VERBOSE headers
-            # (after stripping whitespace from them for comparison)
-            essential_verbose_stripped = {
-                col.strip() for col in ESSENTIAL_VERBOSE_CSV_COLUMNS
-            }
-            missing_essential_verbose_cols_stripped = [
-                col
-                for col in essential_verbose_stripped
-                if col not in found_columns_stripped_set
-            ]
-            if missing_essential_verbose_cols_stripped:
-                # Construct the error message using the original verbose names for clarity to the user
-                original_missing_verbose_names = [
-                    orig_v_col
-                    for orig_v_col in ESSENTIAL_VERBOSE_CSV_COLUMNS
-                    if orig_v_col.strip() in missing_essential_verbose_cols_stripped
-                ]
-                error_msg = (
-                    f"Data integrity error during cleaning: Missing essential CSV columns. "
-                    f"Attempted verbose (missing): {original_missing_verbose_names}. "
-                    f"Attempted cleaned (missing): {missing_essential_cleaned_cols}. "
-                    f"Found (stripped): {list(found_columns_stripped_set)}"
-                )
-                logging.error(error_msg)
-                raise ValueError(error_msg)
-        # If using_cleaned_headers is True, or if verbose check passed, continue.
-
-        rename_dict = {}
-        # Build rename_dict based on whether verbose or cleaned headers are primarily used
-        if not using_cleaned_headers:  # CSV has verbose headers
-            for verbose_header, cleaned_name in column_mapping.items():
-                stripped_verbose_header = verbose_header.strip()
-                if stripped_verbose_header in actual_columns_stripped:
-                    rename_dict[stripped_verbose_header] = cleaned_name
-                    original_to_cleaned_header_map[verbose_header] = (
-                        cleaned_name  # Map original verbose to cleaned
-                    )
-        else:  # CSV has cleaned headers
-            for verbose_header, cleaned_name in column_mapping.items():
-                if cleaned_name in actual_columns_stripped:
-                    # If cleaned name is already there, no rename needed from verbose.
-                    # The map should reflect that the original (which is now clean) maps to the clean name.
-                    original_to_cleaned_header_map[cleaned_name] = cleaned_name
-                elif verbose_header.strip() in actual_columns_stripped:
-                    # This case is less likely if using_cleaned_headers is true,
-                    # but handles mixed scenarios or if a "cleaned" header was actually a verbose one.
-                    rename_dict[verbose_header.strip()] = cleaned_name
-                    original_to_cleaned_header_map[verbose_header] = cleaned_name
-
-        transactions_df.columns = (
-            actual_columns_stripped  # Ensure df uses stripped headers before rename
-        )
-        transactions_df.rename(columns=rename_dict, inplace=True)
-
-        # For any columns that were already cleaned and thus not in rename_dict,
-        # ensure they are in original_to_cleaned_header_map mapping to themselves.
-        for col_name in transactions_df.columns:
-            if (
-                col_name not in original_to_cleaned_header_map.values()
-            ):  # If this cleaned name isn't a target of a map
-                if col_name in column_mapping.values():  # And it's a known cleaned name
-                    # Find its original verbose counterpart to see if it should have been mapped
-                    original_verbose_for_this_clean = next(
-                        (
-                            v_orig
-                            for v_orig, c_clean in column_mapping.items()
-                            if c_clean == col_name
-                        ),
-                        None,
-                    )
-                    if original_verbose_for_this_clean:
-                        original_to_cleaned_header_map[
-                            original_verbose_for_this_clean
-                        ] = col_name
-                    else:  # Should not happen if column_mapping is complete
-                        original_to_cleaned_header_map[col_name] = col_name
-                elif col_name not in column_mapping:  # Custom column
-                    original_to_cleaned_header_map[col_name] = col_name
-
+    # For any dates that failed direct conversion (are NaT), try specific formats
+    failed_indices = parsed_dates[parsed_dates.isna()].index
+    if not failed_indices.empty:
         logging.debug(
-            f"Final Original to Cleaned Header Map: {original_to_cleaned_header_map}"
+            f"Robust date parsing: {len(failed_indices)} dates initially failed direct parse. Trying specific formats."
         )
-
-        # --- Basic Cleaning ---
-        transactions_df["Symbol"] = (
-            transactions_df["Symbol"]
-            .fillna("UNKNOWN_SYMBOL")
-            .astype(str)
-            .str.strip()
-            .str.upper()
-        )
-        transactions_df.loc[transactions_df["Symbol"] == "", "Symbol"] = (
-            "UNKNOWN_SYMBOL"
-        )
-        transactions_df.loc[transactions_df["Symbol"] == "$CASH", "Symbol"] = (
-            CASH_SYMBOL_CSV
-        )
-        transactions_df["Type"] = (
-            transactions_df["Type"]
-            .fillna("UNKNOWN_TYPE")
-            .astype(str)
-            .str.strip()
-            .str.lower()
-        )
-        transactions_df.loc[transactions_df["Type"] == "", "Type"] = "UNKNOWN_TYPE"
-        transactions_df["Account"] = (
-            transactions_df["Account"].fillna("Unknown").astype(str).str.strip()
-        )
-        transactions_df.loc[transactions_df["Account"] == "", "Account"] = "Unknown"
-        transactions_df["Local Currency"] = (
-            transactions_df["Account"]
-            .map(account_currency_map)
-            .fillna(default_currency)
-        )
-        logging.info(f"Helper: Added 'Local Currency' column.")
-
-        # Store original date strings before attempting conversion
-        original_date_strings = transactions_df["Date"].copy()
-
-        # --- Numeric Conversion ---
-        numeric_cols = [
-            "Quantity",
-            "Price/Share",
-            "Total Amount",
-            "Commission",
-            "Split Ratio",
-        ]
-        for col in numeric_cols:
-            if col in transactions_df.columns:
-                # ... (numeric conversion logic with debug logging remains the same) ...
-                original_col_copy = transactions_df[col].copy()
-                if transactions_df[col].dtype == "object":
-                    cleaned_strings = (
-                        transactions_df[col]
-                        .astype(str)
-                        .str.replace(",", "", regex=False)
-                    )
-                    converted_col = pd.to_numeric(cleaned_strings, errors="coerce")
-                else:
-                    converted_col = pd.to_numeric(transactions_df[col], errors="coerce")
-                nan_mask = converted_col.isna() & original_col_copy.notna()
-                if nan_mask.any():
-                    has_warnings = True
-                    logging.warning(
-                        f"Warning: Coercion to numeric failed for column '{col}' on {nan_mask.sum()} rows."
-                    )
-                    # ... (optional detailed debug logging for failed coercion) ...
-                transactions_df[col] = converted_col
-
-        # --- Date Parsing and Dropping (DO THIS FIRST) ---
-        # transactions_df["Date"] = pd.to_datetime(
-        #     original_date_strings, format="%b %d, %Y", errors="coerce"
-        # )  # <-- MODIFIED LINE
-        transactions_df["Date"] = pd.to_datetime(original_date_strings, errors="coerce")
-        if transactions_df["Date"].isnull().any():
-            # ... (Fallback date parsing logic) ...
-            formats_to_try = ["%b %d, %Y", "%m/%d/%Y", "%Y-%m-%d", "%d-%b-%Y", "%Y%m%d"]
-            for fmt in formats_to_try:
-                if transactions_df["Date"].isnull().any():
-                    nat_mask = transactions_df["Date"].isnull()
-                    try:
-                        parsed = pd.to_datetime(
-                            original_date_strings[nat_mask].astype(str),
-                            format=fmt,
-                            errors="coerce",
-                        )
-                        transactions_df.loc[nat_mask, "Date"] = parsed
-                    except (ValueError, TypeError):
-                        pass
-            if transactions_df["Date"].isnull().any():
-                nat_mask = transactions_df["Date"].isnull()
-                try:
-                    inferred = pd.to_datetime(
-                        original_date_strings[nat_mask],
-                        infer_datetime_format=True,
-                        errors="coerce",
-                    )
-                    transactions_df.loc[nat_mask, "Date"] = inferred
-                except (ValueError, TypeError):
-                    pass
-
-        bad_date_mask = transactions_df["Date"].isnull()
-        bad_date_df_indices_to_drop = transactions_df.index[
-            bad_date_mask
-        ]  # Use a distinct name for clarity
-
-        if not bad_date_df_indices_to_drop.empty:
-            has_warnings = True
-            # --- CORRECTED LOGGING ---
-            logging.warning(
-                f"Warning: {len(bad_date_df_indices_to_drop)} rows ignored due to unparseable dates."
-            )
-            # --- END CORRECTION ---
-            orig_indices_bad_date = transactions_df.loc[
-                bad_date_df_indices_to_drop, "original_index"
-            ].tolist()
-            for orig_idx in orig_indices_bad_date:
-                if orig_idx not in ignored_reasons:
-                    ignored_reasons[orig_idx] = "Invalid/Unparseable Date"
-            ignored_row_indices.update(orig_indices_bad_date)
-            transactions_df.drop(bad_date_df_indices_to_drop, inplace=True)
-            transactions_df.reset_index(drop=True, inplace=True)
-            logging.debug(f"DataFrame index reset after date drop.")
-        # --- End Date Parsing ---
-
-        # --- Fill Commission NaNs ---
-        transactions_df["Commission"] = transactions_df["Commission"].fillna(0.0)
-
-        # --- Flagging Rows to Drop (Collect DF Indices AFTER Reset) ---
-        initial_row_count = len(transactions_df)
-        df_indices_to_drop = pd.Index([])  # Collect DataFrame indices
-        local_has_warnings_flagging = False
-
-        def flag_for_drop_direct(df_indices, reason):
-            nonlocal local_has_warnings_flagging
-            if not df_indices.empty:
-                valid_df_indices = df_indices.intersection(transactions_df.index)
-                if not valid_df_indices.empty:
-                    local_has_warnings_flagging = True
-                    original_indices = transactions_df.loc[
-                        valid_df_indices, "original_index"
-                    ].tolist()
-                    logging.debug(
-                        f"FLAGGING DF Indices TO DROP: Reason='{reason}', DF Indices={valid_df_indices.tolist()}, Orig Indices={original_indices}"
-                    )
-                    for orig_idx in original_indices:
-                        if orig_idx not in ignored_reasons:
-                            ignored_row_indices.add(orig_idx)
-                            ignored_reasons[orig_idx] = reason
-                    return valid_df_indices
-            return pd.Index([])
-
-        try:
-            # Define masks (using the state AFTER date drop and reset)
-            is_buy_sell_stock = transactions_df["Type"].isin(
-                ["buy", "sell", "deposit", "withdrawal"]
-            ) & (transactions_df["Symbol"] != CASH_SYMBOL_CSV)
-            is_short_stock = transactions_df["Type"].isin(
-                ["short sell", "buy to cover"]
-            ) & transactions_df["Symbol"].isin(SHORTABLE_SYMBOLS)
-            is_split = transactions_df["Type"].isin(["split", "stock split"])
-            is_dividend = transactions_df["Type"] == "dividend"
-            is_fees = transactions_df["Type"] == "fees"
-            is_cash_tx = (
-                transactions_df["Symbol"] == CASH_SYMBOL_CSV
-            ) & transactions_df["Type"].isin(["buy", "sell", "deposit", "withdrawal"])
-            nan_qty = transactions_df["Quantity"].isnull()
-            nan_price = transactions_df["Price/Share"].isnull()
-            nan_qty_or_price = nan_qty | nan_price
-            # Robust Split Ratio Check
-            numeric_split_ratio = pd.to_numeric(
-                transactions_df["Split Ratio"], errors="coerce"
-            )
-            is_nan_split = numeric_split_ratio.isnull()
-            is_le_zero_split = pd.Series(False, index=transactions_df.index)
-            numeric_mask_split = pd.notna(numeric_split_ratio)
-            if numeric_mask_split.any():
-                is_le_zero_split.loc[numeric_mask_split] = (
-                    numeric_split_ratio.loc[numeric_mask_split] <= 0
-                )
-            invalid_split = is_nan_split | is_le_zero_split
-            missing_div = transactions_df["Total Amount"].isnull() & nan_price
-            # Check if original commission value was NaN
-            commission_was_nan_mask = pd.Series(False, index=transactions_df.index)
+        for idx in failed_indices:
+            original_date_str = date_series.loc[idx]
             if (
-                original_transactions_df is not None
-                and "Commission" in original_transactions_df.columns
-                and "original_index" in original_transactions_df.columns
+                pd.isna(original_date_str)
+                or not isinstance(original_date_str, str)
+                or not original_date_str.strip()
             ):
-                aligned_original_commission = original_transactions_df.set_index(
-                    "original_index"
-                )["Commission"].reindex(transactions_df["original_index"])
-                # --- Use na_values_list defined at function start ---
-                commission_was_nan_mask = (
-                    aligned_original_commission.isnull()
-                    | aligned_original_commission.isin(na_values_list)
-                )
-            is_unknown = (transactions_df["Symbol"] == "UNKNOWN_SYMBOL") | (
-                transactions_df["Type"] == "UNKNOWN_TYPE"
+                continue  # Skip NaN or empty strings
+
+            # Clean common ordinal suffixes (st, nd, rd, th)
+            cleaned_date_str = re.sub(
+                r"(\d+)(st|nd|rd|th)",
+                r"\1",
+                original_date_str.strip(),
+                flags=re.IGNORECASE,
             )
 
-            # Flag DataFrame indices for each reason
-            df_indices_to_drop = df_indices_to_drop.union(
-                flag_for_drop_direct(
-                    transactions_df.index[is_buy_sell_stock & nan_qty_or_price],
-                    "Missing Qty/Price Stock",
-                )
-            )
-            df_indices_to_drop = df_indices_to_drop.union(
-                flag_for_drop_direct(
-                    transactions_df.index[is_short_stock & nan_qty_or_price],
-                    "Missing Qty/Price Short",
-                )
-            )
-            df_indices_to_drop = df_indices_to_drop.union(
-                flag_for_drop_direct(
-                    transactions_df.index[is_cash_tx & nan_qty], "Missing $CASH Qty"
-                )
-            )
-            df_indices_to_drop = df_indices_to_drop.union(
-                flag_for_drop_direct(
-                    transactions_df.index[is_split & invalid_split],
-                    "Missing/Invalid Split Ratio",
-                )
-            )
-            df_indices_to_drop = df_indices_to_drop.union(
-                flag_for_drop_direct(
-                    transactions_df.index[is_dividend & missing_div],
-                    "Missing Dividend Amt/Price",
-                )
-            )
-            df_indices_to_drop = df_indices_to_drop.union(
-                flag_for_drop_direct(
-                    transactions_df.index[is_fees & commission_was_nan_mask],
-                    "Missing Fee Commission",
-                )
-            )
-            df_indices_to_drop = df_indices_to_drop.union(
-                flag_for_drop_direct(
-                    transactions_df.index[is_unknown], "Unknown Symbol/Type"
-                )
-            )
-
-        except Exception as e_mask_flag:
-            logging.exception(
-                "CRITICAL ERROR during mask creation/flagging after date drop"
-            )
-            has_errors = True
-            return (
-                None,
-                original_transactions_df,
-                ignored_row_indices,
-                ignored_reasons,
-                has_errors,
-                has_warnings,
-                original_to_cleaned_header_map,  # Return map on error
-            )
-
-        # --- FINAL Drop rows using the collected DATAFRAME indices ---
-        if not df_indices_to_drop.empty:
-            if local_has_warnings_flagging:
-                has_warnings = True
-            valid_indices_to_drop = df_indices_to_drop.intersection(
-                transactions_df.index
-            )
-            if not valid_indices_to_drop.empty:
-                original_indices_ignored = sorted(
-                    list(transactions_df.loc[valid_indices_to_drop, "original_index"])
-                )
-                reasons_for_drop = {
-                    idx: ignored_reasons.get(idx, "Unknown validation")
-                    for idx in original_indices_ignored
-                }
-                logging.warning(
-                    f"Warning: Dropping {len(valid_indices_to_drop)} final rows (Original Indices: {original_indices_ignored}). Reasons: {reasons_for_drop}"
-                )
-                transactions_df.drop(valid_indices_to_drop, inplace=True)
-
-        # If the dataframe is empty at this point (either started empty or all rows dropped),
-        # it's still a valid result (an empty DataFrame), so proceed to sort and return.
-
-        # Sort and Return
-        transactions_df.sort_values(
-            by=["Date", "original_index"], inplace=True, ascending=True
-        )
-        return (
-            transactions_df,
-            original_transactions_df,
-            ignored_row_indices,
-            ignored_reasons,
-            has_errors,
-            has_warnings,
-            original_to_cleaned_header_map,  # Return the map
-        )
-
-    # --- (Refined Exception Handling for Cleaning Block remains the same) ---
-    except ValueError as e:
-        logging.error(f"Data integrity error during cleaning: {e}")
-        has_errors = True
-        return (
-            None,
-            original_transactions_df,
-            ignored_row_indices,
-            ignored_reasons,
-            has_errors,
-            has_warnings,
-            original_to_cleaned_header_map,  # Return map on error
-        )
-    except KeyError as e:
-        logging.error(f"Missing expected column during cleaning: {e}")
-        has_errors = True
-        return (
-            None,
-            original_transactions_df,
-            ignored_row_indices,
-            ignored_reasons,
-            has_errors,
-            has_warnings,
-            original_to_cleaned_header_map,  # Return map on error
-        )
-    except TypeError as e:
-        logging.error(f"Type error during cleaning checks: {e}")
-        has_errors = True
-        return (
-            None,
-            original_transactions_df,
-            ignored_row_indices,
-            ignored_reasons,
-            has_errors,
-            has_warnings,
-            original_to_cleaned_header_map,  # Return map on error
-        )
-    except Exception as e:
-        logging.exception(f"CRITICAL ERROR during data cleaning helper")
-        has_errors = True
-        return (
-            None,
-            original_transactions_df,
-            ignored_row_indices,
-            ignored_reasons,
-            has_errors,
-            has_warnings,
-            original_to_cleaned_header_map,  # Return map on error
-        )
-    # --- End Refined Exception Handling ---
+            for fmt in common_formats:
+                try:
+                    parsed_dates.loc[idx] = datetime.strptime(cleaned_date_str, fmt)
+                    break  # Stop if successfully parsed
+                except (ValueError, TypeError):
+                    continue  # Try next format
+            # If still NaT after trying all formats, it will remain NaT
+    return parsed_dates
 
 
-@profile
 def load_and_clean_transactions(
-    transactions_csv_file: str,
-    account_currency_map: Dict,
+    source_path: str,  # Can be CSV path or DB path (though DB path not directly used here yet)
+    account_currency_map: Dict[str, str],
     default_currency: str,
+    is_db_source: bool = False,  # ADDED: Flag to indicate if source is DB
 ) -> Tuple[
     Optional[pd.DataFrame],
     Optional[pd.DataFrame],
@@ -803,154 +254,402 @@ def load_and_clean_transactions(
     Dict[str, str],
 ]:
     """
-    Loads transactions, trying a Feather cache first, then falling back to CSV.
-    Caches the cleaned DataFrame to Feather format if loaded from CSV.
+    Loads transaction data, cleans it, and standardizes column names and data types.
+    Primarily loads from SQLite DB if available and populated.
+    Falls back to CSV loading/migration if DB is empty and CSV path is valid.
+
+    Args:
+        source_path (str): Path to the data source. If `is_db_source` is True, this is the DB path.
+                           Otherwise, it's the CSV path.
+        account_currency_map (Dict[str, str]): Mapping of account names to their local currencies.
+        default_currency (str): Default currency to use if not found.
+        is_db_source (bool): True if `source_path` refers to an SQLite database.
+
+    Returns:
+        Tuple containing:
+        - all_transactions_df (Optional[pd.DataFrame]): Cleaned DataFrame of all transactions.
+        - original_transactions_df (Optional[pd.DataFrame]): DataFrame representing the raw data loaded
+          (either from DB or CSV before some cleaning steps, primarily for ignored rows context).
+        - ignored_indices (Set[int]): Set of 'original_index' values from rows skipped.
+        - ignored_reasons (Dict[int, str]): Maps 'original_index' to reason for skipping.
+        - has_errors (bool): True if critical errors occurred.
+        - has_warnings (bool): True if non-critical warnings occurred.
+        - original_to_cleaned_header_map (Dict[str,str]): Map of original CSV headers to cleaned names.
+                                                          Empty if loaded from DB.
     """
-    if not FEATHER_CACHE_ENABLED:
-        logging.info("Feather cache is disabled. Loading directly from CSV.")
-        return _load_and_clean_from_csv_actual(
-            transactions_csv_file, account_currency_map, default_currency
-        )
+    logging.info(
+        f"Data Loader: Starting load from {'DB' if is_db_source else 'CSV'}: {source_path}"
+    )
+    has_errors = False
+    has_warnings = False
+    ignored_indices: Set[int] = set()
+    ignored_reasons: Dict[int, str] = {}
+    original_to_cleaned_header_map: Dict[str, str] = {}  # For CSV context
+    raw_df_for_ignored_context: Optional[pd.DataFrame] = None
 
-    feather_cache_path = get_feather_cache_path(transactions_csv_file)
+    db_conn = None
+    loaded_from_db = False
+
+    if is_db_source and DB_UTILS_AVAILABLE:
+        db_conn = initialize_database(source_path)  # source_path is db_path
+        if db_conn:
+            df, success = load_all_transactions_from_db(
+                db_conn, account_currency_map, default_currency
+            )  # MODIFIED: Pass map and default
+            if success and df is not None and not df.empty:
+                raw_df_for_ignored_context = (
+                    df.copy()
+                )  # DB data is already fairly clean
+                # `original_index` is already the DB `id`
+                # `Date` is already parsed to datetime by load_all_transactions_from_db
+                # Numeric types are also handled by load_all_transactions_from_db
+                loaded_from_db = True
+                logging.info(
+                    f"Successfully loaded {len(df)} transactions from database."
+                )
+            elif success and (df is None or df.empty):
+                logging.info(
+                    "Database is empty or load_all_transactions_from_db returned no data. Will check for CSV."
+                )
+                raw_df_for_ignored_context = pd.DataFrame()  # Ensure it's an empty DF
+            else:  # Load failed
+                logging.error(
+                    "Failed to load transactions from database. Will check for CSV."
+                )
+                has_errors = True  # Mark as error if DB load explicitly fails
+                raw_df_for_ignored_context = pd.DataFrame()
+        else:  # DB connection failed
+            logging.error(
+                f"Failed to connect to database at {source_path}. Will check for CSV."
+            )
+            has_errors = True  # Mark as error if DB connection fails
+            raw_df_for_ignored_context = pd.DataFrame()
+
     if (
-        feather_cache_path is None
-    ):  # Should not happen if QStandardPaths works or fallback is used
-        logging.error(
-            "Could not determine Feather cache path. Loading directly from CSV."
-        )
-        return _load_and_clean_from_csv_actual(
-            transactions_csv_file, account_currency_map, default_currency
-        )
-
-    # Initialize map for cache loading case
-    original_to_cleaned_header_map: Dict[str, str] = {}
-
-    if os.path.exists(feather_cache_path) and os.path.exists(transactions_csv_file):
-        try:
-            csv_mtime = os.path.getmtime(transactions_csv_file)
-            cache_mtime = os.path.getmtime(feather_cache_path)
-
-            if cache_mtime >= csv_mtime:  # Use >= to be safe if mtimes are identical
+        not loaded_from_db
+    ):  # If DB load failed, or DB was empty, or not a DB source initially
+        if is_db_source:  # This means DB was specified but load failed or was empty
+            logging.info(
+                f"DB source specified but no data loaded. Checking for CSV at '{source_path}' (assuming it might be a CSV for migration)."
+            )
+            # The source_path here is problematic if it was a DB path. We need the CSV path.
+            # This function's design needs to be clearer about which path is which.
+            # For now, let's assume if is_db_source=True and loaded_from_db=False,
+            # we expect a CSV to be at a *configured default CSV path* for migration,
+            # NOT at the `source_path` which was the DB path.
+            # This part of the logic needs refinement based on how the GUI calls it.
+            # TEMPORARY: If DB source fails, we don't automatically load CSV here.
+            # The GUI should handle the "DB empty, CSV exists, want to migrate?" flow.
+            # So, if is_db_source and not loaded_from_db, we consider it an error or empty state.
+            if not has_errors:  # If DB was just empty, not an error yet
                 logging.info(
-                    f"Loading cleaned transactions from Feather cache: {feather_cache_path}"
+                    "Database is empty. No CSV migration attempted by data_loader directly."
                 )
-                cleaned_df = pd.read_feather(feather_cache_path)
+            # raw_df_for_ignored_context is already pd.DataFrame() or None
+            # Fall through to the CSV loading section only if is_db_source was False.
+        # else: # This means is_db_source was False, so source_path IS the CSV path
 
-                # Ensure 'original_index' column exists, as it's crucial.
-                # If loading from an older cache that didn't save it, this is a fallback.
-                if "original_index" not in cleaned_df.columns and not cleaned_df.empty:
-                    logging.warning(
-                        "Feather cache missing 'original_index'. Re-adding based on current index. Cache might be from an older version or save process."
-                    )
-                    cleaned_df["original_index"] = cleaned_df.index
-
-                # When loading from cache, we assume it's already cleaned and validated from a previous CSV load.
-                # We don't have the original headers directly from the cache.
-                # We can reconstruct a basic map based on the standard column mapping.
-                # This might not be perfect if the user's original headers were non-standard
-                # but it's the best we can do without re-reading the CSV.
-                standard_column_mapping = {
-                    "Date (MMM DD, YYYY)": "Date",
-                    "Transaction Type": "Type",
-                    "Stock / ETF Symbol": "Symbol",
-                    "Quantity of Units": "Quantity",
-                    "Amount per unit": "Price/Share",
-                    "Total Amount": "Total Amount",
-                    "Fees": "Commission",
-                    "Split Ratio (new shares per old share)": "Split Ratio",
-                    "Investment Account": "Account",
-                    "Note": "Note",
-                }
-                # If the cached DataFrame has cleaned headers, map them to themselves.
-                # If it somehow has verbose headers (less likely for a cleaned cache), map verbose to cleaned.
-                for col_in_cache in cleaned_df.columns:
-                    found_match = False
-                    for verbose_orig, cleaned_std in standard_column_mapping.items():
-                        if (
-                            col_in_cache == cleaned_std
-                        ):  # Cache has a known cleaned header
-                            original_to_cleaned_header_map[verbose_orig] = (
-                                cleaned_std  # Map its verbose original to it
-                            )
-                            original_to_cleaned_header_map[cleaned_std] = (
-                                cleaned_std  # And map itself to itself
-                            )
-                            found_match = True
-                            break
-                        elif (
-                            col_in_cache == verbose_orig.strip()
-                        ):  # Cache has a known verbose header
-                            original_to_cleaned_header_map[verbose_orig] = cleaned_std
-                            found_match = True
-                            break
-                    if (
-                        not found_match
-                        and col_in_cache not in standard_column_mapping.values()
-                    ):  # Custom column
-                        original_to_cleaned_header_map[col_in_cache] = col_in_cache
-
-                logging.debug(
-                    f"Reconstructed Original to Cleaned Header Map from standard mapping for cache load: {original_to_cleaned_header_map}"
-                )
-
-                # 'original_transactions_df' can be a copy of the cleaned_df for consistency in return type.
-                # Ignored indices/reasons for *this specific load operation* are empty because it's from cache.
-                # Overall ignored rows from other processing steps will still be handled by the caller.
+        if (
+            not is_db_source
+        ):  # Only proceed with CSV logic if it was explicitly a CSV source
+            logging.info(f"Loading from CSV: {source_path}")
+            if not os.path.exists(source_path):
+                logging.error(f"Transactions CSV file not found: {source_path}")
                 return (
-                    cleaned_df,
-                    cleaned_df.copy(),
-                    set(),
-                    {},
-                    False,
-                    False,
-                    original_to_cleaned_header_map,  # Return the reconstructed map
+                    None,
+                    None,
+                    ignored_indices,
+                    ignored_reasons,
+                    True,
+                    has_warnings,
+                    original_to_cleaned_header_map,
                 )
-            else:
+
+            try:
+                # Read raw CSV for ignored rows context, keeping original headers
+                # Keep all columns initially to allow user to see full ignored row
+                raw_df_for_ignored_context = pd.read_csv(
+                    source_path, dtype=str, keep_default_na=False, skipinitialspace=True
+                )
+                if raw_df_for_ignored_context.empty and not list(
+                    raw_df_for_ignored_context.columns
+                ):
+                    logging.warning(
+                        f"CSV file '{source_path}' is empty or has no headers."
+                    )
+                    # Return empty but valid structure
+                    return (
+                        pd.DataFrame(columns=EXPECTED_CLEANED_COLUMNS),
+                        pd.DataFrame(),
+                        set(),
+                        {},
+                        False,
+                        True,
+                        {},
+                    )
+
+                raw_df_for_ignored_context["original_index"] = (
+                    raw_df_for_ignored_context.index
+                )  # Add original_index based on CSV row order
+
+                # Now, process for the main df (map headers, clean data)
+                # Reload or use a copy for processing to avoid altering raw_df_for_ignored_context too much
+                df_processing = raw_df_for_ignored_context.copy()
+
+                # 1. Map headers and select expected columns
+                df_processed, original_to_cleaned_applied_map_csv = (
+                    _map_headers_and_drop_unwanted(
+                        df_processing,
+                        COLUMN_MAPPING_CSV_TO_INTERNAL,
+                        EXPECTED_CLEANED_COLUMNS,
+                    )
+                )
+                original_to_cleaned_header_map = (
+                    original_to_cleaned_applied_map_csv  # Store this for GUI
+                )
+
+                if df_processed.empty and not raw_df_for_ignored_context.empty:
+                    logging.warning(
+                        f"No columns mapped to expected standard names from CSV: {source_path}. Check headers."
+                    )
+                    # Keep raw_df_for_ignored_context for potential display of all rows as "ignored"
+                    for idx in raw_df_for_ignored_context.index:
+                        ignored_indices.add(idx)
+                        ignored_reasons[idx] = "CSV Header Mapping Failed"
+                    has_warnings = True
+                    # Return the raw_df as 'all_transactions_df' so GUI can show it in ignored log
+                    return (
+                        raw_df_for_ignored_context,
+                        raw_df_for_ignored_context,
+                        ignored_indices,
+                        ignored_reasons,
+                        has_errors,
+                        has_warnings,
+                        original_to_cleaned_header_map,
+                    )
+
+                df = df_processed  # Use the processed DataFrame from here
                 logging.info(
-                    f"Feather cache '{feather_cache_path}' is older than CSV. Reloading from CSV."
+                    f"Loaded {len(df)} rows from CSV '{source_path}'. Mapped headers."
                 )
-        except FileNotFoundError:  # Should be caught by os.path.exists, but defensive
-            logging.warning(
-                f"Cache or CSV file disappeared during mtime check. Reloading from CSV."
+
+            except pd.errors.EmptyDataError:
+                logging.warning(f"Transactions CSV file is empty: {source_path}")
+                return (
+                    pd.DataFrame(columns=EXPECTED_CLEANED_COLUMNS),
+                    pd.DataFrame(),
+                    ignored_indices,
+                    ignored_reasons,
+                    has_errors,
+                    True,
+                    original_to_cleaned_header_map,
+                )
+            except Exception as e:
+                logging.error(
+                    f"Error reading or initially processing CSV file {source_path}: {e}"
+                )
+                return (
+                    None,
+                    None,
+                    ignored_indices,
+                    ignored_reasons,
+                    True,
+                    has_warnings,
+                    original_to_cleaned_header_map,
+                )
+        else:  # is_db_source was true but no data loaded
+            df = pd.DataFrame()  # Start with an empty DF if DB load failed or was empty
+            if not raw_df_for_ignored_context:  # Ensure it's an empty DF if not set
+                raw_df_for_ignored_context = pd.DataFrame()
+            # No original_to_cleaned_header_map from DB source
+
+    # --- Common Cleaning Steps (apply to df loaded from either DB or CSV) ---
+    # Ensure df is a DataFrame, even if empty from failed load attempts above
+    if not isinstance(df, pd.DataFrame):
+        df = pd.DataFrame()  # Default to empty if something went very wrong
+        if not has_errors:  # If not already marked as error, this is a new problem
+            logging.error(
+                "DataFrame `df` is not a pandas DataFrame after load attempts."
             )
-        except Exception as e:
+            has_errors = True
+
+    # If df is empty at this point, can return early
+    if df.empty:
+        logging.info("No transactions to process after loading stage.")
+        # raw_df_for_ignored_context should hold original CSV data if loaded, or empty if DB was empty/failed
+        return (
+            df,
+            raw_df_for_ignored_context,
+            ignored_indices,
+            ignored_reasons,
+            has_errors,
+            has_warnings,
+            original_to_cleaned_header_map,
+        )
+
+    # --- Add 'original_index' if it's missing (should be present from DB or CSV raw load) ---
+    if "original_index" not in df.columns:
+        if not df.empty:  # Only add if df is not empty
+            df["original_index"] = df.index  # Fallback if missing
             logging.warning(
-                f"Error reading from Feather cache '{feather_cache_path}': {e}. Will load from CSV."
+                "Added 'original_index' from DataFrame index as it was missing."
+            )
+            has_warnings = True
+        elif (
+            raw_df_for_ignored_context is not None
+            and "original_index" in raw_df_for_ignored_context.columns
+        ):
+            # If df is empty but raw_df has original_index, this is fine for ignored context.
+            pass
+        else:  # df is empty and raw_df doesn't have it either
+            if (
+                raw_df_for_ignored_context is not None
+                and not raw_df_for_ignored_context.empty
+            ):
+                raw_df_for_ignored_context["original_index"] = (
+                    raw_df_for_ignored_context.index
+                )
+
+    # --- Ensure all EXPECTED_CLEANED_COLUMNS exist, add if missing (with NaN/None) ---
+    for col in EXPECTED_CLEANED_COLUMNS:
+        if col not in df.columns:
+            df[col] = pd.NA  # Use pd.NA for broader NA compatibility
+            logging.debug(f"Added missing expected column '{col}' to DataFrame.")
+
+    # --- Data Type Conversions and Cleaning ---
+    # Date Parsing (critical)
+    if "Date" in df.columns:
+        if not pd.api.types.is_datetime64_any_dtype(
+            df["Date"]
+        ):  # If not already datetime (e.g. from DB)
+            df["Date"] = _parse_date_robustly(df["Date"])
+        # Store rows that failed date parsing
+        failed_date_parse_mask = df["Date"].isna()
+        if failed_date_parse_mask.any():
+            for idx in df[failed_date_parse_mask].index:
+                original_idx_val = df.loc[idx, "original_index"]
+                ignored_indices.add(original_idx_val)
+                ignored_reasons[original_idx_val] = "Invalid or Unparseable Date"
+            df = df[~failed_date_parse_mask].copy()  # Keep only rows with valid dates
+            logging.warning(
+                f"Removed {failed_date_parse_mask.sum()} rows due to unparseable dates."
+            )
+            has_warnings = True
+    else:  # Date column is fundamental
+        logging.error(
+            "CRITICAL: 'Date' column is missing. Cannot proceed with processing."
+        )
+        # Mark all rows as ignored if Date is missing
+        if "original_index" in df.columns:
+            for original_idx_val in df["original_index"].tolist():
+                ignored_indices.add(original_idx_val)
+                ignored_reasons[original_idx_val] = "Missing Date Column"
+        return (
+            df.iloc[0:0],
+            raw_df_for_ignored_context,
+            ignored_indices,
+            ignored_reasons,
+            True,
+            has_warnings,
+            original_to_cleaned_header_map,
+        )
+
+    # Numeric Conversions (Quantity, Price/Share, Total Amount, Commission, Split Ratio)
+    numeric_cols = [
+        "Quantity",
+        "Price/Share",
+        "Total Amount",
+        "Commission",
+        "Split Ratio",
+    ]
+    for col in numeric_cols:
+        if col in df.columns:
+            # Store original values before conversion for more precise error reporting
+            original_values_for_error = df[col].copy()
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+            # Log rows where numeric conversion failed (became NaN) but original was not NaN/empty
+            # errors='coerce' already turns unconvertible to NaN
+            conversion_failed_mask = (
+                df[col].isna()
+                & original_values_for_error.notna()
+                & (original_values_for_error != "")
+            )
+            if conversion_failed_mask.any():
+                for idx in df[conversion_failed_mask].index:
+                    original_idx_val = df.loc[idx, "original_index"]
+                    # Don't add to ignored_indices here if the field is optional (e.g. Split Ratio for Buy)
+                    # Portfolio_logic will handle missing essential numerics per transaction type.
+                    # Just log a warning.
+                    logging.warning(
+                        f"Row {original_idx_val}: Could not convert '{col}' value '{original_values_for_error.loc[idx]}' to numeric. Set to NaN."
+                    )
+                    # ignored_reasons[original_idx_val] = f"Invalid numeric value for {col}: {original_values_for_error.loc[idx]}" # Optional: add to reasons
+                has_warnings = True
+
+    # Text Column Cleaning (strip whitespace, ensure string type)
+    text_cols = ["Type", "Symbol", "Account", "Note", "Local Currency"]
+    for col in text_cols:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .astype(str)
+                .str.strip()
+                .replace("nan", "", regex=False)
+                .replace("None", "", regex=False)
             )
 
-    # If cache not used, doesn't exist, is older, or failed to load:
-    logging.info(f"Loading and cleaning transactions from CSV: {transactions_csv_file}")
-    (
-        all_transactions_df,
-        original_transactions_df,
-        ignored_indices_load,
-        ignored_reasons_load,
-        err_load,
-        warn_load,
-        original_to_cleaned_header_map,  # Get the map from the actual load
-    ) = _load_and_clean_from_csv_actual(
-        transactions_csv_file, account_currency_map, default_currency
+    # --- Local Currency Assignment (crucial) ---
+    if (
+        "Local Currency" not in df.columns
+        or df["Local Currency"].isin(["", None, np.nan, pd.NA]).all()
+    ):
+        logging.info(
+            "'Local Currency' column missing or empty. Assigning based on account_currency_map."
+        )
+        df["Local Currency"] = (
+            df["Account"].map(account_currency_map).fillna(default_currency)
+        )
+        has_warnings = True  # Adding this column based on map is a "fix"
+    else:  # Local Currency column exists, fill blanks
+        is_empty_local_currency = df["Local Currency"].isin(["", None, np.nan, pd.NA])
+        # --- ADDED: Also check for the string "<NA>" specifically ---
+        if pd.api.types.is_string_dtype(df["Local Currency"]):
+            is_empty_local_currency |= (
+                df["Local Currency"].astype(str).str.upper().str.strip() == "<NA>"
+            )
+        # --- END ADDED ---
+        if is_empty_local_currency.any():
+            df.loc[is_empty_local_currency, "Local Currency"] = (
+                df.loc[is_empty_local_currency, "Account"]
+                .map(account_currency_map)
+                .fillna(default_currency)
+            )
+            logging.info(
+                f"Filled {is_empty_local_currency.sum()} missing Local Currency values."
+                # has_warnings is already True if this block is entered
+            )
+            has_warnings = True
+    df["Local Currency"] = df["Local Currency"].str.upper()  # Standardize to uppercase
+
+    # Ensure `original_transactions_df` for context of ignored rows.
+    # If loaded from DB, `raw_df_for_ignored_context` is already set.
+    # If from CSV, `raw_df_for_ignored_context` holds the raw CSV read.
+    # This df should have 'original_index'.
+    final_original_df_for_context = (
+        raw_df_for_ignored_context
+        if raw_df_for_ignored_context is not None
+        else pd.DataFrame()
     )
 
-    if not err_load and all_transactions_df is not None:
-        try:
-            logging.info(
-                f"Saving cleaned transactions to Feather cache: {feather_cache_path}"
-            )
-            # Ensure 'original_index' is present before saving. It should be added by _load_and_clean_from_csv_actual.
-            all_transactions_df.to_feather(feather_cache_path)
-        except Exception as e:
-            logging.warning(
-                f"Error writing to Feather cache '{feather_cache_path}': {e}"
-            )
-
+    logging.info(
+        f"Data loading and cleaning finished. Errors: {has_errors}, Warnings: {has_warnings}, Ignored: {len(ignored_indices)}"
+    )
     return (
-        all_transactions_df,
-        original_transactions_df,
-        ignored_indices_load,
-        ignored_reasons_load,
-        err_load,
-        warn_load,
-        original_to_cleaned_header_map,  # Return the map from the actual load
+        df,
+        final_original_df_for_context,
+        ignored_indices,
+        ignored_reasons,
+        has_errors,
+        has_warnings,
+        original_to_cleaned_header_map,
     )

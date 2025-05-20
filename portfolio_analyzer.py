@@ -148,7 +148,17 @@ def _process_transactions_to_holdings(
             symbol = str(row["Symbol"]).strip()
             account = str(row["Account"]).strip()
             tx_type = str(row["Type"]).lower().strip()
+            # --- ADDED: Robust cleaning for local_currency_from_row ---
             local_currency_from_row = str(row["Local Currency"]).strip()
+            if (
+                not local_currency_from_row
+                or local_currency_from_row.upper() in ["<NA>", "NAN", "NONE", "N/A"]
+                or len(local_currency_from_row) != 3
+            ):
+                local_currency_from_row = default_currency  # default_currency is an arg
+            else:
+                local_currency_from_row = local_currency_from_row.upper()
+            # --- END ADDED ---
             tx_date = row["Date"].date()
             qty = pd.to_numeric(row.get("Quantity"), errors="coerce")
             price_local = pd.to_numeric(row.get("Price/Share"), errors="coerce")

@@ -42,6 +42,7 @@ import numpy as np
 import json
 import traceback
 import csv
+import sqlite3  # Added import for sqlite3
 import shutil
 
 # --- Add project root to sys.path ---
@@ -69,7 +70,7 @@ import logging
 
 # --- Configure Logging Globally (as early as possible) ---
 # Set the desired global level here (e.g., logging.INFO, logging.DEBUG)
-LOGGING_LEVEL = logging.WARNING  # Or logging.DEBUG for more detail
+LOGGING_LEVEL = logging.DEBUG  # Or logging.DEBUG for more detail
 
 logging.basicConfig(
     level=LOGGING_LEVEL,
@@ -340,7 +341,11 @@ except Exception as import_err:
 
 # --- ADDED: Import the new CSV utility ---
 try:
-    from csv_utils import convert_csv_headers_to_cleaned_format
+    from csv_utils import (
+        convert_csv_headers_to_cleaned_format,
+        DESIRED_CLEANED_COLUMN_ORDER,
+        STANDARD_ORIGINAL_TO_CLEANED_MAP as COLUMN_MAPPING_CSV_TO_INTERNAL,  # Alias for use in commented block
+    )
 
     CSV_UTILS_AVAILABLE = True
 except ImportError:
@@ -348,6 +353,31 @@ except ImportError:
         "ERROR: csv_utils.py not found. CSV header standardization will not be available."
     )
     CSV_UTILS_AVAILABLE = False
+
+    # Define fallbacks for the imported names if csv_utils is not available
+    def convert_csv_headers_to_cleaned_format(*args, **kwargs) -> Tuple[bool, str]:
+        logging.error(
+            "Fallback convert_csv_headers_to_cleaned_format called because csv_utils is unavailable."
+        )
+        return False, "CSV utility not available."
+
+    DESIRED_CLEANED_COLUMN_ORDER: List[str] = []
+    COLUMN_MAPPING_CSV_TO_INTERNAL: Dict[str, str] = {}
+
+# --- ADDED: db_utils import ---
+from db_utils import (
+    DB_FILENAME,
+    get_database_path,
+    initialize_database,
+    add_transaction_to_db,
+    update_transaction_in_db,
+    delete_transaction_from_db,
+    migrate_csv_to_db,
+    check_if_db_empty_and_csv_exists,
+    load_all_transactions_from_db,
+)
+
+# --- END ADDED ---
 
 
 # --- Constants ---
@@ -518,18 +548,17 @@ class WorkerSignals(QObject):
     finished = Signal()
     progress = Signal(int)  # <-- ADDED: Percentage complete (0-100)
     error = Signal(str)
-    # Args: summary_metrics, holdings_df, ignored_df, account_metrics, index_quotes, historical_data_df
-    result = Signal(  # MODIFIED: 10 arguments
-        dict,  # summary_metrics
-        pd.DataFrame,  # holdings_df
-        dict,  # account_metrics
-        dict,  # index_quotes
-        pd.DataFrame,  # full_historical_data_df (FULL daily data with gains)
-        dict,  # hist_prices_adj (raw adjusted prices)
-        dict,  # hist_fx (raw fx rates)
-        set,  # combined_ignored_indices
-        dict,  # combined_ignored_reasons
-        pd.DataFrame,  # dividend_history_df  <-- NEW
+    result = Signal(
+        dict,
+        pd.DataFrame,
+        dict,
+        dict,
+        pd.DataFrame,
+        dict,
+        dict,
+        set,
+        dict,
+        pd.DataFrame,
     )
 
     fundamental_data_ready = Signal(str, dict)  # display_symbol, data_dict
@@ -614,11 +643,13 @@ class PortfolioCalculatorWorker(QRunnable):
 
         try:
             # --- 1. Run Portfolio Summary Calculation ---
+            logging.info("WORKER: Starting portfolio summary calculation...")
             # (No changes needed here, it uses self.portfolio_fn)
             # Make a copy of portfolio_kwargs to modify for the portfolio_fn call
             portfolio_fn_kwargs = self.portfolio_kwargs.copy()
             # Remove the argument not expected by calculate_portfolio_summary
             # It's still available in self.portfolio_kwargs for extract_dividend_history
+            # --- ADDED: Log portfolio_fn_kwargs before call ---
             portfolio_fn_kwargs.pop("all_transactions_df_for_worker", None)
             try:
                 portfolio_fn_kwargs["manual_overrides_dict"] = (
@@ -630,6 +661,10 @@ class PortfolioCalculatorWorker(QRunnable):
                 portfolio_fn_kwargs["user_excluded_symbols"] = (
                     self.user_excluded_symbols
                 )  # Pass excluded symbols
+                logging.debug(
+                    f"WORKER: Calling portfolio_fn with args: {self.portfolio_args}, kwargs: {list(portfolio_fn_kwargs.keys())}"
+                )
+                # --- END ADDED ---
 
                 (
                     p_summary,
@@ -654,11 +689,18 @@ class PortfolioCalculatorWorker(QRunnable):
                 if isinstance(
                     portfolio_summary_metrics, dict
                 ):  # Add status if possible
+                    logging.debug(
+                        f"WORKER: Portfolio summary status: {portfolio_status}"
+                    )
                     portfolio_summary_metrics["status_msg"] = portfolio_status
+                logging.info(
+                    f"WORKER: Portfolio summary calculation finished. Status: {portfolio_status}"
+                )
 
             except Exception as port_e:
                 logging.error(
-                    f"--- Error during portfolio calculation in worker: {port_e} ---"
+                    f"WORKER: --- Error during portfolio calculation: {port_e} ---",
+                    exc_info=True,
                 )
                 traceback.print_exc()
                 portfolio_status = f"Error in Port. Calc: {port_e}"
@@ -669,8 +711,10 @@ class PortfolioCalculatorWorker(QRunnable):
                 combined_ignored_reasons = {}
 
             # --- 2. Fetch Index Quotes using MarketDataProvider ---
+            logging.info("WORKER: Fetching index quotes...")
             try:
                 logging.debug("DEBUG Worker: Fetching index quotes...")
+                logging.info("WORKER: Fetching index quotes...")
                 # --- Instantiate and call MarketDataProvider ---
                 if MARKET_PROVIDER_AVAILABLE:
                     market_provider = MarketDataProvider()
@@ -680,18 +724,25 @@ class PortfolioCalculatorWorker(QRunnable):
                     index_quotes = (
                         market_provider.get_index_quotes()
                     )  # Uses defaults from config
+                    logging.info(
+                        f"WORKER: Index quotes fetched ({len(index_quotes)} items)."
+                    )
                 else:
                     logging.error(
-                        "MarketDataProvider not available, cannot fetch index quotes."
+                        "WORKER: MarketDataProvider not available, cannot fetch index quotes."
                     )
                     index_quotes = {}
                 # --- End MarketDataProvider usage ---
                 logging.debug(
                     f"DEBUG Worker: Index quotes fetched ({len(index_quotes)} items)."
                 )
+                logging.info(
+                    f"WORKER: Index quotes fetched ({len(index_quotes)} items)."
+                )
             except Exception as idx_e:
                 logging.error(
-                    f"--- Error during index quote fetch in worker: {idx_e} ---"
+                    f"WORKER: --- Error during index quote fetch: {idx_e} ---",
+                    exc_info=True,
                 )
                 traceback.print_exc()
                 index_quotes = {}  # Reset on error
@@ -699,6 +750,7 @@ class PortfolioCalculatorWorker(QRunnable):
             # --- 3. Run Historical Performance Calculation ---
             # (No changes needed here, it uses self.historical_fn)
             try:
+                logging.info("WORKER: Starting historical performance calculation...")
                 current_historical_kwargs = self.historical_kwargs.copy()
                 if (
                     not HISTORICAL_FN_SUPPORTS_EXCLUDE
@@ -709,12 +761,14 @@ class PortfolioCalculatorWorker(QRunnable):
                 logging.debug(
                     f"DEBUG Worker: Calling historical_fn with kwargs keys: {list(current_historical_kwargs.keys())}"
                 )
+                # Extract the DataFrame to pass positionally
+                transactions_df_for_hist = current_historical_kwargs.pop(
+                    "all_transactions_df_cleaned", None
+                )
+
                 current_historical_kwargs["worker_signals"] = (
                     self.signals
-                )  # <-- PASS SIGNALS DOWN
-                current_historical_kwargs["all_transactions_df_cleaned"] = (
-                    self.portfolio_kwargs.get("all_transactions_df_for_worker")
-                )  # <-- PASS THE PRELOADED DF
+                )  # Pass signals
                 current_historical_kwargs["user_symbol_map"] = self.user_symbol_map
                 current_historical_kwargs["user_excluded_symbols"] = (
                     self.user_excluded_symbols
@@ -731,6 +785,7 @@ class PortfolioCalculatorWorker(QRunnable):
 
                 # MODIFIED: Unpack 4 items (full_daily_df, prices, fx, status)
                 full_hist_df, h_prices_adj, h_fx, hist_status = self.historical_fn(
+                    transactions_df_for_hist,  # Pass positionally
                     *self.historical_args,
                     **current_historical_kwargs,
                 )
@@ -748,11 +803,17 @@ class PortfolioCalculatorWorker(QRunnable):
                 if isinstance(
                     portfolio_summary_metrics, dict
                 ):  # Add status if possible
+                    logging.debug(
+                        f"WORKER: Historical performance status: {historical_status}"
+                    )
                     portfolio_summary_metrics["historical_status_msg"] = (
                         historical_status
                     )
                 logging.debug(
                     f"DEBUG Worker: Historical calculation finished. Status: {historical_status}"
+                )
+                logging.info(
+                    f"WORKER: Historical performance calculation finished. Status: {historical_status}"
                 )
 
             except ValueError as ve:
@@ -767,7 +828,8 @@ class PortfolioCalculatorWorker(QRunnable):
                 hist_fx = {}
             except Exception as hist_e:
                 logging.error(
-                    f"--- Error during historical performance calculation in worker: {hist_e} ---"
+                    f"WORKER: --- Error during historical performance calculation: {hist_e} ---",
+                    exc_info=True,
                 )
                 traceback.print_exc()
                 historical_status = f"Error in Hist. Calc: {hist_e}"
@@ -777,14 +839,16 @@ class PortfolioCalculatorWorker(QRunnable):
                 hist_fx = {}
 
             # --- 4. Extract Dividend History ---
+            logging.info("WORKER: Extracting dividend history...")
             try:
                 logging.debug("DEBUG Worker: Extracting dividend history...")
+                logging.info("WORKER: Extracting dividend history...")
                 # Ensure historical_fx_yf is available from the historical calculation step
                 # It should be in hist_fx if historical_fn ran successfully
                 if hist_fx:  # Check if hist_fx (which is historical_fx_yf) is populated
                     dividend_history_df = extract_dividend_history(
                         all_transactions_df=self.portfolio_kwargs.get(
-                            "all_transactions_df_for_worker"
+                            "all_transactions_df_cleaned"  # <-- CORRECTED KEY
                         ),  # Pass the full cleaned df
                         display_currency=self.portfolio_kwargs.get("display_currency"),
                         historical_fx_yf=hist_fx,  # Use FX data from historical calc
@@ -797,14 +861,18 @@ class PortfolioCalculatorWorker(QRunnable):
                     logging.debug(
                         f"DEBUG Worker: Dividend history extracted ({len(dividend_history_df)} records)."
                     )
+                    logging.info(
+                        f"WORKER: Dividend history extracted ({len(dividend_history_df)} records)."
+                    )
                 else:
                     logging.warning(
-                        "DEBUG Worker: Historical FX data not available, cannot extract dividend history accurately."
+                        "WORKER: Historical FX data not available, cannot extract dividend history accurately."
                     )
                     dividend_history_df = pd.DataFrame()
             except Exception as div_e:
                 logging.error(
-                    f"--- Error during dividend history extraction in worker: {div_e} ---"
+                    f"WORKER: --- Error during dividend history extraction: {div_e} ---",
+                    exc_info=True,
                 )
                 traceback.print_exc()
                 # Optionally, emit an error or set a status part
@@ -835,6 +903,9 @@ class PortfolioCalculatorWorker(QRunnable):
             )
 
             if portfolio_had_error or historical_had_error:
+                logging.warning(
+                    f"WORKER: Emitting error signal due to calculation issues. Overall status: {overall_status}"
+                )
                 self.signals.error.emit(overall_status)
 
             logging.debug(
@@ -857,40 +928,54 @@ class PortfolioCalculatorWorker(QRunnable):
                     f"WORKER EMIT: Dividend History Head:\n{dividend_history_df.head().to_string()}"
                 )
 
-            self.signals.result.emit(  # MODIFIED: Emit 10 args
-                portfolio_summary_metrics,
-                holdings_df,
-                account_metrics,
-                index_quotes,
-                full_historical_data_df,  # Emit the full daily data
-                hist_prices_adj,
-                hist_fx,
-                combined_ignored_indices,
-                combined_ignored_reasons,
-                dividend_history_df,  # <-- NEW
-            )
+            # MODIFIED: Emit result only if no critical errors in sub-parts
+            if not (portfolio_had_error or historical_had_error):
+                self.signals.result.emit(
+                    portfolio_summary_metrics,
+                    holdings_df,  # EMIT ACTUAL DATA
+                    account_metrics,
+                    index_quotes,
+                    full_historical_data_df,  # EMIT ACTUAL DATA
+                    hist_prices_adj,
+                    hist_fx,
+                    combined_ignored_indices,
+                    combined_ignored_reasons,
+                    dividend_history_df,  # EMIT ACTUAL DATA
+                )
+                logging.debug(
+                    "WORKER: Emitting result signal with actual calculated data."
+                )
+            else:
+                logging.warning(
+                    "WORKER: Skipped emitting result signal due to errors in calculation sub-parts."
+                )
+                # Ensure UI can still finish if error was emitted but not critical enough to stop worker
 
         except Exception as e:
             logging.error(f"--- Critical Error in Worker Thread run method: {e} ---")
             traceback.print_exc()
             overall_status = f"CritErr in Worker: {e}"
-            # --- EMIT DEFAULT/EMPTY VALUES on critical failure (9 args) ---
-            self.signals.result.emit(  # MODIFIED: Emit 10 args
-                {},
-                pd.DataFrame(),
-                {},
-                {},
-                pd.DataFrame(),
-                {},
-                {},
-                set(),
-                {},
-                pd.DataFrame(),
+            # --- EMIT DEFAULT/EMPTY VALUES on critical failure (10 args) ---
+            # For the test, we still emit the no-arg signal even on error in the try block
+            self.signals.result.emit(
+                {},  # portfolio_summary_metrics
+                pd.DataFrame(),  # holdings_df
+                {},  # account_metrics
+                {},  # index_quotes
+                pd.DataFrame(),  # full_historical_data_df
+                {},  # hist_prices_adj
+                {},  # hist_fx
+                set(),  # combined_ignored_indices
+                {},  # combined_ignored_reasons
+                pd.DataFrame(),  # dividend_history_df
+            )
+            logging.debug(
+                "WORKER: Emitted empty/default results due to critical worker error."
             )
             # --- END EMIT ---
             self.signals.error.emit(overall_status)
         finally:
-            logging.debug("DEBUG Worker: Emitting finished signal.")
+            logging.info("WORKER: Emitting finished signal.")
             self.signals.finished.emit()
 
 
@@ -2125,603 +2210,6 @@ class AccountCurrencyDialog(QDialog):
         return None  # Return None if Cancel was clicked
 
 
-class ManageTransactionsDialog(QDialog):
-    """Dialog to view, edit, and delete transactions from the source CSV."""
-
-    # Signal to notify main window to refresh after changes
-    data_changed = Signal()
-
-    def __init__(self, original_df: pd.DataFrame, csv_filepath: str, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Manage Transactions")
-        self.setMinimumSize(1000, 600)
-        self._parent_app = parent  # Store reference to main app
-        self._original_data = original_df.copy()  # Keep a local copy
-        self._csv_filepath = csv_filepath  # Needed for saving changes
-
-        layout = QVBoxLayout(self)
-
-        # --- Add filtering (optional but helpful) ---
-        filter_layout = QHBoxLayout()
-        filter_layout.addWidget(QLabel("Filter Symbol:"))
-        self.filter_symbol_edit = QLineEdit()
-        filter_layout.addWidget(self.filter_symbol_edit)
-        filter_layout.addWidget(QLabel("Account:"))
-        self.filter_account_edit = QLineEdit()
-        filter_layout.addWidget(self.filter_account_edit)
-        filter_button = QPushButton("Apply Filter")
-        filter_button.clicked.connect(self._apply_filter)
-        filter_layout.addWidget(filter_button)
-        clear_button = QPushButton("Clear Filter")
-        clear_button.clicked.connect(self._clear_filter)
-        filter_layout.addWidget(clear_button)
-        filter_layout.addStretch(1)
-        layout.addLayout(filter_layout)
-        # --- End filtering ---
-
-        self.table_view = QTableView()
-        self.table_view.setObjectName("ManageTransactionsTable")
-        # Use the original data with original column names
-        # MODIFIED: Use a copy and log_mode=True for general display
-        self.table_model = PandasModel(
-            self._original_data.copy(), parent=parent, log_mode=True
-        )
-        self.table_view.setModel(self.table_model)
-
-        self.table_view.setSelectionBehavior(QTableView.SelectRows)
-        self.table_view.setSelectionMode(
-            QTableView.SingleSelection
-        )  # Enforce single selection for Edit
-        self.table_view.setAlternatingRowColors(True)
-        self.table_view.setSortingEnabled(True)
-        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        self.table_view.verticalHeader().setVisible(False)
-        self.table_view.resizeColumnsToContents()
-        layout.addWidget(self.table_view)
-
-        button_layout = QHBoxLayout()
-        self.edit_button = QPushButton("Edit Selected")
-        self.delete_button = QPushButton("Delete Selected")
-        self.close_button = QPushButton("Close")
-        button_layout.addWidget(self.edit_button)
-        button_layout.addWidget(self.delete_button)
-        button_layout.addStretch(1)
-        button_layout.addWidget(self.close_button)
-        layout.addLayout(button_layout)
-
-        # Connections
-        self.edit_button.clicked.connect(self.edit_selected_transaction)
-        self.delete_button.clicked.connect(self.delete_selected_transaction)
-        self.close_button.clicked.connect(self.reject)  # Close button rejects
-
-        # Apply parent's style and font
-        if parent:
-            if hasattr(parent, "styleSheet"):
-                self.setStyleSheet(parent.styleSheet())
-            if hasattr(parent, "font"):
-                self.setFont(parent.font())
-
-    def _apply_filter(self):
-        """Filters the table view based on symbol/account input."""
-        symbol_filter_text = self.filter_symbol_edit.text().strip().upper()
-        account_filter_text = self.filter_account_edit.text().strip()
-        df_filtered = self._original_data.copy()
-
-        # Determine which symbol column to use for filtering
-        actual_symbol_col_name = None
-        if "Symbol" in df_filtered.columns:  # Prioritize cleaned name
-            actual_symbol_col_name = "Symbol"
-        elif (
-            "Stock / ETF Symbol" in df_filtered.columns
-        ):  # Fallback to original standard
-            actual_symbol_col_name = "Stock / ETF Symbol"
-
-        if symbol_filter_text and actual_symbol_col_name:
-            try:
-                # Ensure the column is treated as string for robust filtering
-                df_filtered = df_filtered[
-                    df_filtered[actual_symbol_col_name]
-                    .astype(str)
-                    .str.contains(symbol_filter_text, case=False, na=False)
-                ]
-            except Exception as e:
-                logging.warning(
-                    f"Error applying symbol filter on column '{actual_symbol_col_name}': {e}"
-                )
-        elif symbol_filter_text:  # If filter text is present but no column was found
-            logging.warning(
-                "Symbol filter text provided, but no known symbol column ('Symbol' or 'Stock / ETF Symbol') found in data."
-            )
-
-        # Determine which account column to use for filtering
-        actual_account_col_name = None
-        if "Account" in df_filtered.columns:  # Prioritize cleaned name
-            actual_account_col_name = "Account"
-        elif (
-            "Investment Account" in df_filtered.columns
-        ):  # Fallback to original standard
-            actual_account_col_name = "Investment Account"
-
-        if account_filter_text and actual_account_col_name:
-            try:
-                # Ensure the column is treated as string for robust filtering
-                df_filtered = df_filtered[
-                    df_filtered[actual_account_col_name]
-                    .astype(str)
-                    .str.contains(account_filter_text, case=False, na=False)
-                ]
-            except Exception as e:
-                logging.warning(
-                    f"Error applying account filter on column '{actual_account_col_name}': {e}"
-                )
-        elif account_filter_text:  # If filter text is present but no column was found
-            logging.warning(
-                "Account filter text provided, but no known account column ('Account' or 'Investment Account') found in data."
-            )
-
-        self.table_model.updateData(df_filtered)
-        self.table_view.resizeColumnsToContents()
-
-    def _clear_filter(self):
-        """Clears filters and shows all original data."""
-        self.filter_symbol_edit.clear()
-        self.filter_account_edit.clear()
-        self.table_model.updateData(self._original_data)
-        self.table_view.resizeColumnsToContents()
-
-    def get_selected_original_index(self) -> Optional[int]:
-        """
-        Gets the 'original_index' of the currently selected row in the table view.
-        Handles potential filtering/sorting by querying the model directly.
-        """
-        selected_indexes = self.table_view.selectionModel().selectedRows()
-        if not selected_indexes or len(selected_indexes) != 1:
-            logging.debug("get_selected_original_index: No single row selected.")
-            # Don't show a message box here, let the calling function handle it.
-            return None  # Indicate no valid selection
-
-        selected_view_index = selected_indexes[
-            0
-        ]  # This is the QModelIndex for the selected view row
-        source_model = self.table_model  # Get the model associated with the table
-
-        # --- Find the column index for 'original_index' in the model's data ---
-        try:
-            # Use the actual DataFrame currently backing the model to find the column
-            original_index_col_name = "original_index"  # The column name we stored
-            if original_index_col_name not in source_model._data.columns:
-                logging.error(
-                    f"'{original_index_col_name}' column not found in the ManageTransactionsDialog model's data."
-                )
-                QMessageBox.warning(
-                    # MODIFIED: Use self as parent for QMessageBox
-                    self,
-                    "Internal Error",
-                    f"Required column '{original_index_col_name}' is missing.",
-                )
-                return None
-
-            original_index_col_idx = source_model._data.columns.get_loc(
-                original_index_col_name
-            )
-
-            # --- Create a QModelIndex specifically for the 'original_index' column of the selected row ---
-            target_model_index = source_model.index(
-                selected_view_index.row(), original_index_col_idx
-            )
-
-            # --- Ask the model for the data at that specific index ---
-            # Using DisplayRole should give us the value as displayed (likely a string number)
-            original_index_val = source_model.data(target_model_index, Qt.DisplayRole)
-
-            if original_index_val is None:
-                logging.warning(
-                    f"Model returned None for original_index at view row {selected_view_index.row()}, col idx {original_index_col_idx}"
-                )
-                QMessageBox.warning(
-                    self,
-                    "Selection Error",
-                    "Could not retrieve data for the selected row's original index.",
-                )
-                return None
-
-            # --- Convert the retrieved value to an integer ---
-            try:
-                return int(original_index_val)
-            except (ValueError, TypeError) as e:
-                logging.error(
-                    f"Could not convert retrieved original_index '{original_index_val}' to int: {e}"
-                )
-                QMessageBox.warning(
-                    self,
-                    "Data Error",
-                    f"Invalid original index value found for selected row: {original_index_val}",
-                )
-                return None
-
-        except (AttributeError, KeyError, IndexError) as e:
-            logging.error(
-                f"Error accessing model data/columns in get_selected_original_index: {e}"
-            )
-            QMessageBox.warning(
-                self, "Internal Error", "Error accessing table model data."
-            )
-            return None
-        except Exception as e:  # Catch any other unexpected errors
-            logging.exception("Unexpected error in get_selected_original_index")
-            QMessageBox.critical(
-                self,
-                "Unexpected Error",
-                "An unexpected error occurred while getting the selected row index.",
-            )
-            return None
-
-    def _format_for_edit_dialog(self, value, precision=8) -> str:
-        """Helper to format numeric values from CSV for QLineEdit display."""
-        if pd.isna(value) or value == "":
-            return ""
-        try:
-            float_val = float(value)
-            # Format with desired precision, remove trailing zeros/decimal if integer
-            # e.g., 10.00 -> "10", 10.50 -> "10.5"
-            formatted_str = f"{float_val:.{precision}f}".rstrip("0").rstrip(".")
-            return (
-                formatted_str if formatted_str else "0"
-            )  # Return "0" if it became empty (e.g. "0.00" -> "0")
-        except (ValueError, TypeError):
-            # If it's not a number (e.g. already a string like '$CASH' or malformed), return as is
-            return str(value)
-
-    @Slot()
-    def edit_selected_transaction(self):
-        original_index = self.get_selected_original_index()
-        if original_index is None:
-            QMessageBox.warning(
-                self, "Selection Error", "Please select a single transaction to edit."
-            )
-            return
-
-        # Find the row data from the original full dataset
-        try:
-            # Get the specific row from the DataFrame
-            transaction_row_series = self._original_data[
-                self._original_data["original_index"] == original_index
-            ].iloc[
-                0
-            ]  # This is a pandas Series
-
-            # --- ADDED: Log the Series ---
-            logging.debug(
-                f"--- Transaction Series for original_index {original_index} (before to_dict): ---"
-            )
-            logging.debug(
-                f"Series Data:\n{transaction_row_series.to_string()}"
-            )  # Log the full series content
-            logging.debug(
-                f"  Series index (should be original CSV headers): {transaction_row_series.index.tolist()}"
-            )
-            logging.debug(f"  Series values: {transaction_row_series.values.tolist()}")
-            # --- END ADDED ---
-
-            transaction_dict_for_dialog = transaction_row_series.to_dict()
-        except (IndexError, KeyError) as e:
-            logging.error(
-                f"Error finding transaction row for original_index {original_index}: {e}"
-            )
-            QMessageBox.warning(
-                self, "Data Error", "Could not find the selected transaction data."
-            )
-            return
-
-        # --- ADDED: Log the raw data dictionary immediately after retrieval ---
-        logging.debug(
-            f"--- Full transaction_dict_for_dialog for original_index {original_index}: ---"
-        )
-        for key, value in transaction_dict_for_dialog.items():
-            logging.debug(f"  Dict Key: '{key}', Value: '{value}', Type: {type(value)}")
-        logging.debug(
-            f"--- Raw transaction data retrieved for original_index {original_index}: {transaction_dict_for_dialog} ---"
-        )
-
-        # Reuse AddTransactionDialog
-        # Need the list of existing accounts for the dropdown
-        accounts = (
-            list(self._original_data["Investment Account"].unique().tolist())
-            if "Investment Account" in self._original_data.columns
-            else []
-        )
-        edit_dialog = AddTransactionDialog(existing_accounts=accounts, parent=self)
-        edit_dialog.setWindowTitle("Edit Transaction")
-
-        # --- Pre-fill the dialog ---
-        try:
-            logging.debug(f"--- Starting Pre-fill for Edit Dialog ---")
-            # --- ADDED: Temporarily disconnect auto-calculation signals ---
-            try:
-                edit_dialog.quantity_edit.textChanged.disconnect(
-                    edit_dialog._auto_calculate_total
-                )
-                edit_dialog.price_edit.textChanged.disconnect(
-                    edit_dialog._auto_calculate_total
-                )
-                logging.debug(
-                    "Temporarily disconnected auto-calculation signals for pre-fill."
-                )
-            except RuntimeError:  # Signals might not be connected if dialog is fresh
-                logging.debug(
-                    "Auto-calculation signals were not connected, no need to disconnect."
-                )
-            logging.debug(
-                f"Pre-filling edit dialog with data: {transaction_dict_for_dialog}"
-            )
-            logging.debug(f"CSV_DATE_FORMAT constant is: '{CSV_DATE_FORMAT}'")
-            edit_dialog.total_amount_locked_by_user = False  # Default to not locked
-
-            # Date
-            # Use the key that is actually in transaction_dict_for_dialog (cleaned name)
-            date_val_from_csv = transaction_dict_for_dialog.get("Date")
-            logging.debug(
-                f"  Date value from CSV dict: '{date_val_from_csv}' (type: {type(date_val_from_csv)})"
-            )
-            if pd.notna(date_val_from_csv) and date_val_from_csv:
-                try:
-                    # MODIFIED: Handle pandas Timestamp directly
-                    if isinstance(date_val_from_csv, pd.Timestamp):
-                        parsed_dt = date_val_from_csv.to_pydatetime()
-                        qdate = QDate(parsed_dt.year, parsed_dt.month, parsed_dt.day)
-                    elif isinstance(date_val_from_csv, (datetime, date)):
-                        qdate = QDate(
-                            date_val_from_csv.year,
-                            date_val_from_csv.month,
-                            date_val_from_csv.day,
-                        )
-                    else:  # Fallback to string parsing if it's not a Timestamp or datetime object
-                        date_str_for_parsing = str(date_val_from_csv)
-                        parsed_dt = datetime.strptime(
-                            date_str_for_parsing, CSV_DATE_FORMAT
-                        )
-                        qdate = QDate(parsed_dt.year, parsed_dt.month, parsed_dt.day)
-                    # END MODIFICATION
-
-                    if qdate.isValid():
-                        edit_dialog.date_edit.setDate(qdate)
-                        logging.debug(
-                            f"    Set date_edit to: {edit_dialog.date_edit.date().toString('yyyy-MM-dd')}"
-                        )
-                    else:
-                        logging.warning(
-                            f"    Parsed QDate '{qdate.toString()}' is invalid from date_str '{date_str_for_parsing}'."
-                        )  # date_str_for_parsing might be undefined here if timestamp path taken
-                except ValueError as e_date:
-                    logging.error(  # date_str_for_parsing might be undefined here
-                        f"    ValueError processing date value '{date_val_from_csv}': {e_date}"
-                    )
-                except Exception as e_date_other:
-                    logging.error(
-                        f"    Unexpected error processing date_str '{date_str_for_parsing}': {e_date_other}"
-                    )
-            else:
-                logging.warning("    Date string is missing, None, or NaN from dict.")
-            logging.debug(
-                f"  date_edit after attempt: {edit_dialog.date_edit.date().toString('yyyy-MM-dd')}"
-            )
-            # Type (match case-insensitively)
-            # Use the key that is actually in transaction_dict_for_dialog (cleaned name)
-            tx_type_val_from_csv = transaction_dict_for_dialog.get("Type")
-            tx_type_str = (
-                str(tx_type_val_from_csv)
-                if pd.notna(tx_type_val_from_csv) and tx_type_val_from_csv is not None
-                else ""
-            )
-            logging.debug(
-                f"  Transaction Type from dict: '{tx_type_str}' (original value from CSV: '{tx_type_val_from_csv}')"
-            )
-            original_type_index = edit_dialog.type_combo.currentIndex()
-            found_type = False
-            for i in range(edit_dialog.type_combo.count()):
-                if edit_dialog.type_combo.itemText(i).lower() == tx_type_str.lower():
-                    edit_dialog.type_combo.setCurrentIndex(i)
-                    logging.debug(
-                        f"  Set type_combo to index {i} ('{edit_dialog.type_combo.itemText(i)}')"
-                    )
-                    found_type = True
-                    break
-            if not found_type:
-                logging.warning(
-                    f"  Transaction type '{tx_type_str}' not found in combo box."
-                )
-            logging.debug(
-                f"  type_combo after attempt: '{edit_dialog.type_combo.currentText()}' (index: {edit_dialog.type_combo.currentIndex()})"
-            )
-
-            # Symbol
-            # Use the key that is actually in transaction_dict_for_dialog (cleaned name)
-            symbol_val_from_csv = transaction_dict_for_dialog.get("Symbol")
-            symbol_str_for_edit = (
-                str(symbol_val_from_csv)
-                if pd.notna(symbol_val_from_csv) and symbol_val_from_csv is not None
-                else ""
-            )
-            logging.debug(
-                f"  Symbol from dict: '{symbol_str_for_edit}' (original value from CSV: '{symbol_val_from_csv}')"
-            )
-            edit_dialog.symbol_edit.setText(symbol_str_for_edit)
-            logging.debug(
-                f"  symbol_edit after attempt: '{edit_dialog.symbol_edit.text()}'"
-            )
-            # ADDED: Log state after setting Symbol
-            logging.debug(
-                f"  Pre-fill state (after Symbol): Symbol='{edit_dialog.symbol_edit.text()}'"
-            )
-
-            # Account (exact match)
-            # Use the key that is actually in transaction_dict_for_dialog (cleaned name)
-            acc_val_from_csv = transaction_dict_for_dialog.get("Account")
-            acc_str = (
-                str(acc_val_from_csv)
-                if pd.notna(acc_val_from_csv) and acc_val_from_csv is not None
-                else ""
-            )
-            logging.debug(
-                f"  Account from dict: '{acc_str}' (original value from CSV: '{acc_val_from_csv}')"
-            )
-            original_acc_index = edit_dialog.account_combo.currentIndex()
-            index = edit_dialog.account_combo.findText(acc_str, Qt.MatchFixedString)
-            if index >= 0:
-                edit_dialog.account_combo.setCurrentIndex(index)
-                logging.debug(
-                    f"  Set account_combo to index {index} ('{edit_dialog.account_combo.itemText(index)}')"
-                )
-            else:
-                logging.warning(
-                    f"    Account '{acc_str}' not found in combo box. Setting editable text. Index remains {original_acc_index}."
-                )
-                edit_dialog.account_combo.setEditText(acc_str)
-            logging.debug(
-                f"  account_combo after attempt: '{edit_dialog.account_combo.currentText()}' (index: {edit_dialog.account_combo.currentIndex()})"
-            )
-            # ADDED: Log state after setting Account
-            logging.debug(
-                f"  Pre-fill state (after Account): Account='{edit_dialog.account_combo.currentText()}'"
-            )
-
-            # Numeric fields (handle potential formatting issues)
-            # Use the keys that are actually in transaction_dict_for_dialog (cleaned names)
-            fields_to_set = {
-                "Quantity": edit_dialog.quantity_edit,
-                "Price/Share": edit_dialog.price_edit,
-                "Total Amount": edit_dialog.total_amount_edit,  # This key was already cleaned
-                "Commission": edit_dialog.commission_edit,
-                "Split Ratio": edit_dialog.split_ratio_edit,
-            }
-            for key, widget in fields_to_set.items():
-                raw_val = transaction_dict_for_dialog.get(key)
-                logging.debug(f"  {key} from dict: '{raw_val}' (type: {type(raw_val)})")
-                precision = 2 if key in ["Total Amount", "Fees"] else 8
-                formatted_val = self._format_for_edit_dialog(
-                    raw_val, precision=precision
-                )
-                widget.setText(formatted_val)
-                # Use objectName for logging if available, otherwise use the key
-                widget_name_for_log = (
-                    widget.objectName() if widget.objectName() else key
-                )
-                logging.debug(f"    Set {widget_name_for_log} to: '{formatted_val}'")
-                logging.debug(
-                    f"  {widget_name_for_log} after attempt: '{widget.text()}'"
-                )
-                # ADDED: Log state after setting numeric field
-                logging.debug(
-                    f"  Pre-fill state (after {key}): {key}='{widget.text()}'"
-                )
-                # If Total Amount is being pre-filled and has a valid value, lock it
-                if key == "Total Amount" and formatted_val:
-                    logging.debug(
-                        f"  Locking Total Amount as it was pre-filled with '{formatted_val}'"
-                    )
-                    edit_dialog.total_amount_locked_by_user = True
-
-            # Note
-            # Use the key that is actually in transaction_dict_for_dialog (cleaned name)
-            note_val_from_csv = transaction_dict_for_dialog.get("Note")
-            note_str_for_edit = (
-                str(note_val_from_csv)
-                if pd.notna(note_val_from_csv) and note_val_from_csv is not None
-                else ""
-            )
-            logging.debug(
-                f"  Note from dict: '{note_str_for_edit}' (original value from CSV: '{note_val_from_csv}')"
-            )
-            edit_dialog.note_edit.setText(note_str_for_edit)
-            logging.debug(
-                f"  note_edit after attempt: '{edit_dialog.note_edit.text()}'"
-            )
-            # ADDED: Log state after setting Note
-            logging.debug(
-                f"  Pre-fill state (after Note): Note='{edit_dialog.note_edit.text()}'"
-            )
-
-            logging.debug(
-                f"--- Pre-fill complete. Calling _update_field_states with type: '{edit_dialog.type_combo.currentText()}' ---"
-            )
-            edit_dialog._update_field_states(
-                edit_dialog.type_combo.currentText()
-            )  # Ensure fields are correctly enabled/disabled
-            # --- ADDED: Reconnect auto-calculation signals ---
-            try:
-                edit_dialog.quantity_edit.textChanged.connect(
-                    edit_dialog._auto_calculate_total
-                )
-                edit_dialog.price_edit.textChanged.connect(
-                    edit_dialog._auto_calculate_total
-                )
-                logging.debug("Reconnected auto-calculation signals after pre-fill.")
-            except Exception as e_reconnect:
-                logging.error(
-                    f"Error reconnecting auto-calculation signals: {e_reconnect}"
-                )
-            # --- END ADDED ---
-            logging.debug(f"--- _update_field_states called. ---")
-
-        except Exception as e_fill:
-            logging.exception(
-                f"CRITICAL ERROR during pre-fill: {e_fill}"
-            )  # Log full exception
-            QMessageBox.critical(
-                self, "Dialog Error", f"Error pre-filling edit dialog:\n{e_fill}"
-            )
-            return
-        # --- End Pre-fill ---
-
-        if edit_dialog.exec():
-            new_data_dict = (
-                edit_dialog.get_transaction_data()
-            )  # Validation happens here
-            if new_data_dict:
-                # Call parent's method to handle CSV update and refresh
-                if self._parent_app and hasattr(
-                    self._parent_app, "_edit_transaction_in_csv"
-                ):
-                    if self._parent_app._edit_transaction_in_csv(
-                        original_index, new_data_dict
-                    ):
-                        # Refresh the data in *this* dialog's table if successful
-                        # Need to get updated original data from parent
-                        if hasattr(self._parent_app, "original_data"):
-                            self._original_data = self._parent_app.original_data.copy()
-                            self._apply_filter()  # Re-apply filter to show updated data
-                        self.data_changed.emit()  # Signal main window to refresh
-
-    @Slot()
-    def delete_selected_transaction(self):
-        original_index = self.get_selected_original_index()
-        if original_index is None:
-            QMessageBox.warning(
-                self, "Selection Error", "Please select a single transaction to delete."
-            )
-            return
-
-        reply = QMessageBox.question(
-            self,
-            "Confirm Delete",
-            "Are you sure you want to permanently delete this transaction?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-
-        if reply == QMessageBox.Yes:
-            # Call parent's method to handle CSV update and refresh
-            if self._parent_app and hasattr(
-                self._parent_app, "_delete_transactions_from_csv"
-            ):
-                if self._parent_app._delete_transactions_from_csv([original_index]):
-                    # Refresh the data in *this* dialog's table if successful
-                    if hasattr(self._parent_app, "original_data"):
-                        self._original_data = self._parent_app.original_data.copy()
-                        self._apply_filter()  # Re-apply filter
-                    self.data_changed.emit()  # Signal main window to refresh
-
-
 class SymbolChartDialog(QDialog):
     """Dialog to display a historical price chart for a single symbol."""
 
@@ -3543,34 +3031,37 @@ class ManualPriceDialog(QDialog):
         return None  # Return None if Cancel was clicked
 
 
-# --- Add/Edit Transaction Dialog ---
 class AddTransactionDialog(QDialog):
-    """Dialog window for manually adding a new transaction entry."""
+    """Dialog window for manually adding or editing a transaction entry."""
 
-    def __init__(self, existing_accounts: List[str], parent=None):
+    def __init__(
+        self,
+        existing_accounts: List[str],
+        parent=None,
+        edit_data: Optional[Dict[str, Any]] = None,
+    ):
         """
         Initializes the dialog with fields for transaction details.
+        If edit_data is provided, pre-fills the dialog for editing.
 
         Args:
             existing_accounts (List[str]): A list of known account names to populate
                                            the account dropdown.
-            parent (QWidget, optional): The parent widget. Defaults to None.
+            parent (QWidget, optional): The parent widget.
+            edit_data (Optional[Dict[str, Any]], optional): Data to pre-fill for editing.
+                                                            Keys should match AddTransactionDialog's expected field names
+                                                            (i.e., CSV-like headers: "Date (MMM DD, YYYY)", "Quantity of Units", etc.).
         """
         super().__init__(parent)
-        self.setWindowTitle("Add New Transaction")
-        self.setMinimumWidth(300)
+        self.setWindowTitle(
+            "Add New Transaction" if not edit_data else "Edit Transaction"
+        )
+        self.setMinimumWidth(350)  # Adjusted width slightly
 
-        # --- Set the font for the ENTIRE dialog and its children ---
-        # All widgets, including labels created by QFormLayout, will inherit this.
-        dialog_font = QFont("Arial", 10)  # Set desired font and size HERE
+        dialog_font = QFont("Arial", 10)
         self.setFont(dialog_font)
-        # --- Removed separate label_font and self.label_font ---
 
         self.transaction_types = [
-            # --- ADDED: Short Sell and Buy to Cover ---
-            "Short Sell",
-            "Buy to Cover",
-            # --- END ADDED ---
             "Buy",
             "Sell",
             "Dividend",
@@ -3578,150 +3069,140 @@ class AddTransactionDialog(QDialog):
             "Deposit",
             "Withdrawal",
             "Fees",
+            "Short Sell",
+            "Buy to Cover",
         ]
-        # --- ADDED: Initialize total_amount_locked_by_user ---
-        self.total_amount_locked_by_user = False  # Default to not locked
-        # --- END ADDED ---
+        self.total_amount_locked_by_user = (
+            False  # Flag to prevent auto-calc from overwriting manual/edited total
+        )
 
-        # --- Layout Modifications ---
         main_dialog_layout = QVBoxLayout(self)
         form_layout = QFormLayout()
-        form_layout.setContentsMargins(0, 0, 0, 0)
+        form_layout.setContentsMargins(5, 5, 5, 5)  # Added small margins
         form_layout.setHorizontalSpacing(10)
         form_layout.setVerticalSpacing(8)
-        # --- End Layout Modifications ---
+        input_min_width = 180  # Increased min width for inputs
 
-        input_min_width = 150
-
-        # Widgets (Creation remains the same)
+        # --- Date ---
         self.date_edit = QDateEdit(date.today())
         self.date_edit.setCalendarPopup(True)
-        self.date_edit.setDisplayFormat("yyyy-MM-dd")
+        self.date_edit.setDisplayFormat("yyyy-MM-dd")  # Consistent internal format
         self.date_edit.setMinimumWidth(input_min_width)
+        form_layout.addRow("Date:", self.date_edit)
 
+        # --- Type ---
         self.type_combo = QComboBox()
         self.type_combo.addItems(self.transaction_types)
         self.type_combo.setMinimumWidth(input_min_width)
+        form_layout.addRow("Type:", self.type_combo)
 
+        # --- Symbol ---
         self.symbol_edit = QLineEdit()
-        self.symbol_edit.setPlaceholderText(" e.g., AAPL, GOOG, $CASH")
+        self.symbol_edit.setPlaceholderText("e.g., AAPL, GOOG, $CASH")
         self.symbol_edit.setMinimumWidth(input_min_width)
+        form_layout.addRow("Symbol:", self.symbol_edit)
 
+        # --- Account ---
         self.account_combo = QComboBox()
-        self.account_combo.addItems(sorted(list(set(existing_accounts))))
-        self.account_combo.setEditable(True)  # <-- Make editable
-        self.account_combo.setInsertPolicy(
-            QComboBox.NoInsert
-        )  # Prevent adding duplicates to list automatically
+        self.account_combo.addItems(
+            sorted(list(set(existing_accounts)))
+        )  # Ensure unique and sorted
+        self.account_combo.setEditable(True)
+        self.account_combo.setInsertPolicy(QComboBox.NoInsert)
         self.account_combo.setMinimumWidth(input_min_width)
+        form_layout.addRow("Account:", self.account_combo)
 
-        # --- ADDED: Set E*TRADE as default account ---
-        # default_account_name = "E*TRADE"
-        # if default_account_name in existing_accounts:
-        #     self.account_combo.setCurrentText(default_account_name)
-        # elif self.account_combo.isEditable():  # If not in list but editable, pre-fill
-        #     self.account_combo.setCurrentText(default_account_name)
-        # If not in list and not editable, it will just pick the first item or be blank
-        # --- END ADDED ---
-
+        # --- Quantity ---
         self.quantity_edit = QLineEdit()
-        self.quantity_edit.setPlaceholderText(" e.g., 100.5 (required for most types)")
+        self.quantity_edit.setPlaceholderText("e.g., 100.5")
         self.quantity_edit.setMinimumWidth(input_min_width)
+        self.quantity_validator = QDoubleValidator(0.00000001, 1e12, 8, self)
+        self.quantity_validator.setNotation(QDoubleValidator.StandardNotation)
+        self.quantity_edit.setValidator(self.quantity_validator)
+        form_layout.addRow("Quantity:", self.quantity_edit)
 
+        # --- Price/Unit ---
         self.price_edit = QLineEdit()
-        self.price_edit.setPlaceholderText(" Per unit (required for buy/sell)")
+        self.price_edit.setPlaceholderText("Per unit")
         self.price_edit.setMinimumWidth(input_min_width)
+        self.price_validator = QDoubleValidator(0.00000001, 1e12, 8, self)
+        self.price_validator.setNotation(QDoubleValidator.StandardNotation)
+        self.price_edit.setValidator(self.price_validator)
+        form_layout.addRow("Price/Unit:", self.price_edit)
 
+        # --- Total Amount ---
         self.total_amount_edit = QLineEdit()
-        self.total_amount_edit.setPlaceholderText(
-            "Required for Dividend / Auto for Buy/Sell"
-        )  # MODIFIED Placeholder
+        self.total_amount_edit.setPlaceholderText("Auto for Buy/Sell/Short or manual")
         self.total_amount_edit.setMinimumWidth(input_min_width)
+        self.total_validator = QDoubleValidator(0.0, 1e12, 2, self)  # Allow 0
+        self.total_validator.setNotation(QDoubleValidator.StandardNotation)
+        self.total_amount_edit.setValidator(self.total_validator)
+        form_layout.addRow("Total Amount:", self.total_amount_edit)
 
+        # --- Commission ---
         self.commission_edit = QLineEdit()
-        self.commission_edit.setPlaceholderText(" e.g., 6.95 (optional)")
+        self.commission_edit.setPlaceholderText("e.g., 6.95 (optional, default 0)")
         self.commission_edit.setMinimumWidth(input_min_width)
+        self.commission_validator = QDoubleValidator(0.0, 1e12, 2, self)  # Allow 0
+        self.commission_validator.setNotation(QDoubleValidator.StandardNotation)
+        self.commission_edit.setValidator(self.commission_validator)
+        form_layout.addRow("Commission:", self.commission_edit)
 
-        self.split_ratio_edit = QLineEdit()
-        self.split_ratio_edit.setPlaceholderText(
-            " New shares per old (e.g., 2 for 2:1)"
-        )
-        # The label is created implicitly by addRow below, inheriting the dialog font
+        # --- Split Ratio ---
         self.split_ratio_label = QLabel(
             "Split Ratio:"
-        )  # Keep reference if needed by _update_field_states
+        )  # Keep reference for enable/disable
+        self.split_ratio_edit = QLineEdit()
+        self.split_ratio_edit.setPlaceholderText("New shares per old (e.g., 2 for 2:1)")
         self.split_ratio_edit.setMinimumWidth(input_min_width)
-
-        self.note_edit = QLineEdit()
-        self.note_edit.setObjectName("NoteEdit")  # Add object name
-        self.note_edit.setPlaceholderText(" Optional note")
-        self.note_edit.setMinimumWidth(input_min_width)
-
-        # --- Add widgets to the QFormLayout using simple string labels ---
-        # The labels will be created by QFormLayout and inherit the dialog's font.
-        form_layout.addRow("Date:", self.date_edit)
-        form_layout.addRow("Type:", self.type_combo)
-        form_layout.addRow("Symbol:", self.symbol_edit)
-        form_layout.addRow("Account:", self.account_combo)
-        form_layout.addRow("Quantity:", self.quantity_edit)
-        form_layout.addRow("Price/Unit:", self.price_edit)
-        form_layout.addRow("Total Amount:", self.total_amount_edit)
-        form_layout.addRow("Commission:", self.commission_edit)
-        # Pass the QLabel object directly if you need to enable/disable it later
+        self.split_validator = QDoubleValidator(0.00000001, 1e12, 8, self)
+        self.split_validator.setNotation(QDoubleValidator.StandardNotation)
+        self.split_ratio_edit.setValidator(self.split_validator)
         form_layout.addRow(self.split_ratio_label, self.split_ratio_edit)
-        form_layout.addRow("Note:", self.note_edit)
-        # --- Removed the loop and the create_label helper ---
 
-        # Buttons (Creation remains the same)
+        # --- Note ---
+        self.note_edit = QLineEdit()
+        self.note_edit.setObjectName("NoteEdit")
+        self.note_edit.setPlaceholderText("Optional note")
+        self.note_edit.setMinimumWidth(input_min_width)
+        form_layout.addRow("Note:", self.note_edit)
+
+        # --- Buttons ---
         self.button_box = QDialogButtonBox(
             QDialogButtonBox.Save | QDialogButtonBox.Cancel
         )
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
 
-        # --- Layout Modifications ---
         main_dialog_layout.addLayout(form_layout)
         main_dialog_layout.addWidget(self.button_box)
-        # --- End Layout Modifications ---
 
-        # Connect type change (remains the same)
-        self.type_combo.currentTextChanged.connect(self._update_field_states)
-        self._update_field_states(self.type_combo.currentText())
+        # --- Connect Signals ---
+        self.type_combo.currentTextChanged.connect(self._update_field_states_wrapper)
+        self.symbol_edit.textChanged.connect(self._update_field_states_wrapper_symbol)
 
-        # --- ADDED: Input Validation ---
-        # Define validators
-        # Allow positive numbers, high precision for qty/price/split, 2 for total/commission
-        self.quantity_validator = QDoubleValidator(0.00000001, 1e12, 8, self)
-        self.quantity_validator.setNotation(QDoubleValidator.StandardNotation)
-        self.price_validator = QDoubleValidator(0.00000001, 1e12, 8, self)
-        self.price_validator.setNotation(QDoubleValidator.StandardNotation)
-        self.total_validator = QDoubleValidator(0.0, 1e12, 2, self)  # Allow 0 for total
-        self.total_validator.setNotation(QDoubleValidator.StandardNotation)
-        self.commission_validator = QDoubleValidator(
-            0.0, 1e12, 2, self
-        )  # Allow 0 for commission
-        self.commission_validator.setNotation(QDoubleValidator.StandardNotation)
-        self.split_validator = QDoubleValidator(0.00000001, 1e12, 8, self)
-        self.split_validator.setNotation(QDoubleValidator.StandardNotation)
-
-        # Apply validators
-        self.quantity_edit.setValidator(self.quantity_validator)
-        self.price_edit.setValidator(self.price_validator)
-        self.total_amount_edit.setValidator(self.total_validator)
-        self.commission_edit.setValidator(self.commission_validator)
-        self.split_ratio_edit.setValidator(self.split_validator)
-
-        # Connect textChanged signals to validation slot
+        # Numeric input validation feedback
         self.quantity_edit.textChanged.connect(self._validate_numeric_input)
         self.price_edit.textChanged.connect(self._validate_numeric_input)
         self.total_amount_edit.textChanged.connect(self._validate_numeric_input)
         self.commission_edit.textChanged.connect(self._validate_numeric_input)
         self.split_ratio_edit.textChanged.connect(self._validate_numeric_input)
-        # --- END ADDED: Input Validation ---
 
-        # --- ADDED: Connect signals for auto-calculation ---
+        # Auto-calculation (ensure these are connected AFTER validators for proper behavior)
         self.quantity_edit.textChanged.connect(self._auto_calculate_total)
         self.price_edit.textChanged.connect(self._auto_calculate_total)
+        # User typing in total_amount_edit should lock it
+        self.total_amount_edit.textEdited.connect(
+            lambda text: setattr(self, "total_amount_locked_by_user", bool(text))
+        )
+
+        if edit_data:
+            self._populate_fields_for_edit(edit_data)
+        else:
+            # Initial state update for a new transaction
+            self._update_field_states(
+                self.type_combo.currentText(), self.symbol_edit.text()
+            )
 
     def _update_field_states(self, tx_type: str = None, symbol: str = None):
         """Enables/disables input fields based on the selected transaction type.
@@ -3842,48 +3323,64 @@ class AddTransactionDialog(QDialog):
                 "background-color: #ffe0e0;"
             )  # Light red background
 
-    # --- END ADDED ---
+    def get_transaction_data(self) -> Optional[Dict[str, Any]]:
+        """
+        Validates user input and returns transaction data with Python types,
+        keyed by standard CSV header names.
 
-    def get_transaction_data(self) -> Optional[Dict[str, str]]:
-        """Validates user input and returns transaction data formatted for CSV saving.
-
-        Performs checks based on the transaction type (e.g., quantity and price
-        required for buys/sells). Shows warning messages for invalid input.
+        Performs checks based on the transaction type. Shows warning messages
+        for invalid input.
 
         Returns:
-            Optional[Dict[str, str]]: A dictionary where keys are the expected CSV
-                header names and values are the validated and formatted user input
-                strings. Returns None if validation fails.
+            Optional[Dict[str, Any]]: A dictionary where keys are CSV header names
+                (e.g., "Date (MMM DD, YYYY)", "Quantity of Units") and values are
+                Python types (datetime.date, float, str, or None).
+                Returns None if validation fails.
         """
-        data = {}
-        tx_type = self.type_combo.currentText().lower()
+        data_for_processing: Dict[str, Any] = {}
+        tx_type_display_case = (
+            self.type_combo.currentText()
+        )  # Original case for storing
+        tx_type_lower = tx_type_display_case.lower()
         symbol = self.symbol_edit.text().strip().upper()
-        account = self.account_combo.currentText()
-        date_val = self.date_edit.date().toPython()
+        account = (
+            self.account_combo.currentText().strip()
+        )  # Strip whitespace from account
+        date_val_qt = self.date_edit.date()
+
+        # Validate and get Python date object
+        date_val: Optional[date] = None
+        if date_val_qt.isValid():
+            date_val = date_val_qt.toPython()
+        else:  # Should not happen if QDateEdit is used properly
+            QMessageBox.warning(self, "Input Error", "Date is invalid.")
+            return None
 
         if not symbol:
             QMessageBox.warning(self, "Input Error", "Symbol cannot be empty.")
+            self.symbol_edit.setFocus()
             return None
         if not account:
             QMessageBox.warning(self, "Input Error", "Account cannot be empty.")
+            self.account_combo.setFocus()
             return None
 
+        # Get raw string values, strip and remove commas for numeric conversion
         qty_str = self.quantity_edit.text().strip().replace(",", "")
         price_str = self.price_edit.text().strip().replace(",", "")
-        total_str_from_field = (
-            self.total_amount_edit.text().strip().replace(",", "")
-        )  # Value from the QLineEdit
+        total_str_from_field = self.total_amount_edit.text().strip().replace(",", "")
         comm_str = self.commission_edit.text().strip().replace(",", "")
         split_str = self.split_ratio_edit.text().strip().replace(",", "")
         note_str = self.note_edit.text().strip()
 
-        # Numeric variables for internal calculation
+        # Initialize Python type variables
         qty: Optional[float] = None
         price: Optional[float] = None
-        total: Optional[float] = None  # This will hold the *numeric* total
-        comm: float = 0.0
+        total: Optional[float] = None
+        comm: float = 0.0  # Default to 0.0 if empty
         split: Optional[float] = None
 
+        # Validate and convert commission first (optional field)
         if comm_str:
             try:
                 comm = float(comm_str)
@@ -3891,272 +3388,264 @@ class AddTransactionDialog(QDialog):
                     QMessageBox.warning(
                         self, "Input Error", "Commission cannot be negative."
                     )
+                    self.commission_edit.setFocus()
                     return None
             except ValueError:
                 QMessageBox.warning(
                     self, "Input Error", "Commission must be a valid number."
                 )
+                self.commission_edit.setFocus()
                 return None
-        else:
-            comm = 0.0
+        # If comm_str is empty, comm remains 0.0
 
-        if tx_type in ["buy", "sell", "short sell", "buy to cover"]:
-            if not qty_str or not price_str:
+        # Type-specific validation logic
+        is_stock_trade = (
+            tx_type_lower in ["buy", "sell", "short sell", "buy to cover"]
+            and symbol != CASH_SYMBOL_CSV
+        )
+        is_cash_op = symbol == CASH_SYMBOL_CSV and tx_type_lower in [
+            "deposit",
+            "withdrawal",
+            "buy",
+            "sell",
+        ]
+
+        if is_stock_trade:
+            if not self.quantity_edit.isEnabled() or not qty_str:
                 QMessageBox.warning(
                     self,
                     "Input Error",
-                    f"Quantity and Price/Unit are required for '{self.type_combo.currentText()}'.",
+                    f"Quantity is required for '{tx_type_display_case}'.",
                 )
+                self.quantity_edit.setFocus()
+                return None
+            if not self.price_edit.isEnabled() or not price_str:
+                QMessageBox.warning(
+                    self,
+                    "Input Error",
+                    f"Price/Unit is required for '{tx_type_display_case}'.",
+                )
+                self.price_edit.setFocus()
                 return None
             try:
                 qty = float(qty_str)
-                if qty <= 0:
+                if qty <= 1e-8:  # Use a small tolerance, effectively must be > 0
                     QMessageBox.warning(
-                        self, "Input Error", "Quantity must be positive for this type."
+                        self,
+                        "Input Error",
+                        "Quantity must be positive for this transaction type.",
                     )
+                    self.quantity_edit.setFocus()
                     return None
             except ValueError:
                 QMessageBox.warning(
                     self, "Input Error", "Quantity must be a valid number."
                 )
+                self.quantity_edit.setFocus()
                 return None
             try:
                 price = float(price_str)
-                if price <= 0:
+                if price <= 1e-8:  # Price must be positive
                     QMessageBox.warning(
                         self,
                         "Input Error",
-                        "Price/Unit must be positive for this type.",
+                        "Price/Unit must be positive for this transaction type.",
                     )
+                    self.price_edit.setFocus()
                     return None
             except ValueError:
                 QMessageBox.warning(
                     self, "Input Error", "Price/Unit must be a valid number."
                 )
+                self.price_edit.setFocus()
                 return None
-            # --- CORRECTED: Calculate numeric total for these types ---
-            if qty is not None and price is not None:
+
+            # Total amount for these types is typically calculated Qty * Price.
+            # If total_amount_edit was locked (user entered or pre-filled), respect that value.
+            # Otherwise, calculate it.
+            if self.total_amount_locked_by_user and total_str_from_field:
+                try:
+                    total = float(total_str_from_field)
+                    # Basic sanity check: calculated total vs provided total.
+                    # This could be more sophisticated (e.g. tolerance).
+                    # For now, if user locked it, we trust it unless it's clearly invalid (negative).
+                    if total < 0:
+                        QMessageBox.warning(
+                            self, "Input Error", "Total Amount cannot be negative."
+                        )
+                        self.total_amount_edit.setFocus()
+                        return None
+                except ValueError:
+                    QMessageBox.warning(
+                        self,
+                        "Input Error",
+                        "Manually entered Total Amount is not a valid number.",
+                    )
+                    self.total_amount_edit.setFocus()
+                    return None
+            else:  # Calculate total
                 total = qty * price
-            # --- END CORRECTION ---
 
-        elif tx_type in ["deposit", "withdrawal"]:
-            # For stock deposit/withdrawal (non-$CASH symbol)
-            if symbol != CASH_SYMBOL_CSV:
-                if not qty_str or not price_str:  # Price is cost basis
+        elif is_cash_op:  # $CASH Deposit/Withdrawal (or Buy/Sell aliased)
+            if not self.quantity_edit.isEnabled() or not qty_str:
+                QMessageBox.warning(
+                    self,
+                    "Input Error",
+                    f"Amount (Quantity) is required for cash '{tx_type_display_case}'.",
+                )
+                self.quantity_edit.setFocus()
+                return None
+            try:
+                qty = float(qty_str)
+                if qty <= 1e-8:
                     QMessageBox.warning(
                         self,
                         "Input Error",
-                        f"Quantity and Price/Unit (cost basis) are required for stock '{self.type_combo.currentText()}'.",
+                        "Amount (Quantity) must be positive for cash operations.",
                     )
+                    self.quantity_edit.setFocus()
                     return None
-                try:
-                    qty = float(qty_str)
-                    if qty <= 0:
-                        QMessageBox.warning(
-                            self, "Input Error", "Quantity must be positive."
-                        )
-                        return None
-                except ValueError:
-                    QMessageBox.warning(
-                        self, "Input Error", "Quantity must be a valid number."
-                    )
-                    return None
-                try:
-                    price = float(price_str)  # Cost basis per unit
-                    if price < 0:  # Cost basis can be zero
-                        QMessageBox.warning(
-                            self,
-                            "Input Error",
-                            "Price/Unit (cost basis) cannot be negative.",
-                        )
-                        return None
-                except ValueError:
-                    QMessageBox.warning(
-                        self,
-                        "Input Error",
-                        "Price/Unit (cost basis) must be a valid number.",
-                    )
-                    return None
-                # --- CORRECTED: Calculate numeric total for stock deposit/withdrawal ---
-                if qty is not None and price is not None:
-                    total = qty * price  # Total cost basis
-                # --- END CORRECTION ---
-            else:  # For $CASH deposit/withdrawal
-                if not qty_str:
-                    QMessageBox.warning(
-                        self,
-                        "Input Error",
-                        f"Quantity (amount) is required for cash '{self.type_combo.currentText()}'.",
-                    )
-                    return None
-                try:
-                    qty = float(qty_str)
-                    if qty <= 0:
-                        QMessageBox.warning(
-                            self, "Input Error", "Quantity (amount) must be positive."
-                        )
-                        return None
-                except ValueError:
-                    QMessageBox.warning(
-                        self, "Input Error", "Quantity (amount) must be a valid number."
-                    )
-                    return None
-                price = 1.0  # Price for $CASH is always 1.0
-                # --- CORRECTED: Calculate numeric total for cash deposit/withdrawal ---
-                if qty is not None:
-                    total = qty  # For cash, total amount is the quantity
-                # --- END CORRECTION ---
+            except ValueError:
+                QMessageBox.warning(
+                    self, "Input Error", "Amount (Quantity) must be a valid number."
+                )
+                self.quantity_edit.setFocus()
+                return None
+            price = 1.0  # Price for $CASH is always 1.0
+            total = qty  # For cash, total amount is the quantity itself.
 
-        elif tx_type == "dividend":
-            qty_ok, price_ok, total_ok_from_field = False, False, False
-            if qty_str:
+        elif tx_type_lower == "dividend":
+            qty_ok, price_ok, total_ok_from_field_val = False, False, False
+            if self.quantity_edit.isEnabled() and qty_str:
                 try:
                     qty = float(qty_str)
-                    if qty < 0:
-                        QMessageBox.warning(
-                            self, "Input Error", "Dividend quantity cannot be negative."
-                        )
-                        return None
-                    qty_ok = True
+                    qty_ok = qty >= 0  # Allow 0 qty if total is given
                 except ValueError:
-                    pass  # Let main validation catch it if needed
-            if price_str:
+                    QMessageBox.warning(
+                        self, "Input Error", "Dividend Quantity invalid."
+                    )
+                    self.quantity_edit.setFocus()
+                    return None
+            if self.price_edit.isEnabled() and price_str:
                 try:
                     price = float(price_str)
-                    if price < 0:
-                        QMessageBox.warning(
-                            self,
-                            "Input Error",
-                            "Dividend price/unit cannot be negative.",
-                        )
-                        return None
-                    price_ok = True
+                    price_ok = price >= 0  # Allow 0 price if total is given
                 except ValueError:
-                    pass
-            if total_str_from_field:  # Check the string from the field
-                try:
-                    total_numeric_from_field = float(total_str_from_field)
-                    if total_numeric_from_field < 0:
-                        QMessageBox.warning(
-                            self,
-                            "Input Error",
-                            "Dividend total amount cannot be negative.",
-                        )
-                        return None
-                    total_ok_from_field = True
-                    total = (
-                        total_numeric_from_field  # Prioritize total from field if valid
+                    QMessageBox.warning(
+                        self, "Input Error", "Dividend Price/Unit invalid."
                     )
+                    self.price_edit.setFocus()
+                    return None
+            if self.total_amount_edit.isEnabled() and total_str_from_field:
+                try:
+                    total = float(total_str_from_field)
+                    total_ok_from_field_val = total >= 0
                 except ValueError:
-                    pass
+                    QMessageBox.warning(
+                        self, "Input Error", "Dividend Total Amount invalid."
+                    )
+                    self.total_amount_edit.setFocus()
+                    return None
 
-            if not total_ok_from_field:  # If total from field wasn't valid or provided
+            if not total_ok_from_field_val:  # If total wasn't provided or was invalid
                 if qty_ok and price_ok and qty is not None and price is not None:
-                    total = qty * price  # Calculate total if qty and price are valid
+                    total = qty * price
                 elif (
-                    qty_ok and qty is not None and price_str == ""
-                ):  # Qty provided, price empty
-                    # This case is ambiguous, could be total dividend = qty if price is implied as 1 (unlikely for stock)
-                    # Or it's an error. For now, assume error if price is also missing.
+                    price_ok and price is not None and not qty_str
+                ):  # Price given, no Qty (e.g. fixed dividend amount)
+                    total = (
+                        price  # Assuming price field was used for total dividend amount
+                    )
+                elif (
+                    qty_ok and qty is not None and not price_str
+                ):  # Qty given, no Price
                     QMessageBox.warning(
                         self,
                         "Input Error",
-                        "Dividend requires Price/Unit if Quantity is entered and Total Amount is not.",
+                        "Dividend: Price/Unit required if Quantity entered and Total Amount is not.",
                     )
+                    self.price_edit.setFocus()
                     return None
-                elif (
-                    price_ok and price is not None and qty_str == ""
-                ):  # Price provided, qty empty
-                    # This implies total dividend = price (e.g. fixed dividend amount entered as price)
-                    total = price
                 else:
                     QMessageBox.warning(
                         self,
                         "Input Error",
-                        "Dividend requires (Quantity & Price/Unit) OR Total Amount.",
+                        "Dividend: Provide (Quantity & Price/Unit) OR Total Amount.",
                     )
+                    self.total_amount_edit.setFocus()
                     return None
-            # If total_ok_from_field was true, 'total' variable is already set.
+            # If total_ok_from_field_val was true, 'total' is already set from the field.
+            # If dividend is on $CASH, qty/price might not be relevant if total is set.
+            if symbol == CASH_SYMBOL_CSV and total is not None:
+                qty = total  # For $CASH dividend, qty can be same as total, price=1
+                price = 1.0
 
-        elif tx_type == "split":
-            if not split_str:
+        elif tx_type_lower in ["split", "stock split"]:
+            if not self.split_ratio_edit.isEnabled() or not split_str:
                 QMessageBox.warning(
-                    self, "Input Error", "Split Ratio is required for 'split'."
+                    self, "Input Error", "Split Ratio is required for 'Split' type."
                 )
+                self.split_ratio_edit.setFocus()
                 return None
             try:
                 split = float(split_str)
-                if split <= 0:
+                if split <= 1e-8:  # Ratio must be positive
                     QMessageBox.warning(
                         self, "Input Error", "Split Ratio must be positive."
                     )
+                    self.split_ratio_edit.setFocus()
                     return None
             except ValueError:
                 QMessageBox.warning(
                     self, "Input Error", "Split Ratio must be a valid number."
                 )
+                self.split_ratio_edit.setFocus()
                 return None
-            # For split, qty, price, total are not directly used for the primary effect
-            qty_str, price_str, total_str_from_field = (
-                "",
-                "",
-                "",
-            )  # Clear these for formatting
+            # qty, price, total are not primary inputs for split effect, can be None
+            qty, price, total = None, None, None
 
-        elif tx_type == "fees":
-            if not comm_str:  # For fees, commission IS the amount
+        elif tx_type_lower == "fees":
+            if (
+                not self.commission_edit.isEnabled() or not comm_str
+            ):  # For fees, commission IS the fee amount
                 QMessageBox.warning(
                     self,
                     "Input Error",
-                    "Commission (fee amount) is required for 'fees' type.",
+                    "Fee amount (Commission) is required for 'Fees' type.",
                 )
+                self.commission_edit.setFocus()
                 return None
-            # For fees, qty, price, total, split are not applicable
-            qty_str, price_str, total_str_from_field, split_str = "", "", "", ""
+            # For fees, other numeric fields are not applicable. Commission (comm) holds the fee.
+            qty, price, total, split = None, None, None, None
+            # Total amount can be considered the negative of commission for cash flow, but for CSV, often empty.
+            # Let's ensure total remains None if not explicitly set for 'fees'.
 
-        def format_sig(
-            value_float: Optional[float], original_str_for_precision: str
-        ) -> str:
-            """Formats float based on original string's decimal places, ensuring at least 2dp for non-zero."""
-            if value_float is None or pd.isna(value_float):
-                return ""
-            try:
-                # If the float value is effectively zero, format as "0.00"
-                if abs(value_float) < 1e-9:  # Using a small tolerance for zero
-                    return "0.00"
+        else:
+            QMessageBox.warning(
+                self,
+                "Input Error",
+                f"Transaction type '{tx_type_display_case}' not fully handled for validation or is unsupported.",
+            )
+            return None
 
-                cleaned_str = original_str_for_precision.strip().replace(",", "")
-                if "." in cleaned_str:
-                    _, decimal_part = cleaned_str.split(".", 1)
-                    num_decimals_in_original = len(decimal_part.rstrip("0"))
-                    # Ensure at least 2 decimal places, but preserve more if original had more
-                    decimals_to_format = max(2, num_decimals_in_original)
-                    return f"{value_float:.{decimals_to_format}f}"
-                else:  # Original was an integer or had no decimal part
-                    return f"{value_float:.2f}"  # Default to 2 decimal places
-            except (ValueError, TypeError):
-                return f"{value_float:.2f}" if value_float is not None else ""
-
-        data = {
-            "Date (MMM DD, YYYY)": date_val.strftime(CSV_DATE_FORMAT),
-            "Transaction Type": self.type_combo.currentText(),  # Use original case from combo
+        # Prepare dictionary with CSV-like headers and Python typed values
+        data_for_processing = {
+            "Date (MMM DD, YYYY)": date_val,  # datetime.date object
+            "Transaction Type": tx_type_display_case,  # Original case string
             "Stock / ETF Symbol": symbol,
-            "Quantity of Units": format_sig(qty, qty_str),
-            "Amount per unit": format_sig(price, price_str),
-            "Total Amount": format_sig(
-                total,
-                (
-                    total_str_from_field
-                    if total_str_from_field
-                    else (f"{total:.8f}" if total is not None else "")
-                ),
-            ),  # Use field string for precision if available
-            "Fees": format_sig(comm, comm_str),
+            "Quantity of Units": qty,  # float or None
+            "Amount per unit": price,  # float or None
+            "Total Amount": total,  # float or None
+            "Fees": (
+                comm if comm_str else None
+            ),  # float or None (if comm_str was empty, comm is 0.0, make it None for CSV)
             "Investment Account": account,
-            "Split Ratio (new shares per old share)": format_sig(split, split_str),
-            "Note": note_str,
+            "Split Ratio (new shares per old share)": split,  # float or None
+            "Note": note_str if note_str else None,  # string or None
+            # "Local Currency" is determined by PortfolioApp based on account
         }
-        return data
+        logging.debug(f"Validated transaction data from dialog: {data_for_processing}")
+        return data_for_processing
 
     def accept(self):
         """
@@ -4260,6 +3749,560 @@ class AddTransactionDialog(QDialog):
                 f"_auto_calculate_total: ValueError during float conversion. Qty_str='{qty_str}', Price_str='{price_str}'. Current Total Amount: '{self.total_amount_edit.text()}'"
             )
             pass
+
+    def _populate_fields_for_edit(self, data: Dict[str, Any]):
+        """
+        Pre-fills the dialog fields with data for editing.
+        Assumes `data` keys are CSV-like headers (e.g., "Date (MMM DD, YYYY)").
+        """
+        logging.debug(f"Populating AddTransactionDialog for edit with raw data: {data}")
+
+        # --- Temporarily disconnect signals that might interfere with pre-filling ---
+        signals_to_disconnect = [
+            (self.quantity_edit.textChanged, self._auto_calculate_total),
+            (self.price_edit.textChanged, self._auto_calculate_total),
+            (
+                self.total_amount_edit.textEdited,
+                lambda text: setattr(self, "total_amount_locked_by_user", bool(text)),
+            ),
+            (self.type_combo.currentTextChanged, self._update_field_states_wrapper),
+            (self.symbol_edit.textChanged, self._update_field_states_wrapper_symbol),
+        ]
+        for widget_signal, slot_func in signals_to_disconnect:
+            try:
+                widget_signal.disconnect(slot_func)
+            except RuntimeError:  # Signal might not have been connected
+                logging.debug(
+                    f"Signal already disconnected or never connected for pre-fill: {widget_signal}"
+                )
+            except TypeError:  # slot_func might be a lambda
+                logging.debug(f"Cannot disconnect lambda for pre-fill: {widget_signal}")
+
+        # --- Date ---
+        date_val_str = data.get(
+            "Date (MMM DD, YYYY)"
+        )  # Expects CSV standard format string
+        if date_val_str:
+            try:
+                # CSV_DATE_FORMAT is "%b %d, %Y"
+                parsed_dt = datetime.strptime(str(date_val_str), CSV_DATE_FORMAT)
+                q_date = QDate(parsed_dt.year, parsed_dt.month, parsed_dt.day)
+                if q_date.isValid():
+                    self.date_edit.setDate(q_date)
+                    logging.debug(f"  Set Date to: {q_date.toString('yyyy-MM-dd')}")
+                else:
+                    logging.warning(
+                        f"  Could not parse date '{date_val_str}' to a valid QDate for edit dialog."
+                    )
+            except ValueError as e_date:
+                logging.error(
+                    f"  Error parsing date '{date_val_str}' for edit dialog: {e_date}"
+                )
+            except Exception as e_date_other:  # Catch any other unexpected error
+                logging.error(
+                    f"  Unexpected error processing date '{date_val_str}': {e_date_other}",
+                    exc_info=True,
+                )
+
+        # --- Type ---
+        tx_type_val = data.get("Transaction Type", "")
+        type_idx = self.type_combo.findText(
+            str(tx_type_val), Qt.MatchFixedString
+        )  # Case-sensitive match
+        if type_idx >= 0:
+            self.type_combo.setCurrentIndex(type_idx)
+        else:  # If not found, try case-insensitive, then set editable text as fallback
+            type_idx_insensitive = self.type_combo.findText(
+                str(tx_type_val), Qt.MatchContains | Qt.MatchCaseInsensitive
+            )
+            if type_idx_insensitive >= 0:
+                self.type_combo.setCurrentIndex(type_idx_insensitive)
+            else:
+                self.type_combo.setEditText(str(tx_type_val))
+                logging.warning(
+                    f"  Transaction type '{tx_type_val}' not in standard list. Set as editable text."
+                )
+        logging.debug(f"  Set Type to: {self.type_combo.currentText()}")
+
+        # --- Symbol ---
+        self.symbol_edit.setText(str(data.get("Stock / ETF Symbol", "")))
+        logging.debug(f"  Set Symbol to: {self.symbol_edit.text()}")
+
+        # --- Account ---
+        # AddTransactionDialog's account_combo is pre-filled with existing accounts.
+        # setCurrentText will select it if it exists, or set the editable text if it's new.
+        self.account_combo.setCurrentText(str(data.get("Investment Account", "")))
+        logging.debug(f"  Set Account to: {self.account_combo.currentText()}")
+
+        # --- Numeric Fields & Note ---
+        # These keys match what get_transaction_data() would return and what CSVs store
+        # We use the parent's formatter if available, otherwise simple string conversion
+        parent = self.parent()  # QWidget.parent()
+        formatter_func = (
+            parent._format_for_edit_dialog
+            if parent and hasattr(parent, "_format_for_edit_dialog")
+            else lambda val, prec: str(val if pd.notna(val) else "")
+        )
+
+        self.quantity_edit.setText(formatter_func(data.get("Quantity of Units"), 8))
+        self.price_edit.setText(formatter_func(data.get("Amount per unit"), 8))
+        self.total_amount_edit.setText(formatter_func(data.get("Total Amount"), 2))
+        self.commission_edit.setText(formatter_func(data.get("Fees"), 2))
+        self.split_ratio_edit.setText(
+            formatter_func(data.get("Split Ratio (new shares per old share)"), 8)
+        )
+        self.note_edit.setText(str(data.get("Note", "")))
+
+        logging.debug(f"  Set Quantity to: {self.quantity_edit.text()}")
+        logging.debug(f"  Set Price/Unit to: {self.price_edit.text()}")
+        logging.debug(f"  Set Total Amount to: {self.total_amount_edit.text()}")
+        logging.debug(f"  Set Commission to: {self.commission_edit.text()}")
+        logging.debug(f"  Set Split Ratio to: {self.split_ratio_edit.text()}")
+        logging.debug(f"  Set Note to: {self.note_edit.text()}")
+
+        # If Total Amount was pre-filled and is relevant for the transaction type, lock it
+        # to prevent auto-calculation from overwriting it during the initial _update_field_states call.
+        current_tx_type_lower = self.type_combo.currentText().lower()
+        if self.total_amount_edit.text() and current_tx_type_lower in [
+            "buy",
+            "sell",
+            "short sell",
+            "buy to cover",
+        ]:
+            self.total_amount_locked_by_user = True
+            logging.debug(
+                "  Locked Total Amount as it was pre-filled for a relevant transaction type."
+            )
+        elif (
+            current_tx_type_lower in ["dividend", "fees"]
+            and self.total_amount_edit.text()
+        ):
+            # For dividend/fees, if total amount is provided, it's user input.
+            self.total_amount_locked_by_user = True
+            logging.debug(
+                "  Locked Total Amount for dividend/fees as it was pre-filled."
+            )
+
+        # --- Call _update_field_states AFTER all fields are populated ---
+        # This ensures correct enabling/disabling based on the pre-filled type and symbol.
+        self._update_field_states(
+            self.type_combo.currentText(), self.symbol_edit.text()
+        )
+        logging.debug("  Called _update_field_states after populating all fields.")
+
+        # --- Reconnect signals ---
+        for widget_signal, slot_func in signals_to_disconnect:
+            try:
+                widget_signal.connect(slot_func)
+            except Exception as e_reconnect:  # More general catch
+                logging.debug(
+                    f"Error reconnecting signal after pre-fill: {widget_signal} to {slot_func}. Error: {e_reconnect}"
+                )
+
+        logging.debug("Finished populating AddTransactionDialog for edit.")
+
+    @Slot(str)  # Added Slot decorator for consistency if used elsewhere via signal
+    def _update_field_states_wrapper(self, tx_type: str):
+        """
+        Wrapper to call _update_field_states with the current symbol text
+        when the transaction type changes.
+        """
+        current_symbol = self.symbol_edit.text()
+        logging.debug(
+            f"_update_field_states_wrapper (type changed): tx_type='{tx_type}', current_symbol='{current_symbol}'"
+        )
+        self._update_field_states(tx_type, current_symbol)
+
+    @Slot(str)  # Added Slot decorator
+    def _update_field_states_wrapper_symbol(self, symbol: str):
+        """
+        Wrapper to call _update_field_states with the current transaction type
+        when the symbol text changes.
+        """
+        current_tx_type = self.type_combo.currentText()
+        logging.debug(
+            f"_update_field_states_wrapper_symbol (symbol changed): symbol='{symbol}', current_tx_type='{current_tx_type}'"
+        )
+        self._update_field_states(current_tx_type, symbol)
+
+
+class ManageTransactionsDialogDB(QDialog):
+    """
+    Dialog to view, edit, and delete transactions directly from/to the SQLite database.
+    It interacts with the main PortfolioApp instance for DB operations.
+    """
+
+    data_changed = Signal()  # Emitted when data is successfully modified in the DB
+
+    def __init__(
+        self,
+        current_transactions_df: pd.DataFrame,
+        db_connection: sqlite3.Connection,
+        parent_app: "PortfolioApp",
+    ):
+        super().__init__(parent_app)  # Pass parent_app for style, font, and callbacks
+        self.setWindowTitle("Manage Transactions (Database)")
+        self.setMinimumSize(1000, 650)  # Slightly taller for potentially more rows
+        self._parent_app = parent_app
+        self._db_conn = (
+            db_connection  # Keep a reference if direct DB reads are needed for refresh
+        )
+
+        # _current_data_df is the initial snapshot from the DB, includes 'original_index' (DB id)
+        # and DB column names (e.g., "Date" as datetime, "Price/Share" as float).
+        self._current_data_df = current_transactions_df.copy()
+
+        layout = QVBoxLayout(self)
+
+        # --- Filter Widgets ---
+        filter_layout = QHBoxLayout()
+        filter_layout.addWidget(QLabel("Filter Symbol:"))
+        self.filter_symbol_edit = QLineEdit()
+        self.filter_symbol_edit.setPlaceholderText("Enter symbol to filter...")
+        filter_layout.addWidget(self.filter_symbol_edit)
+
+        filter_layout.addWidget(QLabel("Account:"))
+        self.filter_account_edit = QLineEdit()
+        self.filter_account_edit.setPlaceholderText("Enter account to filter...")
+        filter_layout.addWidget(self.filter_account_edit)
+
+        filter_button = QPushButton("Apply Filter")
+        filter_button.setIcon(QIcon.fromTheme("edit-find"))
+        filter_button.clicked.connect(self._apply_filter_to_dialog_view)
+        filter_layout.addWidget(filter_button)
+
+        clear_button = QPushButton("Clear Filters")
+        clear_button.setIcon(QIcon.fromTheme("edit-clear"))
+        clear_button.clicked.connect(self._clear_filter_in_dialog_view)
+        filter_layout.addWidget(clear_button)
+        filter_layout.addStretch(1)
+        layout.addLayout(filter_layout)
+
+        # --- Table View ---
+        self.table_view = QTableView()
+        self.table_view.setObjectName("ManageTransactionsDBTable")
+        # PandasModel displays self._current_data_df.
+        # log_mode=True ensures it handles raw DB column names correctly for display.
+        self.table_model = PandasModel(
+            self._current_data_df.copy(), parent=parent_app, log_mode=True
+        )
+        self.table_view.setModel(self.table_model)
+
+        self.table_view.setSelectionBehavior(QTableView.SelectRows)
+        self.table_view.setSelectionMode(QTableView.SingleSelection)  # For edit/delete
+        self.table_view.setAlternatingRowColors(True)
+        self.table_view.setSortingEnabled(True)
+        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.table_view.verticalHeader().setVisible(False)
+        self.table_view.resizeColumnsToContents()  # Initial resize
+        # Default sort by Date descending if Date column exists
+        if "Date" in self._current_data_df.columns:
+            try:
+                date_col_idx = self._current_data_df.columns.get_loc("Date")
+                self.table_view.sortByColumn(date_col_idx, Qt.DescendingOrder)
+            except KeyError:
+                logging.warning(
+                    "Could not find 'Date' column for default sort in ManageTransactionsDialogDB."
+                )
+
+        layout.addWidget(self.table_view)
+
+        # --- Action Buttons ---
+        button_layout = QHBoxLayout()
+        self.edit_button = QPushButton("Edit Selected")
+        self.edit_button.setIcon(QIcon.fromTheme("document-edit"))
+        self.delete_button = QPushButton("Delete Selected")
+        self.delete_button.setIcon(QIcon.fromTheme("edit-delete"))
+        self.close_button = QPushButton("Close")  # Changed from "Close & Refresh Main"
+        self.close_button.setIcon(QIcon.fromTheme("window-close"))
+
+        button_layout.addWidget(self.edit_button)
+        button_layout.addWidget(self.delete_button)
+        button_layout.addStretch(1)
+        button_layout.addWidget(self.close_button)
+        layout.addLayout(button_layout)
+
+        # --- Connections ---
+        self.edit_button.clicked.connect(self.edit_selected_transaction_db)
+        self.delete_button.clicked.connect(self.delete_selected_transaction_db)
+        self.close_button.clicked.connect(
+            self.accept
+        )  # Accept will close dialog; main GUI refreshes if data_changed was emitted.
+
+        # Apply parent's style and font
+        if parent_app:
+            if hasattr(parent_app, "styleSheet"):
+                self.setStyleSheet(parent_app.styleSheet())
+            if hasattr(parent_app, "font"):
+                self.setFont(parent_app.font())
+
+    def _refresh_dialog_table(self):
+        """Reloads data from DB and updates this dialog's table view."""
+        logging.debug("ManageTransactionsDialogDB: Refreshing table from database...")
+        df_updated, success = load_all_transactions_from_db(self._db_conn)
+        if success and df_updated is not None:
+            self._current_data_df = df_updated.copy()
+            self._apply_filter_to_dialog_view()  # Re-apply any active filters to the new data
+            logging.debug(
+                f"ManageTransactionsDialogDB: Table refreshed with {len(self._current_data_df)} rows."
+            )
+        else:
+            QMessageBox.warning(
+                self,
+                "Refresh Error",
+                "Could not refresh transaction list from database for the dialog.",
+            )
+            self._current_data_df = pd.DataFrame()  # Clear data on error
+            self.table_model.updateData(self._current_data_df)  # Update view with empty
+
+    def _apply_filter_to_dialog_view(self):
+        """Filters the table view based on symbol/account input using DB column names."""
+        symbol_filter_text = self.filter_symbol_edit.text().strip().upper()
+        account_filter_text = (
+            self.filter_account_edit.text().strip()
+        )  # Keep case for account name
+        df_to_display = self._current_data_df.copy()  # Start with full current data
+
+        # Filter by Symbol (column name in DB is "Symbol")
+        if symbol_filter_text and "Symbol" in df_to_display.columns:
+            try:
+                df_to_display = df_to_display[
+                    df_to_display["Symbol"]
+                    .astype(str)
+                    .str.contains(symbol_filter_text, case=False, na=False)
+                ]
+            except Exception as e:
+                logging.warning(f"Error applying symbol filter in dialog: {e}")
+
+        # Filter by Account (column name in DB is "Account")
+        if account_filter_text and "Account" in df_to_display.columns:
+            try:
+                df_to_display = df_to_display[
+                    df_to_display["Account"]
+                    .astype(str)
+                    .str.contains(account_filter_text, case=False, na=False)
+                ]
+            except Exception as e:
+                logging.warning(f"Error applying account filter in dialog: {e}")
+
+        self.table_model.updateData(df_to_display)
+        self.table_view.resizeColumnsToContents()
+
+    def _clear_filter_in_dialog_view(self):
+        """Clears filters and shows all current data loaded from the DB."""
+        self.filter_symbol_edit.clear()
+        self.filter_account_edit.clear()
+        self.table_model.updateData(
+            self._current_data_df.copy()
+        )  # Reset to full current data
+        self.table_view.resizeColumnsToContents()
+
+    def get_selected_db_id(self) -> Optional[int]:
+        """
+        Gets the 'original_index' (which is the DB 'id') of the currently selected row
+        from the table model.
+        """
+        selected_indexes = self.table_view.selectionModel().selectedRows()
+        if not selected_indexes or len(selected_indexes) != 1:
+            return None  # No single row selected
+
+        selected_view_index = selected_indexes[
+            0
+        ]  # QModelIndex of the first cell in the selected row
+        source_model = self.table_model  # This is the PandasModel instance
+
+        try:
+            # 'original_index' column in the model's DataFrame (_data) holds the DB ID
+            # This column was created by load_all_transactions_from_db aliasing `id as original_index`
+            if "original_index" not in source_model._data.columns:
+                logging.error(
+                    "'original_index' column not found in ManageTransactionsDialogDB model data."
+                )
+                return None
+
+            original_index_col_idx = source_model._data.columns.get_loc(
+                "original_index"
+            )
+
+            # Get the model index for the specific cell in the 'original_index' column
+            target_model_index = source_model.index(
+                selected_view_index.row(), original_index_col_idx
+            )
+
+            db_id_val = source_model.data(
+                target_model_index, Qt.DisplayRole
+            )  # Get display data
+
+            return (
+                int(db_id_val)
+                if db_id_val is not None and str(db_id_val).strip() != "-"
+                else None
+            )
+        except (AttributeError, KeyError, IndexError, ValueError, TypeError) as e:
+            logging.error(
+                f"Error getting DB ID from dialog selection: {e}", exc_info=True
+            )
+            return None
+
+    @Slot()
+    def edit_selected_transaction_db(self):
+        db_id = self.get_selected_db_id()
+        if db_id is None:
+            QMessageBox.warning(
+                self, "Selection Error", "Please select a single transaction to edit."
+            )
+            return
+
+        # Fetch the row with DB column names from self._current_data_df
+        try:
+            transaction_row_series = self._current_data_df[
+                self._current_data_df["original_index"] == db_id
+            ].iloc[0]
+        except IndexError:
+            QMessageBox.warning(
+                self,
+                "Data Error",
+                f"Could not find transaction with ID {db_id} for editing in the current view.",
+            )
+            return
+
+        # Map DB data to the format AddTransactionDialog expects for pre-filling
+        # (keys are CSV-like headers, values are strings or appropriate types for QDateEdit)
+        dialog_prefill_data: Dict[str, Any] = {
+            "Date (MMM DD, YYYY)": (
+                pd.to_datetime(transaction_row_series.get("Date")).strftime(
+                    CSV_DATE_FORMAT
+                )
+                if pd.notna(transaction_row_series.get("Date"))
+                else ""
+            ),
+            "Transaction Type": transaction_row_series.get("Type", ""),
+            "Stock / ETF Symbol": transaction_row_series.get("Symbol", ""),
+            # For numeric, pass as string, AddTransactionDialog's _populate_fields_for_edit will format
+            "Quantity of Units": str(
+                transaction_row_series.get("Quantity", "")
+                if pd.notna(transaction_row_series.get("Quantity"))
+                else ""
+            ),
+            "Amount per unit": str(
+                transaction_row_series.get("Price/Share", "")
+                if pd.notna(transaction_row_series.get("Price/Share"))
+                else ""
+            ),
+            "Total Amount": str(
+                transaction_row_series.get("Total Amount", "")
+                if pd.notna(transaction_row_series.get("Total Amount"))
+                else ""
+            ),
+            "Fees": str(
+                transaction_row_series.get("Commission", "")
+                if pd.notna(transaction_row_series.get("Commission"))
+                else ""
+            ),
+            "Investment Account": transaction_row_series.get("Account", ""),
+            "Split Ratio (new shares per old share)": str(
+                transaction_row_series.get("Split Ratio", "")
+                if pd.notna(transaction_row_series.get("Split Ratio"))
+                else ""
+            ),
+            "Note": transaction_row_series.get("Note", ""),
+            # Local Currency is not directly part of AddTransactionDialog fields, it's derived by PortfolioApp
+        }
+
+        accounts_for_dialog = (
+            sorted(list(self._current_data_df["Account"].unique()))
+            if "Account" in self._current_data_df.columns
+            else []
+        )
+
+        edit_dialog = AddTransactionDialog(
+            existing_accounts=accounts_for_dialog,
+            parent=self,
+            edit_data=dialog_prefill_data,
+        )
+
+        if edit_dialog.exec():  # True if Save was clicked and dialog validation passed
+            new_data_dict_pytypes = (
+                edit_dialog.get_transaction_data()
+            )  # Returns dict with Python types, CSV-like keys
+            if new_data_dict_pytypes:
+                # Call PortfolioApp's method to handle the DB update
+                if self._parent_app._edit_transaction_in_db(
+                    db_id, new_data_dict_pytypes
+                ):
+                    self._refresh_dialog_table()  # Refresh this dialog's view from DB after successful save
+                    self.data_changed.emit()  # Signal main window to refresh its data
+                    # Success message will be shown by PortfolioApp after its refresh typically,
+                    # or we can add one here if preferred.
+                    # QMessageBox.information(self, "Success", "Transaction updated in database.")
+                else:
+                    QMessageBox.critical(
+                        self,
+                        "Update Error",
+                        "Failed to update transaction in the database. Check logs.",
+                    )
+            else:  # Dialog validation failed (get_transaction_data returned None)
+                QMessageBox.warning(
+                    self,
+                    "Validation Error",
+                    "Transaction data was not valid. No changes were saved.",
+                )
+
+    @Slot()
+    def delete_selected_transaction_db(self):
+        db_id = self.get_selected_db_id()
+        if db_id is None:
+            QMessageBox.warning(
+                self, "Selection Error", "Please select a single transaction to delete."
+            )
+            return
+
+        # Get some details of the transaction for the confirmation message
+        tx_details_str = "this transaction"
+        try:
+            row_to_delete = self._current_data_df[
+                self._current_data_df["original_index"] == db_id
+            ].iloc[0]
+            tx_date_str = (
+                pd.to_datetime(row_to_delete.get("Date")).strftime("%Y-%m-%d")
+                if pd.notna(row_to_delete.get("Date"))
+                else "N/A"
+            )
+            tx_symbol = row_to_delete.get("Symbol", "N/A")
+            tx_type = row_to_delete.get("Type", "N/A")
+            tx_details_str = (
+                f"Type: {tx_type}, Symbol: {tx_symbol}, Date: {tx_date_str}"
+            )
+        except Exception:
+            pass  # Stick with generic message if details can't be fetched
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Are you sure you want to permanently delete this transaction from the database?\n\n{tx_details_str}",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            # Call PortfolioApp's method to handle the DB delete
+            if self._parent_app._delete_transaction_from_db(db_id):
+                self._refresh_dialog_table()  # Refresh this dialog's view from DB
+                self.data_changed.emit()  # Signal main window to refresh its data
+                # Success message handled by main app or here if desired
+                # QMessageBox.information(self, "Success", "Transaction deleted from database.")
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Delete Error",
+                    "Failed to delete transaction from the database. Check logs.",
+                )
+
+    def accept(self):
+        # This is called when "Close" button is clicked (or dialog is accepted via Save in AddTxDialog if that was the flow)
+        # If changes were made (edit/delete), data_changed should have been emitted already.
+        # No specific action needed here beyond closing, unless we want to force a refresh of main GUI always.
+        # For now, let data_changed signal handle refresh logic in PortfolioApp.
+        super().accept()
 
 
 # --- Main Application Window ---
@@ -4375,228 +4418,276 @@ class PortfolioApp(QMainWindow):
         """
         Loads application configuration from a JSON file (gui_config.json).
 
-        Loads settings like the transaction file path, display currency, selected
+        Loads settings like the database file path, display currency, selected
         accounts, graph parameters, and column visibility. Uses default values if
         the file doesn't exist or if specific settings are missing or invalid.
-        Performs validation on loaded values.
+        Performs validation on loaded values. `self.DB_FILE_PATH` is updated here.
 
         Returns:
             dict: The loaded (and potentially validated/defaulted) configuration dictionary.
         """
+        # Default DB path determined by db_utils.get_database_path()
+        default_db_path = get_database_path(DB_FILENAME)
+        default_csv_fallback_path = DEFAULT_CSV  # For migration prompt if DB is empty
+
         default_display_currency = "USD"
         default_column_visibility = {
             col: True for col in get_column_definitions(default_display_currency).keys()
         }
-        # --- Define Default Account Currency Map ---
         default_account_currency_map = {"SET": "THB"}  # Example default
 
         config_defaults = {
-            "transactions_file": DEFAULT_CSV,
+            "transactions_file": default_db_path,  # Path to .db file
+            "transactions_file_csv_fallback": default_csv_fallback_path,  # For migration check
             "display_currency": default_display_currency,
             "show_closed": False,
             "selected_accounts": [],
             "load_on_startup": True,
-            "fmp_api_key": DEFAULT_API_KEY,
-            "account_currency_map": default_account_currency_map,  # <-- ADDED
-            "default_currency": "USD",  # <-- ADDED Default base currency
+            "fmp_api_key": (
+                config.DEFAULT_API_KEY if hasattr(config, "DEFAULT_API_KEY") else ""
+            ),  # Use from config if available
+            "account_currency_map": default_account_currency_map,
+            "default_currency": (
+                config.DEFAULT_CURRENCY
+                if hasattr(config, "DEFAULT_CURRENCY")
+                else "USD"
+            ),
             "graph_start_date": DEFAULT_GRAPH_START_DATE.strftime("%Y-%m-%d"),
             "graph_end_date": DEFAULT_GRAPH_END_DATE.strftime("%Y-%m-%d"),
             "graph_interval": DEFAULT_GRAPH_INTERVAL,
             "graph_benchmarks": DEFAULT_GRAPH_BENCHMARKS,
             "column_visibility": default_column_visibility,
-            "bar_periods_annual": 10,  # Default periods
+            "bar_periods_annual": 10,
             "bar_periods_monthly": 12,
             "bar_periods_weekly": 12,
-            "dividend_agg_period": "Annual",  # <-- ADDED: Default dividend aggregation period
-            "dividend_periods_to_show": 10,  # <-- ADDED: Default periods for dividend chart (matches annual)
-            "dividend_chart_default_periods_annual": 10,  # From config.py
-            "dividend_chart_default_periods_quarterly": 12,  # From config.py
-            "dividend_chart_default_periods_monthly": 24,  # From config.py
+            "dividend_agg_period": "Annual",
+            "dividend_periods_to_show": 10,
+            "dividend_chart_default_periods_annual": (
+                config.DIVIDEND_CHART_DEFAULT_PERIODS_ANNUAL
+                if hasattr(config, "DIVIDEND_CHART_DEFAULT_PERIODS_ANNUAL")
+                else 10
+            ),
+            "dividend_chart_default_periods_quarterly": (
+                config.DIVIDEND_CHART_DEFAULT_PERIODS_QUARTERLY
+                if hasattr(config, "DIVIDEND_CHART_DEFAULT_PERIODS_QUARTERLY")
+                else 12
+            ),
+            "dividend_chart_default_periods_monthly": (
+                config.DIVIDEND_CHART_DEFAULT_PERIODS_MONTHLY
+                if hasattr(config, "DIVIDEND_CHART_DEFAULT_PERIODS_MONTHLY")
+                else 24
+            ),
+            "last_csv_import_path": QStandardPaths.writableLocation(
+                QStandardPaths.DocumentsLocation
+            )
+            or os.getcwd(),  # For import dialog
+            "last_csv_export_path": QStandardPaths.writableLocation(
+                QStandardPaths.DocumentsLocation
+            )
+            or os.getcwd(),  # For export dialog
         }
-        config = config_defaults.copy()
-        logging.debug(
-            f"LOAD_CONFIG: Initial config from defaults: dividend_agg_period='{config.get('dividend_agg_period')}', dividend_periods_to_show='{config.get('dividend_periods_to_show')}'"
-        )
+        loaded_app_config = config_defaults.copy()  # Start with defaults
 
-        if os.path.exists(self.CONFIG_FILE):  # Use instance attribute
+        if self.CONFIG_FILE and os.path.exists(self.CONFIG_FILE):
             try:
-                with open(self.CONFIG_FILE, "r") as f:  # Use instance attribute
+                with open(self.CONFIG_FILE, "r") as f:
                     loaded_config_from_file = json.load(f)
-                logging.debug(
-                    f"LOAD_CONFIG: From file - loaded_config_from_file['dividend_agg_period'] = '{loaded_config_from_file.get('dividend_agg_period')}'"
-                )
-                logging.debug(
-                    f"LOAD_CONFIG: From file - loaded_config_from_file['dividend_periods_to_show'] = '{loaded_config_from_file.get('dividend_periods_to_show')}'"
-                )
+                loaded_app_config.update(
+                    loaded_config_from_file
+                )  # Update defaults with loaded values
+                logging.info(f"Config loaded from {self.CONFIG_FILE}")
 
-                config.update(loaded_config_from_file)
-                logging.debug(
-                    f"LOAD_CONFIG: After config.update(loaded_config_from_file): dividend_agg_period='{config.get('dividend_agg_period')}', dividend_periods_to_show='{config.get('dividend_periods_to_show')}'"
-                )
+                # Specific validation for transactions_file (DB path)
+                # If the loaded 'transactions_file' is a CSV, it means it's an old config.
+                # We should use it as the CSV fallback and set the transactions_file to the default DB path.
+                if "transactions_file" in loaded_app_config:
+                    path_from_config = loaded_app_config["transactions_file"]
+                    if isinstance(
+                        path_from_config, str
+                    ) and path_from_config.lower().endswith(".csv"):
+                        logging.warning(
+                            f"Old config detected: 'transactions_file' points to a CSV ('{path_from_config}'). "
+                            f"This will be used as a potential migration source. Main data source is now a database."
+                        )
+                        loaded_app_config["transactions_file_csv_fallback"] = (
+                            path_from_config
+                        )
+                        loaded_app_config["transactions_file"] = (
+                            default_db_path  # Use default DB path
+                        )
+                    elif not isinstance(
+                        path_from_config, str
+                    ) or not path_from_config.lower().endswith(
+                        (".db", ".sqlite", ".sqlite3")
+                    ):
+                        logging.warning(
+                            f"Invalid 'transactions_file' (DB path) in config: '{path_from_config}'. Using default DB path."
+                        )
+                        loaded_app_config["transactions_file"] = default_db_path
+                else:  # Not in config, use default
+                    loaded_app_config["transactions_file"] = default_db_path
 
-                logging.info(
-                    f"Config loaded from {self.CONFIG_FILE}"
-                )  # Use instance attribute
-
-                # --- Validate Benchmarks (unchanged) ---
-                if "graph_benchmarks" in config:
-                    if isinstance(config["graph_benchmarks"], list):
+                # --- Validate other config keys (largely as before) ---
+                if "graph_benchmarks" in loaded_app_config:
+                    if isinstance(loaded_app_config["graph_benchmarks"], list):
                         valid_benchmarks = [
                             b
-                            for b in config["graph_benchmarks"]
-                            if isinstance(b, str)
-                            and b
-                            in BENCHMARK_OPTIONS_DISPLAY  # Use display names for validation
+                            for b in loaded_app_config["graph_benchmarks"]
+                            if isinstance(b, str) and b in BENCHMARK_OPTIONS_DISPLAY
                         ]
-                        config["graph_benchmarks"] = valid_benchmarks
+                        loaded_app_config["graph_benchmarks"] = valid_benchmarks
                     else:
-                        config["graph_benchmarks"] = DEFAULT_GRAPH_BENCHMARKS
+                        loaded_app_config["graph_benchmarks"] = DEFAULT_GRAPH_BENCHMARKS
 
-                # --- Validate Selected Accounts (unchanged) ---
-                if "selected_accounts" in config and not isinstance(
-                    config["selected_accounts"], list
+                if "selected_accounts" in loaded_app_config and not isinstance(
+                    loaded_app_config["selected_accounts"], list
                 ):
-                    logging.warning(
-                        "Warn: Invalid 'selected_accounts' type in config. Resetting to empty list."
-                    )
-                    config["selected_accounts"] = []
+                    loaded_app_config["selected_accounts"] = []
 
-                # --- Validate Column Visibility (unchanged) ---
-                if "column_visibility" in config and isinstance(
-                    config["column_visibility"], dict
+                if "column_visibility" in loaded_app_config and isinstance(
+                    loaded_app_config["column_visibility"], dict
                 ):
-                    # Ensure keys are strings and values are booleans
                     validated_visibility = {}
                     all_cols = get_column_definitions(
-                        config.get("display_currency", default_display_currency)
+                        loaded_app_config.get(
+                            "display_currency", default_display_currency
+                        )
                     ).keys()
                     for col in all_cols:
-                        # Get value from loaded config, default to True if missing or invalid type
-                        val = config["column_visibility"].get(col)
+                        val = loaded_app_config["column_visibility"].get(col)
                         validated_visibility[col] = (
                             val if isinstance(val, bool) else True
                         )
-                    config["column_visibility"] = validated_visibility
+                    loaded_app_config["column_visibility"] = validated_visibility
                 else:
-                    config["column_visibility"] = default_column_visibility
+                    loaded_app_config["column_visibility"] = default_column_visibility
 
-                # --- Validate Account Currency Map ---
-                if "account_currency_map" in config:
-                    if not isinstance(config["account_currency_map"], dict) or not all(
+                if "account_currency_map" in loaded_app_config:
+                    if not isinstance(
+                        loaded_app_config["account_currency_map"], dict
+                    ) or not all(
                         isinstance(k, str) and isinstance(v, str)
-                        for k, v in config["account_currency_map"].items()
+                        for k, v in loaded_app_config["account_currency_map"].items()
                     ):
-                        logging.warning(
-                            "Warn: Invalid 'account_currency_map' type in config. Resetting to default."
+                        loaded_app_config["account_currency_map"] = (
+                            default_account_currency_map
                         )
-                        config["account_currency_map"] = default_account_currency_map
-                else:
-                    config["account_currency_map"] = default_account_currency_map
+                else:  # Not in config, use default
+                    loaded_app_config["account_currency_map"] = (
+                        default_account_currency_map
+                    )
 
-                # --- Validate Default Currency ---
-                if "default_currency" in config:
+                if "default_currency" in loaded_app_config:
                     if (
-                        not isinstance(config["default_currency"], str)
-                        or len(config["default_currency"]) != 3
+                        not isinstance(loaded_app_config["default_currency"], str)
+                        or len(loaded_app_config["default_currency"]) != 3
                     ):
-                        logging.warning(
-                            "Warn: Invalid 'default_currency' type/format in config. Resetting to 'USD'."
-                        )
-                        config["default_currency"] = "USD"
-                else:
-                    config["default_currency"] = "USD"
+                        loaded_app_config["default_currency"] = config_defaults[
+                            "default_currency"
+                        ]
+                else:  # Not in config, use default
+                    loaded_app_config["default_currency"] = config_defaults[
+                        "default_currency"
+                    ]
 
             except Exception as e:
                 logging.warning(
-                    f"Warn: Load config failed ({self.CONFIG_FILE}): {e}. Using defaults."  # Use instance attribute
+                    f"Warn: Load config failed ({self.CONFIG_FILE}): {e}. Using defaults."
+                )
+                loaded_app_config = (
+                    config_defaults.copy()
+                )  # Revert to full defaults on error
+                loaded_app_config["transactions_file"] = (
+                    default_db_path  # Ensure DB path is default on error
                 )
         else:
-            logging.info(
-                f"Config file {self.CONFIG_FILE} not found. Using defaults."
-            )  # Use instance attribute
+            logging.info(f"Config file {self.CONFIG_FILE} not found. Using defaults.")
+            loaded_app_config["transactions_file"] = (
+                default_db_path  # Ensure DB path is default if no config file
+            )
 
-        # Ensure all default keys exist (modified to include new keys)
+        # Ensure all default keys exist in the final config, and type check
         for key, default_value in config_defaults.items():
-            if key not in config:
-                config[key] = default_value
-            # Type check (allow list for selected_accounts, dict for map)
-            elif not isinstance(config[key], type(default_value)):
-                if key not in [
+            if key not in loaded_app_config:
+                loaded_app_config[key] = default_value
+            elif not isinstance(loaded_app_config[key], type(default_value)):
+                # Allow for specific keys that might have None or different types legitimately
+                allowed_flexible_types = [
                     "fmp_api_key",
                     "selected_accounts",
                     "account_currency_map",
                     "graph_benchmarks",
-                ] or (
-                    config[key] is not None
-                    and not isinstance(config[key], (str, list, dict))
+                    "transactions_file_csv_fallback",
+                    "last_csv_import_path",
+                    "last_csv_export_path",
+                ]
+                if key not in allowed_flexible_types or (
+                    loaded_app_config[key] is not None
+                    and not isinstance(
+                        loaded_app_config[key], (str, list, dict, bool, int, float)
+                    )
                 ):
                     logging.warning(
-                        f"Warn: Config type mismatch for '{key}'. Loaded: {type(config[key])}, Default: {type(default_value)}. Using default."
+                        f"Warn: Config type mismatch for '{key}'. Loaded type: {type(loaded_app_config[key])}, Default type: {type(default_value)}. Using default."
                     )
-                    config[key] = default_value
+                    loaded_app_config[key] = default_value
 
-        # Final date format validation (unchanged)
+        # Final date format validation
         try:
-            QDate.fromString(config["graph_start_date"], "yyyy-MM-dd")
+            QDate.fromString(loaded_app_config["graph_start_date"], "yyyy-MM-dd")
         except:
-            config["graph_start_date"] = DEFAULT_GRAPH_START_DATE.strftime("%Y-%m-%d")
+            loaded_app_config["graph_start_date"] = DEFAULT_GRAPH_START_DATE.strftime(
+                "%Y-%m-%d"
+            )
         try:
-            QDate.fromString(config["graph_end_date"], "yyyy-MM-dd")
+            QDate.fromString(loaded_app_config["graph_end_date"], "yyyy-MM-dd")
         except:
-            config["graph_end_date"] = DEFAULT_GRAPH_END_DATE.strftime("%Y-%m-%d")
+            loaded_app_config["graph_end_date"] = DEFAULT_GRAPH_END_DATE.strftime(
+                "%Y-%m-%d"
+            )
 
-        # Validate bar chart periods
-        for key in [
+        # Validate spinbox periods
+        numeric_spinbox_keys = [
             "bar_periods_annual",
             "bar_periods_monthly",
-            # "dividend_agg_period", # This is a string, validated separately
-            "dividend_periods_to_show",  # This is numeric
-            "dividend_chart_default_periods_annual",  # Numeric
+            "bar_periods_weekly",
+            "dividend_periods_to_show",
             "dividend_chart_default_periods_annual",
             "dividend_chart_default_periods_quarterly",
             "dividend_chart_default_periods_monthly",
-        ]:
-            if key in config:
+        ]
+        for key in numeric_spinbox_keys:
+            if key in loaded_app_config:
                 try:
-                    val = int(config[key])
-                    config[key] = max(1, min(val, 100))  # Clamp between 1 and 100
+                    val = int(loaded_app_config[key])
+                    loaded_app_config[key] = max(1, min(val, 100))
                 except (ValueError, TypeError):
-                    config[key] = config_defaults[key]  # Reset to default on error
+                    loaded_app_config[key] = config_defaults[key]
             else:
-                config["dividend_periods_to_show"] = config_defaults[
-                    "dividend_periods_to_show"
-                ]  # Correctly use the specific key
+                loaded_app_config[key] = config_defaults[key]  # Ensure key exists
 
-        logging.debug(
-            f"LOAD_CONFIG (PRE-VALIDATION for dividend_agg_period): current config['dividend_agg_period'] = '{config.get('dividend_agg_period')}'"
-        )
-        # Validate dividend aggregation period
-        if config.get("dividend_agg_period") not in ["Annual", "Quarterly", "Monthly"]:
-            logging.warning(
-                f"LOAD_CONFIG: Invalid or missing 'dividend_agg_period' ('{config.get('dividend_agg_period')}') in config. Resetting to default '{config_defaults['dividend_agg_period']}'."
-            )
-            config["dividend_agg_period"] = config_defaults["dividend_agg_period"]
-        logging.debug(
-            f"LOAD_CONFIG (POST-VALIDATION for dividend_agg_period): final config['dividend_agg_period'] = '{config.get('dividend_agg_period')}'"
-        )
-
-        # The validation for "dividend_periods_to_show" is now handled by the numeric_keys_to_validate loop.
-        # The separate block for it has been removed.
-
-        # Validate dividend chart periods
-        for key in [
-            "dividend_chart_default_periods_annual",
-            "dividend_chart_default_periods_quarterly",
-            "dividend_chart_default_periods_monthly",
+        if loaded_app_config.get("dividend_agg_period") not in [
+            "Annual",
+            "Quarterly",
+            "Monthly",
         ]:
-            if key in config:
-                try:
-                    val = int(config[key])
-                    config[key] = max(1, min(val, 100))  # Clamp
-                except (ValueError, TypeError):
-                    config[key] = config_defaults[key]
+            loaded_app_config["dividend_agg_period"] = config_defaults[
+                "dividend_agg_period"
+            ]
 
-        return config
+        # CRITICAL: Set the instance's DB_FILE_PATH based on the final loaded config
+        self.DB_FILE_PATH = loaded_app_config.get("transactions_file", default_db_path)
+        # If somehow it's still not a DB path, force default (should be caught earlier)
+        if not isinstance(
+            self.DB_FILE_PATH, str
+        ) or not self.DB_FILE_PATH.lower().endswith((".db", ".sqlite", ".sqlite3")):
+            logging.error(
+                f"Post-config load, DB_FILE_PATH is invalid: '{self.DB_FILE_PATH}'. Resetting to default."
+            )
+            self.DB_FILE_PATH = default_db_path
+            loaded_app_config["transactions_file"] = self.DB_FILE_PATH
+
+        return loaded_app_config
 
     # --- UI Update Methods (Define BEFORE __init__ calls them) ---
 
@@ -4674,84 +4765,104 @@ class PortfolioApp(QMainWindow):
 
     def _init_menu_bar(self):
         """Creates the main menu bar."""
-        menu_bar = self.menuBar()  # QMainWindow has a menuBar method
+        menu_bar = self.menuBar()
         menu_bar.setObjectName("MenuBar")  # Apply object name for styling
 
         # --- File Menu ---
         file_menu = menu_bar.addMenu("&File")
-        self.select_action = QAction(  # Store as attribute
-            QIcon.fromTheme("document-open"), "Open &Transactions File...", self
-        )  # Use standard icon if possible
 
-        self.select_action.setStatusTip("Select the transaction CSV file to load")
-        self.select_action.triggered.connect(
-            self.select_file
-        )  # Keep existing connection
-        file_menu.addAction(self.select_action)
+        # Open Database File
+        self.select_db_action = QAction(
+            QIcon.fromTheme("document-open"), "Open &Database File...", self
+        )
+        self.select_db_action.setStatusTip("Select the SQLite database file to load")
+        self.select_db_action.triggered.connect(self.select_database_file)
+        file_menu.addAction(self.select_db_action)
 
-        # --- ADDED: New Transaction File Action ---
-        self.new_transactions_file_action = QAction(
-            QIcon.fromTheme("document-new"), "&New Transactions File...", self
+        # New Database File
+        self.new_database_file_action = QAction(
+            QIcon.fromTheme("document-new"), "&New Database File...", self
         )
-        self.new_transactions_file_action.setStatusTip(
-            "Create a new, empty transactions CSV file"
+        self.new_database_file_action.setStatusTip(
+            "Create a new, empty SQLite database file"
         )
-        self.new_transactions_file_action.triggered.connect(
-            self.create_new_transactions_file
-        )
-        file_menu.addAction(self.new_transactions_file_action)
-
-        save_as_action = QAction(
-            QIcon.fromTheme("document-save-as"), "Save Transactions &As...", self
-        )
-        save_as_action.setStatusTip("Save current transaction data to a new CSV file")
-        save_as_action.triggered.connect(
-            self.save_transactions_as
-        )  # Need to implement save_transactions_as
-        file_menu.addAction(save_as_action)
+        self.new_database_file_action.triggered.connect(self.create_new_database_file)
+        file_menu.addAction(self.new_database_file_action)
 
         file_menu.addSeparator()
 
+        # Import Transactions from CSV
+        self.import_csv_action = QAction(
+            QIcon.fromTheme("document-import"), "&Import Transactions from CSV...", self
+        )
+        self.import_csv_action.setStatusTip(
+            "Import transactions from a CSV file into the current database"
+        )
+        self.import_csv_action.triggered.connect(self.import_transactions_from_csv)
+        file_menu.addAction(self.import_csv_action)
+
+        # Export Transactions to CSV
+        self.export_csv_action = QAction(
+            QIcon.fromTheme("document-export"), "&Export Transactions to CSV...", self
+        )
+        self.export_csv_action.setStatusTip(
+            "Export current transaction data from database to a CSV file"
+        )
+        self.export_csv_action.triggered.connect(self.export_transactions_to_csv)
+        file_menu.addAction(self.export_csv_action)
+
+        file_menu.addSeparator()
+
+        # Exit
         exit_action = QAction(QIcon.fromTheme("application-exit"), "E&xit", self)
         exit_action.setStatusTip("Exit application")
-        exit_action.triggered.connect(
-            self.close
-        )  # Connect to the window's close method
+        exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
         # --- View Menu ---
         view_menu = menu_bar.addMenu("&View")
         self.refresh_action = QAction(
             QIcon.fromTheme("view-refresh"), "&Refresh Data", self
-        )  # Store as attribute
-        self.refresh_action.setStatusTip("Reload data and recalculate")
-        self.refresh_action.setShortcut("F5")  # Common shortcut for refresh
+        )
+        self.refresh_action.setStatusTip(
+            "Reload data from database and recalculate"
+        )  # MODIFIED Tip
+        self.refresh_action.setShortcut("F5")
         self.refresh_action.triggered.connect(self.refresh_data)
         view_menu.addAction(self.refresh_action)
 
-        # --- ADDED: Transactions Menu ---
+        # View Ignored Log (can also be a button)
+        self.view_ignored_log_action = QAction(
+            QIcon.fromTheme("dialog-warning"), "View &Ignored Log", self
+        )
+        self.view_ignored_log_action.setStatusTip(
+            "View transactions ignored during the last calculation"
+        )
+        self.view_ignored_log_action.triggered.connect(self.show_ignored_log)
+        self.view_ignored_log_action.setEnabled(False)  # Initially disabled
+        view_menu.addAction(self.view_ignored_log_action)
+
+        # --- Transactions Menu ---
         tx_menu = menu_bar.addMenu("&Transactions")
         self.add_transaction_action = QAction(
             QIcon.fromTheme("list-add"), "&Add Transaction...", self
-        )  # Store as attribute
-        self.add_transaction_action.setStatusTip("Manually add a new transaction")
+        )
+        self.add_transaction_action.setStatusTip(
+            "Manually add a new transaction to the database"
+        )  # MODIFIED Tip
         self.add_transaction_action.triggered.connect(self.open_add_transaction_dialog)
         tx_menu.addAction(self.add_transaction_action)
 
         self.manage_transactions_action = QAction(
             QIcon.fromTheme("document-edit"), "&Manage Transactions...", self
-        )  # Store as attribute
-        self.manage_transactions_action.setStatusTip(
-            "Edit or delete existing transactions"
         )
+        self.manage_transactions_action.setStatusTip(
+            "Edit or delete existing transactions in the database"
+        )  # MODIFIED Tip
         self.manage_transactions_action.triggered.connect(
             self.show_manage_transactions_dialog
         )
         tx_menu.addAction(self.manage_transactions_action)
-        # --- END ADDED ---
-
-        # --- ADDED: View Log Action (moved from button logic) ---
-        # (Could also go in View menu)
 
         # --- Settings Menu ---
         settings_menu = menu_bar.addMenu("&Settings")
@@ -4759,21 +4870,28 @@ class PortfolioApp(QMainWindow):
         acc_currency_action.setStatusTip(
             "Configure currency for each investment account"
         )
-        acc_currency_action.triggered.connect(
-            self.show_account_currency_dialog
-        )  # Connect to new slot
+        acc_currency_action.triggered.connect(self.show_account_currency_dialog)
         settings_menu.addAction(acc_currency_action)
 
-        # --- ADD Manual Prices action ---
-        manual_price_action = QAction("&Manual Prices...", self)
-        manual_price_action.setStatusTip(
-            "Set manual price overrides for specific symbols"
+        if CSV_UTILS_AVAILABLE:
+            standardize_headers_action = QAction(
+                "Standardize &External CSV Headers...", self
+            )
+            standardize_headers_action.setStatusTip(
+                "Convert headers in a selected CSV file (for import help)"
+            )
+            standardize_headers_action.triggered.connect(
+                self.run_standardize_external_csv_headers
+            )
+            settings_menu.addAction(standardize_headers_action)
+
+        symbol_settings_action = QAction("&Symbol Settings...", self)
+        symbol_settings_action.setStatusTip(
+            "Set manual overrides, symbol mappings, and excluded symbols"
         )
-        manual_price_action.triggered.connect(
-            self.show_manual_overrides_dialog  # Renamed slot
-        )  # Connect to new slot
-        settings_menu.addAction(manual_price_action)
-        # --- END ADD ---
+        symbol_settings_action.triggered.connect(self.show_symbol_settings_dialog)
+        settings_menu.addAction(symbol_settings_action)
+
         settings_menu.addSeparator()
         clear_cache_action = QAction("Clear &Cache Files...", self)
         clear_cache_action.setStatusTip(
@@ -4782,17 +4900,19 @@ class PortfolioApp(QMainWindow):
         clear_cache_action.triggered.connect(self.clear_cache_files_action_triggered)
         settings_menu.addAction(clear_cache_action)
 
-        # --- Add Help Menu (Optional) ---
+        # --- Help Menu ---
         help_menu = menu_bar.addMenu("&Help")
-        about_action = QAction("&About", self)
-        about_action.triggered.connect(
-            self.show_about_dialog
-        )  # Need to implement show_about_dialog
-        # --- ADDED: CSV Format Help Action ---
-        csv_help_action = QAction("CSV Format Help...", self)
-        csv_help_action.setStatusTip("Show required CSV file format and headers")
+        csv_help_action = QAction(
+            "CSV Import Format Help...", self
+        )  # Help still relevant for import
+        csv_help_action.setStatusTip(
+            "Show required CSV file format and headers for import"
+        )
         csv_help_action.triggered.connect(self.show_csv_format_help)
         help_menu.addAction(csv_help_action)
+
+        about_action = QAction("&About", self)
+        about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
 
     # --- ADDED: Slot for CSV Format Help ---
@@ -5055,65 +5175,171 @@ The CSV file should contain the following columns (header names must match exact
             else:
                 logging.info("Account currency settings unchanged.")
 
-    # --- Need to implement these methods used in the menu ---
-    def save_transactions_as(self):
-        # Placeholder - opens save dialog, writes self.original_data (or maybe filtered?) to new CSV
-        if not hasattr(self, "original_data") or self.original_data.empty:
-            QMessageBox.warning(self, "No Data", "No transaction data loaded to save.")
+    @Slot()
+    def export_transactions_to_csv(self):
+        """
+        Exports all transactions from the current SQLite database to a new CSV file.
+        The CSV will use standard "verbose" headers for better readability if possible,
+        or the cleaned headers.
+        """
+        if not self.db_conn:
+            QMessageBox.warning(self, "No Database", "No database open to export from.")
             return
 
-        start_dir = (
-            os.path.dirname(self.transactions_file)
-            if self.transactions_file
-            else os.getcwd()
-        )
+        # Load all transactions from the database.
+        # load_all_transactions_from_db returns a DataFrame with 'cleaned' column names
+        # and 'original_index' as the DB id.
+        df_to_export, success = load_all_transactions_from_db(self.db_conn)
+
+        if not success or df_to_export is None:
+            QMessageBox.critical(
+                self,
+                "Load Error",
+                "Failed to load transactions from the database for export.",
+            )
+            return
+        if df_to_export.empty:
+            QMessageBox.information(
+                self, "No Data", "No transactions in the database to export."
+            )
+            return
+
+        # Suggest starting directory based on last export or Documents
+        start_dir = self.config.get("last_csv_export_path", "")
+        if not start_dir or not os.path.isdir(start_dir):
+            start_dir = (
+                QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+                or os.getcwd()
+            )
+
+        default_export_filename = f"{os.path.splitext(os.path.basename(self.DB_FILE_PATH))[0]}_export_{datetime.now().strftime('%Y%m%d')}.csv"
+
         fname, _ = QFileDialog.getSaveFileName(
-            self, "Save Transactions As", start_dir, "CSV Files (*.csv)"
+            self,
+            "Export Transactions to CSV",
+            os.path.join(start_dir, default_export_filename),
+            "CSV Files (*.csv);;All Files (*)",
         )
 
         if fname:
             if not fname.lower().endswith(".csv"):
                 fname += ".csv"
-            logging.info(f"Attempting to save transactions to: {fname}")
 
-            # --- Backup the ORIGINAL file FIRST ---
-            original_file_to_backup = self.transactions_file
-            if original_file_to_backup and os.path.exists(original_file_to_backup):
-                backup_ok, backup_msg = self._backup_csv(
-                    filename_to_backup=original_file_to_backup
-                )  # Pass original filename
-                if not backup_ok:
-                    QMessageBox.critical(
-                        self,
-                        "Backup Error",
-                        f"Failed to backup original CSV before saving:\n{backup_msg}",
-                    )
-                    return  # Stop if backup fails
-            else:
-                logging.info(
-                    "Original transaction file not set or found, skipping backup for 'Save As'."
-                )
-            # --- End Backup ---
+            # Save the directory for next time
+            self.config["last_csv_export_path"] = os.path.dirname(fname)
+            self.save_config()
 
-            # Use the same rewrite logic, but with the new filename
-            temp_orig_file = self.transactions_file  # Store original
-            self.transactions_file = fname  # Temporarily set filename for rewrite
-            # Modify _rewrite_csv to optionally skip its internal backup call
-            success = self._rewrite_csv(
-                self.original_data.drop(columns=["original_index"], errors="ignore"),
-                skip_backup=True,  # Add flag to skip internal backup
+            logging.info(f"Attempting to export transactions to CSV: {fname}")
+            self.status_label.setText(
+                f"Exporting transactions to {os.path.basename(fname)}..."
             )
-            self.transactions_file = temp_orig_file  # Restore original filename
+            QApplication.processEvents()
 
-            if success:
+            try:
+                # Prepare DataFrame for export:
+                # 1. Map cleaned DB column names back to standard "verbose" CSV headers for user-friendliness.
+                # 2. Order columns according to DESIRED_CLEANED_COLUMN_ORDER (which implies verbose headers).
+                # 3. Format Date column to "MMM DD, YYYY".
+                # 4. Drop the 'original_index' (DB id) column or rename it.
+
+                df_export_prepared = df_to_export.copy()
+
+                # Drop 'original_index' or rename if you want to keep it
+                if "original_index" in df_export_prepared.columns:
+                    df_export_prepared.drop(columns=["original_index"], inplace=True)
+                    # Or rename: df_export_prepared.rename(columns={'original_index': 'DatabaseID'}, inplace=True)
+
+                # Map cleaned DB names to standard verbose CSV names for export
+                # Create a reverse map from EXPECTED_CLEANED_COLUMNS to the keys of STANDARD_ORIGINAL_TO_CLEANED_MAP
+                # This is a bit complex; simpler is to define the target CSV headers directly.
+                # DESIRED_CLEANED_COLUMN_ORDER uses cleaned names. We need a map: Cleaned -> Verbose Original
+                cleaned_to_verbose_map = {
+                    v: k
+                    for k, v in COLUMN_MAPPING_CSV_TO_INTERNAL.items()
+                    if v in DESIRED_CLEANED_COLUMN_ORDER
+                }
+                # Prioritize the more verbose ones from STANDARD_ORIGINAL_TO_CLEANED_MAP in csv_utils.py
+                # from csv_utils import STANDARD_ORIGINAL_TO_CLEANED_MAP as CSV_UTILS_STANDARD_MAP
+                # cleaned_to_verbose_map = {v:k for k,v in CSV_UTILS_STANDARD_MAP.items()}
+
+                # For simplicity, let's assume we export with the *cleaned* headers for now,
+                # as mapping back to potentially ambiguous verbose headers can be tricky.
+                # If specific verbose headers are desired, a direct rename map is better.
+                # Example of renaming to verbose:
+                # verbose_rename_map = {
+                #     "Date": "Date (MMM DD, YYYY)",
+                #     "Type": "Transaction Type",
+                #     "Symbol": "Stock / ETF Symbol",
+                #     "Quantity": "Quantity of Units",
+                #     "Price/Share": "Amount per unit",
+                #     # ... and so on for all columns in DESIRED_CLEANED_COLUMN_ORDER
+                #     "Commission": "Fees",
+                #     "Account": "Investment Account",
+                #     "Split Ratio": "Split Ratio (new shares per old share)"
+                # }
+                # df_export_prepared.rename(columns=verbose_rename_map, inplace=True)
+                # export_column_order = [verbose_rename_map.get(col, col) for col in DESIRED_CLEANED_COLUMN_ORDER if verbose_rename_map.get(col,col) in df_export_prepared.columns]
+
+                # Using cleaned headers for export for now (matches DESIRED_CLEANED_COLUMN_ORDER)
+                export_column_order = [
+                    col
+                    for col in DESIRED_CLEANED_COLUMN_ORDER
+                    if col in df_export_prepared.columns
+                ]
+                # Add any other columns that might exist but are not in the desired order (e.g. Note if not listed)
+                other_cols_in_export = [
+                    col
+                    for col in df_export_prepared.columns
+                    if col not in export_column_order
+                ]
+                df_export_final = df_export_prepared[
+                    export_column_order + other_cols_in_export
+                ]
+
+                # Format Date column to "MMM DD, YYYY" for CSV
+                if (
+                    "Date" in df_export_final.columns
+                    and pd.api.types.is_datetime64_any_dtype(df_export_final["Date"])
+                ):
+                    try:
+                        df_export_final["Date"] = df_export_final["Date"].dt.strftime(
+                            CSV_DATE_FORMAT
+                        )
+                    except (
+                        AttributeError
+                    ):  # Handle cases where it might already be string after some ops
+                        pass
+                elif (
+                    "Date" in df_export_final.columns
+                ):  # If Date is string, try to parse and reformat
+                    try:
+                        df_export_final["Date"] = pd.to_datetime(
+                            df_export_final["Date"], errors="coerce"
+                        ).dt.strftime(CSV_DATE_FORMAT)
+                    except:  # If parsing fails, leave as is
+                        pass
+
+                # Write to CSV
+                df_export_final.to_csv(
+                    fname, index=False, encoding="utf-8", quoting=csv.QUOTE_MINIMAL
+                )  # QUOTE_MINIMAL is often preferred
                 QMessageBox.information(
-                    self, "Save Successful", f"Transactions saved to:\n{fname}"
+                    self,
+                    "Export Successful",
+                    f"All transactions exported successfully to:\n{fname}",
                 )
-            # Error message shown by _rewrite_csv if it failed
-            else:
+                self.status_label.setText(f"Exported to {os.path.basename(fname)}")
+            except Exception as e:
                 QMessageBox.critical(
-                    self, "Save Failed", f"Could not save transactions to:\n{fname}"
+                    self, "Export Error", f"Could not export transactions to CSV:\n{e}"
                 )
+                logging.error(
+                    f"Error exporting transactions to CSV: {e}", exc_info=True
+                )
+                self.status_label.setText("Export failed.")
+        else:
+            logging.info("CSV export cancelled by user.")
+            self.status_label.setText("Export cancelled.")
 
     def show_about_dialog(self):
         # Placeholder - shows a simple message box with app info
@@ -5288,240 +5514,228 @@ The CSV file should contain the following columns (header names must match exact
     def __init__(self):
         """Initializes the main application window, loads config, and sets up UI."""
         # --- IMPORTANT: Call super().__init__() for QMainWindow ---
-        super().__init__()  # This was missing, important for QMainWindow setup
+        super().__init__()
         logging.debug("--- PortfolioApp __init__: START ---")
 
-        # --- Initialize CONFIG_FILE and MANUAL_PRICE_FILE here ---
-        # QApplication instance should exist and app name/org should be set by now by the __main__ block
-        self.CONFIG_FILE: Optional[str] = None  # type: ignore
-        self.MANUAL_PRICE_FILE: Optional[str] = None
+        # --- Path Initialization for DB and Config ---
+        self.DB_FILE_PATH: Optional[str] = (
+            None  # Will be set by get_database_path via load_config or direct call
+        )
+        self.CONFIG_FILE: Optional[str] = None
+        self.MANUAL_OVERRIDES_FILE: Optional[str] = (
+            None  # Will be set based on AppDataLocation
+        )
+
         try:
-            # QApplication instance should exist and app name/org should be set by now by the __main__ block
-            config_dir_path = ""  # Initialize
-            if sys.platform == "darwin":  # macOS
-                # On macOS, AppDataLocation is often preferred for this type of data
-                # and should point to ~/Library/Application Support/<Org>/<App>
-                config_dir_path = QStandardPaths.writableLocation(
-                    QStandardPaths.AppDataLocation
-                )
-                if (
-                    not config_dir_path
-                ):  # Fallback to AppConfigLocation if AppDataLocation fails
-                    logging.warning(
-                        "macOS: AppDataLocation failed, trying AppConfigLocation."
-                    )
-                    config_dir_path = QStandardPaths.writableLocation(
-                        QStandardPaths.AppConfigLocation
-                    )
-            else:  # Other platforms
-                config_dir_path = QStandardPaths.writableLocation(
+            app_data_path = QStandardPaths.writableLocation(
+                QStandardPaths.AppDataLocation
+            )
+            if (
+                not app_data_path
+            ):  # Fallback if AppDataLocation (often includes AppName) is empty
+                app_config_path = QStandardPaths.writableLocation(
                     QStandardPaths.AppConfigLocation
                 )
-                if not config_dir_path:  # Fallback
-                    config_dir_path = QStandardPaths.writableLocation(
-                        QStandardPaths.AppDataLocation
+                if app_config_path:  # AppConfigLocation might also be app-specific
+                    app_data_path = app_config_path
+                else:  # Further fallback to user's home if both standard paths fail
+                    logging.warning(
+                        "QStandardPaths AppDataLocation and AppConfigLocation failed. Using user home directory."
                     )
+                    # For home dir, we might want to explicitly create an app-named subfolder
+                    home_dir = os.path.expanduser("~")
+                    app_data_path = os.path.join(
+                        home_dir, f".{APP_NAME_FOR_QT.lower()}"
+                    )  # e.g., ~/.investa
 
-            if config_dir_path:
-                # QStandardPaths.AppConfigLocation is already application-specific (e.g., includes Org/App name)
-                user_specific_app_folder = (
-                    config_dir_path  # This path should now be correct
+            if app_data_path:
+                os.makedirs(app_data_path, exist_ok=True)  # Ensure directory exists
+                self.CONFIG_FILE = os.path.join(app_data_path, "gui_config.json")
+                self.MANUAL_OVERRIDES_FILE = os.path.join(
+                    app_data_path, MANUAL_OVERRIDES_FILENAME
                 )
-                os.makedirs(user_specific_app_folder, exist_ok=True)
-                self.CONFIG_FILE = os.path.join(
-                    user_specific_app_folder, "gui_config.json"
+            else:  # Last resort if all path finding fails (should be rare)
+                logging.error(
+                    "CRITICAL: Could not determine a writable application data directory. Using current working directory for config/overrides."
                 )
-                self.MANUAL_OVERRIDES_FILE = os.path.join(  # Renamed attribute
-                    user_specific_app_folder,
-                    MANUAL_OVERRIDES_FILENAME,  # Use new filename
-                )
-            else:  # Further fallback if QStandardPaths fails (less likely)
-                logging.warning(
-                    "QStandardPaths failed to provide a writable location. Using fallback directory."
-                )
-                user_specific_app_folder = os.path.expanduser(
-                    f"~/.{APP_NAME_FOR_QT.lower()}"
-                )  # Fallback to a hidden dir in user's home
-                os.makedirs(user_specific_app_folder, exist_ok=True)
-                self.CONFIG_FILE = os.path.join(
-                    user_specific_app_folder, "gui_config.json"
-                )
-                self.MANUAL_OVERRIDES_FILE = os.path.join(  # Renamed attribute
-                    user_specific_app_folder,
-                    MANUAL_OVERRIDES_FILENAME,  # Use new filename
-                )
+                self.CONFIG_FILE = "gui_config.json"
+                self.MANUAL_OVERRIDES_FILE = MANUAL_OVERRIDES_FILENAME
         except Exception as e_path_init:
             logging.exception(
                 f"CRITICAL ERROR during config/manual file path initialization: {e_path_init}"
             )
-            # As a last resort, set them to relative paths in the current working directory
-            # This might not be ideal for bundled apps but prevents None.
-            self.CONFIG_FILE = "gui_config.json"
-            self.MANUAL_OVERRIDES_FILE = MANUAL_OVERRIDES_FILENAME  # Use new filename
+            self.CONFIG_FILE = "gui_config.json"  # Fallback
+            self.MANUAL_OVERRIDES_FILE = MANUAL_OVERRIDES_FILENAME  # Fallback
             QMessageBox.critical(
                 self,
                 "Path Error",
-                f"Could not determine standard configuration paths. Using local files.\nError: {e_path_init}",
+                f"Could not set up application paths for config files.\nError: {e_path_init}",
             )
+
+        # DB_FILE_PATH is determined by load_config or set if a new DB is created/opened.
+        # It will also use get_database_path() which has similar fallback logic.
 
         logging.info(f"CONFIG_FILE path determined as: {self.CONFIG_FILE}")
         logging.info(
             f"MANUAL_OVERRIDES_FILE path determined as: {self.MANUAL_OVERRIDES_FILE}"
         )
-        # --- End path initialization ---
+        # DB_FILE_PATH will be logged after load_config
+        # --- End Path Initialization ---
 
-        self.app_font = QFont("Arial", 9)  # Or your chosen common font
+        self.app_font = QFont("Arial", 9)
+        self.setFont(self.app_font)
         logging.info(
             f"Application base font set to: {self.app_font.family()} ({self.app_font.pointSize()}pt)"
-        )  # Add this log
-        self.setFont(self.app_font)
-        # --- Core App Setup ---
+        )
         self.base_window_title = "Investa Portfolio Dashboard"
         self.setWindowTitle(self.base_window_title)
-        # self.app_font = QFont("Arial", 9) # Already set above
-        # self.setFont(self.app_font) # Already set above
-        self.internal_to_yf_map = {}  # <-- ADD Initialize attribute
-        # --- ADDED: Timer for debounced table filtering ---
+        self.internal_to_yf_map = {}
         self.table_filter_timer = QTimer(self)
         self.table_filter_timer.setSingleShot(True)
-        # --- END ADDED ---
-        self._initial_file_selection = False  # Flag for initial auto-select
-        self.worker_signals = WorkerSignals()  # Central signals object
+        self._initial_file_selection = False  # Used by select_database_file now
+        self.worker_signals = WorkerSignals()
 
         # --- Configuration Loading ---
-        self.config = self.load_config()
+        self.config = (
+            self.load_config()
+        )  # This will set self.DB_FILE_PATH from config or default
+        logging.info(f"DB_FILE_PATH set from/to config: {self.DB_FILE_PATH}")
 
-        # --- Load Manual Overrides ---
-        self.manual_overrides_dict = self._load_manual_overrides()
-        # Initialize user-defined symbol map and exclusions (will be populated by _load_manual_overrides)
+        # --- Initialize DB Connection ---
+        # initialize_database will create the DB file and tables if they don't exist at self.DB_FILE_PATH
+        self.db_conn = initialize_database(self.DB_FILE_PATH)
+        if not self.db_conn:
+            QMessageBox.critical(
+                self,
+                "Database Error",
+                f"Could not initialize or connect to the database at:\n{self.DB_FILE_PATH}\n\nThe application may not function correctly.",
+            )
+        else:
+            logging.info(f"Database connection established: {self.DB_FILE_PATH}")
+            self.setWindowTitle(
+                f"{self.base_window_title} - {os.path.basename(self.DB_FILE_PATH)}"
+            )
+
+        # --- Load Manual Overrides & User Symbol Settings ---
+        self.manual_overrides_dict: Dict[str, Dict[str, Any]] = {}
         self.user_symbol_map_config: Dict[str, str] = {}
         self.user_excluded_symbols_config: Set[str] = set()
-        self._load_manual_overrides()  # Call again to ensure new attributes are populated
+        self._load_manual_overrides()  # Populates the above attributes
 
-        self.transactions_file = self.config.get("transactions_file", DEFAULT_CSV)
         self.fmp_api_key = self.config.get(
-            "fmp_api_key", DEFAULT_API_KEY
-        )  # Keep for potential future use
+            "fmp_api_key",
+            config.DEFAULT_API_KEY if hasattr(config, "DEFAULT_API_KEY") else "",
+        )
 
-        # --- State Variables ---
         self.is_calculating = False
-
-        # --- ADD Raw Historical Data Placeholders ---
-        self.historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}
-        self.historical_prices_yf_unadjusted: Dict[str, pd.DataFrame] = (
-            {}
-        )  # Might need this too if we want unadjusted charts later
-        self.historical_fx_yf: Dict[str, pd.DataFrame] = {}
-        # --- END ADD ---
-
         self.last_calc_status = ""
         self.last_hist_twr_factor = np.nan
-
-        # --- Data Placeholders ---
-        self.holdings_data = pd.DataFrame()
-        self.ignored_data = pd.DataFrame()
+        self.holdings_data = pd.DataFrame()  # Initialize as empty DataFrame
+        self.ignored_data = (
+            pd.DataFrame()
+        )  # This will store rows from DB load issues or processing issues
         self.summary_metrics_data = {}
         self.account_metrics_data = {}
         self.historical_data = pd.DataFrame()
         self.index_quote_data: Dict[str, Dict[str, Any]] = {}
         self.full_historical_data = pd.DataFrame()
-        self.periodic_returns_data: Dict[str, pd.DataFrame] = (
-            {}
-        )  # Initialize as empty dict
-        self.dividend_history_data = pd.DataFrame()  # <-- NEW for dividend history
-
-        # --- Account Selection State ---
+        self.periodic_returns_data: Dict[str, pd.DataFrame] = {}
+        self.dividend_history_data = pd.DataFrame()
+        self.historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}
+        self.historical_fx_yf: Dict[str, pd.DataFrame] = {}
         self.available_accounts: List[str] = []
-        # Load selected accounts, default to empty list (meaning all)
         self.selected_accounts: List[str] = self.config.get("selected_accounts", [])
-
-        # --- Benchmark Selection State ---
         self.selected_benchmarks = self.config.get(
             "graph_benchmarks", DEFAULT_GRAPH_BENCHMARKS
         )
         if not isinstance(self.selected_benchmarks, list) or not all(
             isinstance(item, str) for item in self.selected_benchmarks
-        ):  # This line is different from the diff context
+        ):
             self.selected_benchmarks = DEFAULT_GRAPH_BENCHMARKS
-        elif (
-            not self.selected_benchmarks and BENCHMARK_OPTIONS_DISPLAY
-        ):  # Use BENCHMARK_OPTIONS_DISPLAY
-            # If BENCHMARK_OPTIONS_DISPLAY is not empty, use its first item, else empty list
+        elif not self.selected_benchmarks and BENCHMARK_OPTIONS_DISPLAY:
             self.selected_benchmarks = (
                 [BENCHMARK_OPTIONS_DISPLAY[0]] if BENCHMARK_OPTIONS_DISPLAY else []
             )
 
-        # --- Column Visibility State ---
-        # Initialize self.column_visibility before calling _ensure_all_columns...
         self.column_visibility: Dict[str, bool] = self.config.get(
             "column_visibility", {}
         )
-        # Now ensure all possible columns are covered
-        self._ensure_all_columns_in_visibility()  # This needs self.column_visibility to exist
-
-        # --- Background Processing ---
+        self._ensure_all_columns_in_visibility()
         self.threadpool = QThreadPool()
         logging.info(f"Max threads: {self.threadpool.maxThreadCount()}")
 
+        # This will store the full, cleaned DataFrame loaded from the DB (or migrated CSV)
+        # It's the primary source for portfolio_logic functions.
+        self.all_transactions_df_cleaned_for_logic = pd.DataFrame()
+        # This stores the DataFrame representing the original source data, primarily for context
+        # when displaying ignored rows if they originated from a CSV with different headers.
+        # If data is purely from DB, this might be similar/identical to all_transactions_df_cleaned_for_logic.
+        self.original_transactions_df_for_ignored_context = pd.DataFrame()
+        self.original_to_cleaned_header_map_from_csv: Dict[str, str] = (
+            {}
+        )  # Only relevant if CSV was imported
+
         logging.debug("--- PortfolioApp __init__: Before UI Structure/Widgets Init ---")
-        # --- Initialize UI ---
-        self._init_ui_structure()  # Setup frames and main layout
+        self._init_ui_structure()
         logging.debug("--- PortfolioApp __init__: After _init_ui_structure ---")
-        self._init_ui_widgets()  # Create widgets within frames
+        self._init_ui_widgets()
         logging.debug("--- PortfolioApp __init__: After _init_ui_widgets ---")
         self._init_menu_bar()
-        self._init_toolbar()  # Initialize toolbar after menu actions are created
-        self._connect_signals()  # Connect signals after all UI elements are initialized
-
-        # --- Apply Styles & Initial Updates ---
+        self._init_toolbar()
+        self._connect_signals()
         self._apply_initial_styles_and_updates()
 
-        # --- Initial Data Load Logic ---
-        if self.config.get("load_on_startup", True):
-            if self.transactions_file and os.path.exists(self.transactions_file):
-                # Need to get available accounts before potentially filtering in refresh_data
-                # Let's trigger a preliminary load just for accounts if needed, or handle in refresh_data
-                logging.info("Triggering initial data refresh on startup...")
+        # --- Initial Data Load / Migration Check ---
+        if self.db_conn and self.config.get("load_on_startup", True):
+            # Path to a CSV that *might* exist for migration if DB is new/empty
+            csv_for_potential_migration = self.config.get(
+                "transactions_file_csv_fallback", DEFAULT_CSV
+            )
+            logging.info(
+                f"Startup: Checking DB ({self.DB_FILE_PATH}) and potential CSV for migration ({csv_for_potential_migration})"
+            )
 
-                QTimer.singleShot(
-                    150, self.refresh_data
-                )  # Delay slightly to ensure UI is fully shown
-            # --- ADDED: Auto-prompt if file is missing ---
-            elif not self.transactions_file or not os.path.exists(
-                self.transactions_file
+            if check_if_db_empty_and_csv_exists(
+                self.db_conn, csv_for_potential_migration
             ):
+                logging.info("Startup: DB is empty and migration CSV exists.")
+                reply = QMessageBox.question(
+                    self,
+                    "Migrate CSV to Database?",
+                    f"The Investa database is currently empty. "
+                    f"An existing CSV transaction file was found or configured:\n\n"
+                    f"<b>{os.path.basename(csv_for_potential_migration)}</b>\n\n"
+                    f"Would you like to import transactions from this CSV file into the new database?\n\n"
+                    f"Database: {os.path.basename(self.DB_FILE_PATH)}",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes,
+                )
+                if reply == QMessageBox.Yes:
+                    self._run_csv_migration(
+                        csv_for_potential_migration
+                    )  # This will also call refresh_data
+                else:
+                    self.status_label.setText(
+                        "Ready. Add transactions or import from CSV via File menu."
+                    )
+                    self._perform_initial_load_from_db_only()  # Attempt to load from (now confirmed empty) DB
+            else:  # DB not empty or CSV doesn't exist for migration
                 logging.info(
-                    f"Startup TX file invalid or not found: '{self.transactions_file}'. Prompting user."
+                    "Startup: DB not empty or no migration CSV found. Loading from DB directly."
                 )
-                self.status_label.setText(
-                    "Info: Please select your transactions CSV file."
-                )
-                self._initial_file_selection = (
-                    True  # Set flag before calling select_file
-                )
-
-                # Use QTimer to ensure the dialog shows *after* the main window is fully up
-                QTimer.singleShot(100, self.select_file)
-            # --- END ADDED ---
-            else:
-                # Provide specific feedback if the configured file is bad
-                startup_file_msg = f"Warn: Startup TX file invalid or not found: '{self.transactions_file}'. Load skipped."
-                self.status_label.setText(startup_file_msg)
-                logging.info(startup_file_msg)
-                # Update UI elements to reflect no data state
-                self._update_table_view_with_filtered_columns(pd.DataFrame())
-                self.apply_column_visibility()
-                self.update_performance_graphs(initial=True)
-                self._update_account_button_text()
-                self._update_table_title()
-        else:
-            # User chose not to load on startup
-            self.status_label.setText("Ready. Select CSV file and click Refresh.")
+                self._perform_initial_load_from_db_only()
+        elif not self.db_conn:
+            self.status_label.setText("Error: Database connection failed. Check logs.")
+        else:  # Not loading on startup
+            self.status_label.setText(
+                "Ready. Click Refresh or Import CSV via File menu."
+            )
             self._update_table_view_with_filtered_columns(pd.DataFrame())
             self.apply_column_visibility()
             self.update_performance_graphs(initial=True)
             self._update_account_button_text()
             self._update_table_title()
+        logging.debug("--- PortfolioApp __init__: END ---")
 
     # --- Benchmark Selection Methods (Define BEFORE initUI) ---
     def _update_benchmark_button_text(self):
@@ -6075,233 +6289,6 @@ The CSV file should contain the following columns (header names must match exact
         except (TypeError, ValueError, OverflowError):
             return np.nan
 
-    def load_config(self):
-        """
-        Loads application configuration from a JSON file (gui_config.json).
-
-        Loads settings like the transaction file path, display currency, selected
-        accounts, graph parameters, and column visibility. Uses default values if
-        the file doesn't exist or if specific settings are missing or invalid.
-        Performs validation on loaded values.
-
-        Returns:
-            dict: The loaded (and potentially validated/defaulted) configuration dictionary.
-        """
-        default_display_currency = "USD"
-        default_column_visibility = {
-            col: True for col in get_column_definitions(default_display_currency).keys()
-        }
-        # --- Define Default Account Currency Map ---
-        default_account_currency_map = {"SET": "THB"}  # Example default
-
-        config_defaults = {
-            "transactions_file": DEFAULT_CSV,
-            "display_currency": default_display_currency,
-            "show_closed": False,
-            "selected_accounts": [],
-            "load_on_startup": True,
-            "fmp_api_key": DEFAULT_API_KEY,
-            "account_currency_map": default_account_currency_map,  # <-- ADDED
-            "default_currency": "USD",  # <-- ADDED Default base currency
-            "graph_start_date": DEFAULT_GRAPH_START_DATE.strftime("%Y-%m-%d"),
-            "graph_end_date": DEFAULT_GRAPH_END_DATE.strftime("%Y-%m-%d"),
-            "graph_interval": DEFAULT_GRAPH_INTERVAL,
-            "graph_benchmarks": DEFAULT_GRAPH_BENCHMARKS,
-            "column_visibility": default_column_visibility,
-            "bar_periods_annual": 10,  # Default periods
-            "bar_periods_monthly": 12,
-            "bar_periods_weekly": 12,
-            "dividend_agg_period": "Annual",  # <-- ADDED: Default dividend aggregation period
-            "dividend_periods_to_show": 10,  # <-- ADDED: Default periods for dividend chart (matches annual)
-            "dividend_chart_default_periods_annual": 10,  # From config.py
-            "dividend_chart_default_periods_quarterly": 12,  # From config.py
-            "dividend_chart_default_periods_monthly": 24,  # From config.py
-        }
-        config = config_defaults.copy()
-        logging.debug(
-            f"LOAD_CONFIG: Initial config from defaults: dividend_agg_period='{config.get('dividend_agg_period')}', dividend_periods_to_show='{config.get('dividend_periods_to_show')}'"
-        )
-
-        if os.path.exists(self.CONFIG_FILE):  # Use instance attribute
-            try:
-                with open(self.CONFIG_FILE, "r") as f:  # Use instance attribute
-                    loaded_config_from_file = json.load(f)
-                logging.debug(
-                    f"LOAD_CONFIG: From file - loaded_config_from_file['dividend_agg_period'] = '{loaded_config_from_file.get('dividend_agg_period')}'"
-                )
-                logging.debug(
-                    f"LOAD_CONFIG: From file - loaded_config_from_file['dividend_periods_to_show'] = '{loaded_config_from_file.get('dividend_periods_to_show')}'"
-                )
-
-                config.update(loaded_config_from_file)
-                logging.debug(
-                    f"LOAD_CONFIG: After config.update(loaded_config_from_file): dividend_agg_period='{config.get('dividend_agg_period')}', dividend_periods_to_show='{config.get('dividend_periods_to_show')}'"
-                )
-
-                logging.info(
-                    f"Config loaded from {self.CONFIG_FILE}"
-                )  # Use instance attribute
-
-                # --- Validate Benchmarks (unchanged) ---
-                if "graph_benchmarks" in config:
-                    if isinstance(config["graph_benchmarks"], list):
-                        valid_benchmarks = [
-                            b
-                            for b in config["graph_benchmarks"]
-                            if isinstance(b, str)
-                            and b
-                            in BENCHMARK_OPTIONS_DISPLAY  # Use display names for validation
-                        ]
-                        config["graph_benchmarks"] = valid_benchmarks
-                    else:
-                        config["graph_benchmarks"] = DEFAULT_GRAPH_BENCHMARKS
-
-                # --- Validate Selected Accounts (unchanged) ---
-                if "selected_accounts" in config and not isinstance(
-                    config["selected_accounts"], list
-                ):
-                    logging.warning(
-                        "Warn: Invalid 'selected_accounts' type in config. Resetting to empty list."
-                    )
-                    config["selected_accounts"] = []
-
-                # --- Validate Column Visibility (unchanged) ---
-                if "column_visibility" in config and isinstance(
-                    config["column_visibility"], dict
-                ):
-                    # Ensure keys are strings and values are booleans
-                    validated_visibility = {}
-                    all_cols = get_column_definitions(
-                        config.get("display_currency", default_display_currency)
-                    ).keys()
-                    for col in all_cols:
-                        # Get value from loaded config, default to True if missing or invalid type
-                        val = config["column_visibility"].get(col)
-                        validated_visibility[col] = (
-                            val if isinstance(val, bool) else True
-                        )
-                    config["column_visibility"] = validated_visibility
-                else:
-                    config["column_visibility"] = default_column_visibility
-
-                # --- Validate Account Currency Map ---
-                if "account_currency_map" in config:
-                    if not isinstance(config["account_currency_map"], dict) or not all(
-                        isinstance(k, str) and isinstance(v, str)
-                        for k, v in config["account_currency_map"].items()
-                    ):
-                        logging.warning(
-                            "Warn: Invalid 'account_currency_map' type in config. Resetting to default."
-                        )
-                        config["account_currency_map"] = default_account_currency_map
-                else:
-                    config["account_currency_map"] = default_account_currency_map
-
-                # --- Validate Default Currency ---
-                if "default_currency" in config:
-                    if (
-                        not isinstance(config["default_currency"], str)
-                        or len(config["default_currency"]) != 3
-                    ):
-                        logging.warning(
-                            "Warn: Invalid 'default_currency' type/format in config. Resetting to 'USD'."
-                        )
-                        config["default_currency"] = "USD"
-                else:
-                    config["default_currency"] = "USD"
-
-            except Exception as e:
-                logging.warning(
-                    f"Warn: Load config failed ({self.CONFIG_FILE}): {e}. Using defaults."  # Use instance attribute
-                )
-        else:
-            logging.info(
-                f"Config file {self.CONFIG_FILE} not found. Using defaults."
-            )  # Use instance attribute
-
-        # Ensure all default keys exist (modified to include new keys)
-        for key, default_value in config_defaults.items():
-            if key not in config:
-                config[key] = default_value
-            # Type check (allow list for selected_accounts, dict for map)
-            elif not isinstance(config[key], type(default_value)):
-                if key not in [
-                    "fmp_api_key",
-                    "selected_accounts",
-                    "account_currency_map",
-                    "graph_benchmarks",
-                ] or (
-                    config[key] is not None
-                    and not isinstance(config[key], (str, list, dict))
-                ):
-                    logging.warning(
-                        f"Warn: Config type mismatch for '{key}'. Loaded: {type(config[key])}, Default: {type(default_value)}. Using default."
-                    )
-                    config[key] = default_value
-
-        # Final date format validation (unchanged)
-        try:
-            QDate.fromString(config["graph_start_date"], "yyyy-MM-dd")
-        except:
-            config["graph_start_date"] = DEFAULT_GRAPH_START_DATE.strftime("%Y-%m-%d")
-        try:
-            QDate.fromString(config["graph_end_date"], "yyyy-MM-dd")
-        except:
-            config["graph_end_date"] = DEFAULT_GRAPH_END_DATE.strftime("%Y-%m-%d")
-
-        # Validate bar chart periods
-        for key in [
-            "bar_periods_annual",
-            "bar_periods_monthly",
-            # "dividend_agg_period", # This is a string, validated separately
-            "dividend_periods_to_show",  # This is numeric
-            "dividend_chart_default_periods_annual",  # Numeric
-            "dividend_chart_default_periods_annual",
-            "dividend_chart_default_periods_quarterly",
-            "dividend_chart_default_periods_monthly",
-        ]:
-            if key in config:
-                try:
-                    val = int(config[key])
-                    config[key] = max(1, min(val, 100))  # Clamp between 1 and 100
-                except (ValueError, TypeError):
-                    config[key] = config_defaults[key]  # Reset to default on error
-            else:
-                config["dividend_periods_to_show"] = config_defaults[
-                    "dividend_periods_to_show"
-                ]  # Correctly use the specific key
-
-        logging.debug(
-            f"LOAD_CONFIG (PRE-VALIDATION for dividend_agg_period): current config['dividend_agg_period'] = '{config.get('dividend_agg_period')}'"
-        )
-        # Validate dividend aggregation period
-        if config.get("dividend_agg_period") not in ["Annual", "Quarterly", "Monthly"]:
-            logging.warning(
-                f"LOAD_CONFIG: Invalid or missing 'dividend_agg_period' ('{config.get('dividend_agg_period')}') in config. Resetting to default '{config_defaults['dividend_agg_period']}'."
-            )
-            config["dividend_agg_period"] = config_defaults["dividend_agg_period"]
-        logging.debug(
-            f"LOAD_CONFIG (POST-VALIDATION for dividend_agg_period): final config['dividend_agg_period'] = '{config.get('dividend_agg_period')}'"
-        )
-
-        # The validation for "dividend_periods_to_show" is now handled by the numeric_keys_to_validate loop.
-        # The separate block for it has been removed.
-
-        # Validate dividend chart periods
-        for key in [
-            "dividend_chart_default_periods_annual",
-            "dividend_chart_default_periods_quarterly",
-            "dividend_chart_default_periods_monthly",
-        ]:
-            if key in config:
-                try:
-                    val = int(config[key])
-                    config[key] = max(1, min(val, 100))  # Clamp
-                except (ValueError, TypeError):
-                    config[key] = config_defaults[key]
-
-        return config
-
     # --- UI Update Methods (Define BEFORE __init__ calls them) ---
 
     def update_header_info(
@@ -6378,84 +6365,105 @@ The CSV file should contain the following columns (header names must match exact
 
     def _init_menu_bar(self):
         """Creates the main menu bar."""
-        menu_bar = self.menuBar()  # QMainWindow has a menuBar method
+        menu_bar = self.menuBar()
         menu_bar.setObjectName("MenuBar")  # Apply object name for styling
 
         # --- File Menu ---
         file_menu = menu_bar.addMenu("&File")
-        self.select_action = QAction(  # Store as attribute
-            QIcon.fromTheme("document-open"), "Open &Transactions File...", self
-        )  # Use standard icon if possible
 
-        self.select_action.setStatusTip("Select the transaction CSV file to load")
-        self.select_action.triggered.connect(
-            self.select_file
-        )  # Keep existing connection
-        file_menu.addAction(self.select_action)
+        # Open Database File
+        # Ensure self.select_db_action is created correctly before connecting
+        self.select_db_action = QAction(
+            QIcon.fromTheme("document-open"), "Open &Database File...", self
+        )
+        self.select_db_action.setStatusTip("Select the SQLite database file to load")
+        self.select_db_action.triggered.connect(
+            self.select_database_file
+        )  # CORRECTED: Connect to the correct method
+        file_menu.addAction(self.select_db_action)
 
-        # --- ADDED: New Transaction File Action ---
-        self.new_transactions_file_action = QAction(
-            QIcon.fromTheme("document-new"), "&New Transactions File...", self
+        # New Database File
+        self.new_database_file_action = QAction(
+            QIcon.fromTheme("document-new"), "&New Database File...", self
         )
-        self.new_transactions_file_action.setStatusTip(
-            "Create a new, empty transactions CSV file"
+        self.new_database_file_action.setStatusTip(
+            "Create a new, empty SQLite database file"
         )
-        self.new_transactions_file_action.triggered.connect(
-            self.create_new_transactions_file
-        )
-        file_menu.addAction(self.new_transactions_file_action)
-
-        save_as_action = QAction(
-            QIcon.fromTheme("document-save-as"), "Save Transactions &As...", self
-        )
-        save_as_action.setStatusTip("Save current transaction data to a new CSV file")
-        save_as_action.triggered.connect(
-            self.save_transactions_as
-        )  # Need to implement save_transactions_as
-        file_menu.addAction(save_as_action)
+        self.new_database_file_action.triggered.connect(self.create_new_database_file)
+        file_menu.addAction(self.new_database_file_action)
 
         file_menu.addSeparator()
 
+        # Import Transactions from CSV
+        self.import_csv_action = QAction(
+            QIcon.fromTheme("document-import"), "&Import Transactions from CSV...", self
+        )
+        self.import_csv_action.setStatusTip(
+            "Import transactions from a CSV file into the current database"
+        )
+        self.import_csv_action.triggered.connect(self.import_transactions_from_csv)
+        file_menu.addAction(self.import_csv_action)
+
+        # Export Transactions to CSV
+        self.export_csv_action = QAction(
+            QIcon.fromTheme("document-export"), "&Export Transactions to CSV...", self
+        )  # Stored as attribute if needed elsewhere
+        self.export_csv_action.setStatusTip(
+            "Export current transaction data from database to a CSV file"
+        )
+        self.export_csv_action.triggered.connect(self.export_transactions_to_csv)
+        file_menu.addAction(self.export_csv_action)
+
+        file_menu.addSeparator()
+
+        # Exit
         exit_action = QAction(QIcon.fromTheme("application-exit"), "E&xit", self)
         exit_action.setStatusTip("Exit application")
-        exit_action.triggered.connect(
-            self.close
-        )  # Connect to the window's close method
+        exit_action.triggered.connect(self.close)  # QMainWindow's close method
         file_menu.addAction(exit_action)
 
         # --- View Menu ---
         view_menu = menu_bar.addMenu("&View")
         self.refresh_action = QAction(
             QIcon.fromTheme("view-refresh"), "&Refresh Data", self
-        )  # Store as attribute
-        self.refresh_action.setStatusTip("Reload data and recalculate")
-        self.refresh_action.setShortcut("F5")  # Common shortcut for refresh
+        )
+        self.refresh_action.setStatusTip("Reload data from database and recalculate")
+        self.refresh_action.setShortcut("F5")
         self.refresh_action.triggered.connect(self.refresh_data)
         view_menu.addAction(self.refresh_action)
 
-        # --- ADDED: Transactions Menu ---
+        # View Ignored Log
+        self.view_ignored_log_action = QAction(
+            QIcon.fromTheme("dialog-warning"), "View &Ignored Log", self
+        )
+        self.view_ignored_log_action.setStatusTip(
+            "View transactions ignored during the last calculation"
+        )
+        self.view_ignored_log_action.triggered.connect(self.show_ignored_log)
+        self.view_ignored_log_action.setEnabled(False)  # Initially disabled
+        view_menu.addAction(self.view_ignored_log_action)
+
+        # --- Transactions Menu ---
         tx_menu = menu_bar.addMenu("&Transactions")
         self.add_transaction_action = QAction(
             QIcon.fromTheme("list-add"), "&Add Transaction...", self
-        )  # Store as attribute
-        self.add_transaction_action.setStatusTip("Manually add a new transaction")
+        )
+        self.add_transaction_action.setStatusTip(
+            "Manually add a new transaction to the database"
+        )
         self.add_transaction_action.triggered.connect(self.open_add_transaction_dialog)
         tx_menu.addAction(self.add_transaction_action)
 
         self.manage_transactions_action = QAction(
             QIcon.fromTheme("document-edit"), "&Manage Transactions...", self
-        )  # Store as attribute
+        )
         self.manage_transactions_action.setStatusTip(
-            "Edit or delete existing transactions"
+            "Edit or delete existing transactions in the database"
         )
         self.manage_transactions_action.triggered.connect(
             self.show_manage_transactions_dialog
         )
         tx_menu.addAction(self.manage_transactions_action)
-        # --- END ADDED ---
-
-        # --- ADDED: View Log Action (moved from button logic) ---
-        # (Could also go in View menu)
 
         # --- Settings Menu ---
         settings_menu = menu_bar.addMenu("&Settings")
@@ -6463,33 +6471,28 @@ The CSV file should contain the following columns (header names must match exact
         acc_currency_action.setStatusTip(
             "Configure currency for each investment account"
         )
-        acc_currency_action.triggered.connect(
-            self.show_account_currency_dialog
-        )  # Connect to new slot
+        acc_currency_action.triggered.connect(self.show_account_currency_dialog)
         settings_menu.addAction(acc_currency_action)
 
-        # --- ADDED: Standardize CSV Headers Action ---
-        if CSV_UTILS_AVAILABLE:  # Only add if the utility was imported
-            standardize_headers_action = QAction("Standardize CSV Headers...", self)
+        if CSV_UTILS_AVAILABLE:  # Check if csv_utils was imported successfully
+            standardize_headers_action = QAction(
+                "Standardize &External CSV Headers...", self
+            )
             standardize_headers_action.setStatusTip(
-                "Convert headers in the current CSV to the standard internal format"
+                "Convert headers in a selected CSV file (for import help)"
             )
             standardize_headers_action.triggered.connect(
-                self.run_standardize_csv_headers
+                self.run_standardize_external_csv_headers
             )
             settings_menu.addAction(standardize_headers_action)
-        # --- END ADDED ---
 
-        # --- MODIFIED: Manual Prices action to Symbol Settings action ---
-        symbol_settings_action = QAction("&Symbol Settings...", self)  # Renamed
+        symbol_settings_action = QAction("&Symbol Settings...", self)
         symbol_settings_action.setStatusTip(
-            "Set manual overrides, symbol mappings, and excluded symbols"  # Updated tip
+            "Set manual overrides, symbol mappings, and excluded symbols"
         )
-        symbol_settings_action.triggered.connect(
-            self.show_symbol_settings_dialog  # Renamed slot
-        )
-        settings_menu.addAction(symbol_settings_action)  # Add new action
-        # --- END MODIFICATION ---
+        symbol_settings_action.triggered.connect(self.show_symbol_settings_dialog)
+        settings_menu.addAction(symbol_settings_action)
+
         settings_menu.addSeparator()
         clear_cache_action = QAction("Clear &Cache Files...", self)
         clear_cache_action.setStatusTip(
@@ -6498,17 +6501,17 @@ The CSV file should contain the following columns (header names must match exact
         clear_cache_action.triggered.connect(self.clear_cache_files_action_triggered)
         settings_menu.addAction(clear_cache_action)
 
-        # --- Add Help Menu (Optional) ---
+        # --- Help Menu ---
         help_menu = menu_bar.addMenu("&Help")
-        about_action = QAction("&About", self)
-        about_action.triggered.connect(
-            self.show_about_dialog
-        )  # Need to implement show_about_dialog
-        # --- ADDED: CSV Format Help Action ---
-        csv_help_action = QAction("CSV Format Help...", self)
-        csv_help_action.setStatusTip("Show required CSV file format and headers")
+        csv_help_action = QAction("CSV Import Format Help...", self)
+        csv_help_action.setStatusTip(
+            "Show required CSV file format and headers for import"
+        )
         csv_help_action.triggered.connect(self.show_csv_format_help)
         help_menu.addAction(csv_help_action)
+
+        about_action = QAction("&About", self)
+        about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
 
     # --- ADDED: Slot for CSV Format Help ---
@@ -7212,77 +7215,128 @@ The CSV file should contain the following columns (header names must match exact
 
     def save_config(self):
         """Saves the current application configuration to gui_config.json."""
-        self.config["transactions_file"] = self.transactions_file
-        # Ensure fmp_api_key is NOT saved to the config file
-        self.config.pop(
-            "fmp_api_key", None
-        )  # Remove it if it exists from a previous load
-        self.config["display_currency"] = self.currency_combo.currentText()
-        self.config["show_closed"] = self.show_closed_check.isChecked()
-        # Save list of selected accounts
+        if not self.CONFIG_FILE:  # Should have been set in __init__
+            logging.error("Cannot save config: CONFIG_FILE path is not set.")
+            QMessageBox.critical(
+                self,
+                "Config Error",
+                "Cannot save settings: Configuration file path is not defined.",
+            )
+            return
+
+        # Ensure self.config is a dict, even if it was somehow cleared
+        if not isinstance(self.config, dict):
+            logging.warning(
+                "self.config was not a dict during save_config. Reinitializing."
+            )
+            self.config = (
+                {}
+            )  # Reinitialize to avoid error, though this indicates a prior issue.
+
+        self.config["transactions_file"] = self.DB_FILE_PATH  # Store DB path
+        # transactions_file_csv_fallback is already in self.config if it was set during load
+        # or if a CSV was opened and then a new DB created/opened.
+        self.config["last_csv_import_path"] = self.config.get(
+            "last_csv_import_path", os.getcwd()
+        )
+        self.config["last_csv_export_path"] = self.config.get(
+            "last_csv_export_path", os.getcwd()
+        )
+
+        self.config.pop("fmp_api_key", None)  # Ensure API key is not saved
+
+        if hasattr(self, "currency_combo"):
+            self.config["display_currency"] = self.currency_combo.currentText()
+        # else: use existing value in self.config or default (handled by load_config next time)
+
+        if hasattr(self, "show_closed_check"):
+            self.config["show_closed"] = self.show_closed_check.isChecked()
+
         if hasattr(self, "selected_accounts") and isinstance(
             self.selected_accounts, list
         ):
-            if hasattr(self, "available_accounts") and len(
-                self.selected_accounts
-            ) == len(self.available_accounts):
-                self.config["selected_accounts"] = (
-                    []
-                )  # Save empty list if all are selected
+            if (
+                hasattr(self, "available_accounts")
+                and self.available_accounts
+                and len(self.selected_accounts) == len(self.available_accounts)
+            ):
+                self.config["selected_accounts"] = []  # Empty list means "All"
             else:
                 self.config["selected_accounts"] = self.selected_accounts
-        else:
-            logging.warning(
-                "Warning: selected_accounts attribute missing or invalid during save. Saving default (all)."
-            )
-            self.config["selected_accounts"] = []
+        # else: keep existing self.config["selected_accounts"]
 
-        # --- Save account_currency_map and default_currency ---
-        # Assume self.config holds the current map (e.g., loaded initially, maybe editable later)
-        # Ensure the keys exist before saving, using the loaded defaults if necessary.
+        # account_currency_map and default_currency are already in self.config, updated by dialogs
+        # Ensure they exist from defaults if somehow missing
         self.config["account_currency_map"] = self.config.get(
             "account_currency_map", {"SET": "THB"}
         )
-        self.config["default_currency"] = self.config.get("default_currency", "USD")
-        # --------------------------------------------------------
+        self.config["default_currency"] = self.config.get(
+            "default_currency",
+            config.DEFAULT_CURRENCY if hasattr(config, "DEFAULT_CURRENCY") else "USD",
+        )
 
-        self.config["load_on_startup"] = self.config.get(
-            "load_on_startup", True
-        )  # Keep existing
-        self.config["graph_start_date"] = self.graph_start_date_edit.date().toString(
-            "yyyy-MM-dd"
-        )
-        self.config["graph_end_date"] = self.graph_end_date_edit.date().toString(
-            "yyyy-MM-dd"
-        )
-        self.config["graph_interval"] = self.graph_interval_combo.currentText()
+        self.config["load_on_startup"] = self.config.get("load_on_startup", True)
+
+        if hasattr(self, "graph_start_date_edit"):
+            self.config["graph_start_date"] = (
+                self.graph_start_date_edit.date().toString("yyyy-MM-dd")
+            )
+        if hasattr(self, "graph_end_date_edit"):
+            self.config["graph_end_date"] = self.graph_end_date_edit.date().toString(
+                "yyyy-MM-dd"
+            )
+        if hasattr(self, "graph_interval_combo"):
+            self.config["graph_interval"] = self.graph_interval_combo.currentText()
+
         if hasattr(self, "selected_benchmarks") and isinstance(
             self.selected_benchmarks, list
         ):
             self.config["graph_benchmarks"] = self.selected_benchmarks
-        else:
-            self.config["graph_benchmarks"] = DEFAULT_GRAPH_BENCHMARKS
-        self.config["column_visibility"] = self.column_visibility
+        # else: keep existing self.config["graph_benchmarks"]
+
+        if hasattr(self, "column_visibility"):  # Should always exist after __init__
+            self.config["column_visibility"] = self.column_visibility
 
         # Save bar chart periods
-        self.config["bar_periods_annual"] = self.annual_periods_spinbox.value()
-        self.config["bar_periods_monthly"] = self.monthly_periods_spinbox.value()
-        self.config["bar_periods_weekly"] = self.weekly_periods_spinbox.value()
-        # --- ADDED: Save dividend history settings ---
-        self.config["dividend_agg_period"] = self.dividend_period_combo.currentText()
-        self.config["dividend_periods_to_show"] = self.dividend_periods_spinbox.value()
-        # --- END ADDED ---
+        if hasattr(self, "annual_periods_spinbox"):
+            self.config["bar_periods_annual"] = self.annual_periods_spinbox.value()
+        if hasattr(self, "monthly_periods_spinbox"):
+            self.config["bar_periods_monthly"] = self.monthly_periods_spinbox.value()
+        if hasattr(self, "weekly_periods_spinbox"):
+            self.config["bar_periods_weekly"] = self.weekly_periods_spinbox.value()
+
+        # Save dividend history settings
+        if hasattr(self, "dividend_period_combo"):
+            self.config["dividend_agg_period"] = (
+                self.dividend_period_combo.currentText()
+            )
+        if hasattr(self, "dividend_periods_spinbox"):
+            self.config["dividend_periods_to_show"] = (
+                self.dividend_periods_spinbox.value()
+            )
+
+        # Also save the default spinbox values (these are loaded by load_config if key exists)
+        # self.config["dividend_chart_default_periods_annual"] = self.config.get("dividend_chart_default_periods_annual", 10)
+        # self.config["dividend_chart_default_periods_quarterly"] = self.config.get("dividend_chart_default_periods_quarterly", 12)
+        # self.config["dividend_chart_default_periods_monthly"] = self.config.get("dividend_chart_default_periods_monthly", 24)
 
         try:
-            with open(self.CONFIG_FILE, "w") as f:  # Use instance attribute
+            # Ensure directory for CONFIG_FILE exists
+            config_dir = os.path.dirname(self.CONFIG_FILE)
+            if (
+                config_dir
+            ):  # Check if dirname returned anything (it should for absolute paths)
+                os.makedirs(config_dir, exist_ok=True)
+
+            with open(self.CONFIG_FILE, "w") as f:
                 json.dump(self.config, f, indent=4)
-            logging.info(
-                f"Config saved to {self.CONFIG_FILE}"
-            )  # Use instance attribute
+            logging.info(f"Config saved to {self.CONFIG_FILE}")
         except Exception as e:
-            logging.warning(f"Warn: Save config failed: {e}")
+            logging.error(
+                f"Error saving config to {self.CONFIG_FILE}: {e}", exc_info=True
+            )
             QMessageBox.warning(
-                self, "Config Save Error", f"Could not save settings: {e}"
+                self, "Config Save Error", f"Could not save settings:\n{e}"
             )
 
     def _apply_initial_styles_and_updates(self):
@@ -7402,12 +7456,6 @@ The CSV file should contain the following columns (header names must match exact
             return separator
 
         # Buttons
-        self.select_file_button = QPushButton("Select CSV")
-        self.select_file_button.setObjectName("SelectFileButton")
-        self.select_file_button.setIcon(
-            self.style().standardIcon(QStyle.SP_DirOpenIcon)
-        )
-        # controls_layout.addWidget(self.select_file_button) # REMOVED from controls bar
         self.add_transaction_button = QPushButton("Add Tx")
         self.add_transaction_button.setObjectName("AddTransactionButton")
         self.add_transaction_button.setIcon(
@@ -8294,239 +8342,173 @@ The CSV file should contain the following columns (header names must match exact
         self.status_bar.addPermanentWidget(self.exchange_rate_display_label)  # RESTORED
 
     @Slot()
-    @profile
     def refresh_data(self):
         """
         Initiates the background calculation process via the worker thread.
+        Loads data from the SQLite database.
 
-        Gathers current UI settings (file path, currency, filters, graph parameters),
+        Gathers current UI settings (display currency, filters, graph parameters),
         prepares arguments for the portfolio logic functions, creates a
         `PortfolioCalculatorWorker`, and starts it in the thread pool. Disables
         UI controls during calculation.
         """
         if self.is_calculating:
-            # Reset flag if refresh is attempted while calculating (shouldn't happen often)
-            self._initial_file_selection = False
-
             logging.info("Calculation already in progress. Ignoring refresh request.")
             return
 
-        if not self.transactions_file or not os.path.exists(self.transactions_file):
-            QMessageBox.warning(
-                self,
-                "Missing File",
-                f"Transactions CSV file not found:\n{self.transactions_file}",
-            )
-            self.status_label.setText("Error: Select a valid transactions CSV file.")
-            return
-
-        # Reset initial selection flag when a valid refresh starts
-        self._initial_file_selection = False
-
-        # --- Load original data FIRST and PREPARE INPUTS to get the map ---
-        # Get current account map and default currency from config
-        account_map = self.config.get("account_currency_map", {"SET": "THB"})
-        def_currency = self.config.get("default_currency", "USD")
-        logging.info("Loading original transaction data and preparing inputs...")
-        (
-            all_tx_df_temp,
-            orig_df_temp,
-            ignored_indices_load,
-            ignored_reasons_load,
-            err_load_orig,
-            warn_load_orig,  # <-- NEW: Unpack the map
-            original_to_cleaned_header_map,  # <-- NEW: Unpack the map
-        ) = load_and_clean_transactions(
-            self.transactions_file, account_map, def_currency
-        )
-        self.ignored_data = pd.DataFrame()  # Reset ignored data display
-        self.temp_ignored_reasons = (
-            ignored_reasons_load.copy()
-        )  # Store reasons temporarily
-
-        if err_load_orig or all_tx_df_temp is None:
+        if not self.db_conn:  # Check DB connection first
             QMessageBox.critical(
-                self, "Load Error", "Failed to load/clean transaction data."
+                self,
+                "Database Error",
+                "No active database connection. Cannot refresh data.",
             )
-            self.original_data = (
-                pd.DataFrame()
-            )  # Ensure original data is empty on failure
-            self.internal_to_yf_map = {}  # Clear map on failure
-            self.calculation_finished()  # Re-enable controls etc.
-            # Construct ignored_data from load errors if possible
-            if (
-                ignored_indices_load
-                and orig_df_temp is not None
-                and "original_index" in orig_df_temp.columns
-            ):
-                try:
-                    valid_ignored_indices = {
-                        int(i) for i in ignored_indices_load if pd.notna(i)
-                    }
-                    valid_indices_mask = orig_df_temp["original_index"].isin(
-                        valid_ignored_indices
-                    )
-                    ignored_rows_df = orig_df_temp[valid_indices_mask].copy()
-                    if not ignored_rows_df.empty:
-                        reasons_mapped = (
-                            ignored_rows_df["original_index"]
-                            .map(self.temp_ignored_reasons)
-                            .fillna("Load/Clean Issue")
-                        )
-                        ignored_rows_df["Reason Ignored"] = reasons_mapped
-                        self.ignored_data = ignored_rows_df.sort_values(
-                            by="original_index"
-                        )
-                        if hasattr(self, "view_ignored_button"):
-                            self.view_ignored_button.setEnabled(True)
-                except Exception as e_ignored_err:
-                    logging.error(
-                        f"Error constructing ignored_data after load failure: {e_ignored_err}"
-                    )
-                    self.ignored_data = pd.DataFrame()
+            self.status_label.setText("Error: Database not connected.")
+            self.calculation_finished()  # Ensure UI is re-enabled
             return
-        else:
-            # Store original data on successful load
-            self.original_data = (
-                orig_df_temp.copy() if orig_df_temp is not None else pd.DataFrame()
-            )
-            # Ensure original_index exists
-            if (
-                "original_index" not in self.original_data.columns
-                and not self.original_data.empty
-            ):
-                self.original_data["original_index"] = self.original_data.index
 
-            # Construct initial ignored_data from load/clean phase
-            if ignored_indices_load and not self.original_data.empty:
-                try:
-                    valid_ignored_indices = {
-                        int(i) for i in ignored_indices_load if pd.notna(i)
-                    }
-                    valid_indices_mask = self.original_data["original_index"].isin(
-                        valid_ignored_indices
-                    )
-                    ignored_rows_df = self.original_data[valid_indices_mask].copy()
-                    if not ignored_rows_df.empty:
-                        reasons_mapped = (
-                            ignored_rows_df["original_index"]
-                            .map(self.temp_ignored_reasons)
-                            .fillna("Load/Clean Issue")
-                        )
-                        ignored_rows_df["Reason Ignored"] = reasons_mapped
-                        self.ignored_data = ignored_rows_df.sort_values(
-                            by="original_index"
-                        )
-                except Exception as e_ignored_init:
-                    logging.error(
-                        f"Error constructing initial ignored_data: {e_ignored_init}"
-                    )
-                    self.ignored_data = pd.DataFrame()
-            else:
-                self.ignored_data = pd.DataFrame()  # Ensure empty if no ignored indices
-
-            # Generate internal_to_yf_map based on the successfully loaded transactions
-            try:
-                # Update available accounts list based on the loaded data
-                current_available_accounts = (
-                    list(all_tx_df_temp["Account"].unique())
-                    if all_tx_df_temp is not None
-                    and "Account" in all_tx_df_temp.columns
-                    else []
-                )
-                self.available_accounts = sorted(current_available_accounts)
-                self._update_account_button_text()  # Update button now that accounts are known
-
-                # Validate selected accounts against the newly available ones
-                valid_selected_accounts = [
-                    acc
-                    for acc in self.selected_accounts  # This was self.selected_benchmarks before, corrected
-                    if acc in self.available_accounts
-                ]
-                # valid_selected_benchmarks = [  # This block seems to be a copy-paste error, removing
-                #     b
-                #     for b in self.selected_benchmarks
-                #     if b in BENCHMARK_OPTIONS_DISPLAY
-                # ]
-                if len(valid_selected_accounts) != len(self.selected_accounts):
-                    logging.warning(
-                        "Some selected accounts were not found in the loaded data. Adjusting selection."
-                    )
-                    self.selected_accounts = valid_selected_accounts
-                    # If selection becomes empty, default back to all
-                    if not self.selected_accounts and self.available_accounts:
-                        self.selected_accounts = []  # Represent "All" as empty list
-                        logging.info(
-                            "Selection became empty after validation, defaulting to all accounts."
-                        )
-                    self._update_account_button_text()  # Update button again if selection changed
-
-                # Determine effective transactions based on current selection
-                selected_accounts_for_logic = (
-                    self.selected_accounts if self.selected_accounts else None
-                )  # None means all
-
-                transactions_df_effective = (
-                    all_tx_df_temp[
-                        all_tx_df_temp["Account"].isin(selected_accounts_for_logic)
-                    ].copy()
-                    if selected_accounts_for_logic
-                    else all_tx_df_temp.copy()
-                )
-
-                if not transactions_df_effective.empty:
-                    all_symbols_internal = list(
-                        set(transactions_df_effective["Symbol"].unique())
-                    )
-                    temp_internal_to_yf_map = {}
-                    # Use map_to_yf_symbol from finutils (should be imported at top)
-                    for internal_sym in all_symbols_internal:
-                        if internal_sym == CASH_SYMBOL_CSV:
-                            continue
-                        yf_sym = map_to_yf_symbol(  # Pass user settings
-                            internal_sym,
-                            self.user_symbol_map_config,
-                            self.user_excluded_symbols_config,
-                        )
-                        if yf_sym:
-                            temp_internal_to_yf_map[internal_sym] = yf_sym
-                    self.internal_to_yf_map = temp_internal_to_yf_map
-                    logging.info(
-                        f"Generated internal_to_yf_map: {self.internal_to_yf_map}"
-                    )
-                else:
-                    self.internal_to_yf_map = {}
-                    logging.info(
-                        "No effective transactions for selected scope, clearing symbol map."
-                    )
-            except Exception as e_prep:
-                logging.error(
-                    f"Error generating symbol map during refresh prep: {e_prep}"
-                )
-                self.internal_to_yf_map = {}  # Ensure map is cleared on error
-
-            # Store the header map after the try-except for symbol map generation,
-            # ensuring it's stored if load_and_clean_transactions was successful.
-            self.original_to_cleaned_header_map = (
-                original_to_cleaned_header_map
-                if original_to_cleaned_header_map is not None
-                else {}
-            )
-            logging.debug(
-                f"Stored original_to_cleaned_header_map: {self.original_to_cleaned_header_map}"
-            )
-
-        # --- Continue with worker setup ---
         self.is_calculating = True
         now_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-        self.status_label.setText(f"Refreshing data... ({now_str})")
+        self.status_label.setText(f"Refreshing data from database... ({now_str})")
         self.set_controls_enabled(False)
+        if hasattr(self, "progress_bar"):  # Check if progress_bar exists
+            self.progress_bar.setValue(0)
+            self.progress_bar.setVisible(True)
+
+        # --- Load data from DB ---
+        # df_all_transactions will be the cleaned DataFrame from the DB
+        # df_original_for_ignored will also be from the DB, as it's already structured.
+        # Ignored indices/reasons from DB load itself will be empty unless load_all_transactions_from_db reports errors.
+        # Use account_currency_map and default_currency from config for cleaning after DB load
+        acc_map_config_load = self.config.get("account_currency_map", {})
+        def_curr_config_load = self.config.get(
+            "default_currency",
+            config.DEFAULT_CURRENCY if hasattr(config, "DEFAULT_CURRENCY") else "USD",
+        )
+
+        df_all_transactions, load_success = load_all_transactions_from_db(
+            self.db_conn, acc_map_config_load, def_curr_config_load
+        )  # MODIFIED: Pass map and default
+        # END MODIFIED
+
+        # For context of ignored rows, if any are generated by portfolio_logic,
+        # we use the same DataFrame initially. portfolio_logic itself might receive
+        # the raw CSV data if migration was part of the flow leading to the calculation.
+        # However, refresh_data now assumes data is IN the DB.
+        df_original_for_ignored_context = (
+            df_all_transactions.copy()
+            if load_success and df_all_transactions is not None
+            else pd.DataFrame()
+        )
+
+        ignored_indices_load_db = (
+            set()
+        )  # DB load itself usually doesn't produce these; they come from CSV parse
+        ignored_reasons_load_db = {}  # or later processing.
+
+        if not load_success or df_all_transactions is None:
+            QMessageBox.critical(
+                self, "Load Error", "Failed to load transactions from the database."
+            )
+            self.all_transactions_df_cleaned_for_logic = (
+                pd.DataFrame()
+            )  # Ensure attribute is empty
+            self.original_transactions_df_for_ignored_context = pd.DataFrame()
+            self.internal_to_yf_map = {}
+            self.calculation_finished()  # Re-enable UI
+            return
+        elif df_all_transactions.empty:
+            logging.info("Database contains no transactions. Nothing to refresh.")
+            self.all_transactions_df_cleaned_for_logic = pd.DataFrame()  # Store empty
+            self.original_transactions_df_for_ignored_context = pd.DataFrame()
+            self.clear_results()  # Clear UI
+            self.status_label.setText("Database is empty.")
+            self.calculation_finished()  # Re-enable UI
+            return
+        else:
+            # Store the loaded data for portfolio_logic functions
+            self.all_transactions_df_cleaned_for_logic = df_all_transactions.copy()
+            self.original_transactions_df_for_ignored_context = (
+                df_original_for_ignored_context.copy()
+            )
+            # `original_to_cleaned_header_map` is not relevant for DB source in this context
+            self.original_to_cleaned_header_map_from_csv = {}
+
+        # --- Update available accounts and selection based on DB data ---
+        if "Account" in self.all_transactions_df_cleaned_for_logic.columns:
+            self.available_accounts = sorted(
+                list(self.all_transactions_df_cleaned_for_logic["Account"].unique())
+            )
+        else:
+            self.available_accounts = []
+            logging.warning(
+                "No 'Account' column in data loaded from DB. Account filtering may fail."
+            )
+        self._update_account_button_text()  # Update button with new list of accounts
+
+        # Validate selected_accounts against newly available_accounts
+        if self.selected_accounts:  # Only validate if there was a prior selection
+            valid_selected_accounts = [
+                acc for acc in self.selected_accounts if acc in self.available_accounts
+            ]
+            if len(valid_selected_accounts) != len(self.selected_accounts):
+                self.selected_accounts = (
+                    valid_selected_accounts  # Update to only valid ones
+                )
+                logging.info(
+                    f"Adjusted selected accounts to: {self.selected_accounts} based on available accounts."
+                )
+            if (
+                not self.selected_accounts and self.available_accounts
+            ):  # If validation made it empty
+                self.selected_accounts = []  # This means "All"
+                logging.info(
+                    "Selected accounts became empty after validation, defaulting to all."
+                )
+            self._update_account_button_text()  # Update button text again if selection changed
+        elif (
+            not self.selected_accounts and self.available_accounts
+        ):  # If it was already empty (meaning "All")
+            self.selected_accounts = []  # Keep it as "All"
+        # If self.available_accounts is empty, self.selected_accounts will also be empty or become empty.
+
+        # --- Generate internal_to_yf_map based on the effectively filtered transactions ---
+        # This needs to be done *after* account filtering for the current scope is considered.
+        # For now, let's generate it based on all_transactions_df_cleaned_for_logic,
+        # portfolio_logic will internally filter.
+        try:
+            if not self.all_transactions_df_cleaned_for_logic.empty:
+                all_symbols_internal = list(
+                    set(self.all_transactions_df_cleaned_for_logic["Symbol"].unique())
+                )
+                temp_internal_to_yf_map = {}
+                for internal_sym in all_symbols_internal:
+                    if internal_sym == CASH_SYMBOL_CSV:
+                        continue
+                    yf_sym = map_to_yf_symbol(
+                        internal_sym,
+                        self.user_symbol_map_config,
+                        self.user_excluded_symbols_config,
+                    )
+                    if yf_sym:
+                        temp_internal_to_yf_map[internal_sym] = yf_sym
+                self.internal_to_yf_map = temp_internal_to_yf_map
+                logging.info(
+                    f"Generated internal_to_yf_map (full dataset): {len(self.internal_to_yf_map)} mappings."
+                )
+            else:
+                self.internal_to_yf_map = {}
+        except Exception as e_map_gen:
+            logging.error(
+                f"Error generating internal_to_yf_map in refresh_data: {e_map_gen}"
+            )
+            self.internal_to_yf_map = {}
+
+        # --- Prepare for worker ---
         display_currency = self.currency_combo.currentText()
         show_closed = self.show_closed_check.isChecked()
-        start_date = self.graph_start_date_edit.date().toPython()
-        end_date = self.graph_end_date_edit.date().toPython()
-        interval = self.graph_interval_combo.currentText()
-        # Map selected display names to YF tickers for the worker
+        start_date_hist = self.graph_start_date_edit.date().toPython()
+        end_date_hist = self.graph_end_date_edit.date().toPython()
+        interval_hist = self.graph_interval_combo.currentText()
         selected_benchmark_tickers = [
             BENCHMARK_MAPPING.get(name)
             for name in self.selected_benchmarks
@@ -8539,129 +8521,158 @@ The CSV file should contain the following columns (header names must match exact
             self.selected_accounts if self.selected_accounts else None
         )
 
-        if start_date >= end_date:
+        # Account currency map and default currency from config
+        acc_map_config = self.config.get("account_currency_map", {})
+        def_curr_config = self.config.get(
+            "default_currency",
+            config.DEFAULT_CURRENCY if hasattr(config, "DEFAULT_CURRENCY") else "USD",
+        )
+
+        if start_date_hist >= end_date_hist:
             QMessageBox.warning(
                 self, "Invalid Date Range", "Graph start date must be before end date."
             )
             self.calculation_finished()
             return
-        if not selected_benchmark_tickers:
+        if not selected_benchmark_tickers:  # Fallback if no valid benchmarks selected
             selected_benchmark_tickers = (
                 [BENCHMARK_MAPPING.get(DEFAULT_GRAPH_BENCHMARKS[0], "SPY")]
                 if DEFAULT_GRAPH_BENCHMARKS
                 else ["SPY"]
             )
-            logging.warning(
-                f"No valid benchmarks selected or mapped, using default ticker(s): {selected_benchmark_tickers}"
-            )
 
-        # Determine accounts to exclude for historical calc if supported
-        accounts_to_exclude = []
-        if HISTORICAL_FN_SUPPORTS_EXCLUDE:
-            if selected_accounts_for_worker:  # If specific accounts are included
-                accounts_to_exclude = [
-                    acc
-                    for acc in self.available_accounts
-                    if acc not in selected_accounts_for_worker
-                ]
-            # If selected_accounts_for_worker is None (all included), then exclude list remains empty
-
-        logging.info(f"Starting calculation & data fetch:")
-        logging.info(
-            f"File='{os.path.basename(self.transactions_file)}', Currency='{display_currency}', ShowClosed={show_closed}, SelectedAccounts={selected_accounts_for_worker if selected_accounts_for_worker else 'All'}"
-        )
-        logging.info(f"Default Currency: {def_currency}, Account Map: {account_map}")
-        exclude_log_msg = (
-            f", ExcludeHist={accounts_to_exclude}"
-            if HISTORICAL_FN_SUPPORTS_EXCLUDE and accounts_to_exclude
-            else ""
-        )
-        logging.info(
-            f"Graph Params: Start={start_date}, End={end_date}, Interval={interval}, Benchmarks (Tickers)={selected_benchmark_tickers}{exclude_log_msg}"
-        )
-
-        # --- Worker Setup (MODIFIED) ---
-        portfolio_args = ()
+        # --- Worker Setup ---
         portfolio_kwargs = {
-            "transactions_csv_file": self.transactions_file,
+            "all_transactions_df_cleaned": self.all_transactions_df_cleaned_for_logic.copy(),
+            "original_transactions_df_for_ignored": self.original_transactions_df_for_ignored_context.copy(),
+            "ignored_indices_from_load": ignored_indices_load_db,  # From DB load (likely empty)
+            "ignored_reasons_from_load": ignored_reasons_load_db,  # From DB load (likely empty)
             "display_currency": display_currency,
             "show_closed_positions": show_closed,
-            "account_currency_map": account_map,
-            "default_currency": def_currency,
-            "fmp_api_key": api_key,  # Pass API key (though likely unused)
+            "account_currency_map": acc_map_config,
+            "default_currency": def_curr_config,
+            "fmp_api_key": api_key,
             "include_accounts": selected_accounts_for_worker,
-            # manual_prices_dict passed directly below
-            # cache_file_path will be added by the block below
-            # --- MOVED: Add all_transactions_df_for_worker BEFORE worker instantiation ---
-            "all_transactions_df_for_worker": (
-                all_tx_df_temp if all_tx_df_temp is not None else pd.DataFrame()
-            ),
+            "manual_overrides_dict": self.manual_overrides_dict,
+            "user_symbol_map": self.user_symbol_map_config,
+            "user_excluded_symbols": self.user_excluded_symbols_config,
         }
-        # Construct current quotes cache path using QStandardPaths
         current_cache_dir_base = QStandardPaths.writableLocation(
             QStandardPaths.CacheLocation
         )
-        if (
-            current_cache_dir_base
-        ):  # Assuming CacheLocation is also app-specific (e.g., ~/Library/Caches/Investa)
-            current_cache_dir = current_cache_dir_base  # Use the path directly
+        if current_cache_dir_base:
+            current_cache_dir = current_cache_dir_base
             os.makedirs(current_cache_dir, exist_ok=True)
             portfolio_kwargs["cache_file_path"] = os.path.join(
                 current_cache_dir, "portfolio_cache_yf.json"
-            )  # portfolio_cache_yf.json in .../Investa/
-        else:  # Fallback if CacheLocation is not available
-            portfolio_kwargs["cache_file_path"] = (
-                "portfolio_cache_yf.json"  # Relative path as last resort
             )
+        else:
+            portfolio_kwargs["cache_file_path"] = "portfolio_cache_yf.json"
 
-        historical_args = ()
         historical_kwargs = {
-            "transactions_csv_file": self.transactions_file,
-            "start_date": start_date,
-            "end_date": end_date,
-            "interval": interval,
-            "benchmark_symbols_yf": selected_benchmark_tickers,  # Pass YF tickers
+            "all_transactions_df_cleaned": self.all_transactions_df_cleaned_for_logic.copy(),
+            "original_transactions_df_for_ignored": self.original_transactions_df_for_ignored_context.copy(),
+            "ignored_indices_from_load": ignored_indices_load_db,
+            "ignored_reasons_from_load": ignored_reasons_load_db,
+            "start_date": start_date_hist,
+            "end_date": end_date_hist,
+            "interval": interval_hist,
+            "benchmark_symbols_yf": selected_benchmark_tickers,
             "display_currency": display_currency,
-            "account_currency_map": account_map,
-            "default_currency": def_currency,
-            "use_raw_data_cache": True,
-            "use_daily_results_cache": True,
+            "account_currency_map": acc_map_config,
+            "default_currency": def_curr_config,
             "include_accounts": selected_accounts_for_worker,
-            # worker_signals passed directly below
+            "manual_overrides_dict": self.manual_overrides_dict,
+            "user_symbol_map": self.user_symbol_map_config,
+            "user_excluded_symbols": self.user_excluded_symbols_config,
+            "original_csv_file_path": None,  # No single CSV path when data is from DB for cache key hash
         }
-        # Add exclude_accounts only if supported by the function
         if HISTORICAL_FN_SUPPORTS_EXCLUDE:
-            historical_kwargs["exclude_accounts"] = accounts_to_exclude
+            accounts_to_exclude_hist = [
+                acc
+                for acc in self.available_accounts
+                if selected_accounts_for_worker
+                and acc not in selected_accounts_for_worker
+            ]
+            historical_kwargs["exclude_accounts"] = accounts_to_exclude_hist
 
-        # --- Create signals object FIRST ---
-        worker_signals = WorkerSignals()
+        logging.info(f"Starting calculation & data fetch (DB source):")
+        logging.info(
+            f"DB='{os.path.basename(self.DB_FILE_PATH)}', Currency='{display_currency}', ShowClosed={show_closed}, SelectedAccounts={selected_accounts_for_worker if selected_accounts_for_worker else 'All'}"
+        )
+        logging.info(
+            f"Default Currency: {def_curr_config}, Account Map: {acc_map_config}"
+        )
+        exclude_log_msg = (
+            f", ExcludeHist={historical_kwargs.get('exclude_accounts', [])}"
+            if HISTORICAL_FN_SUPPORTS_EXCLUDE
+            and historical_kwargs.get("exclude_accounts")
+            else ""
+        )
+        logging.info(
+            f"Graph Params: Start={start_date_hist}, End={end_date_hist}, Interval={interval_hist}, Benchmarks (Tickers)={selected_benchmark_tickers}{exclude_log_msg}"
+        )
 
-        # --- Instantiate worker WITHOUT index_fn ---
         worker = PortfolioCalculatorWorker(
             portfolio_fn=calculate_portfolio_summary,
-            portfolio_args=portfolio_args,
+            portfolio_args=(),
             portfolio_kwargs=portfolio_kwargs,
-            # index_fn=fetch_index_quotes_yfinance, <-- REMOVED
-            historical_fn=calculate_historical_performance,  # type: ignore
-            historical_args=historical_args,
+            historical_fn=calculate_historical_performance,
+            historical_args=(),
             historical_kwargs=historical_kwargs,
-            worker_signals=worker_signals,  # Pass signals object
-            manual_overrides_dict=self.manual_overrides_dict,  # Pass price/sector overrides
-            user_symbol_map=self.user_symbol_map_config,  # Pass symbol map
-            user_excluded_symbols=self.user_excluded_symbols_config,  # Pass excluded symbols
+            worker_signals=self.worker_signals,  # Use the instance's signals object
+            manual_overrides_dict=self.manual_overrides_dict,
+            user_symbol_map=self.user_symbol_map_config,
+            user_excluded_symbols=self.user_excluded_symbols_config,
         )
-        # --- END MODIFICATION ---
-
-        # --- Connect signals using the created signals object ---
-        worker_signals.result.connect(self.handle_results)
-        worker_signals.error.connect(self.handle_error)
-        worker_signals.progress.connect(self.update_progress)
-        worker_signals.finished.connect(
-            self.calculation_finished
-        )  # Connect finished from the signals object
-        # --- END Connect signals ---
-
+        # Signals are already connected in __init__ to self.worker_signals
         self.threadpool.start(worker)
+
+    def _perform_initial_load_from_db_only(self):
+        """Loads data from DB on startup if load_on_startup is true and DB is not empty."""
+        if self.db_conn:
+            # Check if DB has any data before refreshing
+            try:
+                cursor = self.db_conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM transactions")
+                count_result = cursor.fetchone()
+                count = count_result[0] if count_result else 0
+
+                if count > 0:
+                    logging.info(
+                        "DB has data. Triggering initial data refresh on startup..."
+                    )
+                    # QTimer.singleShot(150, self.refresh_data) # Already called by __init__ logic path if needed
+                    self.refresh_data()  # Call directly if this path is taken
+                else:
+                    logging.info("DB is empty. No initial data refresh from DB.")
+                    self.status_label.setText(
+                        "Database is empty. Add transactions or import from CSV via File menu."
+                    )
+                    # Clear UI elements as no data will be loaded
+                    self.clear_results()  # This handles UI clearing
+            except sqlite3.Error as e:
+                logging.error(f"Error checking database transaction count: {e}")
+                QMessageBox.warning(
+                    self, "Database Error", f"Could not check database content: {e}"
+                )
+                self.status_label.setText("Error accessing database. Check logs.")
+                self.clear_results()
+            except Exception as e_unknown:  # Catch any other unexpected error
+                logging.error(
+                    f"Unexpected error during initial DB check: {e_unknown}",
+                    exc_info=True,
+                )
+                QMessageBox.critical(
+                    self,
+                    "Unexpected Error",
+                    f"An unexpected error occurred: {e_unknown}",
+                )
+                self.status_label.setText("Unexpected error. Check logs.")
+                self.clear_results()
+        else:
+            self.status_label.setText("Database not connected. Cannot load data.")
+            self.clear_results()
 
     def _perform_initial_load(self):
         """Performs the initial data load on startup if configured."""
@@ -9164,26 +9175,69 @@ The CSV file should contain the following columns (header names must match exact
         logging.debug("Updating UI elements after receiving results...")
         try:
             # Enable/Disable "View Log" button based on the newly constructed ignored_data
+            # --- ADDED LOGGING ---
+            logging.debug(
+                f"  Ignored data shape: {self.ignored_data.shape if isinstance(self.ignored_data, pd.DataFrame) else 'Not a DF'}"
+            )
+            # --- END ADDED LOGGING ---
             if hasattr(self, "view_ignored_button"):
                 self.view_ignored_button.setEnabled(not self.ignored_data.empty)
 
             # Get Filtered Data for Display (uses self.holdings_data and current filters)
             # IMPORTANT: _get_filtered_data uses self.holdings_data which was just updated
+            # --- ADDED LOGGING ---
+            logging.debug("  Calling _get_filtered_data...")
+            # --- END ADDED LOGGING ---
+
             df_display_filtered = self._get_filtered_data()
 
+            # --- ADDED LOGGING ---
+            logging.debug(
+                f"  _get_filtered_data returned DataFrame shape: {df_display_filtered.shape}"
+            )
+            logging.debug(
+                f"  _get_filtered_data returned DataFrame columns: {df_display_filtered.columns.tolist()}"
+            )
+            # --- END ADDED LOGGING ---
+
             # Update UI components
+            # --- ADDED LOGGING ---
+            logging.debug("  Calling _update_table_title...")
+            # --- END ADDED LOGGING ---
             self._update_table_title()  # Uses available/selected accounts state
+            # --- ADDED LOGGING ---
+            logging.debug("  Calling update_dashboard_summary...")
+            # --- END ADDED LOGGING ---
             self.update_dashboard_summary()  # Uses self.summary_metrics_data and filtered data for cash
             # Account pie needs data grouped by account *within the selected scope*
             # We can derive this from the df_display_filtered
+            # --- ADDED LOGGING ---
+            logging.debug("  Calling update_account_pie_chart...")
+            # --- END ADDED LOGGING ---
             self.update_account_pie_chart(df_display_filtered)
+            # --- ADDED LOGGING ---
+            logging.debug("  Calling update_holdings_pie_chart...")
+            # --- END ADDED LOGGING ---
             self.update_holdings_pie_chart(df_display_filtered)  # Uses filtered data
+            # --- ADDED LOGGING ---
+            logging.debug("  Calling _update_table_view_with_filtered_columns...")
+            # --- END ADDED LOGGING ---
             self._update_table_view_with_filtered_columns(
                 df_display_filtered
             )  # Update table
+            # --- ADDED LOGGING ---
+            logging.debug("  Calling apply_column_visibility...")
+            # --- END ADDED LOGGING ---
             self.apply_column_visibility()  # Re-apply visibility
             self.update_performance_graphs()  # Uses self.historical_data (which reflects scope)
             self.update_header_info()  # Uses self.index_quote_data
+
+            # --- ADDED LOGGING ---
+            logging.debug(
+                f"  Calling _update_fx_rate_display with currency: {self.currency_combo.currentText()}"
+            )
+            # --- END ADDED LOGGING ---
+
             self._update_fx_rate_display(
                 self.currency_combo.currentText()
             )  # Uses self.summary_metrics_data
@@ -9216,11 +9270,26 @@ The CSV file should contain the following columns (header names must match exact
             self.bar_charts_frame.setVisible(bar_charts_have_data)
             # --- END MODIFY ---
             if bar_charts_have_data:  # Only call plot if there's data
+                # --- ADDED LOGGING ---
+                logging.debug("  Calling _update_periodic_bar_charts...")
+                # --- END ADDED LOGGING ---
                 self._update_periodic_bar_charts()
+                # --- ADDED LOGGING ---
+                logging.debug("  Calling _update_dividend_bar_chart...")
+                # --- END ADDED LOGGING ---
                 self._update_dividend_bar_chart()  # Also update dividend chart
                 # _update_dividend_summary_table will be called by _update_dividend_bar_chart
+                # --- ADDED LOGGING ---
+                logging.debug("  Calling _update_dividend_table...")
+                # --- END ADDED LOGGING ---
                 self._update_dividend_table()  # And dividend table
+                # --- ADDED LOGGING ---
+                logging.debug("  Calling _update_transaction_log_tables_content...")
+                # --- END ADDED LOGGING ---
                 self._update_transaction_log_tables_content()  # Update new log tables
+                # --- ADDED LOGGING ---
+                logging.debug("  Calling _update_asset_allocation_charts...")
+                # --- END ADDED LOGGING ---
                 self._update_asset_allocation_charts()  # Update new allocation charts
             else:
                 logging.info(
@@ -9408,7 +9477,6 @@ The CSV file should contain the following columns (header names must match exact
 
     def _connect_signals(self):
         """Connects signals from UI widgets (buttons, combos, etc.) to their slots."""
-        self.select_file_button.clicked.connect(self.select_file)
         self.add_transaction_button.clicked.connect(self.open_add_transaction_dialog)
         self.account_select_button.clicked.connect(self.show_account_selection_menu)
         self.update_accounts_button.clicked.connect(self.refresh_data)
@@ -9459,6 +9527,11 @@ The CSV file should contain the following columns (header names must match exact
         self.worker_signals.fundamental_data_ready.connect(
             self._show_fundamental_data_dialog_from_worker
         )
+        # --- ADDED: Connect main worker signals ---
+        self.worker_signals.result.connect(self.handle_results)
+        self.worker_signals.error.connect(self.handle_error)
+        self.worker_signals.finished.connect(self.calculation_finished)
+        self.worker_signals.progress.connect(self.update_progress)
 
         # Table Context Menu Connection
         self.table_view.customContextMenuRequested.connect(
@@ -10929,39 +11002,241 @@ The CSV file should contain the following columns (header names must match exact
 
     @Slot()
     def show_manage_transactions_dialog(self):
-        """Opens the dialog to manage transactions."""
-        if not hasattr(self, "original_data") or self.original_data.empty:
-            # Try loading it now if not loaded on startup/refresh
-            account_map = self.config.get("account_currency_map", {"SET": "THB"})
-            def_currency = self.config.get("default_currency", "USD")
-            logging.info("Loading original transaction data for management dialog...")
-            (_, orig_df_temp, _, _, err_load_orig, _) = (
-                load_and_clean_transactions(  # <--- Direct call
-                    self.transactions_file, account_map, def_currency
-                )
-            )
-            if err_load_orig or orig_df_temp is None:
-                QMessageBox.critical(
-                    self,
-                    "Load Error",
-                    "Failed to load transaction data for management.",
-                )
-                return
-            else:
-                self.original_data = orig_df_temp.copy()
-
-        if self.original_data.empty:
-            QMessageBox.information(
-                self, "No Data", "No transaction data loaded to manage."
+        """
+        Opens the dialog to view, edit, and delete transactions.
+        Loads data directly from the SQLite database.
+        """
+        if not self.db_conn:
+            QMessageBox.warning(
+                self,
+                "No Database Connection",
+                "Please open or create a database file first to manage transactions.",
             )
             return
 
-        dialog = ManageTransactionsDialog(
-            self.original_data, self.transactions_file, self
+        # Load current transactions directly from DB for the dialog
+        # load_all_transactions_from_db returns a DataFrame with 'original_index' as DB id
+        # and DB column names (e.g., "Date" as datetime, "Price/Share" as float).
+        # Use account_currency_map and default_currency from config for cleaning after DB load
+        acc_map_config_dialog = self.config.get("account_currency_map", {})
+        def_curr_config_dialog = self.config.get(
+            "default_currency",
+            config.DEFAULT_CURRENCY if hasattr(config, "DEFAULT_CURRENCY") else "USD",
         )
-        # Connect the dialog's signal back to the main window's refresh
-        # dialog.data_changed.connect(self.refresh_data) # Let the _edit/_delete methods trigger refresh
-        dialog.exec()
+
+        df_for_dialog, load_success = load_all_transactions_from_db(
+            self.db_conn, acc_map_config_dialog, def_curr_config_dialog
+        )  # MODIFIED: Pass map and default
+        # END MODIFIED
+
+        if not load_success or df_for_dialog is None:
+            QMessageBox.critical(
+                self,
+                "Load Error",
+                "Failed to load transactions from the database for management.",
+            )
+            # Potentially clear any stale display if necessary
+            # self.manage_transactions_dialog_instance.table_model.updateData(pd.DataFrame()) # If dialog was persistent
+            return
+        if df_for_dialog.empty:
+            QMessageBox.information(
+                self, "No Data", "No transactions found in the database to manage."
+            )
+            return
+
+        # Instantiate the DB-aware dialog, passing the loaded DataFrame and DB connection
+        dialog = ManageTransactionsDialogDB(
+            df_for_dialog, self.db_conn, self
+        )  # Pass self as parent_app
+
+        # Connect the dialog's data_changed signal to the main app's refresh_data slot
+        # This ensures that if the dialog makes changes (edit/delete), the main UI refreshes.
+        dialog.data_changed.connect(self.refresh_data)
+
+        dialog.exec()  # Show the dialog modally
+
+    def _edit_transaction_in_db(
+        self, transaction_id: int, new_data_dict_from_dialog_pytypes: Dict[str, Any]
+    ) -> bool:
+        """
+        Updates an existing transaction in the database.
+        `new_data_dict_from_dialog_pytypes` comes from AddTransactionDialog.get_transaction_data()
+        and contains Python types, keyed by CSV-like headers (e.g., "Date (MMM DD, YYYY)").
+        This method maps these to DB column names and appropriate data types for `db_utils`.
+
+        Args:
+            transaction_id (int): The database ID of the transaction to update.
+            new_data_dict_from_dialog_pytypes (Dict[str, Any]): Data from the edit dialog.
+
+        Returns:
+            bool: True if the update was successful, False otherwise.
+        """
+        if not self.db_conn:
+            logging.error("DB Edit Error: No active database connection.")
+            return False
+
+        logging.info(
+            f"Preparing to edit DB transaction ID {transaction_id}. Raw dialog data: {new_data_dict_from_dialog_pytypes}"
+        )
+        data_for_db_update: Dict[str, Any] = {}
+        try:
+            # Map and format data from dialog (CSV-like headers) to DB schema
+            date_obj = new_data_dict_from_dialog_pytypes.get("Date (MMM DD, YYYY)")
+            if isinstance(date_obj, (datetime, date)):
+                data_for_db_update["Date"] = date_obj.strftime("%Y-%m-%d")
+            elif (
+                date_obj is None
+                and "Date (MMM DD, YYYY)" in new_data_dict_from_dialog_pytypes
+            ):  # Explicit None
+                data_for_db_update["Date"] = (
+                    None  # This should be validated by dialog if Date is mandatory
+                )
+            elif date_obj is not None:
+                logging.error(
+                    f"Invalid date type for DB edit: {type(date_obj)} for value {date_obj}"
+                )
+                QMessageBox.critical(
+                    self,
+                    "Data Error",
+                    f"Invalid date type from edit dialog: {type(date_obj)}. Update failed.",
+                )
+                return False
+
+            data_for_db_update["Type"] = new_data_dict_from_dialog_pytypes.get(
+                "Transaction Type"
+            )
+            data_for_db_update["Symbol"] = new_data_dict_from_dialog_pytypes.get(
+                "Stock / ETF Symbol"
+            )
+
+            # Numeric fields are already float or None from get_transaction_data
+            data_for_db_update["Quantity"] = new_data_dict_from_dialog_pytypes.get(
+                "Quantity of Units"
+            )
+            data_for_db_update["Price/Share"] = new_data_dict_from_dialog_pytypes.get(
+                "Amount per unit"
+            )
+            data_for_db_update["Total Amount"] = new_data_dict_from_dialog_pytypes.get(
+                "Total Amount"
+            )
+            data_for_db_update["Commission"] = new_data_dict_from_dialog_pytypes.get(
+                "Fees"
+            )
+            data_for_db_update["Split Ratio"] = new_data_dict_from_dialog_pytypes.get(
+                "Split Ratio (new shares per old share)"
+            )
+
+            data_for_db_update["Account"] = new_data_dict_from_dialog_pytypes.get(
+                "Investment Account"
+            )
+            data_for_db_update["Note"] = new_data_dict_from_dialog_pytypes.get("Note")
+
+            # Determine Local Currency based on account
+            acc_name_for_currency_update = data_for_db_update.get("Account")
+            if acc_name_for_currency_update:
+                app_config_account_map = self.config.get("account_currency_map", {})
+                app_config_default_curr = self.config.get(
+                    "default_currency",
+                    (
+                        config.DEFAULT_CURRENCY
+                        if hasattr(config, "DEFAULT_CURRENCY")
+                        else "USD"
+                    ),
+                )
+                data_for_db_update["Local Currency"] = app_config_account_map.get(
+                    str(acc_name_for_currency_update), app_config_default_curr
+                )
+            else:  # Should be caught by dialog if Account is mandatory
+                data_for_db_update["Local Currency"] = self.config.get(
+                    "default_currency",
+                    (
+                        config.DEFAULT_CURRENCY
+                        if hasattr(config, "DEFAULT_CURRENCY")
+                        else "USD"
+                    ),
+                )
+                logging.warning(
+                    "Account name missing when determining local currency for transaction update."
+                )
+
+            # Remove keys with None values if db_utils.update_transaction_in_db expects only provided fields
+            # However, db_utils.update_transaction_in_db is designed to handle None for nullable fields.
+            # So, we pass the full dict with None values.
+            data_for_db_update_cleaned = {
+                k: v
+                for k, v in data_for_db_update.items()
+                if k
+                in [  # Ensure only valid DB columns
+                    "Date",
+                    "Type",
+                    "Symbol",
+                    "Quantity",
+                    "Price/Share",
+                    "Total Amount",
+                    "Commission",
+                    "Account",
+                    "Split Ratio",
+                    "Note",
+                    "Local Currency",
+                ]
+            }
+
+            # Validate that required fields for DB are present before calling update
+            for required_db_col in [
+                "Date",
+                "Type",
+                "Symbol",
+                "Account",
+                "Local Currency",
+            ]:
+                if (
+                    data_for_db_update_cleaned.get(required_db_col) is None
+                ):  # Check if value is None after processing
+                    logging.error(
+                        f"Critical field '{required_db_col}' is None after mapping. Transaction update failed for ID {transaction_id}."
+                    )
+                    QMessageBox.critical(
+                        self,
+                        "Data Error",
+                        f"Required field '{required_db_col}' is missing or invalid. Update failed.",
+                    )
+                    return False
+
+            logging.debug(
+                f"Data prepared for DB update (ID: {transaction_id}): {data_for_db_update_cleaned}"
+            )
+
+        except Exception as e_map_edit:
+            logging.error(
+                f"Error mapping dialog data for DB update (ID: {transaction_id}): {e_map_edit}",
+                exc_info=True,
+            )
+            QMessageBox.critical(
+                self, "Data Error", "Internal error preparing data for database update."
+            )
+            return False
+
+        success = update_transaction_in_db(
+            self.db_conn, transaction_id, data_for_db_update_cleaned
+        )
+        if success:
+            logging.info(f"Successfully updated transaction ID {transaction_id} in DB.")
+            new_account_name_edited = data_for_db_update_cleaned.get("Account")
+            if new_account_name_edited:
+                self._add_new_account_if_needed(
+                    str(new_account_name_edited)
+                )  # Update GUI's available accounts
+            # Main window's refresh_data will be triggered by ManageTransactionsDialogDB's data_changed signal
+        else:
+            logging.error(f"Failed to update transaction ID {transaction_id} in DB.")
+            # db_utils.update_transaction_in_db would show a log, PortfolioApp can show a general message
+            QMessageBox.critical(
+                self,
+                "Update Error",
+                "Failed to update transaction in the database. Check logs.",
+            )
+
+        return success
 
     def _backup_csv(self, filename_to_backup=None):  # Add optional argument
         """Creates a timestamped backup of the specified transactions CSV."""
@@ -11259,6 +11534,42 @@ The CSV file should contain the following columns (header names must match exact
             # _rewrite_csv would have shown its own error message
             return False
 
+    def _delete_transaction_from_db(self, transaction_id: int) -> bool:
+        """
+        Deletes a transaction from the database using its ID.
+        This method is called by ManageTransactionsDialogDB.
+
+        Args:
+            transaction_id (int): The database ID of the transaction to delete.
+
+        Returns:
+            bool: True if the deletion was successful, False otherwise.
+        """
+        if not self.db_conn:
+            logging.error("DB Delete Error: No active database connection.")
+            QMessageBox.critical(
+                self,
+                "Database Error",
+                "Cannot delete transaction: No active database connection.",
+            )
+            return False
+
+        logging.info(f"Attempting to delete transaction with DB ID: {transaction_id}")
+
+        success = delete_transaction_from_db(self.db_conn, transaction_id)
+
+        if success:
+            logging.info(
+                f"Successfully deleted transaction ID {transaction_id} from DB."
+            )
+            # The ManageTransactionsDialogDB will emit data_changed, which triggers self.refresh_data() in PortfolioApp.
+            # No need for a QMessageBox here as the dialog handles user feedback.
+        else:
+            logging.error(f"Failed to delete transaction ID {transaction_id} from DB.")
+            # db_utils.delete_transaction_from_db would have logged details.
+            # The dialog can show a generic "failed to delete" message.
+        return success
+
     def _delete_transactions_from_csv(
         self, original_indices_to_delete: List[int]
     ) -> bool:
@@ -11304,30 +11615,411 @@ The CSV file should contain the following columns (header names must match exact
             return False
 
     @Slot()
-    def select_file(self):
-        """Opens a file dialog to select a new transactions CSV file."""
-        # (Keep implementation as before)
-        start_dir = (
-            os.path.dirname(self.transactions_file)
-            if self.transactions_file
-            and os.path.exists(os.path.dirname(self.transactions_file))
-            else os.getcwd()
-        )
+    def select_database_file(self):
+        """Opens a file dialog to select a new SQLite database file."""
+        current_db_dir = os.getcwd()  # Default start directory
+        if self.DB_FILE_PATH and os.path.exists(os.path.dirname(self.DB_FILE_PATH)):
+            current_db_dir = os.path.dirname(self.DB_FILE_PATH)
+        elif self.config and self.config.get(
+            "transactions_file"
+        ):  # Check config if self.DB_FILE_PATH is not yet set
+            config_path = self.config.get("transactions_file")
+            if config_path and os.path.exists(os.path.dirname(config_path)):
+                current_db_dir = os.path.dirname(config_path)
+
         fname, _ = QFileDialog.getOpenFileName(
-            self, "Open Transactions CSV", start_dir, "CSV Files (*.csv)"
+            self,
+            "Open Investa Database File",
+            current_db_dir,
+            "Database Files (*.db *.sqlite *.sqlite3);;All Files (*)",
         )
-        if fname and fname != self.transactions_file:
-            self.transactions_file = fname
-            self.config["transactions_file"] = fname
-            logging.info(f"Selected new file: {self.transactions_file}")
-            self.clear_results()  # Clear results including available accounts
-            # --- MODIFIED: Only refresh if not initial selection ---
-            if not self._initial_file_selection:
-                self.setWindowTitle(
-                    f"{self.base_window_title} - {os.path.basename(self.transactions_file)}"
+
+        if fname:
+            if fname != self.DB_FILE_PATH:
+                logging.info(f"User selected new database file: {fname}")
+                # Close existing connection if open
+                if self.db_conn:
+                    try:
+                        self.db_conn.close()
+                        logging.info(
+                            f"Closed existing DB connection to: {self.DB_FILE_PATH}"
+                        )
+                    except Exception as e_close:
+                        logging.error(
+                            f"Error closing existing DB connection: {e_close}"
+                        )
+                    self.db_conn = None
+
+                # Attempt to initialize/connect to the new DB
+                # initialize_database will create tables if the DB is new/empty.
+                new_conn = initialize_database(fname)
+                if not new_conn:
+                    QMessageBox.critical(
+                        self,
+                        "Database Error",
+                        f"Could not open or initialize selected database:\n{fname}",
+                    )
+                    # Optionally, try to revert to the previous valid DB path if one existed
+                    # For now, we won't auto-revert here, user can re-select.
+                    self.DB_FILE_PATH = None  # Mark as no valid DB
+                    self.setWindowTitle(f"{self.base_window_title} - (No Database)")
+                    self.clear_results()  # Clear UI
+                    self.status_label.setText(
+                        "Error: Failed to open selected database."
+                    )
+                    return
+
+                self.db_conn = new_conn
+                self.DB_FILE_PATH = fname
+                self.config["transactions_file"] = (
+                    fname  # Update config with new DB path
                 )
-            self.refresh_data()  # Refresh will load new data and accounts
-            # --- END MODIFICATION ---
+                # When opening a new DB, it's safer to reset account-specific settings
+                # or prompt the user if they want to keep them.
+                # For simplicity now, let's reset them.
+                self.config["account_currency_map"] = {}
+                self.config["selected_accounts"] = []
+                self.save_config()  # Save the new DB path and reset account settings
+
+                self.clear_results()  # Clear UI for the new database
+                self.setWindowTitle(
+                    f"{self.base_window_title} - {os.path.basename(self.DB_FILE_PATH)}"
+                )
+                self.status_label.setText(
+                    f"Opened database: {os.path.basename(self.DB_FILE_PATH)}. Refreshing..."
+                )
+                self.refresh_data()  # Refresh data from the newly opened/initialized database
+            else:
+                logging.info(
+                    "Selected database file is the same as current. No change."
+                )
+        else:
+            logging.info("Database file selection cancelled by user.")
+
+    @Slot()
+    def create_new_database_file(self):
+        """Prompts the user to create a new, empty SQLite database file and initializes its schema."""
+        start_dir = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+        if not start_dir:  # Fallback if DocumentsLocation is not available
+            start_dir = os.getcwd()
+        default_filename = DB_FILENAME  # e.g., "investa_transactions.db"
+
+        fname, _ = QFileDialog.getSaveFileName(
+            self,
+            "Create New Investa Database File",
+            os.path.join(start_dir, default_filename),
+            "Database Files (*.db *.sqlite *.sqlite3);;All Files (*)",
+        )
+
+        if fname:
+            # Ensure a .db extension if none provided or if it's different
+            if not any(
+                fname.lower().endswith(ext) for ext in [".db", ".sqlite", ".sqlite3"]
+            ):
+                fname += ".db"  # Append .db by default if no valid extension
+
+            logging.info(f"User selected to create new database file at: {fname}")
+
+            if os.path.exists(fname):
+                reply = QMessageBox.question(
+                    self,
+                    "File Exists",
+                    f"The file '{os.path.basename(fname)}' already exists.\n"
+                    "Do you want to overwrite it? All existing data in that file will be lost.",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if reply == QMessageBox.No:
+                    logging.info(
+                        "New database creation cancelled by user (file exists and chose not to overwrite)."
+                    )
+                    return
+                else:  # User chose to overwrite
+                    try:
+                        os.remove(fname)
+                        logging.info(f"Existing file '{fname}' removed for overwrite.")
+                    except Exception as e_del:
+                        QMessageBox.critical(
+                            self,
+                            "Error",
+                            f"Could not remove existing file '{fname}':\n{e_del}",
+                        )
+                        return
+
+            # Close existing connection if open
+            if self.db_conn:
+                try:
+                    self.db_conn.close()
+                    logging.info(
+                        f"Closed existing DB connection to: {self.DB_FILE_PATH or 'previous DB'}"
+                    )
+                except Exception as e_close:
+                    logging.error(f"Error closing existing DB connection: {e_close}")
+                self.db_conn = None
+
+            # Initialize the new database (this will create the file and tables)
+            new_conn = initialize_database(fname)
+            if new_conn:
+                self.db_conn = new_conn
+                self.DB_FILE_PATH = fname
+                self.config["transactions_file"] = (
+                    fname  # Update config with the new DB path
+                )
+                # Reset account-specific configurations for a new database
+                self.config["account_currency_map"] = {}
+                self.config["selected_accounts"] = []
+                self.config["transactions_file_csv_fallback"] = (
+                    ""  # Clear any CSV fallback
+                )
+                self.save_config()
+
+                self.clear_results()  # Clear UI from any previous data
+                self.setWindowTitle(
+                    f"{self.base_window_title} - {os.path.basename(self.DB_FILE_PATH)}"
+                )
+                self.status_label.setText(
+                    f"New database created: {os.path.basename(fname)}. Ready to add transactions or import."
+                )
+                QMessageBox.information(
+                    self,
+                    "Database Created",
+                    f"New database file created successfully:\n{fname}",
+                )
+                # Do not automatically refresh_data as the DB is empty.
+                # User can now add transactions or import.
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Database Creation Error",
+                    f"Could not create or initialize new database at:\n{fname}",
+                )
+                # Attempt to revert to a previously known valid DB path from config if possible
+                previous_db_path = self.config.get("transactions_file")
+                if (
+                    previous_db_path
+                    and previous_db_path != fname
+                    and os.path.exists(previous_db_path)
+                ):
+                    self.DB_FILE_PATH = previous_db_path
+                    self.db_conn = initialize_database(
+                        self.DB_FILE_PATH
+                    )  # Re-initialize old one
+                    if self.db_conn:
+                        self.setWindowTitle(
+                            f"{self.base_window_title} - {os.path.basename(self.DB_FILE_PATH)}"
+                        )
+                    else:  # Failed to reopen previous
+                        self.DB_FILE_PATH = None
+                        self.setWindowTitle(f"{self.base_window_title} - (No Database)")
+                else:  # No valid previous path or it was the one that failed
+                    self.DB_FILE_PATH = None
+                    self.setWindowTitle(f"{self.base_window_title} - (No Database)")
+        else:
+            logging.info("New database file creation cancelled by user.")
+
+    @Slot()
+    def import_transactions_from_csv(self):
+        """
+        Prompts the user to select a CSV file and imports its transactions
+        into the currently open SQLite database.
+        """
+        if not self.db_conn:
+            QMessageBox.warning(
+                self,
+                "No Database Open",
+                "Please open or create a database file first before importing from CSV.",
+            )
+            return
+
+        # Suggest starting directory based on last import or Documents
+        start_dir = self.config.get("last_csv_import_path", "")
+        if not start_dir or not os.path.isdir(start_dir):
+            start_dir = (
+                QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+                or os.getcwd()
+            )
+
+        csv_fname, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select CSV File to Import Transactions",
+            start_dir,
+            "CSV Files (*.csv);;All Files (*)",
+        )
+
+        if csv_fname:
+            # Save the directory of the selected CSV for next time
+            self.config["last_csv_import_path"] = os.path.dirname(csv_fname)
+            self.save_config()  # Save this path preference
+
+            logging.info(f"User selected CSV for import: {csv_fname}")
+            confirm_msg = (
+                f"This will import transactions from:\n<b>{os.path.basename(csv_fname)}</b>\n\n"
+                f"Into the current database:\n<b>{os.path.basename(self.DB_FILE_PATH)}</b>\n\n"
+                "Existing transactions in the database will NOT be deleted. "
+                "If transactions from this CSV (or similar data) have already been imported, "
+                "this may create duplicates.\n\n"
+                "It's recommended to import into an empty or carefully managed database.\n\n"
+                "Proceed with import?"
+            )
+            reply = QMessageBox.question(
+                self,
+                "Confirm CSV Import",
+                confirm_msg,
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+
+            if reply == QMessageBox.No:
+                logging.info("CSV import cancelled by user.")
+                return
+
+            self.status_label.setText(
+                f"Importing transactions from {os.path.basename(csv_fname)}..."
+            )
+            self.set_controls_enabled(False)  # Disable UI during import
+            QApplication.processEvents()  # Ensure UI updates
+
+            # Use current account_currency_map and default_currency from app's config for migration
+            current_account_map = self.config.get("account_currency_map", {})
+            current_default_curr = self.config.get(
+                "default_currency",
+                (
+                    config.DEFAULT_CURRENCY
+                    if hasattr(config, "DEFAULT_CURRENCY")
+                    else "USD"
+                ),
+            )
+
+            mig_count, err_count = migrate_csv_to_db(
+                csv_fname, self.db_conn, current_account_map, current_default_curr
+            )
+
+            self.set_controls_enabled(True)  # Re-enable UI
+
+            if err_count > 0:
+                QMessageBox.warning(
+                    self,
+                    "Import Issues",
+                    f"Imported {mig_count} transaction(s) with {err_count} error(s).\n"
+                    "Please check the application logs for details.",
+                )
+            else:
+                QMessageBox.information(
+                    self,
+                    "Import Successful",
+                    f"Successfully imported {mig_count} transaction(s) from '{os.path.basename(csv_fname)}'.",
+                )
+
+            final_status_msg = f"Import from '{os.path.basename(csv_fname)}' complete. Migrated: {mig_count}, Errors: {err_count}."
+            if (
+                mig_count > 0 or err_count > 0
+            ):  # Refresh if anything changed or tried to change
+                final_status_msg += " Refreshing data..."
+            self.status_label.setText(final_status_msg)
+            logging.info(final_status_msg)
+
+            if mig_count > 0:  # Only refresh if actual transactions were migrated
+                self.refresh_data()  # Refresh data to show newly imported transactions
+            elif (
+                err_count > 0
+            ):  # If only errors, still might be good to ensure UI is in a clean state
+                self.status_label.setText(
+                    f"Import from '{os.path.basename(csv_fname)}' had {err_count} errors. No data changed."
+                )
+            else:  # No rows migrated and no errors (e.g. empty CSV)
+                self.status_label.setText(
+                    f"No transactions imported from '{os.path.basename(csv_fname)}'."
+                )
+
+        else:
+            logging.info("CSV import file selection cancelled by user.")
+
+    def _run_csv_migration(self, csv_path_to_migrate: str):
+        """
+        Internal helper to run CSV to DB migration, update UI, and save config.
+        This is typically called on first startup if an empty DB and a fallback CSV are found.
+        """
+        if not self.db_conn:
+            QMessageBox.critical(
+                self,
+                "Migration Error",
+                "Database connection not available for migration.",
+            )
+            logging.error("Migration Error: DB connection not available.")
+            self.status_label.setText("Error: DB connection lost before migration.")
+            return
+
+        if not os.path.exists(csv_path_to_migrate):
+            QMessageBox.critical(
+                self,
+                "Migration Error",
+                f"CSV file for migration not found:\n{csv_path_to_migrate}",
+            )
+            logging.error(
+                f"Migration Error: CSV file '{csv_path_to_migrate}' not found."
+            )
+            self.status_label.setText(f"Error: Migration CSV not found.")
+            return
+
+        logging.info(f"Starting automatic CSV migration from: {csv_path_to_migrate}")
+        self.status_label.setText(
+            f"Migrating data from {os.path.basename(csv_path_to_migrate)} to database..."
+        )
+        self.set_controls_enabled(False)
+        QApplication.processEvents()
+
+        # Use current account_currency_map and default_currency from app's config for migration
+        # These should be the defaults if it's a first run.
+        current_account_map = self.config.get("account_currency_map", {})
+        current_default_curr = self.config.get(
+            "default_currency",
+            config.DEFAULT_CURRENCY if hasattr(config, "DEFAULT_CURRENCY") else "USD",
+        )
+
+        mig_count, err_count = migrate_csv_to_db(
+            csv_path_to_migrate, self.db_conn, current_account_map, current_default_curr
+        )
+
+        self.set_controls_enabled(True)
+
+        if err_count > 0:
+            QMessageBox.warning(
+                self,
+                "Migration Issues",
+                f"Migrated {mig_count} transaction(s) with {err_count} error(s) from '{os.path.basename(csv_path_to_migrate)}'.\n"
+                "Please check the application logs for details.",
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "Migration Successful",
+                f"Successfully migrated {mig_count} transaction(s) from '{os.path.basename(csv_path_to_migrate)}' to the database.",
+            )
+
+        # Update config: clear the csv_fallback path as migration has been attempted/completed.
+        if self.config.get("transactions_file_csv_fallback") == csv_path_to_migrate:
+            self.config["transactions_file_csv_fallback"] = ""  # Clear it
+            logging.info(
+                f"Cleared 'transactions_file_csv_fallback' after migration attempt from '{csv_path_to_migrate}'."
+            )
+        self.save_config()  # Save updated config
+
+        final_status_msg = f"Migration from '{os.path.basename(csv_path_to_migrate)}' complete. Migrated: {mig_count}, Errors: {err_count}."
+        if mig_count > 0 or err_count > 0:
+            final_status_msg += " Refreshing data..."
+        self.status_label.setText(final_status_msg)
+        logging.info(final_status_msg)
+
+        if mig_count > 0:  # Refresh data to show newly migrated transactions
+            self.refresh_data()
+        elif err_count > 0:
+            self.status_label.setText(
+                f"Migration from '{os.path.basename(csv_path_to_migrate)}' had {err_count} errors. No data changed."
+            )
+        else:  # No rows migrated and no errors (e.g. empty CSV)
+            self.status_label.setText(
+                f"No transactions migrated from '{os.path.basename(csv_path_to_migrate)}'."
+            )
 
     def clear_results(self):
         """Clears all displayed data, resets UI elements, and clears internal state."""
@@ -11365,7 +12057,6 @@ The CSV file should contain the following columns (header names must match exact
         self._update_dividend_bar_chart()  # Clear dividend chart
         self._update_dividend_table()  # Clear dividend table
 
-    @profile
     def _update_transaction_log_tables_content(self):
         """Populates the stock and cash transaction log tables using self.original_data."""
         logging.debug("Updating transaction log tables...")
@@ -12331,7 +13022,6 @@ The CSV file should contain the following columns (header names must match exact
             enabled (bool): True to enable controls, False to disable.
         """
         controls_to_toggle = [
-            self.select_file_button,
             self.add_transaction_button,
             self.account_select_button,  # Use new button
             self.update_accounts_button,  # <-- ADDED Update Accounts button
@@ -12355,7 +13045,6 @@ The CSV file should contain the following columns (header names must match exact
         self.setCursor(Qt.WaitCursor if not enabled else Qt.ArrowCursor)
 
     # --- Signal Handlers from Worker ---
-    @profile
     @Slot(  # MODIFIED: Signature matches WorkerSignals.result (10 args)
         dict,
         pd.DataFrame,
@@ -12381,138 +13070,251 @@ The CSV file should contain the following columns (header names must match exact
         combined_ignored_reasons,
         dividend_history_df,  # <-- NEW from worker
     ):
+        logging.info("HANDLE_RESULTS: Slot entered.")
         """
         Slot to process results received from the PortfolioCalculatorWorker.
         Orchestrates data storage, processing, and UI updates.
         """
-        logging.debug("Entering handle_results orchestrator...")
+        logging.info(
+            "HANDLE_RESULTS: Orchestrator entered."
+        )  # Changed to INFO for visibility
         logging.debug(
-            f"  handle_results received dividend_history_df (shape {dividend_history_df.shape if isinstance(dividend_history_df, pd.DataFrame) else 'Not a DF'}):"
+            f"  Received full_historical_data_df shape: {full_historical_data_df.shape if isinstance(full_historical_data_df, pd.DataFrame) else 'Not DF'}"
+        )
+        logging.debug(
+            f"  Received dividend_history_df shape: {dividend_history_df.shape if isinstance(dividend_history_df, pd.DataFrame) else 'Not DF'}"
         )
 
-        logging.debug("HANDLE_RESULTS: Entered")
-        logging.debug(
-            f"HANDLE_RESULTS: Summary Metrics Keys: {list(summary_metrics.keys()) if summary_metrics else 'Empty'}"
-        )
-        logging.debug(
-            f"HANDLE_RESULTS: Holdings DF Shape: {holdings_df.shape if isinstance(holdings_df, pd.DataFrame) else 'Not DF'}"
-        )
-        logging.debug(
-            f"HANDLE_RESULTS: Full Historical DF Shape: {full_historical_data_df.shape if isinstance(full_historical_data_df, pd.DataFrame) else 'Not DF'}"
-        )
-        logging.debug(
-            f"HANDLE_RESULTS: Dividend History DF Shape: {dividend_history_df.shape if isinstance(dividend_history_df, pd.DataFrame) else 'Not DF'}"
-        )
-        if (
-            isinstance(dividend_history_df, pd.DataFrame)
-            and not dividend_history_df.empty
-        ):
+        try:
             logging.debug(
-                f"HANDLE_RESULTS: Dividend History Head:\n{dividend_history_df.head().to_string()}"
+                f"HANDLE_RESULTS (Inside Try): Summary Metrics Keys: {list(summary_metrics.keys()) if summary_metrics else 'Empty'}"
+            )
+            logging.debug(
+                f"HANDLE_RESULTS (Inside Try): Holdings DF Shape: {holdings_df.shape if isinstance(holdings_df, pd.DataFrame) else 'Not DF'}"
+            )
+            # Add more logs here for the received data
+            logging.debug(
+                f"  Received full_historical_data_df shape: {full_historical_data_df.shape if isinstance(full_historical_data_df, pd.DataFrame) else 'Not DF'}"
+            )
+            if (
+                isinstance(full_historical_data_df, pd.DataFrame)
+                and not full_historical_data_df.empty
+            ):
+                logging.debug(
+                    f"  Received full_historical_data_df head:\n{full_historical_data_df.head().to_string()}"
+                )
+
+            # ... (other debug logs for received data can be added here if needed)
+
+            logging.info("HANDLE_RESULTS: Calling _store_worker_data...")
+            self._store_worker_data(
+                summary_metrics,
+                holdings_df,
+                account_metrics,
+                index_quotes,
+                full_historical_data_df,
+                hist_prices_adj,
+                hist_fx,
+                combined_ignored_indices,
+                combined_ignored_reasons,
+                dividend_history_df,
+            )
+            logging.info("HANDLE_RESULTS: Finished _store_worker_data.")
+            # Log after storing
+            logging.debug(
+                f"  After _store_worker_data, self.full_historical_data shape: {self.full_historical_data.shape if isinstance(self.full_historical_data, pd.DataFrame) else 'Not DF'}"
+            )
+            if (
+                isinstance(self.full_historical_data, pd.DataFrame)
+                and not self.full_historical_data.empty
+            ):
+                logging.debug(
+                    f"  self.full_historical_data head:\n{self.full_historical_data.head().to_string()}"
+                )
+
+            logging.info(
+                "HANDLE_RESULTS: Calling _process_historical_and_periodic_data..."
+            )
+            self._process_historical_and_periodic_data()
+            logging.info(
+                "HANDLE_RESULTS: Finished _process_historical_and_periodic_data."
+            )
+            # Log after processing
+            logging.debug(
+                f"  After _process_historical_and_periodic_data, self.periodic_returns_data keys: {list(self.periodic_returns_data.keys()) if self.periodic_returns_data else 'Empty'}"
+            )
+            if self.periodic_returns_data:
+                for k, v_df in self.periodic_returns_data.items():
+                    logging.debug(
+                        f"    Periodic data for '{k}' shape: {v_df.shape if isinstance(v_df, pd.DataFrame) else 'Not DF'}"
+                    )
+            logging.debug(
+                f"  self.historical_data shape: {self.historical_data.shape if isinstance(self.historical_data, pd.DataFrame) else 'Not DF'}"
             )
 
-        if (
-            isinstance(dividend_history_df, pd.DataFrame)
-            and not dividend_history_df.empty
-        ):
-            logging.debug(f"    Head:\n{dividend_history_df.head().to_string()}")
+            logging.info(
+                "HANDLE_RESULTS: Calling _update_available_accounts_and_selection..."
+            )
+            self._update_available_accounts_and_selection()
+            logging.info(
+                "HANDLE_RESULTS: Finished _update_available_accounts_and_selection."
+            )
 
-        self._store_worker_data(
-            summary_metrics,
-            holdings_df,
-            account_metrics,
-            index_quotes,
-            full_historical_data_df,
-            hist_prices_adj,
-            hist_fx,
-            combined_ignored_indices,
-            combined_ignored_reasons,
-            dividend_history_df,  # <-- Pass it to _store_worker_data
-        )
+            logging.info(
+                "HANDLE_RESULTS: Calling _update_ui_components_after_calculation..."
+            )
+            self._update_ui_components_after_calculation()
+            logging.info(
+                "HANDLE_RESULTS: Finished _update_ui_components_after_calculation."
+            )
 
-        self._process_historical_and_periodic_data()
-        self._update_available_accounts_and_selection()
-        self._update_ui_components_after_calculation()
+            logging.info("HANDLE_RESULTS: Successfully processed and updated UI.")
 
-        logging.debug("Exiting handle_results orchestrator.")
+        except Exception as e:
+            logging.critical(f"CRITICAL ERROR in handle_results: {e}", exc_info=True)
+            # Try to set error status even if other UI updates failed
+            try:
+                self.status_label.setText(f"Error processing results: {e}")
+            except Exception as e_status:
+                logging.error(
+                    f"Failed to set status_label in handle_results error handler: {e_status}"
+                )
+            # It's important that calculation_finished still runs to re-enable UI
+            # self.calculation_finished(f"Error in handle_results: {e}") # This might be redundant if finished signal is always processed
+
+        logging.info("HANDLE_RESULTS: Exiting.")
 
     @Slot(str)
     def handle_error(self, error_message):
         """
         Slot to handle error messages received from the PortfolioCalculatorWorker.
-
         Logs the error and updates the status bar.
-
         Args:
             error_message (str): The error description string.
         """
-        self.is_calculating = False
-        logging.info(
-            f"--- Calculation/Fetch Error Reported ---\n{error_message}\n--- End Error Report ---"
-        )
-        self.status_label.setText(
-            f"Error: {error_message.split('|||')[0]}"
-        )  # Show primary error
-        self.calculation_finished()  # Call finished even on error
+        logging.info(f"HANDLE_ERROR: Slot entered with message: {error_message}")
+        try:
+            self.is_calculating = False  # Ensure this is reset
+            logging.error(  # Changed to error for more visibility
+                f"--- Calculation/Fetch Error Reported by Worker ---\n{error_message}\n--- End Error Report ---"
+            )
+            # Ensure status_label exists before trying to set text
+            if hasattr(self, "status_label") and self.status_label:
+                self.status_label.setText(f"Error: {error_message.split('|||')[0]}")
+            else:
+                logging.warning("status_label not available in handle_error")
+            # calculation_finished will be called by the 'finished' signal separately.
+            # Do not call it directly here as it might lead to double execution or race conditions.
+            # self.calculation_finished(error_message) # Pass the error message to calculation_finished
+        except Exception as e:
+            logging.critical(
+                f"CRITICAL ERROR in handle_error itself: {e}", exc_info=True
+            )
+            # Fallback UI updates if possible
+            if hasattr(self, "status_label") and self.status_label:
+                self.status_label.setText("Critical error handling worker error.")
+            if hasattr(self, "set_controls_enabled"):
+                self.set_controls_enabled(True)  # Try to re-enable controls
 
     def show_status_popup(self, status_message):
         """(Currently unused) Placeholder for potentially showing status popups."""
         # (Keep implementation as before)
-        if not status_message:
-            return
-        cleaned_status = status_message.split("|||TWR_FACTOR:")[
-            0
-        ].strip()  # Use cleaned status
-        if "Error" in cleaned_status or "Critical" in cleaned_status:
-            pass
-        elif "Success" in cleaned_status:
-            pass
-        elif "Warning" in cleaned_status or "ignored" in cleaned_status:
-            logging.info(f"Status indicates warning/info: '{cleaned_status}'.")
+        # ... (no changes to this method's internal logic)
 
     @Slot()
     def calculation_finished(
         self, error_message: Optional[str] = None
     ):  # Add optional error_message
+        logging.info(
+            f"CALC_FINISHED: Slot entered. Error message from worker: {error_message}"
+        )  # Changed to INFO
         """
         Slot called when the worker thread finishes (success or error).
-
         Re-enables UI controls and updates the status bar with the final status message.
         """
-        self.is_calculating = False
-        logging.info(f"Worker thread finished. Error message received: {error_message}")
-        self.set_controls_enabled(True)
-        # Update status label based on the final combined status
-        if self.last_calc_status:
-            cleaned_status = self.last_calc_status.split("|||TWR_FACTOR:")[0].strip()
-            if (
-                "Error" in cleaned_status or "Crit" in cleaned_status
-            ):  # Check original status string for errors
-                # Also re-enable fundamental lookup UI if error_message is present and indicates it
-                if error_message and (
+        try:
+            self.is_calculating = False
+            logging.info(
+                f"Worker thread finished. Error message received by calculation_finished: {error_message}"
+            )
+            self.set_controls_enabled(True)
+
+            final_status_text = "Finished (Status Unknown)"
+
+            network_fetch_error_detected = False
+            if error_message and (
+                "DNSError" in error_message
+                or "Could not resolve host" in error_message
+                or "Failed to fetch" in error_message.lower()
+                or "Failed to perform, curl" in error_message
+            ):
+                network_fetch_error_detected = True
+            elif self.last_calc_status and (
+                "DNSError" in self.last_calc_status
+                or "Could not resolve host" in self.last_calc_status
+                or "Fetch Error" in self.last_calc_status
+                or "Failed to perform, curl" in self.last_calc_status
+            ):
+                network_fetch_error_detected = True
+
+            if network_fetch_error_detected:
+                final_status_text = "Error: Could not connect to market data provider. Check network/DNS."
+                QMessageBox.warning(
+                    self,
+                    "Network Error",
+                    "Could not connect to the market data provider (e.g., Yahoo Finance).\n"
+                    "Please check your internet connection, DNS settings, or firewall.\n"
+                    "Market data will be incomplete or unavailable.",
+                )
+            elif self.last_calc_status:
+                cleaned_status = self.last_calc_status.split("|||TWR_FACTOR:")[
+                    0
+                ].strip()
+                if "Error" in cleaned_status or "Crit" in cleaned_status:
+                    final_status_text = "Finished (with calculation errors)"
+                else:
+                    now_str = QDateTime.currentDateTime().toString("hh:mm:ss")
+                    final_status_text = f"Finished ({now_str})"
+            elif error_message:
+                final_status_text = "Finished (with errors)"
+
+            if hasattr(self, "status_label") and self.status_label:
+                self.status_label.setText(final_status_text)
+            logging.info(f"CALC_FINISHED: Status label set to: '{final_status_text}'")
+
+            if error_message and (
+                isinstance(error_message, str)
+                and (
                     "fundamental" in error_message.lower()
                     or "fundamentals" in error_message.lower()
-                ):
-                    self.lookup_symbol_edit.setEnabled(True)
-                    self.lookup_button.setEnabled(True)
-                self.status_label.setText("Finished (Errors)")  # Shortened message
-            else:
-                now_str = QDateTime.currentDateTime().toString("hh:mm:ss")
-                self.status_label.setText(f"Finished ({now_str})")  # Shortened message
-        elif error_message:  # If no last_calc_status but there was an error
-            if (
-                "fundamental" in error_message.lower()
-                or "fundamentals" in error_message.lower()
+                )
             ):
-                self.lookup_symbol_edit.setEnabled(True)
-                self.lookup_button.setEnabled(True)
-            self.status_label.setText("Finished (Errors)")
-        else:  # No last_calc_status and no error_message
-            self.status_label.setText("Finished (Status Unknown)")
+                if hasattr(self, "lookup_symbol_edit"):
+                    self.lookup_symbol_edit.setEnabled(True)
+                if hasattr(self, "lookup_button"):
+                    self.lookup_button.setEnabled(True)
 
-        # --- Hide progress bar on finish ---
-        if hasattr(self, "progress_bar"):
-            self.progress_bar.setVisible(False)
+            if hasattr(self, "progress_bar"):
+                self.progress_bar.setVisible(False)
+                logging.info("CALC_FINISHED: Progress bar hidden.")
+            logging.info("CALC_FINISHED: Slot exited successfully.")
+
+        except Exception as e:
+            logging.critical(
+                f"CRITICAL ERROR in calculation_finished: {e}", exc_info=True
+            )
+            # Ensure UI is reset to a usable state even if calculation_finished itself errors
+            self.is_calculating = False
+            try:
+                self.set_controls_enabled(True)
+                if hasattr(self, "status_label") and self.status_label:
+                    self.status_label.setText(f"Critical error in finish step: {e}")
+                if hasattr(self, "progress_bar"):
+                    self.progress_bar.setVisible(False)
+            except Exception as e_reset:
+                logging.error(
+                    f"Failed to reset UI in calculation_finished error handler: {e_reset}"
+                )
 
     @Slot(int)
     def update_progress(self, percent):
@@ -13104,29 +13906,63 @@ The CSV file should contain the following columns (header names must match exact
         # --- END CORRECTION ---
         self.dividend_table_view.resizeColumnsToContents()
 
-    # --- Transaction Dialog Methods ---
     @Slot()
     def open_add_transaction_dialog(self):
-        """Opens the AddTransactionDialog for manual transaction entry."""
-        # Use self.available_accounts if populated, otherwise fallback
-        if not self.transactions_file or not os.path.exists(self.transactions_file):
+        """Opens the AddTransactionDialog for manual transaction entry into the database."""
+        if not self.db_conn:
             QMessageBox.warning(
                 self,
-                "File Not Set",
-                "Please select a valid transactions CSV file first.",
+                "No Database Connection",
+                "Please open or create a database file first to add transactions.",
             )
             return
-        accounts = (
-            self.available_accounts
-            if self.available_accounts
-            else list(self.config.get("account_currency_map", {"SET": "THB"}).keys())
-        )
 
-        dialog = AddTransactionDialog(existing_accounts=accounts, parent=self)
-        if dialog.exec():
-            new_data = dialog.get_transaction_data()
-            if new_data:
-                self.save_new_transaction(new_data)
+        # Get available accounts from the current application state
+        # self.available_accounts should be populated by refresh_data or after DB initialization.
+        accounts_for_dialog = self.available_accounts if self.available_accounts else []
+
+        # If available_accounts is empty, try to fetch from DB one last time (e.g., if app just started with empty DB)
+        if not accounts_for_dialog and self.db_conn:
+            temp_df, success = load_all_transactions_from_db(self.db_conn)
+            # Use account_currency_map and default_currency from config for cleaning after DB load
+            acc_map_config_add_tx = self.config.get("account_currency_map", {})
+            def_curr_config_add_tx = self.config.get(
+                "default_currency",
+                (
+                    config.DEFAULT_CURRENCY
+                    if hasattr(config, "DEFAULT_CURRENCY")
+                    else "USD"
+                ),
+            )
+
+            temp_df, success = load_all_transactions_from_db(
+                self.db_conn, acc_map_config_add_tx, def_curr_config_add_tx
+            )  # MODIFIED: Pass map and default
+            if (
+                success and temp_df is not None and "Account" in temp_df.columns
+            ):  # Keep the rest of the logic
+                accounts_for_dialog = sorted(list(temp_df["Account"].unique()))
+                self.available_accounts = accounts_for_dialog  # Update app's list
+            elif not success:
+                QMessageBox.warning(
+                    self, "DB Error", "Could not fetch account list from database."
+                )
+                # Proceed with empty account list, user can type new account.
+
+        dialog = AddTransactionDialog(
+            existing_accounts=accounts_for_dialog, parent=self
+        )
+        if (
+            dialog.exec()
+        ):  # True if dialog was accepted (Save clicked and validation passed)
+            # get_transaction_data now returns a dict with Python types, keys are CSV-like headers
+            new_data_pytypes_from_dialog = dialog.get_transaction_data()
+            if new_data_pytypes_from_dialog:
+                # save_new_transaction will handle mapping to DB columns and saving
+                self.save_new_transaction(new_data_pytypes_from_dialog)
+            # If get_transaction_data returned None, it means dialog validation failed, so do nothing.
+        else:
+            logging.info("Add transaction dialog was cancelled.")
 
     def _add_new_account_if_needed(self, account_name: str):
         """Checks if an account is new and adds it to available_accounts and config."""
@@ -13145,205 +13981,250 @@ The CSV file should contain the following columns (header names must match exact
                 )
                 # self.save_config() # Decide if config should be saved immediately or on app close
 
-    def save_new_transaction(self, transaction_data: Dict[str, str]):
+    def save_new_transaction(self, transaction_data_pytypes: Dict[str, Any]):
         """
-        Appends a new transaction row to the selected CSV file.
-
-        Handles writing the header if the file is new/empty. Shows success or
-        error messages and triggers a data refresh upon successful save.
+        Adds a new transaction to the database.
+        Formats data from Python types (received from AddTransactionDialog)
+        to what db_utils.add_transaction_to_db expects (DB column names and appropriate types).
 
         Args:
-            transaction_data (Dict[str, str]): A dictionary containing the validated
-                transaction data, keyed by CSV header names.
+            transaction_data_pytypes (Dict[str, Any]): A dictionary containing the validated
+                transaction data with Python types (float, date, str), keyed by CSV-like header names
+                (e.g., "Date (MMM DD, YYYY)", "Quantity of Units").
         """
-        # ... (logic remains the same) ...
-        logging.info(f"Attempting to save new transaction to: {self.transactions_file}")
-        if not self.transactions_file or not os.path.exists(self.transactions_file):
+        logging.info(
+            f"Attempting to save new transaction to DB. Raw dialog data: {transaction_data_pytypes}"
+        )
+        if not self.db_conn:
             QMessageBox.critical(
                 self,
                 "Save Error",
-                f"Cannot save transaction. CSV file not found:\n{self.transactions_file}",
+                "Cannot save transaction. No active database connection.",
             )
             return
 
-        # --- ADDED: Check for new account and update internal lists ---
-        new_account_name = transaction_data.get("Investment Account")
-        if new_account_name:
-            self._add_new_account_if_needed(new_account_name)
-        # --- FIX: Define headers WITHOUT the initial blank column ---
-        csv_headers = [
-            "Date (MMM DD, YYYY)",
-            "Transaction Type",
-            "Stock / ETF Symbol",
-            "Quantity of Units",
-            "Amount per unit",
-            "Total Amount",
-            "Fees",
-            "Investment Account",
-            "Split Ratio (new shares per old share)",
-            "Note",  # Removed "Calculated Total Value" header
-        ]
-        # --- END FIX ---
+        # Map CSV-like headers from dialog to DB column names and prepare types for DB
+        data_for_db: Dict[str, Any] = {}
         try:
-            # Check if file is empty to write header
-            needs_newline = False
-            file_exists = os.path.exists(self.transactions_file)
-            is_empty = not file_exists or os.path.getsize(self.transactions_file) == 0
-
-            # --- ADDED: Check for trailing newline if file is not empty ---
-            if not is_empty:
-                try:
-                    with open(
-                        self.transactions_file, "rb"
-                    ) as f:  # Open in binary read mode
-                        f.seek(-1, os.SEEK_END)  # Go to the last byte
-                        if f.read(1) != b"\n":
-                            needs_newline = True
-                            logging.info(
-                                "CSV file does not end with a newline. Will add one."
-                            )
-                except (
-                    OSError
-                ):  # Handle potential issues like empty file after size check
-                    pass
-            # --- END ADDED ---
-
-            # --- ADDED: Calculate Qty * Price and potentially overwrite "Total Amount" ---
-            tx_type = transaction_data.get("Transaction Type", "").lower()
-            try:
-                qty_str = transaction_data.get("Quantity of Units", "")
-                price_str = transaction_data.get("Amount per unit", "")
-                # Only overwrite for Buy/Sell types where calculation is primary
-                if (
-                    tx_type in ["buy", "sell", "short sell", "buy to cover"]
-                    and qty_str
-                    and price_str
-                ):
-                    qty = float(qty_str.replace(",", ""))
-                    price = float(price_str.replace(",", ""))
-                    if qty > 0 and price > 0:
-                        calculated_total = qty * price
-                        # --- Determine max decimal places from inputs ---
-                        qty_decimals = 0
-                        if "." in qty_str:
-                            qty_decimals = len(qty_str.split(".")[-1].rstrip("0"))
-
-                        price_decimals = 0
-                        if "." in price_str:
-                            price_decimals = len(price_str.split(".")[-1].rstrip("0"))
-
-                        # Use max of input decimals, capped at a reasonable limit (e.g., 8), default to 2
-                        total_decimals = max(2, min(8, qty_decimals + price_decimals))
-                        # --- End Determine max decimal places ---
-
-                        calculated_total_str = f"{calculated_total:.{total_decimals}f}"
-                        # Overwrite the value in the dictionary
-                        logging.debug(
-                            f"Qty Dec: {qty_decimals}, Price Dec: {price_decimals}, Total Dec: {total_decimals}"
-                        )  # Overwrite the value in the dictionary
-                        transaction_data["Total Amount"] = calculated_total_str
-                        logging.debug(
-                            f"Calculated and set Total Amount to: {calculated_total_str}"
-                        )
-            except (ValueError, TypeError):
-                logging.warning(
-                    "Could not calculate Qty*Price for Total Amount override."
+            # Date: AddTransactionDialog returns a datetime.date object via get_transaction_data
+            date_obj = transaction_data_pytypes.get("Date (MMM DD, YYYY)")
+            if isinstance(date_obj, (datetime, date)):
+                data_for_db["Date"] = date_obj.strftime(
+                    "%Y-%m-%d"
+                )  # DB expects YYYY-MM-DD string
+            elif (
+                date_obj is None and "Date (MMM DD, YYYY)" in transaction_data_pytypes
+            ):  # Explicit None means clear
+                data_for_db["Date"] = (
+                    None  # Should be caught by dialog validation if mandatory
                 )
-            # --- END ADDED ---
+            elif (
+                date_obj is not None
+            ):  # If not date/datetime and not None (e.g. unexpected type)
+                logging.error(
+                    f"Invalid date type from AddTransactionDialog: {type(date_obj)} for value {date_obj}"
+                )
+                QMessageBox.critical(
+                    self,
+                    "Data Error",
+                    "Invalid date type received from dialog. Transaction not saved.",
+                )
+                return
+            # If key is missing, it wasn't relevant for the transaction type (e.g. Split Date)
 
-            # Create the row list AFTER potentially modifying transaction_data
-            new_row = [transaction_data.get(h, "") for h in csv_headers]
+            data_for_db["Type"] = transaction_data_pytypes.get("Transaction Type")
+            data_for_db["Symbol"] = transaction_data_pytypes.get("Stock / ETF Symbol")
 
-            # Open in append mode ('a'), it creates if not exists
-            with open(self.transactions_file, "a", newline="", encoding="utf-8") as f:
-                # Use QUOTE_MINIMAL (default) to only quote fields containing delimiter/quotechar
-                writer = csv.writer(f)  # Removed quoting=csv.QUOTE_NONNUMERIC
-                # Write header only if file was empty before opening
-                if is_empty:
-                    writer.writerow(csv_headers)
-                elif needs_newline:  # If not empty but needs newline
-                    f.write("\n")  # Write the newline character directly
-                writer.writerow(new_row)
-            logging.info("Transaction successfully appended to CSV.")
+            # Numeric fields are already floats or None from get_transaction_data
+            data_for_db["Quantity"] = transaction_data_pytypes.get("Quantity of Units")
+            data_for_db["Price/Share"] = transaction_data_pytypes.get("Amount per unit")
+            data_for_db["Total Amount"] = transaction_data_pytypes.get("Total Amount")
+            data_for_db["Commission"] = transaction_data_pytypes.get("Fees")
+            data_for_db["Split Ratio"] = transaction_data_pytypes.get(
+                "Split Ratio (new shares per old share)"
+            )
+
+            data_for_db["Account"] = transaction_data_pytypes.get("Investment Account")
+            data_for_db["Note"] = transaction_data_pytypes.get("Note")
+
+            # Determine Local Currency based on account
+            acc_name_for_currency = data_for_db.get("Account")
+            if (
+                acc_name_for_currency
+            ):  # Account name should always be present due to dialog validation
+                # Ensure account_currency_map and default_currency are correctly fetched from config
+                app_config_account_map = self.config.get("account_currency_map", {})
+                app_config_default_curr = self.config.get(
+                    "default_currency",
+                    (
+                        config.DEFAULT_CURRENCY
+                        if hasattr(config, "DEFAULT_CURRENCY")
+                        else "USD"
+                    ),
+                )
+
+                data_for_db["Local Currency"] = app_config_account_map.get(
+                    str(
+                        acc_name_for_currency
+                    ),  # Ensure acc_name is string for map lookup
+                    app_config_default_curr,
+                )
+            else:  # Fallback, though account should be mandatory from dialog
+                data_for_db["Local Currency"] = self.config.get(
+                    "default_currency",
+                    (
+                        config.DEFAULT_CURRENCY
+                        if hasattr(config, "DEFAULT_CURRENCY")
+                        else "USD"
+                    ),
+                )
+                logging.warning(
+                    "Account name was missing when determining local currency for new transaction."
+                )
+
+            # Ensure critical fields for DB are not None if they are NOT NULL in schema
+            # db_utils.add_transaction_to_db will handle None for nullable fields.
+            # Date, Type, Symbol, Account, Local Currency are NOT NULL in schema.
+            for required_db_col in [
+                "Date",
+                "Type",
+                "Symbol",
+                "Account",
+                "Local Currency",
+            ]:
+                if data_for_db.get(required_db_col) is None:
+                    logging.error(
+                        f"Critical field '{required_db_col}' is None. Transaction cannot be saved."
+                    )
+                    QMessageBox.critical(
+                        self,
+                        "Data Error",
+                        f"Required field '{required_db_col}' is missing. Transaction not saved.",
+                    )
+                    return
+
+            # Log the data being sent to DB for clarity
+            logging.debug(f"Data prepared for DB insertion: {data_for_db}")
+
+        except Exception as e_map:
+            logging.error(
+                f"Error mapping dialog data to DB format: {e_map}", exc_info=True
+            )
+            QMessageBox.critical(
+                self, "Data Error", "Internal error preparing data for database."
+            )
+            return
+
+        # Call db_utils function to add to database
+        success, new_id = add_transaction_to_db(self.db_conn, data_for_db)
+
+        if success:
+            logging.info(f"Transaction successfully added to DB with ID: {new_id}")
+            new_account_name_added = data_for_db.get("Account")
+            if new_account_name_added:
+                self._add_new_account_if_needed(
+                    str(new_account_name_added)
+                )  # Update available accounts list in GUI
+
             QMessageBox.information(
-                self, "Success", "Transaction added successfully.\nRefreshing data..."
+                self,
+                "Success",
+                "Transaction added successfully to database.\nRefreshing data...",
             )
-            self.refresh_data()
-        except IOError as e:
-            logging.error(f"ERROR writing to CSV file: {e}")
+            self.refresh_data()  # Refresh data to show the new transaction
+        else:
             QMessageBox.critical(
-                self, "Save Error", f"Failed to write transaction to CSV file:\n{e}"
-            )
-        except Exception as e:
-            logging.error(f"ERROR saving transaction: {e}")
-            traceback.print_exc()
-            QMessageBox.critical(
-                self, "Save Error", f"An unexpected error occurred while saving:\n{e}"
+                self,
+                "Save Error",
+                "Failed to add transaction to database. Check logs for details.",
             )
 
-    # --- Event Handlers ---
     def closeEvent(self, event):
         """
         Handles the main window close event.
 
-        Saves the current configuration before closing. Ensures background threads
-        are properly terminated.
+        Saves the current configuration and closes the database connection
+        before closing. Ensures background threads are properly terminated.
 
         Args:
             event (QCloseEvent): The close event object.
         """
-        # (Keep implementation as before)
-        logging.info("Close event triggered. Saving config...")
+        logging.info(
+            "Close event triggered. Saving config and closing database connection..."
+        )
         try:
             self.save_config()
         except Exception as e:
+            # Log the error but don't prevent closing if config save fails.
+            # User might want to close even if saving config has issues.
+            logging.error(f"Error saving settings on exit: {e}", exc_info=True)
             QMessageBox.warning(
-                self, "Save Error", f"Could not save settings on exit:\n{e}"
+                self,
+                "Config Save Error",
+                f"Could not save settings on exit:\n{e}\n\nApplication will still close.",
             )
-        logging.info("Exiting application.")
-        self.threadpool.clear()
-        if not self.threadpool.waitForDone(2000):
-            logging.warning("Warning: Worker threads did not finish closing.")
-        event.accept()
+
+        if self.db_conn:  # Close DB connection if it's open
+            try:
+                self.db_conn.close()
+                logging.info(f"Database connection to '{self.DB_FILE_PATH}' closed.")
+            except Exception as e_db_close:
+                logging.error(
+                    f"Error closing database connection: {e_db_close}", exc_info=True
+                )
+                # Continue closing even if DB close fails.
+
+        logging.info("Exiting Investa Portfolio Dashboard application.")
+        # Clean up worker threads
+        if hasattr(self, "threadpool"):
+            self.threadpool.clear()  # Clear any queued tasks
+            # Wait for active threads to finish, with a timeout
+            if not self.threadpool.waitForDone(2000):  # Wait up to 2 seconds
+                logging.warning(
+                    "Warning: Worker threads did not finish closing gracefully within the timeout."
+                )
+
+        event.accept()  # Accept the close event to allow the window to close
 
     # --- Toolbar Initialization ---
     def _init_toolbar(self):
         """Initializes the main application toolbar."""
         self.toolbar = self.addToolBar("Main Toolbar")
         self.toolbar.setObjectName("MainToolBar")
-        self.toolbar.setIconSize(QSize(20, 20))
+        self.toolbar.setIconSize(QSize(20, 20))  # Standard icon size
 
-        # Add standard actions first
-        if hasattr(self, "select_action"):
-            self.toolbar.addAction(self.select_action)  # Restored & Corrected
-        if hasattr(
-            self, "new_transactions_file_action"
-        ):  # Check if it exists before adding
-            self.toolbar.addAction(self.new_transactions_file_action)  # Restored
+        # Add DB-related actions first
+        if hasattr(self, "select_db_action"):  # Check if the action attribute exists
+            self.toolbar.addAction(self.select_db_action)
+        if hasattr(self, "new_database_file_action"):
+            self.toolbar.addAction(self.new_database_file_action)
+        if hasattr(self, "import_csv_action"):  # Add Import CSV action
+            self.toolbar.addAction(self.import_csv_action)
+
+        # Refresh action
         if hasattr(self, "refresh_action"):
-            self.toolbar.addAction(self.refresh_action)  # Kept
+            self.toolbar.addAction(self.refresh_action)
 
-        self.toolbar.addSeparator()  # Separator after file/refresh actions
+        self.toolbar.addSeparator()  # Separator
 
+        # Transaction management actions
         if hasattr(self, "add_transaction_action"):
             self.toolbar.addAction(self.add_transaction_action)
-        if hasattr(self, "manage_transactions_action"):  # Moved before spacer
+        if hasattr(self, "manage_transactions_action"):
             self.toolbar.addAction(self.manage_transactions_action)
 
-        # Add a spacer widget to push subsequent items to the right
+        # Spacer to push subsequent items to the right
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.toolbar.addWidget(spacer)
 
-        # Create and add the fundamental lookup widgets AFTER the spacer
-        # The self.toolbar.addSeparator() that was here is removed as spacer handles it.
+        # Fundamental lookup widgets (remain on the right)
         self.lookup_symbol_edit = QLineEdit(self)
         self.lookup_symbol_edit.setPlaceholderText(
             "Symbol for Fundamentals (e.g. AAPL)"
         )
-        # Ensure consistent width for the lookup edit
-        self.lookup_symbol_edit.setMinimumWidth(150)
-        self.lookup_symbol_edit.setMaximumWidth(150)
+        self.lookup_symbol_edit.setMinimumWidth(150)  # Consistent width
+        self.lookup_symbol_edit.setMaximumWidth(150)  # Consistent width
         self.toolbar.addWidget(self.lookup_symbol_edit)
 
         self.lookup_button = QPushButton("Get Fundamentals")
@@ -13354,174 +14235,99 @@ The CSV file should contain the following columns (header names must match exact
     # main_window.show() # This should be in __main__
     # sys.exit(app.exec()) # This should be in __main__
 
-    # --- Moved create_new_transactions_file INSIDE PortfolioApp class ---
     @Slot()
-    def create_new_transactions_file(self):
-        """Prompts the user to create a new, empty transactions CSV file."""
-        start_dir = (
-            os.path.dirname(self.transactions_file)
-            if self.transactions_file
-            and os.path.exists(os.path.dirname(self.transactions_file))
-            else os.getcwd()
-        )
-        default_filename = "my_new_transactions.csv"
-
-        fname, _ = QFileDialog.getSaveFileName(
-            self,
-            "Create New Transactions CSV",
-            os.path.join(start_dir, default_filename),
-            "CSV Files (*.csv)",
-        )
-
-        if fname:
-            if not fname.lower().endswith(".csv"):
-                fname += ".csv"
-
-            logging.info(f"User selected to create new transactions file at: {fname}")
-
-            # Define standard CSV headers
-            csv_headers = [
-                "Date (MMM DD, YYYY)",
-                "Transaction Type",
-                "Stock / ETF Symbol",
-                "Quantity of Units",
-                "Amount per unit",
-                "Total Amount",
-                "Fees",
-                "Investment Account",
-                "Split Ratio (new shares per old share)",
-                "Note",
-            ]
-
-            try:
-                with open(fname, "w", newline="", encoding="utf-8") as f:
-                    writer = csv.writer(f)
-                    writer.writerow(csv_headers)
-
-                logging.info(
-                    f"Successfully created new transactions file with headers: {fname}"
-                )
-                QMessageBox.information(
-                    self,
-                    "File Created",
-                    f"New transactions file created successfully:\n{fname}",
-                )
-
-                # Update application state to use this new file
-                self.transactions_file = fname
-                self.config["transactions_file"] = fname
-                # --- ADDED: Reset account-specific config for a new file ---
-                self.config["account_currency_map"] = {}  # Reset to empty
-                self.config["selected_accounts"] = []  # Reset selected accounts
-                # Default currency (self.config["default_currency"]) can remain as is.
-                self.save_config()
-                self.clear_results()  # Clear any existing data from UI
-                self.setWindowTitle(
-                    f"{self.base_window_title} - {os.path.basename(self.transactions_file)}"
-                )
-                self.status_label.setText(
-                    f"New file created: {os.path.basename(fname)}. Ready to add transactions or refresh."
-                )
-                # Optionally, you might want to trigger a refresh_data() here if you want to process the empty file
-                # self.refresh_data()
-                # For now, let's just clear and let the user decide to refresh/add.
-
-            except IOError as e:
-                logging.error(f"IOError creating new CSV file '{fname}': {e}")
-                QMessageBox.critical(
-                    self,
-                    "File Creation Error",
-                    f"Could not create file:\n{fname}\n\n{e}",
-                )
-            except Exception as e:
-                logging.exception(f"Unexpected error creating new CSV file '{fname}'")
-                QMessageBox.critical(
-                    self, "File Creation Error", f"An unexpected error occurred:\n{e}"
-                )
-        else:
-            logging.info("New transactions file creation cancelled by user.")
-
-    # --- End moved method ---
-
-    # --- ADDED: Method to run CSV header standardization ---
-    @Slot()
-    def run_standardize_csv_headers(self):
+    def run_standardize_external_csv_headers(self):
+        """
+        Prompts the user to select an external CSV file, standardizes its headers
+        using csv_utils, and saves it to a new file chosen by the user.
+        This does not interact with the current database or loaded data.
+        """
         if not CSV_UTILS_AVAILABLE:
-            QMessageBox.critical(self, "Error", "CSV Utilities are not available.")
-            return
-
-        if not self.transactions_file or not os.path.exists(self.transactions_file):
-            QMessageBox.warning(
-                self, "No File Loaded", "Please open a transactions CSV file first."
-            )
-            return
-
-        reply = QMessageBox.question(
-            self,
-            "Confirm Header Standardization",
-            f"This will attempt to convert the headers in your currently loaded CSV file:\n"
-            f"<b>{os.path.basename(self.transactions_file)}</b>\n"
-            f"to the standard internal format (e.g., 'Date', 'Symbol').\n\n"
-            f"<b>A backup of the original file will be created.</b>\n\n"
-            f"Do you want to proceed?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-
-        if reply == QMessageBox.No:
-            return
-
-        # 1. Backup the current CSV file
-        backup_success, backup_msg = self._backup_csv(
-            filename_to_backup=self.transactions_file
-        )
-        if not backup_success:
             QMessageBox.critical(
                 self,
-                "Backup Failed",
-                f"Could not backup the CSV file before standardization:\n{backup_msg}",
+                "Utility Not Available",
+                "The CSV header standardization utility is not available.",
             )
             return
-        else:
-            QMessageBox.information(
-                self,
-                "Backup Created",
-                f"Original file backed up successfully:\n{backup_msg}",
+
+        # Select the input CSV file to standardize
+        start_dir_input = self.config.get(
+            "last_csv_import_path", ""
+        )  # Use import path as a sensible default
+        if not start_dir_input or not os.path.isdir(start_dir_input):
+            start_dir_input = (
+                QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+                or os.getcwd()
             )
 
-        # 2. Perform the conversion (overwrite the original file)
-        self.status_label.setText(
-            f"Standardizing headers in {os.path.basename(self.transactions_file)}..."
+        csv_to_standardize, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select CSV File to Standardize Headers",
+            start_dir_input,
+            "CSV Files (*.csv);;All Files (*)",
         )
-        QApplication.processEvents()  # Update UI
+
+        if not csv_to_standardize:
+            logging.info("Standardize external CSV headers: No input file selected.")
+            return
+
+        # Suggest an output filename
+        input_dir = os.path.dirname(csv_to_standardize)
+        input_basename = os.path.basename(csv_to_standardize)
+        name_part, ext_part = os.path.splitext(input_basename)
+        output_fname_default = f"{name_part}_standardized{ext_part}"
+
+        output_csv_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Standardized CSV As",
+            os.path.join(input_dir, output_fname_default),
+            "CSV Files (*.csv);;All Files (*)",
+        )
+
+        if not output_csv_path:
+            logging.info(
+                "Standardize external CSV headers: No output file selected for saving."
+            )
+            return
+
+        # Ensure output has .csv extension
+        if not output_csv_path.lower().endswith(".csv"):
+            output_csv_path += ".csv"
+
+        logging.info(
+            f"Attempting to standardize headers for '{csv_to_standardize}' and save to '{output_csv_path}'"
+        )
+        self.status_label.setText(
+            f"Standardizing headers for {os.path.basename(csv_to_standardize)}..."
+        )
+        self.set_controls_enabled(False)  # Disable UI during processing
+        QApplication.processEvents()
 
         convert_success, convert_msg = convert_csv_headers_to_cleaned_format(
-            self.transactions_file,
-            self.transactions_file,  # Input and output are the same
+            csv_to_standardize,
+            output_csv_path,
         )
+
+        self.set_controls_enabled(True)  # Re-enable UI
 
         if convert_success:
             QMessageBox.information(
                 self,
                 "Standardization Successful",
-                convert_msg + "\n\nReloading data...",
+                f"Headers standardized successfully.\n\nInput: {os.path.basename(csv_to_standardize)}\nOutput: {os.path.basename(output_csv_path)}\n\n{convert_msg}",
             )
-            logging.info(
-                f"CSV headers standardized for '{self.transactions_file}'. Triggering refresh."
+            logging.info(f"External CSV headers standardized: '{output_csv_path}'.")
+            self.status_label.setText(
+                f"Standardized {os.path.basename(output_csv_path)}"
             )
-            # Important: After modifying the file, the application needs to reload it.
-            self.refresh_data()
         else:
             QMessageBox.critical(
                 self,
                 "Standardization Failed",
-                f"Could not standardize CSV headers:\n{convert_msg}",
+                f"Could not standardize CSV headers for '{os.path.basename(csv_to_standardize)}':\n{convert_msg}",
             )
-            self.status_label.setText("Header standardization failed.")
-
-        self.status_label.setText(
-            "Ready" if convert_success else "Header standardization failed."
-        )
+            logging.error(f"Failed to standardize external CSV headers: {convert_msg}")
+            self.status_label.setText("External CSV header standardization failed.")
 
     # --- END ADDED ---
 

@@ -1401,16 +1401,16 @@ class MarketDataProvider:
 
         # --- 4. Final Check and Return ---
         # Check if any requested symbol is still missing
-        if any(
-            s not in historical_prices_yf_adjusted
-            or historical_prices_yf_adjusted[s].empty
-            for s in symbols_yf
-        ):
-            # Log warning, but don't set fetch_failed=True unless caller deems it critical
-            logging.warning(
-                "Hist Prices WARN: Some requested symbols have no data after cache/fetch."
-            )
-
+        if symbols_yf:  # Only check if symbols were actually requested
+            if any(
+                s not in historical_prices_yf_adjusted
+                or historical_prices_yf_adjusted[s].empty
+                for s in symbols_yf  # Check against originally requested symbols_yf
+            ):
+                logging.error(  # Changed to error
+                    "Hist Prices ERROR: Data missing for some requested stock/benchmark symbols after cache/fetch."
+                )
+                fetch_failed = True  # SET THE FLAG
         return (
             historical_prices_yf_adjusted,
             fetch_failed,
@@ -1539,15 +1539,15 @@ class MarketDataProvider:
 
         # --- 4. Final Check and Return ---
         # Check again if critical data is missing (redundant if fetch_failed already True, but safe)
-        if not fetch_failed and fx_pairs_yf:  # Re-check only if not already failed
+        if fx_pairs_yf:  # Only if FX pairs were requested
             if any(
                 p not in historical_fx_yf or historical_fx_yf[p].empty
-                for p in fx_pairs_yf
+                for p in fx_pairs_yf  # Check against originally requested fx_pairs_yf
             ):
                 logging.error(
-                    "Hist FX ERROR: Critical FX data missing after final check."
+                    "Hist FX ERROR: Critical FX data missing after final check for some requested pairs."
                 )
-                fetch_failed = True
+                fetch_failed = True  # SET THE FLAG
 
         return historical_fx_yf, fetch_failed
 

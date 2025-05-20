@@ -61,7 +61,7 @@ try:
     from config import (
         LOGGING_LEVEL,
         CASH_SYMBOL_CSV,
-        DEFAULT_CURRENT_CACHE_FILE_PATH,
+        DEFAULT_CURRENT_CACHE_FILE_PATH,  # Still used by MarketDataProvider default
         HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
         DAILY_RESULTS_CACHE_PATH_PREFIX,
         YFINANCE_CACHE_DURATION_HOURS,
@@ -71,36 +71,38 @@ try:
         DEFAULT_CURRENCY,
         HISTORICAL_DEBUG_USD_CONVERSION,
         HISTORICAL_DEBUG_SET_VALUE,
-        STOCK_QUANTITY_CLOSE_TOLERANCE,  # Import new tolerance
+        STOCK_QUANTITY_CLOSE_TOLERANCE,
         DEBUG_DATE_VALUE,
         HISTORICAL_DEBUG_DATE_VALUE,
         HISTORICAL_DEBUG_SYMBOL,
-        HISTORICAL_CALC_METHOD,  # <-- ADD
-        HISTORICAL_COMPARE_METHODS,  # <-- ADD
+        HISTORICAL_CALC_METHOD,
+        HISTORICAL_COMPARE_METHODS,
     )
 except ImportError:
     logging.critical("CRITICAL ERROR: Could not import from config.py. Exiting.")
-    raise  # Re-raise to stop execution if config is essential
+    raise
 
 try:
     from finutils import (
         _get_file_hash,
         calculate_npv,
-        calculate_irr,  # Still needed for historical parts
-        get_cash_flows_for_symbol_account,  # Still needed for historical parts
-        get_cash_flows_for_mwr,  # Still needed for historical parts
-        get_conversion_rate,  # Still needed for calculate_portfolio_summary wrapper
+        calculate_irr,
+        get_cash_flows_for_symbol_account,
+        get_cash_flows_for_mwr,
+        get_conversion_rate,
         get_historical_price,
         get_historical_rate_via_usd_bridge,
         map_to_yf_symbol,
-        safe_sum,  # Still needed for historical parts
+        safe_sum,
     )
 except ImportError:
     logging.critical("CRITICAL ERROR: Could not import from finutils.py. Exiting.")
     raise
 
 try:
-    from data_loader import load_and_clean_transactions
+    from data_loader import (
+        load_and_clean_transactions,
+    )  # Still needed for __main__ and historical prep fallback
 except ImportError:
     logging.critical("CRITICAL ERROR: Could not import from data_loader.py. Exiting.")
     raise
@@ -124,7 +126,7 @@ except ImportError:
         "CRITICAL ERROR: Could not import MarketDataProvider from market_data.py. Exiting."
     )
     MARKET_PROVIDER_AVAILABLE = False
-    raise  # Stop if provider is missing
+    raise
 
 # --- Import the NEW Portfolio Analyzer Functions ---
 try:
@@ -141,7 +143,7 @@ except ImportError:
         "CRITICAL ERROR: Could not import helper functions from portfolio_analyzer.py. Exiting."
     )
     ANALYZER_FUNCTIONS_AVAILABLE = False
-    raise  # Stop if analyzer functions are missing
+    raise
 
 
 # --- Helper Functions (IRR/NPV, Cash Flow Gen - Already in finutils.py) ---
@@ -154,20 +156,29 @@ except ImportError:
 
 
 # --- Main Calculation Function (Current Portfolio Summary) ---
-# --- This function now orchestrates calls to portfolio_analyzer.py ---
 @profile
 def calculate_portfolio_summary(
-    transactions_csv_file: str,
-    fmp_api_key: Optional[str] = None,  # Unused
+    all_transactions_df_cleaned: Optional[pd.DataFrame],  # MODIFIED: Accept DataFrame
+    original_transactions_df_for_ignored: Optional[
+        pd.DataFrame
+    ],  # MODIFIED: For ignored rows context
+    ignored_indices_from_load: Set[int],  # MODIFIED: Pass from initial load
+    ignored_reasons_from_load: Dict[int, str],  # MODIFIED: Pass from initial load
+    fmp_api_key: Optional[str] = None,
     display_currency: str = "USD",
     show_closed_positions: bool = False,
-    account_currency_map: Dict = {"SET": "THB"},
-    default_currency: str = "USD",
-    cache_file_path: str = DEFAULT_CURRENT_CACHE_FILE_PATH,  # Used by provider
+    # account_currency_map: Dict = {"SET": "THB"}, # These will be passed via portfolio_kwargs if needed by sub-functions
+    # default_currency: str = "USD", # These will be passed via portfolio_kwargs if needed by sub-functions
+    cache_file_path: str = DEFAULT_CURRENT_CACHE_FILE_PATH,
     include_accounts: Optional[List[str]] = None,
-    manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]] = None,  # MODIFIED
+    manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]] = None,
     user_symbol_map: Optional[Dict[str, str]] = None,
     user_excluded_symbols: Optional[Set[str]] = None,
+    # --- ADDED default_currency and account_currency_map as explicit args again ---
+    # because _process_transactions_to_holdings and _calculate_cash_balances need them directly.
+    # They are not easily passable via a generic **kwargs if those helpers are called directly.
+    default_currency: str = DEFAULT_CURRENCY,
+    account_currency_map: Optional[Dict[str, str]] = None,
 ) -> Tuple[
     Optional[Dict[str, Any]],
     Optional[pd.DataFrame],
@@ -179,34 +190,31 @@ def calculate_portfolio_summary(
     """
     Calculates the current portfolio summary using MarketDataProvider for market data
     and helper functions from portfolio_analyzer.py for calculations.
-
-    This function orchestrates the calculation of the current portfolio summary. It loads
-    and cleans transactions, calculates holdings and cash balances, fetches current market
-    data, builds detailed summary rows, and calculates aggregate metrics.  It relies on
-    helper functions from `portfolio_analyzer.py` for the core calculations and
-    `MarketDataProvider` for real-time price and FX data.
+    Accepts a pre-loaded and cleaned transactions DataFrame.
 
     Args:
-        transactions_csv_file (str): Path to the CSV file containing transaction data.
+        all_transactions_df_cleaned (Optional[pd.DataFrame]): Pre-loaded and cleaned DataFrame of all transactions.
+        original_transactions_df_for_ignored (Optional[pd.DataFrame]): The raw DataFrame read from CSV,
+            used for providing context to ignored rows if `all_transactions_df_cleaned` itself
+            doesn't contain all original columns or if `original_index` isn't from the raw CSV.
+            If `all_transactions_df_cleaned` is comprehensive, this might be the same.
+        ignored_indices_from_load (Set[int]): Set of 'original_index' values from rows skipped
+                                              during the initial load_and_clean_transactions step.
+        ignored_reasons_from_load (Dict[int, str]): Reasons for rows skipped during initial load.
         fmp_api_key (Optional[str], optional): Unused. API key for Financial Modeling Prep. Defaults to None.
         display_currency (str, optional): The currency in which to display all values. Defaults to "USD".
         show_closed_positions (bool, optional): Whether to include closed positions in the summary. Defaults to False.
-        account_currency_map (Dict, optional): Mapping of account names to their local currencies. Defaults to {"SET": "THB"}.
-        default_currency (str, optional): The default currency used when a transaction doesn't specify one. Defaults to "USD".
         cache_file_path (str, optional): Path to the cache file used by MarketDataProvider. Defaults to DEFAULT_CURRENT_CACHE_FILE_PATH.
-        include_accounts (Optional[List[str]], optional): A list of account names to include in the calculation. If None, includes all accounts. Defaults to None.
-        manual_overrides_dict (Optional[Dict[str, Dict[str, Any]]], optional): Dictionary of manual overrides (symbol: {"price": float, "asset_type": str, "sector": str, "geography": str}). Defaults to None.
+        include_accounts (Optional[List[str]], optional): A list of account names to include. Defaults to None (all).
+        manual_overrides_dict (Optional[Dict[str, Dict[str, Any]]], optional): Manual overrides. Defaults to None.
         user_symbol_map (Optional[Dict[str, str]], optional): User-defined symbol map. Defaults to None.
         user_excluded_symbols (Optional[Set[str]], optional): User-defined excluded symbols. Defaults to None.
+        default_currency (str, optional): Default currency. Defaults to DEFAULT_CURRENCY.
+        account_currency_map (Optional[Dict[str, str]], optional): Account to currency map. Defaults to None (uses default).
 
     Returns:
-        Tuple[Optional[Dict[str, Any]], Optional[pd.DataFrame], Optional[Dict[str, Dict[str, float]]], Set[int], Dict[int, str], str]:
-            - overall_summary_metrics (Optional[Dict[str, Any]]): Dictionary of overall portfolio metrics.
-            - summary_df_final (Optional[pd.DataFrame]]): DataFrame containing detailed summary rows.
-            - account_level_metrics (Optional[Dict[str, Dict[str, float]]]): Dictionary of metrics aggregated per account.
-            - combined_ignored_indices (Set[int]): Set of 'original_index' values from rows skipped during load or processing.
-            - combined_ignored_reasons (Dict[int, str]): Maps 'original_index' to a string describing the reason the row was ignored.
-            - final_status (str): Overall status message indicating success, warnings, or errors.
+        Tuple: overall_summary_metrics, summary_df_final, account_level_metrics,
+               combined_ignored_indices, combined_ignored_reasons, final_status.
     """
     logging.info(
         f"Starting Portfolio Summary Calculation (Display: {display_currency})"
@@ -215,73 +223,48 @@ def calculate_portfolio_summary(
     has_errors = False
     has_warnings = False
     status_parts = []
-    original_transactions_df: Optional[pd.DataFrame] = None
-    all_transactions_df: Optional[pd.DataFrame] = None
-    combined_ignored_indices = set()
-    combined_ignored_reasons = {}
-    manual_overrides_effective = (  # MODIFIED
+
+    # Use the passed-in ignored data from the initial load
+    combined_ignored_indices = (
+        ignored_indices_from_load.copy() if ignored_indices_from_load else set()
+    )
+    combined_ignored_reasons = (
+        ignored_reasons_from_load.copy() if ignored_reasons_from_load else {}
+    )
+
+    manual_overrides_effective = (
         manual_overrides_dict if manual_overrides_dict is not None else {}
     )
     effective_user_symbol_map = user_symbol_map if user_symbol_map is not None else {}
-
-    # --- CORRECTLY PREPARE manual_prices_for_build_rows ---
-    # manual_overrides_effective is Dict[symbol_str, Dict[field_str, Any_value]]
-    # We need to extract just Dict[symbol_str, float_price] for _build_summary_rows
-    manual_prices_for_build_rows = {}
-    if manual_overrides_effective:
-        for symbol_key, override_values_dict in manual_overrides_effective.items():
-            if (
-                isinstance(override_values_dict, dict)
-                and "price" in override_values_dict
-            ):
-                price_val = override_values_dict["price"]
-                if price_val is not None and pd.notna(price_val):
-                    try:
-                        manual_prices_for_build_rows[symbol_key] = float(price_val)
-                    except (ValueError, TypeError):
-                        logging.warning(
-                            f"Could not convert manual price for {symbol_key} to float: {price_val}"
-                        )
-    # --- END PREPARATION ---
-
     effective_user_excluded_symbols = (
         user_excluded_symbols if user_excluded_symbols is not None else set()
+    )
+    effective_account_currency_map = (
+        account_currency_map if account_currency_map is not None else {}
     )
 
     report_date = datetime.now().date()
 
-    # --- Check if dependencies are available ---
     if not MARKET_PROVIDER_AVAILABLE or not ANALYZER_FUNCTIONS_AVAILABLE:
         msg = "Error: Critical dependencies (MarketDataProvider or Analyzer Functions) not available."
         logging.error(msg)
-        return None, None, None, set(), {}, f"Finished with Errors [{msg}]"
+        return (
+            None,
+            None,
+            None,
+            combined_ignored_indices,
+            combined_ignored_reasons,
+            f"Finished with Errors [{msg}]",
+        )
 
-    # --- 1. Load & Clean Transactions ---
-    (
-        all_transactions_df,
-        original_transactions_df,
-        ignored_indices_load,
-        ignored_reasons_load,
-        err_load,
-        warn_load,  # This is the 6th item
-        _,  # Add a placeholder for the 7th item (original_to_cleaned_header_map)
-    ) = load_and_clean_transactions(
-        transactions_csv_file, account_currency_map, default_currency
-    )
-    combined_ignored_indices.update(ignored_indices_load)
-    combined_ignored_reasons.update(ignored_reasons_load)
-    if err_load:
-        has_errors = True
-    if warn_load:
-        has_warnings = True
-    if ignored_reasons_load:
-        status_parts.append(f"Load/Clean Issues: {len(ignored_reasons_load)}")
-
-    if has_errors or all_transactions_df is None:
-        msg = f"Error: File not found or failed critically during load/clean: {transactions_csv_file}"
+    # --- 1. Use Pre-loaded Transactions ---
+    if all_transactions_df_cleaned is None or all_transactions_df_cleaned.empty:
+        msg = "Error: No transaction data provided or data is empty."
         logging.error(msg)
-        status_parts.insert(0, "Load Error")
+        status_parts.insert(0, "No Data")
         final_status = f"Finished with Errors [{'; '.join(status_parts)}]"
+        # If df_cleaned is None, df_original_raw_for_ignored might also be None or not useful
+        # We return the initially passed ignored sets as they are the most relevant at this stage.
         return (
             None,
             None,
@@ -291,35 +274,78 @@ def calculate_portfolio_summary(
             final_status,
         )
 
+    # Ensure 'original_index' exists for subsequent processing if it doesn't already
+    # This should ideally be handled by load_and_clean_transactions
+    if "original_index" not in all_transactions_df_cleaned.columns:
+        logging.warning(
+            "'original_index' column not found in provided DataFrame. Adding it from DataFrame index."
+        )
+        all_transactions_df_cleaned["original_index"] = (
+            all_transactions_df_cleaned.index
+        )
+        has_warnings = True
+        status_parts.append("original_index missing")
+
     # --- 2. Filter Transactions ---
     transactions_df_filtered = pd.DataFrame()
     filter_desc = "All Accounts"
-    if not include_accounts:
-        transactions_df_filtered = all_transactions_df.copy()
+    if not include_accounts:  # None or empty list means all accounts
+        transactions_df_filtered = all_transactions_df_cleaned.copy()
     elif isinstance(include_accounts, list):
-        available_accounts = set(all_transactions_df["Account"].unique())
-        valid_include = [acc for acc in include_accounts if acc in available_accounts]
+        # Ensure 'Account' column exists
+        if "Account" not in all_transactions_df_cleaned.columns:
+            logging.error(
+                "CRITICAL: 'Account' column missing in provided transaction data. Cannot filter."
+            )
+            status_parts.append("Filter Error: No Account Column")
+            # Return the combined ignored indices from the load phase
+            return (
+                None,
+                None,
+                None,
+                combined_ignored_indices,
+                combined_ignored_reasons,
+                f"Finished with Errors [{'; '.join(status_parts)}]",
+            )
+
+        available_accounts_in_df = set(all_transactions_df_cleaned["Account"].unique())
+        valid_include = [
+            acc for acc in include_accounts if acc in available_accounts_in_df
+        ]
         if valid_include:
-            transactions_df_filtered = all_transactions_df[
-                all_transactions_df["Account"].isin(valid_include)
+            transactions_df_filtered = all_transactions_df_cleaned[
+                all_transactions_df_cleaned["Account"].isin(valid_include)
             ].copy()
             filter_desc = f"Accounts: {', '.join(sorted(valid_include))}"
         else:
-            transactions_df_filtered = pd.DataFrame()
+            transactions_df_filtered = pd.DataFrame(
+                columns=all_transactions_df_cleaned.columns
+            )  # Empty DF with same schema
             filter_desc = "No Valid Accounts Included"
             status_parts.append("No valid accounts after filter")
-            has_warnings = True
-    else:
-        transactions_df_filtered = all_transactions_df.copy()
-        filter_desc = "All Accounts (Invalid Filter)"
+            has_warnings = (
+                True  # This is a warning, not a critical error to stop all processing.
+            )
+    else:  # Should not happen if GUI validates include_accounts
+        transactions_df_filtered = all_transactions_df_cleaned.copy()
+        filter_desc = "All Accounts (Invalid Filter Type)"
         status_parts.append("Invalid include_accounts filter type")
         has_warnings = True
     logging.info(f"Processing transactions for scope: {filter_desc}")
 
-    # --- 3. Process Stock/ETF Transactions (using imported function) ---
+    if transactions_df_filtered.empty and (
+        not has_warnings or "No valid accounts after filter" not in status_parts
+    ):
+        # If filtering resulted in empty and it wasn't due to "No valid accounts" (which is a warning scenario),
+        # it might be an issue or simply no transactions for the selected scope.
+        logging.info("No transactions after filtering for the selected scope.")
+        # Proceed, might result in empty summary, which is valid.
+        # status_parts.append("No Tx Post-Filter") # Optional status part
+
+    # --- 3. Process Stock/ETF Transactions ---
     holdings, _, _, _, ignored_indices_proc, ignored_reasons_proc, warn_proc = (
-        _process_transactions_to_holdings(  # <-- CALL TO IMPORTED FUNCTION
-            transactions_df=transactions_df_filtered,
+        _process_transactions_to_holdings(
+            transactions_df=transactions_df_filtered,  # Pass filtered DataFrame
             default_currency=default_currency,
             shortable_symbols=SHORTABLE_SYMBOLS,
         )
@@ -331,17 +357,18 @@ def calculate_portfolio_summary(
     if ignored_reasons_proc:
         status_parts.append(f"Processing Issues: {len(ignored_reasons_proc)}")
 
-    # --- 4. Calculate $CASH Balances (using imported function) ---
-    cash_summary, err_cash, warn_cash = (
-        _calculate_cash_balances(  # <-- CALL TO IMPORTED FUNCTION
-            transactions_df=transactions_df_filtered, default_currency=default_currency
-        )
+    # --- 4. Calculate $CASH Balances ---
+    cash_summary, err_cash, warn_cash = _calculate_cash_balances(
+        transactions_df=transactions_df_filtered,  # Pass filtered DataFrame
+        default_currency=default_currency,
     )
     if err_cash:
         has_errors = True
         status_parts.append("Cash Calc Error")
+    if warn_cash:
+        has_warnings = True  # Added
 
-    if has_errors:
+    if has_errors:  # Critical error during cash balance calculation
         msg = "Error: Failed critically during cash balance calculation."
         logging.error(msg)
         final_status_prefix = "Finished with Errors"
@@ -357,84 +384,107 @@ def calculate_portfolio_summary(
             final_status,
         )
 
-    # --- 5. Fetch Current Market Data using MarketDataProvider ---
+    # --- 5. Fetch Current Market Data ---
     all_stock_symbols_internal = list(set(key[0] for key in holdings.keys()))
     required_currencies: Set[str] = set([display_currency, default_currency])
     for data in holdings.values():
         required_currencies.add(data.get("local_currency", default_currency))
     for data in cash_summary.values():
         required_currencies.add(data.get("currency", default_currency))
-    required_currencies.discard(None)
-    required_currencies.discard("N/A")
+    required_currencies.discard(None)  # type: ignore
+    # --- ADDED: More robust cleaning for required_currencies ---
+    cleaned_required_currencies = {
+        str(c).strip().upper()
+        for c in required_currencies
+        if pd.notna(c)
+        and isinstance(str(c).strip(), str)
+        and str(c).strip() not in ["", "<NA>", "NAN", "NONE", "N/A"]
+        and len(str(c).strip()) == 3
+    }
+    required_currencies = cleaned_required_currencies
 
-    # Instantiate the provider
-    market_provider = MarketDataProvider(
-        current_cache_file=cache_file_path
-    )  # Use cache path from args
-
+    market_provider = MarketDataProvider(current_cache_file=cache_file_path)
     current_stock_data_internal, current_fx_rates_vs_usd, err_fetch, warn_fetch = (
         market_provider.get_current_quotes(
             internal_stock_symbols=all_stock_symbols_internal,
-            required_currencies=required_currencies,
+            required_currencies=list(required_currencies),  # Pass as list
             user_symbol_map=effective_user_symbol_map,
             user_excluded_symbols=effective_user_excluded_symbols,
         )
     )
-    if err_fetch:
-        has_errors = True
+    if err_fetch:  # If get_current_quotes signals a critical error
+        has_errors = True  # Treat critical fetch error as overall error
+        status_parts.append("Fetch Failed Critically")
     if warn_fetch:
         has_warnings = True
-    # --- MODIFIED: Only log FATAL, don't return immediately on fetch error ---
-    # Allow calculation to proceed with potentially missing/stale data if fetch failed
-    if err_fetch:
-        # Log as fatal, but don't set has_errors = True here, let subsequent steps handle missing data
-        msg = "Error: Price/FX fetch failed critically via MarketDataProvider."
-        logging.error(f"FATAL: {msg}")
-        status_parts.append("Fetch Failed")
-        # We will continue, but the status will reflect the fetch failure later.
-        # Ensure data structures are at least empty dicts if they are None
-        if current_stock_data_internal is None:
-            current_stock_data_internal = {}
-        if current_fx_rates_vs_usd is None:
-            current_fx_rates_vs_usd = {}
-        # REMOVED early return:
-        # return (
-        #    None,
-        #    None,
-        #    None,
-        #    combined_ignored_indices,
-        #    combined_ignored_reasons,
-        #    final_status,
-        # )
-    elif has_warnings:
         status_parts.append("Fetch Warnings")
 
-    # --- 6. Build Detailed Summary Rows (using imported function) ---
+    # If fetch failed critically, we might not be able to proceed meaningfully.
+    if has_errors and "Fetch Failed Critically" in status_parts:
+        msg = "Error: Price/FX fetch failed critically via MarketDataProvider. Cannot build summary."
+        logging.error(f"FATAL: {msg}")
+        final_status_prefix = "Finished with Errors"
+        final_status = f"{final_status_prefix} ({filter_desc})" + (
+            f" [{'; '.join(status_parts)}]" if status_parts else ""
+        )
+        return (
+            None,
+            None,
+            None,
+            combined_ignored_indices,
+            combined_ignored_reasons,
+            final_status,
+        )
+
+    # --- 6. Build Detailed Summary Rows ---
+    manual_prices_for_build_rows = {}
+    if manual_overrides_effective:
+        for symbol_key, override_values_dict in manual_overrides_effective.items():
+            if (
+                isinstance(override_values_dict, dict)
+                and "price" in override_values_dict
+            ):
+                price_val = override_values_dict["price"]
+                if price_val is not None and pd.notna(price_val):
+                    try:
+                        manual_prices_for_build_rows[symbol_key] = float(price_val)
+                    except (ValueError, TypeError):
+                        logging.warning(
+                            f"Could not convert manual price for {symbol_key} to float: {price_val}"
+                        )
+
     (
         portfolio_summary_rows,
         account_market_values_local,
         account_local_currency_map,
         err_build,
         warn_build,
-    ) = _build_summary_rows(  # <-- CALL TO IMPORTED FUNCTION
+    ) = _build_summary_rows(
         holdings=holdings,
         cash_summary=cash_summary,
-        current_stock_data=current_stock_data_internal,
-        current_fx_rates_vs_usd=current_fx_rates_vs_usd,
+        current_stock_data=(
+            current_stock_data_internal
+            if current_stock_data_internal is not None
+            else {}
+        ),
+        current_fx_rates_vs_usd=(
+            current_fx_rates_vs_usd if current_fx_rates_vs_usd is not None else {}
+        ),
         display_currency=display_currency,
         default_currency=default_currency,
-        transactions_df=transactions_df_filtered,
+        transactions_df=transactions_df_filtered,  # Pass filtered DataFrame
         report_date=report_date,
         shortable_symbols=SHORTABLE_SYMBOLS,
         user_excluded_symbols=effective_user_excluded_symbols,
-        user_symbol_map=effective_user_symbol_map,  # Pass user symbol map
-        manual_prices_dict=manual_prices_for_build_rows,  # Pass the correctly structured dict
+        user_symbol_map=effective_user_symbol_map,
+        manual_prices_dict=manual_prices_for_build_rows,
     )
     if err_build:
         has_errors = True
     if warn_build:
         has_warnings = True
-    if has_errors:
+
+    if has_errors:  # Critical error during summary row building (likely FX)
         msg = "Error: Failed critically during summary row building (likely FX)."
         logging.error(msg)
         status_parts.append("Summary Build Error")
@@ -450,180 +500,110 @@ def calculate_portfolio_summary(
             combined_ignored_reasons,
             final_status,
         )
-    elif not portfolio_summary_rows and (holdings or cash_summary):
-        msg = "Warning: Failed to generate summary rows (FX or other issue)."
+    elif not portfolio_summary_rows and (
+        holdings or cash_summary
+    ):  # Generated no rows but had input
+        msg = "Warning: Failed to generate any summary rows (FX or other issue during build)."
         logging.warning(msg)
         has_warnings = True
-        status_parts.append("Summary Build Failed")
+        status_parts.append("Summary Build Generated No Rows")
+        # Don't return early, let it try to create empty aggregates.
 
-    # --- ADDED: Fetch Sector information and add to summary_df_unfiltered ---
-    if portfolio_summary_rows:  # Only proceed if we have rows
+    # --- Add Sector/Geo information ---
+    if portfolio_summary_rows:
         summary_df_unfiltered_temp = pd.DataFrame(portfolio_summary_rows)
         if "Symbol" in summary_df_unfiltered_temp.columns:
             symbols_in_summary = summary_df_unfiltered_temp["Symbol"].unique()
-            sector_map = {}
-            quote_type_map = {}
-            country_map = {}  # ADDED: To store country
-            industry_map = {}  # ADDED: To store industry
+            sector_map, quote_type_map, country_map, industry_map = {}, {}, {}, {}
+
             for internal_symbol in symbols_in_summary:
-                # Get manual overrides for this symbol
                 symbol_overrides = manual_overrides_effective.get(
                     internal_symbol.upper(), {}
                 )
                 manual_asset_type = symbol_overrides.get("asset_type", "").strip()
                 manual_sector = symbol_overrides.get("sector", "").strip()
                 manual_geography = symbol_overrides.get("geography", "").strip()
-                manual_industry = symbol_overrides.get("industry", "").strip()  # ADDED
-
-                logging.debug(f"Processing symbol: {internal_symbol}")
-                logging.debug(
-                    f"  Manual Overrides found for {internal_symbol}: {symbol_overrides}"
-                )
-                logging.debug(
-                    f"  Parsed Manual - Asset Type: '{manual_asset_type}', Sector: '{manual_sector}', Geography: '{manual_geography}'"
-                )
+                manual_industry = symbol_overrides.get("industry", "").strip()
 
                 if internal_symbol == CASH_SYMBOL_CSV or internal_symbol.startswith(
                     "Cash ("
                 ):
-                    sector_map[internal_symbol] = (
-                        "Cash"  # Assign a specific category for cash
-                    )
+                    sector_map[internal_symbol] = "Cash"
                     quote_type_map[internal_symbol] = "CASH"
-                    country_map[internal_symbol] = (
-                        "Cash"  # ADDED: Assign country for cash
-                    )
-                    industry_map[internal_symbol] = "Cash"  # ADDED
-                    logging.debug(
-                        f"  Assigned for CASH: Sector='{sector_map[internal_symbol]}', quoteType='{quote_type_map[internal_symbol]}', Country='{country_map[internal_symbol]}'"
-                    )
+                    country_map[internal_symbol] = "Cash"
+                    industry_map[internal_symbol] = "Cash"
                     continue
 
                 yf_ticker_for_sector = map_to_yf_symbol(
-                    internal_symbol, user_symbol_map, user_excluded_symbols
-                )  # Pass user settings
-                logging.debug(
-                    f"  YF Ticker for {internal_symbol}: {yf_ticker_for_sector}"
+                    internal_symbol,
+                    effective_user_symbol_map,
+                    effective_user_excluded_symbols,
                 )
-
-                # Initialize with manual overrides if they exist and are non-empty, otherwise placeholder
                 sector_map[internal_symbol] = (
-                    manual_sector if manual_sector else "N/A (No YF / Manual Empty)"
+                    manual_sector if manual_sector else "N/A (No YF/Manual)"
                 )
                 quote_type_map[internal_symbol] = (
-                    manual_asset_type
-                    if manual_asset_type
-                    else "N/A (No YF / Manual Empty)"  # Shortened
+                    manual_asset_type if manual_asset_type else "N/A (No YF/Manual)"
                 )
                 country_map[internal_symbol] = (
-                    manual_geography
-                    if manual_geography
-                    else "N/A (No YF / Manual Empty)"  # Shortened
+                    manual_geography if manual_geography else "N/A (No YF/Manual)"
                 )
-                industry_map[internal_symbol] = (  # ADDED
-                    manual_industry if manual_industry else "N/A (No YF / Manual Empty)"
-                )
-                logging.debug(
-                    f"  Initial map values - Sector: '{sector_map[internal_symbol]}', quoteType: '{quote_type_map[internal_symbol]}', Country: '{country_map[internal_symbol]}'"
+                industry_map[internal_symbol] = (
+                    manual_industry if manual_industry else "N/A (No YF/Manual)"
                 )
 
-                if yf_ticker_for_sector:
-                    # Only fetch if any of the manual fields were initially empty (now "N/A...")
-                    should_fetch_fundamentals = (
-                        not manual_sector
-                        or not manual_asset_type
-                        or not manual_geography
-                        or not manual_industry  # ADDED industry
+                if yf_ticker_for_sector and (
+                    not manual_sector
+                    or not manual_asset_type
+                    or not manual_geography
+                    or not manual_industry
+                ):
+                    fundamental_info = market_provider.get_fundamental_data(
+                        yf_ticker_for_sector
                     )
-                    logging.debug(
-                        f"  Should fetch fundamentals for {internal_symbol}: {should_fetch_fundamentals}"
-                    )
-
-                    if should_fetch_fundamentals:
-                        fundamental_info = market_provider.get_fundamental_data(
-                            yf_ticker_for_sector
-                        )
-                        logging.debug(
-                            f"  Fetched fundamental_info for {yf_ticker_for_sector}: {str(fundamental_info)[:200]}..."
-                        )  # Log snippet
-                        if fundamental_info and isinstance(fundamental_info, dict):
-                            # Sector: Use YF if no manual override or manual was placeholder
-                            if not manual_sector:  # If manual_sector was empty
-                                yf_sector = fundamental_info.get("sector")
-                                sector_map[internal_symbol] = (
-                                    yf_sector if yf_sector else "Unknown Sector"
-                                )
-                                logging.debug(
-                                    f"    Using YF Sector for {internal_symbol}: '{sector_map[internal_symbol]}'"
-                                )
-
-                            # Quote Type: Use YF if no manual override or manual was placeholder
-                            if not manual_asset_type:  # If manual_asset_type was empty
-                                yf_quote_type = fundamental_info.get("quoteType")
-                                quote_type_map[internal_symbol] = (
-                                    yf_quote_type if yf_quote_type else "UNKNOWN"
-                                )
-                                logging.debug(
-                                    f"    Using YF quoteType for {internal_symbol}: '{quote_type_map[internal_symbol]}'"
-                                )
-
-                            # Country: Use YF if no manual override or manual was placeholder
-                            if not manual_geography:  # If manual_geography was empty
-                                yf_country = fundamental_info.get("country")
-                                country_map[internal_symbol] = (
-                                    yf_country if yf_country else "Unknown Region"
-                                )
-                                logging.debug(
-                                    f"    Using YF Country for {internal_symbol}: '{country_map[internal_symbol]}'"
-                                )
-
-                            # ADDED: Industry
-                            if not manual_industry:  # If manual_industry was empty
-                                yf_industry = fundamental_info.get("industry")
-                                industry_map[internal_symbol] = (
-                                    yf_industry if yf_industry else "Unknown Industry"
-                                )
-                                logging.debug(
-                                    f"    Using YF Industry for {internal_symbol}: '{industry_map[internal_symbol]}'"
-                                )
-
-                        else:  # Fetch failed
-                            logging.debug(
-                                f"  Fundamental fetch FAILED for {yf_ticker_for_sector}"
+                    if fundamental_info and isinstance(fundamental_info, dict):
+                        if not manual_sector:
+                            sector_map[internal_symbol] = fundamental_info.get(
+                                "sector", "Unknown Sector"
                             )
-                            if not manual_sector:
-                                sector_map[internal_symbol] = "N/A (Fetch Error)"
-                            if not manual_asset_type:
-                                quote_type_map[internal_symbol] = "N/A (Fetch Error)"
-                            if not manual_geography:
-                                country_map[internal_symbol] = "N/A (Fetch Error)"
-                            if not manual_industry:
-                                industry_map[internal_symbol] = (
-                                    "N/A (Fetch Error)"  # ADDED
-                                )
-
-                logging.debug(
-                    f"  Final map values for {internal_symbol} - Sector: '{sector_map[internal_symbol]}', quoteType: '{quote_type_map[internal_symbol]}', Country: '{country_map[internal_symbol]}'"
-                )
+                        if not manual_asset_type:
+                            quote_type_map[internal_symbol] = fundamental_info.get(
+                                "quoteType", "UNKNOWN"
+                            )
+                        if not manual_geography:
+                            country_map[internal_symbol] = fundamental_info.get(
+                                "country", "Unknown Region"
+                            )
+                        if not manual_industry:
+                            industry_map[internal_symbol] = fundamental_info.get(
+                                "industry", "Unknown Industry"
+                            )
+                    else:  # Fetch failed for this symbol
+                        if not manual_sector:
+                            sector_map[internal_symbol] = "N/A (Fetch Error)"
+                        if not manual_asset_type:
+                            quote_type_map[internal_symbol] = "N/A (Fetch Error)"
+                        if not manual_geography:
+                            country_map[internal_symbol] = "N/A (Fetch Error)"
+                        if not manual_industry:
+                            industry_map[internal_symbol] = "N/A (Fetch Error)"
 
             summary_df_unfiltered_temp["Sector"] = (
                 summary_df_unfiltered_temp["Symbol"]
                 .map(sector_map)
                 .fillna("Unknown Sector")
             )
-            portfolio_summary_rows = summary_df_unfiltered_temp.to_dict(
-                orient="records"
-            )
             summary_df_unfiltered_temp["quoteType"] = (
                 summary_df_unfiltered_temp["Symbol"]
                 .map(quote_type_map)
                 .fillna("UNKNOWN")
             )
-            summary_df_unfiltered_temp["Country"] = summary_df_unfiltered_temp[
-                "Symbol"
-            ].map(country_map)
-            # ADDED: Add Industry column
-            summary_df_unfiltered_temp["Industry"] = (  # ADDED
+            summary_df_unfiltered_temp["Country"] = (
+                summary_df_unfiltered_temp["Symbol"]
+                .map(country_map)
+                .fillna("Unknown Region")
+            )
+            summary_df_unfiltered_temp["Industry"] = (
                 summary_df_unfiltered_temp["Symbol"]
                 .map(industry_map)
                 .fillna("Unknown Industry")
@@ -631,18 +611,18 @@ def calculate_portfolio_summary(
             portfolio_summary_rows = summary_df_unfiltered_temp.to_dict(
                 orient="records"
             )
-    # --- END ADDED ---
 
-    # --- 7. Create DataFrame & Calculate Aggregates (using imported function) ---
+    # --- 7. Create DataFrame & Calculate Aggregates ---
     summary_df_unfiltered = pd.DataFrame()
-    overall_summary_metrics = {}
-    account_level_metrics = {}
+    overall_summary_metrics: Dict[str, Any] = {}  # Ensure it's a dict
+    account_level_metrics: Dict[str, Dict[str, float]] = {}  # Ensure it's a dict
 
-    if not portfolio_summary_rows:
+    if not portfolio_summary_rows:  # If still empty after sector enrichment
         logging.warning(
-            "Portfolio summary list is empty after processing. Returning empty results."
+            "Portfolio summary list is empty. Returning empty results for aggregates."
         )
         has_warnings = True
+        # Define default empty structure for overall_summary_metrics
         overall_summary_metrics = {
             "market_value": 0.0,
             "cost_basis_held": 0.0,
@@ -661,10 +641,11 @@ def calculate_portfolio_summary(
             "cumulative_investment": 0.0,
             "total_return_pct": np.nan,
         }
-        account_level_metrics = {}
-        summary_df_unfiltered = pd.DataFrame()
+        # account_level_metrics remains empty dict
+        summary_df_unfiltered = pd.DataFrame()  # Ensure it's an empty DataFrame
     else:
         full_summary_df = pd.DataFrame(portfolio_summary_rows)
+        # ... (numeric conversion and sorting as before) ...
         try:
             money_cols_display = [
                 c for c in full_summary_df.columns if f"({display_currency})" in c
@@ -674,17 +655,10 @@ def calculate_portfolio_summary(
                 "Total Return %",
                 "IRR (%)",
                 "Day Change %",
+                "Div. Yield (Cost) %",
+                "Div. Yield (Current) %",
             ]
             numeric_cols_to_convert = ["Quantity"] + money_cols_display + percent_cols
-            if (
-                f"Cumulative Investment ({display_currency})"
-                not in numeric_cols_to_convert
-            ):
-                numeric_cols_to_convert.append(
-                    f"Cumulative Investment ({display_currency})"
-                )
-            if f"Total Buy Cost ({display_currency})" not in numeric_cols_to_convert:
-                numeric_cols_to_convert.append(f"Total Buy Cost ({display_currency})")
             for col in numeric_cols_to_convert:
                 if col in full_summary_df.columns:
                     full_summary_df[col] = pd.to_numeric(
@@ -708,21 +682,31 @@ def calculate_portfolio_summary(
                 "Warning: Could not sort summary DataFrame by Account/Market Value."
             )
 
-        # --- MODIFIED CALL: Removed transactions_df argument ---
-        overall_summary_metrics, account_level_metrics, err_agg, warn_agg = (
-            _calculate_aggregate_metrics(  # <-- CALL TO IMPORTED FUNCTION
+        overall_summary_metrics_temp, account_level_metrics_temp, err_agg, warn_agg = (
+            _calculate_aggregate_metrics(
                 full_summary_df=full_summary_df,
                 display_currency=display_currency,
-                # transactions_df=transactions_df_filtered, # Argument removed
                 report_date=report_date,
             )
         )
-        # --- END MODIFIED CALL ---
+        # Ensure types before assignment
+        overall_summary_metrics = (
+            overall_summary_metrics_temp
+            if isinstance(overall_summary_metrics_temp, dict)
+            else {}
+        )
+        account_level_metrics = (
+            account_level_metrics_temp
+            if isinstance(account_level_metrics_temp, dict)
+            else {}
+        )
+
         if err_agg:
             has_errors = True
         if warn_agg:
             has_warnings = True
 
+        # Price source warnings check (as before)
         price_source_warnings = False
         if "Price Source" in full_summary_df.columns:
             non_cash_holdings_agg = full_summary_df[
@@ -740,13 +724,12 @@ def calculate_portfolio_summary(
         if price_source_warnings:
             has_warnings = True
             status_parts.append("Fallback Prices Used")
-
         summary_df_unfiltered = full_summary_df
 
     # --- 8. Filter Closed Positions ---
     summary_df_final = pd.DataFrame()
     if summary_df_unfiltered.empty:
-        summary_df_final = summary_df_unfiltered
+        summary_df_final = summary_df_unfiltered  # Will be empty DF
     elif not show_closed_positions:
         if (
             "Quantity" in summary_df_unfiltered.columns
@@ -756,26 +739,28 @@ def calculate_portfolio_summary(
                 (
                     summary_df_unfiltered["Quantity"].abs()
                     >= STOCK_QUANTITY_CLOSE_TOLERANCE
-                )  # Use new tolerance
+                )
                 | (summary_df_unfiltered["Symbol"] == CASH_SYMBOL_CSV)
                 | (summary_df_unfiltered["Symbol"].str.startswith("Cash (", na=False))
             )
             summary_df_final = summary_df_unfiltered[held_mask].copy()
-        else:
+        else:  # Columns missing for filtering
             summary_df_final = summary_df_unfiltered
             logging.warning(
-                "Could not filter closed positions, Quantity/Symbol columns missing."
+                "Could not filter closed positions, Quantity/Symbol columns missing from summary_df_unfiltered."
             )
             has_warnings = True
-    else:
+    else:  # show_closed_positions is True
         summary_df_final = summary_df_unfiltered
 
     # --- Add Metadata to Overall Summary ---
     if overall_summary_metrics is None:
-        overall_summary_metrics = {}
+        overall_summary_metrics = {}  # Ensure it's a dict
+    # Use all_transactions_df_cleaned for available accounts, as it's the full dataset for this run
     overall_summary_metrics["_available_accounts"] = (
-        sorted(list(all_transactions_df["Account"].unique()))
-        if all_transactions_df is not None and "Account" in all_transactions_df
+        sorted(list(all_transactions_df_cleaned["Account"].unique()))
+        if all_transactions_df_cleaned is not None
+        and "Account" in all_transactions_df_cleaned.columns
         else []
     )
     if display_currency != default_currency and current_fx_rates_vs_usd:
@@ -802,11 +787,10 @@ def calculate_portfolio_summary(
         f"Total Summary Calc Time: {end_time_summary - start_time_summary:.2f} seconds"
     )
 
-    # --- RETURN MODIFIED (6 items) ---
     return (
         overall_summary_metrics,
         summary_df_final,
-        dict(account_level_metrics),
+        dict(account_level_metrics),  # Ensure it's a dict
         combined_ignored_indices,
         combined_ignored_reasons,
         final_status,
@@ -1806,15 +1790,18 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             dtype=np.int64,
         )
         # Keep as date objects
-        tx_symbols_np = (
+        tx_symbols_np = (  # This line was 1800 in the traceback, but the diff applies to the correct logical line
             transactions_til_date["Symbol"].map(symbol_to_id).values.astype(np.int64)
         )
         tx_accounts_np = (
             transactions_til_date["Account"].map(account_to_id).values.astype(np.int64)
         )
         tx_types_np = (
-            transactions_til_date["Type"].map(type_to_id).values.astype(np.int64)
-        )
+            transactions_til_date["Type"]
+            .map(type_to_id)
+            .fillna(-1)
+            .values.astype(np.int64)  # Added fillna(-1)
+        )  # This is the line causing the warning
         tx_quantities_np = (
             transactions_til_date["Quantity"].fillna(0.0).values.astype(np.float64)
         )
@@ -1830,6 +1817,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         tx_local_currencies_np = (
             transactions_til_date["Local Currency"]
             .map(currency_to_id)
+            .fillna(-1)  # Added fillna(-1) to handle missing currency IDs
             .values.astype(np.int64)
         )
 
@@ -2302,10 +2290,16 @@ def _calculate_daily_metrics_worker(
         return failed_row
 
 
-# --- Historical Input Preparation (Keep as is) ---
+# --- Helper Function for Historical Input Preparation ---
 @profile
 def _prepare_historical_inputs(
-    transactions_csv_file: str,
+    # transactions_csv_file: str, # REMOVED
+    preloaded_transactions_df: Optional[pd.DataFrame],  # ADDED
+    original_transactions_df_for_ignored: Optional[
+        pd.DataFrame
+    ],  # ADDED for ignored context
+    ignored_indices_from_load: Set[int],  # ADDED
+    ignored_reasons_from_load: Dict[int, str],  # ADDED
     account_currency_map: Dict,
     default_currency: str,
     include_accounts: Optional[List[str]],
@@ -2317,12 +2311,14 @@ def _prepare_historical_inputs(
     current_hist_version: str = "v10",
     raw_cache_prefix: str = HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
     daily_cache_prefix: str = DAILY_RESULTS_CACHE_PATH_PREFIX,
-    preloaded_transactions_df: Optional[pd.DataFrame] = None,  # <-- ADD NEW PARAMETER
+    # preloaded_transactions_df: Optional[pd.DataFrame] = None, # Already added above
     user_symbol_map: Optional[Dict[str, str]] = None,
     user_excluded_symbols: Optional[Set[str]] = None,
+    # ADDED: original_csv_file_path for daily_results_cache_key hash generation
+    original_csv_file_path: Optional[str] = None,
 ) -> Tuple[
     Optional[pd.DataFrame],
-    Optional[pd.DataFrame],
+    Optional[pd.DataFrame],  # This will be original_transactions_df_for_ignored
     Set[int],
     Dict[int, str],
     List[str],
@@ -2339,52 +2335,6 @@ def _prepare_historical_inputs(
     Optional[str],
     str,
 ]:
-    """
-    Prepares all necessary inputs for the historical performance calculation.
-
-    Loads and cleans transactions, applies account filtering (include/exclude),
-    identifies all unique stock symbols and currencies involved, determines the
-    corresponding Yahoo Finance tickers for stocks and required FX pairs, extracts
-    split history, and generates cache keys and filenames for both raw historical
-    data and calculated daily results based on the inputs.
-
-    Args:
-        transactions_csv_file (str): Path to the transaction CSV.
-        account_currency_map (Dict): Account to currency mapping.
-        default_currency (str): Default currency code.
-        include_accounts (Optional[List[str]]): Accounts to include (None for all).
-        exclude_accounts (Optional[List[str]]): Accounts to exclude.
-        start_date (date): Start date for historical analysis.
-        end_date (date): End date for historical analysis.
-        benchmark_symbols_yf (List[str]): List of YF benchmark tickers.
-        display_currency (str): Target currency for results.
-        current_hist_version (str): Version string for daily results cache key.
-        raw_cache_prefix (str): Prefix for the raw historical data cache file.
-        daily_cache_prefix (str): Prefix for the daily results cache file.
-        user_symbol_map (Optional[Dict[str, str]], optional): User-defined symbol map.
-        user_excluded_symbols (Optional[Set[str]], optional): User-defined excluded symbols.
-
-    Returns:
-        Tuple containing:
-        - transactions_df_effective (Optional[pd.DataFrame]): Filtered transactions. None on critical load failure.
-        - original_transactions_df (Optional[pd.DataFrame]): Unfiltered original transactions.
-        - ignored_indices (Set[int]): Indices ignored during load/clean.
-        - ignored_reasons (Dict[int, str]): Reasons for ignoring.
-        - all_available_accounts_list (List[str]): All unique accounts found in the CSV.
-        - included_accounts_list_sorted (List[str]): Accounts included after filtering.
-        - excluded_accounts_list_sorted (List[str]): Accounts explicitly excluded.
-        - symbols_for_stocks_and_benchmarks_yf (List[str]): Sorted list of YF tickers needed (portfolio + benchmarks).
-        - fx_pairs_for_api_yf (List[str]): Sorted list of YF FX pair tickers needed (e.g., 'EUR=X').
-        - internal_to_yf_map (Dict[str, str]): Mapping from internal symbols to YF tickers.
-        - yf_to_internal_map_hist (Dict[str, str]): Reverse mapping (YF to internal).
-        - splits_by_internal_symbol (Dict[str, List[Dict]]): Split history per internal symbol.
-        - raw_data_cache_file (str): Full path for the raw data cache file.
-        - raw_data_cache_key (str): Validation key for the raw data cache.
-        - daily_results_cache_file (Optional[str]): Full path for the daily results cache file.
-        - daily_results_cache_key (Optional[str]): Validation key for the daily results cache.
-        - filter_desc (str): Description of the account filtering applied.
-    """
-    # ... (Function body remains unchanged) ...
     logging.info("Preparing inputs for historical calculation...")
     empty_tuple_return = (
         None,
@@ -2411,26 +2361,25 @@ def _prepare_historical_inputs(
         user_excluded_symbols if user_excluded_symbols is not None else set()
     )
 
-    (
-        all_transactions_df,
-        original_transactions_df,
-        ignored_indices,
-        ignored_reasons,
-        err_load,
-        warn_load,  # This is the 6th item
-        _,  # Add a placeholder for the 7th item (original_to_cleaned_header_map)
-    ) = load_and_clean_transactions(
-        transactions_csv_file, account_currency_map, default_currency
+    # Use preloaded DataFrame
+    all_transactions_df = preloaded_transactions_df
+    # Use the passed-in ignored data directly
+    ignored_indices = (
+        ignored_indices_from_load.copy() if ignored_indices_from_load else set()
     )
+    ignored_reasons = (
+        ignored_reasons_from_load.copy() if ignored_reasons_from_load else {}
+    )
+
     if all_transactions_df is None:
         logging.error(
-            "ERROR in _prepare_historical_inputs: Failed to load/clean transactions."
+            "ERROR in _prepare_historical_inputs: No preloaded transaction data provided."
         )
-        return empty_tuple_return
+        return empty_tuple_return  # type: ignore
 
     all_available_accounts_list = (
         sorted(all_transactions_df["Account"].unique().tolist())
-        if "Account" in all_transactions_df.columns
+        if "Account" in all_transactions_df.columns and not all_transactions_df.empty
         else []
     )
     available_accounts_set = set(all_available_accounts_list)
@@ -2439,7 +2388,7 @@ def _prepare_historical_inputs(
     excluded_accounts_list_sorted = []
     filter_desc = "All Accounts"
 
-    if not include_accounts:
+    if not include_accounts:  # None or empty list means all
         transactions_df_included = all_transactions_df.copy()
         included_accounts_list_sorted = sorted(list(available_accounts_set))
     else:
@@ -2450,7 +2399,7 @@ def _prepare_historical_inputs(
             logging.warning(
                 "WARN in _prepare_historical_inputs: No valid accounts to include."
             )
-            return empty_tuple_return
+            return empty_tuple_return  # type: ignore
         transactions_df_included = all_transactions_df[
             all_transactions_df["Account"].isin(valid_include_accounts)
         ].copy()
@@ -2484,9 +2433,10 @@ def _prepare_historical_inputs(
         logging.warning(
             "WARN in _prepare_historical_inputs: No transactions remain after filtering."
         )
+        # Return structure must match
         return (
             transactions_df_effective,
-            original_transactions_df,
+            original_transactions_df_for_ignored,  # Pass this through
             ignored_indices,
             ignored_reasons,
             all_available_accounts_list,
@@ -2504,32 +2454,39 @@ def _prepare_historical_inputs(
             filter_desc,
         )
 
+    # Extract split history from the *unfiltered* `all_transactions_df`
+    # to ensure all splits are considered, even if an account with a split tx is filtered out.
     split_transactions = all_transactions_df[
         all_transactions_df["Type"].str.lower().isin(["split", "stock split"])
         & all_transactions_df["Split Ratio"].notna()
-        & (all_transactions_df["Split Ratio"] > 0)
+        & (
+            pd.to_numeric(all_transactions_df["Split Ratio"], errors="coerce") > 0
+        )  # Ensure valid ratio
     ].sort_values(by="Date", ascending=True)
-    splits_by_internal_symbol = {
-        symbol: group[["Date", "Split Ratio"]]
-        .apply(
-            lambda r: {
-                "Date": r["Date"].date(),
-                "Split Ratio": float(r["Split Ratio"]),
-            },
-            axis=1,
-        )
-        .tolist()
-        for symbol, group in split_transactions.groupby("Symbol")
-    }
 
-    all_symbols_internal = list(set(transactions_df_effective["Symbol"].unique()))
+    splits_by_internal_symbol: Dict[str, List[Dict[str, Any]]] = {}
+    if not split_transactions.empty:
+        splits_by_internal_symbol = {
+            symbol: group[["Date", "Split Ratio"]]
+            .apply(
+                lambda r: {
+                    "Date": r["Date"].date(),  # Assuming Date is datetime
+                    "Split Ratio": float(r["Split Ratio"]),
+                },
+                axis=1,
+            )
+            .tolist()
+            for symbol, group in split_transactions.groupby("Symbol")
+        }
+
+    # Symbols for stocks (from effective/filtered transactions)
+    all_symbols_internal_effective = list(
+        set(transactions_df_effective["Symbol"].unique())
+    )
     symbols_to_fetch_yf_portfolio = []
-    internal_to_yf_map = {}
-    yf_to_internal_map_hist = {}
-    for internal_sym in all_symbols_internal:
-        if (
-            internal_sym == CASH_SYMBOL_CSV
-        ):  # This check is redundant with the one inside map_to_yf_symbol, but harmless
+    internal_to_yf_map: Dict[str, str] = {}  # Ensure type
+    for internal_sym in all_symbols_internal_effective:
+        if internal_sym == CASH_SYMBOL_CSV:
             continue
         yf_sym = map_to_yf_symbol(
             internal_sym, effective_user_symbol_map, effective_user_excluded_symbols
@@ -2538,73 +2495,106 @@ def _prepare_historical_inputs(
             symbols_to_fetch_yf_portfolio.append(yf_sym)
             internal_to_yf_map[internal_sym] = yf_sym
 
-    yf_to_internal_map_hist = {
+    yf_to_internal_map_hist: Dict[str, str] = {
         v: k for k, v in internal_to_yf_map.items()
-    }  # Populate reverse map after loop
+    }  # Ensure type
     symbols_to_fetch_yf_portfolio = sorted(list(set(symbols_to_fetch_yf_portfolio)))
     symbols_for_stocks_and_benchmarks_yf = sorted(
         list(set(symbols_to_fetch_yf_portfolio + benchmark_symbols_yf))
     )
 
-    all_currencies_in_tx = set(transactions_df_effective["Local Currency"].unique())
-    all_currencies_needed = all_currencies_in_tx.union(
+    all_currencies_in_tx_effective = set(
+        transactions_df_effective["Local Currency"].unique()
+    )
+    all_currencies_needed = all_currencies_in_tx_effective.union(
         {display_currency, default_currency}
     )
-    all_currencies_needed.discard(None)
-    all_currencies_needed.discard("N/A")
+    # --- ADDED: More robust cleaning for all_currencies_needed ---
+    cleaned_all_currencies_needed = {
+        str(c).strip().upper()
+        for c in all_currencies_needed
+        if pd.notna(c)
+        and isinstance(str(c).strip(), str)
+        and str(c).strip() not in ["", "<NA>", "NAN", "NONE", "N/A"]
+        and len(str(c).strip()) == 3
+    }
+    all_currencies_needed = cleaned_all_currencies_needed
+    # --- END ADDED ---
     fx_pairs_for_api_yf = sorted(
-        list({f"{curr}=X" for curr in all_currencies_needed if curr != "USD"})
+        list(
+            {f"{curr}=X" for curr in all_currencies_needed if curr != "USD" and curr}
+        )  # Added 'and curr' to ensure not empty
     )
 
-    # --- Construct full cache paths using QStandardPaths ---
-    # Assuming QStandardPaths.CacheLocation gives an app-specific dir like ~/Library/Caches/Investa
+    # Cache paths
     app_cache_dir = None
     if QStandardPaths:
         cache_dir_base = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
         if cache_dir_base:
-            app_cache_dir = cache_dir_base  # Use the path directly
+            app_cache_dir = cache_dir_base
             os.makedirs(app_cache_dir, exist_ok=True)
 
-    if app_cache_dir:
-        raw_data_cache_file = os.path.join(
-            app_cache_dir,
-            f"{raw_cache_prefix}_{start_date.isoformat()}_{end_date.isoformat()}.json",
-        )
-    else:  # Fallback to relative path if QStandardPaths failed
-        raw_data_cache_file = (
-            f"{raw_cache_prefix}_{start_date.isoformat()}_{end_date.isoformat()}.json"
-        )
-        logging.warning(
-            f"Hist Prep WARN: Using relative path for raw data cache: {raw_data_cache_file}"
-        )
+    raw_data_cache_file_name = (
+        f"{raw_cache_prefix}_{start_date.isoformat()}_{end_date.isoformat()}.json"
+    )
+    raw_data_cache_file = (
+        os.path.join(app_cache_dir, raw_data_cache_file_name)
+        if app_cache_dir
+        else raw_data_cache_file_name
+    )
 
     raw_data_cache_key = f"ADJUSTED_v7::{start_date.isoformat()}::{end_date.isoformat()}::{'_'.join(sorted(symbols_for_stocks_and_benchmarks_yf))}::{'_'.join(fx_pairs_for_api_yf)}"
 
-    logging.info(f"Hist Prep: Raw data cache file set to: {raw_data_cache_file}")
-    logging.info(f"Hist Prep: Raw data cache key: {raw_data_cache_key[:50]}...")
-
-    daily_results_cache_file = None
-    daily_results_cache_key = None
+    daily_results_cache_file: Optional[str] = None
+    daily_results_cache_key: Optional[str] = None
     try:
-        tx_file_hash = _get_file_hash(transactions_csv_file)
-        acc_map_str = json.dumps(account_currency_map, sort_keys=True)
-        included_accounts_str = json.dumps(included_accounts_list_sorted)
-        excluded_accounts_str = json.dumps(excluded_accounts_list_sorted)
-        daily_results_cache_key = f"DAILY_RES_{current_hist_version}::{start_date.isoformat()}::{end_date.isoformat()}::{tx_file_hash}::{'_'.join(sorted(benchmark_symbols_yf))}::{display_currency}::{acc_map_str}::{default_currency}::{included_accounts_str}::{excluded_accounts_str}"
-        cache_key_hash = hashlib.sha256(daily_results_cache_key.encode()).hexdigest()[
-            :16
-        ]
-        # --- CHANGE: Use .feather extension ---
-        daily_results_filename = f"{daily_cache_prefix}_{cache_key_hash}.feather"
-        if app_cache_dir:
-            daily_results_cache_file = os.path.join(
-                app_cache_dir, daily_results_filename
-            )
-        else:  # Fallback to relative path
-            daily_results_cache_file = daily_results_filename
+        # Use placeholder if original_csv_file_path is not available (loading from DB)
+        tx_file_hash_component = (
+            _get_file_hash(original_csv_file_path)
+            if original_csv_file_path and os.path.exists(original_csv_file_path)
+            else "FROM_DB_OR_DATAFRAME"
+        )
+        if original_csv_file_path and not os.path.exists(original_csv_file_path):
             logging.warning(
-                f"Hist Prep WARN: Using relative path for daily results cache: {daily_results_cache_file}"
+                f"Hist Prep: Original CSV path '{original_csv_file_path}' for hash not found. Using placeholder."
             )
+
+        acc_map_str = json.dumps(account_currency_map, sort_keys=True)
+        included_accounts_str = json.dumps(
+            included_accounts_list_sorted
+        )  # Use effectively included
+        excluded_accounts_str = json.dumps(
+            excluded_accounts_list_sorted
+        )  # Use effectively excluded
+
+        # Add user_symbol_map and user_excluded_symbols to cache key
+        user_map_str = json.dumps(effective_user_symbol_map, sort_keys=True)
+        user_excluded_str = json.dumps(sorted(list(effective_user_excluded_symbols)))
+
+        daily_results_cache_key_str_content = (
+            f"DAILY_RES_{current_hist_version}::"
+            f"{start_date.isoformat()}::{end_date.isoformat()}::"
+            f"{tx_file_hash_component}::"
+            f"{'_'.join(sorted(benchmark_symbols_yf))}::{display_currency}::"
+            f"{acc_map_str}::{default_currency}::"
+            f"{included_accounts_str}::{excluded_accounts_str}::"
+            f"{user_map_str}::{user_excluded_str}::"  # Added user settings
+            f"{HISTORICAL_CALC_METHOD}"  # Added calc method
+        )
+        daily_results_cache_key = hashlib.sha256(
+            daily_results_cache_key_str_content.encode()
+        ).hexdigest()[
+            :32
+        ]  # Longer hash for more uniqueness
+
+        daily_results_filename = (
+            f"{daily_cache_prefix}_{daily_results_cache_key}.feather"
+        )
+        daily_results_cache_file = (
+            os.path.join(app_cache_dir, daily_results_filename)
+            if app_cache_dir
+            else daily_results_filename
+        )
         logging.info(
             f"Hist Prep: Daily results cache file set to: {daily_results_cache_file}"
         )
@@ -2615,9 +2605,9 @@ def _prepare_historical_inputs(
 
     return (
         transactions_df_effective,
-        original_transactions_df,
-        ignored_indices,
-        ignored_reasons,
+        original_transactions_df_for_ignored,  # Pass this through
+        ignored_indices,  # Pass this through
+        ignored_reasons,  # Pass this through
         all_available_accounts_list,
         included_accounts_list_sorted,
         excluded_accounts_list_sorted,
@@ -2753,19 +2743,51 @@ def _load_or_calculate_daily_results(
                     raise ValueError("Cache key mismatch")  # Treat as invalid cache
 
                 # 2. Check Transaction File Modification Time
-                try:
-                    csv_mtime_current = os.path.getmtime(transactions_csv_file)
-                    csv_mtime_cached = metadata.get("csv_mtime")
-                    if csv_mtime_cached is None or csv_mtime_current > csv_mtime_cached:
+                # Only perform mtime check if the cache metadata itself contains a 'csv_mtime'.
+                # This implies the cache was originally created from a CSV.
+                if metadata.get("csv_mtime") is not None:
+                    # Cache expects a CSV mtime. Now check if a valid CSV path is provided for current validation.
+                    if (
+                        transactions_csv_file
+                        and isinstance(transactions_csv_file, str)
+                        and transactions_csv_file.strip()
+                    ):
+                        # A non-empty CSV path is provided.
+                        try:
+                            if os.path.exists(transactions_csv_file):
+                                csv_mtime_current = os.path.getmtime(
+                                    transactions_csv_file
+                                )
+                                csv_mtime_cached = metadata.get(
+                                    "csv_mtime"
+                                )  # Already checked it's not None
+                                if csv_mtime_current > csv_mtime_cached:
+                                    logging.warning(
+                                        f"Hist WARN (Scope: {filter_desc}): Transactions CSV file '{transactions_csv_file}' modified since cache was created. Recalculating."
+                                    )
+                                    raise ValueError("CSV file modified")
+                            else:  # Provided CSV path does not exist, but cache expected one.
+                                logging.warning(
+                                    f"Hist WARN (Scope: {filter_desc}): Transactions CSV file '{transactions_csv_file}' (for mtime check) not found, but cache expected one. Recalculating."
+                                )
+                                raise ValueError("CSV file for mtime check not found")
+                        except (
+                            OSError
+                        ) as e_mtime:  # Handles issues with os.path.exists or os.path.getmtime
+                            logging.warning(
+                                f"Hist WARN (Scope: {filter_desc}): Could not access transactions CSV file '{transactions_csv_file}' for mtime check: {e_mtime}. Recalculating."
+                            )
+                            raise ValueError("CSV mtime check failed (OS error)")
+                    else:  # No valid CSV path provided now (None or empty), but cache expected one.
                         logging.warning(
-                            f"Hist WARN (Scope: {filter_desc}): Transactions CSV file modified since cache was created. Recalculating."
+                            f"Hist WARN (Scope: {filter_desc}): Cache metadata expects 'csv_mtime' but no valid CSV path provided for current validation (path: '{transactions_csv_file}'). Recalculating."
                         )
-                        raise ValueError("CSV file modified")  # Treat as invalid cache
-                except OSError as e_mtime:
-                    logging.warning(
-                        f"Hist WARN (Scope: {filter_desc}): Could not get modification time for '{transactions_csv_file}': {e_mtime}. Assuming invalid cache."
-                    )
-                    raise ValueError("CSV mtime check failed")  # Treat as invalid cache
+                        raise ValueError(
+                            "Cache expected CSV mtime, but no CSV path provided now."
+                        )
+                # If metadata does not contain "csv_mtime", then the cache was likely not from a CSV (e.g., from DB).
+                # In this case, we don't need to perform an mtime check against transactions_csv_file.
+                # The cache_key check is sufficient.
                 # --- END ADDED: Metadata validation ---
 
                 # --- If validation passed, load Feather file ---
@@ -2808,9 +2830,9 @@ def _load_or_calculate_daily_results(
 
             # --- MODIFIED: Catch specific validation errors or general load errors ---
             except (
-                ValueError,
-                json.JSONDecodeError,
-            ) as e_validate:  # Catch key/mtime mismatch or bad JSON
+                ValueError,  # Catches our explicit raises for cache invalidity
+                json.JSONDecodeError,  # For manifest.json issues
+            ) as e_validate:
                 logging.warning(
                     f"Hist WARN (Scope: {filter_desc}): Daily cache validation failed: {e_validate}. Recalculating."
                 )
@@ -2821,6 +2843,7 @@ def _load_or_calculate_daily_results(
                 logging.warning(
                     f"Hist WARN (Scope: {filter_desc}): Error reading/validating daily cache: {e_load_cache}. Recalculating."
                 )
+                daily_df = pd.DataFrame()  # Ensure df is reset
         else:
             logging.info(  # Log if either file is missing
                 f"Hist Daily (Scope: {filter_desc}): Daily cache file not found. Calculating."
@@ -3112,7 +3135,16 @@ def _load_or_calculate_daily_results(
 
                 # --- ADDED: Save metadata file ---
                 try:
-                    csv_mtime_current = os.path.getmtime(transactions_csv_file)
+                    # Only get mtime if transactions_csv_file is a valid, existing file path
+                    if (
+                        transactions_csv_file
+                        and isinstance(transactions_csv_file, str)
+                        and transactions_csv_file.strip()
+                        and os.path.exists(transactions_csv_file)
+                    ):
+                        csv_mtime_current = os.path.getmtime(transactions_csv_file)
+                    else:
+                        csv_mtime_current = None
                 except OSError:
                     csv_mtime_current = None  # Cannot save mtime if file access fails
                 metadata_content = {
@@ -3405,13 +3437,17 @@ def _calculate_accumulated_gains_and_resample(
     return final_df_output, final_twr_factor, status_update
 
 
+# --- Main Historical Performance Calculation Function ---
 @profile
 def calculate_historical_performance(
-    transactions_csv_file: str,
+    all_transactions_df_cleaned: Optional[pd.DataFrame],  # MODIFIED: Accept DataFrame
+    original_transactions_df_for_ignored: Optional[pd.DataFrame],  # MODIFIED
+    ignored_indices_from_load: Set[int],  # MODIFIED
+    ignored_reasons_from_load: Dict[int, str],  # MODIFIED
     start_date: date,
     end_date: date,
     interval: str,
-    benchmark_symbols_yf: List[str],
+    benchmark_symbols_yf: List[str],  # Expects YF tickers
     display_currency: str,
     account_currency_map: Dict,
     default_currency: str,
@@ -3419,69 +3455,29 @@ def calculate_historical_performance(
     use_daily_results_cache: bool = True,
     num_processes: Optional[int] = None,
     include_accounts: Optional[List[str]] = None,
-    worker_signals: Optional[Any] = None,  # <-- ADDED: Accept signals object
-    exclude_accounts: Optional[List[str]] = None,
-    all_transactions_df_cleaned: Optional[pd.DataFrame] = None,  # <-- ADD NEW PARAMETER
+    worker_signals: Optional[Any] = None,
+    exclude_accounts: Optional[
+        List[str]
+    ] = None,  # Kept for signature, used by _prepare_historical_inputs
+    # all_transactions_df_cleaned is now the first arg
     user_symbol_map: Optional[Dict[str, str]] = None,
-    manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]] = None,  # ADDED
+    manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]] = None,
     user_excluded_symbols: Optional[Set[str]] = None,
-) -> Tuple[
-    pd.DataFrame, Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], str
-]:  # MODIFIED RETURN SIG (4 items)
-    """
-    Calculates historical portfolio performance using MarketDataProvider for data fetching.
-
-    Orchestrates the entire historical performance calculation process:
-    1. Prepares inputs (loads/filters transactions, identifies symbols/FX, gets splits, generates cache keys) using `_prepare_historical_inputs`.
-    2. Instantiates `MarketDataProvider`.
-    3. Loads/fetches *adjusted* historical stock/benchmark prices and FX rates using the provider.
-    4. Derives *unadjusted* historical stock prices using `_unadjust_prices` and split data.
-    5. Loads/calculates daily portfolio value (using unadjusted prices), net cash flow, and benchmark prices (using adjusted prices) potentially using cache and parallel processing via `_load_or_calculate_daily_results`.
-    6. Calculates daily returns, cumulative TWR for portfolio and benchmarks, and resamples results to the desired interval using `_calculate_accumulated_gains_and_resample`.
-    7. Returns the final performance DataFrame, raw price/FX data, and a status message.
-
-    Args:
-        transactions_csv_file (str): Path to the transaction CSV.
-        start_date (date): Start date for historical analysis.
-        end_date (date): End date for historical analysis.
-        interval (str): Desired output interval ('D', 'W', 'ME').
-        benchmark_symbols_yf (List[str]): List of YF benchmark tickers.
-        display_currency (str): Target currency for results.
-        account_currency_map (Dict): Account to currency mapping.
-        default_currency (str): Default currency code.
-        use_raw_data_cache (bool): Flag to use cache for raw price/FX data.
-        use_daily_results_cache (bool): Flag to use cache for calculated daily results.
-        num_processes (Optional[int]): Number of parallel processes for daily calculation.
-        include_accounts (Optional[List[str]]): Accounts to include (None for all).
-        worker_signals (Optional[Any]): The signals object from the GUI worker (or None).
-        transactions_csv_file (str): Path to the source transactions CSV file.
-        exclude_accounts (Optional[List[str]]): Accounts to exclude.
-        manual_overrides_dict (Optional[Dict[str, Dict[str, Any]]], optional): Dictionary of manual overrides.
-        user_symbol_map (Optional[Dict[str, str]], optional): User-defined symbol map.
-        user_excluded_symbols (Optional[Set[str]], optional): User-defined excluded symbols.
-
-    Returns:
-        Tuple[pd.DataFrame, Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], str]: # MODIFIED RETURN DOC (4 items)
-            - daily_df_with_gains (pd.DataFrame): DataFrame containing the full daily historical
-              data including calculated accumulated gains. Empty on critical error.
-            - historical_prices_yf_adjusted (Dict): Dictionary of raw *adjusted* historical
-              prices fetched/loaded (YF Ticker -> DataFrame).
-            - historical_fx_yf (Dict): Dictionary of raw historical FX rates fetched/loaded
-              (YF Pair -> DataFrame).
-            - final_status (str): Overall status message, including TWR factor if calculated.
-    """
-    CURRENT_HIST_VERSION = "v1.0"  # Keep version consistent
+    # ADDED: original_csv_file_path for daily_results_cache_key hash generation
+    # This is needed because we no longer pass the CSV path directly to this function for loading
+    original_csv_file_path: Optional[str] = None,
+) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], str]:
+    CURRENT_HIST_VERSION = "v1.1"  # Bump version due to changes (e.g. Numba, cache key)
     start_time_hist = time.time()
     has_errors = False
     has_warnings = False
     status_parts = []
-    processed_warnings = set()  # Initialize here
+    processed_warnings = set()
     final_twr_factor = np.nan
     daily_df = pd.DataFrame()
-    historical_prices_yf_adjusted = {}
-    historical_fx_yf = {}
+    historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}  # Ensure type
+    historical_fx_yf: Dict[str, pd.DataFrame] = {}  # Ensure type
 
-    # --- Initial Checks ---
     if not MARKET_PROVIDER_AVAILABLE:
         return pd.DataFrame(), {}, {}, "Error: MarketDataProvider not available."
     if start_date >= end_date:
@@ -3504,34 +3500,36 @@ def calculate_historical_performance(
         )
     elif not clean_benchmark_symbols_yf and benchmark_symbols_yf:
         logging.warning(
-            f"Hist WARN ({CURRENT_HIST_VERSION}): Invalid benchmark_symbols_yf type provided: {type(benchmark_symbols_yf)}. Ignoring benchmarks."
+            f"Hist WARN ({CURRENT_HIST_VERSION}): Invalid benchmark_symbols_yf type. Ignoring benchmarks."
         )
         has_warnings = True
 
-    # --- 1. Prepare Inputs (Loads and filters transactions) ---
-    # Call this FIRST to get transactions_df_effective
+    # --- 1. Prepare Inputs (Uses preloaded DataFrame) ---
     prep_result = _prepare_historical_inputs(
-        transactions_csv_file,
-        account_currency_map,
-        default_currency,
-        include_accounts,
-        exclude_accounts,
-        start_date,  # Pass initial UI start/end for now
-        end_date,  # Pass initial UI start/end for now
-        clean_benchmark_symbols_yf,
-        display_currency,
+        preloaded_transactions_df=all_transactions_df_cleaned,  # PASS DF
+        original_transactions_df_for_ignored=original_transactions_df_for_ignored,
+        ignored_indices_from_load=ignored_indices_from_load,
+        ignored_reasons_from_load=ignored_reasons_from_load,
+        account_currency_map=account_currency_map,
+        default_currency=default_currency,
+        include_accounts=include_accounts,
+        exclude_accounts=exclude_accounts,
+        start_date=start_date,
+        end_date=end_date,
+        benchmark_symbols_yf=clean_benchmark_symbols_yf,
+        display_currency=display_currency,
         current_hist_version=CURRENT_HIST_VERSION,
         raw_cache_prefix=HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
         daily_cache_prefix=DAILY_RESULTS_CACHE_PATH_PREFIX,
-        preloaded_transactions_df=all_transactions_df_cleaned,  # <-- PASS IT HERE
         user_symbol_map=user_symbol_map,
         user_excluded_symbols=user_excluded_symbols,
+        original_csv_file_path=original_csv_file_path,  # Pass for cache key
     )
     (
-        transactions_df_effective,  # <-- DEFINED HERE
-        original_transactions_df,
-        ignored_indices,
-        ignored_reasons,
+        transactions_df_effective,
+        _,  # original_transactions_df_for_ignored is not needed further here
+        combined_ignored_indices_prep,  # Renamed to avoid conflict if used later
+        combined_ignored_reasons_prep,  # Renamed
         all_available_accounts_list,
         included_accounts_list_sorted,
         excluded_accounts_list_sorted,
@@ -3547,22 +3545,37 @@ def calculate_historical_performance(
         filter_desc,
     ) = prep_result
 
-    if transactions_df_effective is None:
-        status_msg = f"Error: Failed to prepare inputs (load/clean/filter failed)."
-        return pd.DataFrame(), {}, {}, status_msg  # MODIFIED RETURN (4 items)
+    if transactions_df_effective is None:  # Check if prep failed
+        status_msg = "Error: Failed to prepare inputs from preloaded DataFrame."
+        return pd.DataFrame(), {}, {}, status_msg
 
     status_parts.append(f"Inputs prepared ({filter_desc})")
-    if ignored_reasons:
-        status_parts.append(f"{len(ignored_reasons)} tx ignored")
+    if combined_ignored_reasons_prep:  # Use reasons from prep
+        status_parts.append(
+            f"{len(combined_ignored_reasons_prep)} tx ignored (load/prep)"
+        )
 
     # --- Determine FULL date range from the EFFECTIVE transactions ---
-    # Use the transactions_df_effective returned by _prepare_historical_inputs
     try:
         if transactions_df_effective.empty:
             raise ValueError("Effective transaction DataFrame is empty.")
+        # Ensure 'Date' column is datetime
+        if not pd.api.types.is_datetime64_any_dtype(transactions_df_effective["Date"]):
+            transactions_df_effective["Date"] = pd.to_datetime(
+                transactions_df_effective["Date"], errors="coerce"
+            )
+            transactions_df_effective.dropna(
+                subset=["Date"], inplace=True
+            )  # Drop rows where date conversion failed
+
+        if transactions_df_effective.empty:
+            raise ValueError(
+                "Effective transaction DataFrame became empty after date conversion."
+            )
+
         full_start_date = transactions_df_effective["Date"].min().date()
         full_end_date_tx = transactions_df_effective["Date"].max().date()
-        fetch_end_date = max(end_date, full_end_date_tx)  # Use max of tx end and UI end
+        fetch_end_date = max(end_date, full_end_date_tx)
         logging.info(
             f"Determined full transaction range: {full_start_date} to {full_end_date_tx}. Fetching data up to {fetch_end_date}."
         )
@@ -3570,46 +3583,48 @@ def calculate_historical_performance(
         logging.error(
             f"Could not determine full date range from transactions: {e_range}. Using original UI start/end."
         )
-        # Fallback to UI dates if transaction range fails
         full_start_date = start_date
         fetch_end_date = end_date
 
     # --- 2. Instantiate MarketDataProvider ---
     market_provider = MarketDataProvider(
-        hist_data_cache_dir_name="historical_data_cache",  # Use new argument name and default dir name
+        hist_data_cache_dir_name="historical_data_cache"
     )
 
-    # --- 3. Load or Fetch ADJUSTED Historical Raw Data using Provider ---
+    # --- 3. Load or Fetch ADJUSTED Historical Raw Data ---
     logging.info("Fetching/Loading adjusted historical prices...")
-    historical_prices_yf_adjusted, fetch_failed_prices = (
-        market_provider.get_historical_data(
-            symbols_yf=symbols_for_stocks_and_benchmarks_yf,
-            start_date=full_start_date,  # Use determined start date
-            end_date=fetch_end_date,  # Use determined fetch end date
-            use_cache=use_raw_data_cache,
-            cache_file=raw_data_cache_file,
-            cache_key=raw_data_cache_key,
-        )
+    fetched_prices_adj, fetch_failed_prices = market_provider.get_historical_data(
+        symbols_yf=symbols_for_stocks_and_benchmarks_yf,
+        start_date=full_start_date,
+        end_date=fetch_end_date,
+        use_cache=use_raw_data_cache,
+        cache_key=raw_data_cache_key,  # Pass the key for manifest validation
+        # cache_file is not directly used by get_historical_data for path
     )
+    historical_prices_yf_adjusted = (
+        fetched_prices_adj if fetched_prices_adj is not None else {}
+    )
+
     logging.info(
         f"Fetching/Loading historical FX rates ({len(fx_pairs_for_api_yf)} pairs)..."
     )
-    historical_fx_yf, fetch_failed_fx = market_provider.get_historical_fx_rates(
+    fetched_fx_rates, fetch_failed_fx = market_provider.get_historical_fx_rates(
         fx_pairs_yf=fx_pairs_for_api_yf,
-        start_date=full_start_date,  # Fetch full range
-        end_date=fetch_end_date,  # Fetch full range
+        start_date=full_start_date,
+        end_date=fetch_end_date,
         use_cache=use_raw_data_cache,
-        cache_file=raw_data_cache_file,
-        cache_key=raw_data_cache_key,
+        cache_key=raw_data_cache_key,  # Pass the key for manifest validation
     )
-    fetch_failed = fetch_failed_prices or fetch_failed_fx  # Combine failure flags
+    historical_fx_yf = fetched_fx_rates if fetched_fx_rates is not None else {}
+
+    fetch_failed = fetch_failed_prices or fetch_failed_fx
     if fetch_failed:
-        has_errors = True
+        has_errors = True  # Treat critical fetch error as overall error
     status_parts.append("Raw adjusted data loaded/fetched")
 
     if has_errors:
         status_msg = (
-            f"Error: Failed fetching critical historical FX/Price data via Provider."
+            "Error: Failed fetching critical historical FX/Price data via Provider."
         )
         status_parts.append("Fetch Error")
         final_status_prefix = "Finished with Errors"
@@ -3621,7 +3636,7 @@ def calculate_historical_performance(
             historical_prices_yf_adjusted,
             historical_fx_yf,
             final_status,
-        )  # Return fetched data even on error
+        )
 
     # --- 4. Derive Unadjusted Prices ---
     logging.info("Deriving unadjusted prices using split data...")
@@ -3633,60 +3648,82 @@ def calculate_historical_performance(
     )
     status_parts.append("Unadjusted prices derived")
     if processed_warnings:
-        has_warnings = True
+        has_warnings = True  # If _unadjust_prices logged warnings
 
-    # --- Create String-to-ID Mappings ---
-    # (This should ideally happen only once per historical run)
-    symbol_to_id, id_to_symbol = {}, {}
-    account_to_id, id_to_account = {}, {}
-    type_to_id = {}
-    currency_to_id, id_to_currency = {}, {}
+    # --- Create String-to-ID Mappings (for Numba) ---
+    (
+        symbol_to_id,
+        id_to_symbol,
+        account_to_id,
+        id_to_account,
+        type_to_id,
+        currency_to_id,
+        id_to_currency,
+    ) = ({}, {}, {}, {}, {}, {}, {})
     try:
-        all_symbols = transactions_df_effective["Symbol"].unique()
-        symbol_to_id = {symbol: i for i, symbol in enumerate(all_symbols)}
-        id_to_symbol = {i: symbol for symbol, i in symbol_to_id.items()}
-        all_accounts = transactions_df_effective["Account"].unique()
-        account_to_id = {account: i for i, account in enumerate(all_accounts)}
-        id_to_account = {i: account for account, i in account_to_id.items()}
-        all_types = transactions_df_effective["Type"].unique()
-        type_to_id = {tx_type: i for i, tx_type in enumerate(all_types)}
-        all_currencies = transactions_df_effective["Local Currency"].unique()
-        currency_to_id = {curr: i for i, curr in enumerate(all_currencies)}
-        id_to_currency = {i: curr for curr, i in currency_to_id.items()}
-        # Ensure CASH symbol is included if not present
-        if CASH_SYMBOL_CSV not in symbol_to_id:
-            cash_id = len(symbol_to_id)
-            symbol_to_id[CASH_SYMBOL_CSV] = cash_id
-            id_to_symbol[cash_id] = CASH_SYMBOL_CSV
-        logging.info("Created string-to-ID mappings for Numba.")
+        if not transactions_df_effective.empty:
+            all_symbols_eff = transactions_df_effective["Symbol"].unique()
+            symbol_to_id = {symbol: i for i, symbol in enumerate(all_symbols_eff)}
+            id_to_symbol = {i: symbol for symbol, i in symbol_to_id.items()}
+
+            all_accounts_eff = transactions_df_effective["Account"].unique()
+            account_to_id = {account: i for i, account in enumerate(all_accounts_eff)}
+            id_to_account = {i: account for account, i in account_to_id.items()}
+
+            all_types_eff = transactions_df_effective["Type"].unique()
+            type_to_id = {
+                tx_type.lower().strip(): i for i, tx_type in enumerate(all_types_eff)
+            }  # Normalize keys
+
+            all_currencies_eff = transactions_df_effective["Local Currency"].unique()
+            currency_to_id = {curr: i for i, curr in enumerate(all_currencies_eff)}
+            id_to_currency = {i: curr for curr, i in currency_to_id.items()}
+
+            if CASH_SYMBOL_CSV not in symbol_to_id:
+                cash_id_val = len(symbol_to_id)
+                symbol_to_id[CASH_SYMBOL_CSV] = cash_id_val
+                id_to_symbol[cash_id_val] = CASH_SYMBOL_CSV
+            logging.info("Created string-to-ID mappings for Numba.")
+        else:
+            logging.warning(
+                "Transactions_df_effective is empty, cannot create Numba mappings robustly."
+            )
+            # Initialize with CASH_SYMBOL_CSV to prevent Numba helper from crashing if it expects it
+            symbol_to_id[CASH_SYMBOL_CSV] = 0
+            id_to_symbol[0] = CASH_SYMBOL_CSV
+
     except Exception as e_map:
         logging.error(f"CRITICAL ERROR creating string-to-ID mappings: {e_map}")
         has_errors = True
-        # Handle error appropriately, maybe return early
+        status_parts.append("Mapping Error")
+        # Further error handling if needed
 
     # --- 5 & 6. Load or Calculate Daily Results ---
+    # Pass original_csv_file_path to _load_or_calculate_daily_results for cache validation.
+    # If it's None (e.g., data loaded from DB), the mtime check in daily results cache will be skipped or handled.
     daily_df, cache_was_valid_daily, status_update_daily = (
-        _load_or_calculate_daily_results(  # FIX: Pass missing cache arguments
-            use_daily_results_cache=use_daily_results_cache,  # Add this
-            daily_results_cache_file=daily_results_cache_file,  # Add this
-            worker_signals=worker_signals,  # <-- ADDED: Pass signals down
-            transactions_csv_file=transactions_csv_file,  # <-- ADDED: Pass CSV path
+        _load_or_calculate_daily_results(
+            use_daily_results_cache=use_daily_results_cache,
+            daily_results_cache_file=daily_results_cache_file,
+            worker_signals=worker_signals,
+            transactions_csv_file=(
+                original_csv_file_path  # Pass None or actual path for mtime check
+            ),
             daily_results_cache_key=daily_results_cache_key,
-            transactions_df_effective=transactions_df_effective,
+            transactions_df_effective=transactions_df_effective,  # This is filtered
             start_date=full_start_date,  # Use full range for calculation
-            end_date=fetch_end_date,  # Use full range for calculation (fetch up to requested end)
-            historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,  # Pass unadjusted
-            historical_prices_yf_adjusted=historical_prices_yf_adjusted,  # Pass adjusted for benchmarks
+            end_date=fetch_end_date,  # Use full range for calculation
+            historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,
+            historical_prices_yf_adjusted=historical_prices_yf_adjusted,
             historical_fx_yf=historical_fx_yf,
             display_currency=display_currency,
             internal_to_yf_map=internal_to_yf_map,
             account_currency_map=account_currency_map,
             default_currency=default_currency,
-            manual_overrides_dict=manual_overrides_dict,  # Pass through
+            manual_overrides_dict=manual_overrides_dict,
             clean_benchmark_symbols_yf=clean_benchmark_symbols_yf,
-            # --- PASS MAPPINGS ---
             symbol_to_id=symbol_to_id,
-            id_to_symbol=id_to_symbol,
+            id_to_symbol=id_to_symbol,  # Pass mappings
             account_to_id=account_to_id,
             id_to_account=id_to_account,
             type_to_id=type_to_id,
@@ -3710,72 +3747,53 @@ def calculate_historical_performance(
     elif "WARN" in status_update_daily.upper():
         has_warnings = True
 
-    # --- ADDED: Calculate Accumulated Gains on daily_df BEFORE returning it as full_df ---
-    # This ensures the full data has the necessary columns for periodic returns calc
     if not daily_df.empty and "daily_return" in daily_df.columns:
         logging.debug("Calculating daily accumulated gains for full_df...")
         try:
-            # Portfolio Gain
             gain_factors_portfolio = 1 + daily_df["daily_return"].fillna(0.0)
-            daily_df["Portfolio Accumulated Gain"] = (
-                gain_factors_portfolio.cumprod()
-            )  # Use final name
+            daily_df["Portfolio Accumulated Gain"] = gain_factors_portfolio.cumprod()
             if not daily_df.empty and pd.isna(daily_df["daily_return"].iloc[0]):
                 daily_df.iloc[
                     0, daily_df.columns.get_loc("Portfolio Accumulated Gain")
                 ] = np.nan
 
-            # Benchmark Gains
-            for bm_symbol in clean_benchmark_symbols_yf:
-                price_col = f"{bm_symbol} Price"
-                accum_col_final = f"{bm_symbol} Accumulated Gain"  # Use final name
-                if price_col in daily_df.columns:
-                    bench_prices_no_na = daily_df[price_col].dropna()
-                    if not bench_prices_no_na.empty:
-                        bench_daily_returns = (
-                            bench_prices_no_na.pct_change()
+            for bm_symbol_yf_iter in clean_benchmark_symbols_yf:  # Iterate YF tickers
+                price_col_iter = f"{bm_symbol_yf_iter} Price"
+                accum_col_final_iter = f"{bm_symbol_yf_iter} Accumulated Gain"
+                if price_col_iter in daily_df.columns:
+                    bench_prices_no_na_iter = daily_df[price_col_iter].dropna()
+                    if not bench_prices_no_na_iter.empty:
+                        bench_daily_returns_iter = (
+                            bench_prices_no_na_iter.pct_change()
                             .reindex(daily_df.index)
                             .ffill()
                             .fillna(0.0)
                         )
-                        gain_factors_bench = 1 + bench_daily_returns
-                        accum_gains_bench = gain_factors_bench.cumprod()
-                        daily_df[accum_col_final] = accum_gains_bench
+                        gain_factors_bench_iter = 1 + bench_daily_returns_iter
+                        daily_df[accum_col_final_iter] = (
+                            gain_factors_bench_iter.cumprod()
+                        )
                         if not daily_df.empty:
                             daily_df.iloc[
-                                0, daily_df.columns.get_loc(accum_col_final)
+                                0, daily_df.columns.get_loc(accum_col_final_iter)
                             ] = np.nan
                     else:
-                        daily_df[accum_col_final] = np.nan
+                        daily_df[accum_col_final_iter] = np.nan
                 else:
-                    daily_df[accum_col_final] = np.nan
+                    daily_df[accum_col_final_iter] = np.nan
             logging.debug("Finished calculating daily accumulated gains for full_df.")
         except Exception as e_accum_daily:
             logging.error(
                 f"Error calculating daily accumulated gains for full_df: {e_accum_daily}"
             )
-            # If this fails, the full_df might still be missing columns, leading to bar chart issues
-            # We'll proceed, but the periodic returns might still fail later.
             has_warnings = True
             status_parts.append("Daily Accum Gain Calc Failed")
-    # --- END ADDED ---
 
-    # --- REMOVED: Early exit if daily_df is empty ---
-    # Let the GUI handle empty daily_df if necessary
-
-    # --- REMOVED: Call to _calculate_accumulated_gains_and_resample ---
-    # final_df_filtered, final_twr_factor, status_update_final = (
-    #     _calculate_accumulated_gains_and_resample(...)
-    # )
-    # --- END REMOVED ---
-
-    # --- Calculate final TWR factor from the full daily_df ---
     final_twr_factor = np.nan
     if not daily_df.empty and "Portfolio Accumulated Gain" in daily_df.columns:
-        last_valid_twr = daily_df["Portfolio Accumulated Gain"].dropna().iloc[-1:]
-        if not last_valid_twr.empty:
-            final_twr_factor = last_valid_twr.iloc[0]
-    # --- END TWR Factor Calculation ---
+        last_valid_twr_series = daily_df["Portfolio Accumulated Gain"].dropna()
+        if not last_valid_twr_series.empty:
+            final_twr_factor = last_valid_twr_series.iloc[-1]
 
     # --- 8. Final Status and Return ---
     end_time_hist = time.time()
@@ -3789,29 +3807,22 @@ def calculate_historical_performance(
         final_status_prefix = "Finished with Errors"
     elif has_warnings:
         final_status_prefix = "Finished with Warnings"
-    final_status = f"{final_status_prefix} ({filter_desc})"
+    final_status_str = (
+        f"{final_status_prefix} ({filter_desc})"  # Renamed to avoid conflict
+    )
     if status_parts:
-        final_status += f" [{'; '.join(status_parts)}]"
-    final_status += (
+        final_status_str += f" [{'; '.join(status_parts)}]"
+    final_status_str += (
         f"|||TWR_FACTOR:{final_twr_factor:.6f}"
         if pd.notna(final_twr_factor)
         else "|||TWR_FACTOR:NaN"
     )
 
-    # --- ADDED: Rename 'value' column before returning ---
     if not daily_df.empty and "value" in daily_df.columns:
         daily_df.rename(columns={"value": "Portfolio Value"}, inplace=True)
         logging.debug("Renamed 'value' column to 'Portfolio Value' in daily_df.")
-    # --- END ADDED ---
 
-    # --- RETURN MODIFIED (4 items) ---
-    # Return the full daily_df (with gains), raw data, and status
-    return (
-        daily_df,  # Return the full daily_df with gains calculated
-        historical_prices_yf_adjusted,
-        historical_fx_yf,
-        final_status,
-    )
+    return daily_df, historical_prices_yf_adjusted, historical_fx_yf, final_status_str
 
 
 # --- Helper to generate mappings (Needed for standalone profiling) ---
@@ -3850,18 +3861,19 @@ def generate_mappings(transactions_df_effective):
 
 # --- Example Usage (Main block for testing this file directly) ---
 if __name__ == "__main__":
-    # --- END ADDED ---
-
     logging.basicConfig(
         level=LOGGING_LEVEL,
         format="%(asctime)s [%(levelname)-8s] %(module)s:%(lineno)d - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
+        force=True,  # Ensure this config takes precedence
     )
-    multiprocessing.freeze_support()
+    multiprocessing.freeze_support()  # For PyInstaller
     logging.info("Running portfolio_logic.py tests...")
-    test_csv_file = "my_transactions.csv"
-    test_display_currency = "EUR"
-    test_account_currency_map = {
+
+    # --- Define test parameters ---
+    test_csv_file_main = "my_transactions.csv"  # Keep a distinct name for main test CSV
+    test_display_currency_main = "EUR"
+    test_account_currency_map_main = {
         "SET": "THB",
         "IBKR": "USD",
         "Fidelity": "USD",
@@ -3873,121 +3885,134 @@ if __name__ == "__main__":
         "ING Direct": "USD",
         "Penson": "USD",
     }
-    test_default_currency = "USD"
-    test_manual_prices = {"XYZ": 123.45}  # Example manual price
+    test_default_currency_main = "USD"
+    test_manual_overrides_main = {
+        "XYZ": {"price": 123.45, "sector": "Tech"}
+    }  # Example manual override
 
-    logging.info("\n--- Testing Current Portfolio Summary (Refactored) ---")
-    if not os.path.exists(test_csv_file):
+    # --- Load data once for all tests in __main__ ---
+    (
+        loaded_tx_df,
+        loaded_orig_df,
+        loaded_ignored_indices,
+        loaded_ignored_reasons,
+        load_err,
+        load_warn,
+        _,
+    ) = load_and_clean_transactions(
+        test_csv_file_main, test_account_currency_map_main, test_default_currency_main
+    )
+
+    if load_err or loaded_tx_df is None:
         logging.error(
-            f"ERROR: Test transactions file '{test_csv_file}' not found. Cannot run summary test."
+            f"CRITICAL: Failed to load test CSV '{test_csv_file_main}'. Cannot run tests."
         )
     else:
+        logging.info(f"\n--- Testing Current Portfolio Summary (with DataFrame) ---")
         (
             summary_metrics,
             holdings_df,
             account_metrics,
-            ignored_idx,
-            ignored_rsn,
-            status,
+            ignored_idx_summary,
+            ignored_rsn_summary,
+            status_summary,
         ) = calculate_portfolio_summary(
-            transactions_csv_file=test_csv_file,
-            display_currency=test_display_currency,
-            account_currency_map=test_account_currency_map,
-            default_currency=test_default_currency,
-            include_accounts=None,  # Test all accounts
-            manual_prices_dict=test_manual_prices,
+            all_transactions_df_cleaned=(
+                loaded_tx_df.copy() if loaded_tx_df is not None else None
+            ),
+            original_transactions_df_for_ignored=(
+                loaded_orig_df.copy() if loaded_orig_df is not None else None
+            ),
+            ignored_indices_from_load=loaded_ignored_indices,
+            ignored_reasons_from_load=loaded_ignored_reasons,
+            display_currency=test_display_currency_main,
+            account_currency_map=test_account_currency_map_main,  # Pass explicitly
+            default_currency=test_default_currency_main,  # Pass explicitly
+            include_accounts=None,
+            manual_overrides_dict=test_manual_overrides_main,
             user_symbol_map={},
-            user_excluded_symbols=set(),  # Add empty user settings
+            user_excluded_symbols=set(),
         )
-        logging.info(f"Current Summary Status (All Accounts): {status}")
+        logging.info(f"Current Summary Status (All Accounts): {status_summary}")
         if summary_metrics:
             logging.info(f"Overall Metrics: {summary_metrics}")
         if holdings_df is not None and not holdings_df.empty:
             logging.info(f"Holdings DF Head:\n{holdings_df.head().to_string()}")
-        if account_metrics:
-            logging.info(f"Account Metrics: {account_metrics}")
-        if ignored_idx:
-            logging.warning(f"Ignored Indices ({len(ignored_idx)}): {ignored_idx}")
-        if ignored_rsn:
-            logging.warning(f"Ignored Reasons: {ignored_rsn}")
+        # ... (rest of summary logging)
 
-    logging.info("\n--- Testing Historical Performance Calculation (Refactored) ---")
-    test_start = date(2023, 1, 1)
-    test_end = date(2024, 6, 30)
-    test_interval = "M"
-    test_benchmarks = ["SPY", "QQQ"]
-    test_use_raw_cache_flag = True
-    test_use_daily_results_cache_flag = True
-    test_num_processes = None
-    test_accounts_subset1 = ["IBKR", "E*TRADE"]
-    test_exclude_set = ["SET"]
-
-    if not os.path.exists(test_csv_file):
-        logging.error(
-            f"ERROR: Test transactions file '{test_csv_file}' not found. Cannot run historical test."
-        )
-    else:
-        logging.info(f"\n--- Running Historical Test: Scenario='All Accounts' ---")
-        start_time_run = time.time()
-        hist_df, raw_prices, raw_fx, hist_status = calculate_historical_performance(
-            transactions_csv_file=test_csv_file,
-            start_date=test_start,
-            end_date=test_end,
-            interval=test_interval,
-            benchmark_symbols_yf=test_benchmarks,
-            display_currency=test_display_currency,
-            account_currency_map=test_account_currency_map,
-            default_currency=test_default_currency,
-            use_raw_data_cache=test_use_raw_cache_flag,
-            use_daily_results_cache=test_use_daily_results_cache_flag,
-            num_processes=test_num_processes,
-            include_accounts=None,
-            worker_signals=None,  # Pass None for standalone test
-            exclude_accounts=None,
-            user_symbol_map={},  # Add empty user settings
-            manual_overrides_dict=None,  # Add for standalone test
-            user_excluded_symbols=set(),  # Add empty user settings
-        )
-        end_time_run = time.time()
-        logging.info(f"Test 'All Accounts' Status: {hist_status}")
         logging.info(
-            f"Test 'All Accounts' Execution Time: {end_time_run - start_time_run:.2f} seconds"
+            "\n--- Testing Historical Performance Calculation (with DataFrame) ---"
         )
-        if not hist_df.empty:
-            logging.info(f"Test 'All Accounts' DF tail:\n{hist_df.tail().to_string()}")
+        test_start_hist = date(2023, 1, 1)
+        test_end_hist = date(2024, 6, 30)
+        test_interval_hist = "M"
+        test_benchmarks_hist = ["SPY", "QQQ"]
+
+        start_time_run_hist = time.time()
+        hist_df, raw_prices, raw_fx, hist_status = calculate_historical_performance(
+            all_transactions_df_cleaned=(
+                loaded_tx_df.copy() if loaded_tx_df is not None else None
+            ),
+            original_transactions_df_for_ignored=(
+                loaded_orig_df.copy() if loaded_orig_df is not None else None
+            ),
+            ignored_indices_from_load=loaded_ignored_indices,
+            ignored_reasons_from_load=loaded_ignored_reasons,
+            start_date=test_start_hist,
+            end_date=test_end_hist,
+            interval=test_interval_hist,
+            benchmark_symbols_yf=test_benchmarks_hist,
+            display_currency=test_display_currency_main,
+            account_currency_map=test_account_currency_map_main,
+            default_currency=test_default_currency_main,
+            include_accounts=None,
+            original_csv_file_path=test_csv_file_main,  # Pass the original CSV path for cache key context
+            # ... other args like user_symbol_map, manual_overrides_dict etc.
+        )
+        end_time_run_hist = time.time()
+        logging.info(f"Test 'All Accounts' Hist Status: {hist_status}")
+        logging.info(
+            f"Test 'All Accounts' Hist Exec Time: {end_time_run_hist - start_time_run_hist:.2f} seconds"
+        )
+        if hist_df is not None and not hist_df.empty:
+            logging.info(
+                f"Test 'All Accounts' Hist DF tail:\n{hist_df.tail().to_string()}"
+            )
         else:
-            logging.info(f"Test 'All Accounts' Result: Empty DataFrame")
+            logging.info(f"Test 'All Accounts' Hist Result: Empty DataFrame")
 
     logging.info("Finished portfolio_logic.py tests.")
 
-    # --- ADDED: Section for Profiling a Single Date Calculation ---
-    logging.info("\n--- Preparing for Single Date Profiling Run ---")
-    profile_target_date = date(2024, 4, 1)  # Choose a representative recent date
+    # --- Profiling Section (remains largely the same, uses preloaded data) ---
+    logging.info("\n--- Preparing for Single Date Profiling Run (with DataFrame) ---")
+    profile_target_date = date(2024, 4, 1)
     profile_display_currency = "USD"
-    profile_csv_file = "my_transactions.csv"
 
-    if not os.path.exists(profile_csv_file):
-        logging.error(
-            f"Cannot profile: Transaction file '{profile_csv_file}' not found."
-        )
+    if loaded_tx_df is None:
+        logging.error("Cannot profile: Transaction data failed to load initially.")
     else:
         logging.info(f"Profiling target date: {profile_target_date}")
-        # 1. Prepare Inputs (reuse logic from historical test setup)
         prep_result_profile = _prepare_historical_inputs(
-            transactions_csv_file=profile_csv_file,
-            account_currency_map=test_account_currency_map,  # Use test map
-            default_currency=test_default_currency,  # Use test default
-            include_accounts=None,  # Profile all accounts
+            preloaded_transactions_df=loaded_tx_df.copy(),  # Use preloaded
+            original_transactions_df_for_ignored=(
+                loaded_orig_df.copy() if loaded_orig_df is not None else None
+            ),
+            ignored_indices_from_load=loaded_ignored_indices,
+            ignored_reasons_from_load=loaded_ignored_reasons,
+            account_currency_map=test_account_currency_map_main,
+            default_currency=test_default_currency_main,
+            include_accounts=None,
             exclude_accounts=None,
-            start_date=date(2010, 1, 1),  # Need a reasonable start for data fetching
-            end_date=profile_target_date,  # Fetch up to target date
-            benchmark_symbols_yf=[],  # No benchmarks needed for value calc
+            start_date=date(2010, 1, 1),
+            end_date=profile_target_date,
+            benchmark_symbols_yf=[],
             display_currency=profile_display_currency,
-            user_symbol_map={},  # Add empty user settings
-            user_excluded_symbols=set(),  # Add empty user settings
+            user_symbol_map={},
+            user_excluded_symbols=set(),
+            original_csv_file_path=test_csv_file_main,  # Pass original path
         )
         (
-            profile_tx_df,
+            profile_tx_df_effective,
             _,
             _,
             _,
@@ -4006,15 +4031,14 @@ if __name__ == "__main__":
             _,
         ) = prep_result_profile
 
-        if profile_tx_df is not None and not profile_tx_df.empty:
-            # 2. Fetch/Load Data
+        if profile_tx_df_effective is not None and not profile_tx_df_effective.empty:
             profile_market_provider = MarketDataProvider()
+            # ... (rest of data fetching and unadjustment as before) ...
             profile_prices_adj, _ = profile_market_provider.get_historical_data(
                 symbols_yf=profile_symbols_yf,
                 start_date=date(2010, 1, 1),
                 end_date=profile_target_date,
                 use_cache=True,
-                cache_file=profile_raw_cache_file,
                 cache_key=profile_raw_cache_key,
             )
             profile_fx, _ = profile_market_provider.get_historical_fx_rates(
@@ -4022,14 +4046,11 @@ if __name__ == "__main__":
                 start_date=date(2010, 1, 1),
                 end_date=profile_target_date,
                 use_cache=True,
-                cache_file=profile_raw_cache_file,
                 cache_key=profile_raw_cache_key,
             )
-            # 3. Derive Unadjusted Prices
             profile_prices_unadj = _unadjust_prices(
                 profile_prices_adj, profile_yf_to_internal, profile_splits, set()
             )
-            # 4. Generate Mappings
             (
                 prof_sym_id,
                 prof_id_sym,
@@ -4038,24 +4059,21 @@ if __name__ == "__main__":
                 prof_type_id,
                 prof_curr_id,
                 prof_id_curr,
-            ) = generate_mappings(
-                profile_tx_df
-            )  # Reusing test helper
+            ) = generate_mappings(profile_tx_df_effective)
 
-            # 5. Perform a "warm-up" call to trigger Numba compilation
             logging.info(
                 f"Calling _calculate_portfolio_value_at_date_unadjusted_numba (WARM-UP) for {profile_target_date}..."
             )
             _calculate_portfolio_value_at_date_unadjusted_numba(
                 target_date=profile_target_date,
-                transactions_df=profile_tx_df,
+                transactions_df=profile_tx_df_effective,  # Pass effective df
                 historical_prices_yf_unadjusted=profile_prices_unadj,
                 historical_fx_yf=profile_fx,
                 target_currency=profile_display_currency,
                 internal_to_yf_map=profile_internal_to_yf,
-                account_currency_map=test_account_currency_map,  # Use test map
-                default_currency=test_default_currency,  # Use test default
-                manual_overrides_dict=None,  # Pass None for profiling
+                account_currency_map=test_account_currency_map_main,
+                default_currency=test_default_currency_main,
+                manual_overrides_dict=None,
                 processed_warnings=set(),
                 symbol_to_id=prof_sym_id,
                 id_to_symbol=prof_id_sym,
@@ -4066,21 +4084,19 @@ if __name__ == "__main__":
                 id_to_currency=prof_id_curr,
             )
             logging.info("Warm-up call finished.")
-
-            # 6. Call the function AGAIN - this is the one that will be profiled
             logging.info(
                 f"Calling _calculate_portfolio_value_at_date_unadjusted_numba (PROFILED) for {profile_target_date}..."
             )
             _calculate_portfolio_value_at_date_unadjusted_numba(
                 target_date=profile_target_date,
-                transactions_df=profile_tx_df,
+                transactions_df=profile_tx_df_effective,  # Pass effective df
                 historical_prices_yf_unadjusted=profile_prices_unadj,
                 historical_fx_yf=profile_fx,
                 target_currency=profile_display_currency,
                 internal_to_yf_map=profile_internal_to_yf,
-                account_currency_map=test_account_currency_map,  # Use test map
-                default_currency=test_default_currency,  # Use test default
-                manual_overrides_dict=None,  # Pass None for profiling
+                account_currency_map=test_account_currency_map_main,
+                default_currency=test_default_currency_main,
+                manual_overrides_dict=None,
                 processed_warnings=set(),
                 symbol_to_id=prof_sym_id,
                 id_to_symbol=prof_id_sym,
@@ -4091,11 +4107,10 @@ if __name__ == "__main__":
                 id_to_currency=prof_id_curr,
             )
             logging.info("Profiling call finished.")
-            # --- ADDED: Print Numba type inspection ---
-            # print("\n--- Numba Type Inspection (_calculate_holdings_numba) ---") # Keep commented out for now
-            # _calculate_holdings_numba.inspect_types(pretty=True)
-            # print("--- End Numba Type Inspection ---")
-        else:  # profile_tx_df is None or empty
-            logging.error("Could not prepare data for profiling run.")
-    # --- END ADDED ---
+        else:
+            logging.error(
+                "Could not prepare data for profiling run (effective transactions empty)."
+            )
+
+
 # --- END OF MODIFIED portfolio_logic.py ---

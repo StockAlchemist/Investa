@@ -3,6 +3,7 @@
 -------------------------------------------------------------------------------
  Name:          config.py
  Purpose:       Configuration constants for the Investa Portfolio Dashboard.
+                *** MODIFIED: Reviewed for DB migration context. ***
 
  Author:        Kit Matan (Derived from portfolio_logic.py) and Google Gemini 2.5
  Author Email:  kittiwit@gmail.com
@@ -17,59 +18,36 @@ import logging
 from datetime import date
 
 # --- Logging Configuration ---
-# Set the desired global level here (e.g., logging.INFO, logging.DEBUG)
-LOGGING_LEVEL = logging.INFO  # Or logging.DEBUG for more detail
+# This level is a default; main_gui.py might override it for its own logging.
+LOGGING_LEVEL = logging.INFO
 
 # --- Application Name (used by QStandardPaths if it doesn't infer from bundle) ---
-APP_NAME = "Investa"
+APP_NAME = "Investa"  # Used by db_utils.py for fallback folder if QStandardPaths fails
 
-# --- Debugging Flags (Consider removing or managing differently in production) ---
-HISTORICAL_DEBUG_USD_CONVERSION = (
-    False  # Set to True only when debugging USD conversion issues
-)
-HISTORICAL_DEBUG_SET_VALUE = (
-    False  # Set to True only when debugging SET account value issues
-)
-DEBUG_DATE_VALUE = date(
-    2024, 2, 5
-)  # Example date for specific debugging, adjust as needed
-HISTORICAL_DEBUG_DATE_VALUE = date(
-    2025, 4, 29
-)  # Example date for specific debugging, adjust as needed
-HISTORICAL_DEBUG_SYMBOL = (
-    None  # Optional: Focus debug logs on a specific symbol/account
-)
+# --- Debugging Flags ---
+HISTORICAL_DEBUG_USD_CONVERSION = False
+HISTORICAL_DEBUG_SET_VALUE = False
+DEBUG_DATE_VALUE = date(2024, 2, 5)
+HISTORICAL_DEBUG_DATE_VALUE = date(2025, 4, 29)
+HISTORICAL_DEBUG_SYMBOL = None
 
 # --- Core Symbols ---
-CASH_SYMBOL_CSV = "$CASH"  # Standardized cash symbol used in transactions CSV
+CASH_SYMBOL_CSV = "$CASH"  # Standardized cash symbol
 
 # --- Caching Configuration ---
 DEFAULT_CURRENT_CACHE_FILE_PATH = (
-    "portfolio_cache_yf.json"  # Cache for current stock/FX prices
+    "portfolio_cache_yf.json"  # Used by MarketDataProvider default
 )
-HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = (
-    "yf_portfolio_hist_raw_adjusted"  # Prefix for raw historical data cache files
-)
-DAILY_RESULTS_CACHE_PATH_PREFIX = (
-    "yf_portfolio_daily_results"  # Prefix for calculated daily results cache files
-)
-YFINANCE_CACHE_DURATION_HOURS = (
-    4  # Max age in hours for the CURRENT data cache to be considered valid
-)
-FUNDAMENTALS_CACHE_DURATION_HOURS = 24  # Max age in hours for yfinance Ticker.info data
-
-# --- ADDED: Cache duration for CURRENT quotes (stock/index) ---
-# How long (in minutes) to keep current quote data before refetching
-CURRENT_QUOTE_CACHE_DURATION_MINUTES = 60
+HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = "yf_portfolio_hist_raw_adjusted"
+DAILY_RESULTS_CACHE_PATH_PREFIX = "yf_portfolio_daily_results"
+YFINANCE_CACHE_DURATION_HOURS = 4
+FUNDAMENTALS_CACHE_DURATION_HOURS = 24
+CURRENT_QUOTE_CACHE_DURATION_MINUTES = 15  # For current stock/index quotes
 
 # --- Yahoo Finance Mappings & Configuration ---
-# Mapping for specific index symbols used in the header/logic to YF tickers
 YFINANCE_INDEX_TICKER_MAP = {".DJI": "^DJI", "IXIC": "^IXIC", ".INX": "^GSPC"}
-DEFAULT_INDEX_QUERY_SYMBOLS = list(
-    YFINANCE_INDEX_TICKER_MAP.keys()
-)  # Default indices to query
+DEFAULT_INDEX_QUERY_SYMBOLS = list(YFINANCE_INDEX_TICKER_MAP.keys())
 
-# Mapping for specific internal stock symbols to YF tickers (e.g., handling BRK.B)
 SYMBOL_MAP_TO_YFINANCE = {
     "BRK.B": "BRK-B",
     "AAPL": "AAPL",
@@ -123,21 +101,20 @@ SYMBOL_MAP_TO_YFINANCE = {
     "AOT:BKK": "AOT.BK",
     "THAI:BKK": "THAI.BK",
     "TRUE:BKK": "TRUE.BK",
-    "BECL:BKK": "BECL.BK",  # Note: BECL might be delisted/merged, verify ticker
+    "BECL:BKK": "BECL.BK",
     "AMARIN:BKK": "AMARIN.BK",
     "PTT:BKK": "PTT.BK",
     "CPF:BKK": "CPF.BK",
     "BANPU:BKK": "BANPU.BK",
     "AAV:BKK": "AAV.BK",
-    "BBL:BKK": "BBL.BK",  # Assuming BML:BKK meant BBL.BK, please verify
+    "BBL:BKK": "BBL.BK",
     "MBK:BKK": "MBK.BK",
     "ZEN:BKK": "ZEN.BK",
     "CPALL:BKK": "CPALL.BK",
     "SCC:BKK": "SCC.BK",
 }
 
-# Set of internal symbols explicitly excluded from Yahoo Finance fetching/processing
-YFINANCE_EXCLUDED_SYMBOLS = {
+YFINANCE_EXCLUDED_SYMBOLS = {  # Symbols to generally ignore for YFinance fetching
     "BBW",
     "IDBOX",
     "IDIOX",
@@ -182,31 +159,29 @@ YFINANCE_EXCLUDED_SYMBOLS = {
     "ES-FIXED_INCOME",
     "ES-TRESURY",
     "BEM:BKK",
-    "DIA",
-    "SPY",
-    "QQQ",
-    "LQD",
+    # Note: DIA, SPY, QQQ, LQD are often used as benchmarks and might be fetched anyway if requested.
+    # This list is more for portfolio holdings that shouldn't be looked up on YF.
 }
 
-# Set of symbols allowed for short selling logic
-SHORTABLE_SYMBOLS = {"AAPL", "RIMM"}  # Used RIMM instead of BB
+SHORTABLE_SYMBOLS = {"AAPL", "RIMM"}
 
 # --- Default Settings ---
-DEFAULT_CURRENCY = "USD"  # Default currency for calculations if not specified
+DEFAULT_CURRENCY = "USD"
+
+# DEFAULT_CSV constant:
+# In the context of a DB-first application, this is less about the *primary data source*
+# and more about a *default filename for CSV operations* like export or import examples.
+# main_gui.py uses DEFAULT_CSV_FOR_IMPORT_FALLBACK for prompting migration.
+DEFAULT_CSV = "my_transactions.csv"  # Default name for CSV related operations (e.g. export suggestion)
 
 # --- Calculation Method Configuration ---
 HISTORICAL_CALC_METHOD = "numba"  # Options: 'python', 'numba'
-HISTORICAL_COMPARE_METHODS = (
-    False  # If True, worker runs both methods and logs comparison (for debugging)
-)
+HISTORICAL_COMPARE_METHODS = False
 
 # --- Position Closing Tolerance ---
-# If a stock's quantity is less than this (but not zero), treat it as closed.
 STOCK_QUANTITY_CLOSE_TOLERANCE = 1e-6
 
 # --- Dividend Chart Configuration ---
-DIVIDEND_CHART_DEFAULT_PERIODS_ANNUAL = (
-    10  # Default number of years for annual dividend chart
-)
-DIVIDEND_CHART_DEFAULT_PERIODS_QUARTERLY = 12  # Default number of quarters (3 years)
-DIVIDEND_CHART_DEFAULT_PERIODS_MONTHLY = 24  # Default number of months (2 years)
+DIVIDEND_CHART_DEFAULT_PERIODS_ANNUAL = 10
+DIVIDEND_CHART_DEFAULT_PERIODS_QUARTERLY = 12  # (3 years)
+DIVIDEND_CHART_DEFAULT_PERIODS_MONTHLY = 24  # (2 years)
