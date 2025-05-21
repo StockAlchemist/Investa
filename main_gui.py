@@ -70,7 +70,7 @@ import logging
 
 # --- Configure Logging Globally (as early as possible) ---
 # Set the desired global level here (e.g., logging.INFO, logging.DEBUG)
-LOGGING_LEVEL = logging.DEBUG  # Or logging.DEBUG for more detail
+LOGGING_LEVEL = logging.WARNING  # Or logging.DEBUG for more detail
 
 logging.basicConfig(
     level=LOGGING_LEVEL,
@@ -106,6 +106,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QSizePolicy,
+    QListWidget,
     QStyle,
     QDateEdit,
     QLineEdit,
@@ -124,6 +125,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QScrollArea,
     QSpinBox,  # <-- Import QSpinBox
+    QListWidgetItem,
 )
 
 from PySide6.QtWidgets import QProgressBar  # <-- ADDED for progress bar
@@ -4649,6 +4651,7 @@ class PortfolioApp(QMainWindow):
                 QStandardPaths.DocumentsLocation
             )
             or os.getcwd(),  # For export dialog
+            "user_currencies": COMMON_CURRENCIES.copy(),  # Default list of user-selectable currencies
         }
         loaded_app_config = config_defaults.copy()  # Start with defaults
 
@@ -4840,6 +4843,18 @@ class PortfolioApp(QMainWindow):
             ]
 
         # CRITICAL: Set the instance's DB_FILE_PATH based on the final loaded config
+        # Validate user_currencies
+        if not isinstance(loaded_app_config.get("user_currencies"), list) or not all(
+            isinstance(c, str) and len(c) == 3 and c.isupper()
+            for c in loaded_app_config.get("user_currencies", [])
+        ):
+            logging.warning(
+                "Invalid 'user_currencies' in config. Resetting to default."
+            )
+            loaded_app_config["user_currencies"] = config_defaults["user_currencies"]
+        elif not loaded_app_config.get("user_currencies"):  # Ensure not empty
+            loaded_app_config["user_currencies"] = config_defaults["user_currencies"]
+
         self.DB_FILE_PATH = loaded_app_config.get("transactions_file", default_db_path)
         # If somehow it's still not a DB path, force default (should be caught earlier)
         if not isinstance(
@@ -5083,6 +5098,13 @@ class PortfolioApp(QMainWindow):
         )
         clear_cache_action.triggered.connect(self.clear_cache_files_action_triggered)
         settings_menu.addAction(clear_cache_action)
+
+        choose_currencies_action = QAction("Choose Currencies...", self)
+        choose_currencies_action.setStatusTip(
+            "Select which currencies to show in the currency combo box"
+        )
+        choose_currencies_action.triggered.connect(self.show_choose_currencies_dialog)
+        settings_menu.addAction(choose_currencies_action)
 
         # --- Help Menu ---
         help_menu = menu_bar.addMenu("&Help")
@@ -6551,6 +6573,195 @@ The CSV file should contain the following columns (header names must match exact
         else:
             self.header_info_label.setText("<i>Index data unavailable.</i>")
 
+    @Slot()
+    def show_choose_currencies_dialog(self):
+        """Shows the dialog to choose currencies for the currency combo box."""
+        current_managed_currencies = self.config.get(
+            "user_currencies", COMMON_CURRENCIES.copy()
+        )
+        if not current_managed_currencies:  # Ensure it's not empty
+            current_managed_currencies = COMMON_CURRENCIES.copy()
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Manage Currencies for Dropdown")
+        layout = QVBoxLayout(dialog)
+        dialog.setMinimumWidth(300)
+
+        # --- List of current currencies ---
+        list_label = QLabel("Currencies available in the main dropdown:")
+        layout.addWidget(list_label)
+        self.currency_manage_list_widget = QListWidget()
+        self.currency_manage_list_widget.addItems(current_managed_currencies)
+        self.currency_manage_list_widget.setSelectionMode(
+            QAbstractItemView.SingleSelection
+        )
+        layout.addWidget(self.currency_manage_list_widget)
+
+        # --- Add new currency ---
+        add_layout = QHBoxLayout()
+        self.new_currency_edit = QLineEdit()
+        self.new_currency_edit.setPlaceholderText("New Currency (e.g., NZD)")
+        self.new_currency_edit.setMaxLength(3)
+        add_layout.addWidget(self.new_currency_edit, 1)
+        add_button = QPushButton("Add")
+        add_button.clicked.connect(self._add_currency_to_manage_list)
+        add_layout.addWidget(add_button)
+        layout.addLayout(add_layout)
+
+        # --- Delete selected currency ---
+        delete_button = QPushButton("Delete Selected Currency")
+        delete_button.clicked.connect(self._delete_currency_from_manage_list)
+        layout.addWidget(delete_button)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+
+        # Store list widget as temp attribute for helper methods
+        dialog.currency_list_widget = self.currency_manage_list_widget
+        dialog.new_currency_edit = self.new_currency_edit
+
+        if dialog.exec():
+            chosen_currencies = []
+            for i in range(self.currency_manage_list_widget.count()):
+                chosen_currencies.append(
+                    self.currency_manage_list_widget.item(i).text()
+                )
+
+            if not chosen_currencies:
+                QMessageBox.warning(
+                    self, "Selection Error", "At least one currency must be available."
+                )
+                return  # Keep dialog open or handle error
+
+            # --- Temporarily disconnect the signal that triggers refresh ---
+            disconnected_successfully = False
+            try:
+                self.currency_combo.currentTextChanged.disconnect(
+                    self.filter_changed_refresh
+                )
+                disconnected_successfully = True
+                logging.debug(
+                    "Disconnected currency_combo.currentTextChanged from filter_changed_refresh."
+                )
+            except RuntimeError:  # Signal was not connected
+                logging.warning(
+                    "Could not disconnect currentTextChanged from currency_combo, was it connected?"
+                )
+
+            # Get the current display currency before clearing the combo box
+            current_display_currency_in_combo = self.currency_combo.currentText()
+
+            # Update the currency combo box in the UI
+            self.currency_combo.clear()
+            self.currency_combo.addItems(chosen_currencies)
+
+            # Set the current text: restore previous if still valid, otherwise pick a new default
+            new_selected_currency_for_combo = current_display_currency_in_combo
+            if current_display_currency_in_combo not in chosen_currencies:
+                new_selected_currency_for_combo = (
+                    "USD" if "USD" in chosen_currencies else chosen_currencies[0]
+                )
+                logging.info(
+                    f"Previous display currency '{current_display_currency_in_combo}' removed. "
+                    f"Setting combo to '{new_selected_currency_for_combo}'."
+                )
+
+            self.currency_combo.setCurrentText(new_selected_currency_for_combo)
+
+            # Update config to reflect the actual state of the combo box
+            self.config["display_currency"] = self.currency_combo.currentText()
+            self.config["user_currencies"] = chosen_currencies
+            self.save_config()
+
+            # --- Reconnect the signal if it was disconnected ---
+            if disconnected_successfully:
+                self.currency_combo.currentTextChanged.connect(
+                    self.filter_changed_refresh
+                )
+                logging.debug(
+                    "Reconnected currency_combo.currentTextChanged to filter_changed_refresh."
+                )
+
+            logging.info(
+                f"User selected currencies: {chosen_currencies}. Main currency combo updated. No automatic refresh."
+            )
+            # self.refresh_data() # Explicitly removed to prevent immediate refresh
+        else:
+            logging.info("Currency selection cancelled by user.")
+        del self.currency_manage_list_widget  # Clean up temp attribute
+
+    def _add_currency_to_manage_list(self):
+        """Adds a new currency to the list in the 'Manage Currencies' dialog."""
+        if not hasattr(self, "currency_manage_list_widget"):
+            return
+
+        new_code = self.new_currency_edit.text().strip().upper()
+        if not new_code:
+            return
+
+        if len(new_code) != 3 or not new_code.isalpha():
+            QMessageBox.warning(
+                self.currency_manage_list_widget.parent(),
+                "Invalid Code",
+                "Currency code must be 3 alphabetic characters.",
+            )
+            return
+
+        current_items = [
+            self.currency_manage_list_widget.item(i).text()
+            for i in range(self.currency_manage_list_widget.count())
+        ]
+        if new_code in current_items:
+            QMessageBox.information(
+                self.currency_manage_list_widget.parent(),
+                "Duplicate",
+                f"Currency '{new_code}' is already in the list.",
+            )
+            return
+
+        self.currency_manage_list_widget.addItem(new_code)
+        self.new_currency_edit.clear()
+        logging.info(f"Currency '{new_code}' added to management list.")
+
+    def _delete_currency_from_manage_list(self):
+        """Deletes the selected currency from the list in the 'Manage Currencies' dialog."""
+        if not hasattr(self, "currency_manage_list_widget"):
+            return
+
+        selected_items = self.currency_manage_list_widget.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(
+                self.currency_manage_list_widget.parent(),
+                "Selection Error",
+                "Please select a currency to delete.",
+            )
+            return
+
+        currency_to_delete = selected_items[0].text()
+
+        if currency_to_delete == "USD":
+            QMessageBox.warning(
+                self.currency_manage_list_widget.parent(),
+                "Deletion Error",
+                "Cannot delete the base currency 'USD'.",
+            )
+            return
+
+        if self.currency_manage_list_widget.count() <= 1:
+            QMessageBox.warning(
+                self.currency_manage_list_widget.parent(),
+                "Deletion Error",
+                "Cannot delete the last currency.",
+            )
+            return
+
+        self.currency_manage_list_widget.takeItem(
+            self.currency_manage_list_widget.row(selected_items[0])
+        )
+        logging.info(f"Currency '{currency_to_delete}' removed from management list.")
+
     # --- ADDED: Slot for CSV Format Help ---
     @Slot()
     def show_csv_format_help(self):
@@ -7544,7 +7755,15 @@ The CSV file should contain the following columns (header names must match exact
         controls_layout.addWidget(QLabel("Currency:"))
         self.currency_combo = QComboBox()
         self.currency_combo.setObjectName("CurrencyCombo")
-        self.currency_combo.addItems(["USD", "THB", "JPY", "EUR", "GBP"])
+        # Populate from config's user_currencies
+        user_selected_currencies = self.config.get(
+            "user_currencies", COMMON_CURRENCIES.copy()
+        )
+        if (
+            not user_selected_currencies
+        ):  # Ensure there's always something, fallback to COMMON_CURRENCIES
+            user_selected_currencies = COMMON_CURRENCIES.copy()
+        self.currency_combo.addItems(user_selected_currencies)
         self.currency_combo.setCurrentText(self.config.get("display_currency", "USD"))
         self.currency_combo.setMinimumWidth(80)
         controls_layout.addWidget(self.currency_combo)
@@ -14929,9 +15148,7 @@ if __name__ == "__main__":
     # Name does not show up in the menu bar
     app.setApplicationName(APP_NAME_FOR_QT)  # <--- Use the constant
     # --->>> ------------ <<<---
-    logging.debug(
-        f"DEBUG: QApplication name set to: {app.applicationName()}"
-    )  # <-- ADD THIS LINE
+    logging.debug(f"DEBUG: QApplication name set to: {app.applicationName()}")
 
     main_window = PortfolioApp()
 
