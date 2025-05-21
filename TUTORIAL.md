@@ -246,8 +246,8 @@ The **"Asset Allocation"** tab provides a deeper dive into how your portfolio is
 
 ## Part 7: Handy Extras
 
-* **Manual Price Overrides:**
-    If Yahoo Finance doesn't have data for a symbol, or if it's incorrect, you can set a manual price. Go to **Settings > Manual Prices...**.
+* **Manual Overrides (Price, Asset Type, Sector, etc.):**
+    If data fetched from Yahoo Finance for a symbol (like its price, asset type, sector, geography, or industry) is missing, incorrect, or you simply wish to use a custom value, you can set these manually. Go to **Settings > Manual Overrides...**. These overrides are saved in the `manual_overrides.json` file in your application data directory. This allows for greater control and accuracy in your portfolio representation, especially for assets not well-covered by standard data sources or when you have specific classification preferences.
 * **Fundamental Data Viewer:**
     Want to quickly look up some key stats for a stock? Use the "Symbol for Fundamentals" input box and "Get Fundamentals" button on the toolbar, or right-click a holding and select "View Fundamentals". Investa will try to fetch data like P/E ratio, market cap, and now also includes tabs for:
   * **Overview:** Company profile, valuation metrics, dividend info, price stats.

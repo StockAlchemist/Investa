@@ -25,12 +25,11 @@ Investa is a desktop application designed to help you track, analyze, and visual
   * Manually add new transactions.
   * View, edit, and delete existing transactions directly from the application (modifies the source CSV).
   * Utility to standardize CSV headers to the application's preferred internal format.
-* **Manual Price Overrides:** Set manual prices for symbols where API data might be unavailable or incorrect.
 * **Fundamental Data Viewer:** Look up and display key fundamental data for stock symbols.
   * **Financials Tab:** Income Statement, Balance Sheet, Cash Flow statements.
 * **Configuration Persistence:** Saves UI settings (file paths, currency, column visibility, account currencies, manual overrides, etc.) for convenience.
 * **Account Currency Management:** Assign specific currencies to different investment accounts.
-* **Manual Overrides:** Beyond just price, manually override Asset Type, Sector, Geography, and Industry for holdings.
+* **Manual Overrides:** Set manual values for price, asset type, sector, geography, and industry for specific symbols. This is useful when API data is unavailable, incorrect, or needs custom adjustment (managed via `Settings > Manual Overrides...` and stored in `manual_overrides.json`).
 * **Table Filtering:** Live text-based filtering for the main holdings table.
 * **CSV Format Help:** In-app guide for the required transaction CSV format.
 * **Numba Optimization:** Utilizes Numba for accelerating historical portfolio value calculations.
@@ -89,7 +88,7 @@ For a step-by-step guide on how to set up and use Investa, please see our detail
 
 ## Configuration
 
-User-specific configuration files (`gui_config.json`, `manual_prices.json`), cache files, and transaction backups are stored in a standard application data directory. The exact location depends on your operating system:
+User-specific configuration files (`gui_config.json`, `manual_overrides.json`), cache files, and transaction backups are stored in a standard application data directory. The exact location depends on your operating system:
 
 * **macOS:** `~/Library/Application Support/StockAlchemist/Investa/`
 * **Windows:** `C:\Users\<YourUserName>\AppData\Local\StockAlchemist\Investa\` (or potentially in `AppData\Roaming`)
@@ -98,7 +97,7 @@ User-specific configuration files (`gui_config.json`, `manual_prices.json`), cac
 Key files in this directory:
 
 * **`gui_config.json`**: Stores your UI preferences, such as the path to your last used transactions CSV, display currency, selected accounts, graph settings, and column visibility.
-* **`manual_prices.json`**: Contains any manual price overrides you've set for specific symbols (managed via `Settings > Manual Prices...` in the app).
+* **`manual_overrides.json`**: Contains all manual overrides you've set for symbols, including price, asset type, sector, geography, and industry (managed via `Settings > Manual Overrides...` in the app).
 * **`csv_backups/` (subfolder)**: Stores timestamped backups of your transactions CSV file, created automatically when you add, edit, or delete transactions through the application.
 * Cache files (e.g., for market data) are also stored here to speed up loading times.
 
