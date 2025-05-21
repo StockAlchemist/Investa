@@ -70,7 +70,7 @@ import logging
 
 # --- Configure Logging Globally (as early as possible) ---
 # Set the desired global level here (e.g., logging.INFO, logging.DEBUG)
-LOGGING_LEVEL = logging.WARNING  # Or logging.DEBUG for more detail
+LOGGING_LEVEL = logging.DEBUG  # Or logging.DEBUG for more detail
 
 logging.basicConfig(
     level=LOGGING_LEVEL,
@@ -842,34 +842,30 @@ class PortfolioCalculatorWorker(QRunnable):
             # --- 4. Extract Dividend History ---
             logging.info("WORKER: Extracting dividend history...")
             try:
-                logging.debug("DEBUG Worker: Extracting dividend history...")
-                logging.info("WORKER: Extracting dividend history...")
                 # Ensure historical_fx_yf is available from the historical calculation step
                 # It should be in hist_fx if historical_fn ran successfully
-                if hist_fx:  # Check if hist_fx (which is historical_fx_yf) is populated
-                    dividend_history_df = extract_dividend_history(
-                        all_transactions_df=self.portfolio_kwargs.get(
-                            "all_transactions_df_cleaned"  # <-- CORRECTED KEY
-                        ),  # Pass the full cleaned df
-                        display_currency=self.portfolio_kwargs.get("display_currency"),
-                        historical_fx_yf=hist_fx,  # Use FX data from historical calc
-                        default_currency=self.portfolio_kwargs.get("default_currency"),
-                        include_accounts=self.portfolio_kwargs.get(
-                            "include_accounts"
-                        ),  # <-- CORRECTLY ADDED HERE
-                        # extract_dividend_history does not need user_symbol_map or user_excluded_symbols
-                    )
-                    logging.debug(
-                        f"DEBUG Worker: Dividend history extracted ({len(dividend_history_df)} records)."
-                    )
-                    logging.info(
-                        f"WORKER: Dividend history extracted ({len(dividend_history_df)} records)."
-                    )
-                else:
+                # If hist_fx is empty (e.g., all transactions and display currency are USD),
+                # extract_dividend_history should still be called.
+                # get_historical_rate_via_usd_bridge will handle USD->USD conversion as 1.0.
+                if (
+                    not hist_fx
+                ):  # hist_fx might be empty if no FX conversion was needed by historical calc
                     logging.warning(
-                        "WORKER: Historical FX data not available, cannot extract dividend history accurately."
+                        "WORKER: Historical FX data from historical calc is empty. "
+                        "Dividend history will rely on same-currency or default FX handling."
                     )
-                    dividend_history_df = pd.DataFrame()
+                dividend_history_df = extract_dividend_history(
+                    all_transactions_df=self.portfolio_kwargs.get(
+                        "all_transactions_df_cleaned"
+                    ),
+                    display_currency=self.portfolio_kwargs.get("display_currency"),
+                    historical_fx_yf=hist_fx,  # Pass potentially empty hist_fx
+                    default_currency=self.portfolio_kwargs.get("default_currency"),
+                    include_accounts=self.portfolio_kwargs.get("include_accounts"),
+                )
+                logging.info(
+                    f"WORKER: Dividend history extracted ({len(dividend_history_df)} records)."
+                )
             except Exception as div_e:
                 logging.error(
                     f"WORKER: --- Error during dividend history extraction: {div_e} ---",
@@ -8161,7 +8157,8 @@ The CSV file should contain the following columns (header names must match exact
 
         # Dividend Transaction History GroupBox
         transaction_group = QGroupBox("Dividend Transaction History")
-        transaction_group_layout = QVBoxLayout(transaction_group)
+        self.dividend_transaction_group = transaction_group  # Store as attribute
+        transaction_group_layout = QVBoxLayout(self.dividend_transaction_group)
         transaction_group_layout.addWidget(
             self.dividend_table_view, 1
         )  # Table takes all vertical space in group
@@ -8345,6 +8342,24 @@ The CSV file should contain the following columns (header names must match exact
         # For now, it's a placeholder. The actual population logic will be added
         # where self.original_data is available and processed.
         pass
+
+    def _get_scope_label_for_charts(self) -> str:
+        """Helper to get a consistent scope label for chart titles."""
+        num_available = len(self.available_accounts)
+        num_selected = len(self.selected_accounts)
+        scope_label = "Overall Portfolio"
+        if (
+            self.available_accounts
+            and num_selected > 0
+            and num_selected != num_available
+        ):
+            if num_selected == 1:
+                scope_label = f"Account: {self.selected_accounts[0]}"
+            else:
+                scope_label = f"Selected Accounts ({num_selected}/{num_available})"
+        elif not self.available_accounts:
+            scope_label = "No Accounts Available"
+        return scope_label
 
     def _update_dividend_spinbox_default(self):
         """Updates the dividend periods spinbox based on the selected aggregation period."""
@@ -12117,29 +12132,40 @@ The CSV file should contain the following columns (header names must match exact
             return
 
         # Ensure required columns exist in original_data
-        # Determine which set of column names to use
-        # Prioritize original CSV headers if they exist
-        if "Stock / ETF Symbol" in self.original_data.columns:
-            symbol_col_name_to_use = "Stock / ETF Symbol"
-        elif "Symbol" in self.original_data.columns:
-            symbol_col_name_to_use = "Symbol"
-        else:
+        # self.original_data is all_transactions_df_cleaned_for_logic, which has cleaned names.
+        df_for_logs = self.original_data.copy()
+
+        # Filter by selected accounts
+        # self.selected_accounts contains the list of accounts to show. If empty, show all.
+        if self.selected_accounts and "Account" in df_for_logs.columns:
+            logging.debug(
+                f"Filtering transaction log for accounts: {self.selected_accounts}"
+            )
+            df_for_logs = df_for_logs[
+                df_for_logs["Account"].isin(self.selected_accounts)
+            ]
+        elif not self.selected_accounts:
+            logging.debug("No accounts selected for log filter, showing all.")
+        else:  # self.selected_accounts is not None but "Account" column is missing
+            logging.warning(
+                "Cannot filter transaction log by account: 'Account' column missing in original_data."
+            )
+
+        # Determine column names for symbol and date (should be cleaned names from DB)
+        symbol_col_name_to_use = "Symbol"  # Expect cleaned name "Symbol"
+        date_col_name_to_use_for_sort = "Date"  # Expect cleaned name "Date"
+
+        if symbol_col_name_to_use not in df_for_logs.columns:
             logging.error(
-                "Missing 'Stock / ETF Symbol' or 'Symbol' column in original_data. Cannot populate transaction logs."
+                f"Missing expected column '{symbol_col_name_to_use}' in original_data. Cannot populate transaction logs."
             )
             self.stock_transactions_table_model.updateData(pd.DataFrame())
             self.cash_transactions_table_model.updateData(pd.DataFrame())
             return
 
-        if "Date (MMM DD, YYYY)" in self.original_data.columns:
-            date_col_name_to_use_for_sort = "Date (MMM DD, YYYY)"
-        elif "Date" in self.original_data.columns:
-            date_col_name_to_use_for_sort = (
-                "Date"  # This will be a datetime object if from cleaned data
-            )
-        else:
+        if date_col_name_to_use_for_sort not in df_for_logs.columns:
             logging.error(
-                "Missing 'Date (MMM DD, YYYY)' or 'Date' column in original_data. Cannot populate transaction logs or sort."
+                f"Missing expected column '{date_col_name_to_use_for_sort}' in original_data. Cannot populate transaction logs or sort."
             )
             self.stock_transactions_table_model.updateData(pd.DataFrame())
             self.cash_transactions_table_model.updateData(pd.DataFrame())
@@ -12150,12 +12176,12 @@ The CSV file should contain the following columns (header names must match exact
         # so they retain the original column order and names.
 
         # Filter for stock transactions (anything not $CASH)
-        stock_tx_df = self.original_data[
-            self.original_data[symbol_col_name_to_use] != CASH_SYMBOL_CSV
+        stock_tx_df = df_for_logs[
+            df_for_logs[symbol_col_name_to_use] != CASH_SYMBOL_CSV
         ].copy()
         # Filter for cash transactions
-        cash_tx_df = self.original_data[
-            self.original_data[symbol_col_name_to_use] == CASH_SYMBOL_CSV
+        cash_tx_df = df_for_logs[
+            df_for_logs[symbol_col_name_to_use] == CASH_SYMBOL_CSV
         ].copy()
 
         # Drop the 'original_index' column before displaying in logs
@@ -12299,7 +12325,39 @@ The CSV file should contain the following columns (header names must match exact
 
         # --- MOVED: Log df_alloc columns and head AFTER it's defined ---
         logging.debug(
-            f"[_update_asset_allocation_charts] df_alloc columns: {df_alloc.columns.tolist()}"
+            f"[_update_asset_allocation_charts] Base df_alloc (from self.holdings_data) columns: {df_alloc.columns.tolist()}"
+        )
+
+        # Filter df_alloc by selected accounts.
+        # self.holdings_data should already be filtered by the worker.
+        # However, to be robust or if that assumption is wrong, explicit filtering here is safer.
+        df_alloc_filtered = df_alloc.copy()  # Start with potentially scoped data
+        if self.selected_accounts and "Account" in df_alloc_filtered.columns:
+            # If specific accounts are selected, ensure we only use data from those accounts.
+            # The _AGGREGATE_CASH_ACCOUNT_NAME_ row in self.holdings_data is special;
+            # it represents the cash sum for the *selected scope*. So, if it's present
+            # in self.holdings_data (which is already supposed to be scoped), it should be included.
+            account_filter_mask = df_alloc_filtered["Account"].isin(
+                self.selected_accounts
+            )
+            aggregate_cash_mask = (
+                df_alloc_filtered["Account"] == _AGGREGATE_CASH_ACCOUNT_NAME_
+            )
+            df_alloc_filtered = df_alloc_filtered[
+                account_filter_mask | aggregate_cash_mask
+            ].copy()
+            logging.debug(
+                f"Asset allocation charts filtered for accounts: {self.selected_accounts}. Resulting df_alloc_filtered shape: {df_alloc_filtered.shape}"
+            )
+        elif not self.selected_accounts:
+            logging.debug(
+                "Asset allocation charts using data for all accounts (no specific selection)."
+            )
+        # df_alloc is now the correctly scoped DataFrame for allocation charts.
+        df_alloc = df_alloc_filtered
+
+        logging.debug(
+            f"[_update_asset_allocation_charts] Filtered df_alloc columns: {df_alloc.columns.tolist()}"
         )
         if not df_alloc.empty:  # Log head only if not empty
             logging.debug(
@@ -12567,7 +12625,7 @@ The CSV file should contain the following columns (header names must match exact
         # --- Geographical Allocation Chart ---
         if "Country" in df_alloc.columns:
             df_alloc_for_geo_chart = df_alloc.copy()
-            df_alloc_for_geo_chart["Country"] = (
+            df_alloc_for_geo_chart["Country"] = (  # type: ignore
                 df_alloc_for_geo_chart["Country"]
                 .astype(str)
                 .fillna("Unknown Region")
@@ -12678,7 +12736,7 @@ The CSV file should contain the following columns (header names must match exact
         # --- Industry Allocation Chart (New) ---
         if "Industry" in df_alloc.columns:
             df_alloc_for_industry_chart = df_alloc.copy()
-            df_alloc_for_industry_chart["Industry"] = (
+            df_alloc_for_industry_chart["Industry"] = (  # type: ignore
                 df_alloc_for_industry_chart["Industry"]
                 .astype(str)
                 .fillna("Unknown Industry")
@@ -13766,10 +13824,12 @@ The CSV file should contain the following columns (header names must match exact
                         dtype=float
                     )  # Empty series for table
                 else:
+                    # Ensure plot_data_for_table is initialized before potentially being used
+                    plot_data_for_table = pd.Series(dtype=float)
                     # --- MODIFIED: Generate x_labels for quarterly directly ---
                     if period_type == "Quarterly":
                         x_labels = [
-                            f"{dt.year}-Q{dt.quarter}" for dt in plot_data.index
+                            f"{dt.year}-Q{dt.quarter}" for dt in plot_data.index  # type: ignore
                         ]
                     else:
                         x_labels = plot_data.index.strftime(date_format_str)
@@ -13816,8 +13876,9 @@ The CSV file should contain the following columns (header names must match exact
                 color=COLOR_LOSS,
             )
 
+        scope_display_label = self._get_scope_label_for_charts()
         ax.set_title(
-            f"{period_type} Dividend Totals ({display_currency_symbol})",
+            f"{scope_display_label} - {period_type} Dividend Totals ({display_currency_symbol})",
             fontsize=9,
             weight="bold",
         )
@@ -13916,6 +13977,11 @@ The CSV file should contain the following columns (header names must match exact
         if not self.dividend_history_data.empty:
             logging.debug(f"    Head:\n{self.dividend_history_data.head().to_string()}")
 
+        # self.dividend_history_data should already be filtered by account scope from the worker.
+        # If it's not, the bug is in portfolio_analyzer.extract_dividend_history.
+        # For the table display, we use self.dividend_history_data as is.
+        # The title of the group box will be updated to reflect the scope.
+
         df_display = self.dividend_history_data.copy()
 
         # Format columns for display if needed (e.g., date, currency)
@@ -13932,6 +13998,15 @@ The CSV file should contain the following columns (header names must match exact
         }
         df_display.rename(columns=rename_map, inplace=True)
 
+        # Update the title of the transaction group box
+        scope_display_label_tx = self._get_scope_label_for_charts()
+        if (
+            hasattr(self, "dividend_transaction_group")
+            and self.dividend_transaction_group
+        ):
+            self.dividend_transaction_group.setTitle(
+                f"{scope_display_label_tx} - Dividend Transaction History"
+            )
         # --- CORRECTED: Call updateData ONCE, then sort ---
         self.dividend_table_model.updateData(df_display)
 

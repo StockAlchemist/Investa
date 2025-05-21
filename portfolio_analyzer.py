@@ -1704,6 +1704,12 @@ def extract_dividend_history(
     logging.debug(
         f"  Input all_transactions_df shape: {all_transactions_df.shape if isinstance(all_transactions_df, pd.DataFrame) else 'Not a DF'}"
     )
+
+    # ADDED LOG: Log include_accounts
+    logging.debug(
+        f"  extract_dividend_history received include_accounts: {include_accounts}"
+    )
+
     logging.debug(
         f"  Historical FX data keys: {list(historical_fx_yf.keys()) if historical_fx_yf else 'Empty'}"
     )
@@ -1715,19 +1721,58 @@ def extract_dividend_history(
         all_transactions_df["Type"].str.lower() == "dividend"
     ].copy()
 
-    # --- ADDED: Filter by include_accounts if specified ---
+    # ADDED LOG: Log initial dividend transactions before account filtering
+    logging.debug(
+        f"  Initial dividend transactions (before account filter): {len(dividend_transactions)} rows."
+    )
+    if not dividend_transactions.empty:
+        logging.debug(
+            f"    Accounts in initial dividend transactions: {dividend_transactions['Account'].unique()}"
+        )
+
+    # Filter by include_accounts if specified
     if include_accounts is not None and isinstance(include_accounts, list):
         if "Account" in dividend_transactions.columns:
+            logging.debug(
+                f"  Filtering dividend transactions for accounts: {include_accounts}"
+            )
             dividend_transactions = dividend_transactions[
                 dividend_transactions["Account"].isin(include_accounts)
             ].copy()
-    # --- END ADDED ---
+            logging.debug(
+                f"  Dividend transactions after account filter: {len(dividend_transactions)} rows."
+            )
+            if not dividend_transactions.empty:
+                logging.debug(
+                    f"    Accounts in filtered dividend transactions: {dividend_transactions['Account'].unique()}"
+                )
+            elif (
+                len(
+                    all_transactions_df[
+                        all_transactions_df["Type"].str.lower() == "dividend"
+                    ]
+                )
+                > 0
+            ):  # If initial had dividends but filter resulted in none
+                logging.warning(
+                    f"    No dividend transactions found for accounts {include_accounts} after filtering. Initial count was {len(all_transactions_df[all_transactions_df['Type'].str.lower() == 'dividend'])}."
+                )
 
     logging.debug(f"  Found {len(dividend_transactions)} dividend transactions.")
 
     if dividend_transactions.empty:
         logging.info("No dividend transactions found.")
-        return pd.DataFrame()
+        return pd.DataFrame(
+            columns=[
+                "Date",
+                "Symbol",
+                "Account",
+                "LocalCurrency",
+                "DividendAmountLocal",
+                "FXRateUsed",
+                "DividendAmountDisplayCurrency",
+            ]
+        )  # Return empty DF with schema
 
     results = []
     for i, (_, row) in enumerate(
