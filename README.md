@@ -2,37 +2,50 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Investa is a desktop application designed to help you track, analyze, and visualize your investment portfolio. It loads transaction data from a CSV file, fetches current market prices, and provides a comprehensive overview of your holdings, performance, and historical trends.
+Investa is a desktop application designed to help you track, analyze, and visualize your investment portfolio. It uses a local SQLite database to store transaction data, fetches current market prices, and provides a comprehensive overview of your holdings, performance, and historical trends.
 
 ## Features
 
-* **Portfolio Summary:** View current market values, cost basis, unrealized/realized gains, dividends, and total returns for your holdings.
-* **Detailed Holdings Table:** See a breakdown of each stock, ETF, and cash position with sortable columns and customizable visibility.
-* **Account Filtering:** Focus your view on specific investment accounts or see an aggregated overview.
-* **Currency Conversion:** Display portfolio values in your preferred currency (USD, THB, EUR, JPY, GBP, etc.).
-* **Historical Performance Charts:**
-  * Plot accumulated Time-Weighted Return (TWR) against popular benchmarks (e.g., SPY, QQQ).
-  * Visualize absolute portfolio value over time.
-  * Adjustable date ranges and intervals (Daily, Weekly, Monthly).
-* **Periodic Returns Bar Charts:** View portfolio and benchmark returns for annual, monthly, and weekly periods with adjustable lookback.
-* **Dividend History:** Visualize dividend income over time (Annual, Quarterly, Monthly) and view a detailed dividend transaction table.
+* **Database Integration:** Securely stores all transaction data in a local SQLite database (`investa_transactions.db`), ensuring data persistence and integrity.
+* **Portfolio Summary:** Get a clear overview of your investments, including current market values, cost basis, unrealized and realized gains/losses, total dividends received, and overall portfolio return.
+* **Detailed Holdings Table:** Dive into individual stock, ETF, and cash positions. Features sortable columns (e.g., by symbol, quantity, market value, gain/loss) and allows customization of visible columns to tailor the view to your needs.
+* **Transaction Management (Comprehensive):**
+  * **Direct Database Operations:** Add, edit, and delete transactions directly within the application, with changes immediately reflected in the SQLite database.
+  * **Transaction Log Tab:** View a chronological log of all transactions with filtering capabilities.
+  * **CSV Import/Export:** Easily import transactions from CSV files into the database and export your database transactions to a CSV file for backup or use in other tools.
+* **Account Filtering & Management:** Filter your portfolio view by specific investment accounts (e.g., "Brokerage A," "IRA") or view an aggregated summary of all accounts.
+* **Currency Conversion & Management:**
+  * Display portfolio values in your preferred global currency (e.g., USD, EUR, JPY).
+  * Assign specific local currencies to different investment accounts for accurate tracking of multi-currency portfolios.
+* **Historical Performance Charts (Enhanced Controls):**
+  * **Time-Weighted Return (TWR):** Plot your portfolio's TWR against popular market benchmarks (e.g., SPY, QQQ) to gauge relative performance.
+  * **Absolute Portfolio Value:** Visualize the growth of your portfolio's total market value over time.
+  * **Customizable Views:** Adjust date ranges, select comparison benchmarks, and choose different time intervals (Daily, Weekly, Monthly) for granular analysis.
+* **Periodic Returns Bar Charts:** Analyze performance over specific periods. View portfolio and benchmark returns for annual, monthly, and weekly durations with adjustable lookback periods.
+* **Dividend History Tab:**
+  * **Visualizations:** Track dividend income over time with charts for Annual, Quarterly, and Monthly payouts.
+  * **Detailed Table:** View a comprehensive table of all dividend transactions, including dates, symbols, and amounts.
 * **Portfolio Allocation Pie Charts:**
-  * Understand your portfolio's composition by account and by individual holding.
-  * View allocation by Asset Type, Sector, Geography, and Industry (requires fundamental data).
-* **Market Data Fetching:** Retrieves near real-time stock quotes, index prices, and FX rates using Yahoo Finance.
-* **Data Caching:** Caches fetched market data to speed up subsequent loads and reduce API calls.
-* **Transaction Management:**
-  * Manually add new transactions.
-  * View, edit, and delete existing transactions directly from the application (modifies the source CSV).
-  * Utility to standardize CSV headers to the application's preferred internal format.
-* **Fundamental Data Viewer:** Look up and display key fundamental data for stock symbols.
-  * **Financials Tab:** Income Statement, Balance Sheet, Cash Flow statements.
-* **Configuration Persistence:** Saves UI settings (file paths, currency, column visibility, account currencies, manual overrides, etc.) for convenience.
-* **Account Currency Management:** Assign specific currencies to different investment accounts.
-* **Manual Overrides:** Set manual values for price, asset type, sector, geography, and industry for specific symbols. This is useful when API data is unavailable, incorrect, or needs custom adjustment (managed via `Settings > Manual Overrides...` and stored in `manual_overrides.json`).
-* **Table Filtering:** Live text-based filtering for the main holdings table.
-* **CSV Format Help:** In-app guide for the required transaction CSV format.
-* **Numba Optimization:** Utilizes Numba for accelerating historical portfolio value calculations.
+  * **Composition Analysis:** Understand your portfolio's diversification by account and by individual holding.
+  * **Categorical Breakdown:** View asset allocation by Asset Type (e.g., Stock, ETF, Cash), Sector (e.g., Technology, Healthcare), Geography (e.g., US, International), and Industry. (Note: Sector, Geography, and Industry breakdowns require fundamental data for symbols).
+* **Symbol Settings (Overrides, Mapping, Exclusions):**
+  * **Manual Overrides:** For any symbol, manually set or adjust price, asset type, sector, geography, and industry. This is crucial when API data is missing, incorrect, or when you need to define custom classifications. Managed via `Settings > Symbol Settings...` and stored in `manual_overrides.json`.
+  * **Symbol Mapping:** Define aliases or map alternative ticker symbols to a primary symbol (e.g., map "BRK.B" to "BRK-B") for consistent data fetching and display.
+  * **Symbol Exclusions:** Specify symbols to be excluded from market data fetching or certain calculations.
+* **Fundamental Data Viewer (Multi-Tab):**
+  * Access key fundamental data for stock symbols directly within the app.
+  * **Financials Tab:** View Income Statements, Balance Sheets, and Cash Flow statements (annual and quarterly).
+  * **Summary Tab:** Get an overview of company profile, key statistics, and ratios.
+  * **Options Tab (Future):** Planned integration for options chain data.
+* **Market Data Fetching & Caching:**
+  * Retrieves near real-time stock quotes, index prices, and foreign exchange (FX) rates using Yahoo Finance.
+  * Caches fetched market data locally to accelerate subsequent application loads and minimize redundant API calls, improving performance and reducing reliance on constant internet connectivity.
+* **Configuration Persistence:** Saves UI settings (e.g., database file path, selected display currency, active accounts, graph configurations, table column visibility, user-defined currency lists) in `gui_config.json` for a consistent user experience across sessions.
+* **Table Filtering:** Dynamically filter the main holdings table by typing text, making it easy to find specific assets quickly.
+* **CSV Format Help & Standardization:**
+  * In-app guide explains the required CSV format for importing transactions.
+  * Utility to standardize CSV headers to the application's preferred internal format before import.
+* **Numba Optimization:** Leverages Numba to accelerate computationally intensive historical portfolio value calculations, providing faster chart loading and analysis.
 
 ## Getting Started Tutorial
 
@@ -50,6 +63,7 @@ For a step-by-step guide on how to set up and use Investa, please see our detail
 
 * **GUI:** PySide6 (Qt for Python)
 * **Data Handling & Analysis:** pandas, NumPy
+* **Database:** sqlite3
 * **Financial Calculations:** SciPy (for IRR/NPV), Numba
 * **Market Data:** yfinance
 * **Charting:** Matplotlib (embedded in PySide6), mplcursors (for interactive tooltips)
@@ -88,7 +102,7 @@ For a step-by-step guide on how to set up and use Investa, please see our detail
 
 ## Configuration
 
-User-specific configuration files (`gui_config.json`, `manual_overrides.json`), cache files, and transaction backups are stored in a standard application data directory. The exact location depends on your operating system:
+User-specific configuration files (`gui_config.json`, `manual_overrides.json`), the SQLite database (`investa_transactions.db`), cache files, and CSV backups are stored in a standard application data directory. The exact location depends on your operating system:
 
 * **macOS:** `~/Library/Application Support/StockAlchemist/Investa/`
 * **Windows:** `C:\Users\<YourUserName>\AppData\Local\StockAlchemist\Investa\` (or potentially in `AppData\Roaming`)
@@ -96,26 +110,46 @@ User-specific configuration files (`gui_config.json`, `manual_overrides.json`), 
 
 Key files in this directory:
 
-* **`gui_config.json`**: Stores your UI preferences, such as the path to your last used transactions CSV, display currency, selected accounts, graph settings, and column visibility.
-* **`manual_overrides.json`**: Contains all manual overrides you've set for symbols, including price, asset type, sector, geography, and industry (managed via `Settings > Manual Overrides...` in the app).
-* **`csv_backups/` (subfolder)**: Stores timestamped backups of your transactions CSV file, created automatically when you add, edit, or delete transactions through the application.
-* Cache files (e.g., for market data) are also stored here to speed up loading times.
+* **`investa_transactions.db`**: The SQLite database storing all your transaction data. This is the primary data source for the application.
+* **`gui_config.json`**: Stores your UI preferences and settings. This includes:
+  * Path to the currently loaded database file.
+  * Selected global display currency.
+  * List of active/selected investment accounts for filtering.
+  * Current graph settings (date ranges, intervals, selected benchmarks).
+  * Visibility status for columns in the main holdings table.
+  * User-defined list of currencies for quick selection in dropdowns.
+* **`manual_overrides.json`**: Stores symbol-specific configurations and data overrides. This JSON file contains:
+  * **`overrides`**: Manually set values for `price`, `asset_type`, `sector`, `geography`, and `industry` for specific symbols. Example: `{"AAPL": {"price": 175.00, "sector": "Technology"}}`
+  * **`symbol_map`**: User-defined mappings from alternative ticker symbols to a primary symbol. Example: `{"BRK.B": "BRK-B", "MSFT.NE": "MSFT"}`
+  * **`excluded_symbols`**: A list of symbols to be excluded from market data fetching or certain calculations. Example: `["OLD_STOCK", "DELISTED_ETF"]`
+  * These settings are managed via `Settings > Symbol Settings...` in the application.
+* **`csv_backups/` (subfolder)**: Stores timestamped backups of your transactions CSV file if you've used the CSV import feature and opted for backups, or when exporting data.
+* Cache files (e.g., for market data from `yfinance`) are also stored here to speed up loading times.
 
 * **Account Currencies:**
-  * Managed via `Settings > Account Currencies...` in the app. This allows you to specify the local currency for each of your investment accounts.
+  * Managed via `Settings > Account Currencies...` in the app. This allows you to specify the local currency for each of your investment accounts, stored within `gui_config.json`.
 * **Advanced Configuration (`config.py`):**
-  * Contains constants for logging levels, cache durations, default benchmark symbols, and internal symbol mappings. Modify this file directly for advanced tweaks.
+  * Contains application-wide constants such as logging levels, cache durations, default benchmark symbols, and internal API settings. Modify this file directly only for advanced tweaks.
 * **API Keys:**
   * The application primarily uses `yfinance` which generally does not require an API key for public data.
-  * An environment variable `FMP_API_KEY` is checked (see `config.py`) but currently not actively used in the core portfolio summary logic.
+  * An environment variable `FMP_API_KEY` is checked (see `config.py`) but its usage is for optional, supplementary data and not core functionality.
 
 ## Input Data Format (Transactions CSV)
 
-The application requires a CSV file with your transaction history.
-Investa can read CSV files with either verbose, descriptive headers or its preferred cleaned, internal headers.
-A utility is provided within the application (`Settings > Standardize CSV Headers...`) to convert your CSV to the cleaned header format, which is recommended for optimal consistency.
+While Investa's primary data storage is the `investa_transactions.db` SQLite database, it supports importing transaction data from CSV files. The following format details are crucial for successful CSV imports.
+A utility is provided within the application (`File > Import Transactions from CSV...` then `Standardize Headers`) to help map your CSV columns to the application's expected format.
 
-**Preferred (Cleaned) CSV Headers:**
+**Key Considerations for CSV Import:**
+
+* **`$CASH` Symbol:** This is a special reserved symbol used to manage cash balances within accounts.
+  * **Deposits:** Record a "Deposit" transaction with `$CASH` as the symbol, positive quantity, and price of 1. The "Total Amount" should be the deposit amount.
+  * **Withdrawals:** Record a "Withdrawal" transaction with `$CASH` as the symbol, negative quantity (or positive quantity and ensure "Total Amount" is negative), and price of 1. The "Total Amount" should be the withdrawal amount.
+  * **Internal Cash Movements & TWR:** For accurate Time-Weighted Return (TWR) calculations, it's vital to log all cash inflows and outflows from an account. This includes dividends received in cash, interest, fees paid from cash, and transfers between accounts. Use `$CASH` with appropriate transaction types (Deposit, Withdrawal, Fees) to reflect these movements. For example, if you transfer $500 from Brokerage A to Brokerage B:
+    * Brokerage A: `Type`: Withdrawal, `Symbol`: $CASH, `Quantity`: 500 (or Total Amount: -500)
+    * Brokerage B: `Type`: Deposit, `Symbol`: $CASH, `Quantity`: 500 (or Total Amount: 500)
+  * Dividends paid directly to a cash balance (not reinvested) should be recorded as a "Dividend" type transaction for the respective stock, which the system will then treat as a cash inflow to the account's `$CASH` balance. If importing general cash dividends not tied to a specific stock, use a "Deposit" transaction with `$CASH` and note it as "Dividend Income".
+
+**Preferred (Cleaned) CSV Headers for Import:**
 
 1. `Date` (e.g., *Jan 01, 2023* or other common date formats)
 2. `Type` (e.g., *Buy, Sell, Dividend, Split, Deposit, Withdrawal, Fees*)
@@ -154,16 +188,29 @@ Here's a quick overview:
     python main_gui.py
     ```
 
-2. **Select Transactions File:**
-    * On first run, or if the previously used file is not found, you'll be prompted to select your transactions CSV file via `File > Open Transactions File...` or the "Select CSV" button.
-    * You can also create a new, empty transactions file via `File > New Transactions File...`.
+2. **Database Setup:**
+    * **On first run:** You'll be prompted to either open an existing Investa database file (`.db`) or create a new one.
+    * **Creating a New Database:** If you choose to create a new database, an empty `investa_transactions.db` file will be set up in the application's configuration directory, or you can specify a custom path.
+    * **Opening an Existing Database:** Use `File > Open Database...` to load your transaction data. The path to the last used database is saved in `gui_config.json`.
 
-3. **Refresh Data:**
-    * Click the "Refresh All" button (or press F5) to load data from the selected CSV, fetch market prices, and calculate portfolio metrics.
-    * Use "Update Accounts" if you only change account filters.
-    * Use "Update Graphs" if you only change graph parameters (dates, interval, benchmarks).
+3. **Importing Transactions (Optional):**
+    * If you have transaction data in a CSV file, you can import it into the current database via `File > Import Transactions from CSV...`.
+    * The application provides a utility to help map your CSV columns to the required format and standardize headers.
+    * It's recommended to review imported data in the "Transaction Log" tab.
 
-4. **Interact with the Dashboard:**
+4. **Adding/Editing Transactions:**
+    * Manually add new transactions (Buy, Sell, Dividend, etc.) using the `Transactions > Add Transaction...` menu item or dedicated buttons.
+    * Edit or delete existing transactions directly from the "Transaction Log" tab by right-clicking on a transaction. Changes are saved directly to the database.
+
+5. **Refresh Data & View Portfolio:**
+    * Click the "Refresh All" button (or press F5) to:
+        * Load all transactions from the database.
+        * Fetch current market prices for your holdings.
+        * Calculate portfolio metrics, historical performance, and generate charts.
+    * Use "Update Accounts" if you only change account filters (e.g., show/hide specific brokerage accounts).
+    * Use "Update Graphs" if you only change graph parameters (e.g., date ranges, time intervals, benchmark selections).
+
+6. **Interact with the Dashboard:**
     * Use the controls to change display currency, show/hide closed positions, filter by account, and adjust graph settings.
     * Right-click on the holdings table header to customize visible columns.
     * Right-click on a holding in the table for context menu options like viewing its transaction history or charting its price.
@@ -204,7 +251,9 @@ If you wish to package Investa as a standalone macOS application (`.app` bundle)
     * `main_gui.py`: Your main application script.
 
 4. **Further Customization (Optional):**
-    * PyInstaller generates a `.spec` file (e.g., `Investa.spec`) the first time you run it. For more complex projects or if you need to fine-tune the build (e.g., add more data files, manage hidden imports for libraries like pandas, numpy, scipy, PySide6, numba), you can edit this `.spec` file and then run `pyinstaller Investa.spec` for subsequent builds.
+    * PyInstaller generates a `.spec` file (e.g., `Investa.spec`) the first time you run it. This file contains the build configuration.
+    * For more complex projects or if you need to fine-tune the build (e.g., add more data files, manage hidden imports for libraries like pandas, numpy, scipy, PySide6, numba, or adjust other PyInstaller settings), you can edit this `Investa.spec` file directly.
+    * After modifying the `.spec` file, you can run `pyinstaller Investa.spec` for subsequent builds instead of re-typing the full command. This provides greater control and flexibility over the packaging process.
 
 ## Contributing
 
@@ -225,6 +274,43 @@ SPDX-License-Identifier: MIT
 ## Author
 
 * **Google Gemini 2.5 and Kit Matan** - <kittiwit@gmail.com>
+
+## Troubleshooting / FAQ
+
+* **Market Data Not Loading (e.g., prices show as 0 or NaN):**
+  * **Check Internet Connection:** Ensure you have an active internet connection. `yfinance` needs to fetch data online.
+  * **Symbol Validity:** Verify that the stock/ETF symbols in your transactions are correct and recognized by Yahoo Finance. Some symbols might have changed or been delisted. Use the `Settings > Symbol Settings...` to map old symbols to new ones if needed (e.g., `BRK.B` to `BRK-B`).
+  * **API Limits/Issues:** Yahoo Finance might occasionally have temporary issues or impose rate limits. Try refreshing data after some time.
+  * **Firewall/VPN:** Your firewall or VPN might be blocking requests to Yahoo Finance. Try temporarily disabling them to check.
+  * **Excluded Symbols:** Ensure the symbol is not in the exclusion list under `Settings > Symbol Settings...`.
+  * **Cache:** Try clearing the cache via `File > Clear Cache and Restart` (if available) or by manually deleting cache files from the application data directory.
+
+* **CSV Import Errors:**
+  * **Incorrect Format:** Ensure your CSV file strictly follows the format described in the "Input Data Format (Transactions CSV)" section or use the "Standardize Headers" utility during import. Pay close attention to date formats, transaction types, and required fields like `Symbol`, `Quantity`, `Price/Share`.
+  * **Special Characters/Encoding:** Save your CSV as UTF-8 encoded. Unusual characters in notes or symbols might cause issues.
+  * **Large Files:** For very large CSV files, import in smaller chunks if possible.
+  * **Header Row:** Ensure your CSV has a header row that matches either the "Preferred (Cleaned)" or "Compatible (Verbose)" headers.
+
+* **Data Inaccuracies (e.g., incorrect cost basis, gains):**
+  * **Transaction Data Entry:** Double-check all your transactions in the "Transaction Log" tab for accuracy. Errors in dates, quantities, prices, types (Buy/Sell/Dividend/Split), or fees will lead to miscalculations.
+  * **`$CASH` Transactions:** Ensure all cash movements (deposits, withdrawals, fees paid from cash, inter-account transfers) are correctly logged using the `$CASH` symbol as described. Missing cash flow data is a common source of TWR discrepancies.
+  * **Splits and Dividends:** Verify that stock splits are entered correctly with the right ratio and that all dividends (especially reinvested ones) are recorded.
+  * **Currency Settings:** Ensure your global display currency and account-specific currencies are set correctly.
+  * **Manual Overrides:** Check if any manual overrides for prices in `Settings > Symbol Settings...` are affecting calculations unexpectedly.
+
+* **Application Slowdown:**
+  * **Large Database:** A very large number of transactions over many years can slow down calculations.
+  * **Market Data Fetching:** Initial data fetch for many symbols can be slow. Subsequent loads should be faster due to caching.
+  * **Numba JIT Compilation:** The first time calculations are run (e.g., historical TWR), Numba compiles functions, which might take a moment. Subsequent runs are faster.
+
+* **"File not found" error for database on startup:**
+  * This usually means the database file (`investa_transactions.db` or a custom-named one) that was last opened cannot be found at its previous location.
+  * The application will prompt you to either locate the existing `.db` file or create a new one.
+  * Ensure the path stored in `gui_config.json` under `database_path` is correct or select the correct file when prompted.
+
+* **Error related to `matplotlib` or `PySide6` backend:**
+  * Ensure these libraries are correctly installed in your Python environment. Reinstalling them (`pip install --force-reinstall PySide6 matplotlib`) might help.
+  * Conflicts with other GUI libraries or incorrect environment setup can sometimes cause these. Using a clean virtual environment is recommended.
 
 ---
 

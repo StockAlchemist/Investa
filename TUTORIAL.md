@@ -25,263 +25,468 @@ Before you can start crunching numbers, there are a couple of preliminary steps:
         pip install -r requirements.txt
         ```
 
-        Otherwise, install them manually:
+        Otherwise, install them manually (core dependencies):
 
         ```bash
         pip install PySide6 pandas numpy matplotlib yfinance scipy mplcursors requests numba
         ```
 
-2. **Prepare Your Transaction Data (The CSV File):**
-    This is the most crucial step! Investa needs your transaction history in a specific CSV format. Here are the columns it expects, in order:
+2. **Understanding Data Storage: The SQLite Database**
+    Investa uses a local SQLite database file (typically named `investa_transactions.db`) to store all your transaction data. This file is the heart of your Investa setup.
+    * **Location:** This database file, along with configuration files (`gui_config.json`, `manual_overrides.json`), cache, and backups, is stored in a standard application data directory. The exact path depends on your operating system:
+        * **macOS:** `~/Library/Application Support/Investa/`
+        * **Windows:** `C:\Users\<YourUserName>\AppData\Local\Investa\Investa\` (or `AppData\Roaming`)
+        * **Linux:** `~/.local/share/Investa/` (or `~/.config/Investa/`)
+    * You will typically create or open this database file when you first run Investa.
 
-    Investa can read CSV files with either verbose, descriptive headers (listed below under "Compatible Verbose Headers") or its preferred cleaned, internal headers.
-    It's recommended to use the cleaned header format for optimal consistency. You can convert an existing CSV with verbose headers to the cleaned format using the in-app utility found under **Settings > Standardize CSV Headers...** after loading your file.
+3. **Preparing Your Transaction Data for Import (Optional CSV):**
+    If you have existing transaction data in a CSV file, you can import it into the Investa database. Investa is flexible with CSV headers but recommends a "cleaned" format for clarity. An in-app utility (**File > Import Transactions from CSV...** then **Standardize Headers**) can help map your CSV columns.
 
-    **Preferred (Cleaned) CSV Headers:**
-
-    1. `Date`: e.g., *Jan 01, 2023* (other common date formats are also supported)
+    **Preferred (Cleaned) CSV Headers for Import:**
+    1. `Date`: e.g., *Jan 01, 2023* (common date formats are supported)
     2. `Type`: *Buy, Sell, Dividend, Split, Deposit, Withdrawal, Fees*
     3. `Symbol`: e.g., *AAPL, VTI*. Use **`$CASH`** for general cash movements.
     4. `Quantity`
     5. `Price/Share`
     6. `Total Amount`: (Optional for Buy/Sell if Quantity and Price/Share are provided). For dividends, this is the total dividend amount.
-    7. `Commission`: Any commissions or fees for the transaction.
-    8. `Account`: The name of your brokerage account (e.g., *My Brokerage, Roth IRA*).
-    9. `Split Ratio`: Only needed for 'Split' transactions (e.g., *2* for a 2-for-1 split).
-    10. `Note`: Any personal notes about the transaction (optional).
+    7. `Commission`: Any transaction fees.
+    8. `Account`: Name of your brokerage account (e.g., *Brokerage A, Roth IRA*).
+    9. `Split Ratio`: Only for 'Split' type (e.g., *2* for a 2-for-1 split).
+    10. `Note`: Optional notes.
 
-    **Compatible (Verbose) CSV Headers (will be mapped internally if your CSV uses these):**
+    **Compatible (Verbose) CSV Headers (mapped internally during import):**
+    * `Date (MMM DD, YYYY)` -> `Date`
+    * `Transaction Type` -> `Type`
+    * `Stock / ETF Symbol` -> `Symbol`
+    * `Quantity of Units` -> `Quantity`
+    * `Amount per unit` -> `Price/Share`
+    * `Fees` -> `Commission`
+    * `Investment Account` -> `Account`
+    * `Split Ratio (new shares per old share)` -> `Split Ratio`
 
-    * `Date (MMM DD, YYYY)` (maps to `Date`)
-    * `Transaction Type` (maps to `Type`)
-    * `Stock / ETF Symbol` (maps to `Symbol`)
-    * `Quantity of Units` (maps to `Quantity`)
-    * `Amount per unit` (maps to `Price/Share`)
-    * `Fees` (maps to `Commission`)
-    * `Investment Account` (maps to `Account`)
-    * `Split Ratio (new shares per old share)` (maps to `Split Ratio`)
-        *(`Total Amount` and `Note` are typically the same in both formats)*
+### Understanding and Using `$CASH` Transactions
 
-### Understanding `$CASH` Transactions
+The special symbol **`$CASH`** is crucial for accurately tracking your portfolio's value, cash flows, and performance, especially the Time-Weighted Return (TWR).
 
-The special symbol **`$CASH`** plays a vital role in accurately tracking your portfolio's value and performance. Here's how it works and when to use it:
+* **What it Represents:** `$CASH` signifies the cash component within your investment accounts. Its price is always `1.00` in the account's local currency.
+* **When and How to Use `$CASH` (Examples for CSV Import or Manual Entry):**
 
-* **What it Represents:** `$CASH` is used to denote monetary movements or balances within your investment accounts that are not directly tied to a specific stock or ETF. Think of it as the cash component of your account.
-* **When to Use `$CASH`:**
-  * **Deposits:** When you add funds to your brokerage account (e.g., `Transaction Type: Deposit`, `Stock / ETF Symbol: $CASH`).
-  * **Withdrawals:** When you take funds out of your brokerage account (e.g., `Transaction Type: Withdrawal`, `Stock / ETF Symbol: $CASH`).
-  * **Cash Dividends (Not Reinvested into the Same Stock):** If a dividend is paid out as cash to your account and not automatically reinvested into the stock that paid it, you can record it as a `Dividend` for `$CASH`. For example, `Transaction Type: Dividend`, `Stock / ETF Symbol: $CASH`, `Total Amount: [dividend amount]`. (Alternatively, if a stock pays a dividend and you want to track it against that stock, use the stock's symbol and `Transaction Type: Dividend`).
-  * **Fees (Not Tied to a Specific Trade):** For general account maintenance fees, record them as `Transaction Type: Fees`, `Stock / ETF Symbol: $CASH`, `Total Amount: [fee amount]`. For trade-specific fees, include them in the `Fees` column of the Buy/Sell transaction for the specific stock.
-  * **Interest Received:** If your account earns interest on its cash balance, you can record this as `Transaction Type: Deposit` (or `Dividend`) for `$CASH`.
-* **How It's Treated:**
-  * `$CASH` is treated like any other holding in terms of contributing to your portfolio's market value.
-  * Its "price per unit" is always considered **1.00** in the currency of the investment account it belongs to. So, a `Quantity of Units` of 100 for `$CASH` means $100 (or 100 units of the account's currency).
-  * **`$CASH` Buy/Sell Transactions:** These are crucial for modeling internal cash movements within an account:
-    * A **`$CASH` `Buy`** transaction typically signifies cash *increasing* in your account's cash balance from an internal source. For example, when you sell a stock, the proceeds can be represented as a `$CASH` `Buy` (or a `$CASH` `Deposit` if you prefer to view proceeds as an inflow to cash).
-    * A **`$CASH` `Sell`** transaction signifies cash *decreasing* from your account's cash balance to be used for an internal purpose, most commonly to fund the purchase of a stock or ETF.
-* **Impact on Calculations (Especially TWR Daily Gain):**
-  * Accurate `$CASH` transactions are crucial for correctly calculating your portfolio's total value, cost basis (for cash itself, it's usually just its face value), and especially for performance metrics like Time-Weighted Return (TWR), as they represent external cash flows (contributions and withdrawals).
-  * **External Flows for TWR:**
-    * `$CASH` `Deposit` (e.g., transferring new money into your brokerage account) and `$CASH` `Withdrawal` (e.g., taking money out of your brokerage account) are treated as **external cash flows**.
-    * These external flows directly impact the capital base upon which TWR is calculated. A deposit increases the investment base; a withdrawal decreases it. TWR aims to measure performance *excluding* the effect of these contributions or withdrawals.
-  * **Internal Conversions for TWR:**
-    * When you `Buy` a stock: If you model this with an accompanying `$CASH` `Sell` transaction, this represents an **internal asset conversion**. Cash in your account decreases, and your holding in the new stock increases by the same amount (at cost). This is *not* an external cash flow for TWR purposes.
-    * When you `Sell` a stock: If you model the proceeds with an accompanying `$CASH` `Buy` (or `$CASH` `Deposit`), this is also an internal asset conversion. Your stock holding decreases, and your cash balance increases. This is *not* an external cash flow for TWR.
-  * **Daily Gain and TWR:**
-    * The TWR formula is designed to isolate the performance of your investments from the timing and size of when you add or remove funds.
-    * For any given day (or sub-period used in TWR calculation), the return is essentially `(End Market Value - Start Market Value - Net External Cash Flow) / (Start Market Value + Weighted Cash Flows during the period)`.
-    * `$CASH` `Buy`/`Sell` transactions that represent these internal asset reallocations do *not* count as "Net External Cash Flow." Their immediate effect on the day of the transaction is a shift in value between the `$CASH` asset and the stock/ETF involved.
-    * For example, if you start a day with $1000 cash and no stocks, and then buy $500 of SPY:
-            1. Optional: `$CASH` `Deposit` $1000 (if this is new money for the day - this IS an external flow).
-            2. `$CASH``Sell` $500 (internal conversion - cash balance reduces).
-            3. `SPY``Buy` $500 (internal conversion - SPY holding increases).
-      * Immediately after these internal conversions, the total portfolio value (cash + SPY) remains unchanged by the act of buying SPY itself (assuming SPY is valued at its purchase price initially).
-      * The daily gain for TWR will then depend on how the *remaining cash* and the *market value of SPY* change from this point until the end of the day. If SPY's price increases or decreases, that contributes to the investment performance measured by TWR. The `$CASH` asset itself (with a fixed price of 1.00) does not generate capital gains or losses, though it can receive interest (recorded as a separate transaction).
+  * **Deposits (External Inflow):** Adding funds to your brokerage account.
+    * `Date`: 2023-01-15
+    * `Type`: Deposit
+    * `Symbol`: $CASH
+    * `Quantity`: 1000
+    * `Price/Share`: 1
+    * `Total Amount`: 1000
+    * `Account`: Brokerage A
+    * **TWR Impact:** This is an **external cash inflow**, increasing the investment base. TWR calculation will account for this new capital.
 
-By diligently recording your `$CASH` movements, including internal `Buy`/`Sell` transactions for cash when appropriate, Investa can provide a more complete and accurate picture of your investment activities, cash flow, and true investment performance.
+  * **Withdrawals (External Outflow):** Taking funds out of your brokerage account.
+    * `Date`: 2023-02-20
+    * `Type`: Withdrawal
+    * `Symbol`: $CASH
+    * `Quantity`: 500 (or -500, `Total Amount` will be negative)
+    * `Price/Share`: 1
+    * `Total Amount`: -500 (or 500 if Quantity is negative)
+    * `Account`: Brokerage A
+    * **TWR Impact:** This is an **external cash outflow**, decreasing the investment base. TWR calculation will account for this reduction of capital.
 
-* **Tip:** For detailed examples and specific requirements for each transaction type, once the app is running, check out the **Help > CSV Format Help...** menu.
+  * **Buying a Stock (Internal Conversion):** Using cash from your account to buy shares.
+    * This is typically a two-part conceptual movement if you track cash with high fidelity, though Investa often handles the cash deduction implicitly if your `Buy` transaction for a stock has a `Total Amount`. For explicit cash tracking during CSV import or for clarity:
+            1. **(Optional Explicit Cash Reduction)** A `$CASH` `Sell` or `Withdrawal` (less common for this specific purpose).
+                * `Date`: 2023-03-01
+                * `Type`: Sell (or Withdrawal, conceptually)
+                * `Symbol`: $CASH
+                * `Quantity`: 1000 (amount used for stock purchase)
+                * `Price/Share`: 1
+                * `Total Amount`: -1000
+                * `Account`: Brokerage A
+            2. **The Actual Stock Purchase:**
+                * `Date`: 2023-03-01
+                * `Type`: Buy
+                * `Symbol`: AAPL
+                * `Quantity`: 10
+                * `Price/Share`: 100
+                * `Total Amount`: 1000
+                * `Account`: Brokerage A
+    * **TWR Impact:** The act of buying a stock itself (converting cash to stock) is an **internal asset conversion**, not an external cash flow. The total portfolio value remains momentarily unchanged. TWR measures the performance *after* this conversion. If you explicitly log a `$CASH` `Sell` for this, it's also internal.
 
-## Part 2: Your First Launch and Loading Data
+  * **Selling a Stock (Internal Conversion):** Receiving cash in your account from selling shares.
+    * Similar to buying, this is often handled implicitly. For explicit cash tracking:
+            1. **The Actual Stock Sale:**
+                * `Date`: 2023-04-10
+                * `Type`: Sell
+                * `Symbol`: AAPL
+                * `Quantity`: 5
+                * `Price/Share`: 120
+                * `Total Amount`: 600
+                * `Account`: Brokerage A
+            2. **(Optional Explicit Cash Increase)** A `$CASH` `Buy` or `Deposit`.
+                * `Date`: 2023-04-10
+                * `Type`: Buy (or Deposit, conceptually)
+                * `Symbol`: $CASH
+                * `Quantity`: 600 (proceeds from sale)
+                * `Price/Share`: 1
+                * `Total Amount`: 600
+                * `Account`: Brokerage A
+    * **TWR Impact:** Selling a stock is an **internal asset conversion**. Cash increases, stock holding decreases. Not an external flow.
+
+  * **Dividends Received in Cash:**
+    * If a stock pays a dividend and it lands in your account as cash:
+      * `Date`: 2023-05-15
+      * `Type`: Dividend
+      * `Symbol`: MSFT (the stock that paid the dividend)
+      * `Quantity`: (Can be 0 or 1, or actual shares if DRIP but you're logging cash component)
+      * `Price/Share`: (Can be 0 or 1)
+      * `Total Amount`: 50 (the cash amount of the dividend)
+      * `Account`: Brokerage A
+    * **TWR Impact:** Dividends received are treated as part of the return on investment. The system internally recognizes this as an increase in the account's cash balance, contributing positively to performance.
+
+  * **Fees Paid From Cash:** For general account fees not tied to a specific trade.
+    * `Date`: 2023-06-01
+    * `Type`: Fees
+    * `Symbol`: $CASH
+    * `Quantity`: 10
+    * `Price/Share`: 1
+    * `Total Amount`: -10 (or 10 if Quantity is negative)
+    * `Account`: Brokerage A
+    * **TWR Impact:** Fees paid from cash are like withdrawals for TWR purposes if they are external to the core investment activity (e.g. advisory fees). If they are transaction fees, they are part of the cost of the transaction. The `Fees` type with `$CASH` implies an expense that reduces the account's cash and is typically treated as a negative return or an outflow.
+
+* **Key for TWR:** Accurately logging `Deposit` and `Withdrawal` transactions for `$CASH` is paramount for correct TWR calculation, as these define the external cash flows against which investment performance is measured. Internal conversions (buying/selling assets) do not count as external flows.
+
+* **Tip:** For detailed examples and specific requirements for each transaction type, once the app is running, check out the **Help > CSV Format Help...** menu. This is especially useful before importing a CSV.
+
+## Part 2: Your First Launch and Managing Data Files
 
 1. **Run Investa:**
-    Open your terminal, make sure your virtual environment is active (if you're using one), and navigate to the Investa project directory. Then run:
+    Open your terminal, ensure your virtual environment is active (if used), navigate to the Investa project directory, and run:
 
     ```bash
     python main_gui.py
     ```
 
-2. **Select Your Transactions File:**
-    * The first time you run Investa, or if it can't find the last file you used, it will prompt you. You can also go to **File > Open Transactions File...** or click the "Select CSV" button.
-    * Navigate to and select the CSV file you prepared in Part 1.
-    * If you're starting fresh, you can create a new, empty transactions file via **File > New Transactions File...**.
+2. **Database Initialization (First Run):**
+    * **Welcome Prompt:** On your very first launch, Investa will display a welcome message and prompt you to either:
+        * **Create a New Database:** This is the recommended option if you're new to Investa or want to start fresh. It will create an empty `investa_transactions.db` file in the default application data directory (see Part 1 for locations) or a location you choose.
+        * **Open an Existing Database:** If you have an existing Investa database file (`.db`) from a previous installation or a backup, use this option.
+        * **(Migrate from CSV - Deprecated):** Older versions focused on CSVs. If Investa detects an old `gui_config.json` pointing to a CSV, it *might* offer to import it. However, the primary workflow is now database-centric. It's better to create a new database and then import your CSV.
 
-3. **Refresh and See the Magic!**
-    * Click the big "Refresh All" button (or press F5).
-    * Investa will now:
-        * Read your transactions.
-        * Go online (using Yahoo Finance) to fetch the latest market prices for your stocks, ETFs, and any currency exchange rates needed.
-        * Calculate all your portfolio metrics.
+3. **Managing Your Data Files (File Menu):**
+    The **File** menu is your central hub for managing data:
+
+    * **File > New Database File...**
+        * Use this to create a brand-new, empty SQLite database (`.db` extension).
+        * You'll be asked where to save this file. The default application data directory is a good choice, but you can place it elsewhere (e.g., a synced cloud folder, though ensure it's not simultaneously accessed by multiple Investa instances).
+        * Once created, this new database becomes the active one.
+
+    * **File > Open Database File...**
+        * Use this to open an existing Investa SQLite database file (`.db`).
+        * This is how you switch between different portfolio databases if you maintain more than one, or if you've moved your database file.
+        * The path to the last successfully opened database is remembered by Investa.
+
+    * **File > Import Transactions from CSV...**
+        * This powerful utility allows you to populate your currently open SQLite database with transactions from a CSV file.
+        * A dialog will appear:
+            1. **Select CSV File:** Choose the CSV file containing your transactions.
+            2. **Header Standardization (Important):** You'll see a preview of your CSV data and options to map your CSV columns to Investa's expected fields (`Date`, `Type`, `Symbol`, etc.). Use the dropdowns above each column in the preview to match your CSV's headers to Investa's internal names.
+            3. **Standardize Headers Button:** Click this after mapping. It converts your CSV data to the preferred internal format for import.
+            4. **Import Button:** Once headers are standardized, click this to import the transactions into the active database.
+            5. **Backup Original CSV:** You'll usually be prompted to back up the original CSV file. It's a good idea to do so.
+        * After import, it's wise to check the **Transactions Log** tab to ensure data appears as expected.
+
+4. **Refresh and See the Magic!**
+    * Once your database is set up (and optionally populated via CSV import) and you've added any new transactions directly (see Part 6), click the main **"Refresh All"** button (or press F5).
+    * Investa will:
+        * Load all transactions from the active SQLite database.
+        * Fetch the latest market prices for your holdings using Yahoo Finance.
+        * Calculate all portfolio metrics, historical performance, and generate charts.
         * Display everything in the dashboard!
 
 ## Part 3: Exploring the Main Dashboard
 
-Once the data is loaded, you'll see the main dashboard. Let's break it down:
+Once your data is loaded (from the database) and refreshed, the main dashboard comes alive. Here's a quick tour:
 
 * **Portfolio Summary (Top Section):**
-    This gives you the big picture:
-  * `Net Value`: Total current value of your holdings.
-  * `Day's G/L`: Your portfolio's gain or loss for the current trading day.
-  * `Total G/L`: Overall profit or loss, including realized and unrealized gains.
-  * `Realized G/L`, `Unrealized G/L`, `Dividends`, `Fees`: Breakdown of components contributing to your total gain/loss.
-  * `Cash Balance`: Total cash held across the selected accounts.
-  * `Total Ret %`, `Ann. TWR %`: Key performance percentages.
+    This area provides a high-level snapshot of your entire portfolio (or the accounts selected in the filter):
+  * `Net Value`: Total current market value of all your holdings.
+  * `Day's G/L`: Gain or loss for the current trading day.
+  * `Total G/L`: Overall profit or loss, combining realized and unrealized gains/losses and dividends.
+  * `Realized G/L`: Profits locked in from sales.
+  * `Unrealized G/L`: Profits or losses on paper for assets you still hold.
+  * `Dividends`: Total dividends received.
+  * `Fees`: Total fees paid.
+  * `Cash Balance`: Total cash held across the selected accounts (derived from `$CASH` transactions).
+  * `Total Ret %`: Your portfolio's total return percentage.
+  * `Ann. TWR %`: Annualized Time-Weighted Return percentage, a key measure of investment performance.
 
-* **Controls (Below Summary):**
-  * `Display Currency`: Change the currency for all monetary values shown.
-  * `Show Closed Positions`: Toggle to include or exclude assets you've completely sold off.
-  * `Account Filter`: Choose to see data for "All Accounts" or select a specific investment account you defined in your CSV. Click "Update Accounts" after changing this.
+* **Controls (Toolbar and Buttons below Summary):**
+  * `Display Currency`: A dropdown to select your preferred currency (e.g., USD, EUR, JPY) for viewing all monetary values. Add more currencies via **Settings > Choose Currencies...**.
+  * `Show Closed Pos.`: Checkbox to include or exclude assets you've completely sold off from the Holdings Table.
+  * `Accounts`: Button to open a dialog where you can select which specific investment accounts (defined in your transactions) to include in the dashboard view. Click "Update Accounts" (or "Refresh All") after changing.
+  * `Refresh All (F5)`: The main button to reload all data from the database, fetch fresh market prices, and recalculate everything.
+  * `Update Accounts`: A quicker refresh if you've only changed the account filter.
+  * `Update Graphs`: A quicker refresh if you've only changed graph parameters (like date ranges or benchmarks).
 
 * **Holdings Table (Main Area):**
-    This is a detailed list of everything you own (or owned, if "Show Closed Positions" is on) within the selected accounts.
-  * **Columns:** You'll see things like Symbol, Quantity, Current Price, Market Value, Cost Basis, Gains, etc.
-  * **Sorting:** Click on any column header to sort the table by that column. Click again to reverse the sort.
-  * **Customize Columns:** Right-click on any column header to choose which columns you want to see or hide.
-  * **Live Filtering:** Use the "Filter: Symbol contains..." and "Account contains..." boxes above the table to quickly narrow down the displayed holdings.
-  * **Context Menu:** Right-click on a specific holding (row) in the table for quick actions like:
-    * Viewing its transaction history.
-    * Charting its price.
+    This is the heart of the dashboard, listing all your individual assets (stocks, ETFs, `$CASH`) within the currently selected accounts.
+  * **Columns:** Displays comprehensive information for each holding, such as Symbol, Quantity, Current Price, Market Value, Cost Basis, Unrealized Gain/Loss (value and %), Realized Gain/Loss, Dividends, Fees, Return %, TWR %, and more.
+  * **Sorting:** Click any column header to sort the table by that column. Click again to reverse the sort order.
+  * **Customize Columns:** Right-click on any column header to open a context menu that allows you to show or hide specific columns, tailoring the table to your preferences.
+  * **Live Filtering:**
+    * "Filter: Symbol contains..." text box: Type here to quickly filter the table for symbols matching your input.
+    * "Filter: Account contains..." text box: Type here to filter by account name.
+  * **Context Menu (Right-Click on a Holding):** Right-clicking a specific row (holding) in the table provides quick actions:
+    * `View Transactions for [Symbol]`: Opens a dialog showing all transactions for that specific symbol.
+    * `View Fundamentals for [Symbol]`: Opens the Fundamental Data Viewer for that symbol.
+    * `Chart Price for [Symbol]`: (If charting feature for individual symbols is enabled) Plots the historical price of the selected symbol.
 
 ## Part 4: Analyzing Your Performance with Charts
 
-Investa offers several charts, now organized into tabs, to help you visualize your investment journey:
+Investa's charting capabilities are grouped into tabs, providing rich visualizations of your portfolio's performance and composition. Remember to click "Update Graphs" if you change date ranges, intervals, or benchmark selections on the "Performance & Summary" tab.
 
-### Performance & Summary Tab
+### "Performance & Summary" Tab
 
-This tab contains:
+This is your primary tab for performance analysis:
 
-* **Historical Performance Line Graphs:**
-  * **Accumulated Gain (TWR):** Shows how your portfolio performed percentage-wise, independent of when you added or withdrew money. Great for comparing against benchmarks.
-  * **Absolute Value:** Shows the actual monetary value of your portfolio over time.
-  * **Controls:**
-    * `Date Range`: Choose the start and end dates for the chart.
-    * `Interval`: View data Daily (D), Weekly (W), or Monthly (M).
-    * `Benchmark`: Compare your TWR against common market indexes (e.g., S&P 500, NASDAQ). You can select multiple benchmarks.
-    * Click "Update Graphs" after changing these settings.
+* **Historical Performance Line Graphs (Top Left):**
+  * **Accumulated Gain (TWR %):** This chart is crucial. It shows your portfolio's Time-Weighted Return percentage over your chosen `Date Range` and `Interval` (Daily, Weekly, Monthly). TWR measures performance by neutralizing the effects of external cash flows (deposits/withdrawals), making it ideal for comparing your investment strategy against `Benchmark(s)` like SPY (S&P 500) or QQQ (NASDAQ 100). You can select multiple benchmarks to overlay.
+  * **Absolute Portfolio Value:** This chart displays the total market value of your portfolio in your selected `Display Currency` over the same `Date Range` and `Interval`. It gives you a clear view of your portfolio's growth in monetary terms.
 
-* **Periodic Returns Bar Charts:**
-    See your portfolio's (and selected benchmark's) percentage returns for specific periods:
-  * **Annual Returns:** View year-by-year performance.
-  * **Monthly Returns:** View month-by-month performance.
-  * **Weekly Returns:** View week-by-week performance.
-  * **Periods Control:** For each bar chart, you can adjust the number of past periods (years, months, or weeks) to display using the "Periods:" spinbox next to each chart's title.
+* **Periodic Returns Bar Charts (Right Side):**
+    These charts break down percentage returns for discrete periods, allowing you to see performance trends:
+  * **Annual Returns:** Shows year-by-year TWR for your portfolio and the selected primary benchmark. Use the "Periods:" spinbox to control how many past years are displayed.
+  * **Monthly Returns:** Shows month-by-month TWR.
+  * **Weekly Returns:** Shows week-by-week TWR.
 
-* **Portfolio Allocation Pie Charts (Bottom Right):**
-    Get a visual breakdown of your portfolio:
-  * **Value by Account:** Shows how your assets are distributed across your different investment accounts (within the selected scope).
-  * **Value by Holding:** Shows the weight of each individual stock/ETF in your portfolio (within the selected scope).
+* **Portfolio Allocation Pie Charts (Bottom Left):**
+    These provide a quick visual breakdown of your portfolio's current composition based on the accounts selected in the main filter:
+  * **Value by Account:** Illustrates how your total portfolio value is distributed across your different investment accounts (e.g., Brokerage A, IRA).
+  * **Value by Holding:** Shows the relative weight (percentage of total portfolio value) of each individual stock, ETF, and your `$CASH` balance.
 
-## Part 5: Dividend History
+### Other Chart Tabs (Covered in Later Sections)
 
-The **"Dividend History"** tab provides insights into your dividend income.
+* **"Dividend History" Tab:** Focuses on visualizing dividend income over time.
+* **"Asset Allocation" Tab:** Provides pie charts for allocation by Asset Type, Sector, Geography, and Industry.
 
-<!-- It's good to add a screenshot here if you have one -->
-<!-- Example: !Dividend History Tab -->
+## Part 5: Deep Dive into Dividend History
 
-1. **Accessing the Tab**: Click on the "Dividend History" tab in the main tab widget.
-2. **Account Filtering**: The dividend data displayed is automatically filtered based on the accounts you have selected in the main "Controls" bar (using the "Accounts" button). If "All Accounts" are selected (or no specific accounts are chosen), dividends from all accounts will be shown.
-3. **Aggregation Controls**:
-    * **Aggregate by**: Choose to view your dividend totals "Annual", "Quarterly", or "Monthly". This selection affects the bar chart and the summary table.
-    * **Periods to Show**: Specify how many of the selected periods (e.g., last 10 years, last 12 quarters) you want to see in the chart and summary table.
-4. **Dividend Bar Chart**:
-    * Visualizes the total dividend amounts for each aggregated period (e.g., total dividends per year).
-    * The Y-axis shows the total dividend amount in your selected display currency.
-    * The X-axis shows the periods.
-5. **Dividend Summary Table**:
-    * Located below the bar chart, this table shows the same aggregated data in tabular form: "Period" and "Total Dividends".
-6. **Dividend Transaction History Table**:
-    * This table, typically to the right of or below the summary table, lists all individual dividend transactions that contribute to the selected scope (based on account filters).
-    * It includes columns like "Date", "Symbol", "Account", "LocalCurrency", "DividendAmountLocal" (amount in the asset's local currency), "FXRateUsed", and "DividendAmountDisplayCurrency" (amount converted to your chosen display currency).
-    * You can sort this table by clicking on the column headers.
+The **"Dividend History"** tab is dedicated to tracking and visualizing your dividend income, offering both aggregated views and detailed transaction lists.
 
-## Part 6: Managing Your Transactions
+1. **Accessing the Tab:** Click on the "Dividend History" tab within the main interface.
+2. **Account Filtering:** The dividend data presented is filtered by the accounts selected in the main "Accounts" filter (top control bar). This ensures you see dividend information relevant to your current view (e.g., "All Accounts" or a specific brokerage).
+3. **Controls for Visualization:**
+    * **Aggregate by:** This dropdown menu allows you to group your dividend income into:
+        * `Annual`: Shows total dividends received per year.
+        * `Quarterly`: Shows total dividends received per quarter.
+        * `Monthly`: Shows total dividends received per month.
+        This selection drives the bar chart and the summary table.
+    * **Periods to Show:** This spinbox lets you define how many of the chosen aggregation periods (e.g., the last 10 years, the last 12 quarters) are displayed in the chart and summary table.
+    * **Update Chart Button:** After changing "Aggregate by" or "Periods to Show," click this button to refresh the dividend visualizations and tables.
 
-### Transactions Log Tab
+4. **Dividend Bar Chart:**
+    * This chart visually represents the total dividend amounts for each aggregated period you've selected (e.g., a bar for each year showing total annual dividends).
+    * The Y-axis displays the total dividend amount in your globally selected `Display Currency`.
+    * The X-axis represents the periods (years, quarters, or months).
+    * Hovering over a bar often shows the exact amount for that period.
 
-The **"Transactions Log"** tab provides a dedicated view of all your recorded transactions, separated into:
+5. **Dividend Summary Table:**
+    * Located typically below the bar chart, this table provides the same aggregated data in a numerical format.
+    * It has columns like "Period" (e.g., "2023", "2023-Q1") and "Total Dividends" (in the `Display Currency`).
 
-* **Stock/ETF Transactions Table:** Lists all transactions that are not for the `$CASH` symbol.
-* **$CASH Transactions Table:** Lists all transactions specifically for the `$CASH` symbol (deposits, withdrawals, cash dividends, etc.).
+6. **Detailed Dividend Transaction History Table:**
+    * This comprehensive table, usually found to the right or below the summary, lists every individual dividend transaction loaded from your database that falls within the selected account scope.
+    * Key columns include:
+        * `Date`: Date the dividend was received.
+        * `Symbol`: The stock or ETF that paid the dividend.
+        * `Account`: The account that received the dividend.
+        * `LocalCurrency`: The currency in which the dividend was originally paid (asset's local currency).
+        * `DividendAmountLocal`: The dividend amount in that local currency.
+        * `FXRateUsed`: The foreign exchange rate applied if the local currency differs from your display currency.
+        * `DividendAmountDisplayCurrency`: The dividend amount converted to your chosen global `Display Currency`.
+    * This table is sortable by clicking on its column headers, allowing you to easily find specific transactions or view trends.
 
-Both tables are sortable by clicking on their column headers. This tab is useful for quickly reviewing your entire transaction history.
+This tab provides a clear and detailed overview of your dividend earnings, helping you understand this important component of your investment returns.
 
-Investa isn't just for viewing; you can also manage your transaction data:
+## Part 6: Managing Your Transactions Directly in the Database
 
-* **Adding a New Transaction:**
-  * Go to **Transactions > Add Transaction...** (or use the "Add Tx" button on the toolbar).
-  * Fill in the details in the dialog that appears. This will add a new row to your source CSV file.
+With Investa, your transaction data lives in the SQLite database. You have full control to add, edit, and delete transactions directly within the application. Changes are saved immediately to the database file.
 
-* **Editing or Deleting Transactions:**
-  * Go to **Transactions > Manage Transactions...** (or use the "Manage Tx" button on the toolbar).
-  * A dialog will appear showing all your transactions in a table.
-  * You can filter this table by symbol or account.
-  * Select a transaction you wish to modify.
-  * Buttons will be available to "Edit Selected" or "Delete Selected".
-  * **Caution:** Editing or deleting directly modifies your source CSV file, so be careful! It's always a good idea to have a backup of your CSV (Investa creates backups automatically in the `csv_backups` folder within your application data directory).
+### "Transactions Log" Tab
+
+Before making changes, it's often helpful to review your existing data. The **"Transactions Log"** tab offers a comprehensive view:
+
+* It displays two main tables:
+  * **Stock/ETF Transactions Table:** Lists all transactions for your actual investment assets (shares, ETFs, etc.).
+  * **$CASH Transactions Table:** Specifically lists all transactions related to the `$CASH` symbol (deposits, withdrawals, cash movements).
+* Both tables are sortable by clicking on their column headers, making it easy to find specific entries.
+* This tab provides a read-only view, perfect for reviewing data before or after making modifications.
+
+### Adding, Editing, and Deleting Transactions
+
+All modifications to your transaction history are done via the **Transactions** menu or corresponding toolbar buttons:
+
+1. **Adding a New Transaction:**
+    * Go to **Transactions > Add Transaction...** (or click the "Add Tx" button on the toolbar).
+    * A dialog window will appear, allowing you to enter all the details for a new transaction:
+        * `Date`, `Type` (Buy, Sell, Dividend, Deposit, etc.), `Symbol`, `Quantity`, `Price/Share`, `Total Amount`, `Commission`, `Account`, `Split Ratio` (if applicable), and `Note`.
+    * Click "Save Transaction" to add this new record directly to your SQLite database.
+
+2. **Managing Existing Transactions (Edit/Delete):**
+    * Go to **Transactions > Manage Transactions...** (or click the "Manage Tx" button on the toolbar).
+    * This opens the "Manage Transactions" dialog, which is your primary interface for editing or deleting records.
+    * **Viewing Transactions:** The dialog displays a table of all transactions currently in your database. You can filter this table by `Symbol` or `Account` using the input fields at the top to quickly find the transaction(s) you're interested in.
+    * **Editing a Transaction:**
+        1. Select the transaction row in the table that you wish to modify.
+        2. Click the "Edit Selected" button.
+        3. A dialog, pre-filled with the selected transaction's data, will appear.
+        4. Make your necessary changes and click "Save Changes". The record in the database will be updated.
+    * **Deleting a Transaction:**
+        1. Select the transaction row in the table you want to remove.
+        2. Click the "Delete Selected" button.
+        3. You'll be asked for confirmation. If you confirm, the transaction will be permanently removed from the database.
+            * **Caution:** Deleting transactions is a permanent action in the database. While Investa *may* still create CSV backups during certain operations (like CSV import/export), the primary record is in the database. Always be sure before deleting. It's good practice to occasionally back up your `investa_transactions.db` file itself.
+
+* **Impact of Changes:** After adding, editing, or deleting any transactions, always click the **"Refresh All"** button on the main dashboard to ensure all calculations and views are updated based on the modified data.
+
+This direct database management provides a seamless and integrated way to keep your portfolio records accurate and up-to-date.
 
 ## Part 7: Asset Allocation Insights
 
-The **"Asset Allocation"** tab provides a deeper dive into how your portfolio is diversified across different categories. This data is derived from the fundamental information fetched for your holdings.
+The **"Asset Allocation"** tab offers valuable pie charts that visually break down your portfolio's diversification across several key dimensions. These charts help you understand your exposure and concentration in different areas. The data primarily comes from the fundamental information fetched for your holdings via Yahoo Finance, which can be supplemented or corrected with manual overrides.
 
-* **Allocation by Asset Type:** Shows a pie chart breaking down your portfolio by asset classes like "Stock", "ETF", "Cash", or "Other Assets". This classification is based on the `quoteType` fetched from Yahoo Finance.
-* **Allocation by Sector:** Displays a pie chart of your portfolio's distribution across various market sectors (e.g., Technology, Healthcare, Financials). This relies on the "Sector" information fetched for your holdings.
-* **Allocation by Geography:** Visualizes the geographical distribution of your investments (e.g., United States, Canada, United Kingdom). This uses the "Country" information associated with your holdings.
-* **Allocation by Industry:** (New!) Shows a pie chart of your portfolio's allocation across specific industries. This uses the "Industry" information fetched for your holdings.
+* **Allocation by Asset Type:**
+  * Displays a pie chart categorizing your portfolio by asset classes such as "Stock", "ETF", "Cash", "Mutual Fund", "Currency", etc.
+  * This classification is typically derived from the `quoteType` provided by Yahoo Finance for each symbol.
+  * `$CASH` holdings are explicitly shown as "Cash".
 
-**Note on Allocation Data:**
+* **Allocation by Sector:**
+  * Shows a pie chart of your portfolio's distribution across various market sectors (e.g., "Technology", "Healthcare", "Financial Services", "Consumer Cyclical").
+  * This relies on the "Sector" information fetched for your individual stock and ETF holdings.
 
-* The accuracy of these charts depends on the fundamental data available for your holdings via Yahoo Finance.
-* If data for a specific category (like Sector or Industry) is missing for some holdings, they might be grouped under "Unknown" or not contribute to that specific chart.
-* You can manually override these classifications for any symbol via **Settings > Manual Overrides...**.
+* **Allocation by Geography:**
+  * Visualizes the geographical spread of your investments (e.g., "United States", "Canada", "United Kingdom", "India").
+  * This uses the "Country" information associated with your holdings. For ETFs, this often reflects the domicile of the ETF itself, though the underlying assets might be global.
 
-## Part 7: Handy Extras
+* **Allocation by Industry:**
+  * Provides a more granular breakdown than Sector, showing a pie chart of your portfolio's allocation across specific industries (e.g., "Software - Infrastructure", "Banks - Regional", "Auto Manufacturers").
+  * This relies on the "Industry" information fetched for your holdings.
 
-* **Manual Overrides (Price, Asset Type, Sector, etc.):**
-    If data fetched from Yahoo Finance for a symbol (like its price, asset type, sector, geography, or industry) is missing, incorrect, or you simply wish to use a custom value, you can set these manually. Go to **Settings > Manual Overrides...**. These overrides are saved in the `manual_overrides.json` file in your application data directory. This allows for greater control and accuracy in your portfolio representation, especially for assets not well-covered by standard data sources or when you have specific classification preferences.
-* **Fundamental Data Viewer:**
-    Want to quickly look up some key stats for a stock? Use the "Symbol for Fundamentals" input box and "Get Fundamentals" button on the toolbar, or right-click a holding and select "View Fundamentals". Investa will try to fetch data like P/E ratio, market cap, and now also includes tabs for:
-  * **Overview:** Company profile, valuation metrics, dividend info, price stats.
-  * **Financials:** Income Statement data.
-  * **Balance Sheet:** Balance Sheet data.
-  * **Cash Flow:** Cash Flow statement data.
-* **Account Currencies:**
-    If your different investment accounts operate in different local currencies (e.g., one in USD, another in THB), you can specify this under **Settings > Account Currencies...**. This helps with accurate cost basis and gain calculations before converting to your main display currency.
-* **Data Caching:**
-    Investa is smart! It caches market data it fetches. This means if you refresh again soon, it'll load much faster and won't hit the Yahoo Finance servers as often. Cache settings are in `config.py`.
-* **Configuration Persistence & User Files:**
-    The app remembers your settings (like the path to your last used CSV, display currency, selected accounts, graph preferences, and column visibility). These are automatically saved when you close the application and stored in a file named `gui_config.json`.
+**Important Notes on Allocation Data:**
 
-    This file, along with `manual_overrides.json` (which now stores overrides for price, asset type, sector, geography, and industry), is stored in a user-specific application data directory. Cache files and transaction data backups are also stored here. The typical locations are:
+* **Data Source:** The accuracy and completeness of these charts depend heavily on the fundamental data available for your holdings through Yahoo Finance.
+* **Missing Data:** If Yahoo Finance does not provide data for a specific category (like Sector or Industry) for some of your holdings, those holdings might be grouped under an "Unknown" or "N/A" slice in the pie chart, or they might not contribute to that specific chart if the information is entirely absent.
+* **Manual Overrides:** You have the power to correct or specify these classifications. Use **Settings > Symbol Settings...** to manually set the `Asset Type`, `Sector`, `Geography`, and `Industry` for any symbol. These overrides are stored in `manual_overrides.json` and will be used by the allocation charts. This is particularly useful for:
+  * Assets not well-covered by Yahoo Finance.
+  * Correcting data you believe is misclassified by the API.
+  * Defining custom classifications that suit your analysis style.
+* **Account Filtering:** Like other dashboard elements, these allocation charts respect the currently selected account filter.
 
-  * **macOS**: `~/Library/Application Support/StockAlchemist/Investa/`
-  * **Windows**: `C:\Users\<YourUserName>\AppData\Local\StockAlchemist\Investa\` (or `Roaming` instead of `Local`)
-  * **Linux**: `~/.local/share/StockAlchemist/Investa/` (or `~/.config/StockAlchemist/Investa/`)
+By regularly reviewing these charts and ensuring your data (including manual overrides) is accurate, you can gain significant insights into your investment strategy and risk exposures.
 
-    Inside this directory, you'll find:
-  * `gui_config.json`: Your main application settings.
-  * `manual_overrides.json`: Your manual overrides for price, asset type, sector, geography, and industry.
-  * `csv_backups/`: A subfolder containing timestamped backups of your transactions CSV, created when you edit or delete transactions.
-  * Cache files for market data.
+## Part 8: Handy Extras & Advanced Settings
 
-    You generally don't need to interact with these files directly, but knowing their location can be useful for backups or troubleshooting.
+Investa packs several additional features and settings to enhance your portfolio management experience:
 
-## Part 8: Tips & Troubleshooting
+* **Symbol Settings (Overrides, Mapping, Exclusions) via `Settings > Symbol Settings...`:**
+    This powerful dialog is your go-to for managing how individual symbols are treated within Investa. It directly modifies the `manual_overrides.json` file.
+  * **Manual Overrides Tab:**
+    * If data fetched from Yahoo Finance for a symbol (like its current `price`, `asset_type`, `sector`, `geography`, or `industry`) is missing, incorrect, or you wish to use a custom value, you can set it here.
+    * Enter the `Symbol`, select the `Field to Override`, and provide the `New Value`. Click "Add/Update Override".
+    * This gives you fine-grained control over how your assets are classified and valued, which is especially useful for non-standard assets or correcting API data.
+  * **Symbol Mapping Tab:**
+    * Useful if a ticker symbol has changed or if you use an alternative symbol in your records (e.g., `BRK.B` vs `BRK-B`).
+    * Enter the `Original Symbol` (as it might appear in your transactions or from an old data source) and the `Mapped Symbol` (the one Yahoo Finance recognizes or your preferred primary symbol).
+    * Investa will then treat all instances of the original symbol as the mapped symbol for data fetching and calculations.
+  * **Excluded Symbols Tab:**
+    * If you have symbols you want Investa to completely ignore for market data fetching and calculations (e.g., delisted stocks you only keep for historical record, private assets you track manually), add them here.
 
-* **CSV is Key:** The accuracy of Investa depends entirely on the accuracy and completeness of your transactions CSV. Double-check your entries!
-* **"Refresh All" is Your Friend:** Whenever you change your CSV file externally, or want the very latest prices, hit "Refresh All".
-* **Check the Status Bar:** The bottom of the window often shows messages about what Investa is doing (e.g., "Fetching prices...", "Calculations complete.").
-* **CSV Format Help:** Seriously, if you're unsure about the CSV, the in-app help (**Help > CSV Format Help...**) is very useful.
+* **Fundamental Data Viewer (Toolbar & Context Menu):**
+  * Quickly look up detailed financial information for any stock. Enter a symbol in the "Symbol for Fundamentals" box on the toolbar and click "Get Fundamentals", or right-click a holding in the Holdings Table and select "View Fundamentals".
+  * The viewer is organized into tabs:
+    * **Summary:** Company profile, key statistics (Market Cap, P/E, EPS), dividend information, and price history.
+    * **Financials:** Annual and quarterly Income Statements.
+    * **Balance Sheet:** Annual and quarterly Balance Sheet data.
+    * **Cash Flow:** Annual and quarterly Cash Flow statements.
+    * *(Options Tab might be present but is typically for future development).*
+
+* **Account Currencies (`Settings > Account Currencies...`):**
+  * If you have multiple investment accounts and they operate in different local currencies (e.g., a US brokerage in USD, a UK brokerage in GBP, a Thai brokerage in THB), this dialog allows you to assign a specific currency to each account.
+  * This is crucial for accurate cost basis, gain/loss calculations, and proper aggregation before conversion to your main `Display Currency`.
+
+* **Choose Currencies for Display (`Settings > Choose Currencies...`):**
+  * Customize the list of currencies available in the main `Display Currency` dropdown on the dashboard.
+  * Select your frequently used currencies from a comprehensive list to keep the dropdown tidy and relevant.
+
+* **Data Caching & Clearing Cache:**
+  * Investa automatically caches market data (prices, FX rates, fundamental info) to speed up loading times and reduce API calls to Yahoo Finance. Cache settings (like duration) are generally managed in `config.py`.
+  * If you suspect your cached data is stale or corrupted, you can clear it via **Settings > Clear Cache Files...**. This will delete the cached market data, and Investa will fetch fresh data on the next "Refresh All".
+
+* **Configuration Persistence (`gui_config.json` & `manual_overrides.json`):**
+  * **`gui_config.json`:** Stores your UI preferences and operational settings:
+    * Path to the last used database file.
+    * Selected global display currency.
+    * List of active/selected investment accounts.
+    * Graph settings (date ranges, intervals, benchmarks).
+    * Column visibility preferences for tables.
+    * Your customized list of display currencies.
+  * **`manual_overrides.json`:** Stores all your symbol-specific settings:
+    * Manual overrides for price, asset type, sector, geography, industry.
+    * User-defined symbol mappings.
+    * List of excluded symbols.
+  * These files are located in the application data directory (see Part 1). You generally don't need to edit them manually, as settings are managed through the application's UI. Knowing their existence is useful for understanding how Investa remembers your preferences and for manual backups.
+
+* **Application Data Directory:**
+    As mentioned in Part 1, this directory is vital. It holds:
+  * `investa_transactions.db` (your primary data)
+  * `gui_config.json`
+  * `manual_overrides.json`
+  * `cache/` (subfolder for cached market data)
+  * `csv_backups/` (subfolder for backups of CSVs made during import)
+  * **macOS:** `~/Library/Application Support/Investa/`
+  * **Windows:** `C:\Users\<YourUserName>\AppData\Local\Investa\Investa\`
+  * **Linux:** `~/.local/share/Investa/`
+
+## Part 9: Tips & Troubleshooting
+
+Here are some general tips and common troubleshooting steps, reflecting Investa's database-centric approach:
+
+* **Your Database is Primary:** Remember that `investa_transactions.db` (or your custom-named `.db` file) is your primary data source. While CSV import is supported, all ongoing transaction management (adds, edits, deletes) happens directly in the database.
+  * **Backup your `.db` file regularly!** While Investa might create CSV backups during certain operations, direct backup of the database file itself is the most robust way to protect your data.
+* **Accuracy is Paramount:** The insights Investa provides are only as good as the data you feed it.
+  * Double-check every transaction you enter or import for correct dates, types, symbols, quantities, prices, and especially account assignments.
+  * Pay close attention to `$CASH` transactions (Deposits, Withdrawals) as they are critical for accurate Time-Weighted Return (TWR) calculations.
+* **"Refresh All" (F5) is Your Best Friend:**
+  * After adding/editing/deleting transactions directly in the database.
+  * After importing a CSV file.
+  * After changing symbol settings (overrides, mappings, exclusions).
+  * When you want the absolute latest market prices and FX rates.
+  * If something just doesn't look right, a "Refresh All" is often the first step.
+* **Use the Status Bar:** The bottom of the Investa window often displays messages about current operations (e.g., "Fetching prices...", "Calculations complete...", "Database loaded"). This can give you an idea of what the application is doing, especially during longer operations.
+* **CSV Format Help (`Help > CSV Format Help...`):**
+  * Even though the database is primary, this in-app guide is still very useful if you are preparing a CSV file for import. It details the expected headers and data for each transaction type.
+* **Troubleshooting Steps (Consult README.md for more detail):**
+  * **Market Data Not Loading (Prices are 0 or NaN):**
+    * Check your internet connection.
+    * Verify symbol correctness (use `Settings > Symbol Settings...` for mapping if needed).
+    * Yahoo Finance might have temporary issues; try later.
+    * Check firewall/VPN.
+    * Ensure the symbol isn't in your exclusion list (`Settings > Symbol Settings...`).
+    * Consider clearing the cache (`Settings > Clear Cache Files...`) if data seems stuck.
+  * **CSV Import Errors:**
+    * Strictly follow the format described in "Input Data Format (Transactions CSV)" in the README or use the "Standardize Headers" utility during import.
+    * Ensure CSV is UTF-8 encoded.
+  * **Data Inaccuracies (Cost Basis, Gains, TWR):**
+    * Meticulously review your transactions in the "Transaction Log" tab or "Manage Transactions" dialog.
+    * Ensure all cash flows (`$CASH` Deposits/Withdrawals) are accurately recorded.
+    * Verify stock splits and dividends.
+    * Check currency settings (global display and account-specific).
+    * Review any manual price overrides.
+  * **Application Slowdown:**
+    * Very large databases can slow calculations.
+    * Initial market data fetch for many symbols can be slow (improves with caching).
+  * **"File not found" for Database on Startup:**
+    * The app will prompt you to locate your `.db` file or create a new one. The path is stored in `gui_config.json`.
 
 ---
 
-That's the grand tour of Investa! It's a powerful tool, so take your time exploring its features. The more accurate your transaction data, the more insightful your portfolio analysis will be. Happy investing!
+That's the grand tour of Investa! It's a powerful tool designed to give you deep insights into your investments. Take your time, ensure your data is accurate, and explore all the features to make the most of your portfolio analysis. Happy investing!
