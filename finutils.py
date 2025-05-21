@@ -645,7 +645,9 @@ def get_conversion_rate(
     if from_curr == to_curr:
         return 1.0
     if not isinstance(fx_rates, dict):
-        logging.warning(
+        # Changed to debug as this might be expected in some initial states
+        # or if no FX data was fetched at all.
+        logging.debug(
             f"Warning: get_conversion_rate received invalid fx_rates type. Returning NaN"
         )
         return np.nan  # Return NaN on invalid rates dict
@@ -653,9 +655,17 @@ def get_conversion_rate(
     from_curr_upper = from_curr.upper()
     to_curr_upper = to_curr.upper()
     rate_A_per_USD = fx_rates.get(from_curr_upper)
+    # Added debug log for lookup
+    logging.debug(
+        f"get_conversion_rate: Looking up {from_curr_upper}/USD (key '{from_curr_upper}'): {rate_A_per_USD}"
+    )
     if from_curr_upper == "USD":
         rate_A_per_USD = 1.0
     rate_B_per_USD = fx_rates.get(to_curr_upper)
+    # Added debug log for lookup
+    logging.debug(
+        f"get_conversion_rate: Looking up {to_curr_upper}/USD (key '{to_curr_upper}'): {rate_B_per_USD}"
+    )
     if to_curr_upper == "USD":
         rate_B_per_USD = 1.0
 
@@ -664,7 +674,7 @@ def get_conversion_rate(
         if abs(rate_A_per_USD) > 1e-9:
             try:
                 rate_B_per_A = rate_B_per_USD / rate_A_per_USD
-                logging.debug(
+                logging.debug(  # Keep debug log for successful calculation
                     f"DEBUG get_conv_rate: {to_curr}/{from_curr} = {rate_B_per_USD} / {rate_A_per_USD} = {rate_B_per_A}"
                 )
             except (ZeroDivisionError, TypeError):
@@ -673,11 +683,11 @@ def get_conversion_rate(
     if pd.isna(rate_B_per_A):
         # Log the warning but return a neutral rate (1.0) to avoid breaking calculations?
         # Or return NaN to signal failure? Let's return NaN for clarity.
-        logging.warning(
+        logging.warning(  # Keep warning for failed conversion
             f"Warning: Current FX rate lookup failed for {from_curr}->{to_curr}. Returning NaN"
         )
-        # return np.nan  # Fallback to NaN to indicate failure
-        return 1.0  # Fallback to 1.0 might hide errors
+        return np.nan  # Fallback to NaN to indicate failure
+        # return 1.0  # Fallback to 1.0 might hide errors
     else:
         return float(rate_B_per_A)
 
@@ -712,7 +722,7 @@ def get_historical_price(
         if not all(isinstance(idx, date) for idx in df.index):
             df.index = pd.to_datetime(df.index).date
         if not isinstance(target_date, date):
-            return None
+            return None  # Return None on invalid target date type
         if not df.index.is_monotonic_increasing:
             df.sort_index(inplace=True)
         combined_index = df.index.union([target_date])
@@ -770,7 +780,7 @@ def get_historical_rate_via_usd_bridge(
         or not isinstance(to_curr, str)
         or not isinstance(target_date, date)
     ):
-        logging.warning(
+        logging.debug(  # Changed to debug as this might be expected for invalid inputs
             f"Hist FX Bridge: Invalid input - from={from_curr}, to={to_curr}, date={target_date}"
         )
         return np.nan
@@ -778,7 +788,7 @@ def get_historical_rate_via_usd_bridge(
         return 1.0
     if not isinstance(historical_fx_data, dict):
         logging.warning(f"Hist FX Bridge: Invalid historical_fx_data type received.")
-        return np.nan
+        return np.nan  # Return NaN on invalid input dict
 
     from_curr_upper = from_curr.upper()
     to_curr_upper = to_curr.upper()
@@ -787,6 +797,9 @@ def get_historical_rate_via_usd_bridge(
         rate_A_per_USD = 1.0
     else:
         pair_A = f"{from_curr_upper}=X"
+        logging.debug(
+            f"Hist FX Bridge: Getting historical price for {pair_A} on {target_date}"
+        )  # Added debug log
         price_A = get_historical_price(pair_A, target_date, historical_fx_data)
         if price_A is not None and pd.notna(price_A):
             rate_A_per_USD = price_A
@@ -795,6 +808,9 @@ def get_historical_rate_via_usd_bridge(
         rate_B_per_USD = 1.0
     else:
         pair_B = f"{to_curr_upper}=X"
+        logging.debug(
+            f"Hist FX Bridge: Getting historical price for {pair_B} on {target_date}"
+        )  # Added debug log
         price_B = get_historical_price(pair_B, target_date, historical_fx_data)
         if price_B is not None and pd.notna(price_B):
             rate_B_per_USD = price_B
@@ -809,7 +825,7 @@ def get_historical_rate_via_usd_bridge(
 
     if pd.isna(rate_B_per_A):
         if pd.notna(rate_A_per_USD) and pd.notna(rate_B_per_USD):
-            logging.warning(
+            logging.warning(  # Keep warning for calculation failure despite finding intermediate rates
                 f"Hist FX Bridge: Calculation failed for {from_curr}->{to_curr} on {target_date} despite finding intermediate rates ({rate_A_per_USD}, {rate_B_per_USD})."
             )
         return np.nan

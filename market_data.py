@@ -259,6 +259,15 @@ class MarketDataProvider:
                 - has_errors (bool): True if critical errors occurred during fetching.
                 - has_warnings (bool): True if non-critical warnings occurred.
         """
+        # ADDED LOGS
+        logging.debug(
+            f"get_current_quotes: Received internal_stock_symbols ({len(internal_stock_symbols)}): {internal_stock_symbols}"
+        )
+        logging.debug(
+            f"get_current_quotes: Received required_currencies ({len(required_currencies)}): {required_currencies}"
+        )
+        # END ADDED LOGS
+
         logging.info(
             f"Getting current quotes for {len(internal_stock_symbols)} symbols and FX for {len(required_currencies)} currencies."
         )
@@ -286,8 +295,7 @@ class MarketDataProvider:
                 has_warnings = True
 
         if not yf_symbols_to_fetch:
-            logging.info(f"No valid stock symbols provided for current quotes.")
-            return {}, {}, has_errors, has_warnings  # Return empty if no symbols
+            logging.info("No valid stock symbols provided for current quotes.")
 
         # --- 2. Caching Logic for Current Quotes ---
         cache_key = f"CURRENT_QUOTES_v3::{'_'.join(sorted(yf_symbols_to_fetch))}::{'_'.join(sorted(required_currencies))}"  # Cache key bumped for new fields
@@ -296,6 +304,11 @@ class MarketDataProvider:
         cache_valid = False
 
         if os.path.exists(self.current_cache_file):
+            # ADDED LOG
+            logging.debug(
+                f"get_current_quotes: Cache file exists: {self.current_cache_file}"
+            )
+            # END ADDED LOG
             try:
                 with open(self.current_cache_file, "r") as f:
                     cache_data = json.load(f)
@@ -312,15 +325,24 @@ class MarketDataProvider:
                             if cached_quotes is not None and cached_fx is not None:
                                 cache_valid = True
                                 logging.info(
-                                    f"Using valid cache for current quotes (Key: {cache_key[:30]}...)."
+                                    # ADDED timestamp log
+                                    f"Using valid cache for current quotes (Key: {cache_key[:30]}...). Cache timestamp: {cache_timestamp}"
                                 )
                         else:
-                            logging.info("Current quotes cache expired.")
+                            # ADDED timestamp log
+                            logging.info(
+                                f"Current quotes cache expired. Cache timestamp: {cache_timestamp}"
+                            )
                     else:
                         logging.warning("Current quotes cache missing timestamp.")
                 else:
                     logging.info("Current quotes cache key mismatch.")
-            except (json.JSONDecodeError, IOError, Exception) as e:
+            # ADDED LOGS for cache read errors
+            except json.JSONDecodeError as e:
+                logging.warning(
+                    f"Error decoding JSON from current quotes cache: {e}. Will refetch."
+                )
+            except (IOError, Exception) as e:
                 logging.warning(
                     f"Error reading current quotes cache: {e}. Will refetch."
                 )
@@ -335,7 +357,7 @@ class MarketDataProvider:
             # --- End Populate results ---
         else:
             logging.info("Fetching fresh current quotes and FX rates...")
-            # --- Fetching logic will run if cache is not valid ---
+            # --- Fetching logic will run if cache was invalid/missing ---
             pass  # Let the fetching logic below execute
 
         # --- 3. Fetching Logic (Only runs if cache was invalid/missing) ---
@@ -364,8 +386,19 @@ class MarketDataProvider:
                 # Using fast_info is generally preferred for speed if available fields suffice.
                 # However, 'currency' might only be in .info
 
+                # ADDED LOG
+                logging.debug(
+                    f"get_current_quotes: yf.Tickers({stock_tickers_str}) returned {len(tickers.tickers)} tickers."
+                )
+                # END ADDED LOG
+
                 # Iterate through tickers and get necessary info
                 for yf_symbol, ticker_obj in tickers.tickers.items():
+                    # ADDED LOG
+                    logging.debug(
+                        f"get_current_quotes: Processing ticker object for {yf_symbol}"
+                    )
+                    # END ADDED LOG
                     try:
                         # Use .info as fast_info might miss crucial fields like currency
                         ticker_info = getattr(ticker_obj, "info", None)
@@ -429,6 +462,11 @@ class MarketDataProvider:
                                         "dividendYield": dividend_yield_on_current,
                                     }
                                 )
+                                # ADDED LOG
+                                logging.debug(
+                                    f"get_current_quotes: Stored data for internal symbol {internal_symbol}"
+                                )
+                                # END ADDED LOG
                             else:
                                 logging.warning(
                                     f"Could not get sufficient quote data (price/currency) for {yf_symbol} from info."
@@ -436,7 +474,8 @@ class MarketDataProvider:
                                 has_warnings = True
                         else:
                             logging.warning(
-                                f"Could not get .info for ticker {yf_symbol}"
+                                # ADDED internal symbol lookup for better context
+                                f"Could not get .info for ticker {yf_symbol} (Internal: {internal_to_yf_map_local.get(yf_symbol, 'N/A')})"
                             )
                             has_warnings = True
 
@@ -480,6 +519,10 @@ class MarketDataProvider:
             # The original "Fallback for FX Rates" block (lines 308-338 in the provided file) is removed.
             # The correctly positioned fallback logic is already present later in the code (lines 358-398).
 
+            # ADDED LOG
+            logging.debug("get_current_quotes: Skipping old FX fallback block.")
+            # END ADDED LOG
+
             # --- 4. Fetch FX Rates ---
             logging.info(
                 f"Fetching current FX rates for {len(fx_pairs_to_fetch)} pairs..."
@@ -488,6 +531,11 @@ class MarketDataProvider:
             fx_data_yf = {}  # Initialize as dict
             if fx_pairs_to_fetch:
                 fx_tickers_str = " ".join(fx_pairs_to_fetch)
+                # ADDED LOG
+                logging.debug(
+                    f"get_current_quotes: YF FX pairs to fetch ({len(fx_pairs_to_fetch)}): {fx_pairs_to_fetch}"
+                )
+                # END ADDED LOG
                 try:
                     fx_tickers = yf.Tickers(fx_tickers_str)  # REMOVED session argument
                     # Iterate and extract rates
@@ -495,6 +543,11 @@ class MarketDataProvider:
                         try:
                             # Use .info for FX
                             fx_info = getattr(ticker_obj, "info", None)
+                            # ADDED LOG
+                            logging.debug(
+                                f"get_current_quotes: Processing FX ticker object for {yf_symbol}"
+                            )
+                            # END ADDED LOG
                             if fx_info:
                                 rate_val = (
                                     fx_info.get("currentPrice")
@@ -532,6 +585,7 @@ class MarketDataProvider:
                                         fx_rates_vs_usd[base_curr_from_symbol] = (
                                             1.0 / rate_float
                                         )
+                                        # ADDED LOG
                                         logging.info(
                                             f"Processed FX {yf_symbol} (USD quoted): {rate_float:.4f} {currency_code_from_info}/{base_curr_from_symbol} -> {fx_rates_vs_usd[base_curr_from_symbol]:.4f} {base_curr_from_symbol}/USD"
                                         )
@@ -543,6 +597,7 @@ class MarketDataProvider:
                                         fx_rates_vs_usd[base_curr_from_symbol] = (
                                             rate_float
                                         )
+                                        # ADDED LOG
                                         logging.info(
                                             f"Processed FX {yf_symbol} (Base quoted): {rate_float:.4f} {base_curr_from_symbol}/USD"
                                         )
@@ -619,6 +674,11 @@ class MarketDataProvider:
 
             # --- MOVED: Fallback for FX Rates using recent historical data ---
             # This now runs AFTER the primary attempt to fetch current FX rates.
+            # ADDED LOG
+            logging.debug(
+                "get_current_quotes: Checking for FX pairs needing historical fallback."
+            )
+            # END ADDED LOG
             fx_pairs_needing_fallback_after_primary_fetch = []
             for (
                 yf_fx_pair_full
@@ -676,6 +736,11 @@ class MarketDataProvider:
                 results[internal_symbol] = yf_data
 
             # --- 6. Save to Cache ---
+            # ADDED LOG
+            logging.debug(
+                f"get_current_quotes: Attempting to save cache. Has errors: {has_errors}"
+            )
+            # END ADDED LOG
             if not has_errors:  # Only cache if the fetch didn't have critical errors
                 try:
                     cache_content = {

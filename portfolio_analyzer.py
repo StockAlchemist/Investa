@@ -918,7 +918,7 @@ def _build_summary_rows(
         fx_rate = get_conversion_rate(
             local_currency, display_currency, current_fx_rates_vs_usd
         )
-        if pd.isna(fx_rate):
+        if pd.isna(fx_rate):  # Keep critical error log if FX rate is NaN
             logging.error(
                 f"CRITICAL ERROR: Failed FX rate {local_currency}->{display_currency} for {symbol}/{account}."
             )
