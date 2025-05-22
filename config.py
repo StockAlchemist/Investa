@@ -48,130 +48,18 @@ CURRENT_QUOTE_CACHE_DURATION_MINUTES = 15  # For current stock/index quotes
 YFINANCE_INDEX_TICKER_MAP = {".DJI": "^DJI", "IXIC": "^IXIC", ".INX": "^GSPC"}
 DEFAULT_INDEX_QUERY_SYMBOLS = list(YFINANCE_INDEX_TICKER_MAP.keys())
 
-SYMBOL_MAP_TO_YFINANCE = {
-    "BRK.B": "BRK-B",
-    "AAPL": "AAPL",
-    "GOOG": "GOOG",
-    "GOOGL": "GOOGL",
-    "MSFT": "MSFT",
-    "AMZN": "AMZN",
-    "LQD": "LQD",
-    "SPY": "SPY",
-    "VTI": "VTI",
-    "KHC": "KHC",
-    "DIA": "DIA",
-    "AXP": "AXP",
-    "BLV": "BLV",
-    "NVDA": "NVDA",
-    "PLTR": "PLTR",
-    "JNJ": "JNJ",
-    "XLE": "XLE",
-    "VDE": "VDE",
-    "BND": "BND",
-    "VWO": "VWO",
-    "DPZ": "DPZ",
-    "QQQ": "QQQ",
-    "BHP": "BHP",
-    "DAL": "DAL",
-    "QSR": "QSR",
-    "ASML": "ASML",
-    "NLY": "NLY",
-    "ADRE": "ADRE",
-    "GS": "GS",
-    "EPP": "EPP",
-    "EFA": "EFA",
-    "IBM": "IBM",
-    "VZ": "VZ",
-    "BBW": "BBW",
-    "CVX": "CVX",
-    "NKE": "NKE",
-    "KO": "KO",
-    "BAC": "BAC",
-    "VGK": "VGK",
-    "C": "C",
-    "TLT": "TLT",
-    "AGG": "AGG",
-    "^GSPC": "^GSPC",
-    "VT": "VT",
-    "IWM": "IWM",
-    "TCAP:BKK": "TCAP.BK",
-    "BEM:BKK": "BEM.BK",
-    "GENCO:BKK": "GENCO.BK",
-    "NOK:BKK": "NOK.BK",
-    "AOT:BKK": "AOT.BK",
-    "THAI:BKK": "THAI.BK",
-    "TRUE:BKK": "TRUE.BK",
-    "BECL:BKK": "BECL.BK",
-    "AMARIN:BKK": "AMARIN.BK",
-    "PTT:BKK": "PTT.BK",
-    "CPF:BKK": "CPF.BK",
-    "BANPU:BKK": "BANPU.BK",
-    "AAV:BKK": "AAV.BK",
-    "BBL:BKK": "BBL.BK",
-    "MBK:BKK": "MBK.BK",
-    "ZEN:BKK": "ZEN.BK",
-    "CPALL:BKK": "CPALL.BK",
-    "SCC:BKK": "SCC.BK",
-}
+SYMBOL_MAP_TO_YFINANCE = {}
 
-YFINANCE_EXCLUDED_SYMBOLS = {  # Symbols to generally ignore for YFinance fetching
-    "BBW",
-    "IDBOX",
-    "IDIOX",
-    "ES-Fixed_Income",
-    "GENCO:BKK",
-    "UOBBC",
-    "ES-JUMBO25",
-    "SCBCHA-SSF",
-    "ES-SET50",
-    "ES-Tresury",
-    "UOBCG",
-    "ES-GQG",
-    "SCBRM1",
-    "SCBRMS50",
-    "AMARIN:BKK",
-    "RIMM",
-    "SCBSFF",
-    "BANPU:BKK",
-    "AAV:BKK",
-    "CPF:BKK",
-    "EMV",
-    "IDMOX",
-    "BML:BKK",
-    "ZEN:BKK",
-    "SCBRCTECH",
-    "MBK:BKK",
-    "DSV",
-    "THAI:BKK",
-    "IDLOX",
-    "SCBRMS&P500",
-    "AOT:BKK",
-    "BECL:BKK",
-    "TCAP:BKK",
-    "KRFT",
-    "AAUKY",
-    "NOK:BKK",
-    "ADRE",
-    "SCC:BKK",
-    "CPALL:BKK",
-    "TRUE:BKK",
-    "PTT:BKK",
-    "ES-FIXED_INCOME",
-    "ES-TRESURY",
-    "BEM:BKK",
-    # Note: DIA, SPY, QQQ, LQD are often used as benchmarks and might be fetched anyway if requested.
-    # This list is more for portfolio holdings that shouldn't be looked up on YF.
-}
+YFINANCE_EXCLUDED_SYMBOLS = {}
 
 SHORTABLE_SYMBOLS = {"AAPL", "RIMM"}
-
-# --- Default Settings ---
-DEFAULT_CURRENCY = "USD"
 
 # DEFAULT_CSV constant:
 # In the context of a DB-first application, this is less about the *primary data source*
 # and more about a *default filename for CSV operations* like export or import examples.
 # main_gui.py uses DEFAULT_CSV_FOR_IMPORT_FALLBACK for prompting migration.
+# DEFAULT_CSV is also used in PortfolioApp.load_config as a fallback.
+# Note: main_gui.py previously redefined this; ensure it now imports from here.
 DEFAULT_CSV = "my_transactions.csv"  # Default name for CSV related operations (e.g. export suggestion)
 
 # --- Calculation Method Configuration ---
@@ -185,3 +73,80 @@ STOCK_QUANTITY_CLOSE_TOLERANCE = 1e-6
 DIVIDEND_CHART_DEFAULT_PERIODS_ANNUAL = 10
 DIVIDEND_CHART_DEFAULT_PERIODS_QUARTERLY = 12  # (3 years)
 DIVIDEND_CHART_DEFAULT_PERIODS_MONTHLY = 24  # (2 years)
+
+# --- Constants moved from main_gui.py ---
+DEBOUNCE_INTERVAL_MS = 400  # Debounce interval for live table filtering
+MANUAL_OVERRIDES_FILENAME = (
+    "manual_overrides.json"  # Filename for manual overrides (prices, sectors, etc.)
+)
+
+DEFAULT_API_KEY = ""  # Default API key (e.g., for FMP, though currently unused directly by yfinance logic)
+
+CHART_MAX_SLICES = 10  # Max slices before grouping into 'Other' in pie charts
+PIE_CHART_FIG_SIZE = (6.5, 4.25)  # Figure size for pie charts
+PERF_CHART_FIG_SIZE = (7.5, 3.0)  # Figure size for performance graphs
+CHART_DPI = 95  # Dots per inch for charts
+
+INDICES_FOR_HEADER = [".DJI", "IXIC", ".INX"]  # Indices to display in the header bar
+CSV_DATE_FORMAT = "%b %d, %Y"  # Date format used in CSV files (e.g., "Jan 01, 2023")
+
+# --- Default Settings ---
+DEFAULT_CURRENCY = "USD"
+
+COMMON_CURRENCIES = [  # List of commonly used currency codes
+    "USD",
+    "EUR",
+    "GBP",
+    "JPY",
+    "CAD",
+    "AUD",
+    "CHF",
+    "CNY",
+    "HKD",
+    "SGD",
+    "THB",
+]
+
+# --- Graph Defaults ---
+DEFAULT_GRAPH_DAYS_AGO = 365 * 2  # Default start for graphs, days relative to today
+DEFAULT_GRAPH_INTERVAL = "W"  # Default graph interval (D, W, M)
+
+# --- Benchmark Definitions ---
+# DEFAULT_GRAPH_BENCHMARKS uses display names.
+DEFAULT_GRAPH_BENCHMARKS = [
+    "S&P 500"
+]  # Default benchmarks selected in the UI (user-friendly names)
+
+BENCHMARK_MAPPING = {  # Maps user-friendly benchmark names to Yahoo Finance tickers
+    "S&P 500": "^GSPC",
+    "NASDAQ": "^IXIC",
+    "Dow Jones": "^DJI",
+    "Russell 2000": "^RUT",
+    "SPY (S&P 500 ETF)": "SPY",
+    "QQQ (Nasdaq 100 ETF)": "QQQ",
+    "DIA (Dow Jones ETF)": "DIA",
+    "S&P 500 Total Return": "^SP500TR",  # Note: Total return indices might need specific handling or data source
+}
+
+BENCHMARK_OPTIONS_DISPLAY = [  # Order for UI display of benchmark options
+    "S&P 500",
+    "Dow Jones",
+    "NASDAQ",
+    "Russell 2000",
+    "SPY (S&P 500 ETF)",
+    "QQQ (Nasdaq 100 ETF)",
+    "DIA (Dow Jones ETF)",
+    "S&P 500 Total Return",
+]
+
+# --- Theme Colors (Hex Strings) ---
+COLOR_BG_DARK = "#FFFFFF"
+COLOR_BG_HEADER_LIGHT = "#F8F9FA"
+COLOR_BG_HEADER_ORIGINAL = "#495057"
+COLOR_TEXT_DARK = "#212529"
+COLOR_TEXT_SECONDARY = "#6C757D"
+COLOR_ACCENT_TEAL = "#6C757D"  # Main accent color, often used for portfolio lines
+COLOR_BORDER_LIGHT = "#DEE2E6"
+COLOR_BORDER_DARK = "#ADB5BD"
+COLOR_GAIN = "#198754"
+COLOR_LOSS = "#DC3545"

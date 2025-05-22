@@ -19,7 +19,29 @@ try:
         SHORTABLE_SYMBOLS,
         DEFAULT_CURRENCY,
         LOGGING_LEVEL,
-        # Add other constants you moved if needed
+        # --- Constants moved from main_gui.py ---
+        DEBOUNCE_INTERVAL_MS,
+        MANUAL_OVERRIDES_FILENAME,
+        # APP_NAME is already tested, APP_NAME_FOR_QT was merged
+        DEFAULT_API_KEY,
+        CHART_MAX_SLICES,
+        PIE_CHART_FIG_SIZE,
+        PERF_CHART_FIG_SIZE,
+        CHART_DPI,
+        INDICES_FOR_HEADER,
+        CSV_DATE_FORMAT,
+        COMMON_CURRENCIES,
+        DEFAULT_GRAPH_DAYS_AGO,
+        DEFAULT_GRAPH_INTERVAL,
+        DEFAULT_GRAPH_BENCHMARKS,
+        BENCHMARK_MAPPING,
+        BENCHMARK_OPTIONS_DISPLAY,
+        COLOR_BG_DARK,
+        COLOR_TEXT_DARK,
+        COLOR_GAIN,
+        COLOR_LOSS,  # Sample of colors
+        DEFAULT_CSV,  # Ensure DEFAULT_CSV is tested
+        # --- End moved constants ---
     )
 
     CONFIG_IMPORTED = True
@@ -49,14 +71,44 @@ def test_import_and_types():
     assert isinstance(
         LOGGING_LEVEL, int
     )  # logging levels are ints (e.g., logging.INFO)
+    assert isinstance(DEFAULT_CSV, str)  # Test for DEFAULT_CSV
+
+    # --- Test types for constants moved from main_gui.py ---
+    assert isinstance(DEBOUNCE_INTERVAL_MS, int)
+    assert isinstance(MANUAL_OVERRIDES_FILENAME, str)
+    assert isinstance(DEFAULT_API_KEY, str)
+    assert isinstance(CHART_MAX_SLICES, int)
+    assert isinstance(PIE_CHART_FIG_SIZE, tuple)
+    assert isinstance(PERF_CHART_FIG_SIZE, tuple)
+    assert isinstance(CHART_DPI, int)
+    assert isinstance(INDICES_FOR_HEADER, list)
+    assert isinstance(CSV_DATE_FORMAT, str)
+    assert isinstance(COMMON_CURRENCIES, list)
+    assert isinstance(DEFAULT_GRAPH_DAYS_AGO, int)
+    assert isinstance(DEFAULT_GRAPH_INTERVAL, str)
+    assert isinstance(DEFAULT_GRAPH_BENCHMARKS, list)
+    assert isinstance(BENCHMARK_MAPPING, dict)
+    assert isinstance(BENCHMARK_OPTIONS_DISPLAY, list)
+    assert isinstance(COLOR_BG_DARK, str)
+    assert isinstance(COLOR_TEXT_DARK, str)
+    assert isinstance(COLOR_GAIN, str)
+    assert isinstance(COLOR_LOSS, str)
 
     # Basic content checks
     assert CASH_SYMBOL_CSV == "$CASH"
     assert DEFAULT_CURRENCY == "USD"
+    assert DEFAULT_CSV == "my_transactions.csv"
     assert ".DJI" in YFINANCE_INDEX_TICKER_MAP
     assert "AAPL" in SYMBOL_MAP_TO_YFINANCE
     assert "BBW" in YFINANCE_EXCLUDED_SYMBOLS  # Example excluded symbol
     assert "AAPL" in SHORTABLE_SYMBOLS  # Example shortable symbol
+
+    # Basic content checks for moved constants
+    assert DEBOUNCE_INTERVAL_MS == 400
+    assert MANUAL_OVERRIDES_FILENAME == "manual_overrides.json"
+    assert "USD" in COMMON_CURRENCIES
+    assert "S&P 500" in BENCHMARK_MAPPING
+    assert COLOR_GAIN == "#198754"
 
 
 # Add more specific checks if needed for complex constants

@@ -70,7 +70,7 @@ import logging
 
 # --- Configure Logging Globally (as early as possible) ---
 # Set the desired global level here (e.g., logging.INFO, logging.DEBUG)
-LOGGING_LEVEL = logging.DEBUG  # Or logging.DEBUG for more detail
+LOGGING_LEVEL = logging.WARNING  # Or logging.DEBUG for more detail
 
 logging.basicConfig(
     level=LOGGING_LEVEL,
@@ -241,6 +241,36 @@ try:
     )  # Add the new function
     import config  # <-- ADDED IMPORT FOR CONFIG MODULE
 
+    # --- Import constants moved from main_gui.py to config.py ---
+    from config import (
+        DEBOUNCE_INTERVAL_MS,
+        MANUAL_OVERRIDES_FILENAME,
+        DEFAULT_API_KEY,  # Already used by PortfolioApp.load_config via config.DEFAULT_API_KEY
+        CHART_MAX_SLICES,
+        PIE_CHART_FIG_SIZE,
+        PERF_CHART_FIG_SIZE,
+        CHART_DPI,
+        INDICES_FOR_HEADER,
+        CSV_DATE_FORMAT,
+        COMMON_CURRENCIES,
+        DEFAULT_GRAPH_DAYS_AGO,
+        DEFAULT_GRAPH_INTERVAL,
+        DEFAULT_GRAPH_BENCHMARKS,
+        BENCHMARK_MAPPING,
+        BENCHMARK_OPTIONS_DISPLAY,
+        COLOR_BG_DARK,
+        COLOR_BG_HEADER_LIGHT,
+        COLOR_BG_HEADER_ORIGINAL,  # Import moved color hex strings
+        COLOR_TEXT_DARK,
+        COLOR_TEXT_SECONDARY,
+        COLOR_ACCENT_TEAL,
+        COLOR_BORDER_LIGHT,
+        COLOR_BORDER_DARK,
+        COLOR_GAIN,
+        COLOR_LOSS,
+        DEFAULT_CSV,
+    )
+
     # --- END ADD ---
     MARKET_PROVIDER_AVAILABLE = True  # Assume available if import succeeds
     # Check if the imported function signature actually supports 'exclude_accounts'
@@ -400,86 +430,29 @@ def resource_path(relative_path):
 # For DEFAULT_CSV, it's often better to let the user select it or store its path in config,
 # rather than bundling a specific "my_transactions.csv".
 # If "my_transactions.csv" is an example/template, then resource_path could be used.
-# For now, we'll assume it's user-selected and its path is stored in config.
-DEFAULT_CSV = "my_transactions.csv"
-DEBOUNCE_INTERVAL_MS = 400  # Debounce interval for live table filtering
+# DEFAULT_CSV is now imported from config.py
 
-MANUAL_OVERRIDES_FILENAME = "manual_overrides.json"  # New filename
 # --- User-specific file paths using QStandardPaths ---
-APP_NAME_FOR_QT = "Investa"  # Define your application name for Qt settings
+# APP_NAME_FOR_QT was "Investa". config.APP_NAME ("Investa") will be used instead.
 
 # CONFIG_FILE and MANUAL_PRICE_FILE will be initialized as instance attributes
 # in PortfolioApp.__init__ after QApplication is fully configured.
 
-# DEFAULT_API_KEY = os.getenv("FMP_API_KEY")  # Optional API key from environment
-DEFAULT_API_KEY = ""
-# CONFIG_FILE = resource_path("gui_config.json")  # Configuration file name
-CHART_MAX_SLICES = (
-    10  # Max slices before grouping into 'Other' in pie charts # type: ignore
-)
-PIE_CHART_FIG_SIZE = (6.5, 4.25)  # Figure size for pie charts - Increased size
-PERF_CHART_FIG_SIZE = (7.5, 3.0)  # Figure size for performance graphs
-CHART_DPI = 95  # Dots per inch for charts
-INDICES_FOR_HEADER = [".DJI", "IXIC", ".INX"]
-CSV_DATE_FORMAT = "%b %d, %Y"  # Define the specific date format used in the CSV
-COMMON_CURRENCIES = [
-    "USD",
-    "THB",
-    "EUR",
-    "GBP",
-    "JPY",
-    "CAD",
-    "AUD",
-    "CHF",
-    "CNY",
-    "HKD",
-    "SGD",
-]
-# MANUAL_PRICE_FILE = resource_path("manual_prices.json")
+# DEFAULT_API_KEY is now imported from config.py
 
 # --- Graph Defaults ---
-DEFAULT_GRAPH_START_DATE = date.today() - timedelta(
-    days=365 * 2
-)  # Default start 2 years ago
+# DEFAULT_GRAPH_START_DATE will use config.DEFAULT_GRAPH_DAYS_AGO
+DEFAULT_GRAPH_START_DATE = date.today() - timedelta(days=DEFAULT_GRAPH_DAYS_AGO)
 DEFAULT_GRAPH_END_DATE = date.today()  # Default end today
-DEFAULT_GRAPH_INTERVAL = "W"  # Default interval Weekly
-DEFAULT_GRAPH_BENCHMARKS = ["SPY"]  # Default to a list with SPY benchmark
-# --- Benchmark Definitions ---
-BENCHMARK_MAPPING = {
-    "S&P 500 Index": "^GSPC",
-    "NASDAQ Composite": "^IXIC",
-    "Dow Jones Industrial Avg": "^DJI",
-    "Russell 2000 Index": "^RUT",
-    "SPY (S&P 500 ETF)": "SPY",
-    "QQQ (Nasdaq 100 ETF)": "QQQ",
-    "DIA (Dow Jones ETF)": "DIA",
-    "S&P 500 Total Return": "^SP500TR",
-}
-BENCHMARK_OPTIONS_DISPLAY = sorted(
-    list(BENCHMARK_MAPPING.keys())
-)  # For UI display order
-DEFAULT_GRAPH_BENCHMARKS = ["S&P 500 Index"]  # Default to a user-friendly name
+# DEFAULT_GRAPH_INTERVAL is imported from config.py
+# DEFAULT_GRAPH_BENCHMARKS is imported from config.py
+# BENCHMARK_MAPPING is imported from config.py
+# BENCHMARK_OPTIONS_DISPLAY is imported from config.py
 
 # --- Theme Colors ---
 # Define color palette for styling the UI (Minimal Theme)
-COLOR_BG_DARK = "#FFFFFF"
-COLOR_BG_HEADER_LIGHT = "#F8F9FA"
-COLOR_BG_HEADER_ORIGINAL = "#495057"  # Dark grey for header text/borders
-COLOR_BG_CONTROLS = "#FFFFFF"
-COLOR_BG_SUMMARY = "#F8F9FA"  # Light grey for summary background
-COLOR_BG_CONTENT = "#FFFFFF"
-COLOR_TEXT_LIGHT = "#FFFFFF"
-COLOR_TEXT_DARK = "#212529"  # Dark text
-COLOR_TEXT_SECONDARY = "#6C757D"  # Grey text for labels, status
-COLOR_ACCENT_TEAL = "#6C757D"  # Grey/teal accent
-COLOR_ACCENT_TEAL_LIGHT = "#F8F9FA"  # Very light grey for headers
-COLOR_ACCENT_AMBER = "#E9ECEF"  # Light grey for buttons, selection background
-COLOR_ACCENT_AMBER_DARK = "#CED4DA"  # Slightly darker grey for button hover
-COLOR_GAIN = "#198754"  # Green for gains
-COLOR_LOSS = "#DC3545"  # Red for losses
-COLOR_BORDER_LIGHT = "#DEE2E6"  # Light grey border
-COLOR_BORDER_DARK = "#ADB5BD"
-# Medium grey border
+# Hex color strings (COLOR_BG_DARK, etc.) are now imported from config.py
+# QColor objects will be defined using these imported hex strings.
 
 # Convert hex colors to QColor objects for easier use in Qt palettes
 QCOLOR_GAIN = QColor(COLOR_GAIN)
@@ -5751,7 +5724,7 @@ The CSV file should contain the following columns (header names must match exact
                     # For home dir, we might want to explicitly create an app-named subfolder
                     home_dir = os.path.expanduser("~")
                     app_data_path = os.path.join(
-                        home_dir, f".{APP_NAME_FOR_QT.lower()}"
+                        home_dir, f".{config.APP_NAME.lower()}"
                     )  # e.g., ~/.investa
 
             if app_data_path:
@@ -15141,12 +15114,12 @@ if __name__ == "__main__":
     # --->>> SET ORG AND APP NAME EARLY <<<---
     # This ensures QStandardPaths uses the correct names when PortfolioApp initializes its paths.
     app.setOrganizationName("StockAlchemist")  # Or your desired organization name
-    app.setApplicationName(APP_NAME_FOR_QT)  # APP_NAME_FOR_QT is "Investa"
+    app.setApplicationName(config.APP_NAME)  # Use APP_NAME from config.py
     # --->>> ------------ <<<---
 
     # --->>> IT MUST BE HERE <<<---s
     # Name does not show up in the menu bar
-    app.setApplicationName(APP_NAME_FOR_QT)  # <--- Use the constant
+    app.setApplicationName(config.APP_NAME)  # <--- Use the constant
     # --->>> ------------ <<<---
     logging.debug(f"DEBUG: QApplication name set to: {app.applicationName()}")
 
