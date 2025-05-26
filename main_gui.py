@@ -3800,51 +3800,100 @@ class AddTransactionDialog(QDialog):
             )
             return
 
+        # Determine if price field should be used or if it's $CASH
+        current_symbol = self.symbol_edit.text().strip().upper()
+        is_cash_tx = (
+            current_symbol == CASH_SYMBOL_CSV
+        )  # CASH_SYMBOL_CSV is imported from config
+
         logging.debug(
-            f"_auto_calculate_total: Called. Lock: {self.total_amount_locked_by_user}, Qty: '{self.quantity_edit.text()}', Price: '{self.price_edit.text()}'"
+            f"_auto_calculate_total: Called. Lock: {self.total_amount_locked_by_user}, Symbol: '{current_symbol}', Qty: '{self.quantity_edit.text()}', Price: '{self.price_edit.text()}'"
         )
 
-        # Only calculate if Quantity and Price fields are enabled (relevant for Buy/Sell)
-        if not self.quantity_edit.isEnabled() or not self.price_edit.isEnabled():
+        # If quantity cannot be entered, no auto-calculation based on it.
+        if not self.quantity_edit.isEnabled():
             logging.debug(
-                "_auto_calculate_total: SKIPPED because Qty or Price field is not enabled."
+                "_auto_calculate_total: SKIPPED because Qty field is not enabled."
             )
             return
 
+        # If it's not a cash transaction, and price_edit is also disabled (e.g. for "Split"), then skip.
+        if not is_cash_tx and not self.price_edit.isEnabled():
+            logging.debug(
+                "_auto_calculate_total: SKIPPED because (not $CASH and Price field is not enabled)."
+            )
+            # If total_amount_edit is read-only, it should be cleared as its inputs are not available.
+            if self.total_amount_edit.isReadOnly():
+                self.total_amount_edit.clear()
+            return
+
         qty_str = self.quantity_edit.text().strip().replace(",", "")
-        price_str = self.price_edit.text().strip().replace(",", "")
+        price_str = ""
+
+        if is_cash_tx:
+            price_str = "1.00"  # For $CASH, price is always 1.0
+        elif (
+            self.price_edit.isEnabled()
+        ):  # Only read from price_edit if it's enabled for non-$CASH
+            price_str = self.price_edit.text().strip().replace(",", "")
+        else:  # Not $CASH and price_edit is not enabled (e.g. for Split type where price isn't used for total)
+            logging.debug(
+                "_auto_calculate_total: Price field not used for calculation (e.g., Split type or $CASH handled)."
+            )
+            # If total_amount_edit is read-only, it should be cleared as its inputs are not available.
+            if self.total_amount_edit.isReadOnly():
+                self.total_amount_edit.clear()
+            return
 
         try:
-            # Attempt conversion only if both strings have content
-            if qty_str and price_str:
+            if (
+                qty_str and price_str
+            ):  # Both quantity and a determined price string must exist
                 qty = float(qty_str)
                 price = float(price_str)
-                if qty > 0 and price > 0:
+
+                # Allow calculation for qty >= 0 and price >= 0.
+                # Validators should prevent negative values where inappropriate.
+                if qty >= 0 and price >= 0:
                     total = qty * price
+                    decimal_places = 2  # Default
+                    parent_app = self.parent()  # PortfolioApp instance
+                    if (
+                        parent_app
+                        and hasattr(parent_app, "config")
+                        and "decimal_places" in parent_app.config
+                    ):
+                        decimal_places = parent_app.config.get("decimal_places", 2)
+                    self.total_amount_edit.setText(f"{total:.{decimal_places}f}")
                     logging.debug(
-                        f"_auto_calculate_total: Calculated total {total:.2f}. Setting text."
+                        f"_auto_calculate_total: Calculated total {total:.{decimal_places}f}. Setting text."
                     )
-                    # Update the Total Amount field, formatted to 2 decimal places
-                    self.total_amount_edit.setText(f"{total:.2f}")
                 else:
+                    # This case implies qty or price was negative, which should be handled by validators.
+                    # If total_amount_edit is read-only (always auto-calculated), clear it. Otherwise, preserve.
+                    if self.total_amount_edit.isReadOnly():
+                        self.total_amount_edit.clear()
                     logging.debug(
-                        f"_auto_calculate_total: Qty or Price not > 0. Qty={qty}, Price={price}. Current Total Amount: '{self.total_amount_edit.text()}'"
+                        f"_auto_calculate_total: Qty or Price was negative. Qty={qty}, Price={price}. Total cleared if read-only."
                     )
-            # If qty_str or price_str is empty, do nothing, let existing total_amount_edit text remain.
-            # This prevents clearing if user deletes qty/price while total was pre-filled or manually entered.
-            elif not qty_str or not price_str:
+            elif (
+                self.total_amount_edit.isReadOnly()
+            ):  # If inputs are incomplete and total is auto-calc only
+                self.total_amount_edit.clear()
                 logging.debug(
-                    "_auto_calculate_total: Qty or Price string is empty. No calculation performed."
+                    "_auto_calculate_total: Qty or Price string empty and Total is read-only. Total cleared."
                 )
+            # If inputs are incomplete and total is editable, do nothing (preserve existing text as per original logic)
 
         except ValueError:
-            # If quantity or price are not valid numbers (e.g., non-numeric text),
-            # do nothing. The QLineEdit validators will handle visual feedback for those fields.
-            # We don't want to clear total_amount_edit if the user is just starting to type
-            # or if it was pre-filled and qty/price are temporarily invalid during an edit.
+            if (
+                self.total_amount_edit.isReadOnly()
+            ):  # If conversion error and total is auto-calc only
+                self.total_amount_edit.clear()
             logging.debug(
-                f"_auto_calculate_total: ValueError during float conversion. Qty_str='{qty_str}', Price_str='{price_str}'. Current Total Amount: '{self.total_amount_edit.text()}'"
+                f"_auto_calculate_total: ValueError during float conversion. Qty_str='{qty_str}', Price_str='{price_str}'. Total cleared if read-only."
             )
+            # Pass, as validators on Qty/Price fields will show error to user.
             pass
 
     def _populate_fields_for_edit(self, data: Dict[str, Any]):
@@ -5368,7 +5417,15 @@ The CSV file should contain the following columns (header names must match exact
         # Load all transactions from the database.
         # load_all_transactions_from_db returns a DataFrame with 'cleaned' column names
         # and 'original_index' as the DB id.
-        df_to_export, success = load_all_transactions_from_db(self.db_conn)
+        # Use account_currency_map and default_currency from config for cleaning after DB load
+        acc_map_config_export = self.config.get("account_currency_map", {})
+        def_curr_config_export = self.config.get(
+            "default_currency", config.DEFAULT_CURRENCY
+        )
+
+        df_to_export, success = load_all_transactions_from_db(
+            self.db_conn, acc_map_config_export, def_curr_config_export
+        )
 
         if not success or df_to_export is None:
             QMessageBox.critical(
