@@ -342,12 +342,86 @@ def calculate_portfolio_summary(
         # Proceed, might result in empty summary, which is valid.
         # status_parts.append("No Tx Post-Filter") # Optional status part
 
+    # --- ADDED: Prepare historical FX rates for _process_transactions_to_holdings ---
+    historical_fx_for_processing: Dict[Tuple[date, str], float] = {}
+    if not transactions_df_filtered.empty:
+        logging.debug(
+            "Preparing historical FX rates for transaction processing (current summary)..."
+        )
+        unique_dates = transactions_df_filtered["Date"].dt.date.unique()
+
+        # Collect all relevant currencies for historical FX fetching
+        currencies_for_hist_fx_fetch = set(
+            transactions_df_filtered["Local Currency"].unique()
+        )
+        currencies_for_hist_fx_fetch.add(display_currency)
+        currencies_for_hist_fx_fetch.add(
+            default_currency
+        )  # default_currency is an arg to calculate_portfolio_summary
+
+        # Clean the collected currencies
+        cleaned_currencies_for_hist_fx = {
+            str(c).strip().upper()
+            for c in currencies_for_hist_fx_fetch
+            if pd.notna(c)
+            and isinstance(str(c).strip(), str)
+            and str(c).strip() not in ["", "<NA>", "NAN", "NONE", "N/A"]
+            and len(str(c).strip()) == 3
+        }
+
+        min_tx_date = transactions_df_filtered["Date"].min().date()
+        fx_pairs_to_fetch_hist = [
+            f"{lc.upper()}=X"
+            for lc in cleaned_currencies_for_hist_fx  # Use the cleaned and expanded set
+            if lc and lc.upper() != "USD" and pd.notna(lc) and str(lc).strip() != ""
+        ]
+
+        market_provider_for_hist_fx = MarketDataProvider(
+            current_cache_file=cache_file_path
+        )  # Use same cache config
+
+        # Fetch historical FX rates (local_curr vs USD)
+        # report_date is datetime.now().date()
+        historical_fx_data_usd_based, fx_fetch_err_hist = (
+            market_provider_for_hist_fx.get_historical_fx_rates(
+                fx_pairs_yf=list(set(fx_pairs_to_fetch_hist)),
+                start_date=min_tx_date,
+                end_date=report_date,
+                use_cache=True,
+                cache_key=f"PROC_FX_HIST_{min_tx_date}_{report_date}_{'_'.join(sorted(list(set(fx_pairs_to_fetch_hist))))}",
+            )
+        )
+        if fx_fetch_err_hist:
+            logging.warning(
+                "Failed to fetch some historical FX rates needed for precise FX G/L calculation in current summary. FX G/L might be inaccurate."
+            )
+            has_warnings = True
+
+        for tx_date_obj in unique_dates:
+            for loc_curr in transactions_df_filtered[
+                "Local Currency"
+            ].unique():  # Iterate original unique local currencies from transactions
+                if pd.isna(loc_curr) or str(loc_curr).strip() == "":
+                    continue
+                rate = get_historical_rate_via_usd_bridge(
+                    str(loc_curr),
+                    display_currency,
+                    tx_date_obj,
+                    historical_fx_data_usd_based or {},
+                )
+                historical_fx_for_processing[(tx_date_obj, str(loc_curr))] = (
+                    float(rate) if pd.notna(rate) else np.nan
+                )
+    # --- END ADDED ---
+
     # --- 3. Process Stock/ETF Transactions ---
     holdings, _, _, _, ignored_indices_proc, ignored_reasons_proc, warn_proc = (
         _process_transactions_to_holdings(
             transactions_df=transactions_df_filtered,  # Pass filtered DataFrame
             default_currency=default_currency,
             shortable_symbols=SHORTABLE_SYMBOLS,
+            historical_fx_lookup=historical_fx_for_processing,  # NEW ARG
+            display_currency_for_hist_fx=display_currency,  # NEW ARG
         )
     )
     combined_ignored_indices.update(ignored_indices_proc)
@@ -1790,36 +1864,31 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             dtype=np.int64,
         )
         # Keep as date objects
-        tx_symbols_np = (  # This line was 1800 in the traceback, but the diff applies to the correct logical line
-            transactions_til_date["Symbol"].map(symbol_to_id).values.astype(np.int64)
-        )
-        tx_accounts_np = (
-            transactions_til_date["Account"].map(account_to_id).values.astype(np.int64)
-        )
-        tx_types_np = (
-            transactions_til_date["Type"]
-            .map(type_to_id)
-            .fillna(-1)
-            .values.astype(np.int64)  # Added fillna(-1)
-        )  # This is the line causing the warning
+        tx_symbols_series = transactions_til_date["Symbol"].map(symbol_to_id)
+        tx_symbols_np = tx_symbols_series.values.astype(np.int64)
+
+        tx_accounts_series = transactions_til_date["Account"].map(account_to_id)
+        tx_accounts_np = tx_accounts_series.values.astype(np.int64)
+
+        tx_types_series = transactions_til_date["Type"].map(type_to_id).fillna(-1)
+        tx_types_np = tx_types_series.values.astype(np.int64)
+
         tx_quantities_np = (
             transactions_til_date["Quantity"].fillna(0.0).values.astype(np.float64)
         )
         tx_prices_np = (
             transactions_til_date["Price/Share"].fillna(0.0).values.astype(np.float64)
         )
-        tx_commissions_np = (
-            transactions_til_date["Commission"].fillna(0.0).values.astype(np.float64)
+        tx_commissions_series = transactions_til_date["Commission"].fillna(0.0)
+        tx_commissions_np = tx_commissions_series.values.astype(np.float64)
+
+        tx_split_ratios_series = transactions_til_date["Split Ratio"].fillna(0.0)
+        tx_split_ratios_np = tx_split_ratios_series.values.astype(np.float64)
+
+        tx_local_currencies_series = (
+            transactions_til_date["Local Currency"].map(currency_to_id).fillna(-1)
         )
-        tx_split_ratios_np = (
-            transactions_til_date["Split Ratio"].fillna(0.0).values.astype(np.float64)
-        )
-        tx_local_currencies_np = (
-            transactions_til_date["Local Currency"]
-            .map(currency_to_id)
-            .fillna(-1)  # Added fillna(-1) to handle missing currency IDs
-            .values.astype(np.int64)
-        )
+        tx_local_currencies_np = tx_local_currencies_series.values.astype(np.int64)
 
         # Get IDs for specific types/symbols needed inside Numba
         split_type_id = type_to_id.get("split", -1)

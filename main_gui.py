@@ -214,6 +214,37 @@ except ImportError:
 import matplotlib.dates as mdates  # Needed for date formatting in tooltips
 
 # --- Import Business Logic from portfolio_logic ---
+# --- MOVED: Import constants from config.py EARLIER ---
+# This ensures these constants are defined even if portfolio_logic import fails.
+from config import (
+    DEBOUNCE_INTERVAL_MS,
+    MANUAL_OVERRIDES_FILENAME,
+    DEFAULT_API_KEY,
+    CHART_MAX_SLICES,
+    PIE_CHART_FIG_SIZE,
+    PERF_CHART_FIG_SIZE,
+    CHART_DPI,
+    INDICES_FOR_HEADER,
+    CSV_DATE_FORMAT,
+    COMMON_CURRENCIES,
+    DEFAULT_GRAPH_DAYS_AGO,  # Now defined before its use
+    DEFAULT_GRAPH_INTERVAL,
+    DEFAULT_GRAPH_BENCHMARKS,
+    BENCHMARK_MAPPING,
+    BENCHMARK_OPTIONS_DISPLAY,
+    COLOR_BG_DARK,
+    COLOR_BG_HEADER_LIGHT,
+    COLOR_BG_HEADER_ORIGINAL,
+    COLOR_TEXT_DARK,
+    COLOR_TEXT_SECONDARY,
+    COLOR_ACCENT_TEAL,
+    COLOR_BORDER_LIGHT,
+    COLOR_BORDER_DARK,
+    COLOR_GAIN,
+    COLOR_LOSS,
+    DEFAULT_CSV,
+)
+
 try:
     # --- MODIFICATION: Check if the imported function actually supports exclude_accounts ---
     # We assume it might not, based on the error. The GUI will pass include_accounts, # type: ignore
@@ -240,36 +271,6 @@ try:
         # --- ADDED: Import extract_dividend_history ---
         extract_dividend_history,  # <-- ADDED for dividend history
     )  # Add the new function
-
-    # --- Import constants moved from main_gui.py to config.py ---
-    from config import (
-        DEBOUNCE_INTERVAL_MS,
-        MANUAL_OVERRIDES_FILENAME,
-        DEFAULT_API_KEY,  # Already used by PortfolioApp.load_config via config.DEFAULT_API_KEY
-        CHART_MAX_SLICES,
-        PIE_CHART_FIG_SIZE,
-        PERF_CHART_FIG_SIZE,
-        CHART_DPI,
-        INDICES_FOR_HEADER,
-        CSV_DATE_FORMAT,
-        COMMON_CURRENCIES,
-        DEFAULT_GRAPH_DAYS_AGO,
-        DEFAULT_GRAPH_INTERVAL,
-        DEFAULT_GRAPH_BENCHMARKS,
-        BENCHMARK_MAPPING,
-        BENCHMARK_OPTIONS_DISPLAY,
-        COLOR_BG_DARK,
-        COLOR_BG_HEADER_LIGHT,
-        COLOR_BG_HEADER_ORIGINAL,  # Import moved color hex strings
-        COLOR_TEXT_DARK,
-        COLOR_TEXT_SECONDARY,
-        COLOR_ACCENT_TEAL,
-        COLOR_BORDER_LIGHT,
-        COLOR_BORDER_DARK,
-        COLOR_GAIN,
-        COLOR_LOSS,
-        DEFAULT_CSV,
-    )
 
     # --- END ADD ---
     MARKET_PROVIDER_AVAILABLE = True  # Assume available if import succeeds
@@ -14696,8 +14697,9 @@ The CSV file should contain the following columns (header names must match exact
                 logging.warning(
                     f"Toolbar: Original icon for '{self.import_csv_action.text()}' is NULL. Attempting fallbacks."
                 )
-                import_icon = QIcon.fromTheme("document-import")
-                if import_icon.isNull():
+                if (
+                    not import_icon or import_icon.isNull()
+                ):  # Check if import_icon itself is None or isNull
                     logging.warning(
                         "Toolbar: QIcon.fromTheme('document-import') is NULL. Trying SP_ArrowDown."
                     )
@@ -14705,11 +14707,9 @@ The CSV file should contain the following columns (header names must match exact
                     if import_icon.isNull():
                         logging.warning(
                             "Toolbar: SP_ArrowDown icon is also NULL for import_csv_action. Creating placeholder."
-                        )
+                        )  # Fallback to QPixmap
                         pixmap = QPixmap(24, 24)
-                        pixmap.fill(
-                            QColor("blue")
-                        )  # Placeholder, changed size to 24x24
+                        pixmap.fill(QColor(Qt.blue))  # Use Qt.blue
                         import_icon = QIcon(pixmap)
                 self.import_csv_action.setIcon(import_icon)
 
@@ -14774,10 +14774,8 @@ The CSV file should contain the following columns (header names must match exact
                 logging.warning(
                     f"Toolbar: Original icon for '{self.manage_transactions_action.text()}' is NULL. Attempting fallbacks."
                 )
-                manage_icon = QIcon.fromTheme(
-                    "document-edit"
-                )  # Simplified theme icon name
-                if manage_icon.isNull():
+                # manage_icon = QIcon.fromTheme("document-edit") # Simplified theme icon name
+                if not manage_icon or manage_icon.isNull():
                     logging.warning(
                         "Toolbar: QIcon.fromTheme('document-edit') is NULL. Trying SP_DirIcon."
                     )  # Changed standard icon fallback
@@ -14786,10 +14784,8 @@ The CSV file should contain the following columns (header names must match exact
                         logging.warning(
                             "Toolbar: SP_DirIcon icon is also NULL for manage_transactions_action. Creating placeholder."
                         )
-                        pixmap = QPixmap(24, 24)
-                        pixmap.fill(
-                            QColor("green")
-                        )  # Placeholder, changed size to 24x24
+                        pixmap = QPixmap(24, 24)  # Fallback to QPixmap
+                        pixmap.fill(QColor(Qt.green))  # Use Qt.green
                         manage_icon = QIcon(pixmap)
                 self.manage_transactions_action.setIcon(manage_icon)
 

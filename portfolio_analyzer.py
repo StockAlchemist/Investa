@@ -93,7 +93,11 @@ _AGGREGATE_CASH_ACCOUNT_NAME_ = "Cash"
 # --- REVISED: _process_transactions_to_holdings (Split applied to all accounts) ---
 @profile
 def _process_transactions_to_holdings(
-    transactions_df: pd.DataFrame, default_currency: str, shortable_symbols: Set[str]
+    transactions_df: pd.DataFrame,
+    default_currency: str,
+    shortable_symbols: Set[str],
+    historical_fx_lookup: Dict[Tuple[date, str], float],  # NEW: For historical FX rates
+    display_currency_for_hist_fx: str,  # NEW: Target currency for rates in historical_fx_lookup
 ) -> Tuple[
     Dict[Tuple[str, str], Dict],
     Dict[str, float],
@@ -210,6 +214,7 @@ def _process_transactions_to_holdings(
                 "total_cost_invested_local": 0.0,
                 "cumulative_investment_local": 0.0,
                 "total_buy_cost_local": 0.0,
+                "total_cost_display_historical_fx": 0.0,  # NEW: Track cost in display currency at historical FX
             }
         elif (
             holdings[holding_key_from_row]["local_currency"] != local_currency_from_row
@@ -371,12 +376,35 @@ def _process_transactions_to_holdings(
                 if qty_abs <= 1e-9:
                     raise ValueError(f"{tx_type} qty must be > 0")
                 if tx_type == "short sell":
+                    # Cost in display currency at historical FX for short proceeds
+                    fx_rate_hist_short = historical_fx_lookup.get(
+                        (tx_date, local_currency_from_row), np.nan
+                    )
+                    if pd.isna(fx_rate_hist_short):
+                        logging.warning(
+                            f"FX G/L (Short Sell): Missing historical FX for {local_currency_from_row} on {tx_date} for {symbol}. FX G/L on this tx may be inaccurate."
+                        )
+                        # Fallback: use current rate for this transaction's display currency cost component if historical is missing
+                        # This is not ideal but prevents NaN propagation if one rate is missing.
+                        # Better: ensure all rates are pre-fetched or handle missing rates by making the whole FX G/L NaN.
+                        # For now, let's assume a fallback to 1.0 if display_currency == local_currency, else NaN.
+                        fx_rate_hist_short = (
+                            1.0
+                            if local_currency_from_row == display_currency_for_hist_fx
+                            else np.nan
+                        )
+
                     proceeds = (qty_abs * price_local) - commission_local_for_this_tx
                     holding["qty"] -= qty_abs
                     holding["short_proceeds_local"] += proceeds
                     holding["short_original_qty"] += qty_abs
                     holding["commissions_local"] += commission_local_for_this_tx
                     holding["cumulative_investment_local"] -= proceeds
+                    if pd.notna(fx_rate_hist_short) and pd.notna(proceeds):
+                        holding["total_cost_display_historical_fx"] -= (
+                            proceeds * fx_rate_hist_short
+                        )  # Proceeds are negative cost
+
                 elif tx_type == "buy to cover":
                     qty_currently_short = (
                         abs(holding["qty"]) if holding["qty"] < -1e-9 else 0.0
@@ -386,6 +414,19 @@ def _process_transactions_to_holdings(
                             f"Not currently short {symbol}/{account} to cover."
                         )
                     qty_covered = min(qty_abs, qty_currently_short)
+                    fx_rate_hist_cover = historical_fx_lookup.get(
+                        (tx_date, local_currency_from_row), np.nan
+                    )
+                    if pd.isna(fx_rate_hist_cover):
+                        logging.warning(
+                            f"FX G/L (Buy to Cover): Missing historical FX for {local_currency_from_row} on {tx_date} for {symbol}. FX G/L on this tx may be inaccurate."
+                        )
+                        fx_rate_hist_cover = (
+                            1.0
+                            if local_currency_from_row == display_currency_for_hist_fx
+                            else np.nan
+                        )
+
                     cost = (qty_covered * price_local) + commission_local_for_this_tx
                     if holding["short_original_qty"] <= 1e-9:
                         raise ZeroDivisionError(
@@ -395,6 +436,17 @@ def _process_transactions_to_holdings(
                         holding["short_proceeds_local"] / holding["short_original_qty"]
                     )
                     proceeds_attributed = qty_covered * avg_proceeds_per_share
+
+                    # Adjust historical display cost for covering
+                    if pd.notna(fx_rate_hist_cover) and pd.notna(cost):
+                        cost_display_hist_cover = cost * fx_rate_hist_cover
+                        # For buy to cover, this cost reduces the "negative cost" (proceeds) accumulated in display currency
+                        # Effectively, it's like adding back this cost.
+                        # If total_cost_display_historical_fx was negative due to short proceeds, this makes it less negative.
+                        holding[
+                            "total_cost_display_historical_fx"
+                        ] += cost_display_hist_cover
+
                     gain = proceeds_attributed - cost
                     holding["qty"] += qty_covered
                     holding["short_proceeds_local"] -= proceeds_attributed
@@ -419,6 +471,20 @@ def _process_transactions_to_holdings(
                 qty_abs = abs(qty)
                 if qty_abs <= 1e-9:
                     raise ValueError("Buy/Deposit qty must be > 0")
+
+                fx_rate_hist_buy = historical_fx_lookup.get(
+                    (tx_date, local_currency_from_row), np.nan
+                )
+                if pd.isna(fx_rate_hist_buy):
+                    logging.warning(
+                        f"FX G/L (Buy): Missing historical FX for {local_currency_from_row} on {tx_date} for {symbol}. FX G/L on this tx may be inaccurate."
+                    )
+                    fx_rate_hist_buy = (
+                        1.0
+                        if local_currency_from_row == display_currency_for_hist_fx
+                        else np.nan
+                    )
+
                 cost = (qty_abs * price_local) + commission_local_for_this_tx
                 holding["qty"] += qty_abs
                 holding["total_cost_local"] += cost
@@ -426,6 +492,10 @@ def _process_transactions_to_holdings(
                 holding["total_cost_invested_local"] += cost
                 holding["cumulative_investment_local"] += cost
                 holding["total_buy_cost_local"] += cost
+                if pd.notna(fx_rate_hist_buy) and pd.notna(cost):
+                    holding["total_cost_display_historical_fx"] += (
+                        cost * fx_rate_hist_buy
+                    )
 
             elif tx_type == "sell" or tx_type == "withdrawal":
                 qty_abs = abs(qty)
@@ -444,6 +514,10 @@ def _process_transactions_to_holdings(
                     raise ValueError("Sell/Withdrawal qty must be > 0")
                 qty_sold = min(qty_abs, held_qty)
                 cost_sold = 0.0
+                cost_sold_display_historical_fx = (
+                    0.0  # For adjusting historical display cost
+                )
+
                 if held_qty > 1e-9 and abs(holding["total_cost_local"]) > 1e-9:
                     if pd.isna(holding["total_cost_local"]):
                         cost_sold = 0.0
@@ -453,6 +527,12 @@ def _process_transactions_to_holdings(
                         )
                     else:
                         cost_sold = qty_sold * (holding["total_cost_local"] / held_qty)
+                        # Proportionally reduce the historical display cost
+                        if pd.notna(holding.get("total_cost_display_historical_fx")):
+                            cost_sold_display_historical_fx = qty_sold * (
+                                holding["total_cost_display_historical_fx"] / held_qty
+                            )
+
                 proceeds = (qty_sold * price_local) - commission_local_for_this_tx
                 gain = proceeds - cost_sold
                 logging.debug(
@@ -466,6 +546,13 @@ def _process_transactions_to_holdings(
                     f"Debug: {symbol}/{account} {holding['qty']:.4f} remaining"
                 )
                 holding["total_cost_local"] -= cost_sold
+                if pd.notna(
+                    cost_sold_display_historical_fx
+                ):  # Ensure it's a number before subtracting
+                    holding[
+                        "total_cost_display_historical_fx"
+                    ] -= cost_sold_display_historical_fx
+
                 holding["commissions_local"] += commission_local_for_this_tx
                 holding["realized_gain_local"] += gain
                 overall_realized_gains_local[holding["local_currency"]] += gain
@@ -473,6 +560,9 @@ def _process_transactions_to_holdings(
                 if abs(holding["qty"]) < 1e-9:
                     holding["qty"] = 0.0
                     holding["total_cost_local"] = 0.0
+                    holding["total_cost_display_historical_fx"] = (
+                        0.0  # Reset if position closed
+                    )
                 holding["cumulative_investment_local"] -= proceeds
 
             elif tx_type == "dividend":
@@ -497,12 +587,42 @@ def _process_transactions_to_holdings(
                 holding["dividends_local"] += div_effect
                 overall_dividends_local[holding["local_currency"]] += div_effect
                 holding["commissions_local"] += commission_local_for_this_tx
+                # Dividends reduce the cost basis in display currency (historical FX)
+                fx_rate_hist_div = historical_fx_lookup.get(
+                    (tx_date, local_currency_from_row), np.nan
+                )
+                if pd.isna(fx_rate_hist_div):
+                    logging.warning(
+                        f"FX G/L (Dividend): Missing historical FX for {local_currency_from_row} on {tx_date} for {symbol}. FX G/L on this tx may be inaccurate."
+                    )
+                    fx_rate_hist_div = (
+                        1.0
+                        if local_currency_from_row == display_currency_for_hist_fx
+                        else np.nan
+                    )
+                if pd.notna(fx_rate_hist_div) and pd.notna(div_effect):
+                    holding["total_cost_display_historical_fx"] -= (
+                        div_effect * fx_rate_hist_div
+                    )  # Dividends reduce cost
 
             elif tx_type == "fees":
                 fee_cost = abs(commission_local_for_this_tx)
                 holding["commissions_local"] += fee_cost
                 holding["total_cost_invested_local"] += fee_cost
                 holding["cumulative_investment_local"] += fee_cost
+                fx_rate_hist_fee = historical_fx_lookup.get(
+                    (tx_date, local_currency_from_row), np.nan
+                )
+                if pd.isna(fx_rate_hist_fee):
+                    fx_rate_hist_fee = (
+                        1.0
+                        if local_currency_from_row == display_currency_for_hist_fx
+                        else np.nan
+                    )
+                if pd.notna(fx_rate_hist_fee) and pd.notna(fee_cost):
+                    holding["total_cost_display_historical_fx"] += (
+                        fee_cost * fx_rate_hist_fee
+                    )  # Fees add to cost
 
             else:  # Should not be reachable
                 msg = f"Unhandled stock tx type '{tx_type}'"
@@ -583,6 +703,9 @@ def _process_transactions_to_holdings(
             data["qty"] = 0.0
             data["total_cost_local"] = (
                 0.0  # If qty is zero, cost basis should also be zero
+            )
+            data["total_cost_display_historical_fx"] = (
+                0.0  # Also zero out historical display cost
             )
             # Potentially zero out other fields if qty becomes zero, e.g., short proceeds if short position closes due to tolerance
             if data.get("short_original_qty", 0.0) > 0 and data["qty"] == 0.0:
@@ -773,6 +896,10 @@ def _build_summary_rows(
         total_cost_invested_local = data.get("total_cost_invested_local", 0.0)
         cumulative_investment_local = data.get("cumulative_investment_local", 0.0)
         total_buy_cost_local = data.get("total_buy_cost_local", 0.0)
+        # NEW: Get historical cost in display currency
+        total_cost_display_historical_fx_val = data.get(
+            "total_cost_display_historical_fx", np.nan
+        )
 
         account_local_currency_map[account] = local_currency
         stock_data = current_stock_data.get(symbol, {})
@@ -1121,42 +1248,54 @@ def _build_summary_rows(
                 stock_irr = calculate_irr(cf_dates, cf_values)
         except Exception as e_irr:
             logging.warning(
-                f"Warning: IRR calculation failed for {symbol}/{account}: {e_irr}"
+                f"Warning: IRR calculation failed for {symbol}/{account}: {e_irr}",
+                exc_info=True,
             )
             has_warnings = True
             stock_irr = np.nan
 
         # --- FX Gain/Loss Calculation (after all other local values are determined) ---
-        if (
-            symbol != CASH_SYMBOL_CSV
-            and abs(current_total_cost_local) > 1e-9
-            and pd.notna(cost_basis_display)
-            and abs(cost_basis_display) > 1e-9
+        fx_gain_loss_display_holding = np.nan  # Initialize
+        fx_gain_loss_pct_holding = np.nan  # Initialize
+
+        if local_currency == display_currency:
+            fx_gain_loss_display_holding = 0.0
+            fx_gain_loss_pct_holding = 0.0  # If no FX G/L, percentage is 0%
+        elif (  # Original conditions, but now as elif
+            symbol != CASH_SYMBOL_CSV  # Not cash
+            and abs(current_total_cost_local) > 1e-9  # Has a local cost basis
+            and pd.notna(cost_basis_display)  # Cost basis in display currency is valid
+            and abs(cost_basis_display)
+            > 1e-9  # Cost basis in display currency is significant
+            and pd.notna(
+                total_cost_display_historical_fx_val
+            )  # Historical cost in display currency is valid
         ):
             try:
-                avg_historical_fx_rate_at_cost = (
-                    cost_basis_display / current_total_cost_local
-                )
-                current_fx_rate_local_to_display = get_conversion_rate(
-                    local_currency, display_currency, current_fx_rates_vs_usd
+                # Cost at current FX: cost_basis_display (which is current_total_cost_local * current_fx_rate)
+                # Cost at historical FX: total_cost_display_historical_fx_val
+                fx_gain_loss_display_holding = (
+                    cost_basis_display - total_cost_display_historical_fx_val
                 )
 
-                if pd.notna(current_fx_rate_local_to_display) and pd.notna(
-                    avg_historical_fx_rate_at_cost
+                # Calculate percentage if the historical cost (denominator) is significant
+                if (
+                    pd.notna(fx_gain_loss_display_holding)
+                    and abs(total_cost_display_historical_fx_val)
+                    > 1e-9  # Denominator for % is historical cost
                 ):
-                    # FX Gain/Loss on the cost basis of the current holding
-                    fx_gain_loss_display_holding = current_total_cost_local * (
-                        current_fx_rate_local_to_display
-                        - avg_historical_fx_rate_at_cost
-                    )
+                    fx_gain_loss_pct_holding = (
+                        fx_gain_loss_display_holding
+                        / total_cost_display_historical_fx_val
+                    ) * 100.0
+                # If fx_gain_loss_display_holding is calculated as 0 (e.g. rates were identical or very close), pct should also be 0
+                elif (
+                    pd.notna(fx_gain_loss_display_holding)
+                    and abs(fx_gain_loss_display_holding) < 1e-9
+                ):
+                    fx_gain_loss_pct_holding = 0.0
+                # Else, fx_gain_loss_pct_holding remains np.nan if fx_gain_loss_display_holding is nan or historical cost is zero
 
-                    if (
-                        pd.notna(fx_gain_loss_display_holding)
-                        and abs(cost_basis_display) > 1e-9
-                    ):
-                        fx_gain_loss_pct_holding = (
-                            fx_gain_loss_display_holding / cost_basis_display
-                        ) * 100.0
             except ZeroDivisionError:
                 logging.warning(
                     f"FX G/L Calc: ZeroDivisionError for {symbol}/{account}. current_total_cost_local: {current_total_cost_local}"
@@ -1165,6 +1304,9 @@ def _build_summary_rows(
                 logging.error(
                     f"Error calculating FX G/L for {symbol}/{account}: {e_fx_gl}"
                 )
+        # If none of the above conditions met (e.g. historical cost in display currency is NaN),
+        # fx_gain_loss_display_holding and fx_gain_loss_pct_holding will remain np.nan as initialized.
+
         # --- END FX Gain/Loss Calculation ---
 
         irr_value_to_store = stock_irr * 100.0 if pd.notna(stock_irr) else np.nan
