@@ -992,6 +992,10 @@ def _build_summary_rows(
 
         # --- End Dividend Calculations ---
 
+        # --- ADDED: FX Gain/Loss Calculation ---
+        fx_gain_loss_display_holding = np.nan
+        fx_gain_loss_pct_holding = np.nan
+
         # --- Calculate Display Currency Values ---
         market_value_local = current_qty * current_price_local
         if pd.notna(market_value_local):
@@ -1121,6 +1125,48 @@ def _build_summary_rows(
             )
             has_warnings = True
             stock_irr = np.nan
+
+        # --- FX Gain/Loss Calculation (after all other local values are determined) ---
+        if (
+            symbol != CASH_SYMBOL_CSV
+            and abs(current_total_cost_local) > 1e-9
+            and pd.notna(cost_basis_display)
+            and abs(cost_basis_display) > 1e-9
+        ):
+            try:
+                avg_historical_fx_rate_at_cost = (
+                    cost_basis_display / current_total_cost_local
+                )
+                current_fx_rate_local_to_display = get_conversion_rate(
+                    local_currency, display_currency, current_fx_rates_vs_usd
+                )
+
+                if pd.notna(current_fx_rate_local_to_display) and pd.notna(
+                    avg_historical_fx_rate_at_cost
+                ):
+                    # FX Gain/Loss on the cost basis of the current holding
+                    fx_gain_loss_display_holding = current_total_cost_local * (
+                        current_fx_rate_local_to_display
+                        - avg_historical_fx_rate_at_cost
+                    )
+
+                    if (
+                        pd.notna(fx_gain_loss_display_holding)
+                        and abs(cost_basis_display) > 1e-9
+                    ):
+                        fx_gain_loss_pct_holding = (
+                            fx_gain_loss_display_holding / cost_basis_display
+                        ) * 100.0
+            except ZeroDivisionError:
+                logging.warning(
+                    f"FX G/L Calc: ZeroDivisionError for {symbol}/{account}. current_total_cost_local: {current_total_cost_local}"
+                )
+            except Exception as e_fx_gl:
+                logging.error(
+                    f"Error calculating FX G/L for {symbol}/{account}: {e_fx_gl}"
+                )
+        # --- END FX Gain/Loss Calculation ---
+
         irr_value_to_store = stock_irr * 100.0 if pd.notna(stock_irr) else np.nan
         if pd.isna(irr_value_to_store) and current_qty != 0:
             logging.debug(f"Debug: IRR is NaN for non-zero holding {symbol}/{account}")
@@ -1152,6 +1198,8 @@ def _build_summary_rows(
                 f"Div. Yield (Cost) %": div_yield_on_cost_pct_display,
                 f"Div. Yield (Current) %": div_yield_on_current_pct_display,
                 f"Est. Ann. Income ({display_currency})": est_annual_income_display,
+                f"FX Gain/Loss ({display_currency})": fx_gain_loss_display_holding,
+                "FX Gain/Loss %": fx_gain_loss_pct_holding,
             }
         )
     # --- End Stock/ETF Loop ---
@@ -1283,6 +1331,8 @@ def _build_summary_rows(
                 f"Div. Yield (Cost) %": np.nan,  # Not applicable for cash
                 f"Div. Yield (Current) %": np.nan,  # Not applicable for cash
                 f"Est. Ann. Income ({display_currency})": np.nan,  # Not applicable for cash
+                f"FX Gain/Loss ({display_currency})": 0.0,  # FX G/L for cash is 0
+                "FX Gain/Loss %": np.nan,  # Not applicable for cash
             }
         )
 
@@ -1383,6 +1433,8 @@ def _calculate_aggregate_metrics(
                 f"Total Cost Invested ({display_currency})",
                 f"Total Buy Cost ({display_currency})",
                 f"Day Change ({display_currency})",
+                f"FX Gain/Loss ({display_currency})",  # Add FX G/L for aggregation
+                # "FX Gain/Loss %" is not directly summed, it's recalculated
             ]
             for col in cols_to_sum_display:
                 if col not in account_full_df.columns:
@@ -1463,6 +1515,22 @@ def _calculate_aggregate_metrics(
                     )
                 elif abs(acc_total_day_change_display) < 1e-9:
                     metrics_entry["total_day_change_percent"] = 0.0
+
+            # --- ADDED: Account-level FX Gain/Loss ---
+            acc_fx_gain_loss_display = safe_sum(
+                account_full_df, f"FX Gain/Loss ({display_currency})"
+            )
+            metrics_entry["fx_gain_loss_display"] = acc_fx_gain_loss_display
+            acc_cost_basis_display_for_fx_pct = safe_sum(
+                account_full_df, f"Cost Basis ({display_currency})"
+            )
+            metrics_entry["fx_gain_loss_pct"] = (
+                (acc_fx_gain_loss_display / acc_cost_basis_display_for_fx_pct) * 100
+                if abs(acc_cost_basis_display_for_fx_pct) > 1e-9
+                else np.nan
+            )
+            # --- END ADDED ---
+
         except Exception as e_acc_agg:
             logging.exception(f"Error aggregating metrics for account '{account}'")
             has_warnings = True
@@ -1478,6 +1546,7 @@ def _calculate_aggregate_metrics(
     cost_invest_col = f"Total Cost Invested ({display_currency})"
     cum_invest_col = f"Cumulative Investment ({display_currency})"
     day_change_col = f"Day Change ({display_currency})"
+    fx_gain_loss_col = f"FX Gain/Loss ({display_currency})"  # For overall sum
     cols_to_check = [
         mkt_val_col,
         total_gain_col,
@@ -1490,6 +1559,7 @@ def _calculate_aggregate_metrics(
         cost_invest_col,
         cum_invest_col,
         day_change_col,
+        fx_gain_loss_col,
     ]
     for col in cols_to_check:
         if col not in full_summary_df.columns:
@@ -1517,6 +1587,11 @@ def _calculate_aggregate_metrics(
     overall_total_buy_cost_display = safe_sum(full_summary_df, total_buy_cost_col)
     overall_day_change_display = safe_sum(full_summary_df, day_change_col)
     overall_prev_close_mv_display = np.nan
+
+    # --- ADDED: Overall FX Gain/Loss ---
+    overall_fx_gain_loss_display = safe_sum(full_summary_df, fx_gain_loss_col)
+    # --- END ADDED ---
+
     if pd.notna(overall_market_value_display) and pd.notna(overall_day_change_display):
         overall_prev_close_mv_display = (
             overall_market_value_display - overall_day_change_display
@@ -1552,6 +1627,14 @@ def _calculate_aggregate_metrics(
         logging.warning("Warning: Critical overall metrics calculated as NaN.")
         has_warnings = True
 
+    # --- ADDED: Overall FX Gain/Loss Percentage ---
+    overall_fx_gain_loss_pct = (
+        (overall_fx_gain_loss_display / overall_cost_basis_display) * 100
+        if abs(overall_cost_basis_display) > 1e-9
+        else np.nan
+    )
+    # --- END ADDED ---
+
     overall_summary_metrics = {
         "market_value": overall_market_value_display,
         "cost_basis_held": overall_cost_basis_display,
@@ -1569,6 +1652,8 @@ def _calculate_aggregate_metrics(
         "display_currency": display_currency,
         "cumulative_investment": overall_cumulative_investment_display,
         "total_return_pct": overall_total_return_pct,
+        "fx_gain_loss_display": overall_fx_gain_loss_display,  # ADDED
+        "fx_gain_loss_pct": overall_fx_gain_loss_pct,  # ADDED
     }
     logging.debug(
         f"--- Finished Aggregating Metrics. Overall Market Value: {overall_market_value_display} ---"

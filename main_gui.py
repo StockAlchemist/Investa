@@ -69,11 +69,12 @@ from typing import Dict, Any, Optional, List, Tuple, Set  # Added Set
 import logging
 
 # --- Configure Logging Globally (as early as possible) ---
-# Set the desired global level here (e.g., logging.INFO, logging.DEBUG)
-LOGGING_LEVEL = logging.WARNING  # Or logging.DEBUG for more detail
+# The LOGGING_LEVEL is imported from config.py and used here.
+# Default in config.py is logging.INFO, but can be changed there.
+import config  # <-- MOVED IMPORT HERE
 
 logging.basicConfig(
-    level=LOGGING_LEVEL,
+    level=config.LOGGING_LEVEL,  # Use LOGGING_LEVEL from config module
     format="%(asctime)s [%(levelname)-8s] %(name)-15s %(module)s:%(lineno)d - %(message)s",  # Added logger name
     datefmt="%Y-%m-%d %H:%M:%S",
     # Use force=True (Python 3.8+) to ensure this config takes precedence
@@ -239,7 +240,6 @@ try:
         # --- ADDED: Import extract_dividend_history ---
         extract_dividend_history,  # <-- ADDED for dividend history
     )  # Add the new function
-    import config  # <-- ADDED IMPORT FOR CONFIG MODULE
 
     # --- Import constants moved from main_gui.py to config.py ---
     from config import (
@@ -499,6 +499,8 @@ def get_column_definitions(display_currency="USD"):
         # Optional columns that might be added for debugging or other features:
         "Yield (Cost) %": f"Div. Yield (Cost) %",
         "Yield (Mkt) %": f"Div. Yield (Current) %",
+        "FX G/L": f"FX Gain/Loss ({display_currency})",
+        "FX G/L %": "FX Gain/Loss %",
         f"Est. Income": f"Est. Ann. Income ({display_currency})",
         # 'Cumulative Investment': f'Cumulative Investment ({display_currency})',
         # 'Price Source': 'Price Source',
@@ -1091,6 +1093,8 @@ class PandasModel(QAbstractTableModel):
                         "IRR (%)",
                         "Yield (Cost) %",  # New
                         "Yield (Mkt) %",  # New
+                        "FX G/L",  # New
+                        "FX G/L %",  # New
                     ]  # Added IRR (%) here for coloring
                     if any(indicator in col_name for indicator in gain_loss_color_cols):
                         if value_float > 1e-9:
@@ -1169,6 +1173,14 @@ class PandasModel(QAbstractTableModel):
                             return "Inf %"
                         # Use original signed value for percentages (already scaled if IRR)
                         return f"{value_float:,.2f}%"  # Add % sign
+
+                    # --- ADDED: FX Gain/Loss Formatting ---
+                    elif col_name == "FX G/L":
+                        current_currency_symbol = self._get_currency_symbol_safe()
+                        return f"{current_currency_symbol}{value_float:,.2f}"
+                    elif col_name == "FX G/L %":
+                        return f"{value_float:,.2f}%"
+                    # --- END ADDED ---
 
                     # --- MODIFIED Currency Check & Formatting ---
                     elif self._parent and hasattr(self._parent, "_get_currency_symbol"):
@@ -7887,6 +7899,14 @@ The CSV file should contain the following columns (header names must match exact
         self.summary_cash = self.create_summary_item("Cash Balance")
         self.summary_total_return_pct = self.create_summary_item("Total Ret %")
         self.summary_annualized_twr = self.create_summary_item("Ann. TWR %")
+        # --- Corrected initialization for FX G/L labels and values ---
+        self.summary_fx_gl_abs_label, self.summary_fx_gl_abs_value = (
+            self.create_summary_item("FX Gain/Loss")
+        )
+        self.summary_fx_gl_pct_label, self.summary_fx_gl_pct_value = (
+            self.create_summary_item("FX G/L %")
+        )
+
         summary_layout.addWidget(self.summary_net_value[0], 0, 0, Qt.AlignRight)
         summary_layout.addWidget(self.summary_net_value[1], 0, 1)
         summary_layout.addWidget(self.summary_day_change[0], 0, 2, Qt.AlignRight)
@@ -7907,6 +7927,11 @@ The CSV file should contain the following columns (header names must match exact
         summary_layout.addWidget(self.summary_total_return_pct[1], 4, 1)
         summary_layout.addWidget(self.summary_annualized_twr[0], 4, 2, Qt.AlignRight)
         summary_layout.addWidget(self.summary_annualized_twr[1], 4, 3)
+        # Add new FX G/L to row 5 using corrected variable names
+        summary_layout.addWidget(self.summary_fx_gl_abs_label, 5, 0, Qt.AlignRight)
+        summary_layout.addWidget(self.summary_fx_gl_abs_value, 5, 1)
+        summary_layout.addWidget(self.summary_fx_gl_pct_label, 5, 2, Qt.AlignRight)
+        summary_layout.addWidget(self.summary_fx_gl_pct_value, 5, 3)
         summary_layout.setColumnStretch(1, 1)
         summary_layout.setColumnStretch(3, 1)
         summary_layout.setRowStretch(5, 1)
@@ -11008,6 +11033,13 @@ The CSV file should contain the following columns (header names must match exact
         self.update_summary_value(
             self.summary_annualized_twr[1], None, metric_type="clear"
         )
+        # Clear FX G/L
+        self.update_summary_value(  # Corrected
+            self.summary_fx_gl_abs_value, None, metric_type="clear"
+        )
+        self.update_summary_value(  # Corrected
+            self.summary_fx_gl_pct_value, None, metric_type="clear"
+        )
 
         # Data source is always the overall summary metrics, which now reflect the selected scope
         data_source_current = self.summary_metrics_data
@@ -11197,6 +11229,28 @@ The CSV file should contain the following columns (header names must match exact
         self.summary_annualized_twr[0].setVisible(True)
         self.summary_annualized_twr[1].setVisible(True)
 
+        # --- ADDED: Update FX Gain/Loss in Summary Panel ---
+        fx_gain_loss_display_val = data_source_current.get("fx_gain_loss_display")
+        fx_gain_loss_pct_val = data_source_current.get("fx_gain_loss_pct")
+
+        self.update_summary_value(
+            self.summary_fx_gl_abs_value,  # Corrected
+            fx_gain_loss_display_val,
+            currency_symbol,
+            True,  # is_currency
+            False,  # is_percent
+            "fx_gain_loss",  # metric_type for coloring
+        )
+        self.update_summary_value(
+            self.summary_fx_gl_pct_value,
+            fx_gain_loss_pct_val,
+            "",  # no currency symbol for percentage
+            False,  # is_currency
+            True,  # is_percent
+            "fx_gain_loss_pct",  # metric_type for coloring
+        )
+        # --- END ADDED ---
+
     def update_summary_value(
         self,
         value_label,
@@ -11271,6 +11325,17 @@ The CSV file should contain the following columns (header names must match exact
                 elif original_value_float < -1e-9:
                     target_color = QCOLOR_LOSS
                 else:
+                    target_color = QCOLOR_TEXT_DARK
+            elif metric_type in [
+                "fx_gain_loss",
+                "fx_gain_loss_pct",
+            ]:  # Coloring for FX G/L
+                if original_value_float > 1e-9:
+                    target_color = QCOLOR_GAIN
+                elif original_value_float < -1e-9:
+                    target_color = QCOLOR_LOSS
+                else:
+                    # For FX G/L, if it's zero, keep it dark, not green.
                     target_color = QCOLOR_TEXT_DARK
             # Default coloring
             else:
@@ -13161,6 +13226,8 @@ The CSV file should contain the following columns (header names must match exact
                     "Cost Basis": 100,
                 }
                 # Add new dividend columns to width adjustments if needed
+                col_widths["FX G/L"] = 95
+                col_widths["FX G/L %"] = 80
                 col_widths[f"Est. Income"] = (
                     90  # Assuming this is the UI name from get_column_definitions
                 )
@@ -14296,7 +14363,6 @@ The CSV file should contain the following columns (header names must match exact
 
         # If available_accounts is empty, try to fetch from DB one last time (e.g., if app just started with empty DB)
         if not accounts_for_dialog and self.db_conn:
-            temp_df, success = load_all_transactions_from_db(self.db_conn)
             # Use account_currency_map and default_currency from config for cleaning after DB load
             acc_map_config_add_tx = self.config.get("account_currency_map", {})
             def_curr_config_add_tx = self.config.get(
@@ -14307,10 +14373,13 @@ The CSV file should contain the following columns (header names must match exact
                     else "USD"
                 ),
             )
-
+            # MODIFIED: Pass map and default to load_all_transactions_from_db
             temp_df, success = load_all_transactions_from_db(
-                self.db_conn, acc_map_config_add_tx, def_curr_config_add_tx
-            )  # MODIFIED: Pass map and default
+                self.db_conn,
+                account_currency_map=acc_map_config_add_tx,
+                default_currency=def_curr_config_add_tx,
+            )
+            # END MODIFIED
             if (
                 success and temp_df is not None and "Account" in temp_df.columns
             ):  # Keep the rest of the logic

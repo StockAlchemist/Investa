@@ -15,17 +15,16 @@
 SPDX-License-Identifier: MIT
 """
 import sqlite3
-from datetime import datetime, date  # Added import for datetime and date
-import numpy as np  # Added import for numpy
+from datetime import datetime, date
+import numpy as np
 import os
 import logging
 from typing import Optional, Dict, Any, Tuple, Union, List
 import pandas as pd
 import traceback
 
-# --- MODIFIED: Defer import of load_and_clean_transactions to the function that uses it ---
-# This helps avoid direct import cycle issues at the module level.
-DATA_LOADER_AVAILABLE = ()
+# --- MODIFIED: Removed problematic global flag ---
+# DATA_LOADER_AVAILABLE = () # <-- REMOVE THIS LINE
 
 try:
     from PySide6.QtCore import QStandardPaths
@@ -57,17 +56,13 @@ def get_database_path(db_filename: str = DB_FILENAME) -> str:
     """
     preferred_path = None
     if PYSIDE_AVAILABLE and QStandardPaths:
-        # Prefer AppDataLocation as it's often more appropriate for user data files like a DB.
-        # AppConfigLocation is more for config files.
         app_data_dir = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
-        if not app_data_dir:  # Fallback to AppConfigLocation
+        if not app_data_dir:
             app_data_dir = QStandardPaths.writableLocation(
                 QStandardPaths.AppConfigLocation
             )
 
         if app_data_dir:
-            # QStandardPaths usually includes the app name if set via QApplication.setApplicationName()
-            # Ensure the base directory exists before joining the filename
             try:
                 os.makedirs(app_data_dir, exist_ok=True)
                 preferred_path = os.path.join(app_data_dir, db_filename)
@@ -80,10 +75,7 @@ def get_database_path(db_filename: str = DB_FILENAME) -> str:
 
     if not preferred_path:
         try:
-            # Fallback to a directory in user's home
-            app_name_for_folder = (
-                "InvestaApp"  # Consistent name, can be from config.APP_NAME
-            )
+            app_name_for_folder = "InvestaApp"
             home_dir = os.path.expanduser("~")
             fallback_app_dir = os.path.join(home_dir, f".{app_name_for_folder.lower()}")
             os.makedirs(fallback_app_dir, exist_ok=True)
@@ -94,12 +86,10 @@ def get_database_path(db_filename: str = DB_FILENAME) -> str:
             )
 
     if not preferred_path:
-        # Last resort: current working directory
         preferred_path = os.path.join(os.getcwd(), db_filename)
         logging.warning(
             "Could not determine standard application data path or user home path. Using current working directory for DB."
         )
-        # Ensure current working directory is writable for the DB file itself (os.makedirs not needed for file in CWD)
 
     return preferred_path
 
@@ -109,21 +99,18 @@ def get_db_connection(db_path: Optional[str] = None) -> Optional[sqlite3.Connect
     if db_path is None:
         db_path = get_database_path()
     try:
-        # Ensure the directory for the database file exists before connecting
         db_dir = os.path.dirname(db_path)
-        if db_dir:  # If db_path includes a directory component
+        if db_dir:
             os.makedirs(db_dir, exist_ok=True)
 
         conn = sqlite3.connect(db_path)
-        conn.execute("PRAGMA foreign_keys = ON;")  # Good practice if using foreign keys
+        conn.execute("PRAGMA foreign_keys = ON;")
         logging.info(f"Successfully connected to database: {db_path}")
         return conn
     except sqlite3.Error as e:
         logging.error(f"Error connecting to database at {db_path}: {e}", exc_info=True)
         return None
-    except (
-        OSError
-    ) as e_os:  # Catch errors like permission denied for directory creation
+    except OSError as e_os:
         logging.error(
             f"OS error setting up database path {db_path}: {e_os}", exc_info=True
         )
@@ -169,16 +156,12 @@ def create_transactions_table(conn: sqlite3.Connection):
             logging.info(
                 f"Database schema version is {current_db_version}, target is {DB_SCHEMA_VERSION}. Applying migrations if any."
             )
-            # Placeholder for actual migration logic if schema changes
-            # e.g., if DB_SCHEMA_VERSION == 2 and current_db_version == 1:
-            #   cursor.execute("ALTER TABLE transactions ADD COLUMN NewColumn TEXT;")
-            # After successful migration steps:
             cursor.execute(
                 "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
                 (DB_SCHEMA_VERSION, datetime.now().isoformat()),
             )
             logging.info(f"Database schema updated to version {DB_SCHEMA_VERSION}.")
-        elif current_db_version == 0:  # Fresh database
+        elif current_db_version == 0:
             cursor.execute(
                 "INSERT INTO schema_version (version, applied_on) VALUES (?, ?)",
                 (DB_SCHEMA_VERSION, datetime.now().isoformat()),
@@ -234,18 +217,14 @@ def migrate_csv_to_db(
     """
     Migrates transaction data from a CSV file to the SQLite database.
     """
-    global DATA_LOADER_AVAILABLE  # Check the flag
+    # --- MODIFIED: Removed global DATA_LOADER_AVAILABLE flag and its usage ---
     try:
-        # Local import to attempt resolving dependency only when function is called
         from data_loader import load_and_clean_transactions
     except ImportError:
         logging.error(
             "CRITICAL: data_loader.load_and_clean_transactions could not be imported in migrate_csv_to_db. Migration failed."
         )
-        DATA_LOADER_AVAILABLE = False  # Update flag if import fails here
-
-    if not DATA_LOADER_AVAILABLE:
-        return 0, 1
+        return 0, 1  # Return error if import fails
 
     logging.info(f"Starting migration from CSV: {csv_file_path}")
     migrated_count = 0
@@ -256,7 +235,7 @@ def migrate_csv_to_db(
             csv_file_path,
             account_currency_map,
             default_currency,
-            is_db_source=False,  # Explicitly False for CSV
+            is_db_source=False,
         )
 
         if load_error or transactions_df is None:
@@ -330,12 +309,10 @@ def migrate_csv_to_db(
     return migrated_count, error_count
 
 
-# ... (load_all_transactions_from_db, add_transaction_to_db, update_transaction_in_db, delete_transaction_from_db, initialize_database)
-# ... these functions remain as previously provided ...
 def load_all_transactions_from_db(
     db_conn: sqlite3.Connection,
-    account_currency_map: Dict[str, str],  # ADDED
-    default_currency: str,  # ADDED
+    account_currency_map: Dict[str, str],
+    default_currency: str,
 ) -> Tuple[Optional[pd.DataFrame], bool]:
     logging.info("Loading all transactions from the database.")
     try:
@@ -347,9 +324,7 @@ def load_all_transactions_from_db(
         """
         df = pd.read_sql_query(query, db_conn, parse_dates=["Date"])
 
-        # --- ADDED: Clean Local Currency after loading from DB ---
         if "Local Currency" in df.columns and "Account" in df.columns:
-            # Check for None, NaN, empty string, or the string "<NA>"
             is_empty_local_currency = df["Local Currency"].isin(
                 [None, np.nan, pd.NA, ""]
             )
@@ -364,10 +339,7 @@ def load_all_transactions_from_db(
                     .map(account_currency_map)
                     .fillna(default_currency)
                 )
-            df["Local Currency"] = df[
-                "Local Currency"
-            ].str.upper()  # Standardize to uppercase
-        # --- END ADDED ---
+            df["Local Currency"] = df["Local Currency"].str.upper()
 
         if "original_index" in df.columns:
             df["original_index"] = pd.to_numeric(
@@ -415,14 +387,14 @@ def add_transaction_to_db(
     for col_name in db_column_order:
         placeholder_name = (
             col_name.replace("/", "_per_").replace(" ", "_").replace(".", "_")
-        )  # Make valid placeholder
+        )
         placeholders_list.append(f":{placeholder_name}")
         value = transaction_data.get(col_name)
         if col_name == "Date":
             if isinstance(value, (datetime, date)):
                 data_for_sql_ordered.append(value.strftime("%Y-%m-%d"))
             elif isinstance(value, str):
-                try:  # Validate YYYY-MM-DD format if string
+                try:
                     datetime.strptime(value, "%Y-%m-%d")
                     data_for_sql_ordered.append(value)
                 except ValueError:
@@ -435,7 +407,6 @@ def add_transaction_to_db(
         else:
             data_for_sql_ordered.append(value)
 
-    # Create dict for execute using placeholders and ordered values
     data_for_sql_dict = {
         ph.lstrip(":"): val for ph, val in zip(placeholders_list, data_for_sql_ordered)
     }
@@ -464,10 +435,9 @@ def update_transaction_in_db(
     db_conn: sqlite3.Connection, transaction_id: int, new_data_dict: Dict[str, Any]
 ) -> bool:
     set_clauses = []
-    values_for_sql: Dict[str, Any] = {}  # Ensure type for values
+    values_for_sql: Dict[str, Any] = {}
 
     for key, value in new_data_dict.items():
-        # Key from new_data_dict is already the DB column name
         placeholder = key.replace("/", "_per_").replace(" ", "_").replace(".", "_")
         set_clauses.append(f'"{key}" = :{placeholder}')
         if key == "Date":
@@ -494,9 +464,7 @@ def update_transaction_in_db(
     sql_update = (
         f"UPDATE transactions SET {', '.join(set_clauses)} WHERE id = :id_placeholder"
     )
-    values_for_sql["id_placeholder"] = (
-        transaction_id  # Use a different placeholder for id
-    )
+    values_for_sql["id_placeholder"] = transaction_id
 
     try:
         cursor = db_conn.cursor()
@@ -556,13 +524,10 @@ def initialize_database(db_path: Optional[str] = None) -> Optional[sqlite3.Conne
 
 if __name__ == "__main__":
     logging.basicConfig(
-        level=logging.DEBUG,  # Use DEBUG for more verbose output during standalone test
+        level=logging.DEBUG,
         format="%(asctime)s [%(levelname)-8s] %(module)s.%(funcName)s:%(lineno)d - %(message)s",
     )
-    # Test Database Setup
-    test_db_filename = (
-        "test_investa_transactions_dbutils.db"  # Unique name for this test
-    )
+    test_db_filename = "test_investa_transactions_dbutils.db"
     db_file_path_test = get_database_path(test_db_filename)
     print(f"Test DB path set to: {db_file_path_test}")
     if os.path.exists(db_file_path_test):
@@ -597,10 +562,8 @@ if __name__ == "__main__":
         else:
             print("Error: 'schema_version' table or correct version NOT found.")
 
-        # Test Migration
         dummy_csv_path = "dummy_transactions_for_db_migration.csv"
         csv_content_for_test = {
-            # MODIFIED: Added Local Currency column, including an empty one
             "Date (MMM DD, YYYY)": [
                 "Jan 01, 2023",
                 "Jan 02, 2023",
@@ -610,13 +573,13 @@ if __name__ == "__main__":
                 "Jan 02, 2023",
                 "Jan 03, 2023",
                 "Jan 04, 2023",
-            ],  # Added one more row
+            ],
             "Transaction Type": ["Buy", "Sell", "Dividend", "Fees"],
             "Stock / ETF Symbol": ["AAPL", "MSFT", "AAPL", "MSFT"],
-            "Quantity of Units": ["10.0", "5.0", "", "N/A"],  # N/A for fees qty
-            "Amount per unit": ["150.0", "250.0", "", ""],  # Price not for fees
-            "Total Amount": ["1500.0", "1250.0", "25.0", ""],  # Total not for fees
-            "Fees": ["5.0", "5.0", "0.0", "1.25"],  # Fee amount for 'Fees' type
+            "Quantity of Units": ["10.0", "5.0", "", "N/A"],
+            "Amount per unit": ["150.0", "250.0", "", ""],
+            "Total Amount": ["1500.0", "1250.0", "25.0", ""],
+            "Fees": ["5.0", "5.0", "0.0", "1.25"],
             "Investment Account": ["Brokerage", "Brokerage", "Brokerage", "IRA"],
             "Split Ratio (new shares per old share)": ["", "", "", ""],
             "Note": ["Buy Apple", "Sell Microsoft", "Apple Dividend", "Account Fee"],
@@ -630,11 +593,11 @@ if __name__ == "__main__":
             "EUR",
             "EUR",
             "",
-        ]  # ADDED
+        ]
         pd.DataFrame(csv_content_for_test).to_csv(dummy_csv_path, index=False)
         print(f"\nAttempting to migrate '{dummy_csv_path}'...")
         test_account_map = {"Brokerage": "USD", "IRA": "USD"}
-        test_default_currency = "CAD"  # Use a different default to test mapping
+        test_default_currency = "CAD"
 
         if check_if_db_empty_and_csv_exists(conn, dummy_csv_path):
             print("DB is empty and CSV exists, proceeding with migration.")
@@ -643,11 +606,9 @@ if __name__ == "__main__":
             )
             print(f"Migration test result: Migrated {mig_count}, Errors {err_count}")
             if mig_count > 0:
-                # MODIFIED: Pass map and default to load_all_transactions_from_db
                 df_from_db, load_success = load_all_transactions_from_db(
                     conn, test_account_map, test_default_currency
                 )
-                # END MODIFIED
                 if load_success and df_from_db is not None:
                     print(
                         f"Successfully loaded {len(df_from_db)} rows from DB post-migration."
@@ -665,7 +626,6 @@ if __name__ == "__main__":
         else:
             print("Skipping migration test (DB not empty or CSV missing).")
 
-        # Test Add, Update, Delete
         print("\n--- Testing Add, Update, Delete ---")
         test_tx_data_add = {
             "Date": "2024-03-15",
