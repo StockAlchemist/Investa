@@ -7818,9 +7818,6 @@ The CSV file should contain the following columns (header names must match exact
         # --- Separator 2 (Between Account/Display and Graph Controls) ---
         controls_layout.addWidget(create_separator())
 
-        # --- Separator 2 ---
-        controls_layout.addWidget(create_separator())
-
         # Graph Controls
         controls_layout.addWidget(QLabel("Graphs:"))
         self.graph_start_date_edit = QDateEdit()
@@ -7935,7 +7932,9 @@ The CSV file should contain the following columns (header names must match exact
         summary_layout.addWidget(self.summary_fx_gl_pct_value, 5, 3)
         summary_layout.setColumnStretch(1, 1)
         summary_layout.setColumnStretch(3, 1)
-        summary_layout.setRowStretch(5, 1)
+        # Apply stretch to the row *after* the last content row (row index 5 is last content)
+        # summary_layout.rowCount() will be 6 after adding items to row 5.
+        summary_layout.setRowStretch(summary_layout.rowCount(), 1)
         summary_graphs_layout.addWidget(summary_grid_widget, 9)
 
     def _init_performance_graph_widgets(self, summary_graphs_layout: QHBoxLayout):
