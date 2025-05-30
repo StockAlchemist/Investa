@@ -126,6 +126,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QScrollArea,
     QSpinBox,  # <-- Import QSpinBox
+    QCompleter,  # <-- ADDED for symbol autocompletion
     QListWidgetItem,
 )
 
@@ -133,7 +134,7 @@ from PySide6.QtWidgets import QProgressBar  # <-- ADDED for progress bar
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QWidget, QLabel
 from PySide6.QtCore import Qt
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas  # type: ignore
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 import matplotlib.dates as mdates
 import matplotlib.ticker as mtick
@@ -154,6 +155,7 @@ from PySide6.QtCore import (
     QDateTime,
     QDate,
     QPoint,
+    QStringListModel,  # <-- ADDED for QCompleter
     QStandardPaths,
     QTimer,
 )
@@ -3023,6 +3025,7 @@ class AddTransactionDialog(QDialog):
         self,
         existing_accounts: List[str],
         parent=None,
+        portfolio_symbols: Optional[List[str]] = None,  # <-- ADDED
         edit_data: Optional[Dict[str, Any]] = None,
     ):
         """
@@ -3033,6 +3036,8 @@ class AddTransactionDialog(QDialog):
             existing_accounts (List[str]): A list of known account names to populate
                                            the account dropdown.
             parent (QWidget, optional): The parent widget.
+            portfolio_symbols (Optional[List[str]], optional): A list of unique symbols
+                                                               in the portfolio for autocompletion.
             edit_data (Optional[Dict[str, Any]], optional): Data to pre-fill for editing.
                                                             Keys should match AddTransactionDialog's expected field names
                                                             (i.e., CSV-like headers: "Date (MMM DD, YYYY)", "Quantity of Units", etc.).
@@ -3086,6 +3091,20 @@ class AddTransactionDialog(QDialog):
         self.symbol_edit.setPlaceholderText("e.g., AAPL, GOOG, $CASH")
         self.symbol_edit.setMinimumWidth(input_min_width)
         form_layout.addRow("Symbol:", self.symbol_edit)
+
+        # --- ADDED: Autocompleter for Symbol ---
+        if portfolio_symbols:
+            symbols_for_completer = (
+                portfolio_symbols  # <-- MODIFIED: No longer exclude $CASH here
+            )
+            self.symbol_completer_model = QStringListModel(self)
+            self.symbol_completer_model.setStringList(
+                sorted(list(set(symbols_for_completer)))
+            )
+            self.symbol_completer = QCompleter(self.symbol_completer_model, self)
+            self.symbol_completer.setCaseSensitivity(Qt.CaseInsensitive)
+            self.symbol_completer.setFilterMode(Qt.MatchContains)
+            self.symbol_edit.setCompleter(self.symbol_completer)
 
         # --- Account ---
         self.account_combo = QComboBox()
@@ -7794,6 +7813,10 @@ The CSV file should contain the following columns (header names must match exact
             "Apply selected accounts and recalculate"
         )
         controls_layout.addWidget(self.update_accounts_button)
+
+        # --- Separator 2 (Between Account Controls and Filters) ---
+        controls_layout.addWidget(create_separator())
+
         # Filters & Combos
         controls_layout.addWidget(QLabel("Currency:"))
         self.currency_combo = QComboBox()
@@ -7815,7 +7838,7 @@ The CSV file should contain the following columns (header names must match exact
         self.show_closed_check.setChecked(self.config.get("show_closed", False))
         controls_layout.addWidget(self.show_closed_check)
 
-        # --- Separator 2 (Between Account/Display and Graph Controls) ---
+        # --- Separator 3 (Between Account/Display and Graph Controls) ---
         controls_layout.addWidget(create_separator())
 
         # Graph Controls
@@ -7859,7 +7882,7 @@ The CSV file should contain the following columns (header names must match exact
         )
         controls_layout.addWidget(self.graph_update_button)
 
-        # --- Separator 3 ---
+        # --- Separator 4 ---
         controls_layout.addWidget(create_separator())
 
         # Spacer & Right Aligned Controls
@@ -14391,8 +14414,23 @@ The CSV file should contain the following columns (header names must match exact
                 )
                 # Proceed with empty account list, user can type new account.
 
+        # --- Get portfolio symbols for autocompletion ---
+        portfolio_symbols_for_dialog = []
+        if (
+            hasattr(self, "all_transactions_df_cleaned_for_logic")
+            and not self.all_transactions_df_cleaned_for_logic.empty
+            and "Symbol" in self.all_transactions_df_cleaned_for_logic.columns
+        ):
+            portfolio_symbols_for_dialog = list(
+                self.all_transactions_df_cleaned_for_logic["Symbol"].unique()
+            )
+            # <-- MODIFIED: Removed $CASH exclusion block
+        # --- End Get portfolio symbols ---
+
         dialog = AddTransactionDialog(
-            existing_accounts=accounts_for_dialog, parent=self
+            existing_accounts=accounts_for_dialog,
+            portfolio_symbols=portfolio_symbols_for_dialog,  # <-- Pass symbols
+            parent=self,
         )
         if (
             dialog.exec()
