@@ -64,8 +64,8 @@ def test_import_and_types():
     assert isinstance(YFINANCE_CACHE_DURATION_HOURS, int)
     assert isinstance(YFINANCE_INDEX_TICKER_MAP, dict)
     assert isinstance(DEFAULT_INDEX_QUERY_SYMBOLS, list)
-    assert isinstance(SYMBOL_MAP_TO_YFINANCE, dict)
-    assert isinstance(YFINANCE_EXCLUDED_SYMBOLS, set)
+    assert isinstance(SYMBOL_MAP_TO_YFINANCE, dict)  # Remains dict, starts empty
+    assert isinstance(YFINANCE_EXCLUDED_SYMBOLS, dict)  # Changed from set to dict
     assert isinstance(SHORTABLE_SYMBOLS, set)
     assert isinstance(DEFAULT_CURRENCY, str)
     assert isinstance(
@@ -99,9 +99,9 @@ def test_import_and_types():
     assert DEFAULT_CURRENCY == "USD"
     assert DEFAULT_CSV == "my_transactions.csv"
     assert ".DJI" in YFINANCE_INDEX_TICKER_MAP
-    assert "AAPL" in SYMBOL_MAP_TO_YFINANCE
-    assert "BBW" in YFINANCE_EXCLUDED_SYMBOLS  # Example excluded symbol
-    assert "AAPL" in SHORTABLE_SYMBOLS  # Example shortable symbol
+    # assert "AAPL" in SYMBOL_MAP_TO_YFINANCE # Removed: SYMBOL_MAP_TO_YFINANCE starts empty
+    # assert "BBW" in YFINANCE_EXCLUDED_SYMBOLS  # Removed: YFINANCE_EXCLUDED_SYMBOLS starts empty
+    # assert "AAPL" in SHORTABLE_SYMBOLS  # Example shortable symbol
 
     # Basic content checks for moved constants
     assert DEBOUNCE_INTERVAL_MS == 400

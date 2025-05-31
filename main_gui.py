@@ -42,6 +42,7 @@ import numpy as np
 import json
 import traceback
 import csv
+import re  # <-- ADDED for parsing formatted currency strings
 import sqlite3  # Added import for sqlite3
 import shutil
 
@@ -128,6 +129,7 @@ from PySide6.QtWidgets import (
     QSpinBox,  # <-- Import QSpinBox
     QCompleter,  # <-- ADDED for symbol autocompletion
     QListWidgetItem,
+    QSpacerItem,  # <-- ADDED for layout spacing
 )
 
 from PySide6.QtWidgets import QProgressBar  # <-- ADDED for progress bar
@@ -136,6 +138,7 @@ from PySide6.QtCore import Qt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas  # type: ignore
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.dates as mdates
 import matplotlib.ticker as mtick
 import pandas as pd
@@ -273,6 +276,9 @@ try:
         # --- ADDED: Import extract_dividend_history ---
         extract_dividend_history,  # <-- ADDED for dividend history
     )  # Add the new function
+    from portfolio_analyzer import (
+        extract_realized_capital_gains_history,
+    )  # <-- ADDED for capital gains
 
     # --- END ADD ---
     MARKET_PROVIDER_AVAILABLE = True  # Assume available if import succeeds
@@ -539,7 +545,8 @@ class WorkerSignals(QObject):
         dict,
         set,
         dict,
-        pd.DataFrame,
+        pd.DataFrame,  # dividend_history_df
+        pd.DataFrame,  # capital_gains_history_df
     )
 
     fundamental_data_ready = Signal(str, dict)  # display_symbol, data_dict
@@ -617,6 +624,7 @@ class PortfolioCalculatorWorker(QRunnable):
         hist_fx = {}
         combined_ignored_indices = set()
         combined_ignored_reasons = {}
+        capital_gains_history_df = pd.DataFrame()  # Initialize for capital gains
 
         portfolio_status = "Error: Portfolio calc not run"
         historical_status = "Error: Historical calc not run"
@@ -855,6 +863,39 @@ class PortfolioCalculatorWorker(QRunnable):
                 # Optionally, emit an error or set a status part
                 dividend_history_df = pd.DataFrame()  # Ensure it's an empty DF on error
 
+            # --- 5. Extract Realized Capital Gains History ---
+            logging.info("WORKER: Extracting realized capital gains history...")
+            try:
+                # Ensure hist_fx is available (from historical calc)
+                # and other necessary args from portfolio_kwargs
+                capital_gains_history_df = extract_realized_capital_gains_history(
+                    all_transactions_df=self.portfolio_kwargs.get(
+                        "all_transactions_df_cleaned"
+                    ),
+                    display_currency=self.portfolio_kwargs.get("display_currency"),
+                    historical_fx_yf=hist_fx,  # Use h_fx from historical performance part
+                    default_currency=self.portfolio_kwargs.get("default_currency"),
+                    shortable_symbols=config.SHORTABLE_SYMBOLS,  # Import from config
+                    include_accounts=self.portfolio_kwargs.get("include_accounts"),
+                )
+                logging.info(
+                    f"WORKER: Capital gains history extracted ({len(capital_gains_history_df)} records)."
+                )
+            except (
+                ImportError
+            ):  # If extract_realized_capital_gains_history is not yet implemented
+                logging.warning(
+                    "WORKER: extract_realized_capital_gains_history function not found in portfolio_analyzer. Capital gains will be empty."
+                )
+                capital_gains_history_df = pd.DataFrame()
+            except Exception as cg_e:
+                logging.error(
+                    f"WORKER: --- Error during capital gains history extraction: {cg_e} ---",
+                    exc_info=True,
+                )
+                traceback.print_exc()
+                capital_gains_history_df = pd.DataFrame()  # Ensure empty DF on error
+
             logging.debug(
                 f"DEBUG Worker: dividend_history_df before emit (shape {dividend_history_df.shape if isinstance(dividend_history_df, pd.DataFrame) else 'Not a DF'}):"
             )
@@ -918,6 +959,7 @@ class PortfolioCalculatorWorker(QRunnable):
                     combined_ignored_indices,
                     combined_ignored_reasons,
                     dividend_history_df,  # EMIT ACTUAL DATA
+                    capital_gains_history_df,  # EMIT ACTUAL DATA
                 )
                 logging.debug(
                     "WORKER: Emitting result signal with actual calculated data."
@@ -945,6 +987,7 @@ class PortfolioCalculatorWorker(QRunnable):
                 set(),  # combined_ignored_indices
                 {},  # combined_ignored_reasons
                 pd.DataFrame(),  # dividend_history_df
+                pd.DataFrame(),  # capital_gains_history_df
             )
             logging.debug(
                 "WORKER: Emitted empty/default results due to critical worker error."
@@ -1077,10 +1120,47 @@ class PandasModel(QAbstractTableModel):
         if role == Qt.ForegroundRole:
             try:
                 col_name = self._data.columns[col]
-                value = self._data.iloc[row, col]
+                value_str = str(self._data.iloc[row, col])  # Ensure it's a string
                 target_color = self._default_text_color
-                if pd.api.types.is_number(value) and pd.notna(value):
-                    value_float = float(value)
+
+                # Specific handling for Gain/Loss columns in Capital Gains table (and potentially others if named similarly)
+                if (
+                    "Gain/Loss" in col_name
+                ):  # e.g., "Gain/Loss (Local)" or "Gain/Loss ($)"
+                    # value_str is now defined before this block
+                    # Remove commas first, as they interfere with float conversion
+                    cleaned_value_str = value_str.replace(
+                        ",", ""
+                    )  # value_str is from str(self._data.iloc[row, col])
+                    # Regex to extract the numeric part, including sign.
+                    # This regex handles an optional sign, then a digit, then any number of digits or dots.
+                    match = re.search(
+                        r"([+-]?\d*\.?\d+)", cleaned_value_str
+                    )  # MODIFIED Regex
+                    if match:
+                        numeric_part_str = match.group(1)
+                        try:
+                            numeric_value = float(numeric_part_str)
+                            if (
+                                numeric_value > 1e-9
+                            ):  # Use a small epsilon for float comparison
+                                target_color = QCOLOR_GAIN
+                            elif numeric_value < -1e-9:
+                                target_color = QCOLOR_LOSS
+                            # else: keep default color for zero or very near zero
+                        except ValueError:
+                            # If conversion fails, keep default color
+                            logging.debug(
+                                f"Could not parse numeric value from '{numeric_part_str}' for coloring column '{col_name}'."
+                            )
+                            pass
+                    return target_color
+
+                # Existing coloring logic for other tables/columns (where value is numeric, not pre-formatted string)
+                if pd.api.types.is_number(self._data.iloc[row, col]) and pd.notna(
+                    self._data.iloc[row, col]
+                ):
+                    value_float = float(self._data.iloc[row, col])
                     gain_loss_color_cols = [
                         "Gain",
                         "Return",
@@ -4706,6 +4786,8 @@ class PortfolioApp(QMainWindow):
             )
             or os.getcwd(),  # For export dialog
             "user_currencies": COMMON_CURRENCIES.copy(),  # Default list of user-selectable currencies
+            "cg_agg_period": "Annual",  # Default for Capital Gains aggregation
+            "cg_periods_to_show": 10,  # Default periods for Capital Gains chart
         }
         loaded_app_config = config_defaults.copy()  # Start with defaults
 
@@ -4886,6 +4968,21 @@ class PortfolioApp(QMainWindow):
                     loaded_app_config[key] = config_defaults[key]
             else:
                 loaded_app_config[key] = config_defaults[key]  # Ensure key exists
+
+        # Validate Capital Gains periods
+        cg_numeric_spinbox_keys = ["cg_periods_to_show"]
+        for key in cg_numeric_spinbox_keys:
+            if key in loaded_app_config:
+                try:
+                    val = int(loaded_app_config[key])
+                    loaded_app_config[key] = max(1, min(val, 100))  # Max 100 periods
+                except (ValueError, TypeError):
+                    loaded_app_config[key] = config_defaults[key]
+            else:
+                loaded_app_config[key] = config_defaults[key]
+
+        if loaded_app_config.get("cg_agg_period") not in ["Annual", "Quarterly"]:
+            loaded_app_config["cg_agg_period"] = config_defaults["cg_agg_period"]
 
         if loaded_app_config.get("dividend_agg_period") not in [
             "Annual",
@@ -7657,6 +7754,25 @@ The CSV file should contain the following columns (header names must match exact
         self._update_account_button_text()
         self._update_benchmark_button_text()
         self._update_table_title()
+
+        # --- Style Tab Titles ---
+        if hasattr(self, "main_tab_widget") and self.main_tab_widget:
+            tab_bar = self.main_tab_widget.tabBar()
+            if tab_bar:
+                current_font = tab_bar.font()  # Get the current font of the tab bar
+                # Set a specific point size (e.g., 10pt or 11pt).
+                # self.app_font.pointSize() is likely 9pt.
+                target_tab_font_size = 10  # You can adjust this value
+                current_font.setPointSize(target_tab_font_size)
+                current_font.setBold(True)
+                tab_bar.setFont(current_font)
+                logging.debug(
+                    f"Tab bar font set to: {current_font.family()}, {current_font.pointSize()}pt, Bold: {current_font.bold()}"
+                )
+
+                # Optional: Add some padding if text gets cut off or looks cramped.
+                # This can also be done in your style.qss file.
+                # tab_bar.setStyleSheet(tab_bar.styleSheet() + "QTabBar::tab { padding: 4px 8px; min-height: 20px; }")
         self._update_periodic_bar_charts()  # Draw empty bar charts initially
 
     def _init_ui_structure(self):
@@ -7715,6 +7831,10 @@ The CSV file should contain the following columns (header names must match exact
         self.main_tab_widget.addTab(
             self.performance_summary_tab, "Performance & Summary"
         )
+
+        # --- Tab 2: Capital Gains ---
+        self.capital_gains_tab = QWidget()
+        self.main_tab_widget.addTab(self.capital_gains_tab, "Capital Gains")
 
         # Tab 4 for Dividend History will be initialized in _init_ui_widgets
         # The "Holdings Overview" tab is now removed.
@@ -8301,6 +8421,8 @@ The CSV file should contain the following columns (header names must match exact
         self._init_pie_chart_widgets(content_layout)
         logging.debug("--- _init_ui_widgets: After _init_pie_chart_widgets ---")
         self._init_table_panel_widgets(content_layout)
+        # Initialize Capital Gains tab widgets
+        self._init_capital_gains_tab_widgets()
         logging.debug("--- _init_ui_widgets: After _init_table_panel_widgets ---")
         # --- Tab 4: Dividend History ---
         # (This will become Tab 4 after we add Transactions Log and Asset Allocation)
@@ -8627,6 +8749,103 @@ The CSV file should contain the following columns (header names must match exact
         logging.debug(
             "--- _init_ui_widgets: Asset Allocation Tab added to main_tab_widget ---"
         )
+        # --- End Asset Allocation Tab ---
+
+        self._create_status_bar()
+        logging.debug("--- _init_ui_widgets: After _create_status_bar ---")
+        logging.debug("--- _init_ui_widgets: END ---")
+
+    def _init_capital_gains_tab_widgets(self):
+        """Initializes widgets for the Capital Gains tab."""
+        if not hasattr(self, "capital_gains_tab"):
+            return
+
+        cg_main_layout = QVBoxLayout(self.capital_gains_tab)
+        cg_main_layout.setContentsMargins(10, 10, 10, 10)
+        cg_main_layout.setSpacing(8)
+
+        # --- Controls Row ---
+        cg_controls_layout = QHBoxLayout()
+        cg_controls_layout.addWidget(QLabel("Aggregate by:"))
+        self.cg_period_combo = QComboBox()
+        self.cg_period_combo.setObjectName("CgPeriodCombo")
+        self.cg_period_combo.addItems(["Annual", "Quarterly"])
+        self.cg_period_combo.setCurrentText(self.config.get("cg_agg_period", "Annual"))
+        self.cg_period_combo.setMinimumWidth(100)
+        cg_controls_layout.addWidget(self.cg_period_combo)
+
+        cg_controls_layout.addWidget(QLabel("  Periods to Show:"))
+        self.cg_periods_spinbox = QSpinBox()
+        self.cg_periods_spinbox.setObjectName("CgPeriodsSpinbox")
+        self.cg_periods_spinbox.setMinimum(1)
+        self.cg_periods_spinbox.setMaximum(50)  # Max periods to show
+        self.cg_periods_spinbox.setValue(self.config.get("cg_periods_to_show", 10))
+        self.cg_periods_spinbox.setFixedWidth(60)
+        cg_controls_layout.addWidget(self.cg_periods_spinbox)
+        cg_controls_layout.addStretch()
+        cg_main_layout.addLayout(cg_controls_layout)
+
+        # --- Chart Area ---
+        self.cg_bar_fig = Figure(figsize=(7, 3), dpi=CHART_DPI)  # Adjust size as needed
+        self.cg_bar_ax = self.cg_bar_fig.add_subplot(111)
+        self.cg_bar_canvas = FigureCanvas(self.cg_bar_fig)
+        self.cg_bar_canvas.setObjectName("CgBarCanvas")
+        cg_main_layout.addWidget(self.cg_bar_canvas, 1)  # Stretch factor 1
+
+        # --- Horizontal layout for the two tables ---
+        tables_horizontal_layout = QHBoxLayout()
+
+        # --- Capital Gains Summary Table (Data from Bar Graph) ---
+        summary_table_group = QGroupBox("Summary of Plotted Gains")
+        summary_table_group_layout = QVBoxLayout(summary_table_group)
+        self.cg_summary_table_view = QTableView()
+        self.cg_summary_table_view.setObjectName("CgSummaryTable")
+        self.cg_summary_table_model = PandasModel(parent=self, log_mode=True)
+        self.cg_summary_table_view.setModel(self.cg_summary_table_model)
+        self.cg_summary_table_view.setAlternatingRowColors(True)
+        self.cg_summary_table_view.setSelectionBehavior(QTableView.SelectRows)
+        self.cg_summary_table_view.setWordWrap(False)
+        self.cg_summary_table_view.setSortingEnabled(True)
+        self.cg_summary_table_view.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Stretch  # Stretch columns
+        )
+        self.cg_summary_table_view.verticalHeader().setVisible(False)
+        self.cg_summary_table_view.setMinimumHeight(
+            80
+        )  # Ensure it has some visible height
+        summary_table_group_layout.addWidget(self.cg_summary_table_view)
+        tables_horizontal_layout.addWidget(
+            summary_table_group, 1
+        )  # Summary table takes 1 part of horizontal space
+
+        # --- Detailed Capital Gains History Table ---
+        history_table_group = QGroupBox("Detailed Capital Gains History")
+        history_table_group_layout = QVBoxLayout(history_table_group)
+        self.cg_table_view = QTableView()
+        self.cg_table_view.setObjectName("CgHistoryTable")
+        self.cg_table_model = PandasModel(
+            parent=self, log_mode=True
+        )  # log_mode for direct column display
+        self.cg_table_view.setModel(self.cg_table_model)
+        self.cg_table_view.setAlternatingRowColors(True)
+        self.cg_table_view.setSelectionBehavior(QTableView.SelectRows)
+        self.cg_table_view.setWordWrap(False)
+        self.cg_table_view.setSortingEnabled(True)
+        self.cg_table_view.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Interactive
+        )
+        self.cg_table_view.verticalHeader().setVisible(False)
+        history_table_group_layout.addWidget(self.cg_table_view)
+        tables_horizontal_layout.addWidget(
+            history_table_group, 2
+        )  # History table takes 2 parts of horizontal space
+
+        # Add the horizontal layout of tables to the main vertical layout
+        cg_main_layout.addLayout(
+            tables_horizontal_layout, 2
+        )  # Tables area takes 2 parts of vertical space
+
+        logging.debug("--- _init_ui_widgets: Capital Gains Tab widgets initialized ---")
         # --- End Asset Allocation Tab ---
 
         self._create_status_bar()
@@ -9076,7 +9295,8 @@ The CSV file should contain the following columns (header names must match exact
         hist_fx,
         combined_ignored_indices,
         combined_ignored_reasons,
-        dividend_history_df,  # <-- NEW: Add to signature
+        dividend_history_df,
+        capital_gains_history_df,  # <-- ADDED
     ):
         """Stores data received from the worker into self attributes and handles status.
         Args:
@@ -9089,6 +9309,7 @@ The CSV file should contain the following columns (header names must match exact
             hist_fx (dict): Raw historical FX rates used by worker.
             combined_ignored_indices (set): Set of original indices ignored during load or processing.
             combined_ignored_reasons (dict): Maps 'original_index' to a string describing the reason the row was ignored.
+            capital_gains_history_df (pd.DataFrame): Realized capital gains history.
         """
 
         # --- Handle Status Messages and TWR ---
@@ -9119,6 +9340,13 @@ The CSV file should contain the following columns (header names must match exact
         self.dividend_history_data = (  # <-- Store dividend history
             dividend_history_df if dividend_history_df is not None else pd.DataFrame()
         )
+
+        # --- NEW: Store capital gains history ---
+        self.capital_gains_history_data = (
+            capital_gains_history_df
+            if capital_gains_history_df is not None
+            else pd.DataFrame()  # Already present
+        )
         logging.debug(
             f"  _store_worker_data assigned self.dividend_history_data (shape {self.dividend_history_data.shape if isinstance(self.dividend_history_data, pd.DataFrame) else 'Not a DF'}):"
         )
@@ -9127,6 +9355,17 @@ The CSV file should contain the following columns (header names must match exact
             and not self.dividend_history_data.empty
         ):
             logging.debug(f"    Head:\n{self.dividend_history_data.head().to_string()}")
+        logging.debug(
+            f"  _store_worker_data assigned self.capital_gains_history_data (shape {self.capital_gains_history_data.shape if isinstance(self.capital_gains_history_data, pd.DataFrame) else 'Not a DF'}):"
+        )
+        if (
+            isinstance(self.capital_gains_history_data, pd.DataFrame)
+            and not self.capital_gains_history_data.empty
+        ):
+            logging.debug(
+                f"    Head:\n{self.capital_gains_history_data.head().to_string()}"
+            )
+
             logging.debug(
                 f"    'DividendAmountDisplayCurrency' NaNs in stored data: {self.dividend_history_data['DividendAmountDisplayCurrency'].isna().sum()} out of {len(self.dividend_history_data)}"
             )
@@ -9646,6 +9885,11 @@ The CSV file should contain the following columns (header names must match exact
                 logging.debug("  Calling _update_asset_allocation_charts...")
                 # --- END ADDED LOGGING ---
                 self._update_asset_allocation_charts()  # Update new allocation charts
+                # --- ADDED LOGGING ---
+                logging.debug("  Calling _update_capital_gains_display...")
+                # --- END ADDED LOGGING ---
+                self._update_capital_gains_display()  # Update Capital Gains tab
+
             else:
                 logging.info(
                     "Hiding bar charts frame as no periodic data is available."
@@ -9913,6 +10157,11 @@ The CSV file should contain the following columns (header names must match exact
         self.dividend_periods_spinbox.valueChanged.connect(
             self._update_dividend_bar_chart
         )
+        # Capital Gains Tab Connections
+        self.cg_period_combo.currentTextChanged.connect(
+            self._update_capital_gains_display
+        )
+        self.cg_periods_spinbox.valueChanged.connect(self._update_capital_gains_display)
 
     def _update_table_display(self):
         """Updates the table view, pie charts, and title based on current filters."""
@@ -12429,6 +12678,8 @@ The CSV file should contain the following columns (header names must match exact
         self.historical_data = pd.DataFrame()
         self.last_hist_twr_factor = np.nan
         self.available_accounts = []  # Clear available accounts
+        self.capital_gains_history_data = pd.DataFrame()  # Already present from Phase 2
+
         self.dividend_history_data = pd.DataFrame()  # Clear dividend data
         # Keep selected_accounts as loaded from config, validation happens on load
         self._update_table_view_with_filtered_columns(pd.DataFrame())
@@ -12447,6 +12698,7 @@ The CSV file should contain the following columns (header names must match exact
         self._update_fx_rate_display(self.currency_combo.currentText())
         self.update_header_info(loading=True)
         self._clear_asset_allocation_charts()  # Clear allocation charts
+        self._update_capital_gains_display()  # Clear Capital Gains tab
         if hasattr(self, "view_ignored_button"):
             self.view_ignored_button.setEnabled(False)  # Disable when clearing
         self._update_dividend_bar_chart()  # Clear dividend chart
@@ -12520,6 +12772,26 @@ The CSV file should contain the following columns (header names must match exact
         cash_tx_df = df_for_logs[
             df_for_logs[symbol_col_name_to_use] == CASH_SYMBOL_CSV
         ].copy()
+
+        # Ensure Date column is formatted as string "YYYY-MM-DD" for display
+        if date_col_name_to_use_for_sort in stock_tx_df.columns:
+            stock_tx_df[date_col_name_to_use_for_sort] = pd.to_datetime(
+                stock_tx_df[date_col_name_to_use_for_sort], errors="coerce"
+            ).dt.strftime("%Y-%m-%d")
+            stock_tx_df[date_col_name_to_use_for_sort] = stock_tx_df[
+                date_col_name_to_use_for_sort
+            ].replace(
+                "NaT", "-", regex=False
+            )  # Handle potential NaT from coerce
+        if date_col_name_to_use_for_sort in cash_tx_df.columns:
+            cash_tx_df[date_col_name_to_use_for_sort] = pd.to_datetime(
+                cash_tx_df[date_col_name_to_use_for_sort], errors="coerce"
+            ).dt.strftime("%Y-%m-%d")
+            cash_tx_df[date_col_name_to_use_for_sort] = cash_tx_df[
+                date_col_name_to_use_for_sort
+            ].replace(
+                "NaT", "-", regex=False
+            )  # Handle potential NaT
 
         # Drop the 'original_index' column before displaying in logs
         if "original_index" in stock_tx_df.columns:
@@ -13491,7 +13763,7 @@ The CSV file should contain the following columns (header names must match exact
         self.setCursor(Qt.WaitCursor if not enabled else Qt.ArrowCursor)
 
     # --- Signal Handlers from Worker ---
-    @Slot(  # MODIFIED: Signature matches WorkerSignals.result (10 args)
+    @Slot(  # MODIFIED: Signature matches WorkerSignals.result (11 args)
         dict,
         pd.DataFrame,
         dict,
@@ -13502,9 +13774,10 @@ The CSV file should contain the following columns (header names must match exact
         set,
         dict,
         pd.DataFrame,
+        pd.DataFrame,  # capital_gains_history_df
     )
-    def handle_results(  # MODIFIED: Signature matches Slot decorator (10 args)
-        self,  # Don't forget self!
+    def handle_results(
+        self,
         summary_metrics,
         holdings_df,
         account_metrics,
@@ -13514,7 +13787,8 @@ The CSV file should contain the following columns (header names must match exact
         hist_fx,
         combined_ignored_indices,
         combined_ignored_reasons,
-        dividend_history_df,  # <-- NEW from worker
+        dividend_history_df,
+        capital_gains_history_df,
     ):
         logging.info("HANDLE_RESULTS: Slot entered.")
         """
@@ -13529,6 +13803,9 @@ The CSV file should contain the following columns (header names must match exact
         )
         logging.debug(
             f"  Received dividend_history_df shape: {dividend_history_df.shape if isinstance(dividend_history_df, pd.DataFrame) else 'Not DF'}"
+        )
+        logging.debug(
+            f"  Received capital_gains_history_df shape: {capital_gains_history_df.shape if isinstance(capital_gains_history_df, pd.DataFrame) else 'Not DF'}"
         )
 
         try:
@@ -13564,6 +13841,7 @@ The CSV file should contain the following columns (header names must match exact
                 combined_ignored_indices,
                 combined_ignored_reasons,
                 dividend_history_df,
+                capital_gains_history_df,  # Pass the new argument
             )
             logging.info("HANDLE_RESULTS: Finished _store_worker_data.")
             # Log after storing
@@ -14215,6 +14493,7 @@ The CSV file should contain the following columns (header names must match exact
                 color=COLOR_LOSS,
             )
 
+        self._update_capital_gains_summary_table(plot_data_for_table)
         scope_display_label = self._get_scope_label_for_charts()
         ax.set_title(
             f"{scope_display_label} - {period_type} Dividend Totals ({display_currency_symbol})",
@@ -14368,6 +14647,394 @@ The CSV file should contain the following columns (header names must match exact
             logging.error(f"  Error during dividend history table sort: {e_sort}")
         # --- END CORRECTION ---
         self.dividend_table_view.resizeColumnsToContents()
+
+    # --- NEW: Capital Gains Display Methods ---
+    @Slot()
+    def _update_capital_gains_display(self):
+        """Updates the Capital Gains tab (bar chart and table)."""
+        logging.debug("Updating Capital Gains display...")
+        self._update_capital_gains_bar_chart()
+        # _update_capital_gains_summary_table will be called by _update_capital_gains_bar_chart
+        self._update_capital_gains_table()
+
+    def _update_capital_gains_bar_chart(self):
+        """Updates the Capital Gains bar chart."""
+        logging.debug("Updating Capital Gains bar chart...")
+        ax = self.cg_bar_ax
+        canvas = self.cg_bar_canvas
+        ax.clear()
+
+        if (
+            not hasattr(self, "capital_gains_history_data")
+            or self.capital_gains_history_data.empty
+        ):
+            logging.debug("  _update_capital_gains_bar_chart: No data or empty.")
+            ax.text(
+                0.5,
+                0.5,
+                "No Capital Gains Data",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                color=COLOR_TEXT_SECONDARY,
+            )
+            ax.set_title("Realized Capital Gains", fontsize=9, weight="bold")
+            canvas.draw()
+            self._update_capital_gains_summary_table(
+                pd.Series(dtype=float)
+            )  # Clear summary table
+            return
+
+        df_cg = self.capital_gains_history_data.copy()
+        if (
+            "Date" not in df_cg.columns
+            or "Realized Gain (Display)" not in df_cg.columns
+        ):
+            logging.error("Capital gains data missing required Date or Gain columns.")
+            ax.text(
+                0.5,
+                0.5,
+                "Invalid Capital Gains Data",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                color=COLOR_TEXT_SECONDARY,
+            )
+            ax.set_title("Realized Capital Gains", fontsize=9, weight="bold")
+            canvas.draw()
+            self._update_capital_gains_summary_table(
+                pd.Series(dtype=float)
+            )  # Clear summary table
+            return
+
+        df_cg["Date"] = pd.to_datetime(df_cg["Date"])
+        df_cg.set_index("Date", inplace=True)
+
+        period_type = self.cg_period_combo.currentText()
+        num_periods_to_show = self.cg_periods_spinbox.value()
+        display_currency_symbol = self._get_currency_symbol()
+
+        resample_freq = "YE"  # Annual
+        date_format_str = "%Y"
+        if period_type == "Quarterly":
+            resample_freq = "QE"
+            # For quarterly, strftime %q is not standard across all systems for pandas index directly
+            # We will handle quarterly labeling during x_labels generation.
+            date_format_str = "%Y-Q%q"
+
+        try:
+            aggregated_gains = (
+                df_cg["Realized Gain (Display)"].resample(resample_freq).sum().dropna()
+            )
+
+            # Initialize plot_data_for_table as an empty Series.
+            # It will be updated only if valid plot_data is generated.
+            plot_data_for_table = pd.Series(dtype=float)
+
+            if aggregated_gains.empty:
+                ax.text(
+                    0.5,
+                    0.5,
+                    f"No Realized Gains/Losses for {period_type} Periods",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                    color=COLOR_TEXT_SECONDARY,
+                )
+                # plot_data_for_table remains empty here
+            else:
+                plot_data = aggregated_gains.tail(num_periods_to_show)
+                if plot_data.empty:
+                    ax.text(
+                        0.5,
+                        0.5,
+                        f"No Realized Gains/Losses for Last {num_periods_to_show} {period_type} Periods",
+                        ha="center",
+                        va="center",
+                        transform=ax.transAxes,
+                        color=COLOR_TEXT_SECONDARY,
+                    )
+                    # plot_data_for_table remains empty here
+                else:
+                    # >>> KEY CHANGE: Assign plot_data to plot_data_for_table <<<
+                    plot_data_for_table = plot_data
+                    # --- Generate x_labels ---
+                    if period_type == "Quarterly":
+                        x_labels = [f"{dt.year}-Q{dt.quarter}" for dt in plot_data.index]  # type: ignore
+                    else:  # Annual
+                        x_labels = plot_data.index.strftime(date_format_str)
+                    # --- End Generate x_labels ---
+
+                    colors = [
+                        COLOR_GAIN if val >= 0 else COLOR_LOSS
+                        for val in plot_data.values
+                    ]
+                    bars = ax.bar(x_labels, plot_data.values, color=colors, width=0.6)
+
+                    # Add value labels on top/bottom of bars
+                    for bar in bars:
+                        yval = bar.get_height()
+                        if pd.notna(yval) and abs(yval) > 1e-9:
+                            va = "bottom" if yval >= 0 else "top"
+                            offset = (
+                                (plot_data.max() * 0.01)
+                                if yval >= 0
+                                else -(plot_data.min() * 0.01)
+                            )  # Small offset
+                            ax.text(
+                                bar.get_x() + bar.get_width() / 2.0,
+                                yval + offset,
+                                f"{display_currency_symbol}{yval:,.0f}",
+                                ha="center",
+                                va=va,
+                                fontsize=7,
+                                color=COLOR_TEXT_DARK,
+                            )
+
+                    ax.yaxis.set_major_formatter(
+                        mtick.FuncFormatter(
+                            lambda x, p: f"{display_currency_symbol}{x:,.0f}"
+                        )
+                    )
+                    ax.tick_params(axis="x", labelrotation=45, labelsize=7)
+                    ax.tick_params(axis="y", labelsize=7)
+                    ax.grid(
+                        True,
+                        axis="y",
+                        linestyle="--",
+                        linewidth=0.5,
+                        color=COLOR_BORDER_LIGHT,
+                    )
+                    ax.axhline(0, color=COLOR_BORDER_DARK, linewidth=0.6)  # Zero line
+
+        except Exception as e:
+            logging.error(f"Error generating capital gains bar chart: {e}")
+            traceback.print_exc()
+            ax.text(
+                0.5,
+                0.5,
+                "Error Plotting Gains",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                color=COLOR_LOSS,
+            )
+
+        self._update_capital_gains_summary_table(
+            plot_data_for_table
+            if "plot_data_for_table" in locals()
+            else pd.Series(dtype=float)
+        )
+        scope_display_label = self._get_scope_label_for_charts()
+        ax.set_title(
+            f"{scope_display_label} - Realized Capital Gains ({display_currency_symbol})",
+            fontsize=9,
+            weight="bold",
+        )
+        ax.set_xlabel("")  # Clear x-axis label
+        ax.set_ylabel(f"Total Gain/Loss ({display_currency_symbol})", fontsize=8)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        self.cg_bar_fig.tight_layout(pad=0.5)
+        canvas.draw()
+
+    def _update_capital_gains_summary_table(self, plot_data: pd.Series):
+        """Updates the capital gains summary table view with aggregated data."""
+        logging.debug("Updating capital gains summary table...")
+        if not hasattr(self, "cg_summary_table_model"):
+            logging.error("_update_capital_gains_summary_table: Model not initialized.")
+            return
+
+        if plot_data is None or plot_data.empty:
+            logging.debug(
+                "  _update_capital_gains_summary_table: No plot_data or empty."
+            )
+            self.cg_summary_table_model.updateData(pd.DataFrame())
+            return
+
+        df_summary = plot_data.to_frame(
+            name=f"Realized Gain/Loss ({self._get_currency_symbol()})"
+        )
+
+        period_type = self.cg_period_combo.currentText()
+        if isinstance(df_summary.index, pd.DatetimeIndex):
+            if period_type == "Quarterly":
+                df_summary.index = [
+                    f"{dt.year}-Q{dt.quarter}" for dt in df_summary.index
+                ]
+            else:  # Annual
+                date_format_str_table = "%Y"
+                df_summary.index = df_summary.index.strftime(date_format_str_table)
+
+        df_summary.index.name = "Period"
+        df_summary = df_summary.reset_index()
+
+        self.cg_summary_table_model.updateData(df_summary)
+
+        try:
+            if not df_summary.empty:
+                period_col_index = df_summary.columns.get_loc("Period")
+                self.cg_summary_table_view.sortByColumn(
+                    period_col_index, Qt.DescendingOrder
+                )
+                logging.debug("  Applied default sort to capital gains summary table.")
+            else:
+                logging.debug(
+                    "  df_summary is empty, skipping sort for capital gains summary table."
+                )
+        except KeyError:
+            logging.warning(
+                "  'Period' column not found in capital gains summary table, cannot apply default sort."
+            )
+        except Exception as e_sort:
+            logging.error(f"  Error during capital gains summary table sort: {e_sort}")
+
+        self.cg_summary_table_view.resizeColumnsToContents()
+        self.cg_summary_table_view.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Stretch
+        )
+
+    def _update_capital_gains_table(self):
+        """Updates the Capital Gains history table view."""
+        logging.debug("Updating Capital Gains table...")
+        if not hasattr(self, "cg_table_model"):
+            logging.error("_update_capital_gains_table: Model not initialized.")
+            return
+
+        if (
+            not hasattr(self, "capital_gains_history_data")
+            or self.capital_gains_history_data.empty
+        ):
+            logging.debug("  _update_capital_gains_table: No data or empty.")
+            self.cg_table_model.updateData(pd.DataFrame())
+            return
+
+        df_display = self.capital_gains_history_data.copy()
+
+        display_currency_symbol = self._get_currency_symbol()
+
+        # Format currency columns before renaming
+        local_currency_cols = [
+            "Avg Sale Price (Local)",
+            "Total Proceeds (Local)",
+            "Total Cost Basis (Local)",
+            "Realized Gain (Local)",
+        ]
+        display_currency_cols = [
+            "Total Proceeds (Display)",
+            "Total Cost Basis (Display)",
+            "Realized Gain (Display)",
+        ]
+
+        if "LocalCurrency" in df_display.columns:
+            for col_name in local_currency_cols:
+                if col_name in df_display.columns:
+                    df_display[col_name] = df_display.apply(
+                        lambda r: (
+                            f"{self._get_currency_symbol(currency_code=r.get('LocalCurrency'))}{r[col_name]:,.2f}"
+                            if pd.notna(r[col_name])
+                            and pd.notna(r.get("LocalCurrency"))
+                            and isinstance(r[col_name], (float, int))
+                            else ("-" if pd.isna(r[col_name]) else str(r[col_name]))
+                        ),
+                        axis=1,
+                    )
+        else:  # Fallback if LocalCurrency column is missing
+            for col_name in local_currency_cols:
+                if col_name in df_display.columns:
+                    df_display[col_name] = df_display[col_name].apply(
+                        lambda x: (
+                            f"{x:,.2f}"
+                            if pd.notna(x) and isinstance(x, (float, int))
+                            else ("-" if pd.isna(x) else str(x))
+                        )
+                    )
+
+        for col_name in display_currency_cols:
+            if col_name in df_display.columns:
+                df_display[col_name] = df_display[col_name].apply(
+                    lambda x: (
+                        f"{display_currency_symbol}{x:,.2f}"
+                        if pd.notna(x) and isinstance(x, (float, int))
+                        else ("-" if pd.isna(x) else str(x))
+                    )
+                )
+
+        # Format other numeric columns
+        if "Quantity" in df_display.columns:
+            df_display["Quantity"] = df_display["Quantity"].apply(
+                lambda x: (
+                    f"{x:,.4f}"
+                    if pd.notna(x) and isinstance(x, (float, int))
+                    else ("-" if pd.isna(x) else str(x))
+                )
+            )
+        if "Sale/Cover FX Rate" in df_display.columns:
+            df_display["Sale/Cover FX Rate"] = df_display["Sale/Cover FX Rate"].apply(
+                lambda x: (
+                    f"{x:,.4f}"
+                    if pd.notna(x) and isinstance(x, (float, int))
+                    else ("-" if pd.isna(x) else str(x))
+                )
+            )
+
+        # Ensure original_tx_id is string
+        if "original_tx_id" in df_display.columns:
+            df_display["original_tx_id"] = (
+                df_display["original_tx_id"]
+                .astype(str)
+                .replace("nan", "-")
+                .replace("<NA>", "-")
+            )
+
+        # Drop LocalCurrency column after formatting, before renaming, if it's not part of UI
+        if "LocalCurrency" in df_display.columns:
+            df_display = df_display.drop(columns=["LocalCurrency"])
+
+        # Format columns for display
+        if "Date" in df_display.columns:
+            df_display["Date"] = pd.to_datetime(df_display["Date"]).dt.strftime(
+                "%Y-%m-%d"
+            )
+
+        # Rename columns for UI friendliness
+        rename_map = {
+            "Quantity": "Quantity Sold",
+            "Avg Sale Price (Local)": "Avg Sale Price",  # Cell value already has local symbol
+            "Total Proceeds (Local)": "Proceeds (Local)",
+            "Total Cost Basis (Local)": "Cost Basis (Local)",
+            "Realized Gain (Local)": "Gain/Loss (Local)",
+            "Sale/Cover FX Rate": "FX Rate",
+            "Total Proceeds (Display)": f"Proceeds ({display_currency_symbol})",
+            "Total Cost Basis (Display)": f"Cost Basis ({display_currency_symbol})",
+            "Realized Gain (Display)": f"Gain/Loss ({display_currency_symbol})",
+            "original_tx_id": "Original Tx ID",
+        }
+        df_display.rename(columns=rename_map, inplace=True)
+
+        # --- CORRECTED: Call updateData ONCE, then sort ---
+        self.cg_table_model.updateData(df_display)
+
+        try:
+            if not df_display.empty:  # Check if df_display has data
+                date_col_index = df_display.columns.get_loc("Date")
+                self.cg_table_view.sortByColumn(date_col_index, Qt.DescendingOrder)
+                logging.debug("  Applied default sort to capital gains table.")
+            else:
+                logging.debug(
+                    "  df_display is empty, skipping sort for capital gains table."
+                )
+        except KeyError:
+            logging.warning(
+                "  'Date' column not found in capital gains table, cannot apply default sort."
+            )
+        except Exception as e_sort:
+            logging.error(f"  Error during capital gains table sort: {e_sort}")
+        # --- END CORRECTION ---
+
+        self.cg_table_view.resizeColumnsToContents()
+
+    # --- End Capital Gains Display Methods ---
 
     @Slot()
     def open_add_transaction_dialog(self):

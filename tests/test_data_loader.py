@@ -97,7 +97,9 @@ def test_load_clean_basic_success(tmp_path):
         "original_index": "original_index",  # Added to reflect actual behavior
     }
     assert header_map == expected_header_map, "Header map mismatch"
-    assert isinstance(
+    # Corrected: Use the unpacked variable for assertion
+    assert original_to_cleaned_header_map == expected_header_map, "Header map mismatch"
+    assert isinstance(  # type: ignore
         original_to_cleaned_header_map, dict
     ), "Header map should be a dictionary"
     assert pd.api.types.is_datetime64_any_dtype(
@@ -155,7 +157,8 @@ def test_load_clean_column_rename(tmp_path):
         "Note": "Note",
     }
     # The map should only contain entries for columns actually present in the CSV
-    assert header_map == expected_header_map, "Header map mismatch"
+    # Corrected: Use the unpacked variable for assertion
+    assert original_to_cleaned_header_map == expected_header_map, "Header map mismatch"
 
 
 def test_load_clean_date_parsing_formats(tmp_path):

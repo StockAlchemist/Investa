@@ -2094,3 +2094,354 @@ def extract_dividend_history(
             f"  'DividendAmountDisplayCurrency' NaNs: {df_dividends['DividendAmountDisplayCurrency'].isna().sum()} out of {len(df_dividends)}"
         )
     return df_dividends
+
+
+@profile
+def extract_realized_capital_gains_history(
+    all_transactions_df: pd.DataFrame,
+    display_currency: str,
+    historical_fx_yf: Dict[str, pd.DataFrame],  # YF Ticker -> DataFrame of rates vs USD
+    default_currency: str,
+    shortable_symbols: Set[
+        str
+    ],  # Currently unused for CG, but kept for signature consistency
+    stock_quantity_close_tolerance: float = STOCK_QUANTITY_CLOSE_TOLERANCE,
+    include_accounts: Optional[List[str]] = None,
+) -> pd.DataFrame:
+    """
+    Calculates realized capital gains from transactions using FIFO accounting for long positions.
+
+    Args:
+        all_transactions_df (pd.DataFrame): Cleaned DataFrame of all transactions.
+            Expected columns: 'Date', 'Symbol', 'Account', 'Type', 'Local Currency',
+                              'Quantity', 'Price/Share', 'Commission', 'Split Ratio', 'original_index'.
+        display_currency (str): The target currency for reporting gains.
+        historical_fx_yf (Dict[str, pd.DataFrame]): Historical FX rates vs USD, used by
+                                                   get_historical_rate_via_usd_bridge.
+        default_currency (str): Default currency if 'Local Currency' is missing.
+        shortable_symbols (Set[str]): Set of symbols that can be shorted (currently unused for CG).
+        stock_quantity_close_tolerance (float): Tolerance for considering a lot closed.
+        include_accounts (Optional[List[str]]): Accounts to include. If None, all accounts.
+
+    Returns:
+        pd.DataFrame: DataFrame with details of each realized capital gain/loss for long positions.
+                      Columns: 'Date', 'Symbol', 'Account', 'Type', 'Quantity',
+                               'Avg Sale Price (Local)', 'Total Proceeds (Local)',
+                               'Total Cost Basis (Local)', 'Realized Gain (Local)',
+                               'Sale/Cover FX Rate', 'Total Proceeds (Display)',
+                               'Total Cost Basis (Display)', 'Realized Gain (Display)',
+                               'original_tx_id'.
+    """
+    logging.info(
+        f"Extracting realized capital gains history for display in {display_currency}..."
+    )
+
+    output_columns = [
+        "Date",
+        "Symbol",
+        "Account",
+        "Type",
+        "Quantity",
+        "Avg Sale Price (Local)",
+        "Total Proceeds (Local)",
+        "Total Cost Basis (Local)",
+        "Realized Gain (Local)",
+        "Sale/Cover FX Rate",
+        "Total Proceeds (Display)",
+        "Total Cost Basis (Display)",
+        "Realized Gain (Display)",
+        "LocalCurrency",
+        "original_tx_id",
+    ]
+
+    if not isinstance(all_transactions_df, pd.DataFrame) or all_transactions_df.empty:
+        logging.warning("Capital gains: Input transactions DataFrame is empty.")
+        return pd.DataFrame(columns=output_columns)
+
+    transactions_to_process = all_transactions_df.copy()
+    if include_accounts and isinstance(include_accounts, list):
+        if "Account" in transactions_to_process.columns:
+            transactions_to_process = transactions_to_process[
+                transactions_to_process["Account"].isin(include_accounts)
+            ]
+            logging.info(
+                f"Filtered capital gains calculation for accounts: {include_accounts}"
+            )
+        else:
+            logging.warning(
+                "Cannot filter by account for capital gains: 'Account' column missing."
+            )
+
+    if transactions_to_process.empty:
+        logging.info(
+            "No transactions to process for capital gains after account filtering."
+        )
+        return pd.DataFrame(columns=output_columns)
+
+    # Ensure transactions are sorted chronologically
+    transactions_to_process.sort_values(by=["Date", "original_index"], inplace=True)
+
+    # Dictionary to store purchase lots: (symbol, account) -> list of lots
+    # Each lot: {'qty', 'cost_per_share_local_net', 'purchase_date', 'purchase_fx_to_display', 'original_tx_id'}
+    holdings_long: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
+    realized_gains_records: List[Dict[str, Any]] = []
+
+    for _, row in transactions_to_process.iterrows():
+        try:
+            tx_date_dt = row["Date"]
+            if pd.isna(tx_date_dt):
+                logging.warning(
+                    f"Skipping CG row due to missing date: {row.get('original_index', 'N/A')}"
+                )
+                continue
+            tx_date = tx_date_dt.date()  # Convert to datetime.date
+
+            symbol = str(row["Symbol"]).strip()
+            account = str(row["Account"]).strip()
+            tx_type = str(row["Type"]).lower().strip()
+            local_curr_raw = row.get("Local Currency")
+            local_curr = str(
+                local_curr_raw
+                if pd.notna(local_curr_raw) and str(local_curr_raw).strip()
+                else default_currency
+            ).upper()
+
+            if not local_curr or len(local_curr) != 3:
+                local_curr = default_currency.upper()
+
+            qty_raw = row.get("Quantity")
+            price_local_raw = row.get("Price/Share")
+            commission_local_raw = row.get("Commission")
+            split_ratio_raw = row.get("Split Ratio")
+
+            qty = pd.to_numeric(qty_raw, errors="coerce")
+            price_local = pd.to_numeric(price_local_raw, errors="coerce")
+            commission_local = (
+                0.0
+                if pd.isna(commission_local_raw)
+                else float(pd.to_numeric(commission_local_raw, errors="coerce"))
+            )
+            split_ratio = pd.to_numeric(split_ratio_raw, errors="coerce")
+            original_tx_id_current_row = row.get("original_index")
+
+        except Exception as e_parse:
+            logging.warning(
+                f"Error parsing basic data for CG row {row.get('original_index', 'N/A')}: {e_parse}. Skipping."
+            )
+            continue
+
+        holding_key = (symbol, account)
+
+        if symbol == CASH_SYMBOL_CSV or tx_type in [
+            "deposit",
+            "withdrawal",
+            "fees",  # Fees on their own don't realize CG on assets
+            "dividend",  # Dividends are income, not CG from sale
+        ]:
+            continue
+
+        if tx_type in ["split", "stock split"]:
+            if pd.notna(split_ratio) and split_ratio > 0:
+                if holding_key in holdings_long:
+                    for lot in holdings_long[holding_key]:
+                        lot["qty"] *= split_ratio
+                        # Cost per share needs to be adjusted inversely
+                        if lot["qty"] > 0:  # Avoid division by zero if qty became 0
+                            lot["cost_per_share_local_net"] /= split_ratio
+                        else:  # If qty becomes zero due to split (unlikely for positive split_ratio but safety)
+                            lot["cost_per_share_local_net"] = 0.0
+            continue
+
+        if pd.isna(qty) or qty <= 1e-9:  # Quantity must be positive for buy/sell
+            logging.debug(
+                f"Skipping CG for {symbol}/{account} on {tx_date} due to zero/NaN quantity: {qty}"
+            )
+            continue
+
+        # Get FX rate for the current transaction's date (for converting proceeds or cost of new buys)
+        fx_rate_to_display_current_tx = get_historical_rate_via_usd_bridge(
+            local_curr, display_currency, tx_date, historical_fx_yf
+        )
+        if pd.isna(fx_rate_to_display_current_tx):
+            logging.warning(
+                f"CG: Missing FX rate for {local_curr} to {display_currency} on {tx_date} for {symbol} (TX ID: {original_tx_id_current_row}). Display currency gains may be inaccurate for this TX."
+            )
+            # We will proceed, display currency values will be NaN if this rate is needed and missing.
+
+        if tx_type == "buy":
+            if pd.isna(price_local) or price_local <= 1e-9:
+                logging.warning(
+                    f"Skipping BUY for {symbol}/{account} on {tx_date} (TX ID: {original_tx_id_current_row}) due to invalid price: {price_local}"
+                )
+                continue
+
+            cost_per_share_local_net = ((qty * price_local) + commission_local) / qty
+
+            holdings_long[holding_key].append(
+                {
+                    "qty": qty,
+                    "cost_per_share_local_net": cost_per_share_local_net,
+                    "purchase_date": tx_date,
+                    "purchase_fx_to_display": fx_rate_to_display_current_tx,  # FX at time of purchase
+                    "original_tx_id": original_tx_id_current_row,  # original_index of the buy transaction
+                }
+            )
+
+        elif tx_type == "sell":  # Assuming this is selling a long position
+            if pd.isna(price_local) or price_local <= 1e-9:
+                logging.warning(
+                    f"Skipping SELL for {symbol}/{account} on {tx_date} (TX ID: {original_tx_id_current_row}) due to invalid price: {price_local}"
+                )
+                continue
+
+            qty_to_sell_remaining = qty
+            # Proceeds are calculated from the sale price and quantity, less commission on sale
+            total_proceeds_local_for_this_sale = (qty * price_local) - commission_local
+
+            total_cost_basis_local_for_this_sale = 0.0
+            total_cost_basis_display_for_this_sale = (
+                0.0  # Sum of (cost_per_share_local * purchase_fx_rate) * qty_from_lot
+            )
+
+            lots_for_holding = holdings_long[holding_key]
+            temp_lots_after_sale = []  # Build the new list of lots
+
+            if not lots_for_holding:
+                logging.warning(
+                    f"Attempted to SELL {qty} of {symbol}/{account} on {tx_date} (TX ID: {original_tx_id_current_row}), but no existing lots found. This might indicate selling short without 'short sell' type or data issue."
+                )
+                # If we want to strictly prevent this, we can 'continue' here.
+                # For now, it will result in zero cost basis if no lots are found.
+
+            for lot in lots_for_holding:
+                if (
+                    qty_to_sell_remaining <= stock_quantity_close_tolerance
+                ):  # Use tolerance
+                    temp_lots_after_sale.append(lot)  # Keep unconsumed lot
+                    continue
+
+                qty_sold_from_this_lot = min(qty_to_sell_remaining, lot["qty"])
+
+                cost_basis_lot_local = (
+                    qty_sold_from_this_lot * lot["cost_per_share_local_net"]
+                )
+                total_cost_basis_local_for_this_sale += cost_basis_lot_local
+
+                cost_basis_lot_display_part = np.nan
+                if pd.notna(lot["purchase_fx_to_display"]) and pd.notna(
+                    lot["cost_per_share_local_net"]
+                ):
+                    cost_basis_lot_display_part = (
+                        qty_sold_from_this_lot
+                        * lot["cost_per_share_local_net"]
+                        * lot["purchase_fx_to_display"]
+                    )
+
+                if pd.notna(cost_basis_lot_display_part):
+                    total_cost_basis_display_for_this_sale = (
+                        total_cost_basis_display_for_this_sale  # Keep existing sum if it's valid
+                        if pd.notna(total_cost_basis_display_for_this_sale)
+                        else 0.0
+                    ) + cost_basis_lot_display_part
+                else:  # If any part of cost basis in display is NaN, total becomes NaN
+                    total_cost_basis_display_for_this_sale = np.nan
+
+                lot["qty"] -= qty_sold_from_this_lot
+                qty_to_sell_remaining -= qty_sold_from_this_lot
+
+                if lot["qty"] >= stock_quantity_close_tolerance:  # Use tolerance
+                    temp_lots_after_sale.append(lot)  # Keep partially consumed lot
+
+            holdings_long[holding_key] = (
+                temp_lots_after_sale  # Update the lots for the holding
+            )
+
+            if (
+                qty_to_sell_remaining > stock_quantity_close_tolerance
+                and not lots_for_holding
+            ):
+                # This case was logged above if lots_for_holding was initially empty.
+                # If lots_for_holding was not empty but all were consumed and still qty_to_sell_remaining,
+                # it means we sold more than was in the tracked lots.
+                logging.warning(
+                    f"Sold {qty} of {symbol}/{account} on {tx_date} (TX ID: {original_tx_id_current_row}), but only {qty - qty_to_sell_remaining:.4f} shares were covered by existing lots. Remainder to sell: {qty_to_sell_remaining:.4f}."
+                )
+
+            realized_gain_local = (
+                total_proceeds_local_for_this_sale
+                - total_cost_basis_local_for_this_sale
+            )
+
+            total_proceeds_display = np.nan
+            if pd.notna(fx_rate_to_display_current_tx) and pd.notna(
+                total_proceeds_local_for_this_sale
+            ):
+                total_proceeds_display = (
+                    total_proceeds_local_for_this_sale * fx_rate_to_display_current_tx
+                )
+
+            realized_gain_display = np.nan
+            if pd.notna(total_proceeds_display) and pd.notna(
+                total_cost_basis_display_for_this_sale
+            ):
+                realized_gain_display = (
+                    total_proceeds_display - total_cost_basis_display_for_this_sale
+                )
+
+            # Only record if some quantity was actually sold from lots
+            quantity_actually_sold_from_lots = qty - qty_to_sell_remaining
+            if quantity_actually_sold_from_lots > stock_quantity_close_tolerance:
+                realized_gains_records.append(
+                    {
+                        "Date": tx_date,
+                        "Symbol": symbol,
+                        "Account": account,
+                        "Type": "Sale Long",
+                        "Quantity": quantity_actually_sold_from_lots,  # Quantity covered by FIFO lots
+                        "Avg Sale Price (Local)": price_local,  # Price per share from sell transaction
+                        "Total Proceeds (Local)": total_proceeds_local_for_this_sale
+                        * (
+                            quantity_actually_sold_from_lots / qty if qty > 0 else 1
+                        ),  # Pro-rate proceeds if only partial sale from lots
+                        "Total Cost Basis (Local)": total_cost_basis_local_for_this_sale,
+                        "Realized Gain (Local)": realized_gain_local
+                        * (
+                            quantity_actually_sold_from_lots / qty if qty > 0 else 1
+                        ),  # Pro-rate gain
+                        "Sale/Cover FX Rate": fx_rate_to_display_current_tx,  # FX at time of sale
+                        "Total Proceeds (Display)": total_proceeds_display
+                        * (
+                            quantity_actually_sold_from_lots / qty
+                            if qty > 0 and pd.notna(total_proceeds_display)
+                            else 1
+                        ),
+                        "Total Cost Basis (Display)": total_cost_basis_display_for_this_sale,  # This is already sum for sold lots
+                        "Realized Gain (Display)": realized_gain_display
+                        * (
+                            quantity_actually_sold_from_lots / qty
+                            if qty > 0 and pd.notna(realized_gain_display)
+                            else 1
+                        ),
+                        "LocalCurrency": local_curr,  # Add the local currency of the sale
+                        "original_tx_id": original_tx_id_current_row,  # original_index of the sell transaction
+                    }
+                )
+
+        # TODO: Implement FIFO for short sale capital gains if required.
+        # This would involve tracking short lots: {'qty', 'proceeds_per_share_local_net', 'short_sell_date', 'short_sell_fx_to_display'}
+        # and matching 'buy to cover' transactions against these lots.
+        # elif tx_type == "short sell":
+        #     pass
+        # elif tx_type == "buy to cover":
+        #     pass
+
+    if not realized_gains_records:
+        logging.info(
+            "No realized capital gains found after processing all transactions."
+        )
+        return pd.DataFrame(columns=output_columns)
+
+    df_gains = pd.DataFrame(realized_gains_records, columns=output_columns)
+    df_gains.sort_values(by=["Date", "Symbol", "Account"], inplace=True)
+    logging.info(f"Extracted {len(df_gains)} realized capital gains records.")
+    return df_gains
