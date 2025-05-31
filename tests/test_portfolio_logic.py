@@ -15,6 +15,7 @@ SAMPLE_CSV_PATH = os.path.join(TEST_DIR, "sample_transactions.csv")
 try:
     # We only need the main entry points for integration tests
     from portfolio_logic import (
+        load_and_clean_transactions,  # Import for loading data in tests
         calculate_portfolio_summary,
         calculate_historical_performance,
     )
@@ -76,16 +77,30 @@ def test_calculate_portfolio_summary_basic(
     # and assume the function uses it. A more robust test would mock yfinance.
     # We also need FX rates.
     # Let's assume the function handles manual prices and we provide FX via a simplified mechanism if needed
-    # For now, rely on manual_prices and assume FX works or is mocked elsewhere if needed by the function directly.
+
+    # Load transactions first
+    (
+        loaded_tx_df,
+        loaded_orig_df,
+        loaded_ignored_indices,
+        loaded_ignored_reasons,
+        _,
+        _,
+        _,
+    ) = load_and_clean_transactions(
+        sample_csv_filepath, default_account_map, default_base_currency
+    )
+    assert loaded_tx_df is not None, "Test setup: Failed to load sample transactions"
 
     # --- Call the function under test ---
     summary_metrics, holdings_df, account_metrics, ignored_idx, ignored_rsn, status = (
         calculate_portfolio_summary(
-            transactions_csv_file=sample_csv_filepath,
+            all_transactions_df_cleaned=loaded_tx_df,
+            original_transactions_df_for_ignored=loaded_orig_df,
+            ignored_indices_from_load=loaded_ignored_indices,
+            ignored_reasons_from_load=loaded_ignored_reasons,
             display_currency=display_currency,
             show_closed_positions=show_closed,
-            account_currency_map=default_account_map,
-            default_currency=default_base_currency,
             include_accounts=include_accounts,
             manual_overrides_dict=manual_overrides,
             user_symbol_map={},  # Pass empty dict instead of None
@@ -93,6 +108,8 @@ def test_calculate_portfolio_summary_basic(
             # Pass other args like cache_file_path if needed by the current signature
         )
     )
+    # Add assertions for the new arguments if they affect the output in a testable way
+    # For now, just ensuring the call signature is correct.
 
     # --- Assertions ---
     assert "Error" not in status, f"Status indicates error: {status}"
@@ -172,10 +189,29 @@ def test_calculate_historical_performance_basic(
     include_accounts = None  # Test with all accounts
     exclude_accounts = None
 
+    # Load transactions first
+    (
+        loaded_tx_df,
+        loaded_orig_df,
+        loaded_ignored_indices,
+        loaded_ignored_reasons,
+        _,
+        _,
+        _,
+    ) = load_and_clean_transactions(
+        sample_csv_filepath, default_account_map, default_base_currency
+    )
+    assert (
+        loaded_tx_df is not None
+    ), "Test setup: Failed to load sample transactions for historical test"
+
     # --- Call the function under test ---
     # Note: This will perform actual yfinance downloads unless mocked
     hist_df, raw_prices, raw_fx, status = calculate_historical_performance(
-        transactions_csv_file=sample_csv_filepath,
+        all_transactions_df_cleaned=loaded_tx_df,
+        original_transactions_df_for_ignored=loaded_orig_df,
+        ignored_indices_from_load=loaded_ignored_indices,
+        ignored_reasons_from_load=loaded_ignored_reasons,
         start_date=start_date_hist,
         end_date=end_date_hist,
         interval=interval,
@@ -185,7 +221,6 @@ def test_calculate_historical_performance_basic(
         default_currency=default_base_currency,
         include_accounts=include_accounts,
         worker_signals=None,
-        all_transactions_df_cleaned=None,
         exclude_accounts=exclude_accounts,
         user_symbol_map={},  # Pass empty dict instead of None for robustness
         user_excluded_symbols=set(),  # Pass empty set instead of None for robustness

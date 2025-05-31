@@ -198,6 +198,7 @@ def _parse_date_robustly(date_series: pd.Series) -> pd.Series:
         "%m-%d-%Y",
         "%d-%m-%Y",
         "%b %d, %Y",  # E.g., Jan 01, 2023 (this is Investa's standard CSV output)
+        "%d-%b-%Y",  # E.g., 25-Apr-2023
         "%B %d, %Y",  # E.g., January 01, 2023
         "%Y%m%d",  # E.g., 20230101
         # Add more formats if needed

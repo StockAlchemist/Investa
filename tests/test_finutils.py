@@ -343,8 +343,12 @@ def test_get_conversion_rate_same_currency(sample_fx_rates):
 
 def test_get_conversion_rate_missing(sample_fx_rates):
     # CAD is missing from sample_fx_rates
-    assert get_conversion_rate("USD", "CAD", sample_fx_rates) == 1.0  # Fallback
-    assert get_conversion_rate("CAD", "EUR", sample_fx_rates) == 1.0  # Fallback
+    assert np.isnan(
+        get_conversion_rate("USD", "CAD", sample_fx_rates)
+    )  # MODIFIED: Expect NaN
+    assert np.isnan(
+        get_conversion_rate("CAD", "EUR", sample_fx_rates)
+    )  # MODIFIED: Expect NaN
 
 
 def test_get_conversion_rate_invalid_input(sample_fx_rates):
