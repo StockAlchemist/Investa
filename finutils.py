@@ -837,7 +837,7 @@ def get_historical_rate_via_usd_bridge(
 def map_to_yf_symbol(
     internal_symbol: str,
     user_symbol_map: Dict[str, str],
-    user_excluded_symbols: Set[str],
+    user_excluded_symbols: Set[str],  # Ensure this parameter is used
 ) -> Optional[str]:
     """
     Maps an internal symbol to a Yahoo Finance compatible ticker, handling specific cases.
@@ -870,7 +870,8 @@ def map_to_yf_symbol(
     # --- 1. Check Excluded and Cash Symbols FIRST ---
     if (
         normalized_symbol == CASH_SYMBOL_CSV
-        or normalized_symbol in user_excluded_symbols  # Use user-defined exclusions
+        or normalized_symbol
+        in user_excluded_symbols  # CORRECTLY Use user-defined exclusions
     ):
         logging.debug(
             f"  Symbol '{normalized_symbol}' is CASH or EXCLUDED. Returning None."

@@ -1111,6 +1111,7 @@ class MarketDataProvider:
         """
         loaded_symbol_data: Dict[str, pd.DataFrame] = {}
         manifest_path = self._get_historical_manifest_path()
+        # manifest_data_section_key is still relevant for organizing within "sections"
         manifest_data_section_key = (
             "historical_prices" if data_type == "price" else "historical_fx_rates"
         )
@@ -1125,36 +1126,70 @@ class MarketDataProvider:
             )
             return loaded_symbol_data, False
 
-        manifest = {}
+        # Initialize manifest with the new structure in mind if it's being created
+        # or to ensure "sections" key exists if loading an old manifest (though version check should handle this)
+        manifest = {"global_version": "1.2", "sections": {}}
+
         try:
             with open(manifest_path, "r", encoding="utf-8") as f:
-                manifest = json.load(f)
-        except Exception as e:
+                # ADD: Check file size before attempting to load
+                if os.path.getsize(manifest_path) == 0:
+                    logging.info(
+                        f"Hist Cache Load ({data_type}): Manifest file '{manifest_path}' is empty. Ignoring cache."
+                    )
+                    return loaded_symbol_data, False
+                loaded_manifest_content = json.load(f)
+                if (
+                    not isinstance(loaded_manifest_content, dict)
+                    or loaded_manifest_content.get("global_version") != "1.2"
+                ):  # Check for new version
+                    logging.warning(
+                        f"Hist Cache Load ({data_type}): Manifest file '{manifest_path}' is old version or invalid structure. Ignoring cache and rebuilding."
+                    )
+                    # Optionally, delete the old manifest here to force a clean save later
+                    return loaded_symbol_data, False
+                manifest = loaded_manifest_content
+        except json.JSONDecodeError as e_json:  # Specific catch for JSON error
+            logging.error(
+                f"Hist Cache Load ({data_type}): Error DECODING manifest '{manifest_path}': {e_json}. Attempting to delete corrupt manifest."
+            )
+            try:
+                os.remove(manifest_path)
+                logging.info(
+                    f"Hist Cache Load ({data_type}): Deleted corrupt manifest file '{manifest_path}'."
+                )
+            except OSError as e_del:
+                logging.error(
+                    f"Hist Cache Load ({data_type}): Failed to delete corrupt manifest '{manifest_path}': {e_del}"
+                )
+            return loaded_symbol_data, False
+        except Exception as e:  # General catch for other IO errors
             logging.error(
                 f"Hist Cache Load ({data_type}): Error reading manifest '{manifest_path}': {e}. Ignoring cache."
             )
             return loaded_symbol_data, False
 
-        loaded_manifest_cache_key = manifest.get("cache_key")
-        logging.info(
-            f"Hist Cache Load ({data_type}): Manifest exists. Found Key='{str(loaded_manifest_cache_key)[:50]}...'"
-        )
+        # New logic: Access the specific cache key entry within the data type section
+        sections = manifest.get("sections", {})
+        data_type_entries = sections.get(manifest_data_section_key, {})
+        section_metadata_for_key = data_type_entries.get(expected_cache_key)
 
-        if loaded_manifest_cache_key != expected_cache_key:
+        if section_metadata_for_key is None:
             logging.info(
-                f"Hist Cache Load ({data_type}): Manifest MISS (key MISMATCH). Ignoring cache."
+                f"Hist Cache Load ({data_type}): Manifest MISS (expected cache key '{expected_cache_key[:50]}...' not found in '{manifest_data_section_key}' section). Ignoring cache."
             )
             return loaded_symbol_data, False
 
         logging.info(
-            f"Hist Cache Load ({data_type}): Manifest HIT (key MATCH). Loading individual symbol files..."
+            f"Hist Cache Load ({data_type}): Manifest HIT (key '{expected_cache_key[:50]}...' found). Loading individual symbol files..."
         )
-        manifest_data_section = manifest.get(manifest_data_section_key, {})
+        # Files are listed under 'files' within the section
+        symbol_files_in_manifest = section_metadata_for_key.get("files", {})
         all_symbols_found_and_loaded = True
 
         for yf_symbol in symbols_to_load:
             if (
-                yf_symbol in manifest_data_section
+                yf_symbol in symbol_files_in_manifest
             ):  # Check if symbol is listed in manifest
                 symbol_file_path = self._get_historical_symbol_data_path(
                     yf_symbol, data_type
@@ -1188,7 +1223,7 @@ class MarketDataProvider:
                     all_symbols_found_and_loaded = False
             else:
                 logging.info(
-                    f"Hist Cache Load ({data_type}): Symbol {yf_symbol} not listed in manifest's '{manifest_data_section_key}' section."
+                    f"Hist Cache Load ({data_type}): Symbol {yf_symbol} not listed in manifest's '{manifest_data_section_key}.files' section."
                 )
                 all_symbols_found_and_loaded = False  # Symbol not in manifest means cache is incomplete for this request
 
@@ -1208,19 +1243,13 @@ class MarketDataProvider:
         cache_key_to_save: str,
         data_to_save_map: Dict[
             str, pd.DataFrame
-        ],  # Keyed by symbol, value is DataFrame
-        data_type: str = "price",  # "price" or "fx"
-        existing_other_type_data_from_manifest: Optional[
-            Dict
         ] = None,  # e.g., existing FX data if saving prices
+        data_type: str = "price",  # "price" or "fx"
     ):
         """Saves individual symbol historical data files and updates the manifest.json."""
         manifest_path = self._get_historical_manifest_path()
         manifest_data_section_key = (
             "historical_prices" if data_type == "price" else "historical_fx_rates"
-        )
-        other_manifest_data_section_key = (
-            "historical_fx_rates" if data_type == "price" else "historical_prices"
         )
 
         logging.info(
@@ -1250,19 +1279,52 @@ class MarketDataProvider:
                     f"Hist Cache Save ({data_type}): Error saving data for {yf_symbol} to {symbol_file_path}: {e_sym_save}"
                 )
 
-        # Update manifest
-        manifest_content = {
-            "cache_key": cache_key_to_save,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            manifest_data_section_key: current_manifest_symbol_entries,
-            # Preserve the other data type if it was passed
-            other_manifest_data_section_key: existing_other_type_data_from_manifest
-            or {},
+        # Load existing manifest to update it, or create new if not exists
+        full_manifest_content = {
+            "global_version": "1.2",  # Use new version
+            "sections": {},  # Initialize sections
         }
+        if os.path.exists(manifest_path):
+            try:
+                with open(manifest_path, "r", encoding="utf-8") as f_m:
+                    loaded_content = json.load(f_m)
+                    # Check if loaded content is new version and valid structure
+                    if (
+                        isinstance(loaded_content, dict)
+                        and loaded_content.get("global_version") == "1.2"
+                        and isinstance(loaded_content.get("sections"), dict)
+                    ):
+                        full_manifest_content = loaded_content
+                    else:
+                        logging.warning(
+                            f"Hist Cache Save ({data_type}): Existing manifest '{manifest_path}' is old version or invalid. Creating new one."
+                        )
+                        # full_manifest_content remains as the new default structure
+            except Exception as e_read_manifest:
+                logging.warning(
+                    f"Hist Cache Save ({data_type}): Could not read existing manifest '{manifest_path}', creating new one: {e_read_manifest}"
+                )
+                # full_manifest_content remains as the new default structure
 
+        # Ensure the data type section exists in "sections"
+        if manifest_data_section_key not in full_manifest_content["sections"]:
+            full_manifest_content["sections"][manifest_data_section_key] = {}
+
+        # Update or add the entry for the specific cache_key_to_save within its data type section
+        full_manifest_content["sections"][manifest_data_section_key][
+            cache_key_to_save
+        ] = {
+            "_timestamp": datetime.now(timezone.utc).isoformat(),
+            "files": current_manifest_symbol_entries,  # List of symbol files under this key
+        }
+        full_manifest_content["global_timestamp"] = datetime.now(
+            timezone.utc
+        ).isoformat()  # Overall manifest timestamp
         try:
             with open(manifest_path, "w", encoding="utf-8") as f:
-                json.dump(manifest_content, f, indent=2)
+                json.dump(
+                    full_manifest_content, f, indent=2
+                )  # CORRECTED: Use full_manifest_content
             logging.info(
                 f"Hist Cache Save ({data_type}): Manifest updated at {manifest_path}"
             )
@@ -1436,32 +1498,13 @@ class MarketDataProvider:
                 # Don't mark fetch_failed=True here, let caller decide if missing stock is critical
 
             # --- 3. Update Cache if Fetch Occurred and Cache Enabled ---
-            if (
-                use_cache and cache_key
-            ):  # Always try to save if cache is enabled and key exists
-                # We need to load existing FX data from manifest if we are to preserve it
-                # For simplicity now, if we fetched prices, we assume FX might also be refetched by its own call.
-                # A more robust solution would merge, but let's keep it focused.
-                # If this call is ONLY for prices, we can load the FX part of the manifest to preserve it.
-                existing_fx_from_manifest = {}
-                if os.path.exists(manifest_path):
-                    try:
-                        with open(manifest_path, "r") as f_m:
-                            m_data = json.load(f_m)
-                            if (
-                                m_data.get("cache_key") == cache_key
-                            ):  # Only use if key matches
-                                existing_fx_from_manifest = m_data.get(
-                                    "historical_fx_rates", {}
-                                )
-                    except:
-                        pass
-
+            if use_cache and cache_key:
+                # The new _save_historical_data_and_manifest will handle merging/updating the manifest correctly
+                # without needing existing_other_type_data_from_manifest passed here.
                 self._save_historical_data_and_manifest(
                     cache_key_to_save=cache_key,
                     data_to_save_map=historical_prices_yf_adjusted,  # Save all currently held price data
                     data_type="price",
-                    existing_other_type_data_from_manifest=existing_fx_from_manifest,
                 )
 
         # --- 4. Final Check and Return ---
@@ -1578,28 +1621,12 @@ class MarketDataProvider:
                 )
 
             # --- 3. Update Cache if Fetch Occurred (or if cache was incomplete) and Cache Enabled ---
-            if (
-                use_cache and cache_key
-            ):  # Always try to save if cache is enabled and key exists
-                existing_prices_from_manifest = {}
-                if os.path.exists(manifest_path):
-                    try:
-                        with open(manifest_path, "r") as f_m:
-                            m_data = json.load(f_m)
-                            if (
-                                m_data.get("cache_key") == cache_key
-                            ):  # Only use if key matches
-                                existing_prices_from_manifest = m_data.get(
-                                    "historical_prices", {}
-                                )
-                    except:
-                        pass
-
+            if use_cache and cache_key:
+                # The new _save_historical_data_and_manifest will handle merging/updating the manifest correctly.
                 self._save_historical_data_and_manifest(
                     cache_key_to_save=cache_key,
                     data_to_save_map=historical_fx_yf,  # Save all currently held FX data
                     data_type="fx",
-                    existing_other_type_data_from_manifest=existing_prices_from_manifest,
                 )
 
         # --- 4. Final Check and Return ---
