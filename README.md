@@ -10,11 +10,11 @@ Investa is a desktop application designed to help you track, analyze, and visual
 * **Portfolio Summary:** Get a clear overview of your investments, including current market values, cost basis, unrealized and realized gains/losses, total dividends received, and overall portfolio return.
 * **Detailed Holdings Table:** Dive into individual stock, ETF, and cash positions. Features sortable columns (e.g., by symbol, quantity, market value, gain/loss) and allows customization of visible columns to tailor the view to your needs.
 * **Transaction Management (Comprehensive):**
-  * **Direct Database Operations:** Add, edit, and delete transactions directly within the application, with changes immediately reflected in the SQLite database.
-  * **Transaction Log Tab:** View a chronological log of all transactions with filtering capabilities.
+  * **Direct Database Operations:** Add, edit, and delete transactions directly within the application via a dedicated management dialog, with changes immediately reflected in the SQLite database.
+  * **Transaction Log Tab:** View chronological logs of Stock/ETF transactions and $CASH transactions separately, with filtering capabilities based on the main account selection.
   * **CSV Import/Export:** Easily import transactions from CSV files into the database and export your database transactions to a CSV file for backup or use in other tools.
 * **Account Filtering & Management:** Filter your portfolio view by specific investment accounts (e.g., "Brokerage A," "IRA") or view an aggregated summary of all accounts.
-* **Currency Conversion & Management:**
+* **Currency Management:**
   * Display portfolio values in your preferred global currency (e.g., USD, EUR, JPY).
   * Assign specific local currencies to different investment accounts for accurate tracking of multi-currency portfolios.
 * **Historical Performance Charts (Enhanced Controls):**
@@ -24,32 +24,32 @@ Investa is a desktop application designed to help you track, analyze, and visual
 * **Periodic Returns Bar Charts:** Analyze performance over specific periods. View portfolio and benchmark returns for annual, monthly, and weekly durations with adjustable lookback periods.
 * **Dividend History Tab:**
   * **Visualizations:** Track dividend income over time with charts for Annual, Quarterly, and Monthly payouts.
-  * **Detailed Table:** View a comprehensive table of all dividend transactions, including dates, symbols, and amounts.
+  * **Detailed Tables:** View a summary table of aggregated dividends (matching the chart) and a comprehensive table of all individual dividend transactions (filtered by selected accounts), including dates, symbols, and amounts.
 * **Portfolio Allocation Pie Charts:**
   * **Composition Analysis:** Understand your portfolio's diversification by account and by individual holding.
-  * **Categorical Breakdown:** View asset allocation by Asset Type (e.g., Stock, ETF, Cash), Sector (e.g., Technology, Healthcare), Geography (e.g., US, International), and Industry. (Note: Sector, Geography, and Industry breakdowns require fundamental data for symbols).
+  * **Categorical Breakdown:** View asset allocation by Asset Type (e.g., Stock, ETF, Cash), Sector (e.g., Technology, Healthcare), Geography (e.g., US, International), and Industry. (Note: Sector, Geography, and Industry breakdowns require fundamental data for symbols, fetched via Yahoo Finance, or manual overrides).
 * **Symbol Settings (Overrides, Mapping, Exclusions):**
-  * **Manual Overrides:** For any symbol, manually set or adjust price, asset type, sector, geography, and industry. This is crucial when API data is missing, incorrect, or when you need to define custom classifications. Managed via `Settings > Symbol Settings...` and stored in `manual_overrides.json`.
+  * **Manual Overrides:** For any symbol, manually set or adjust `price`, `asset_type`, `sector`, `geography`, and `industry`. This is crucial when API data is missing, incorrect, or when you need to define custom classifications.
   * **Symbol Mapping:** Define aliases or map alternative ticker symbols to a primary symbol (e.g., map "BRK.B" to "BRK-B") for consistent data fetching and display.
   * **Symbol Exclusions:** Specify symbols to be excluded from market data fetching or certain calculations.
+  * All managed via `Settings > Symbol Settings...` and stored in `manual_overrides.json`.
 * **Fundamental Data Viewer (Multi-Tab):**
   * Access key fundamental data for stock symbols directly within the app.
-  * **Financials Tab:** View Income Statements, Balance Sheets, and Cash Flow statements (annual and quarterly).
-  * **Summary Tab:** Get an overview of company profile, key statistics, and ratios.
-  * **Options Tab (Future):** Planned integration for options chain data.
+  * **Overview Tab:** Company profile, key statistics (market cap, P/E, dividend yield), price stats (52-week high/low, volume), and business summary.
+  * **Financials, Balance Sheet, Cash Flow Tabs:** View detailed financial statements (annual and quarterly).
 * **Market Data Fetching & Caching:**
   * Retrieves near real-time stock quotes, index prices, and foreign exchange (FX) rates using Yahoo Finance.
   * Caches fetched market data locally to accelerate subsequent application loads and minimize redundant API calls, improving performance and reducing reliance on constant internet connectivity.
 * **Configuration Persistence:** Saves UI settings (e.g., database file path, selected display currency, active accounts, graph configurations, table column visibility, user-defined currency lists) in `gui_config.json` for a consistent user experience across sessions.
 * **Table Filtering:** Dynamically filter the main holdings table by typing text, making it easy to find specific assets quickly.
 * **CSV Format Help & Standardization:**
-  * In-app guide explains the required CSV format for importing transactions.
+  * In-app guide explains the recommended CSV format for importing transactions.
   * Utility to standardize CSV headers to the application's preferred internal format before import.
 * **Numba Optimization:** Leverages Numba to accelerate computationally intensive historical portfolio value calculations, providing faster chart loading and analysis.
 
 ## Getting Started Tutorial
 
-For a step-by-step guide on how to set up and use Investa, please see our detailed tutorial:
+For a step-by-step guide on how to set up and use Investa, please see our detailed tutorial (work in progress):
 
 ➡️ **[Investa User Tutorial](TUTORIAL.md)**
 
@@ -102,9 +102,9 @@ For a step-by-step guide on how to set up and use Investa, please see our detail
 
 ## Configuration
 
-User-specific configuration files (`gui_config.json`, `manual_overrides.json`), the SQLite database (`investa_transactions.db`), cache files, and CSV backups are stored in a standard application data directory. The exact location depends on your operating system:
+User-specific configuration files (`gui_config.json`, `manual_overrides.json`), the SQLite database (`investa_transactions.db`), cache files, and CSV backups are stored in a standard application data directory, organized under "StockAlchemist" and then "Investa". The exact base path depends on your operating system:
 
-* **macOS:** `~/Library/Application Support/StockAlchemist/Investa/`
+* **macOS:** `~/Library/Application Support/StockAlchemist/Investa/` (or similar, based on `QStandardPaths.AppDataLocation`)
 * **Windows:** `C:\Users\<YourUserName>\AppData\Local\StockAlchemist\Investa\` (or potentially in `AppData\Roaming`)
 * **Linux:** `~/.local/share/StockAlchemist/Investa/` (or `~/.config/StockAlchemist/Investa/`)
 
@@ -112,17 +112,17 @@ Key files in this directory:
 
 * **`investa_transactions.db`**: The SQLite database storing all your transaction data. This is the primary data source for the application.
 * **`gui_config.json`**: Stores your UI preferences and settings. This includes:
-  * Path to the currently loaded database file.
+  * Path to the currently loaded SQLite database file (`investa_transactions.db` or user-specified).
   * Selected global display currency.
   * List of active/selected investment accounts for filtering.
   * Current graph settings (date ranges, intervals, selected benchmarks).
   * Visibility status for columns in the main holdings table.
   * User-defined list of currencies for quick selection in dropdowns.
 * **`manual_overrides.json`**: Stores symbol-specific configurations and data overrides. This JSON file contains:
-  * **`overrides`**: Manually set values for `price`, `asset_type`, `sector`, `geography`, and `industry` for specific symbols. Example: `{"AAPL": {"price": 175.00, "sector": "Technology"}}`
-  * **`symbol_map`**: User-defined mappings from alternative ticker symbols to a primary symbol. Example: `{"BRK.B": "BRK-B", "MSFT.NE": "MSFT"}`
+  * **`manual_price_overrides`**: Manually set values for `price`, `asset_type`, `sector`, `geography`, and `industry` for specific symbols. Example: `{"AAPL": {"price": 175.00, "asset_type": "Stock", "sector": "Technology", "geography": "United States", "industry": "Consumer Electronics"}}`
+  * **`user_symbol_map`**: User-defined mappings from alternative ticker symbols to a primary symbol. Example: `{"BRK.B": "BRK-B", "MSFT.NE": "MSFT"}`
   * **`excluded_symbols`**: A list of symbols to be excluded from market data fetching or certain calculations. Example: `["OLD_STOCK", "DELISTED_ETF"]`
-  * These settings are managed via `Settings > Symbol Settings...` in the application.
+  * These settings are managed via **Settings > Symbol Settings...** in the application.
 * **`csv_backups/` (subfolder)**: Stores timestamped backups of your transactions CSV file if you've used the CSV import feature and opted for backups, or when exporting data.
 * Cache files (e.g., for market data from `yfinance`) are also stored here to speed up loading times.
 
@@ -138,7 +138,7 @@ Key files in this directory:
 
 While Investa's primary data storage is the `investa_transactions.db` SQLite database, it supports importing transaction data from CSV files. The following format details are crucial for successful CSV imports.
 A utility is provided within the application (`File > Import Transactions from CSV...` then `Standardize Headers`) to help map your CSV columns to the application's expected format.
-
+The application can also attempt to automatically migrate data from a CSV file specified in the configuration if the database is empty on first startup.
 **Key Considerations for CSV Import:**
 
 * **`$CASH` Symbol:** This is a special reserved symbol used to manage cash balances within accounts.
@@ -148,13 +148,14 @@ A utility is provided within the application (`File > Import Transactions from C
     * Brokerage A: `Type`: Withdrawal, `Symbol`: $CASH, `Quantity`: 500 (or Total Amount: -500)
     * Brokerage B: `Type`: Deposit, `Symbol`: $CASH, `Quantity`: 500 (or Total Amount: 500)
   * Dividends paid directly to a cash balance (not reinvested) should be recorded as a "Dividend" type transaction for the respective stock, which the system will then treat as a cash inflow to the account's `$CASH` balance. If importing general cash dividends not tied to a specific stock, use a "Deposit" transaction with `$CASH` and note it as "Dividend Income".
+  * For more detailed examples of `$CASH` usage, please refer to the **Investa User Tutorial**.
 
-**Preferred (Cleaned) CSV Headers for Import:**
+**Preferred (Cleaned) CSV Headers for Import (Target format after standardization):**
 
 1. `Date` (e.g., *Jan 01, 2023* or other common date formats)
 2. `Type` (e.g., *Buy, Sell, Dividend, Split, Deposit, Withdrawal, Fees*)
 3. `Symbol` (e.g., *AAPL, GOOG*. Use **`$CASH`** for cash-related transactions.)
-4. `Quantity`
+4. `Quantity` (Number of units)
 5. `Price/Share`
 6. `Total Amount` (Optional for Buy/Sell if Quantity and Price/Share are provided)
 7. `Commission` (Fees)
@@ -162,7 +163,7 @@ A utility is provided within the application (`File > Import Transactions from C
 9. `Split Ratio` (Required only for 'Split' type, e.g., *2* for a 2-for-1 split)
 10. `Note` (Optional)
 
-**Compatible (Verbose) CSV Headers (will be mapped internally):**
+**Compatible (Verbose) CSV Headers (will be mapped internally during import/standardization):**
 
 * `Date (MMM DD, YYYY)` maps to `Date`
 * `Transaction Type` maps to `Type`
@@ -172,13 +173,14 @@ A utility is provided within the application (`File > Import Transactions from C
 * `Fees` maps to `Commission`
 * `Investment Account` maps to `Account`
 * `Split Ratio (new shares per old share)` maps to `Split Ratio`
-    *(`Total Amount` and `Note` are typically the same)*
+* `Total Amount` (typically the same)
+* `Note` (typically the same)
 
 For detailed examples and specific requirements for each transaction type, please refer to the **Help > CSV Format Help...** menu within the application.
 
 ## Usage
 
-For a detailed step-by-step guide on using Investa, check out our **User Tutorial**.
+For a detailed step-by-step guide on using Investa, check out our (work in progress) **User Tutorial**.
 
 Here's a quick overview:
 
@@ -190,17 +192,18 @@ Here's a quick overview:
 
 2. **Database Setup:**
     * **On first run:** You'll be prompted to either open an existing Investa database file (`.db`) or create a new one.
-    * **Creating a New Database:** If you choose to create a new database, an empty `investa_transactions.db` file will be set up in the application's configuration directory, or you can specify a custom path.
+    * **Creating a New Database:** Use `File > New Database File...`. An empty database file will be created at your chosen location.
     * **Opening an Existing Database:** Use `File > Open Database...` to load your transaction data. The path to the last used database is saved in `gui_config.json`.
+    * **Automatic CSV Migration (First Run):** If the database is empty and a CSV file is specified as a fallback in the configuration (e.g., from a previous version or manual setup), Investa may prompt you to migrate transactions from this CSV into the new database.
 
 3. **Importing Transactions (Optional):**
     * If you have transaction data in a CSV file, you can import it into the current database via `File > Import Transactions from CSV...`.
-    * The application provides a utility to help map your CSV columns to the required format and standardize headers.
+    * The application provides a utility to help map your CSV columns to the required format and standardize headers if needed.
     * It's recommended to review imported data in the "Transaction Log" tab.
 
-4. **Adding/Editing Transactions:**
+4. **Adding/Managing Transactions:**
     * Manually add new transactions (Buy, Sell, Dividend, etc.) using the `Transactions > Add Transaction...` menu item or dedicated buttons.
-    * Edit or delete existing transactions directly from the "Transaction Log" tab by right-clicking on a transaction. Changes are saved directly to the database.
+    * Edit or delete existing transactions using `Transactions > Manage Transactions...`. This opens a dialog where you can filter, select, edit, or delete records. Changes are saved directly to the database.
 
 5. **Refresh Data & View Portfolio:**
     * Click the "Refresh All" button (or press F5) to:
@@ -235,7 +238,7 @@ If you wish to package Investa as a standalone macOS application (`.app` bundle)
                 --windowed \
                 --icon=Investa.icns \
                 --add-data "style.qss:." \
-                --collect-data matplotlib \
+    * `--collect-data matplotlib --collect-data scipy --collect-data pandas --collect-data numpy --collect-data yfinance \
                 main_gui.py
     ```
 

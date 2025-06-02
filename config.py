@@ -22,7 +22,7 @@ HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = "yf_portfolio_hist_raw_adjusted"
 DAILY_RESULTS_CACHE_PATH_PREFIX = "yf_portfolio_daily_results"
 YFINANCE_CACHE_DURATION_HOURS = 24
 FUNDAMENTALS_CACHE_DURATION_HOURS = 24 * 30 * 3
-CURRENT_QUOTE_CACHE_DURATION_MINUTES = 24 * 60  # For current stock/index quotes
+CURRENT_QUOTE_CACHE_DURATION_MINUTES = 1  # For current stock/index quotes
 
 # --- Logging Configuration ---
 # This level is a default; main_gui.py might override it for its own logging.

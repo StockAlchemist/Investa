@@ -1,6 +1,6 @@
 # Welcome to Investa! A Quick Tutorial
 
-Investa is your personal desktop assistant for keeping a close eye on your investment portfolio. It takes your transaction history from a simple CSV file, fetches the latest market data, and then presents you with a clear, detailed picture of how your investments are doing.
+Investa is your personal desktop assistant for keeping a close eye on your investment portfolio. It uses a local SQLite database to store your transaction history, fetches the latest market data, and then presents you with a clear, detailed picture of how your investments are doing.
 
 Let's dive in!
 
@@ -34,9 +34,9 @@ Before you can start crunching numbers, there are a couple of preliminary steps:
 2. **Understanding Data Storage: The SQLite Database**
     Investa uses a local SQLite database file (typically named `investa_transactions.db`) to store all your transaction data. This file is the heart of your Investa setup.
     * **Location:** This database file, along with configuration files (`gui_config.json`, `manual_overrides.json`), cache, and backups, is stored in a standard application data directory. The exact path depends on your operating system:
-        * **macOS:** `~/Library/Application Support/Investa/`
-        * **Windows:** `C:\Users\<YourUserName>\AppData\Local\Investa\Investa\` (or `AppData\Roaming`)
-        * **Linux:** `~/.local/share/Investa/` (or `~/.config/Investa/`)
+        * **macOS:** `~/Library/Application Support/StockAlchemist/Investa/`
+        * **Windows:** `C:\Users\<YourUserName>\AppData\Local\StockAlchemist\Investa\` (or `AppData\Roaming\StockAlchemist\Investa\`)
+        * **Linux:** `~/.local/share/StockAlchemist/Investa/` (or `~/.config/StockAlchemist/Investa/`)
     * You will typically create or open this database file when you first run Investa.
 
 3. **Preparing Your Transaction Data for Import (Optional CSV):**
@@ -94,40 +94,40 @@ The special symbol **`$CASH`** is crucial for accurately tracking your portfolio
   * **Buying a Stock (Internal Conversion):** Using cash from your account to buy shares.
     * This is typically a two-part conceptual movement if you track cash with high fidelity, though Investa often handles the cash deduction implicitly if your `Buy` transaction for a stock has a `Total Amount`. For explicit cash tracking during CSV import or for clarity:
             1. **(Optional Explicit Cash Reduction)** A `$CASH` `Sell` or `Withdrawal` (less common for this specific purpose).
-                * `Date`: 2023-03-01
+                *`Date`: 2023-03-01
                 * `Type`: Sell (or Withdrawal, conceptually)
-                * `Symbol`: $CASH
+                *`Symbol`: $CASH
                 * `Quantity`: 1000 (amount used for stock purchase)
-                * `Price/Share`: 1
+                *`Price/Share`: 1
                 * `Total Amount`: -1000
-                * `Account`: Brokerage A
+                *`Account`: Brokerage A
             2. **The Actual Stock Purchase:**
                 * `Date`: 2023-03-01
-                * `Type`: Buy
+                *`Type`: Buy
                 * `Symbol`: AAPL
-                * `Quantity`: 10
+                *`Quantity`: 10
                 * `Price/Share`: 100
-                * `Total Amount`: 1000
+                *`Total Amount`: 1000
                 * `Account`: Brokerage A
     * **TWR Impact:** The act of buying a stock itself (converting cash to stock) is an **internal asset conversion**, not an external cash flow. The total portfolio value remains momentarily unchanged. TWR measures the performance *after* this conversion. If you explicitly log a `$CASH` `Sell` for this, it's also internal.
 
   * **Selling a Stock (Internal Conversion):** Receiving cash in your account from selling shares.
     * Similar to buying, this is often handled implicitly. For explicit cash tracking:
             1. **The Actual Stock Sale:**
-                * `Date`: 2023-04-10
+                *`Date`: 2023-04-10
                 * `Type`: Sell
-                * `Symbol`: AAPL
+                *`Symbol`: AAPL
                 * `Quantity`: 5
-                * `Price/Share`: 120
+                *`Price/Share`: 120
                 * `Total Amount`: 600
-                * `Account`: Brokerage A
+                *`Account`: Brokerage A
             2. **(Optional Explicit Cash Increase)** A `$CASH` `Buy` or `Deposit`.
                 * `Date`: 2023-04-10
-                * `Type`: Buy (or Deposit, conceptually)
+                *`Type`: Buy (or Deposit, conceptually)
                 * `Symbol`: $CASH
-                * `Quantity`: 600 (proceeds from sale)
+                *`Quantity`: 600 (proceeds from sale)
                 * `Price/Share`: 1
-                * `Total Amount`: 600
+                *`Total Amount`: 600
                 * `Account`: Brokerage A
     * **TWR Impact:** Selling a stock is an **internal asset conversion**. Cash increases, stock holding decreases. Not an external flow.
 
@@ -383,7 +383,60 @@ The **"Asset Allocation"** tab offers valuable pie charts that visually break do
 
 By regularly reviewing these charts and ensuring your data (including manual overrides) is accurate, you can gain significant insights into your investment strategy and risk exposures.
 
-## Part 8: Handy Extras & Advanced Settings
+## Part 8: Understanding Capital Gains
+
+The **"Capital Gains"** tab provides a focused view on the profits or losses you've realized from selling assets (stocks, ETFs). This is distinct from unrealized gains/losses on assets you still hold.
+
+1. **Accessing the Tab:** Click on the "Capital Gains" tab in the main interface.
+
+2. **Account Filtering:** Similar to other analytical tabs, the capital gains data displayed is filtered by the accounts selected in the main "Accounts" filter on the top control bar. This allows you to see realized gains specific to certain accounts or an aggregated view.
+
+3. **Controls for Visualization:**
+    * **Aggregate by:** This dropdown menu allows you to group your realized capital gains into:
+        * `Annual`: Shows total realized gains/losses per year.
+        * `Quarterly`: Shows total realized gains/losses per quarter.
+        This selection drives the bar chart and the summary table below it.
+    * **Periods to Show:** This spinbox lets you define how many of the chosen aggregation periods (e.g., the last 10 years, the last 8 quarters) are displayed in the chart and summary table.
+    * *(Note: Changes to these controls will automatically update the chart and summary table.)*
+
+4. **Capital Gains Bar Chart:**
+    * This chart visually represents the total realized capital gains or losses for each aggregated period you've selected.
+    * The Y-axis displays the gain/loss amount in your globally selected `Display Currency`.
+    * The X-axis represents the periods (years or quarters).
+    * Bars are color-coded: typically green for gains and red for losses.
+    * Hovering over a bar often shows the exact amount for that period.
+
+5. **Summary of Plotted Gains Table:**
+    * Located directly below the bar chart, this table provides a numerical breakdown of the data shown in the chart.
+    * It typically has columns like "Period" (e.g., "2023", "2023-Q2") and "Realized Gain/Loss (Display Currency)".
+
+6. **Detailed Capital Gains History Table:**
+    * This comprehensive table, found at the bottom of the tab, lists every individual realized gain/loss event calculated from your transaction history that falls within the selected account scope.
+    * It provides a granular view of each sale that resulted in a capital gain or loss.
+    * Key columns often include:
+        * `Date`: Date the sale (realization event) occurred.
+        * `Symbol`: The stock or ETF that was sold.
+        * `Account`: The account where the sale took place.
+        * `Quantity Sold`: The number of units sold.
+        * `Avg Sale Price (Local)`: Average price per unit at which the asset was sold, in its local currency.
+        * `Total Proceeds (Local)`: Total cash received from the sale, in local currency.
+        * `Total Cost Basis (Local)`: The original cost of the units sold, in local currency.
+        * `Realized Gain (Local)`: The profit or loss from the sale in local currency (Proceeds - Cost Basis).
+        * `FX Rate`: The foreign exchange rate applied if the local currency of the asset differs from your global display currency.
+        * `Realized Gain (Display)`: The profit or loss from the sale, converted to your chosen global `Display Currency`.
+        * `Term`: Indicates if the gain/loss is Short-Term or Long-Term (this depends on holding period calculation logic, which may vary).
+    * This table is sortable by clicking on its column headers.
+
+**How Capital Gains are Calculated:**
+
+* Investa calculates realized capital gains when you record a "Sell" transaction for a stock/ETF or a "Buy to Cover" transaction for a short position.
+* It uses a cost basis accounting method (commonly First-In, First-Out or FIFO, though the specific method might be configurable or fixed in the backend logic) to determine the cost of the shares being sold.
+* The realized gain/loss is then the difference between the sale proceeds (net of any fees if accounted for separately) and the calculated cost basis of those specific shares.
+* Foreign exchange effects are also considered if the asset's local currency differs from your display currency.
+
+This tab is essential for understanding the actual profits you've locked in from your trading activities and can be very useful for tax estimation purposes (though always consult with a tax professional for official advice).
+
+## Part 9: Handy Extras & Advanced Settings
 
 Investa packs several additional features and settings to enhance your portfolio management experience:
 
@@ -442,11 +495,11 @@ Investa packs several additional features and settings to enhance your portfolio
   * `manual_overrides.json`
   * `cache/` (subfolder for cached market data)
   * `csv_backups/` (subfolder for backups of CSVs made during import)
-  * **macOS:** `~/Library/Application Support/Investa/`
-  * **Windows:** `C:\Users\<YourUserName>\AppData\Local\Investa\Investa\`
-  * **Linux:** `~/.local/share/Investa/`
+  * **macOS:** `~/Library/Application Support/StockAlchemist/Investa/`
+  * **Windows:** `C:\Users\<YourUserName>\AppData\Local\StockAlchemist\Investa\`
+  * **Linux:** `~/.local/share/StockAlchemist/Investa/`
 
-## Part 9: Tips & Troubleshooting
+## Part 10: Tips & Troubleshooting
 
 Here are some general tips and common troubleshooting steps, reflecting Investa's database-centric approach:
 
