@@ -1,534 +1,443 @@
-/*
--------------------------------------------------------------------------------
-Name:          style_dark.qss
-Purpose:       Dark theme stylesheet for the Investa Portfolio Dashboard GUI.
+/* Dark Theme Stylesheet for Investa */
 
-Author:        Kit Matan (Modified by AI)
- Author Email:  kittiwit@gmail.com
+/* General Window Styling */
+QMainWindow, QDialog {
+    background-color: #1e1e1e; /* DARK_COLOR_BG_DARK */
+    color: #e0e0e0; /* DARK_COLOR_TEXT_DARK */
+}
 
-Created:       26/04/2025 (Dark theme version: Current Date)
- Copyright:     (c) Kittiwit Matan 2025
- Licence:       MIT
--------------------------------------------------------------------------------
-SPDX-License-Identifier: MIT
-*/
-
-/* --- START OF FILE style_dark.qss --- */
 QWidget {
-    font-family: "Arial", "DejaVu Sans", "Helvetica";
-    font-size: 10pt;
-    color: #e0e0e0; /* DARK_COLOR_TEXT_PRIMARY */
-    /* Base size for controls etc. */
+    background-color: #1e1e1e; /* DARK_COLOR_BG_DARK */
+    font-size: 10pt; /* Match style.qss */
+    color: #e0e0e0; /* DARK_COLOR_TEXT_DARK */
+    border: none; /* Remove default borders for many widgets */
 }
 
-QMainWindow {
-    background-color: #1e1e1e; /* DARK_COLOR_BG */
-}
-
-QFrame#HeaderFrame {
-    background-color: #2c2c2c; /* DARK_COLOR_BG_HEADER */
-    border-bottom: 1px solid #444444; /* DARK_COLOR_BORDER */
+/* Labels */
+QLabel {
+    color: #e0e0e0; /* DARK_COLOR_TEXT_DARK */
+    background-color: transparent; /* Ensure labels don't have their own background unless specified */
 }
 
 QLabel#MainTitleLabel {
-    font-size: 14pt;
+    font-size: 14pt; /* Match style.qss */
     font-weight: bold;
-    color: #f0f0f0; /* DARK_COLOR_TEXT_HEADER */
-    padding: 4px 0px 4px 5px;
+    color: #f0f0f0; /* DARK_COLOR_HEADER_TEXT */
 }
 
-QLabel#HeaderInfoLabel {
-    font-size: 14pt;
-    font-weight: normal;
-    color: #e0e0e0; /* DARK_COLOR_TEXT_PRIMARY */
-    padding: 5px 5px;
-    min-height: 18px;
+QLabel#HeaderInfoLabel { /* Split from combined rule */
+    color: #b0b0b0; /* DARK_COLOR_TEXT_LIGHT */
+    font-size: 14pt; /* Match style.qss */
+    font-weight: normal; /* Match style.qss */
 }
 
-QLabel#HeaderInfoLabel font {
-    /* Allow color tags */
+QLabel#StatusLabel, QLabel#YahooAttributionLabel, QLabel#ExchangeRateLabel { /* Split from combined rule */
+    color: #b0b0b0; /* DARK_COLOR_TEXT_LIGHT */
+    font-size: 9pt; /* Match style.qss */
+    /* font-weight: normal; style.qss has no explicit weight, so inherit */
 }
 
-QPushButton#AccountSelectButton {
-    padding: 4px 8px;
-    text-align: left;
-    min-width: 130px;
-}
-
-QPushButton#AccountSelectButton::menu-indicator {
-    image: none;
-}
-
-QFrame#ControlsFrame {
-    background-color: #1e1e1e; /* DARK_COLOR_BG */
-    border-bottom: 1px solid #444444; /* DARK_COLOR_BORDER */
-}
-
-QFrame#ControlsFrame QLabel {
-    color: #a0a0a0; /* DARK_COLOR_TEXT_SECONDARY */
-    font-weight: bold;
-    padding: 0 3px;
+QLabel#TableTitleLabel { /* Split from combined rule */
     font-size: 10pt;
-    /* Match base control size */
+    font-weight: bold;
+    color: #e0e0e0; /* DARK_COLOR_TEXT_DARK */
 }
 
-QStatusBar {
-    background-color: #2c2c2c; /* DARK_COLOR_BG_HEADER */
-    border-top: 1px solid #444444; /* DARK_COLOR_BORDER */
+QLabel#TableScopeLabel { /* Split from combined rule */
+    font-size: 9pt; /* Match style.qss */
+    font-weight: normal; /* Match style.qss */
+    color: #e0e0e0; /* DARK_COLOR_TEXT_DARK */
 }
 
-QStatusBar QLabel#StatusLabel {
+QLabel#BarChartTitleLabel { /* For titles above bar charts */
     font-size: 9pt;
-    /* Slightly smaller */
-    color: #a0a0a0; /* DARK_COLOR_TEXT_SECONDARY */
-    padding: 1px 8px;
+    font-weight: bold;
+    color: #e0e0e0; /* DARK_COLOR_TEXT_DARK */
+    padding-bottom: 3px;
 }
 
-QStatusBar QLabel#YahooAttributionLabel {
-    font-size: 9pt;
-    color: #a0a0a0; /* DARK_COLOR_TEXT_SECONDARY */
-    padding: 1px 8px;
-    border-left: 1px solid #444444; /* DARK_COLOR_BORDER */
-    margin-left: 5px;
-}
-
-QStatusBar QLabel#ExchangeRateLabel {
-    font-size: 9pt;
-    color: #a0a0a0; /* DARK_COLOR_TEXT_SECONDARY */
-    padding: 1px 8px;
-    border-left: 1px solid #444444; /* DARK_COLOR_BORDER */
-    margin-left: 5px;
-}
-
-QFrame#SummaryAndGraphsFrame {
-    background-color: #2c2c2c; /* DARK_COLOR_BG_HEADER */
-    border-bottom: 1px solid #444444; /* DARK_COLOR_BORDER */
-    padding: 5px 10px;
-}
-
-QWidget#PerfGraphsContainer {
-    background-color: #2c2c2c; /* DARK_COLOR_BG_HEADER */
-    border: 1px solid #444444; /* DARK_COLOR_BORDER */
-    border-radius: 4px;
-    padding: 5px;
-}
-
+/* Added to match style.qss font sizes */
 QLabel#SummaryLabel {
     font-size: 11pt;
-    /* Normal Summary Label */
-    color: #a0a0a0; /* DARK_COLOR_TEXT_SECONDARY */
-    padding-right: 5px;
 }
 
 QLabel#SummaryLabelLarge {
     font-size: 13pt;
-    /* Large Summary Label */
-    color: #a0a0a0; /* DARK_COLOR_TEXT_SECONDARY */
-    padding-right: 5px;
 }
 
 QLabel#SummaryValue {
     font-size: 12pt;
-    /* Normal Summary Value */
-    font-weight: bold;
-    color: #e0e0e0; /* DARK_COLOR_TEXT_PRIMARY */
+    font-weight: bold; /* Match style.qss */
 }
 
 QLabel#SummaryValueLarge {
     font-size: 14pt;
-    /* Large Summary Value */
-    font-weight: bold;
-    color: #e0e0e0; /* DARK_COLOR_TEXT_PRIMARY */
+    font-weight: bold; /* Match style.qss */
 }
 
-FigureCanvas {
-    background-color: transparent; /* Keep transparent, chart itself will handle its bg */
-}
-
-QFrame#ContentFrame {
-    background-color: #1e1e1e; /* DARK_COLOR_BG */
-    border: none;
-    padding: 0;
-}
-
-QWidget#PieChartsContainer {
-    background-color: transparent;
-    border: none;
-    padding: 0;
-}
-
-QFrame#TablePanel {
-    background-color: transparent;
-    border: none;
-    padding: 0;
-}
-
-QLabel#AccountPieTitleLabel,
-QLabel#HoldingsPieTitleLabel {
+QLabel#AccountPieTitleLabel, QLabel#HoldingsPieTitleLabel { /* Match style.qss */
     font-size: 11pt;
-    /* Chart Title */
     font-weight: bold;
-    color: #e0e0e0; /* DARK_COLOR_TEXT_PRIMARY */
-    padding: 0;
 }
 
-QLabel#TableTitleLabel {
-    /* Right side: Detail */
-    font-size: 10pt;
-    /* Table Header */
-    font-weight: bold;
-    color: #e0e0e0; /* DARK_COLOR_TEXT_PRIMARY */
-    padding: 5px 0px 3px 5px;
-}
-
-QLabel#TableScopeLabel {
-    /* Left side: Scope */
-    font-size: 9pt;
-    /* Table Scope */
-    font-weight: normal;
-    color: #a0a0a0; /* DARK_COLOR_TEXT_SECONDARY */
-    padding: 5px 5px 3px 0px;
-}
-
-QTableView#HoldingsTable {
-    background-color: #2a2a2a; /* DARK_COLOR_INPUT_BG */
-    border: 1px solid #444444; /* DARK_COLOR_BORDER */
-    border-radius: 4px;
-    gridline-color: #444444; /* DARK_COLOR_BORDER */
-    alternate-background-color: #252525; /* DARK_COLOR_BG_TABLE_ALT_ROW */
-    selection-background-color: #007bff; /* DARK_COLOR_ACCENT_PRIMARY */
-    selection-color: #FFFFFF; /* Text on accent selection */
-    font-size: 10pt;
-    /* Table Data */
-}
-
-QTableView#HoldingsTable::item {
-    padding: 3px 5px;
-    border: none;
-    background-color: transparent;
-    color: #e0e0e0; /* DARK_COLOR_TEXT_PRIMARY for table items */
-}
-
-QTableView#HoldingsTable::item:selected {
-    background-color: #007bff; /* DARK_COLOR_ACCENT_PRIMARY */
-    color: #FFFFFF; /* Text on accent selection */
-}
-
-QHeaderView::section {
-    background-color: #2c2c2c; /* DARK_COLOR_BG_HEADER */
-    color: #a0a0a0; /* DARK_COLOR_TEXT_SECONDARY */
-    padding: 4px 5px;
-    border: none;
-    border-bottom: 2px solid #444444; /* DARK_COLOR_BORDER */
-    font-weight: bold;
-    font-size: 10pt;
-    /* Table Header */
-}
-
-QHeaderView::section:checked {
-    background-color: #007bff; /* DARK_COLOR_ACCENT_PRIMARY */
-    color: #f0f0f0; /* DARK_COLOR_TEXT_HEADER */
-}
-
+/* Buttons */
 QPushButton {
-    background-color: #3a3a3a; /* Slightly lighter than input bg for definition */
-    color: #e0e0e0; /* DARK_COLOR_TEXT_PRIMARY */
-    border: 1px solid #555555; /* DARK_COLOR_INPUT_BORDER for definition */
-    padding: 4px 10px;
-    border-radius: 10px;
-    font-weight: bold;
-    min-width: 70px;
-    font-size: 10pt;
-    /* Base control size */
+    background-color: #007bff; /* DARK_COLOR_ACCENT_PRIMARY */
+    color: #ffffff; /* White text on primary buttons */
+    border: 1px solid #0056b3;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 10pt; /* Match style.qss */
+    font-weight: bold; /* Match style.qss */
+    min-height: 20px;
 }
-
 QPushButton:hover {
-    background-color: #4a4a4a; /* Darker shade for hover */
-    border-color: #666666;
+    background-color: #0056b3;
+    border-color: #004085;
 }
-
 QPushButton:pressed {
-    background-color: #0056b3; /* Darker shade of DARK_COLOR_ACCENT_PRIMARY */
-    color: #FFFFFF;
+    background-color: #004085;
 }
-
 QPushButton:disabled {
-    background-color: #303030;
+    background-color: #3a3a3a;
     color: #707070;
-    border-color: #444444;
+    border-color: #4f4f4f;
 }
 
-QPushButton#BenchmarkSelectButton {
-    padding: 4px 8px;
-    text-align: left;
-    min-width: 100px;
+/* QComboBox, QLineEdit, QDateEdit */
+QComboBox, QLineEdit, QDateEdit, QTextEdit, QPlainTextEdit {
+    border: 1px solid #555555; /* DARK_COLOR_INPUT_BORDER */
+    border-radius: 4px;
+    padding: 2px 4px; /* Adjusted padding */
+    background-color: #2a2a2a; /* DARK_COLOR_INPUT_BG */
+    color: #e0e0e0; /* DARK_COLOR_INPUT_TEXT */
+    font-size: 10pt; /* Match style.qss */
+    min-height: 20px; /* Ensure consistent height */
+}
+QComboBox:disabled, QLineEdit:disabled, QDateEdit:disabled, QTextEdit:disabled, QPlainTextEdit:disabled {
+    background-color: #3c3c3c;
+    color: #707070;
+    border-color: #4f4f4f;
+}
+QComboBox::drop-down {
+    border: none;
+    background-color: #3a3a3a;
+    width: 18px;
+}
+QComboBox::down-arrow {
+    image: url(:/qt-project.org/styles/commonstyle/images/arrow-down-16.png); /* Example, replace with themed icon if available */
+    width: 12px;
+    height: 12px;
 }
 
-QPushButton#BenchmarkSelectButton::menu-indicator {
-    image: none;
+/* Added to match style.qss */
+QComboBox QAbstractItemView {
+    font-size: 10pt; /* Match style.qss */
+    border: 1px solid #555555; /* DARK_COLOR_INPUT_BORDER */
+    background-color: #2a2a2a; /* DARK_COLOR_INPUT_BG */
+    outline: 0px;
+    selection-background-color: #007bff; /* DARK_COLOR_ACCENT_PRIMARY */
+    selection-color: #ffffff; /* White text on selection */
 }
 
-QComboBox,
-QCheckBox,
-QDateEdit,
-QLineEdit, /* ADDED */
-QSpinBox   /* ADDED */ {
+/* QSpinBox Styling */
+QSpinBox {
     border: 1px solid #555555; /* DARK_COLOR_INPUT_BORDER */
     border-radius: 4px;
     padding: 2px 4px;
     background-color: #2a2a2a; /* DARK_COLOR_INPUT_BG */
     color: #e0e0e0; /* DARK_COLOR_INPUT_TEXT */
-    min-height: 20px;
-    font-size: 10pt; /* Base control size */
+    font-size: 10pt; /* Match style.qss (inherited from QWidget) */
+    min-height: 20px; /* Consistent with other inputs */
 }
-
-/* Specific padding for QLineEdit if needed, QSpinBox padding is usually fine */
-QLineEdit {
-    padding: 3px 5px; /* Match QTableView item padding for consistency */
-}
-
-QComboBox {
-    padding-right: 15px;
-}
-
-QDateEdit {
-    padding-right: 0px;
-    min-width: 90px;
-}
-
-QComboBox:disabled,
-QCheckBox:disabled,
-QDateEdit:disabled,
-QLineEdit:disabled, /* ADDED */
-QSpinBox:disabled   /* ADDED */ {
+QSpinBox:disabled {
     background-color: #3c3c3c;
     color: #707070;
     border-color: #4f4f4f;
 }
-
-QComboBox::drop-down,
-QDateEdit::drop-down {
-    /* QSpinBox drop-downs (up/down buttons) are styled separately if needed */
-    subcontrol-origin: padding; 
-    subcontrol-position: top right;
-    width: 15px;
-    border-left: 1px solid #555555; /* DARK_COLOR_INPUT_BORDER */
-    border-top-right-radius: 3px;
-    border-bottom-right-radius: 3px;
-    background: #2c2c2c; /* DARK_COLOR_BG_HEADER */
-}
-
-/* Styling for QSpinBox up/down buttons */
 QSpinBox::up-button {
     subcontrol-origin: border;
-    subcontrol-position: top right; /* position at the top right corner */
-    width: 16px; /* width of the spinner button */
-    border-image: url(placeholder_up_arrow.png); /* Placeholder - replace with actual icon or use theme */
-    border-width: 1px;
+    subcontrol-position: top right;
+    width: 16px;
+    border-left: 1px solid #444444; /* DARK_COLOR_BORDER */
     border-top-right-radius: 3px;
-    background-color: #2c2c2c;
+    background-color: #333333; /* Slightly different from input bg */
 }
-QSpinBox::up-button:hover { background-color: #3f3f3f; }
-QSpinBox::up-button:pressed { background-color: #4f4f4f; }
-
+QSpinBox::up-button:hover {
+    background-color: #404040;
+}
+QSpinBox::up-button:pressed {
+    background-color: #202020;
+}
 QSpinBox::down-button {
     subcontrol-origin: border;
-    subcontrol-position: bottom right; /* position at bottom right corner */
+    subcontrol-position: bottom right;
     width: 16px;
-    border-image: url(placeholder_down_arrow.png); /* Placeholder */
-    border-width: 1px;
+    border-left: 1px solid #444444; /* DARK_COLOR_BORDER */
     border-bottom-right-radius: 3px;
-    background-color: #2c2c2c;
+    background-color: #333333;
 }
-QSpinBox::down-button:hover { background-color: #3f3f3f; }
-QSpinBox::down-button:pressed { background-color: #4f4f4f; }
+QSpinBox::down-button:hover {
+    background-color: #404040;
+}
+QSpinBox::down-button:pressed {
+    background-color: #202020;
+}
+QSpinBox::up-arrow, QSpinBox::down-arrow {
+    /* Qt should render arrows based on widget's foreground/ButtonText color. */
+    /* If custom icons are needed: */
+    /* image: url(:/icons/arrow_up_dark.png); */
+    /* image: url(:/icons/arrow_down_dark.png); */
+    width: 10px; /* Adjust size as needed */
+    height: 10px; /* Adjust size as needed */
+}
 
-
-QComboBox QAbstractItemView {
-    font-size: 10pt;
-    /* Match control size */
+/* QCheckBox */
+QCheckBox {
+    color: #e0e0e0; /* DARK_COLOR_TEXT_DARK */
+    spacing: 5px; /* Space between checkbox and text */
+    font-size: 10pt; /* Match style.qss */
+    background-color: transparent;
+}
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
     border: 1px solid #555555; /* DARK_COLOR_INPUT_BORDER */
+    border-radius: 3px;
     background-color: #2a2a2a; /* DARK_COLOR_INPUT_BG */
-    outline: 0px;
-    padding: 3px;
-    selection-background-color: #007bff; /* DARK_COLOR_ACCENT_PRIMARY */
-    selection-color: #f0f0f0; /* DARK_COLOR_TEXT_HEADER */
 }
-
-QMenu {
-    background-color: #2a2a2a; /* DARK_COLOR_INPUT_BG */
-    border: 1px solid #444444; /* DARK_COLOR_BORDER */
-    padding: 4px;
-    font-size: 10pt;
-    color: #e0e0e0; /* DARK_COLOR_TEXT_PRIMARY for menu text */
-    /* Match control size */
-}
-
-QMenu::item {
-    padding: 4px 20px 4px 5px;
-    color: #e0e0e0; /* DARK_COLOR_TEXT_PRIMARY */
-}
-
-QMenu::item:selected {
+QCheckBox::indicator:checked {
     background-color: #007bff; /* DARK_COLOR_ACCENT_PRIMARY */
-    color: #f0f0f0; /* DARK_COLOR_TEXT_HEADER */
+    image: url(:/qt-project.org/styles/commonstyle/images/checkbox-checked-16.png); /* Example, replace with themed icon */
+}
+QCheckBox::indicator:disabled {
+    border-color: #4f4f4f;
+    background-color: #3c3c3c;
+}
+QCheckBox::indicator:checked:disabled {
+    image: url(:/qt-project.org/styles/commonstyle/images/checkbox-checked-disabled-16.png); /* Example */
 }
 
-QMenu::separator {
-    height: 1px;
-    background: #444444; /* DARK_COLOR_BORDER */
-    margin: 4px 0px;
-}
-
-/* --- Tab Widget Styling --- */
-QTabWidget#MainTabWidget::pane, /* Target main tab widget specifically */
-QDialog QTabWidget::pane {      /* Target tab widgets within dialogs */
-    border-top: 1px solid #444444; /* DARK_COLOR_BORDER */
-    background-color: #1e1e1e; /* DARK_COLOR_BG */
-    padding: 5px;
-}
-
-QTabWidget#MainTabWidget QTabBar::tab,
-QDialog QTabWidget QTabBar::tab {
-    background-color: #2c2c2c; /* DARK_COLOR_BG_HEADER */
-    color: #a0a0a0; /* DARK_COLOR_TEXT_SECONDARY */
+/* QTableView */
+QTableView {
+    gridline-color: #444444; /* DARK_COLOR_BORDER */
+    background-color: #1e1e1e; /* DARK_COLOR_BG_DARK */
+    color: #e0e0e0; /* DARK_COLOR_TEXT_DARK */
+    alternate-background-color: #252525; /* DARK_COLOR_TABLE_ALT_ROW */
+    font-size: 10pt; /* Match style.qss QTableView#HoldingsTable */
+    selection-background-color: #007bff; /* DARK_COLOR_ACCENT_PRIMARY */
+    selection-color: #ffffff; /* White text on selection */
     border: 1px solid #444444; /* DARK_COLOR_BORDER */
-    border-bottom: none; /* Remove bottom border for unselected */
-    padding: 6px 12px; /* Increased padding for better look */
-    margin-right: 1px;
+}
+QTableView QHeaderView::section {
+    background-color: #2c2c2c; /* DARK_COLOR_BG_LIGHT (for headers) */
+    color: #f0f0f0; /* DARK_COLOR_HEADER_TEXT */
+    padding: 4px;
+    border: 1px solid #444444; /* DARK_COLOR_BORDER */
+    font-size: 10pt; /* Match style.qss */
+    font-weight: bold;
+}
+QTableView QHeaderView::section:pressed {
+    background-color: #3a3a3a;
+}
+
+/* QTabWidget */
+QTabWidget::pane {
+    border: 1px solid #444444; /* DARK_COLOR_BORDER */
+    background-color: #1e1e1e; /* DARK_COLOR_BG_DARK */
+}
+QTabBar::tab {
+    background-color: #2c2c2c; /* DARK_COLOR_BG_LIGHT */
+    color: #b0b0b0; /* DARK_COLOR_TEXT_LIGHT */
+    border: 1px solid #444444; /* DARK_COLOR_BORDER */
+    border-bottom: none; /* Remove bottom border for unselected tabs */
+    padding: 4px 8px;
+    margin-right: 2px;
     border-top-left-radius: 4px;
     border-top-right-radius: 4px;
-    min-width: 100px; /* Ensure tabs have a decent minimum width */
+}
+QTabBar::tab:selected {
+    background-color: #1e1e1e; /* DARK_COLOR_BG_DARK (match pane) */
+    color: #e0e0e0; /* DARK_COLOR_TEXT_DARK */
+    border-bottom: 1px solid #1e1e1e; /* Make bottom border match pane bg */
+    font-weight: bold;
+}
+QTabBar::tab:hover:!selected {
+    background-color: #3a3a3a;
+}
+
+/* QGroupBox */
+QGroupBox {
+    background-color: #252525; /* Slightly lighter than main bg */
+    border: 1px solid #444444; /* DARK_COLOR_BORDER */
+    border-radius: 4px;
+    margin-top: 10px; /* Space for the title */
+    padding: 10px 5px 5px 5px; /* Top padding less due to margin-top */
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 5px;
+    left: 10px; /* Indent title slightly */
+    color: #e0e0e0; /* DARK_COLOR_TEXT_DARK */
     font-weight: bold;
 }
 
-QTabWidget#MainTabWidget QTabBar::tab:selected,
-QDialog QTabWidget QTabBar::tab:selected {
-    background-color: #1e1e1e; /* DARK_COLOR_BG (match pane) */
-    color: #e0e0e0; /* DARK_COLOR_TEXT_PRIMARY */
-    border-bottom: 1px solid #1e1e1e; /* Make bottom border same as pane bg to "connect" */
+/* QFrame specific styling */
+QFrame#HeaderFrame {
+    background-color: #2c2c2c; /* DARK_COLOR_BG_LIGHT */
+    border-bottom: 1px solid #444444; /* DARK_COLOR_BORDER */
+}
+QFrame#ControlsFrame {
+    background-color: #252525; /* Slightly lighter than header */
+    border-bottom: 1px solid #444444; /* DARK_COLOR_BORDER */
+}
+QFrame#SummaryAndGraphsFrame, QFrame#ContentFrame, QFrame#BarChartsFrame {
+    background-color: #1e1e1e; /* DARK_COLOR_BG_DARK */
 }
 
-QTabWidget#MainTabWidget QTabBar::tab:hover,
-QDialog QTabWidget QTabBar::tab:hover {
-    background-color: #3a3a3a; /* Slightly lighter on hover */
-}
-
-/* Target both navigation toolbars specifically by object name */
-#PerfReturnToolbar, #AbsValueToolbar {
-    background-color: #2c2c2c; /* DARK_COLOR_BG_HEADER */
-    border: none; /* Remove default toolbar border */
-    padding: 1px; /* Reduce padding */
-    margin: 0px;
-    min-height: 20px; /* Force a smaller minimum height */
-    max-height: 25px; /* Force a smaller maximum height */
-}
-
-/* Target ALL QToolButtons within the specific toolbars */
-#PerfReturnToolbar QToolButton,
-#AbsValueToolbar QToolButton {
-    background-color: transparent; /* Make button background transparent */
-    border: 1px solid transparent; /* Remove default button border */
-    padding: 1px; /* Reduce button padding */
-    margin: 1px; /* Add small margin between buttons */
-    min-width: 20px; /* Make buttons smaller */
-    max-width: 20px;
-    min-height: 18px;
-    max-height: 18px;
-    border-radius: 3px; /* Optional: Slightly rounded corners */
-    icon-size: 14px; /* Make icons smaller */
-}
-
-#PerfReturnToolbar QToolButton:hover,
-#AbsValueToolbar QToolButton:hover {
-    background-color: #3f3f3f; /* Darker hover */
-    border: 1px solid #555555; /* DARK_COLOR_INPUT_BORDER */
-}
-
-#PerfReturnToolbar QToolButton:pressed,
-#AbsValueToolbar QToolButton:pressed {
-    background-color: #4f4f4f; /* Even darker pressed */
-    border: 1px solid #666666;
-}
-
-#PerfReturnToolbar QToolButton:checked, /* Style for toggle buttons like Zoom */
-#AbsValueToolbar QToolButton:checked {
-    background-color: #007bff; /* DARK_COLOR_ACCENT_PRIMARY */
-    border: 1px solid #0056b3; /* Darker accent border */
-    color: #FFFFFF; /* Ensure icon/text is visible */
-}
-
-/* Optionally hide separators if they take up too much space */
-#PerfReturnToolbar QToolBarSeparator,
-#AbsValueToolbar QToolBarSeparator {
-    /* margin: 0px 2px; */ /* Adjust space around separators */
-     width: 0px; /* Try hiding them completely */
-     /* height: 0px; */ /* Might also need height */
-     /* border: none; */
-}
-
-/* Optionally hide the coordinate display (often takes space) */
-#PerfReturnToolbar QLabel,
-#AbsValueToolbar QLabel {
-    display: none; /* Explicitly hide the coordinate display labels */
-}
-
-/* Add styles for the Symbol Chart Toolbar */
-#SymbolChartToolbar {
-    background-color: #2c2c2c; /* DARK_COLOR_BG_HEADER */
+/* QToolBar */
+QToolBar {
+    background-color: #2c2c2c; /* DARK_COLOR_BG_LIGHT */
     border: none;
-    padding: 1px;
-    margin: 0px;
-    min-height: 18px;   /* Compact height */
-    max-height: 22px;
+    padding: 4px; /* Increased padding for the toolbar itself */
+    spacing: 3px;
 }
-
-#SymbolChartToolbar QToolButton {
+QToolBar QToolButton { /* Style buttons inside toolbar */
     background-color: transparent;
+    color: #e0e0e0;
     border: 1px solid transparent;
-    padding: 0px;
-    margin: 0px 1px;
-    min-width: 18px;    /* Small buttons */
-    max-width: 18px;
-    min-height: 16px;
-    max-height: 16px;
-    border-radius: 2px;
-    icon-size: 12px;    /* Small icons */
+    padding: 4px; /* Increased padding for buttons within the toolbar */
+    border-radius: 3px;
 }
-
-#SymbolChartToolbar QToolButton:hover {
-    background-color: #3f3f3f;
-    border: 1px solid #555555; /* DARK_COLOR_INPUT_BORDER */
+QToolBar QToolButton:hover {
+    background-color: #3a3a3a;
+    border: 1px solid #555555;
 }
-#SymbolChartToolbar QToolButton:pressed {
-    background-color: #4f4f4f;
-    border: 1px solid #666666;
+QToolBar QToolButton:pressed {
+    background-color: #202020;
 }
-#SymbolChartToolbar QToolButton:checked {
+QToolBar QToolButton:checked { /* For checkable actions */
     background-color: #007bff; /* DARK_COLOR_ACCENT_PRIMARY */
-    border: 1px solid #0056b3; /* Darker accent border */
-    color: #FFFFFF; /* Ensure icon/text is visible */
+    color: white;
 }
 
-#SymbolChartToolbar QToolBarSeparator {
-     width: 0px;
-     margin: 0px;
+/* QMenu */
+QMenu {
+    background-color: #2c2c2c; /* DARK_COLOR_BG_LIGHT */
+    color: #e0e0e0; /* DARK_COLOR_TEXT_DARK */
+    border: 1px solid #444444; /* DARK_COLOR_BORDER */
+    font-size: 10pt; /* Match style.qss */
+    padding: 2px;
+}
+QMenu::item {
+    padding: 4px 20px 4px 20px;
+}
+QMenu::item:selected {
+    background-color: #007bff; /* DARK_COLOR_ACCENT_PRIMARY */
+    color: #ffffff;
+}
+QMenu::separator {
+    height: 1px;
+    background-color: #444444; /* DARK_COLOR_BORDER */
+    margin-left: 5px;
+    margin-right: 5px;
 }
 
-/* Styling for specific QTableView instances in dialogs or other tabs if palette is not enough */
-/* These ensure text color is light if palette settings don't fully propagate */
-QTableView#StockTransactionsLogTable::item,
-QTableView#CashTransactionsLogTable::item,
-QTableView#DividendHistoryTable::item,
-QTableView#DividendSummaryTable::item,
-QTableView#CgHistoryTable::item,
-QTableView#CgSummaryTable::item,
-QTableView#IgnoredLogTable::item,
-QTableView#AccountCurrencyTable::item,
-QTableView#ManualOverridesTable::item,
-QTableView#SymbolMapTable::item,
-QTableView#ExcludedSymbolsTable::item {
-    color: #e0e0e0; /* DARK_COLOR_TEXT_PRIMARY */
+/* QStatusBar */
+QStatusBar {
+    background-color: #2c2c2c; /* DARK_COLOR_BG_LIGHT */
+    color: #b0b0b0; /* DARK_COLOR_TEXT_LIGHT */
+    border-top: 1px solid #444444; /* DARK_COLOR_BORDER */
+}
+QStatusBar QLabel { /* Ensure labels in status bar inherit correctly */
+    color: #b0b0b0;
+    background-color: transparent;
 }
 
-/* --- END OF FILE style_dark.qss --- */
+/* QProgressBar */
+QProgressBar {
+    border: 1px solid #555555; /* DARK_COLOR_INPUT_BORDER */
+    border-radius: 3px;
+    text-align: center;
+    color: #e0e0e0; /* DARK_COLOR_INPUT_TEXT */
+    background-color: #2a2a2a; /* DARK_COLOR_INPUT_BG */
+}
+QProgressBar::chunk {
+    background-color: #007bff; /* DARK_COLOR_ACCENT_PRIMARY */
+    border-radius: 2px;
+}
+
+/* QSplitter */
+QSplitter::handle {
+    background-color: #3a3a3a; /* A slightly different color for the handle */
+    border: 1px solid #444444; /* DARK_COLOR_BORDER */
+}
+QSplitter::handle:horizontal {
+    width: 5px;
+}
+QSplitter::handle:vertical {
+    height: 5px;
+}
+QSplitter::handle:pressed {
+    background-color: #007bff; /* DARK_COLOR_ACCENT_PRIMARY */
+}
+
+/* ScrollBar Styling */
+QScrollBar:horizontal {
+    border: 1px solid #444444;
+    background: #2a2a2a;
+    height: 12px;
+    margin: 0px 12px 0 12px;
+}
+QScrollBar::handle:horizontal {
+    background: #555555;
+    min-width: 20px;
+    border-radius: 5px;
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    border: 1px solid #444444;
+    background: #3a3a3a;
+    width: 12px;
+    subcontrol-origin: margin;
+}
+QScrollBar::add-line:horizontal {
+    subcontrol-position: right;
+}
+QScrollBar::sub-line:horizontal {
+    subcontrol-position: left;
+}
+QScrollBar:vertical {
+    border: 1px solid #444444;
+    background: #2a2a2a;
+    width: 12px;
+    margin: 12px 0 12px 0;
+}
+QScrollBar::handle:vertical {
+    background: #555555;
+    min-height: 20px;
+    border-radius: 5px;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    border: 1px solid #444444;
+    background: #3a3a3a;
+    height: 12px;
+    subcontrol-origin: margin;
+}
+QScrollBar::add-line:vertical {
+    subcontrol-position: bottom;
+}
+QScrollBar::sub-line:vertical {
+    subcontrol-position: top;
+}
+
+/* Specific Canvas Styling (if needed, but usually handled by figure/axes facecolor) */
+/*
+QWidget#PerfReturnCanvas, QWidget#AbsValueCanvas,
+QWidget#AccountPieCanvas, QWidget#HoldingsPieCanvas,
+QWidget#AssetTypePieCanvas, QWidget#SectorPieCanvas, QWidget#GeoPieCanvas,
+QWidget#AnnualBarCanvas, QWidget#MonthlyBarCanvas, QWidget#WeeklyBarCanvas,
+QWidget#DividendBarCanvas, QWidget#CgBarCanvas {
+    background-color: #2a2a2a;
+}
+*/

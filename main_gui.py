@@ -1161,47 +1161,35 @@ class PandasModel(QAbstractTableModel):
         if role == Qt.ForegroundRole:
             try:
                 col_name = self._data.columns[col]
-                value_str = str(self._data.iloc[row, col])  # Ensure it's a string
-                target_color = self._default_text_color
+                raw_cell_value = self._data.iloc[
+                    row, col
+                ]  # Get raw value for numeric check
 
                 # Specific handling for Gain/Loss columns in Capital Gains table (and potentially others if named similarly)
-                if (
-                    "Gain/Loss" in col_name
-                ):  # e.g., "Gain/Loss (Local)" or "Gain/Loss ($)"
-                    # value_str is now defined before this block
-                    # Remove commas first, as they interfere with float conversion
-                    cleaned_value_str = value_str.replace(
-                        ",", ""
-                    )  # value_str is from str(self._data.iloc[row, col])
-                    # Regex to extract the numeric part, including sign.
-                    # This regex handles an optional sign, then a digit, then any number of digits or dots.
-                    match = re.search(
-                        r"([+-]?\d*\.?\d+)", cleaned_value_str
-                    )  # MODIFIED Regex
+                if "Gain/Loss" in col_name:  # For Capital Gains table
+                    value_str = str(raw_cell_value)
+                    cleaned_value_str = value_str.replace(",", "")  # Remove commas
+                    # Try to extract numeric part for coloring
+                    match = re.search(r"([+-]?\d*\.?\d+)", cleaned_value_str)
                     if match:
                         numeric_part_str = match.group(1)
                         try:
                             numeric_value = float(numeric_part_str)
-                            if (
-                                numeric_value > 1e-9
-                            ):  # Use a small epsilon for float comparison
-                                target_color = self._gain_color  # Use themed color
-                            elif numeric_value < -1e-9:
-                                target_color = self._loss_color  # Use themed color
-                            # else: keep default color for zero or very near zero
+                            if numeric_value > 1e-9:
+                                return self._gain_color
+                            if numeric_value < -1e-9:
+                                return self._loss_color
                         except ValueError:
-                            # If conversion fails, keep default color
-                            logging.debug(
-                                f"Could not parse numeric value from '{numeric_part_str}' for coloring column '{col_name}'."
-                            )
-                            pass
-                    return target_color
+                            pass  # Fall through to default (None)
+                    return (
+                        None  # Default to QSS if not clearly gain/loss or parse error
+                    )
 
                 # Existing coloring logic for other tables/columns (where value is numeric, not pre-formatted string)
-                if pd.api.types.is_number(self._data.iloc[row, col]) and pd.notna(
-                    self._data.iloc[row, col]
-                ):
-                    value_float = float(self._data.iloc[row, col])
+                if pd.api.types.is_number(raw_cell_value) and pd.notna(raw_cell_value):
+                    value_float = float(raw_cell_value)
+
+                    # General Gain/Loss indicators
                     gain_loss_color_cols = [
                         "Gain",
                         "Return",
@@ -1217,28 +1205,48 @@ class PandasModel(QAbstractTableModel):
                         "IRR (%)",
                         "Yield (Cost) %",  # New
                         "Yield (Mkt) %",  # New
-                        "FX G/L",  # New
-                        "FX G/L %",  # New
-                    ]  # Added IRR (%) here for coloring
+                        "FX G/L",
+                        "FX G/L %",
+                    ]
                     if any(indicator in col_name for indicator in gain_loss_color_cols):
-                        if value_float > 1e-9:
-                            target_color = self._gain_color  # Use themed color
-                        elif value_float < -1e-9:
-                            target_color = self._loss_color  # Use themed color
+                        if (
+                            "Yield" in col_name
+                        ):  # Yields are typically shown as positive, color green if > 0
+                            if value_float > 1e-9:
+                                return self._gain_color
+                        else:  # For other G/L type columns
+                            if value_float > 1e-9:
+                                return self._gain_color
+                            if value_float < -1e-9:
+                                return self._loss_color
+                        return (
+                            None  # Zero value or non-applicable yield, let QSS handle
+                        )
+
+                    # Dividends
                     elif "Dividend" in col_name or "Divs" in col_name:
                         if value_float > 1e-9:
-                            target_color = self._gain_color  # Use themed color
+                            return self._gain_color  # Positive dividends are green
+                        return None  # Zero or negative dividend, let QSS handle
+
+                    # Commissions/Fees
                     elif (
                         "Commission" in col_name
                         or "Fee" in col_name
                         or "Fees" in col_name
                     ):
                         if value_float > 1e-9:
-                            target_color = self._loss_color  # Use themed color
-                return target_color
+                            return (
+                                self._loss_color
+                            )  # Fees are costs, shown red if positive
+                        return None  # Zero fee, let QSS handle
+
+                # If not a special column or not numeric, or numeric but zero in a special column
+                return None  # Let QSS handle color
+
             except Exception as e:
                 # logging.info(f"Coloring Error (Row:{row}, Col:{col}, Name:'{self._data.columns[col]}'): {e}")
-                return self._default_text_color
+                return None  # Fallback to QSS on any error
 
         # --- Display Text ---
         if role == Qt.DisplayRole or role == Qt.EditRole:
@@ -2440,17 +2448,15 @@ class SymbolChartDialog(QDialog):
         ax.clear()
 
         # Explicitly set background colors based on current theme
-        # SymbolChartDialog is usually in a container that matches the main window background
-        fig_bg_color = (
+        # Both figure and axes should match the main dashboard background
+        bg_color = (
             self.parent().QCOLOR_BACKGROUND_THEMED.name()
             if self.parent()
             else FALLBACK_QCOLOR_BG_DARK.name()
         )
-        ax_bg_color = (
-            self.parent().QCOLOR_INPUT_BACKGROUND_THEMED.name()
-            if self.parent()
-            else FALLBACK_QCOLOR_BG_DARK.name()
-        )  # Or BG_DARK if preferred
+        fig_bg_color = bg_color
+        ax_bg_color = bg_color
+
         self.figure.patch.set_facecolor(fig_bg_color)
         ax.patch.set_facecolor(ax_bg_color)
 
@@ -4714,6 +4720,58 @@ class ManageTransactionsDialogDB(QDialog):
 class PortfolioApp(QMainWindow):
     """Main application window for the Investa Portfolio Dashboard."""
 
+    # Define icon specifications for toolbar actions for light and dark themes
+    # Format: action_attribute_name: {"light": (type, spec), "dark": (type, spec, [fallback_sp_for_dark])}
+    # type can be "theme" (for QIcon.fromTheme) or "sp" (for QStyle.standardIcon)
+    TOOLBAR_ICON_SPECS = {
+        "select_db_action": {
+            "light": ("theme", "document-open"),
+            "dark": ("sp", QStyle.SP_DialogOpenButton),
+        },
+        "new_database_file_action": {
+            "light": ("theme", "document-new"),
+            "dark": ("sp", QStyle.SP_FileIcon),  # Changed from SP_FileDialogNewButton
+        },
+        "import_csv_action": {  # Original uses SP_DialogOpenButton
+            "light": (
+                "sp",
+                QStyle.SP_DialogOpenButton,
+                QStyle.SP_ArrowDown,
+            ),  # type, primary, fallback
+            "dark": (
+                "sp",
+                QStyle.SP_DialogOpenButton,
+                QStyle.SP_ArrowDown,
+            ),  # Assuming SP_DialogOpenButton is fine for dark
+        },
+        "export_csv_action": {
+            "light": ("theme", "document-export"),
+            "dark": ("sp", QStyle.SP_DialogSaveButton),
+        },
+        "refresh_action": {
+            "light": ("theme", "view-refresh"),
+            "dark": ("sp", QStyle.SP_BrowserReload),
+        },
+        "add_transaction_action": {
+            "light": ("theme", "list-add"),
+            "dark": ("sp", QStyle.SP_FileIcon),  # Changed from SP_FileDialogNewButton
+        },
+        "manage_transactions_action": {  # Original uses SP_FileDialogDetailedView
+            "light": ("sp", QStyle.SP_FileDialogDetailedView, QStyle.SP_DirIcon),
+            "dark": (
+                "sp",
+                QStyle.SP_FileDialogDetailedView,
+                QStyle.SP_DirIcon,
+            ),  # Assuming SP_FileDialogDetailedView is fine
+        },
+    }
+
+    # For the QPushButton used for fundamental lookup (not a QAction on toolbar directly from menu)
+    LOOKUP_BUTTON_ICON_SPECS = {
+        "light": ("theme", "help-about"),
+        "dark": ("sp", QStyle.SP_MessageBoxInformation),
+    }
+
     # --- Helper Methods (Define BEFORE they are called in __init__) ---
     def _ensure_all_columns_in_visibility(self):
         """
@@ -6296,6 +6354,59 @@ The CSV file should contain the following columns (header names must match exact
                 self.save_config()
             return
 
+        # --- Update Toolbar Icons based on Theme ---
+        for action_attr, specs_by_theme in PortfolioApp.TOOLBAR_ICON_SPECS.items():
+            action_widget = getattr(self, action_attr, None)
+            if not action_widget:
+                logging.debug(
+                    f"Action attribute '{action_attr}' not found, skipping icon update."
+                )
+                continue
+
+            # Default to light theme spec if current theme's spec is missing
+            spec_to_use = specs_by_theme.get(theme_name, specs_by_theme["light"])
+            icon_type, primary_spec, *fallback_spec_tuple = spec_to_use
+            fallback_spec = fallback_spec_tuple[0] if fallback_spec_tuple else None
+
+            icon = QIcon()  # Start with a null icon
+            if icon_type == "theme":
+                icon = QIcon.fromTheme(primary_spec)
+            elif icon_type == "sp":
+                icon = self.style().standardIcon(primary_spec)
+                if icon.isNull() and fallback_spec:
+                    icon = self.style().standardIcon(fallback_spec)
+
+            if icon.isNull():
+                logging.warning(
+                    f"Icon for action '{action_attr}' (theme: {theme_name}, spec: {spec_to_use}) is NULL. Action text: '{action_widget.text()}'"
+                )
+                # Set to a truly empty icon to clear any previous one if it's null
+                action_widget.setIcon(QIcon())
+            else:
+                action_widget.setIcon(icon)
+
+        # Handle lookup_button (QPushButton) separately
+        if hasattr(self, "lookup_button"):
+            spec_lookup = PortfolioApp.LOOKUP_BUTTON_ICON_SPECS.get(
+                theme_name, PortfolioApp.LOOKUP_BUTTON_ICON_SPECS["light"]
+            )
+            icon_type_lookup, primary_spec_lookup, *_ = spec_lookup
+
+            icon_lookup = QIcon()
+            if icon_type_lookup == "theme":
+                icon_lookup = QIcon.fromTheme(primary_spec_lookup)
+            elif icon_type_lookup == "sp":
+                icon_lookup = self.style().standardIcon(primary_spec_lookup)
+
+            if icon_lookup.isNull():
+                logging.warning(
+                    f"Icon for lookup_button (theme: {theme_name}, spec: {spec_lookup}) is NULL."
+                )
+                self.lookup_button.setIcon(QIcon())  # Clear icon
+            else:
+                self.lookup_button.setIcon(icon_lookup)
+        # --- End Toolbar Icon Update ---
+
         self.current_theme = theme_name
         self._style_sheet_applied_once = (
             True  # Mark that a stylesheet has been applied at least once
@@ -6399,6 +6510,7 @@ The CSV file should contain the following columns (header names must match exact
             )
         logging.debug(f"Matplotlib rcParams updated for {theme_name} theme.")
         logging.debug(f"Themed QColors updated for {theme_name}.")
+        # Explicit QSpinBox theming removed, will be handled by style_dark.qss
 
         # Explicitly theme table viewports and tables
         table_view_attr_names = [
@@ -7914,6 +8026,7 @@ The CSV file should contain the following columns (header names must match exact
         value = QLabel("N/A")  # Default text
         value.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         value.setObjectName("SummaryValueLarge" if is_large else "SummaryValue")
+        value.setTextFormat(Qt.RichText)
 
         # Adjust font sizes based on is_large flag
         # Ensure self.app_font exists if called during initUI (should be fine if initUI called after font set)
@@ -11123,10 +11236,9 @@ The CSV file should contain the following columns (header names must match exact
 
         # Explicitly set backgrounds for performance line graphs
         # These graphs are in PerfGraphsContainer, which has its own QSS background.
-        # Matplotlib figures should match this, axes can be different.
-        # From QSS: #PerfGraphsContainer background-color: #2c2c2c; (DARK_COLOR_BG_HEADER)
-        perf_fig_bg = self.QCOLOR_HEADER_BACKGROUND_THEMED.name()
-        perf_ax_bg = self.QCOLOR_INPUT_BACKGROUND_THEMED.name()
+        # Both figure and axes should match the main dashboard background.
+        perf_fig_bg = self.QCOLOR_BACKGROUND_THEMED.name()
+        perf_ax_bg = self.QCOLOR_BACKGROUND_THEMED.name()
 
         if self.perf_return_fig:
             self.perf_return_fig.patch.set_facecolor(perf_fig_bg)
@@ -12168,11 +12280,10 @@ The CSV file should contain the following columns (header names must match exact
                 target_color = self.QCOLOR_LOSS_THEMED  # Use themed color
         elif metric_type == "clear":
             text = "N/A"
-            target_color = self.QCOLOR_TEXT_PRIMARY_THEMED  # Use themed color
-        value_label.setText(text)
-        palette = value_label.palette()
-        palette.setColor(QPalette.WindowText, target_color)
-        value_label.setPalette(palette)
+            target_color = self.QCOLOR_TEXT_PRIMARY_THEMED
+
+        # Apply color using rich text
+        value_label.setText(f"<font color='{target_color.name()}'>{text}</font>")
 
     @Slot()
     def show_manage_transactions_dialog(self):
@@ -14665,7 +14776,9 @@ The CSV file should contain the following columns (header names must match exact
             if fig:
                 fig.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
             # Use the input-specific background for the axes plotting area
-            ax.patch.set_facecolor(self.QCOLOR_INPUT_BACKGROUND_THEMED.name())
+            ax.patch.set_facecolor(
+                self.QCOLOR_BACKGROUND_THEMED.name()  # Match dashboard background)
+            )
 
             returns_df = self.periodic_returns_data.get(interval_key)
 
@@ -14891,7 +15004,7 @@ The CSV file should contain the following columns (header names must match exact
                 self.QCOLOR_BACKGROUND_THEMED.name()
             )  # Main background for figure
         ax.patch.set_facecolor(
-            self.QCOLOR_INPUT_BACKGROUND_THEMED.name()
+            self.QCOLOR_BACKGROUND_THEMED.name()  # Match dashboard background
         )  # Input-like background for axes
 
         if (
