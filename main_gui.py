@@ -45,6 +45,7 @@ import csv
 import re  # <-- ADDED for parsing formatted currency strings
 import sqlite3  # Added import for sqlite3
 import shutil
+import logging
 
 # --- Add project root to sys.path ---
 # Ensures modules like config, data_loader etc. can be found reliably
@@ -145,8 +146,7 @@ import pandas as pd
 from datetime import date
 
 from PySide6.QtGui import QDoubleValidator
-
-from PySide6.QtGui import QColor, QPalette, QFont, QIcon, QPixmap, QAction
+from PySide6.QtGui import QColor, QPalette, QFont, QIcon, QPixmap, QAction, QActionGroup
 from PySide6.QtCore import (
     Qt,
     QAbstractTableModel,
@@ -161,7 +161,6 @@ from PySide6.QtCore import (
     QStringListModel,  # <-- ADDED for QCompleter
     QStandardPaths,
     QTimer,
-    QActionGroup,  # Added for theme selection
 )
 from PySide6.QtGui import QValidator, QIcon  # <-- ADDED Import QValidator
 from PySide6.QtCore import QSize  # <-- ADDED Import QSize
@@ -480,6 +479,19 @@ QCOLOR_BORDER_DARK = QColor(
     COLOR_BORDER_DARK
 )  # General dark borders (like table header bottom)
 QCOLOR_ACCENT_TEAL = QColor(COLOR_ACCENT_TEAL)  # Primary accent for lines/etc.
+
+
+# --- Fallback QColor Constants (for dialogs if themed attributes are not on parent) ---
+FALLBACK_QCOLOR_GAIN = QCOLOR_GAIN
+FALLBACK_QCOLOR_LOSS = QCOLOR_LOSS
+FALLBACK_QCOLOR_TEXT_DARK = QCOLOR_TEXT_DARK
+FALLBACK_QCOLOR_TEXT_SECONDARY = QCOLOR_TEXT_SECONDARY
+FALLBACK_QCOLOR_BG_DARK = QCOLOR_BG_DARK
+FALLBACK_QCOLOR_BG_HEADER_LIGHT = QCOLOR_BG_HEADER_LIGHT
+FALLBACK_QCOLOR_BORDER_LIGHT = QCOLOR_BORDER_LIGHT
+FALLBACK_QCOLOR_BORDER_DARK = QCOLOR_BORDER_DARK
+FALLBACK_QCOLOR_ACCENT_TEAL = QCOLOR_ACCENT_TEAL
+# Add any other FALLBACK_QCOLOR_ needed by dialogs, mirroring the global QCOLOR_ definitions
 
 
 # --- Column Definition Helper ---
@@ -2426,6 +2438,21 @@ class SymbolChartDialog(QDialog):
         """Helper method to perform the actual plotting."""
         ax = self.ax
         ax.clear()
+
+        # Explicitly set background colors based on current theme
+        # SymbolChartDialog is usually in a container that matches the main window background
+        fig_bg_color = (
+            self.parent().QCOLOR_BACKGROUND_THEMED.name()
+            if self.parent()
+            else FALLBACK_QCOLOR_BG_DARK.name()
+        )
+        ax_bg_color = (
+            self.parent().QCOLOR_INPUT_BACKGROUND_THEMED.name()
+            if self.parent()
+            else FALLBACK_QCOLOR_BG_DARK.name()
+        )  # Or BG_DARK if preferred
+        self.figure.patch.set_facecolor(fig_bg_color)
+        ax.patch.set_facecolor(ax_bg_color)
 
         if price_data is None or price_data.empty or "price" not in price_data.columns:
             ax.text(
@@ -5360,6 +5387,7 @@ class PortfolioApp(QMainWindow):
         # --- End Theme Submenu ---
 
         # --- Help Menu ---
+        help_menu = menu_bar.addMenu("&Help")  # Define help_menu
         csv_help_action = QAction(
             "CSV Import Format Help...", self
         )  # Help still relevant for import
@@ -5983,6 +6011,21 @@ The CSV file should contain the following columns (header names must match exact
         super().__init__()
         logging.debug("--- PortfolioApp __init__: START ---")
 
+        # --- Early Initialization of Themed QColor Attributes with Light Theme Defaults ---
+        # These will be updated by _create_status_bar and apply_theme later.
+        self.QCOLOR_GAIN_THEMED = QColor(config.COLOR_GAIN)
+        self.QCOLOR_LOSS_THEMED = QColor(config.COLOR_LOSS)
+        self.QCOLOR_TEXT_PRIMARY_THEMED = QColor(config.COLOR_TEXT_DARK)
+        self.QCOLOR_TEXT_SECONDARY_THEMED = QColor(config.COLOR_TEXT_SECONDARY)
+        self.QCOLOR_BACKGROUND_THEMED = QColor(config.COLOR_BG_DARK)
+        self.QCOLOR_HEADER_BACKGROUND_THEMED = QColor(config.COLOR_BG_HEADER_LIGHT)
+        self.QCOLOR_BORDER_THEMED = QColor(config.COLOR_BORDER_LIGHT)  # Initialize here
+        self.QCOLOR_ACCENT_THEMED = QColor(config.COLOR_ACCENT_TEAL)
+        self.QCOLOR_INPUT_BACKGROUND_THEMED = QColor(config.COLOR_BG_DARK)
+        self.QCOLOR_INPUT_TEXT_THEMED = QColor(config.COLOR_TEXT_DARK)
+        self.QCOLOR_TABLE_ALT_ROW_THEMED = QColor("#fAfBff")
+        logging.debug("Early initialization of QCOLOR_*_THEMED attributes completed.")
+
         # --- Path Initialization for DB and Config ---
         self.DB_FILE_PATH: Optional[str] = (
             None  # Will be set by get_database_path via load_config or direct call
@@ -6292,29 +6335,34 @@ The CSV file should contain the following columns (header names must match exact
         if theme_name == "dark":
             self.QCOLOR_GAIN_THEMED = QColor(config.DARK_COLOR_GAIN)
             self.QCOLOR_LOSS_THEMED = QColor(config.DARK_COLOR_LOSS)
-            self.QCOLOR_TEXT_PRIMARY_THEMED = QColor(config.DARK_COLOR_TEXT_PRIMARY)
-            self.QCOLOR_TEXT_SECONDARY_THEMED = QColor(config.DARK_COLOR_TEXT_SECONDARY)
-            self.QCOLOR_BACKGROUND_THEMED = QColor(config.DARK_COLOR_BG)
-            self.QCOLOR_HEADER_BACKGROUND_THEMED = QColor(config.DARK_COLOR_BG_HEADER)
+            self.QCOLOR_TEXT_PRIMARY_THEMED = QColor(config.DARK_COLOR_TEXT_DARK)
+            self.QCOLOR_TEXT_SECONDARY_THEMED = QColor(config.DARK_COLOR_TEXT_LIGHT)
+            self.QCOLOR_BACKGROUND_THEMED = QColor(config.DARK_COLOR_BG_DARK)
+            self.QCOLOR_HEADER_BACKGROUND_THEMED = QColor(config.DARK_COLOR_BG_LIGHT)
             self.QCOLOR_BORDER_THEMED = QColor(config.DARK_COLOR_BORDER)
             self.QCOLOR_ACCENT_THEMED = QColor(
                 config.DARK_COLOR_ACCENT_PRIMARY
             )  # Using primary accent
             self.QCOLOR_INPUT_BACKGROUND_THEMED = QColor(config.DARK_COLOR_INPUT_BG)
             self.QCOLOR_INPUT_TEXT_THEMED = QColor(config.DARK_COLOR_INPUT_TEXT)
-            self.QCOLOR_TABLE_ALT_ROW_THEMED = QColor(
-                config.DARK_COLOR_BG_TABLE_ALT_ROW
-            )
+            self.QCOLOR_TABLE_ALT_ROW_THEMED = QColor(config.DARK_COLOR_TABLE_ALT_ROW)
+
+            # Matplotlib dark theme settings
+            plt.style.use("dark_background")  # Use a predefined dark style as a base
+            # Override specific rcParams for dark theme
+            # (dark_background style already sets many of these)
 
             plt.rcParams.update(
                 {
-                    "axes.labelcolor": config.DARK_COLOR_TEXT_SECONDARY,
-                    "xtick.color": config.DARK_COLOR_TEXT_SECONDARY,
-                    "ytick.color": config.DARK_COLOR_TEXT_SECONDARY,
-                    "text.color": config.DARK_COLOR_TEXT_PRIMARY,
+                    "axes.labelcolor": config.DARK_COLOR_TEXT_LIGHT,
+                    "xtick.color": config.DARK_COLOR_TEXT_LIGHT,
+                    "ytick.color": config.DARK_COLOR_TEXT_LIGHT,
+                    "text.color": config.DARK_COLOR_TEXT_DARK,
                     "axes.edgecolor": config.DARK_COLOR_BORDER,
-                    "figure.facecolor": config.DARK_COLOR_BG,
+                    "figure.facecolor": config.DARK_COLOR_BG_DARK,
                     "axes.facecolor": config.DARK_COLOR_INPUT_BG,
+                    "savefig.facecolor": config.DARK_COLOR_BG_DARK,
+                    "savefig.edgecolor": config.DARK_COLOR_BG_DARK,
                 }
             )
         else:  # Light theme
@@ -6332,6 +6380,8 @@ The CSV file should contain the following columns (header names must match exact
             self.QCOLOR_INPUT_TEXT_THEMED = QColor(
                 config.COLOR_TEXT_DARK
             )  # Dark text for light theme inputs
+            # Matplotlib light theme settings
+            plt.style.use("default")  # Revert to Matplotlib default
             self.QCOLOR_TABLE_ALT_ROW_THEMED = QColor("#fAfBff")
 
             plt.rcParams.update(
@@ -6343,10 +6393,66 @@ The CSV file should contain the following columns (header names must match exact
                     "axes.edgecolor": config.COLOR_BORDER_DARK,  # Darker border for light theme charts
                     "figure.facecolor": config.COLOR_BG_DARK,  # White
                     "axes.facecolor": config.COLOR_BG_DARK,  # White
+                    "savefig.facecolor": "white",
+                    "savefig.edgecolor": "white",
                 }
             )
         logging.debug(f"Matplotlib rcParams updated for {theme_name} theme.")
         logging.debug(f"Themed QColors updated for {theme_name}.")
+
+        # Explicitly theme table viewports and tables
+        table_view_attr_names = [
+            "table_view",  # Main holdings table
+            "stock_transactions_table_view",
+            "cash_transactions_table_view",  # Log tab
+            "dividend_table_view",
+            "dividend_summary_table_view",  # Dividend tab
+            "cg_table_view",
+            "cg_summary_table_view",  # Capital Gains tab
+            # Dialog tables are not direct attributes, they will be handled by QSS
+            # or by ensuring dialogs inherit styles.
+            # "ignored_log_table_view", # Example if it were a direct attribute
+            # "account_currency_table_widget", # Example
+        ]
+
+        for attr_name in table_view_attr_names:
+            if hasattr(self, attr_name):
+                table_view_widget = getattr(self, attr_name)
+                if table_view_widget:  # Ensure the widget exists
+                    # Theme the viewport (the actual scrollable area where items are drawn)
+                    viewport = table_view_widget.viewport()
+                    if viewport:
+                        logging.debug(f"Theming viewport for {attr_name}")  # DEBUG
+                        vp_palette = viewport.palette()
+                        vp_palette.setColor(
+                            QPalette.Base, self.QCOLOR_BACKGROUND_THEMED
+                        )
+                        vp_palette.setColor(
+                            QPalette.Window, self.QCOLOR_BACKGROUND_THEMED
+                        )
+                        vp_palette.setColor(
+                            QPalette.Text, self.QCOLOR_TEXT_PRIMARY_THEMED
+                        )
+                        viewport.setPalette(vp_palette)
+                        viewport.setAutoFillBackground(True)
+
+                    # Theme the table view itself
+                    table_palette = table_view_widget.palette()
+                    logging.debug(f"Theming table view {attr_name}")  # DEBUG
+                    table_palette.setColor(QPalette.Base, self.QCOLOR_BACKGROUND_THEMED)
+                    table_palette.setColor(
+                        QPalette.Text, self.QCOLOR_TEXT_PRIMARY_THEMED
+                    )
+                    table_palette.setColor(
+                        QPalette.AlternateBase, self.QCOLOR_TABLE_ALT_ROW_THEMED
+                    )
+                    table_view_widget.setPalette(table_palette)
+                    table_view_widget.setAutoFillBackground(
+                        True
+                    )  # Important for palette to take effect
+                    table_view_widget.setAlternatingRowColors(
+                        True
+                    )  # Ensure alternating rows are active
 
         # Refresh UI elements
         if hasattr(self, "table_model"):
@@ -10688,6 +10794,12 @@ The CSV file should contain the following columns (header names must match exact
         self.account_ax.clear()
         self.account_ax.axis("off")  # Turn off by default
 
+        # Explicitly set background colors based on current theme
+        fig = self.account_fig
+        if fig:
+            fig.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
+        self.account_ax.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
+
         # Use passed data if available, otherwise fallback to self.holdings_data
         df_to_use = (
             df_account_data
@@ -10808,7 +10920,7 @@ The CSV file should contain the following columns (header names must match exact
                     horizontalalignment=horizontalalignment,
                     **kw,
                     fontsize=8,
-                    color=COLOR_TEXT_DARK,
+                    color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
                 )
 
         # Adjust subplot parameters to make space for labels
@@ -10831,6 +10943,12 @@ The CSV file should contain the following columns (header names must match exact
         """
         self.holdings_ax.clear()
         # --- Turn axis off by default, only turn on if plotting ---
+        # Explicitly set background colors based on current theme
+        fig = self.holdings_fig
+        if fig:
+            fig.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
+        self.holdings_ax.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
+
         self.holdings_ax.axis("off")
 
         if not isinstance(df_display, pd.DataFrame) or df_display.empty:
@@ -10958,7 +11076,7 @@ The CSV file should contain the following columns (header names must match exact
                     horizontalalignment=horizontalalignment,
                     **kw,
                     fontsize=8,
-                    color=COLOR_TEXT_DARK,
+                    color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
                 )
 
         # Adjust subplot parameters to make space for labels
@@ -11002,6 +11120,22 @@ The CSV file should contain the following columns (header names must match exact
         )
         self.perf_return_ax.clear()
         self.abs_value_ax.clear()
+
+        # Explicitly set backgrounds for performance line graphs
+        # These graphs are in PerfGraphsContainer, which has its own QSS background.
+        # Matplotlib figures should match this, axes can be different.
+        # From QSS: #PerfGraphsContainer background-color: #2c2c2c; (DARK_COLOR_BG_HEADER)
+        perf_fig_bg = self.QCOLOR_HEADER_BACKGROUND_THEMED.name()
+        perf_ax_bg = self.QCOLOR_INPUT_BACKGROUND_THEMED.name()
+
+        if self.perf_return_fig:
+            self.perf_return_fig.patch.set_facecolor(perf_fig_bg)
+        if self.perf_return_ax:
+            self.perf_return_ax.patch.set_facecolor(perf_ax_bg)
+        if self.abs_value_fig:
+            self.abs_value_fig.patch.set_facecolor(perf_fig_bg)
+        if self.abs_value_ax:
+            self.abs_value_ax.patch.set_facecolor(perf_ax_bg)
 
         # --- Clear existing mplcursors if they exist ---
         # Disconnect signals to prevent errors if objects persist unexpectedly
@@ -11590,12 +11724,11 @@ The CSV file should contain the following columns (header names must match exact
         try:
             # Pie charts container and content frame background are handled by QSS.
             # Figure and Axes patch colors for Matplotlib plots:
-            fig_face_color = (
-                self.QCOLOR_BACKGROUND_THEMED.name()
-            )  # Main window background
-            ax_face_color = (
-                self.QCOLOR_INPUT_BACKGROUND_THEMED.name()
-            )  # Slightly different for plot area if desired, or same as fig_face_color
+            fig_face_color = self.QCOLOR_BACKGROUND_THEMED.name()
+            # Use input background for axes of pie charts for consistency if desired,
+            # or main background if they should blend more with the figure.
+            # For pies, usually figure and axes are same.
+            ax_pie_face_color = self.QCOLOR_BACKGROUND_THEMED.name()
 
             # Performance graphs are in a QWidget#PerfGraphsContainer which has its own BG from QSS.
             # So, make Matplotlib figure/axes transparent for these if QSS is to show through.
@@ -11621,9 +11754,11 @@ The CSV file should contain the following columns (header names must match exact
                     fig.patch.set_facecolor(fig_face_color)
                 if ax:
                     ax.patch.set_facecolor(
-                        fig_face_color
-                    )  # Pie chart axes usually match figure
+                        ax_pie_face_color
+                    )  # Use specific pie axes color
 
+            # For performance line graphs, axes are often different from figure
+            ax_line_graph_face_color = self.QCOLOR_INPUT_BACKGROUND_THEMED.name()
             for fig, ax in [
                 (self.perf_return_fig, self.perf_return_ax),
                 (self.abs_value_fig, self.abs_value_ax),
@@ -11631,12 +11766,15 @@ The CSV file should contain the following columns (header names must match exact
                 if fig:
                     fig.patch.set_facecolor(perf_graph_bg_color_to_match_qss)
                 if ax:
-                    ax.patch.set_facecolor(perf_graph_bg_color_to_match_qss)
+                    ax.patch.set_facecolor(
+                        ax_line_graph_face_color
+                    )  # Use input-like background for axes
 
             # Bar charts (Periodic, Dividend, Capital Gains)
-            # These are in QFrames/QWidgets that might have their own QSS background.
-            # For now, set to main background, can adjust if specific QSS is applied to their containers.
-            bar_chart_bg_color_to_match_qss = self.QCOLOR_BACKGROUND_THEMED.name()
+            # Figure background matches main, axes background matches input style
+            bar_fig_bg_color = self.QCOLOR_BACKGROUND_THEMED.name()
+            bar_ax_bg_color = self.QCOLOR_INPUT_BACKGROUND_THEMED.name()
+
             for fig, ax in [
                 (self.annual_bar_fig, self.annual_bar_ax),
                 (self.monthly_bar_fig, self.monthly_bar_ax),
@@ -11645,9 +11783,9 @@ The CSV file should contain the following columns (header names must match exact
                 (self.cg_bar_fig, self.cg_bar_ax),
             ]:
                 if fig:
-                    fig.patch.set_facecolor(bar_chart_bg_color_to_match_qss)
+                    fig.patch.set_facecolor(bar_fig_bg_color)
                 if ax:
-                    ax.patch.set_facecolor(bar_chart_bg_color_to_match_qss)
+                    ax.patch.set_facecolor(bar_ax_bg_color)
 
         except Exception as e_bg:
             logging.warning(f"Warn setting graph background: {e_bg}")
@@ -13263,6 +13401,20 @@ The CSV file should contain the following columns (header names must match exact
         logging.debug(
             "Updating asset allocation charts (Asset Type, Sector, Geography)..."
         )
+        # Explicitly set background colors for all asset allocation pie charts
+        for fig_attr, ax_attr in [
+            ("asset_type_pie_fig", "asset_type_pie_ax"),
+            ("sector_pie_fig", "sector_pie_ax"),  # These are in AssetAllocationTab
+            ("geo_pie_fig", "geo_pie_ax"),  # which should match main background
+            ("industry_pie_fig", "industry_pie_ax"),  #
+        ]:
+            if hasattr(self, fig_attr) and hasattr(self, ax_attr):
+                fig = getattr(self, fig_attr)
+                ax = getattr(self, ax_attr)
+                if fig:
+                    fig.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
+                if ax:
+                    ax.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
         self._clear_asset_allocation_charts()  # Clear existing charts first
 
         if not hasattr(self, "holdings_data") or self.holdings_data.empty:
@@ -13444,8 +13596,8 @@ The CSV file should contain the following columns (header names must match exact
             total_value = np.sum(values)
 
             # Use a predefined color map or generate colors
-            cmap = plt.get_cmap("Spectral")  # CHANGED colormap
-            colors = cmap(np.linspace(0, 1, len(values)))
+            cmap_asset = plt.get_cmap("Spectral")
+            colors = cmap_asset(np.linspace(0, 1, len(values)))
 
             wedges, texts, autotexts = self.asset_type_pie_ax.pie(
                 values,
@@ -13454,7 +13606,10 @@ The CSV file should contain the following columns (header names must match exact
                 startangle=90,
                 counterclock=False,
                 colors=colors,
-                wedgeprops={"edgecolor": "white", "linewidth": 0.7},
+                wedgeprops={
+                    "edgecolor": self.QCOLOR_BACKGROUND_THEMED.name(),
+                    "linewidth": 0.7,
+                },  # Edge matches bg
             )
             # plt.setp(autotexts, size=8, weight="bold", color="black") # No longer needed for internal
 
@@ -13487,7 +13642,7 @@ The CSV file should contain the following columns (header names must match exact
                         ha=horizontalalignment,
                         va="center",
                         fontsize=7,
-                        color=COLOR_TEXT_DARK,
+                        color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
                     )
 
             self.asset_type_pie_fig.subplots_adjust(
@@ -13560,7 +13715,10 @@ The CSV file should contain the following columns (header names must match exact
                     startangle=90,
                     counterclock=False,
                     colors=colors_sector,
-                    wedgeprops={"edgecolor": "white", "linewidth": 0.7},
+                    wedgeprops={
+                        "edgecolor": self.QCOLOR_BACKGROUND_THEMED.name(),
+                        "linewidth": 0.7,
+                    },
                 )
                 # plt.setp(autotexts_s, size=8, weight="bold", color="black") # No longer needed
 
@@ -13593,7 +13751,7 @@ The CSV file should contain the following columns (header names must match exact
                             ha=horizontalalignment,
                             va="center",
                             fontsize=7,
-                            color=COLOR_TEXT_DARK,
+                            color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
                         )
                 self.sector_pie_fig.subplots_adjust(left=0.05, right=0.75)
                 self.sector_pie_canvas.draw()
@@ -13674,7 +13832,10 @@ The CSV file should contain the following columns (header names must match exact
                     startangle=90,
                     counterclock=False,
                     colors=colors_geo,
-                    wedgeprops={"edgecolor": "white", "linewidth": 0.7},
+                    wedgeprops={
+                        "edgecolor": self.QCOLOR_BACKGROUND_THEMED.name(),
+                        "linewidth": 0.7,
+                    },
                 )
                 legend_labels_g = [
                     f"{l} ({self._get_currency_symbol()}{v:,.0f})"
@@ -13704,7 +13865,7 @@ The CSV file should contain the following columns (header names must match exact
                             ha=horizontalalignment,
                             va="center",
                             fontsize=7,
-                            color=COLOR_TEXT_DARK,
+                            color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
                         )
                 self.geo_pie_fig.subplots_adjust(left=0.05, right=0.75)
                 self.geo_pie_canvas.draw()
@@ -13779,8 +13940,12 @@ The CSV file should contain the following columns (header names must match exact
                     startangle=90,
                     counterclock=False,
                     colors=colors_ind,
-                    wedgeprops={"edgecolor": "white", "linewidth": 0.7},
+                    wedgeprops={
+                        "edgecolor": self.QCOLOR_BACKGROUND_THEMED.name(),
+                        "linewidth": 0.7,
+                    },
                 )
+
                 legend_labels_i = [
                     f"{l} ({self._get_currency_symbol()}{v:,.0f})"
                     for l, v in industry_values_to_plot.items()
@@ -13809,7 +13974,7 @@ The CSV file should contain the following columns (header names must match exact
                             ha=horizontalalignment,
                             va="center",
                             fontsize=7,
-                            color=COLOR_TEXT_DARK,
+                            color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
                         )
                 self.industry_pie_fig.subplots_adjust(left=0.05, right=0.75)
                 self.industry_pie_canvas.draw()
@@ -14494,6 +14659,14 @@ The CSV file should contain the following columns (header names must match exact
             interval_key = config["data_key"]
             ax.clear()  # Clear previous plot
 
+            # Explicitly set background colors based on current theme
+            # Bar charts are in BarChartsFrame, which should match main background
+            fig = ax.get_figure()
+            if fig:
+                fig.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
+            # Use the input-specific background for the axes plotting area
+            ax.patch.set_facecolor(self.QCOLOR_INPUT_BACKGROUND_THEMED.name())
+
             returns_df = self.periodic_returns_data.get(interval_key)
 
             # --- ADDED: Log the DataFrame being used ---
@@ -14711,6 +14884,16 @@ The CSV file should contain the following columns (header names must match exact
         canvas = self.dividend_bar_canvas
         ax.clear()
 
+        # Explicitly set background colors based on current theme
+        fig = ax.get_figure()
+        if fig:
+            fig.patch.set_facecolor(
+                self.QCOLOR_BACKGROUND_THEMED.name()
+            )  # Main background for figure
+        ax.patch.set_facecolor(
+            self.QCOLOR_INPUT_BACKGROUND_THEMED.name()
+        )  # Input-like background for axes
+
         if (
             not hasattr(self, "dividend_history_data")
             or self.dividend_history_data.empty
@@ -14860,7 +15043,7 @@ The CSV file should contain the following columns (header names must match exact
                                 ha="center",
                                 va="bottom",
                                 fontsize=7,
-                                color=COLOR_TEXT_DARK,
+                                color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
                             )
 
                     ax.yaxis.set_major_formatter(
@@ -15056,6 +15239,16 @@ The CSV file should contain the following columns (header names must match exact
         canvas = self.cg_bar_canvas
         ax.clear()
 
+        # Explicitly set background colors based on current theme
+        fig = ax.get_figure()
+        if fig:
+            fig.patch.set_facecolor(
+                self.QCOLOR_BACKGROUND_THEMED.name()
+            )  # Main background for figure
+        ax.patch.set_facecolor(
+            self.QCOLOR_INPUT_BACKGROUND_THEMED.name()
+        )  # Input-like background for axes
+
         if (
             not hasattr(self, "capital_gains_history_data")
             or self.capital_gains_history_data.empty
@@ -15180,7 +15373,7 @@ The CSV file should contain the following columns (header names must match exact
                                 ha="center",
                                 va=va,
                                 fontsize=7,
-                                color=COLOR_TEXT_DARK,
+                                color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
                             )
 
                     ax.yaxis.set_major_formatter(
@@ -15732,52 +15925,9 @@ The CSV file should contain the following columns (header names must match exact
         self.toolbar.setObjectName("MainToolBar")
         self.toolbar.setIconSize(QSize(20, 20))  # Standard icon size
 
-        # --- Diagnostic: Check toolbar instance and add a simple test action ---
-        logging.debug(f"Toolbar instance: {self.toolbar}, type: {type(self.toolbar)}")
         if not isinstance(self.toolbar, QToolBar):
             logging.critical("CRITICAL: self.toolbar is NOT a QToolBar instance!")
             return
-        """
-        test_action_diag = QAction("Test Diag Action", self)
-        diag_icon = self.style().standardIcon(QStyle.SP_DialogApplyButton)
-        if diag_icon.isNull():
-            logging.warning(
-                "Diagnostic action: SP_DialogApplyButton icon is NULL. Trying SP_MessageBoxInformation."
-            )
-            diag_icon = self.style().standardIcon(QStyle.SP_MessageBoxInformation)
-            if diag_icon.isNull():
-                logging.warning(
-                    "Diagnostic action: SP_MessageBoxInformation icon is also NULL. Creating a placeholder QPixmap."
-                )
-                pixmap = QPixmap(24, 24)
-                pixmap.fill(QColor("red"))  # Placeholder, changed size to 24x24
-                diag_icon = QIcon(pixmap)
-        test_action_diag.setIcon(diag_icon)
-
-        test_action_diag_icon_null = test_action_diag.icon().isNull()
-        logging.debug(
-            f"TEST_DIAG_ACTION: Icon is {'NULL' if test_action_diag_icon_null else 'VALID'}. Action: {test_action_diag}"
-        )
-
-        added_test_action_diag = self.toolbar.addAction(test_action_diag)
-        if added_test_action_diag:
-            logging.info(
-                f"Successfully added TEST_DIAG_ACTION to toolbar. Widget: {self.toolbar.widgetForAction(added_test_action_diag)}"
-            )
-            test_button_diag = self.toolbar.widgetForAction(added_test_action_diag)
-            if test_button_diag:
-                # test_button_diag.setToolButtonStyle(Qt.ToolButtonIconOnly) # Reverted to default
-                logging.info("TEST_DIAG_ACTION added to toolbar (default style).")
-            else:
-                logging.warning(
-                    "Could not get QToolButton for TEST_DIAG_ACTION from toolbar."
-                )
-        else:
-            logging.error(
-                f"Failed to add TEST_DIAG_ACTION to toolbar. Toolbar: {self.toolbar}, Action: {test_action_diag}"
-            )
-        # --- End Diagnostic ---
-        """
 
         # Add DB-related actions first
         if hasattr(self, "select_db_action") and self.select_db_action:
@@ -15785,148 +15935,39 @@ The CSV file should contain the following columns (header names must match exact
         if hasattr(self, "new_database_file_action") and self.new_database_file_action:
             self.toolbar.addAction(self.new_database_file_action)  # Add New DB action
 
-        # Import CSV action - make it icon-only
+        # Import CSV action
         if hasattr(self, "import_csv_action") and self.import_csv_action:
-            # Log icon state before attempting to make it icon-only in toolbar
             import_icon = self.import_csv_action.icon()
-            if import_icon.isNull():  # Check current icon
+            if not import_icon or import_icon.isNull():
                 logging.warning(
-                    f"Toolbar: Original icon for '{self.import_csv_action.text()}' is NULL. Attempting fallbacks."
+                    f"Toolbar: Icon for '{self.import_csv_action.text()}' is NULL. Using SP_ArrowDown as fallback."
                 )
-                if (
-                    not import_icon or import_icon.isNull()
-                ):  # Check if import_icon itself is None or isNull
-                    logging.warning(
-                        "Toolbar: QIcon.fromTheme('document-import') is NULL. Trying SP_ArrowDown."
-                    )
-                    import_icon = self.style().standardIcon(QStyle.SP_ArrowDown)
-                    if import_icon.isNull():
-                        logging.warning(
-                            "Toolbar: SP_ArrowDown icon is also NULL for import_csv_action. Creating placeholder."
-                        )  # Fallback to QPixmap
-                        pixmap = QPixmap(24, 24)
-                        pixmap.fill(QColor(Qt.blue))  # Use Qt.blue
-                        import_icon = QIcon(pixmap)
+                import_icon = self.style().standardIcon(QStyle.SP_ArrowDown)
                 self.import_csv_action.setIcon(import_icon)
-
-            # Re-check icon status after attempting to set it
-            if self.import_csv_action.icon().isNull():
-                logging.error(  # Changed to error as it's problematic
-                    f"Toolbar: Icon for 'import_csv_action' ({self.import_csv_action.text()}) is STILL NULL after fallbacks."
-                )
-            try:
-                action_in_toolbar_import = self.toolbar.addAction(
-                    self.import_csv_action
-                )
-            except Exception as e:
-                logging.exception(
-                    f"Exception while adding import_csv_action to toolbar: {e}"
-                )
-                # action_in_toolbar_import = self.toolbar.addAction(self.import_csv_action)
-
-            # Check if the action was successfully added and get the corresponding tool button
-            """
-            if action_in_toolbar_import:
-                tool_button_import = self.toolbar.widgetForAction(
-                    action_in_toolbar_import
-                )
-                if tool_button_import:
-                    # Reverted to default style, icon may or may not show based on toolbar style
-                    # tool_button_import.setToolButtonStyle(Qt.ToolButtonIconOnly)
-                    # Ensure the tooltip is set on the button as well
-                    tool_button_import.setToolTip(self.import_csv_action.statusTip())
-                    # logging.debug( # Log message might be slightly inaccurate now
-                    #     f"Successfully added tool button for '{self.import_csv_action.text()}' (default style)."
-                    # )
-                else:
-                    # This case is unexpected if addAction succeeded, but handle defensively
-                    logging.warning(
-                        f"toolbar.widgetForAction returned None for '{self.import_csv_action.text()}' after addAction succeeded."
-                    )
-            else:
-                logging.error(
-                    f"toolbar.addAction for 'import_csv_action' failed. Action object: {self.import_csv_action}"
-                )
-            """
-        elif hasattr(self, "import_csv_action") and not self.import_csv_action:
-            logging.error("'import_csv_action' attribute exists but is None.")
+            self.toolbar.addAction(self.import_csv_action)
 
         if hasattr(self, "refresh_action"):
             self.toolbar.addAction(self.refresh_action)
 
         self.toolbar.addSeparator()  # Separator
 
-        # Transaction management actions
+        # Add Transaction action
         if hasattr(self, "add_transaction_action") and self.add_transaction_action:
             self.toolbar.addAction(self.add_transaction_action)
 
-        # Manage Transactions action - make it icon-only
+        # Manage Transactions action
         if (
             hasattr(self, "manage_transactions_action")
             and self.manage_transactions_action
         ):
             manage_icon = self.manage_transactions_action.icon()
-            if manage_icon.isNull():
+            if not manage_icon or manage_icon.isNull():
                 logging.warning(
-                    f"Toolbar: Original icon for '{self.manage_transactions_action.text()}' is NULL. Attempting fallbacks."
+                    f"Toolbar: Icon for '{self.manage_transactions_action.text()}' is NULL. Using SP_DirIcon as fallback."
                 )
-                # manage_icon = QIcon.fromTheme("document-edit") # Simplified theme icon name
-                if not manage_icon or manage_icon.isNull():
-                    logging.warning(
-                        "Toolbar: QIcon.fromTheme('document-edit') is NULL. Trying SP_DirIcon."
-                    )  # Changed standard icon fallback
-                    manage_icon = self.style().standardIcon(QStyle.SP_DirIcon)
-                    if manage_icon.isNull():
-                        logging.warning(
-                            "Toolbar: SP_DirIcon icon is also NULL for manage_transactions_action. Creating placeholder."
-                        )
-                        pixmap = QPixmap(24, 24)  # Fallback to QPixmap
-                        pixmap.fill(QColor(Qt.green))  # Use Qt.green
-                        manage_icon = QIcon(pixmap)
+                manage_icon = self.style().standardIcon(QStyle.SP_DirIcon)
                 self.manage_transactions_action.setIcon(manage_icon)
-
-            if self.manage_transactions_action.icon().isNull():
-                logging.error(  # Changed to error
-                    f"Toolbar: Icon for 'manage_transactions_action' ({self.manage_transactions_action.text()}) is STILL NULL after fallbacks."
-                )
-            try:
-                action_in_toolbar_manage = self.toolbar.addAction(
-                    self.manage_transactions_action
-                )
-            except Exception as e:
-                logging.exception(
-                    f"Exception while adding manage_transactions_action to toolbar: {e}"
-                )
-            # action_in_toolbar_manage = self.toolbar.addAction(
-            #     self.manage_transactions_action
-            # )
-            """
-            if action_in_toolbar_manage:
-                tool_button_manage = self.toolbar.widgetForAction(
-                    action_in_toolbar_manage
-                )
-                if tool_button_manage:
-                    # tool_button_manage.setToolButtonStyle(Qt.ToolButtonIconOnly) # Reverted to default
-                    tool_button_manage.setToolTip(
-                        self.manage_transactions_action.statusTip()
-                    )
-                    # logging.debug( # Log message might be slightly inaccurate now
-                    #     f"Successfully added tool button for '{self.manage_transactions_action.text()}' (default style)."
-                    # )
-                else:
-                    logging.warning(
-                        f"Toolbar.widgetForAction returned None for '{self.manage_transactions_action.text()}' after addAction succeeded."
-                    )
-            else:
-                logging.error(
-                    f"toolbar.addAction for 'manage_transactions_action' failed. Action object: {self.manage_transactions_action}"
-                )
-            """
-        elif (
-            hasattr(self, "manage_transactions_action")
-            and not self.manage_transactions_action
-        ):
-            logging.error("'manage_transactions_action' attribute exists but is None.")
+            self.toolbar.addAction(self.manage_transactions_action)
 
         # Spacer to push subsequent items to the right
         spacer = QWidget()

@@ -270,15 +270,21 @@ QPushButton#BenchmarkSelectButton::menu-indicator {
 
 QComboBox,
 QCheckBox,
-QDateEdit {
+QDateEdit,
+QLineEdit, /* ADDED */
+QSpinBox   /* ADDED */ {
     border: 1px solid #555555; /* DARK_COLOR_INPUT_BORDER */
     border-radius: 4px;
     padding: 2px 4px;
     background-color: #2a2a2a; /* DARK_COLOR_INPUT_BG */
     color: #e0e0e0; /* DARK_COLOR_INPUT_TEXT */
     min-height: 20px;
-    font-size: 10pt;
-    /* Base control size */
+    font-size: 10pt; /* Base control size */
+}
+
+/* Specific padding for QLineEdit if needed, QSpinBox padding is usually fine */
+QLineEdit {
+    padding: 3px 5px; /* Match QTableView item padding for consistency */
 }
 
 QComboBox {
@@ -292,7 +298,9 @@ QDateEdit {
 
 QComboBox:disabled,
 QCheckBox:disabled,
-QDateEdit:disabled {
+QDateEdit:disabled,
+QLineEdit:disabled, /* ADDED */
+QSpinBox:disabled   /* ADDED */ {
     background-color: #3c3c3c;
     color: #707070;
     border-color: #4f4f4f;
@@ -300,7 +308,8 @@ QDateEdit:disabled {
 
 QComboBox::drop-down,
 QDateEdit::drop-down {
-    subcontrol-origin: padding;
+    /* QSpinBox drop-downs (up/down buttons) are styled separately if needed */
+    subcontrol-origin: padding; 
     subcontrol-position: top right;
     width: 15px;
     border-left: 1px solid #555555; /* DARK_COLOR_INPUT_BORDER */
@@ -308,6 +317,32 @@ QDateEdit::drop-down {
     border-bottom-right-radius: 3px;
     background: #2c2c2c; /* DARK_COLOR_BG_HEADER */
 }
+
+/* Styling for QSpinBox up/down buttons */
+QSpinBox::up-button {
+    subcontrol-origin: border;
+    subcontrol-position: top right; /* position at the top right corner */
+    width: 16px; /* width of the spinner button */
+    border-image: url(placeholder_up_arrow.png); /* Placeholder - replace with actual icon or use theme */
+    border-width: 1px;
+    border-top-right-radius: 3px;
+    background-color: #2c2c2c;
+}
+QSpinBox::up-button:hover { background-color: #3f3f3f; }
+QSpinBox::up-button:pressed { background-color: #4f4f4f; }
+
+QSpinBox::down-button {
+    subcontrol-origin: border;
+    subcontrol-position: bottom right; /* position at bottom right corner */
+    width: 16px;
+    border-image: url(placeholder_down_arrow.png); /* Placeholder */
+    border-width: 1px;
+    border-bottom-right-radius: 3px;
+    background-color: #2c2c2c;
+}
+QSpinBox::down-button:hover { background-color: #3f3f3f; }
+QSpinBox::down-button:pressed { background-color: #4f4f4f; }
+
 
 QComboBox QAbstractItemView {
     font-size: 10pt;
@@ -343,6 +378,40 @@ QMenu::separator {
     height: 1px;
     background: #444444; /* DARK_COLOR_BORDER */
     margin: 4px 0px;
+}
+
+/* --- Tab Widget Styling --- */
+QTabWidget#MainTabWidget::pane, /* Target main tab widget specifically */
+QDialog QTabWidget::pane {      /* Target tab widgets within dialogs */
+    border-top: 1px solid #444444; /* DARK_COLOR_BORDER */
+    background-color: #1e1e1e; /* DARK_COLOR_BG */
+    padding: 5px;
+}
+
+QTabWidget#MainTabWidget QTabBar::tab,
+QDialog QTabWidget QTabBar::tab {
+    background-color: #2c2c2c; /* DARK_COLOR_BG_HEADER */
+    color: #a0a0a0; /* DARK_COLOR_TEXT_SECONDARY */
+    border: 1px solid #444444; /* DARK_COLOR_BORDER */
+    border-bottom: none; /* Remove bottom border for unselected */
+    padding: 6px 12px; /* Increased padding for better look */
+    margin-right: 1px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    min-width: 100px; /* Ensure tabs have a decent minimum width */
+    font-weight: bold;
+}
+
+QTabWidget#MainTabWidget QTabBar::tab:selected,
+QDialog QTabWidget QTabBar::tab:selected {
+    background-color: #1e1e1e; /* DARK_COLOR_BG (match pane) */
+    color: #e0e0e0; /* DARK_COLOR_TEXT_PRIMARY */
+    border-bottom: 1px solid #1e1e1e; /* Make bottom border same as pane bg to "connect" */
+}
+
+QTabWidget#MainTabWidget QTabBar::tab:hover,
+QDialog QTabWidget QTabBar::tab:hover {
+    background-color: #3a3a3a; /* Slightly lighter on hover */
 }
 
 /* Target both navigation toolbars specifically by object name */
@@ -401,12 +470,7 @@ QMenu::separator {
 /* Optionally hide the coordinate display (often takes space) */
 #PerfReturnToolbar QLabel,
 #AbsValueToolbar QLabel {
-     /* color: transparent; */ /* Hide text by making it transparent */
-     /* max-width: 0px; */   /* Or try to collapse it */
-     /* font-size: 1px; */
-     /* margin-right: 5px; */ /* Add some space if kept visible */
-     /* border: 1px solid red; */ /* DEBUG: See the label bounds */
-     /* display: none; /* Simplest way to hide */
+    display: none; /* Explicitly hide the coordinate display labels */
 }
 
 /* Add styles for the Symbol Chart Toolbar */
@@ -449,6 +513,22 @@ QMenu::separator {
 #SymbolChartToolbar QToolBarSeparator {
      width: 0px;
      margin: 0px;
+}
+
+/* Styling for specific QTableView instances in dialogs or other tabs if palette is not enough */
+/* These ensure text color is light if palette settings don't fully propagate */
+QTableView#StockTransactionsLogTable::item,
+QTableView#CashTransactionsLogTable::item,
+QTableView#DividendHistoryTable::item,
+QTableView#DividendSummaryTable::item,
+QTableView#CgHistoryTable::item,
+QTableView#CgSummaryTable::item,
+QTableView#IgnoredLogTable::item,
+QTableView#AccountCurrencyTable::item,
+QTableView#ManualOverridesTable::item,
+QTableView#SymbolMapTable::item,
+QTableView#ExcludedSymbolsTable::item {
+    color: #e0e0e0; /* DARK_COLOR_TEXT_PRIMARY */
 }
 
 /* --- END OF FILE style_dark.qss --- */
