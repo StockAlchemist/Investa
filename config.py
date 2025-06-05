@@ -152,3 +152,20 @@ COLOR_BORDER_LIGHT = "#DEE2E6"
 COLOR_BORDER_DARK = "#ADB5BD"
 COLOR_GAIN = "#198754"
 COLOR_LOSS = "#DC3545"
+
+# --- Dark Theme Color Palette (Hex Strings) ---
+# These constants define the color scheme for the dark theme.
+DARK_COLOR_BG_DARK = "#1e1e1e"          # Main background color
+DARK_COLOR_BG_LIGHT = "#2c2c2c"         # Lighter background for elements like cards, headers
+DARK_COLOR_TEXT_DARK = "#e0e0e0"        # Primary text color (on dark backgrounds)
+DARK_COLOR_TEXT_LIGHT = "#b0b0b0"       # Secondary/dimmer text color
+DARK_COLOR_HEADER_TEXT = "#f0f0f0"      # Text color specifically for headers
+DARK_COLOR_BORDER = "#444444"           # Border color for tables, widgets, etc.
+DARK_COLOR_ACCENT_PRIMARY = "#007bff"   # Primary accent color (e.g., buttons, highlights)
+DARK_COLOR_ACCENT_SECONDARY = "#6c757d" # Secondary accent color
+DARK_COLOR_GAIN = "#28a745"             # Color for indicating financial gains
+DARK_COLOR_LOSS = "#dc3545"             # Color for indicating financial losses
+DARK_COLOR_TABLE_ALT_ROW = "#252525"    # Background color for alternating rows in tables
+DARK_COLOR_INPUT_BG = "#2a2a2a"         # Background for input fields
+DARK_COLOR_INPUT_TEXT = "#e0e0e0"       # Text color for input fields
+DARK_COLOR_INPUT_BORDER = "#555555"     # Border color for input fields

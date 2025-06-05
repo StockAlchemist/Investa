@@ -161,6 +161,7 @@ from PySide6.QtCore import (
     QStringListModel,  # <-- ADDED for QCompleter
     QStandardPaths,
     QTimer,
+    QActionGroup,  # Added for theme selection
 )
 from PySide6.QtGui import QValidator, QIcon  # <-- ADDED Import QValidator
 from PySide6.QtCore import QSize  # <-- ADDED Import QSize
@@ -464,10 +465,17 @@ DEFAULT_GRAPH_END_DATE = date.today()  # Default end today
 # QColor objects will be defined using these imported hex strings.
 
 # Convert hex colors to QColor objects for easier use in Qt palettes
+# These are the base light theme colors. Themed versions will be created in __init__.
 QCOLOR_GAIN = QColor(COLOR_GAIN)
 QCOLOR_LOSS = QColor(COLOR_LOSS)
 QCOLOR_TEXT_DARK = QColor(COLOR_TEXT_DARK)
 QCOLOR_TEXT_SECONDARY = QColor(COLOR_TEXT_SECONDARY)
+# Add other base QColor objects if they are directly used and need theming
+QCOLOR_BG_DARK = QColor(COLOR_BG_DARK) # Used for QWidget background and figure backgrounds
+QCOLOR_BG_HEADER_LIGHT = QColor(COLOR_BG_HEADER_LIGHT) # Used for some headers/frames
+QCOLOR_BORDER_LIGHT = QColor(COLOR_BORDER_LIGHT) # General light borders
+QCOLOR_BORDER_DARK = QColor(COLOR_BORDER_DARK)   # General dark borders (like table header bottom)
+QCOLOR_ACCENT_TEAL = QColor(COLOR_ACCENT_TEAL) # Primary accent for lines/etc.
 
 
 # --- Column Definition Helper ---
@@ -1027,7 +1035,17 @@ class PandasModel(QAbstractTableModel):
         self._data = data
         self._parent = parent
         self._log_mode = log_mode  # STORE log_mode
-        self._default_text_color = QCOLOR_TEXT_DARK
+        # In PandasModel, access themed colors via the parent (PortfolioApp instance)
+        if parent and hasattr(parent, 'QCOLOR_TEXT_PRIMARY_THEMED') and hasattr(parent, 'QCOLOR_GAIN_THEMED') and hasattr(parent, 'QCOLOR_LOSS_THEMED'):
+            self._default_text_color = parent.QCOLOR_TEXT_PRIMARY_THEMED
+            self._gain_color = parent.QCOLOR_GAIN_THEMED
+            self._loss_color = parent.QCOLOR_LOSS_THEMED
+            logging.debug("PandasModel initialized with themed colors from parent.")
+        else: # Fallback if parent or themed colors are not available
+            self._default_text_color = QColor(config.COLOR_TEXT_DARK) # Fallback to default config
+            self._gain_color = QColor(config.COLOR_GAIN)
+            self._loss_color = QColor(config.COLOR_LOSS)
+            logging.warning("PandasModel initialized with fallback colors.")
         self._currency_symbol = "$"  # Default currency symbol
 
     def updateCurrencySymbol(self, symbol):
@@ -1144,9 +1162,9 @@ class PandasModel(QAbstractTableModel):
                             if (
                                 numeric_value > 1e-9
                             ):  # Use a small epsilon for float comparison
-                                target_color = QCOLOR_GAIN
+                                target_color = self._gain_color # Use themed color
                             elif numeric_value < -1e-9:
-                                target_color = QCOLOR_LOSS
+                                target_color = self._loss_color # Use themed color
                             # else: keep default color for zero or very near zero
                         except ValueError:
                             # If conversion fails, keep default color
@@ -1181,19 +1199,19 @@ class PandasModel(QAbstractTableModel):
                     ]  # Added IRR (%) here for coloring
                     if any(indicator in col_name for indicator in gain_loss_color_cols):
                         if value_float > 1e-9:
-                            target_color = QCOLOR_GAIN
+                            target_color = self._gain_color # Use themed color
                         elif value_float < -1e-9:
-                            target_color = QCOLOR_LOSS
+                            target_color = self._loss_color # Use themed color
                     elif "Dividend" in col_name or "Divs" in col_name:
                         if value_float > 1e-9:
-                            target_color = QCOLOR_GAIN
+                            target_color = self._gain_color # Use themed color
                     elif (
                         "Commission" in col_name
                         or "Fee" in col_name
                         or "Fees" in col_name
                     ):
                         if value_float > 1e-9:
-                            target_color = QCOLOR_LOSS
+                            target_color = self._loss_color # Use themed color
                 return target_color
             except Exception as e:
                 # logging.info(f"Coloring Error (Row:{row}, Col:{col}, Name:'{self._data.columns[col]}'): {e}")
@@ -2407,9 +2425,9 @@ class SymbolChartDialog(QDialog):
                 va="center",
                 transform=ax.transAxes,
                 fontsize=12,
-                color=COLOR_TEXT_SECONDARY,
+                    color=self.parent().QCOLOR_TEXT_SECONDARY_THEMED.name() if self.parent() and hasattr(self.parent(), 'QCOLOR_TEXT_SECONDARY_THEMED') else FALLBACK_QCOLOR_TEXT_SECONDARY.name(),
             )
-            ax.set_title(f"Price Chart: {symbol}", fontsize=10, weight="bold")
+                ax.set_title(f"Price Chart: {symbol}", fontsize=10, weight="bold", color=self.parent().QCOLOR_TEXT_PRIMARY_THEMED.name() if self.parent() and hasattr(self.parent(), 'QCOLOR_TEXT_PRIMARY_THEMED') else FALLBACK_QCOLOR_TEXT_DARK.name())
             self.canvas.draw()
             return
 
@@ -2428,7 +2446,7 @@ class SymbolChartDialog(QDialog):
                 va="center",
                 transform=ax.transAxes,
                 fontsize=12,
-                color=COLOR_LOSS,
+                    color=self.parent().QCOLOR_LOSS_THEMED.name() if self.parent() and hasattr(self.parent(), 'QCOLOR_LOSS_THEMED') else FALLBACK_QCOLOR_LOSS.name(),
             )
             self.canvas.draw()
             return
@@ -2438,28 +2456,34 @@ class SymbolChartDialog(QDialog):
             price_data.index,
             price_data["price"],
             label=f"{symbol} Price ({currency_symbol_display})",
-            color=COLOR_ACCENT_TEAL,
+            color=self.parent().QCOLOR_ACCENT_THEMED.name() if self.parent() and hasattr(self.parent(), 'QCOLOR_ACCENT_THEMED') else FALLBACK_QCOLOR_ACCENT_TEAL.name(),
         )
 
         # Formatting
+        title_color_name = self.parent().QCOLOR_TEXT_PRIMARY_THEMED.name() if self.parent() and hasattr(self.parent(), 'QCOLOR_TEXT_PRIMARY_THEMED') else FALLBACK_QCOLOR_TEXT_DARK.name()
+        label_color_name = self.parent().QCOLOR_TEXT_PRIMARY_THEMED.name() if self.parent() and hasattr(self.parent(), 'QCOLOR_TEXT_PRIMARY_THEMED') else FALLBACK_QCOLOR_TEXT_DARK.name()
+        tick_color_name = self.parent().QCOLOR_TEXT_SECONDARY_THEMED.name() if self.parent() and hasattr(self.parent(), 'QCOLOR_TEXT_SECONDARY_THEMED') else FALLBACK_QCOLOR_TEXT_SECONDARY.name()
+        grid_color_name = self.parent().QCOLOR_BORDER_THEMED.name() if self.parent() and hasattr(self.parent(), 'QCOLOR_BORDER_THEMED') else FALLBACK_QCOLOR_BORDER_LIGHT.name()
+        spine_color_name = self.parent().QCOLOR_BORDER_THEMED.name() if self.parent() and hasattr(self.parent(), 'QCOLOR_BORDER_THEMED') else FALLBACK_QCOLOR_BORDER_DARK.name()
+
         ax.set_title(
             f"Historical Price: {symbol}",
             fontsize=10,
             weight="bold",
-            color=COLOR_TEXT_DARK,
+            color=title_color_name,
         )
         ax.set_ylabel(
-            f"Price ({currency_symbol_display})", fontsize=9, color=COLOR_TEXT_DARK
+            f"Price ({currency_symbol_display})", fontsize=9, color=label_color_name
         )
         ax.grid(
-            True, which="major", linestyle="--", linewidth=0.5, color=COLOR_BORDER_LIGHT
+            True, which="major", linestyle="--", linewidth=0.5, color=grid_color_name
         )
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
-        ax.spines["bottom"].set_color(COLOR_BORDER_DARK)
-        ax.spines["left"].set_color(COLOR_BORDER_DARK)
-        ax.tick_params(axis="x", colors=COLOR_TEXT_SECONDARY, labelsize=8)
-        ax.tick_params(axis="y", colors=COLOR_TEXT_SECONDARY, labelsize=8)
+        ax.spines["bottom"].set_color(spine_color_name)
+        ax.spines["left"].set_color(spine_color_name)
+        ax.tick_params(axis="x", colors=tick_color_name, labelsize=8)
+        ax.tick_params(axis="y", colors=tick_color_name, labelsize=8)
 
         # Y-axis formatting (simplified currency)
         formatter = mtick.FormatStrFormatter(f"{currency_symbol_display}%.2f")
@@ -4788,6 +4812,7 @@ class PortfolioApp(QMainWindow):
             "user_currencies": COMMON_CURRENCIES.copy(),  # Default list of user-selectable currencies
             "cg_agg_period": "Annual",  # Default for Capital Gains aggregation
             "cg_periods_to_show": 10,  # Default periods for Capital Gains chart
+            "theme": "light",  # Added theme configuration
         }
         loaded_app_config = config_defaults.copy()  # Start with defaults
 
@@ -5257,8 +5282,26 @@ class PortfolioApp(QMainWindow):
         choose_currencies_action.triggered.connect(self.show_choose_currencies_dialog)
         settings_menu.addAction(choose_currencies_action)
 
+        # --- Theme Submenu ---
+        settings_menu.addSeparator()
+        theme_menu = settings_menu.addMenu("&Theme")
+        self.theme_action_group = QActionGroup(self)
+        self.theme_action_group.setExclusive(True)
+
+        self.light_theme_action = QAction("Light Mode", self)
+        self.light_theme_action.setCheckable(True)
+        theme_menu.addAction(self.light_theme_action)
+        self.theme_action_group.addAction(self.light_theme_action)
+        self.light_theme_action.triggered.connect(lambda: self.apply_theme("light")) # Connect action
+
+        self.dark_theme_action = QAction("Dark Mode", self)
+        self.dark_theme_action.setCheckable(True)
+        theme_menu.addAction(self.dark_theme_action)
+        self.theme_action_group.addAction(self.dark_theme_action)
+        self.dark_theme_action.triggered.connect(lambda: self.apply_theme("dark")) # Connect action
+        # --- End Theme Submenu ---
+
         # --- Help Menu ---
-        help_menu = menu_bar.addMenu("&Help")
         csv_help_action = QAction(
             "CSV Import Format Help...", self
         )  # Help still relevant for import
@@ -5964,7 +6007,9 @@ The CSV file should contain the following columns (header names must match exact
         self.config = (
             self.load_config()
         )  # This will set self.DB_FILE_PATH from config or default
+        self.current_theme = self.config.get("theme", "light") # Load theme preference
         logging.info(f"DB_FILE_PATH set from/to config: {self.DB_FILE_PATH}")
+        logging.info(f"Initial theme set to: {self.current_theme}")
 
         # --- Initialize DB Connection ---
         # initialize_database will create the DB file and tables if they don't exist at self.DB_FILE_PATH
@@ -6052,7 +6097,23 @@ The CSV file should contain the following columns (header names must match exact
         self._init_menu_bar()
         self._init_toolbar()
         self._connect_signals()
-        self._apply_initial_styles_and_updates()
+        self._apply_initial_styles_and_updates() # This used to call self.apply_styles()
+
+        # --- Initial Theme Application ---
+        # apply_theme will also call save_config if triggered by user, but not here during init.
+        # We set _config_already_saved_for_theme to bypass save_config inside apply_theme during init.
+        self._config_already_saved_for_theme = True
+        if hasattr(self, 'apply_theme'): # Check if method exists before calling
+            self.apply_theme(self.current_theme)
+            if self.current_theme == "light":
+                if hasattr(self, 'light_theme_action'): self.light_theme_action.setChecked(True)
+            elif hasattr(self, 'dark_theme_action'): # Ensure dark_theme_action exists
+                 self.dark_theme_action.setChecked(True)
+        else:
+            logging.error("apply_theme method not found during __init__ post theme setup.")
+        if hasattr(self, '_config_already_saved_for_theme'): # Clean up temp attr
+            del self._config_already_saved_for_theme
+        # --- End Initial Theme Application ---
 
         # --- Initial Data Load / Migration Check ---
         if self.db_conn and self.config.get("load_on_startup", True):
@@ -6105,6 +6166,128 @@ The CSV file should contain the following columns (header names must match exact
             self._update_account_button_text()
             self._update_table_title()
         logging.debug("--- PortfolioApp __init__: END ---")
+
+    # --- Theme Application Method ---
+    def apply_theme(self, theme_name: str):
+        """Applies the selected theme (light or dark) to the application."""
+        logging.info(f"Applying theme: {theme_name}")
+
+        # Check if the theme is already applied to prevent redundant work,
+        # but allow initial application even if self.current_theme matches default.
+        if hasattr(self, '_style_sheet_applied_once') and self._style_sheet_applied_once and self.current_theme == theme_name:
+             logging.debug(f"Theme '{theme_name}' is already applied and stylesheet was set. Skipping full re-application of QSS.")
+             # If triggered by user action, still save config.
+             if hasattr(self, 'light_theme_action') and hasattr(self, 'dark_theme_action') and \
+                self.sender() in [self.light_theme_action, self.dark_theme_action]:
+                self.config["theme"] = theme_name
+                self.save_config()
+             return
+
+        self.current_theme = theme_name
+        self._style_sheet_applied_once = True # Mark that a stylesheet has been applied at least once
+
+        qss_file = "style.qss" if theme_name == "light" else "style_dark.qss"
+
+        try:
+            qss_path = resource_path(qss_file)
+            if not os.path.exists(qss_path):
+                logging.error(f"Stylesheet file NOT FOUND at: {qss_path}")
+                self.setStyleSheet("") # Fallback to default Qt style
+                QMessageBox.warning(self, "Theme Error", f"Stylesheet for {theme_name} theme not found. Using default style.")
+                return
+
+            with open(qss_path, "r", encoding="utf-8") as f: # Added encoding
+                style_sheet_content = f.read()
+                self.setStyleSheet(style_sheet_content)
+            logging.info(f"Successfully applied stylesheet: {qss_file}")
+
+        except Exception as e:
+            logging.error(f"ERROR applying stylesheet {qss_file}: {e}", exc_info=True) # Added exc_info
+            self.setStyleSheet("") # Fallback
+            QMessageBox.warning(self, "Theme Error", f"Could not load {theme_name} theme. Using default style.\nError: {e}")
+
+        # Update themed QColor objects
+        if theme_name == "dark":
+            self.QCOLOR_GAIN_THEMED = QColor(config.DARK_COLOR_GAIN)
+            self.QCOLOR_LOSS_THEMED = QColor(config.DARK_COLOR_LOSS)
+            self.QCOLOR_TEXT_PRIMARY_THEMED = QColor(config.DARK_COLOR_TEXT_PRIMARY)
+            self.QCOLOR_TEXT_SECONDARY_THEMED = QColor(config.DARK_COLOR_TEXT_SECONDARY)
+            self.QCOLOR_BACKGROUND_THEMED = QColor(config.DARK_COLOR_BG)
+            self.QCOLOR_HEADER_BACKGROUND_THEMED = QColor(config.DARK_COLOR_BG_HEADER)
+            self.QCOLOR_BORDER_THEMED = QColor(config.DARK_COLOR_BORDER)
+            self.QCOLOR_ACCENT_THEMED = QColor(config.DARK_COLOR_ACCENT_PRIMARY) # Using primary accent
+            self.QCOLOR_INPUT_BACKGROUND_THEMED = QColor(config.DARK_COLOR_INPUT_BG)
+            self.QCOLOR_INPUT_TEXT_THEMED = QColor(config.DARK_COLOR_INPUT_TEXT)
+            self.QCOLOR_TABLE_ALT_ROW_THEMED = QColor(config.DARK_COLOR_BG_TABLE_ALT_ROW)
+
+            plt.rcParams.update({
+                "axes.labelcolor": config.DARK_COLOR_TEXT_SECONDARY,
+                "xtick.color": config.DARK_COLOR_TEXT_SECONDARY,
+                "ytick.color": config.DARK_COLOR_TEXT_SECONDARY,
+                "text.color": config.DARK_COLOR_TEXT_PRIMARY,
+                "axes.edgecolor": config.DARK_COLOR_BORDER,
+                "figure.facecolor": config.DARK_COLOR_BG,
+                "axes.facecolor": config.DARK_COLOR_INPUT_BG,
+            })
+        else: # Light theme
+            self.QCOLOR_GAIN_THEMED = QColor(config.COLOR_GAIN)
+            self.QCOLOR_LOSS_THEMED = QColor(config.COLOR_LOSS)
+            self.QCOLOR_TEXT_PRIMARY_THEMED = QColor(config.COLOR_TEXT_DARK)
+            self.QCOLOR_TEXT_SECONDARY_THEMED = QColor(config.COLOR_TEXT_SECONDARY)
+            self.QCOLOR_BACKGROUND_THEMED = QColor(config.COLOR_BG_DARK)
+            self.QCOLOR_HEADER_BACKGROUND_THEMED = QColor(config.COLOR_BG_HEADER_LIGHT)
+            self.QCOLOR_BORDER_THEMED = QColor(config.COLOR_BORDER_LIGHT)
+            self.QCOLOR_ACCENT_THEMED = QColor(config.COLOR_ACCENT_TEAL)
+            self.QCOLOR_INPUT_BACKGROUND_THEMED = QColor(config.COLOR_BG_DARK) # White for light theme inputs
+            self.QCOLOR_INPUT_TEXT_THEMED = QColor(config.COLOR_TEXT_DARK)    # Dark text for light theme inputs
+            self.QCOLOR_TABLE_ALT_ROW_THEMED = QColor("#fAfBff")
+
+
+            plt.rcParams.update({
+                "axes.labelcolor": config.COLOR_TEXT_DARK,
+                "xtick.color": config.COLOR_TEXT_SECONDARY,
+                "ytick.color": config.COLOR_TEXT_SECONDARY,
+                "text.color": config.COLOR_TEXT_DARK,
+                "axes.edgecolor": config.COLOR_BORDER_DARK, # Darker border for light theme charts
+                "figure.facecolor": config.COLOR_BG_DARK, # White
+                "axes.facecolor": config.COLOR_BG_DARK,   # White
+            })
+        logging.debug(f"Matplotlib rcParams updated for {theme_name} theme.")
+        logging.debug(f"Themed QColors updated for {theme_name}.")
+
+        # Refresh UI elements
+        if hasattr(self, 'table_model'): self.table_model.layoutChanged.emit()
+        if hasattr(self, 'stock_transactions_table_model'): self.stock_transactions_table_model.layoutChanged.emit()
+        if hasattr(self, 'cash_transactions_table_model'): self.cash_transactions_table_model.layoutChanged.emit()
+        if hasattr(self, 'dividend_table_model'): self.dividend_table_model.layoutChanged.emit()
+        if hasattr(self, 'dividend_summary_table_model'): self.dividend_summary_table_model.layoutChanged.emit()
+        if hasattr(self, 'cg_table_model'): self.cg_table_model.layoutChanged.emit()
+        if hasattr(self, 'cg_summary_table_model'): self.cg_summary_table_model.layoutChanged.emit()
+        # IgnoredLogTable model is created dynamically, so it will pick up new theme when next opened.
+
+        self.update_performance_graphs(initial=False) # initial=False to redraw with current data
+        self._update_periodic_bar_charts()
+        self._update_dividend_bar_chart()
+        self._update_capital_gains_display() # This calls its own chart and table updates
+
+        # Pie charts and asset allocation charts might need data, pass filtered data if available
+        df_display_filtered_for_pies = self._get_filtered_data() if hasattr(self, '_get_filtered_data') else pd.DataFrame()
+        self.update_account_pie_chart(df_display_filtered_for_pies)
+        self.update_holdings_pie_chart(df_display_filtered_for_pies)
+        self._update_asset_allocation_charts()
+
+        self.update_dashboard_summary() # Re-apply palette colors to summary labels
+        self.update_header_info() # Re-color header text
+
+        self.update() # General repaint for the main window
+        logging.info(f"UI components refreshed for {theme_name} theme.")
+
+        # Save the theme preference if triggered by menu action
+        if hasattr(self, 'light_theme_action') and hasattr(self, 'dark_theme_action') and \
+           self.sender() in [self.light_theme_action, self.dark_theme_action]:
+            self.config["theme"] = theme_name
+            self.save_config()
+
 
     # --- Benchmark Selection Methods (Define BEFORE initUI) ---
     def _update_benchmark_button_text(self):
@@ -7748,7 +7931,7 @@ The CSV file should contain the following columns (header names must match exact
 
     def _apply_initial_styles_and_updates(self):
         """Applies styles and initial UI states after widgets are created."""
-        self.apply_styles()
+        # self.apply_styles() # Styles will be applied by apply_theme called from __init__
         self.update_header_info(loading=True)
         self.update_performance_graphs(initial=True)
         self._update_account_button_text()
@@ -8900,6 +9083,22 @@ The CSV file should contain the following columns (header names must match exact
         self.status_label = QLabel("Ready")
         self.status_label.setObjectName("StatusLabel")
         self.status_bar.addWidget(self.status_label, 1)
+
+        # --- Themed QColor objects ---
+        # Initialize with light theme colors; apply_theme will update them.
+        self.QCOLOR_GAIN_THEMED = QColor(COLOR_GAIN)
+        self.QCOLOR_LOSS_THEMED = QColor(COLOR_LOSS)
+        self.QCOLOR_TEXT_PRIMARY_THEMED = QColor(COLOR_TEXT_DARK) # Default main text
+        self.QCOLOR_TEXT_SECONDARY_THEMED = QColor(COLOR_TEXT_SECONDARY) # Default secondary text
+        self.QCOLOR_BACKGROUND_THEMED = QColor(COLOR_BG_DARK) # Default main background (QWidget, QMainWindow)
+        self.QCOLOR_HEADER_BACKGROUND_THEMED = QColor(COLOR_BG_HEADER_LIGHT) # Default header/frame background
+        self.QCOLOR_BORDER_THEMED = QColor(COLOR_BORDER_LIGHT) # Default border color
+        self.QCOLOR_ACCENT_THEMED = QColor(COLOR_ACCENT_TEAL) # Default accent color
+        self.QCOLOR_INPUT_BACKGROUND_THEMED = QColor(COLOR_BG_DARK) # For inputs like QLineEdit, QComboBox
+        self.QCOLOR_INPUT_TEXT_THEMED = QColor(COLOR_TEXT_DARK) # For text within inputs
+        self.QCOLOR_TABLE_ALT_ROW_THEMED = QColor("#fAfBff") # Light theme alternate row color
+
+
         self.yahoo_attribution_label = QLabel(  # RESTORED
             "Financial data provided by Yahoo Finance"
         )
@@ -10203,63 +10402,45 @@ The CSV file should contain the following columns (header names must match exact
 
     # --- Styling Method (Reads External File) ---
     def apply_styles(self):
-        """Loads and applies the stylesheet from style.qss."""
-        logging.info("Applying styles from style.qss...")
-        qss_file = "style.qss"  # Expect file in the same directory
-        try:
-            # --- MODIFIED: Use resource_path to find style.qss ---
-            qss_path = resource_path(qss_file)  # This line is crucial
-            logging.info(f"Attempting to load stylesheet from: {qss_path}")  # Add log
-            if not os.path.exists(qss_path):
-                logging.error(f"Stylesheet file NOT FOUND at: {qss_path}")
-                # Fallback or error handling if needed
-                self.setStyleSheet("")  # Clear any existing style
-                return
-            # --- END MODIFICATION ---
+        """ DEPRECATED: This method is now largely handled by apply_theme and QSS.
+            Kept for potential direct Matplotlib rcParams if needed, but QSS is preferred.
+            The rcParams update is now within apply_theme.
+        """
+        logging.info("apply_styles() called. Functionality moved to apply_theme() and QSS.")
+        # The core stylesheet application is now in apply_theme.
+        # Matplotlib rcParams are also updated in apply_theme.
+        # This method can be kept if there are any specific non-QSS, non-rcParams
+        # styling adjustments needed, or removed if fully superseded.
 
-            with open(qss_path, "r") as f:  # Use qss_path
-                style_sheet = f.read()
-                self.setStyleSheet(style_sheet)
-            logging.info("Styles applied successfully.")
+        # Example of how chart backgrounds might be set if not using QSS for FigureCanvas:
+        # try:
+        #     if hasattr(self, 'account_fig'): # and other chart figures
+        #         bg_color = self.QCOLOR_BACKGROUND_THEMED.name()
+        #         header_bg_color = self.QCOLOR_HEADER_BACKGROUND_THEMED.name()
+        #
+        #         for fig_attr, ax_attr, color_to_use in [
+        #             ('account_fig', 'account_ax', bg_color),
+        #             ('holdings_fig', 'holdings_ax', bg_color),
+        #             ('asset_type_pie_fig', 'asset_type_pie_ax', bg_color),
+        #             ('sector_pie_fig', 'sector_pie_ax', bg_color),
+        #             ('geo_pie_fig', 'geo_pie_ax', bg_color),
+        #             ('industry_pie_fig', 'industry_pie_ax', bg_color),
+        #             ('perf_return_fig', 'perf_return_ax', header_bg_color), # Typically match container
+        #             ('abs_value_fig', 'abs_value_ax', header_bg_color),     # Typically match container
+        #             ('annual_bar_fig', 'annual_bar_ax', bg_color),
+        #             ('monthly_bar_fig', 'monthly_bar_ax', bg_color),
+        #             ('weekly_bar_fig', 'weekly_bar_ax', bg_color),
+        #             ('dividend_bar_fig', 'dividend_bar_ax', bg_color),
+        #             ('cg_bar_fig', 'cg_bar_ax', bg_color),
+        #         ]:
+        #             if hasattr(self, fig_attr) and getattr(self, fig_attr):
+        #                 getattr(self, fig_attr).patch.set_facecolor(color_to_use)
+        #             if hasattr(self, ax_attr) and getattr(self, ax_attr):
+        #                 getattr(self, ax_attr).patch.set_facecolor(color_to_use)
+        #         logging.debug("Chart figure/axes backgrounds updated based on theme.")
+        # except Exception as e_chart_bg:
+        #     logging.warning(f"Warning: Failed to update chart backgrounds in apply_styles: {e_chart_bg}")
 
-            # Re-apply chart background colors after loading stylesheet
-            try:
-                # Ensure figure/axes objects exist before setting colors
-                if (
-                    hasattr(self, "account_fig")
-                    and hasattr(self, "holdings_fig")
-                    and hasattr(self, "perf_return_fig")
-                    and hasattr(self, "abs_value_fig")
-                ):
-                    pie_chart_bg_color = "#FFFFFF"  # Match COLOR_BG_CONTENT if possible
-                    perf_chart_bg_color = (
-                        "#F8F9FA"  # Match COLOR_BG_SUMMARY if possible
-                    )
-                    for fig in [self.account_fig, self.holdings_fig]:
-                        fig.patch.set_facecolor(pie_chart_bg_color)
-                    for ax in [self.account_ax, self.holdings_ax]:
-                        ax.patch.set_facecolor(pie_chart_bg_color)
-                    for fig in [self.perf_return_fig, self.abs_value_fig]:
-                        fig.patch.set_facecolor(perf_chart_bg_color)
-                    for ax in [self.perf_return_ax, self.abs_value_ax]:
-                        ax.patch.set_facecolor(perf_chart_bg_color)
-                else:
-                    logging.warning(
-                        "Warn: Chart figures/axes not fully initialized before style application."
-                    )
-            except Exception as e:
-                logging.warning(f"Warning: Failed chart background style: {e}")
-
-        except FileNotFoundError:
-            logging.warning(
-                f"Warning: Stylesheet file '{qss_file}' not found. Using default Qt styles."
-            )
-            # Clear any previously set stylesheet to revert to default
-            self.setStyleSheet("")
-        except Exception as e:
-            logging.error(f"ERROR applying stylesheet: {e}")
-            # Clear any potentially broken stylesheet
-            self.setStyleSheet("")
 
     # --- Chart Update Methods ---
     def _adjust_pie_labels(self, label_positions, vertical_threshold=0.15):
@@ -10722,19 +10903,19 @@ The CSV file should contain the following columns (header names must match exact
         for ax in [self.perf_return_ax, self.abs_value_ax]:
             ax.spines["top"].set_visible(False)
             ax.spines["right"].set_visible(False)
-            ax.spines["bottom"].set_color(COLOR_BORDER_DARK)
-            ax.spines["left"].set_color(COLOR_BORDER_DARK)
-            ax.tick_params(axis="x", colors=COLOR_TEXT_SECONDARY, labelsize=8)
-            ax.tick_params(axis="y", colors=COLOR_TEXT_SECONDARY, labelsize=8)
-            ax.xaxis.label.set_color(COLOR_TEXT_DARK)
-            ax.yaxis.label.set_color(COLOR_TEXT_DARK)
-            ax.title.set_color(COLOR_TEXT_DARK)
+            ax.spines["bottom"].set_color(self.QCOLOR_BORDER_THEMED.name())
+            ax.spines["left"].set_color(self.QCOLOR_BORDER_THEMED.name())
+            ax.tick_params(axis="x", colors=self.QCOLOR_TEXT_SECONDARY_THEMED.name(), labelsize=8)
+            ax.tick_params(axis="y", colors=self.QCOLOR_TEXT_SECONDARY_THEMED.name(), labelsize=8)
+            ax.xaxis.label.set_color(self.QCOLOR_TEXT_PRIMARY_THEMED.name())
+            ax.yaxis.label.set_color(self.QCOLOR_TEXT_PRIMARY_THEMED.name())
+            ax.title.set_color(self.QCOLOR_TEXT_PRIMARY_THEMED.name())
             ax.grid(
                 True,
                 which="major",
                 linestyle="--",
                 linewidth=0.5,
-                color=COLOR_BORDER_LIGHT,
+                color=self.QCOLOR_BORDER_THEMED.name(), # Use themed border for grid
             )
             ax.set_aspect("auto")  # Ensure aspect is auto after clearing
 
@@ -10772,7 +10953,7 @@ The CSV file should contain the following columns (header names must match exact
                 va="center",
                 transform=self.perf_return_ax.transAxes,
                 fontsize=10,
-                color=COLOR_TEXT_SECONDARY,
+                color=self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
             )
             self.abs_value_ax.text(
                 0.5,
@@ -10782,12 +10963,12 @@ The CSV file should contain the following columns (header names must match exact
                 va="center",
                 transform=self.abs_value_ax.transAxes,
                 fontsize=10,
-                color=COLOR_TEXT_SECONDARY,
+                color=self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
             )
             self.perf_return_ax.set_title(
-                return_graph_title, fontsize=10, weight="bold"
+                return_graph_title, fontsize=10, weight="bold", color=self.QCOLOR_TEXT_PRIMARY_THEMED.name()
             )
-            self.abs_value_ax.set_title(value_graph_title, fontsize=10, weight="bold")
+            self.abs_value_ax.set_title(value_graph_title, fontsize=10, weight="bold", color=self.QCOLOR_TEXT_PRIMARY_THEMED.name())
             if plot_start_date and plot_end_date:
                 try:
                     self.perf_return_ax.set_xlim(plot_start_date, plot_end_date)
@@ -10965,12 +11146,10 @@ The CSV file should contain the following columns (header names must match exact
                     transform=self.perf_return_ax.transAxes,
                     fontsize=9,
                     fontweight="bold",
-                    color=tc_color.name(),
+                    color=tc_color.name(), # tc_color is already a QColor, .name() gets hex
                     va="bottom",  # Vertical alignment
                     ha="right",  # Horizontal alignment
-                    bbox=dict(
-                        boxstyle="round,pad=0.3", fc="white", alpha=0.7, ec="none"
-                    ),
+                    bbox=dict(boxstyle="round,pad=0.3", fc=self.QCOLOR_BACKGROUND_THEMED.name(), alpha=0.7, ec="none")
                 )
             except Exception as e:
                 logging.warning(f"Warn adding TWR annotation: {e}")
@@ -10985,19 +11164,21 @@ The CSV file should contain the following columns (header names must match exact
                     ncol=min(3, nl),
                     loc="upper left",
                     bbox_to_anchor=(0, 0.95),
+                    facecolor=self.QCOLOR_BACKGROUND_THEMED.name(),
+                    edgecolor=self.QCOLOR_BORDER_THEMED.name()
                 )  # Adjusted legend position
             self.perf_return_ax.set_title(
-                return_graph_title, fontsize=10, weight="bold", color=COLOR_TEXT_DARK
+                return_graph_title, fontsize=10, weight="bold", color=self.QCOLOR_TEXT_PRIMARY_THEMED.name()
             )
             self.perf_return_ax.set_ylabel(
-                "Accumulated Gain (%)", fontsize=9, color=COLOR_TEXT_DARK
+                "Accumulated Gain (%)", fontsize=9, color=self.QCOLOR_TEXT_PRIMARY_THEMED.name()
             )
             self.perf_return_ax.grid(
                 True,
                 which="major",
                 linestyle="--",
                 linewidth=0.5,
-                color=COLOR_BORDER_LIGHT,
+                color=self.QCOLOR_BORDER_THEMED.name(),
             )
 
             # SET RETURN Y LIMITS (using VISIBLE range min/max)
@@ -11042,10 +11223,10 @@ The CSV file should contain the following columns (header names must match exact
                 va="center",
                 transform=self.perf_return_ax.transAxes,
                 fontsize=10,
-                color=COLOR_TEXT_SECONDARY,
+                color=self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
             )
             self.perf_return_ax.set_title(
-                return_graph_title, fontsize=10, weight="bold", color=COLOR_TEXT_DARK
+                return_graph_title, fontsize=10, weight="bold", color=self.QCOLOR_TEXT_PRIMARY_THEMED.name()
             )
             self.perf_return_ax.set_ylim(-10, 10)  # Default Y range if no data
 
@@ -11085,17 +11266,17 @@ The CSV file should contain the following columns (header names must match exact
                 # --- End currency formatter ---
 
                 self.abs_value_ax.set_title(
-                    value_graph_title, fontsize=10, weight="bold", color=COLOR_TEXT_DARK
+                    value_graph_title, fontsize=10, weight="bold", color=self.QCOLOR_TEXT_PRIMARY_THEMED.name()
                 )
                 self.abs_value_ax.set_ylabel(
-                    f"Value ({currency_symbol})", fontsize=9, color=COLOR_TEXT_DARK
+                    f"Value ({currency_symbol})", fontsize=9, color=self.QCOLOR_TEXT_PRIMARY_THEMED.name()
                 )
                 self.abs_value_ax.grid(
                     True,
                     which="major",
                     linestyle="--",
                     linewidth=0.5,
-                    color=COLOR_BORDER_LIGHT,
+                    color=self.QCOLOR_BORDER_THEMED.name(),
                 )
 
                 # --- SET VALUE Y LIMITS (using VISIBLE range min/max) ---
@@ -11140,10 +11321,10 @@ The CSV file should contain the following columns (header names must match exact
                     va="center",
                     transform=self.abs_value_ax.transAxes,
                     fontsize=10,
-                    color=COLOR_TEXT_SECONDARY,
+                    color=self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
                 )
                 self.abs_value_ax.set_title(
-                    value_graph_title, fontsize=10, weight="bold", color=COLOR_TEXT_DARK
+                    value_graph_title, fontsize=10, weight="bold", color=self.QCOLOR_TEXT_PRIMARY_THEMED.name()
                 )
                 self.abs_value_ax.set_ylim(0, 100)  # Default Y range
 
@@ -11156,10 +11337,10 @@ The CSV file should contain the following columns (header names must match exact
                 va="center",
                 transform=self.abs_value_ax.transAxes,
                 fontsize=10,
-                color=COLOR_TEXT_SECONDARY,
+                color=self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
             )
             self.abs_value_ax.set_title(
-                value_graph_title, fontsize=10, weight="bold", color=COLOR_TEXT_DARK
+                value_graph_title, fontsize=10, weight="bold", color=self.QCOLOR_TEXT_PRIMARY_THEMED.name()
             )
             self.abs_value_ax.set_ylim(0, 100)
 
@@ -11249,18 +11430,53 @@ The CSV file should contain the following columns (header names must match exact
         except Exception as e_draw:
             logging.error(f"Error drawing graph canvas: {e_draw}")
 
-        # --- Re-apply Backgrounds ---
+        # --- Re-apply Backgrounds based on theme ---
         try:
-            pc = "#FFFFFF"
-            pf = "#F8F9FA"
-            for f in [self.account_fig, self.holdings_fig]:
-                f.patch.set_facecolor(pc)
-            for a in [self.account_ax, self.holdings_ax]:
-                a.patch.set_facecolor(pc)
-            for f in [self.perf_return_fig, self.abs_value_fig]:
-                f.patch.set_facecolor(pf)
-            for a in [self.perf_return_ax, self.abs_value_ax]:
-                a.patch.set_facecolor(pf)
+            # Pie charts container and content frame background are handled by QSS.
+            # Figure and Axes patch colors for Matplotlib plots:
+            fig_face_color = self.QCOLOR_BACKGROUND_THEMED.name() # Main window background
+            ax_face_color = self.QCOLOR_INPUT_BACKGROUND_THEMED.name() # Slightly different for plot area if desired, or same as fig_face_color
+
+            # Performance graphs are in a QWidget#PerfGraphsContainer which has its own BG from QSS.
+            # So, make Matplotlib figure/axes transparent for these if QSS is to show through.
+            # Or, explicitly set their BG to match the PerfGraphsContainer's QSS BG.
+            # For now, let's try to match the QSS intent for PerfGraphsContainer.
+            # If QSS sets PerfGraphsContainer to DARK_COLOR_BG_HEADER, then use that.
+            perf_graph_bg_color_to_match_qss = self.QCOLOR_HEADER_BACKGROUND_THEMED.name()
+
+
+            for fig, ax in [
+                (self.account_fig, self.account_ax),
+                (self.holdings_fig, self.holdings_ax),
+                (self.asset_type_pie_fig, self.asset_type_pie_ax), # Asset Allocation Tab
+                (self.sector_pie_fig, self.sector_pie_ax),       # Asset Allocation Tab
+                (self.geo_pie_fig, self.geo_pie_ax),             # Asset Allocation Tab
+                (self.industry_pie_fig, self.industry_pie_ax)    # Asset Allocation Tab
+            ]:
+                if fig: fig.patch.set_facecolor(fig_face_color)
+                if ax: ax.patch.set_facecolor(fig_face_color) # Pie chart axes usually match figure
+
+            for fig, ax in [
+                (self.perf_return_fig, self.perf_return_ax),
+                (self.abs_value_fig, self.abs_value_ax)
+            ]:
+                if fig: fig.patch.set_facecolor(perf_graph_bg_color_to_match_qss)
+                if ax: ax.patch.set_facecolor(perf_graph_bg_color_to_match_qss)
+
+            # Bar charts (Periodic, Dividend, Capital Gains)
+            # These are in QFrames/QWidgets that might have their own QSS background.
+            # For now, set to main background, can adjust if specific QSS is applied to their containers.
+            bar_chart_bg_color_to_match_qss = self.QCOLOR_BACKGROUND_THEMED.name()
+            for fig, ax in [
+                (self.annual_bar_fig, self.annual_bar_ax),
+                (self.monthly_bar_fig, self.monthly_bar_ax),
+                (self.weekly_bar_fig, self.weekly_bar_ax),
+                (self.dividend_bar_fig, self.dividend_bar_ax),
+                (self.cg_bar_fig, self.cg_bar_ax)
+            ]:
+                if fig: fig.patch.set_facecolor(bar_chart_bg_color_to_match_qss)
+                if ax: ax.patch.set_facecolor(bar_chart_bg_color_to_match_qss)
+
         except Exception as e_bg:
             logging.warning(f"Warn setting graph background: {e_bg}")
 
@@ -11552,24 +11768,24 @@ The CSV file should contain the following columns (header names must match exact
         # (Keep implementation as before)
         text = "N/A"
         original_value_float = None
-        target_color = QCOLOR_TEXT_DARK
+        target_color = self.QCOLOR_TEXT_PRIMARY_THEMED # Use themed color
         if value is not None and pd.notna(value):
             try:
                 original_value_float = float(value)
             except (ValueError, TypeError):
                 text = "Error"
-                target_color = QCOLOR_LOSS
+                target_color = self.QCOLOR_LOSS_THEMED # Use themed color
         if original_value_float is not None:
             if metric_type in ["net_value", "cash"]:
-                target_color = QCOLOR_TEXT_DARK
+                target_color = self.QCOLOR_TEXT_PRIMARY_THEMED # Use themed color
             elif metric_type == "dividends":
                 target_color = (
-                    QCOLOR_GAIN if original_value_float > 1e-9 else QCOLOR_TEXT_DARK
+                    self.QCOLOR_GAIN_THEMED if original_value_float > 1e-9 else self.QCOLOR_TEXT_PRIMARY_THEMED # Use themed color
                 )
             # Fees and commissions are usually displayed as positive numbers but represent losses/costs
             elif metric_type in ["fees", "commissions"]:
                 target_color = (
-                    QCOLOR_LOSS if original_value_float > 1e-9 else QCOLOR_TEXT_DARK
+                    self.QCOLOR_LOSS_THEMED if original_value_float > 1e-9 else self.QCOLOR_TEXT_PRIMARY_THEMED # Use themed color
                 )
             elif metric_type in [
                 "total_gain",
@@ -11580,11 +11796,11 @@ The CSV file should contain the following columns (header names must match exact
                 "period_twr",
             ]:  # Added MWR/TWR here
                 if original_value_float > 1e-9:
-                    target_color = QCOLOR_GAIN
+                    target_color = self.QCOLOR_GAIN_THEMED # Use themed color
                 elif original_value_float < -1e-9:
-                    target_color = QCOLOR_LOSS
+                    target_color = self.QCOLOR_LOSS_THEMED # Use themed color
                 else:
-                    target_color = QCOLOR_TEXT_DARK
+                    target_color = self.QCOLOR_TEXT_PRIMARY_THEMED # Use themed color
             # Explicitly color Total Return %
             elif metric_type in [
                 "account_total_return_pct",
@@ -11593,30 +11809,30 @@ The CSV file should contain the following columns (header names must match exact
                 "total_return_pct",
             ]:  # Added total_return_pct
                 if original_value_float > 1e-9:
-                    target_color = QCOLOR_GAIN
+                    target_color = self.QCOLOR_GAIN_THEMED # Use themed color
                 elif original_value_float < -1e-9:
-                    target_color = QCOLOR_LOSS
+                    target_color = self.QCOLOR_LOSS_THEMED # Use themed color
                 else:
-                    target_color = QCOLOR_TEXT_DARK
+                    target_color = self.QCOLOR_TEXT_PRIMARY_THEMED # Use themed color
             elif metric_type in [
                 "fx_gain_loss",
                 "fx_gain_loss_pct",
             ]:  # Coloring for FX G/L
                 if original_value_float > 1e-9:
-                    target_color = QCOLOR_GAIN
+                    target_color = self.QCOLOR_GAIN_THEMED # Use themed color
                 elif original_value_float < -1e-9:
-                    target_color = QCOLOR_LOSS
+                    target_color = self.QCOLOR_LOSS_THEMED # Use themed color
                 else:
                     # For FX G/L, if it's zero, keep it dark, not green.
-                    target_color = QCOLOR_TEXT_DARK
+                    target_color = self.QCOLOR_TEXT_PRIMARY_THEMED # Use themed color
             # Default coloring
             else:
                 if original_value_float > 1e-9:
-                    target_color = QCOLOR_GAIN
+                    target_color = self.QCOLOR_GAIN_THEMED # Use themed color
                 elif original_value_float < -1e-9:
-                    target_color = QCOLOR_LOSS
+                    target_color = self.QCOLOR_LOSS_THEMED # Use themed color
                 else:
-                    target_color = QCOLOR_TEXT_DARK
+                    target_color = self.QCOLOR_TEXT_PRIMARY_THEMED # Use themed color
 
         if override_text is not None:
             text = override_text
@@ -11635,10 +11851,10 @@ The CSV file should contain the following columns (header names must match exact
                     text = f"{value_float_abs:,.2f}"
             except (ValueError, TypeError):
                 text = "Format Error"
-                target_color = QCOLOR_LOSS
+                target_color = self.QCOLOR_LOSS_THEMED # Use themed color
         elif metric_type == "clear":
             text = "N/A"
-            target_color = QCOLOR_TEXT_DARK
+            target_color = self.QCOLOR_TEXT_PRIMARY_THEMED # Use themed color
         value_label.setText(text)
         palette = value_label.palette()
         palette.setColor(QPalette.WindowText, target_color)
