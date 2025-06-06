@@ -6471,7 +6471,7 @@ The CSV file should contain the following columns (header names must match exact
                     "text.color": config.DARK_COLOR_TEXT_DARK,
                     "axes.edgecolor": config.DARK_COLOR_BORDER,
                     "figure.facecolor": config.DARK_COLOR_BG_DARK,
-                    "axes.facecolor": config.DARK_COLOR_INPUT_BG,
+                    "axes.facecolor": config.DARK_COLOR_BG_DARK,
                     "savefig.facecolor": config.DARK_COLOR_BG_DARK,
                     "savefig.edgecolor": config.DARK_COLOR_BG_DARK,
                 }
@@ -11870,7 +11870,7 @@ The CSV file should contain the following columns (header names must match exact
                     )  # Use specific pie axes color
 
             # For performance line graphs, axes are often different from figure
-            ax_line_graph_face_color = self.QCOLOR_INPUT_BACKGROUND_THEMED.name()
+            ax_line_graph_face_color = self.QCOLOR_BACKGROUND_THEMED.name()
             for fig, ax in [
                 (self.perf_return_fig, self.perf_return_ax),
                 (self.abs_value_fig, self.abs_value_ax),
@@ -11885,7 +11885,7 @@ The CSV file should contain the following columns (header names must match exact
             # Bar charts (Periodic, Dividend, Capital Gains)
             # Figure background matches main, axes background matches input style
             bar_fig_bg_color = self.QCOLOR_BACKGROUND_THEMED.name()
-            bar_ax_bg_color = self.QCOLOR_INPUT_BACKGROUND_THEMED.name()
+            bar_ax_bg_color = self.QCOLOR_BACKGROUND_THEMED.name()
 
             for fig, ax in [
                 (self.annual_bar_fig, self.annual_bar_ax),
@@ -15359,7 +15359,7 @@ The CSV file should contain the following columns (header names must match exact
                 self.QCOLOR_BACKGROUND_THEMED.name()
             )  # Main background for figure
         ax.patch.set_facecolor(
-            self.QCOLOR_INPUT_BACKGROUND_THEMED.name()
+            self.QCOLOR_BACKGROUND_THEMED.name()
         )  # Input-like background for axes
 
         if (

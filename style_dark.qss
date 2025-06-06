@@ -344,6 +344,57 @@ QMenu::separator {
     margin-right: 5px;
 }
 
+/* Target both performance graph navigation toolbars specifically by object name */
+#PerfReturnToolbar, #AbsValueToolbar {
+    background-color: #2c2c2c; /* DARK_COLOR_BG_LIGHT */
+    border: none;
+    padding: 1px;
+    margin: 0px;
+    min-height: 20px;
+    max-height: 25px;
+}
+
+/* Target ALL QToolButtons within the specific performance graph toolbars */
+/* This is a workaround for dark icons on a dark background. We give the button */
+/* a light background so the icon is visible. */
+#PerfReturnToolbar QToolButton,
+#AbsValueToolbar QToolButton {
+    background-color: #dddddd; /* Light grey background for icon visibility */
+    border: 1px solid #aaaaaa;
+    padding: 1px;
+    margin: 1px;
+    min-width: 20px;
+    max-width: 20px;
+    min-height: 18px;
+    max-height: 18px;
+    border-radius: 3px;
+    icon-size: 14px; /* Explicitly set icon size, matching light theme */
+}
+
+#PerfReturnToolbar QToolButton:hover,
+#AbsValueToolbar QToolButton:hover {
+    background-color: #cccccc; /* Slightly darker light grey hover */
+    border: 1px solid #999999;
+}
+
+#PerfReturnToolbar QToolButton:pressed,
+#AbsValueToolbar QToolButton:pressed {
+    background-color: #bbbbbb; /* Even darker light grey for pressed */
+    border: 1px solid #888888;
+}
+
+#PerfReturnToolbar QToolButton:checked, /* Style for toggle buttons like Zoom */
+#AbsValueToolbar QToolButton:checked {
+    background-color: #007bff; /* Use theme accent color when checked */
+    border: 1px solid #0056b3;
+}
+
+/* Hide separators in performance graph toolbars */
+#PerfReturnToolbar QToolBarSeparator,
+#AbsValueToolbar QToolBarSeparator {
+     width: 0px;
+}
+
 /* QStatusBar */
 QStatusBar {
     background-color: #2c2c2c; /* DARK_COLOR_BG_LIGHT */
