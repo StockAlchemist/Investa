@@ -444,4 +444,24 @@ QMenu::separator {
      margin: 0px;
 }
 
+/* --- QTabWidget and QTabBar Styling --- */
+QTabBar::tab {
+    /* Add some padding to tab titles */
+    padding: 6px 20px; /* Increased horizontal padding */
+    font-size: 12pt;   /* Set desired font size */
+    font-weight: bold; /* Make tab titles bold */
+    /* Optional: Define background, color, border for light theme tabs */
+    /* background-color: #E9ECEF; */ /* Example light tab background, similar to QPushButton */
+    /* border: 1px solid #DEE2E6; */
+    /* border-bottom-color: transparent; */ /* For unselected tabs */
+    /* border-top-left-radius: 4px; */
+    /* border-top-right-radius: 4px; */
+    /* margin-right: 2px; */
+}
+QTabBar::tab:selected {
+    /* background-color: #FFFFFF; */ /* Example selected tab background (main window bg) */
+    /* font-weight: bold; */
+}
+
+
 /* --- END OF FILE style.qss --- */

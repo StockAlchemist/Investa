@@ -1541,6 +1541,7 @@ def _calculate_aggregate_metrics(
             "display_currency": display_currency,
             "cumulative_investment": 0.0,
             "total_return_pct": np.nan,
+            "est_annual_income_display": 0.0,  # ADDED: Ensure key exists
         }
         return (overall_summary_metrics, dict(account_level_metrics), has_errors, True)
 
@@ -1734,6 +1735,11 @@ def _calculate_aggregate_metrics(
     overall_fx_gain_loss_display = safe_sum(full_summary_df, fx_gain_loss_col)
     # --- END ADDED ---
 
+    # --- ADDED: Overall Estimated Annual Income ---
+    est_ann_income_col = f"Est. Ann. Income ({display_currency})"
+    overall_est_annual_income_display = safe_sum(full_summary_df, est_ann_income_col)
+    # --- END ADDED ---
+
     if pd.notna(overall_market_value_display) and pd.notna(overall_day_change_display):
         overall_prev_close_mv_display = (
             overall_market_value_display - overall_day_change_display
@@ -1796,6 +1802,7 @@ def _calculate_aggregate_metrics(
         "total_return_pct": overall_total_return_pct,
         "fx_gain_loss_display": overall_fx_gain_loss_display,  # ADDED
         "fx_gain_loss_pct": overall_fx_gain_loss_pct,  # ADDED
+        "est_annual_income_display": overall_est_annual_income_display,  # ADDED
     }
     logging.debug(
         f"--- Finished Aggregating Metrics. Overall Market Value: {overall_market_value_display} ---"

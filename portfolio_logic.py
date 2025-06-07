@@ -225,6 +225,43 @@ def calculate_portfolio_summary(
     status_parts = []
 
     # Use the passed-in ignored data from the initial load
+    report_date = datetime.now().date()  # Defined early for use in default metrics
+
+    # --- Define default metrics structures ---
+    def get_default_metrics_dict(
+        display_curr_arg,
+        report_date_arg,
+        available_accs_list_arg,
+        is_empty_data_case=False,
+    ):
+        metrics = {
+            "market_value": 0.0 if is_empty_data_case else np.nan,
+            "cost_basis_held": 0.0 if is_empty_data_case else np.nan,
+            "unrealized_gain": 0.0 if is_empty_data_case else np.nan,
+            "realized_gain": 0.0 if is_empty_data_case else np.nan,
+            "dividends": 0.0 if is_empty_data_case else np.nan,
+            "commissions": 0.0 if is_empty_data_case else np.nan,
+            "total_gain": 0.0 if is_empty_data_case else np.nan,
+            "total_cost_invested": 0.0 if is_empty_data_case else np.nan,
+            "total_buy_cost": 0.0 if is_empty_data_case else np.nan,
+            "portfolio_mwr": np.nan,
+            "day_change_display": 0.0 if is_empty_data_case else np.nan,
+            "day_change_percent": np.nan,
+            "report_date": report_date_arg.strftime("%Y-%m-%d"),
+            "display_currency": display_curr_arg,
+            "cumulative_investment": 0.0 if is_empty_data_case else np.nan,
+            "total_return_pct": np.nan,
+            "est_annual_income_display": (
+                0.0 if is_empty_data_case else np.nan
+            ),  # Key change here
+            "fx_gain_loss_display": 0.0 if is_empty_data_case else np.nan,
+            "fx_gain_loss_pct": np.nan,
+            "_available_accounts": available_accs_list_arg,
+        }
+        return metrics
+
+    # --- End Define default metrics ---
+
     combined_ignored_indices = (
         ignored_indices_from_load.copy() if ignored_indices_from_load else set()
     )
@@ -243,15 +280,15 @@ def calculate_portfolio_summary(
         account_currency_map if account_currency_map is not None else {}
     )
 
-    report_date = datetime.now().date()
-
     if not MARKET_PROVIDER_AVAILABLE or not ANALYZER_FUNCTIONS_AVAILABLE:
         msg = "Error: Critical dependencies (MarketDataProvider or Analyzer Functions) not available."
         logging.error(msg)
         return (
-            None,
-            None,
-            None,
+            get_default_metrics_dict(
+                display_currency, report_date, [], is_empty_data_case=False
+            ),  # MODIFIED
+            None,  # summary_df_final
+            None,  # account_level_metrics
             combined_ignored_indices,
             combined_ignored_reasons,
             f"Finished with Errors [{msg}]",
@@ -266,9 +303,11 @@ def calculate_portfolio_summary(
         # If df_cleaned is None, df_original_raw_for_ignored might also be None or not useful
         # We return the initially passed ignored sets as they are the most relevant at this stage.
         return (
-            None,
-            None,
-            None,
+            get_default_metrics_dict(
+                display_currency, report_date, [], is_empty_data_case=True
+            ),  # MODIFIED
+            None,  # summary_df_final
+            None,  # account_level_metrics
             combined_ignored_indices,
             combined_ignored_reasons,
             final_status,
@@ -286,6 +325,17 @@ def calculate_portfolio_summary(
         has_warnings = True
         status_parts.append("original_index missing")
 
+    # Determine available accounts early if all_transactions_df_cleaned is valid
+    available_accounts_for_errors = []
+    if (
+        all_transactions_df_cleaned is not None
+        and "Account" in all_transactions_df_cleaned.columns
+        and not all_transactions_df_cleaned.empty
+    ):
+        available_accounts_for_errors = sorted(
+            list(all_transactions_df_cleaned["Account"].unique())
+        )
+
     # --- 2. Filter Transactions ---
     transactions_df_filtered = pd.DataFrame()
     filter_desc = "All Accounts"
@@ -300,9 +350,14 @@ def calculate_portfolio_summary(
             status_parts.append("Filter Error: No Account Column")
             # Return the combined ignored indices from the load phase
             return (
-                None,
-                None,
-                None,
+                get_default_metrics_dict(
+                    display_currency,
+                    report_date,
+                    available_accounts_for_errors,
+                    is_empty_data_case=False,
+                ),  # MODIFIED
+                None,  # summary_df_final
+                None,  # account_level_metrics
                 combined_ignored_indices,
                 combined_ignored_reasons,
                 f"Finished with Errors [{'; '.join(status_parts)}]",
@@ -450,9 +505,14 @@ def calculate_portfolio_summary(
             f" [{'; '.join(status_parts)}]" if status_parts else ""
         )
         return (
-            None,
-            None,
-            None,
+            get_default_metrics_dict(
+                display_currency,
+                report_date,
+                available_accounts_for_errors,
+                is_empty_data_case=False,
+            ),  # MODIFIED
+            None,  # summary_df_final
+            None,  # account_level_metrics
             combined_ignored_indices,
             combined_ignored_reasons,
             final_status,
@@ -502,9 +562,14 @@ def calculate_portfolio_summary(
             f" [{'; '.join(status_parts)}]" if status_parts else ""
         )
         return (
-            None,
-            None,
-            None,
+            get_default_metrics_dict(
+                display_currency,
+                report_date,
+                available_accounts_for_errors,
+                is_empty_data_case=False,
+            ),  # MODIFIED
+            None,  # summary_df_final
+            None,  # account_level_metrics
             combined_ignored_indices,
             combined_ignored_reasons,
             final_status,
@@ -567,9 +632,14 @@ def calculate_portfolio_summary(
             f" [{'; '.join(status_parts)}]" if status_parts else ""
         )
         return (
-            None,
-            None,
-            None,
+            get_default_metrics_dict(
+                display_currency,
+                report_date,
+                available_accounts_for_errors,
+                is_empty_data_case=False,
+            ),  # MODIFIED
+            None,  # summary_df_final
+            None,  # account_level_metrics
             combined_ignored_indices,
             combined_ignored_reasons,
             final_status,
@@ -714,6 +784,7 @@ def calculate_portfolio_summary(
             "display_currency": display_currency,
             "cumulative_investment": 0.0,
             "total_return_pct": np.nan,
+            "est_annual_income_display": 0.0,  # This is for empty portfolio_summary_rows
         }
         # account_level_metrics remains empty dict
         summary_df_unfiltered = pd.DataFrame()  # Ensure it's an empty DataFrame

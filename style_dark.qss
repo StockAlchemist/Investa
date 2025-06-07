@@ -251,10 +251,12 @@ QTabBar::tab {
     color: #b0b0b0; /* DARK_COLOR_TEXT_LIGHT */
     border: 1px solid #444444; /* DARK_COLOR_BORDER */
     border-bottom: none; /* Remove bottom border for unselected tabs */
-    padding: 4px 8px;
+    padding: 6px 20px; /* Increased horizontal padding */
     margin-right: 2px;
     border-top-left-radius: 4px;
     border-top-right-radius: 4px;
+    font-size: 12pt;   /* Set desired font size */
+    font-weight: bold; /* Make all tab titles bold */
 }
 QTabBar::tab:selected {
     background-color: #1e1e1e; /* DARK_COLOR_BG_DARK (match pane) */

@@ -4744,10 +4744,14 @@ class PortfolioApp(QMainWindow):
                 QStyle.SP_ArrowDown,
             ),  # Assuming SP_DialogOpenButton is fine for dark
         },
-        "export_csv_action": {
-            "light": ("theme", "document-export"),
-            "dark": ("sp", QStyle.SP_DialogSaveButton),
-        },
+        # "export_csv_action": {
+        #     "light": (
+        #         "theme",
+        #         "document-export",
+        #         QStyle.SP_DialogSaveButton,
+        #     ),  # Added SP_DialogSaveButton as fallback
+        #     "dark": ("sp", QStyle.SP_DialogSaveButton),  # Dark theme already uses SP
+        # },
         "refresh_action": {
             "light": ("theme", "view-refresh"),
             "dark": ("sp", QStyle.SP_BrowserReload),
@@ -8269,20 +8273,9 @@ The CSV file should contain the following columns (header names must match exact
         if hasattr(self, "main_tab_widget") and self.main_tab_widget:
             tab_bar = self.main_tab_widget.tabBar()
             if tab_bar:
-                current_font = tab_bar.font()  # Get the current font of the tab bar
-                # Set a specific point size (e.g., 10pt or 11pt).
-                # self.app_font.pointSize() is likely 9pt.
-                target_tab_font_size = 10  # You can adjust this value
-                current_font.setPointSize(target_tab_font_size)
-                current_font.setBold(True)
-                tab_bar.setFont(current_font)
-                logging.debug(
-                    f"Tab bar font set to: {current_font.family()}, {current_font.pointSize()}pt, Bold: {current_font.bold()}"
-                )
-
-                # Optional: Add some padding if text gets cut off or looks cramped.
-                # This can also be done in your style.qss file.
-                # tab_bar.setStyleSheet(tab_bar.styleSheet() + "QTabBar::tab { padding: 4px 8px; min-height: 20px; }")
+                # Font styling for tab titles is now handled by QSS files (style.qss, style_dark.qss)
+                # This ensures theme consistency and avoids overrides.
+                logging.debug("Tab title font styling is now managed by QSS.")
         self._update_periodic_bar_charts()  # Draw empty bar charts initially
 
     def _init_ui_structure(self):
@@ -8338,9 +8331,7 @@ The CSV file should contain the following columns (header names must match exact
             self.content_frame, 3  # Pie charts and holdings table
         )
         # --- END MODIFIED ORDER ---
-        self.main_tab_widget.addTab(
-            self.performance_summary_tab, "Performance & Summary"
-        )
+        self.main_tab_widget.addTab(self.performance_summary_tab, "Performance")
 
         # --- Tab 2: Capital Gains ---
         self.capital_gains_tab = QWidget()
@@ -8998,6 +8989,24 @@ The CSV file should contain the following columns (header names must match exact
         dividend_controls_layout.addStretch()
         dividend_history_layout.addLayout(dividend_controls_layout)
         logging.debug("--- _init_ui_widgets: Dividend controls layout added ---")
+
+        # --- ADDED: Estimated Annual Dividend Income Display ---
+        est_annual_income_layout = QHBoxLayout()
+        est_annual_income_layout.setContentsMargins(
+            0, 5, 0, 5
+        )  # Add some vertical margin
+
+        self.est_annual_income_label = QLabel("<b>Est. Next 12m Dividend Income:</b>")
+        self.est_annual_income_label.setObjectName("EstAnnualIncomeLabel")
+        est_annual_income_layout.addWidget(self.est_annual_income_label)
+
+        self.est_annual_income_value_label = QLabel("N/A")
+        self.est_annual_income_value_label.setObjectName("EstAnnualIncomeValueLabel")
+        est_annual_income_layout.addWidget(self.est_annual_income_value_label)
+        est_annual_income_layout.addStretch()
+        dividend_history_layout.addLayout(est_annual_income_layout)
+        # --- END ADDED ---
+
         # Dividend Bar Graph Canvas
         self.dividend_bar_fig = Figure(
             figsize=(7, 3), dpi=CHART_DPI
@@ -9115,7 +9124,7 @@ The CSV file should contain the following columns (header names must match exact
             True
         )  # Ensure the page widget itself is visible
 
-        self.main_tab_widget.addTab(self.dividend_history_tab, "Dividend History")
+        self.main_tab_widget.addTab(self.dividend_history_tab, "Dividend")
         logging.debug(
             "--- _init_ui_widgets: Dividend History Tab added to main_tab_widget ---"
         )
@@ -9135,10 +9144,12 @@ The CSV file should contain the following columns (header names must match exact
         stock_tx_group = QGroupBox("Stock/ETF Transactions")
         stock_tx_layout = QVBoxLayout(stock_tx_group)
         self.stock_transactions_table_view = QTableView()
-        self.stock_transactions_table_view.setObjectName("StockTransactionsLogTable")
+        self.stock_transactions_table_view.setObjectName(
+            "StockTransactionsLogTable"
+        )  # Ensure object name is set
         self.stock_transactions_table_model = PandasModel(
-            parent=None, log_mode=True
-        )  # ADD log_mode
+            parent=self, log_mode=True
+        )  # MODIFIED: parent=self
         self.stock_transactions_table_view.setModel(self.stock_transactions_table_model)
         self.stock_transactions_table_view.setSortingEnabled(True)
         self.stock_transactions_table_view.setAlternatingRowColors(True)
@@ -9152,11 +9163,13 @@ The CSV file should contain the following columns (header names must match exact
         # Group for $CASH Transactions
         cash_tx_group = QGroupBox(f"{CASH_SYMBOL_CSV} Transactions")
         cash_tx_layout = QVBoxLayout(cash_tx_group)
-        self.cash_transactions_table_view = QTableView()
-        self.cash_transactions_table_view.setObjectName("CashTransactionsLogTable")
+        self.cash_transactions_table_view = QTableView()  # Ensure object name is set
+        self.cash_transactions_table_view.setObjectName(
+            "CashTransactionsLogTable"
+        )  # Ensure object name is set
         self.cash_transactions_table_model = PandasModel(
-            parent=None, log_mode=True
-        )  # ADD log_mode
+            parent=self, log_mode=True
+        )  # MODIFIED: parent=self
         self.cash_transactions_table_view.setModel(self.cash_transactions_table_model)
         self.cash_transactions_table_view.setSortingEnabled(True)
         self.cash_transactions_table_view.setAlternatingRowColors(True)
@@ -9176,7 +9189,7 @@ The CSV file should contain the following columns (header names must match exact
         self.transactions_log_tab.setVisible(True)
 
         # Insert the Transactions Log tab at index 1 (making it the second tab)
-        self.main_tab_widget.insertTab(1, self.transactions_log_tab, "Transactions Log")
+        self.main_tab_widget.insertTab(1, self.transactions_log_tab, "Transactions")
         logging.debug(
             "--- _init_ui_widgets: Transactions Log Tab added to main_tab_widget ---"
         )
@@ -11943,6 +11956,14 @@ The CSV file should contain the following columns (header names must match exact
         self.update_summary_value(
             self.summary_annualized_twr[1], None, metric_type="clear"
         )
+
+        # --- ADDED: Clear Estimated Annual Dividend Income ---
+        if hasattr(self, "est_annual_income_value_label"):
+            self.update_summary_value(
+                self.est_annual_income_value_label, None, metric_type="clear"
+            )
+        # --- END ADDED ---
+
         # Clear FX G/L
         self.update_summary_value(  # Corrected
             self.summary_fx_gl_abs_value, None, metric_type="clear"
@@ -12159,6 +12180,19 @@ The CSV file should contain the following columns (header names must match exact
             True,  # is_percent
             "fx_gain_loss_pct",  # metric_type for coloring
         )
+        # --- END ADDED ---
+
+        # --- ADDED: Update Estimated Annual Dividend Income in Dividend History Tab ---
+        if hasattr(self, "est_annual_income_value_label") and data_source_current:
+            est_annual_income_val = data_source_current.get("est_annual_income_display")
+            self.update_summary_value(
+                self.est_annual_income_value_label,
+                est_annual_income_val,
+                currency_symbol,
+                True,  # is_currency
+                False,  # is_percent
+                "dividends",  # Use 'dividends' metric type for coloring (green if positive)
+            )
         # --- END ADDED ---
 
     def update_summary_value(
