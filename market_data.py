@@ -1754,7 +1754,194 @@ class MarketDataProvider:
         except Exception as e_fetch:
             logging.error(f"Error fetching fundamental data for {yf_symbol}: {e_fetch}")
             traceback.print_exc()
+            # --- ADDED: Cache empty data on fetch error ---
+            try:
+                logging.info(
+                    f"Caching empty fundamental data for {yf_symbol} due to fetch error."
+                )
+                error_cache_content = {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "data": {},  # Cache an empty dictionary
+                }
+                # symbol_cache_file is defined earlier in this method
+                os.makedirs(self.fundamentals_cache_dir, exist_ok=True)
+                with open(symbol_cache_file, "w", encoding="utf-8") as f_write_err:
+                    json.dump(error_cache_content, f_write_err, indent=2, cls=NpEncoder)
+            except Exception as e_cache_err_write:
+                logging.warning(
+                    f"Failed to write error cache for fundamentals of {yf_symbol} ('{symbol_cache_file}'): {e_cache_err_write}"
+                )
+            # --- END ADDED ---
+            return None  # Still return None to indicate failure to the caller for this attempt
+
+    def _get_cached_statement_data(
+        self, yf_symbol: str, statement_type: str, period_type: str = "annual"
+    ) -> Optional[pd.DataFrame]:
+        """
+        Helper to load a specific financial statement (financials, balance_sheet, cashflow)
+        for a symbol from its dedicated cache file.
+
+        Args:
+            yf_symbol (str): The Yahoo Finance ticker symbol.
+            statement_type (str): Type of statement ("financials", "balance_sheet", "cashflow").
+            period_type (str): "annual" or "quarterly".
+
+        Returns:
+            Optional[pd.DataFrame]: The cached DataFrame, or None if not found/valid.
+        """
+        if not yf_symbol or not statement_type or not period_type:
             return None
+
+        statement_cache_file = os.path.join(
+            self.fundamentals_cache_dir,
+            f"{yf_symbol}_{statement_type}_{period_type}.json",
+        )
+
+        if os.path.exists(statement_cache_file):
+            try:
+                with open(statement_cache_file, "r", encoding="utf-8") as f:
+                    cached_entry = json.load(f)
+
+                cache_timestamp_str = cached_entry.get("timestamp")
+                if cache_timestamp_str:
+                    cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
+                    if datetime.now(timezone.utc) - cache_timestamp < timedelta(
+                        hours=FUNDAMENTALS_CACHE_DURATION_HOURS  # Use same duration as .info
+                    ):
+                        data_json_str = cached_entry.get("data_df_json")
+                        if data_json_str:
+                            # Deserialize DataFrame from JSON string
+                            df = pd.read_json(StringIO(data_json_str), orient="split")
+                            # yfinance statements often have Timestamps as columns, ensure they are parsed correctly
+                            # If columns are dates, convert them to simple date strings for consistency if needed,
+                            # or ensure they are Timestamps. For now, assume read_json handles it.
+                            logging.debug(
+                                f"Using valid cache for {period_type} {statement_type} of {yf_symbol} from {statement_cache_file}"
+                            )
+                            return df
+            except Exception as e:
+                logging.warning(
+                    f"Error reading {period_type} {statement_type} cache for {yf_symbol} from {statement_cache_file}: {e}"
+                )
+        return None
+
+    def _save_statement_data_to_cache(
+        self,
+        yf_symbol: str,
+        statement_type: str,
+        period_type: str,
+        data_df: pd.DataFrame,
+    ):
+        """
+        Helper to save a specific financial statement DataFrame to its dedicated cache file.
+        """
+        if (  # Allow saving empty df if that's what yf returns
+            not yf_symbol or not statement_type or not period_type or data_df is None
+        ):
+            return
+
+        statement_cache_file = os.path.join(
+            self.fundamentals_cache_dir,
+            f"{yf_symbol}_{statement_type}_{period_type}.json",
+        )
+        try:
+            # Serialize DataFrame to JSON string
+            data_df_json_str = data_df.to_json(
+                orient="split", date_format="iso", default_handler=str
+            )
+
+            cache_content = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "data_df_json": data_df_json_str,
+            }
+            os.makedirs(self.fundamentals_cache_dir, exist_ok=True)
+            with open(statement_cache_file, "w", encoding="utf-8") as f:
+                json.dump(
+                    cache_content, f, indent=2
+                )  # No NpEncoder needed if df is stringified
+            logging.debug(
+                f"Saved {period_type} {statement_type} for {yf_symbol} to cache: {statement_cache_file}"
+            )
+        except Exception as e:
+            logging.warning(
+                f"Failed to write {period_type} {statement_type} cache for {yf_symbol} to {statement_cache_file}: {e}"
+            )
+
+    def _fetch_statement_data(
+        self, yf_symbol: str, statement_type: str, period_type: str = "annual"
+    ) -> Optional[pd.DataFrame]:
+        """
+        Fetches a specific financial statement using yfinance and caches it.
+        """
+        if not YFINANCE_AVAILABLE:
+            return None
+
+        cached_df = self._get_cached_statement_data(
+            yf_symbol, statement_type, period_type
+        )
+        if (
+            cached_df is not None
+        ):  # Check if it's not None (could be empty DataFrame from cache)
+            return cached_df
+
+        logging.info(
+            f"Fetching fresh {period_type} {statement_type} for {yf_symbol}..."
+        )
+        try:
+            ticker = yf.Ticker(yf_symbol)
+            df = pd.DataFrame()  # Default to empty DataFrame
+            if period_type == "quarterly":
+                if statement_type == "financials":
+                    df = ticker.quarterly_financials
+                elif statement_type == "balance_sheet":
+                    df = ticker.quarterly_balance_sheet
+                elif statement_type == "cashflow":
+                    df = ticker.quarterly_cashflow
+            else:  # Default to annual
+                if statement_type == "financials":
+                    df = ticker.financials
+                elif statement_type == "balance_sheet":
+                    df = ticker.balance_sheet
+                elif statement_type == "cashflow":
+                    df = ticker.cashflow
+
+            if df is None:  # yfinance might return None if no data
+                df = pd.DataFrame()  # Ensure it's an empty DataFrame, not None
+
+            self._save_statement_data_to_cache(
+                yf_symbol, statement_type, period_type, df
+            )
+            return df
+        except Exception as e:
+            logging.error(
+                f"Error fetching {period_type} {statement_type} for {yf_symbol}: {e}"
+            )
+            # Cache an empty DataFrame on error to prevent repeated failed fetches within cache duration
+            self._save_statement_data_to_cache(
+                yf_symbol, statement_type, period_type, pd.DataFrame()
+            )
+            return pd.DataFrame()  # Return empty DataFrame on error
+
+    @profile
+    def get_financials(
+        self, yf_symbol: str, period_type: str = "annual"
+    ) -> Optional[pd.DataFrame]:
+        """Fetches Income Statement data for a symbol."""
+        return self._fetch_statement_data(yf_symbol, "financials", period_type)
+
+    @profile
+    def get_balance_sheet(
+        self, yf_symbol: str, period_type: str = "annual"
+    ) -> Optional[pd.DataFrame]:
+        """Fetches Balance Sheet data for a symbol."""
+        return self._fetch_statement_data(yf_symbol, "balance_sheet", period_type)
+
+    @profile
+    def get_cashflow(
+        self, yf_symbol: str, period_type: str = "annual"
+    ) -> Optional[pd.DataFrame]:
+        """Fetches Cash Flow Statement data for a symbol."""
+        return self._fetch_statement_data(yf_symbol, "cashflow", period_type)
 
 
 # --- END OF FILE market_data.py ---

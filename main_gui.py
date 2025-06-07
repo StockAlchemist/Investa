@@ -421,6 +421,29 @@ from db_utils import (
 
 # --- END ADDED ---
 
+# --- ADDED: Import financial_ratios and set availability flag ---
+try:
+    from financial_ratios import (
+        calculate_key_ratios_timeseries,
+        calculate_current_valuation_ratios,
+    )
+
+    FINANCIAL_RATIOS_AVAILABLE = True
+except ImportError:
+    logging.error(
+        "ERROR: financial_ratios.py not found. Financial ratio calculations will be disabled."
+    )
+    FINANCIAL_RATIOS_AVAILABLE = False
+
+    def calculate_key_ratios_timeseries(*args, **kwargs):
+        return pd.DataFrame()
+
+    def calculate_current_valuation_ratios(*args, **kwargs):
+        return {}
+
+
+# --- END ADDED ---
+
 
 # --- Constants ---
 # Helper function to determine correct path for bundled resources
@@ -1023,7 +1046,6 @@ class PortfolioCalculatorWorker(QRunnable):
             self.signals.finished.emit()
 
 
-# --- Pandas Model for TableView ---
 class PandasModel(QAbstractTableModel):
     """A Qt Table Model for displaying pandas DataFrames in a QTableView.
 
@@ -1119,15 +1141,21 @@ class PandasModel(QAbstractTableModel):
             alignment = int(Qt.AlignLeft | Qt.AlignVCenter)  # Default left
             try:
                 col_name = self._data.columns[col]  # UI Column Name
+                # Ensure col_name is treated as a string for subsequent checks
+                col_name_str = str(col_name)
                 col_data = self._data.iloc[:, col]
-                if col_name in ["Account", "Symbol", "Price Source"]:
+                if col_name_str in ["Account", "Symbol", "Price Source"]:
                     alignment = int(Qt.AlignLeft | Qt.AlignVCenter)
-                elif pd.api.types.is_numeric_dtype(col_data.dtype):
+                elif pd.api.types.is_numeric_dtype(
+                    col_data.dtype
+                ) and not pd.api.types.is_datetime64_any_dtype(
+                    col_data.dtype
+                ):  # Exclude datetime
                     alignment = int(Qt.AlignRight | Qt.AlignVCenter)
                 elif col_data.dtype == "object":
                     is_potentially_numeric_by_name = (
                         any(
-                            indicator in col_name
+                            indicator in col_name_str
                             for indicator in [
                                 "%",
                                 " G/L",
@@ -1160,13 +1188,15 @@ class PandasModel(QAbstractTableModel):
         # ... (Coloring logic remains the same) ...
         if role == Qt.ForegroundRole:
             try:
-                col_name = self._data.columns[col]
+                col_name_orig_type_fg = self._data.columns[col]  # Original type
+                col_name_fg = str(
+                    col_name_orig_type_fg
+                )  # String version for comparisons
                 raw_cell_value = self._data.iloc[
                     row, col
                 ]  # Get raw value for numeric check
-
                 # Specific handling for Gain/Loss columns in Capital Gains table (and potentially others if named similarly)
-                if "Gain/Loss" in col_name:  # For Capital Gains table
+                if "Gain/Loss" in col_name_fg:  # For Capital Gains table
                     value_str = str(raw_cell_value)
                     cleaned_value_str = value_str.replace(",", "")  # Remove commas
                     # Try to extract numeric part for coloring
@@ -1191,26 +1221,18 @@ class PandasModel(QAbstractTableModel):
 
                     # General Gain/Loss indicators
                     gain_loss_color_cols = [
-                        "Gain",
-                        "Return",
+                        "G/L",  # Catches "Unreal. G/L", "Real. G/L", "Total G/L", "FX G/L", and their % versions
+                        "Ret %",  # Catches "Total Ret %"
                         "IRR",
-                        "Day Change",
-                        "Day Chg",
-                        "Total G/L",
-                        "Unreal. G/L",
-                        "Real. G/L",
-                        "Total Ret %",
-                        "Unreal. G/L %",
-                        "Day Chg %",
-                        "IRR (%)",
-                        "Yield (Cost) %",  # New
-                        "Yield (Mkt) %",  # New
-                        "FX G/L",
-                        "FX G/L %",
+                        "Day Chg",  # Catches "Day Chg" and "Day Chg %"
+                        "Yield",  # Catches "Yield (Cost) %" and "Yield (Mkt) %"
+                        "Income",  # Catches "Est. Income"
                     ]
-                    if any(indicator in col_name for indicator in gain_loss_color_cols):
+                    if any(
+                        indicator in col_name_fg for indicator in gain_loss_color_cols
+                    ):
                         if (
-                            "Yield" in col_name
+                            "Yield" in col_name_fg  # Check against the UI name
                         ):  # Yields are typically shown as positive, color green if > 0
                             if value_float > 1e-9:
                                 return self._gain_color
@@ -1224,16 +1246,16 @@ class PandasModel(QAbstractTableModel):
                         )
 
                     # Dividends
-                    elif "Dividend" in col_name or "Divs" in col_name:
+                    elif "Dividend" in col_name_fg or "Divs" in col_name_fg:
                         if value_float > 1e-9:
                             return self._gain_color  # Positive dividends are green
                         return None  # Zero or negative dividend, let QSS handle
 
                     # Commissions/Fees
                     elif (
-                        "Commission" in col_name
-                        or "Fee" in col_name
-                        or "Fees" in col_name
+                        "Commission" in col_name_fg
+                        or "Fee" in col_name_fg
+                        or "Fees" in col_name_fg
                     ):
                         if value_float > 1e-9:
                             return (
@@ -1253,10 +1275,14 @@ class PandasModel(QAbstractTableModel):
             original_value = "ERR"  # Default in case of early error
             try:
                 original_value = self._data.iloc[row, col]
-                col_name = self._data.columns[col]  # UI Column Name
+                col_name_orig_type = self._data.columns[
+                    col
+                ]  # Original type (can be Timestamp)
+                col_name = str(col_name_orig_type)  # Use string version for comparisons
 
                 # --- Special Formatting for CASH Symbol ---
                 # ... (Cash formatting remains the same) ...
+                # This part should use 'col_name' (string version) if it compares column names
                 try:
                     symbol_col_idx = self._data.columns.get_loc("Symbol")
                     symbol_value = self._data.iloc[row, symbol_col_idx]
@@ -1751,13 +1777,14 @@ class FundamentalDataDialog(QDialog):
         self.setWindowTitle(f"Fundamental Data: {display_symbol}")
         self.setMinimumSize(700, 750)  # Increased size for tabs
         self.setFont(
-            parent.font() if parent else QFont("Arial", 10)
+            parent.font()
+            if parent and hasattr(parent, "font")
+            else QFont("Arial", 10)  # Added hasattr check
         )  # Inherit font from parent app
         self._parent_app = parent  # Store parent reference to access methods
         self.display_symbol_for_title = (
             display_symbol  # Store for use in _dialog_format_value
         )
-
         main_layout = QVBoxLayout(self)
 
         # --- Tab Widget ---
@@ -1766,30 +1793,53 @@ class FundamentalDataDialog(QDialog):
 
         # --- Tab 1: Overview (Existing Content) ---
         overview_tab = QWidget()
+        overview_tab.setObjectName("OverviewTab")  # Add object name
         self._populate_overview_tab(
             overview_tab, fundamental_data_dict
         )  # display_symbol removed from call
         self.tab_widget.addTab(overview_tab, "Overview")
 
-        # --- Tab 2: Financials ---
-        financials_tab = QWidget()
-        financials_data = fundamental_data_dict.get("financials")
-        self._populate_financial_data_tab(financials_tab, financials_data)
-        self.tab_widget.addTab(financials_tab, "Financials")
+        # --- Tab 2: Income Statement (New) ---
+        income_statement_tab = QWidget()
+        income_statement_tab.setObjectName("IncomeStatementTab")
+        financials_annual_data = fundamental_data_dict.get("financials_annual")
+        financials_quarterly_data = fundamental_data_dict.get("financials_quarterly")
+        self._setup_financial_statement_tab(
+            income_statement_tab, financials_annual_data, financials_quarterly_data
+        )
+        self.tab_widget.addTab(income_statement_tab, "Income Statement")
 
         # --- Tab 3: Balance Sheet ---
         balance_sheet_tab = QWidget()
-        self._populate_financial_data_tab(
-            balance_sheet_tab, fundamental_data_dict.get("balance_sheet")
+        balance_sheet_tab.setObjectName("BalanceSheetTab")
+        balance_sheet_annual_data = fundamental_data_dict.get("balance_sheet_annual")
+        balance_sheet_quarterly_data = fundamental_data_dict.get(
+            "balance_sheet_quarterly"
+        )
+        self._setup_financial_statement_tab(
+            balance_sheet_tab, balance_sheet_annual_data, balance_sheet_quarterly_data
         )
         self.tab_widget.addTab(balance_sheet_tab, "Balance Sheet")
 
         # --- Tab 4: Cash Flow ---
         cash_flow_tab = QWidget()
-        self._populate_financial_data_tab(
-            cash_flow_tab, fundamental_data_dict.get("cashflow")
+        cash_flow_tab.setObjectName("CashFlowTab")
+        cash_flow_annual_data = fundamental_data_dict.get("cashflow_annual")
+        cash_flow_quarterly_data = fundamental_data_dict.get("cashflow_quarterly")
+        self._setup_financial_statement_tab(
+            cash_flow_tab, cash_flow_annual_data, cash_flow_quarterly_data
         )
         self.tab_widget.addTab(cash_flow_tab, "Cash Flow")
+
+        # --- Tab 5: Key Ratios ---
+        self.key_ratios_tab = (
+            QWidget()
+        )  # Ensure this attribute exists if referenced elsewhere
+        self.key_ratios_tab.setObjectName("KeyRatiosTab")
+        self._setup_key_ratios_tab(
+            self.key_ratios_tab, fundamental_data_dict.get("key_ratios_timeseries")
+        )
+        self.tab_widget.addTab(self.key_ratios_tab, "Key Ratios")
 
         # --- Dialog Buttons ---
         button_box = QDialogButtonBox(QDialogButtonBox.Ok)
@@ -1818,27 +1868,141 @@ class FundamentalDataDialog(QDialog):
         if value is None or pd.isna(value):
             return "N/A"
 
-        currency_symbol = self._get_dialog_currency_symbol()
+        currency_symbol_for_formatting = self._get_dialog_currency_symbol()
 
-        if key == "marketCap" and isinstance(value, (int, float)):
-            return format_large_number_display(value, currency_symbol)
-        elif key == "dividendYield" and isinstance(value, (int, float)):
-            return format_percentage_value(value, decimals=2)
-        elif key == "dividendRate" and isinstance(value, (int, float)):
-            return format_currency_value(value, currency_symbol, decimals=2)
-        elif key in ["fiftyTwoWeekHigh", "fiftyTwoWeekLow"] and isinstance(
-            value, (int, float)
-        ):
-            return format_currency_value(value, currency_symbol, decimals=2)
-        elif key in [
+        # Define sets of keys for different formatting types
+        LARGE_CURRENCY_KEYS = {
+            "marketCap",
+            "enterpriseValue",
+            "totalRevenue",
+            "ebitda",
+            "grossProfits",
+            "freeCashflow",
+            "operatingCashflow",
+            "totalCash",
+            "totalDebt",
+        }
+        PERCENTAGE_KEYS_AS_FACTORS = {  # These values are factors (e.g., 0.05 for 5%)
+            "dividendYield",
+            "trailingAnnualDividendYield",
+            "fiveYearAvgDividendYield",
+            "payoutRatio",
+            "heldPercentInsiders",
+            "heldPercentInstitutions",
+            "shortPercentOfFloat",
+            "profitMargins",
+            "grossMargins",
+            "ebitdaMargins",
+            "operatingMargins",
+            "returnOnAssets",
+            "returnOnEquity",
+            "revenueGrowth",  # e.g., yfinance 'revenueGrowth'
+            "earningsQuarterlyGrowth",  # e.g., yfinance 'earningsQuarterlyGrowth'
+        }
+        PERCENTAGE_KEYS_ALREADY_PERCENTAGES = {  # These values are already percentages (e.g., 5.0 for 5%)
+            "Dividend Yield (%)",  # From current_valuation_ratios
+            # Ratios from key_ratios_timeseries (though not directly used by overview tab's _dialog_format_value)
+            "Gross Profit Margin (%)",
+            "Net Profit Margin (%)",
+            "Return on Equity (ROE) (%)",
+            "Return on Assets (ROA) (%)",
+        }
+        CURRENCY_PER_SHARE_OR_PRICE_KEYS = {
+            "dividendRate",
+            "trailingAnnualDividendRate",
+            "currentPrice",
+            "regularMarketPrice",
+            "fiftyTwoWeekHigh",
+            "fiftyTwoWeekLow",
+            "targetHighPrice",
+            "targetLowPrice",
+            "targetMeanPrice",
+            "targetMedianPrice",
+            "regularMarketDayHigh",
+            "regularMarketDayLow",
+            "regularMarketOpen",
+            "regularMarketPreviousClose",
+            "bookValue",  # Book Value Per Share
+            "trailingEps",
+            "forwardEps",
+            "revenuePerShare",
+            "totalCashPerShare",
+        }
+        RATIO_KEYS_NO_CURRENCY = {
+            # yfinance keys
+            "trailingPE",
+            "forwardPE",
+            "pegRatio",
+            "priceToBook",
+            "priceToSalesTrailing12Months",
+            "enterpriseToRevenue",
+            "enterpriseToEbitda",
+            "beta",
+            "beta3Year",
+            "shortRatio",
+            "debtToEquity",
+            "currentRatio",
+            "quickRatio",
+            # Friendly names from current_valuation_ratios (used in Overview tab)
+            "P/E Ratio (TTM)",
+            "Forward P/E Ratio",
+            "Price-to-Sales (P/S) Ratio (TTM)",
+            "Price-to-Book (P/B) Ratio (MRQ)",
+            "Enterprise Value to EBITDA",
+            # Ratios from key_ratios_timeseries (not directly formatted by this func for Overview, but good to list)
+            "Current Ratio",
+            "Quick Ratio",
+            "Debt-to-Equity Ratio",
+            "Interest Coverage Ratio",
+            "Asset Turnover",
+        }
+        INTEGER_COUNT_KEYS = {
             "regularMarketVolume",
             "averageVolume",
             "averageVolume10days",
             "fullTimeEmployees",
-        ] and isinstance(value, (int, float)):
-            return format_integer_with_commas(value)
-        elif isinstance(value, (int, float)):
-            return format_float_with_commas(value, decimals=2)
+            "sharesOutstanding",
+            "floatShares",  # Can be very large
+            "sharesShort",
+            "sharesShortPriorMonth",
+        }
+
+        if isinstance(value, (int, float)):  # Common check for most numeric types
+            if key in LARGE_CURRENCY_KEYS:
+                return format_large_number_display(
+                    value, currency_symbol_for_formatting
+                )
+            elif key in PERCENTAGE_KEYS_AS_FACTORS:
+                return format_percentage_value(value, decimals=2)
+            elif key in PERCENTAGE_KEYS_ALREADY_PERCENTAGES:
+                return format_percentage_value(
+                    value, decimals=2
+                )  # Already a percentage
+            elif key in CURRENCY_PER_SHARE_OR_PRICE_KEYS:
+                return format_currency_value(
+                    value, currency_symbol_for_formatting, decimals=2
+                )
+            elif key in RATIO_KEYS_NO_CURRENCY:
+                return format_float_with_commas(value, decimals=2)  # No currency symbol
+            elif key in INTEGER_COUNT_KEYS:
+                return format_integer_with_commas(value)
+            elif key == "sharesShortPreviousMonthDate":  # Timestamp
+                try:
+                    return datetime.fromtimestamp(value).strftime("%Y-%m-%d")
+                except:
+                    return str(value)  # Fallback
+            else:  # General fallback for other numeric values not explicitly categorized
+                # This is a catch-all. If it's a financial value from yfinance, it likely needs currency.
+                # If it's a ratio we missed, it needs no currency.
+                # Defaulting to currency for unknown numeric yfinance fields is often safer.
+                logging.debug(
+                    f"Key '{key}' not in specific format lists, formatting as currency by default."
+                )
+                return format_currency_value(
+                    value, currency_symbol_for_formatting, decimals=2
+                )
+        elif isinstance(value, str):  # Handle strings directly
+            return value  # Return the string as is
         else:
             return str(value)
 
@@ -1864,63 +2028,185 @@ class FundamentalDataDialog(QDialog):
 
         return tab_widget, form_layout
 
-    def _populate_financial_data_tab(
-        self, tab_widget: QWidget, data_df: Optional[pd.DataFrame]
+    def _setup_financial_statement_tab(
+        self,
+        tab_page: QWidget,
+        annual_data_df: Optional[pd.DataFrame],
+        quarterly_data_df: Optional[pd.DataFrame],
     ):
-        """Populates a tab with financial data from a DataFrame (e.g., financials, balance sheet, cash flow)."""
-        layout = QVBoxLayout(tab_widget)
-        layout.setContentsMargins(5, 5, 5, 5)
+        """Sets up a financial statement tab with a period selector and a table view."""
+        tab_layout = QVBoxLayout(tab_page)
+        tab_layout.setContentsMargins(5, 5, 5, 5)
 
-        if data_df is None or not isinstance(data_df, pd.DataFrame) or data_df.empty:
-            layout.addWidget(QLabel("Data not available for this section."))
-            return
+        # Controls (ComboBox for period type)
+        controls_layout = QHBoxLayout()
+        period_label = QLabel("Period:")
+        period_combo = QComboBox()
+        period_combo.addItems(["Annual", "Quarterly"])
+        period_combo.setMinimumWidth(120)  # MODIFIED: Increased width
+        period_combo.setObjectName(f"{tab_page.objectName()}PeriodCombo")
 
+        controls_layout.addWidget(period_label)
+        controls_layout.addWidget(period_combo)
+        controls_layout.addStretch()
+        tab_layout.addLayout(controls_layout)
+
+        # Table View
         table_view = QTableView()
-        table_view.setObjectName(
-            f"{tab_widget.objectName()}Table"
-        )  # For potential styling
-
-        # Transpose the DataFrame: yfinance often has dates as columns and items as rows.
-        # We want items as rows and dates as columns for better readability in a QFormLayout-like view,
-        # or keep as is for QTableView. For QTableView, original format is better.
-        # model_df = data_df.transpose() # Uncomment if you prefer items as columns
-        model_df = data_df
-
-        # Convert index (dates) to string for display if it's a DatetimeIndex
-        if isinstance(model_df.index, pd.DatetimeIndex):
-            model_df.index = model_df.index.strftime("%Y-%m-%d")
-
-        # For QTableView, we want the items as rows and dates as columns.
-        # yfinance often returns financials with items in the index and dates as columns.
-        # If it's the other way around (dates in index, items as columns), transpose it.
-        # Let's assume data_df is already in the format: Index=Items, Columns=Dates
-
-        # Create a PandasModel. We need to reset index to make items a column.
-        display_df = model_df.reset_index()
-        # Rename the new 'index' column to something meaningful like 'Metric' or 'Item'
-        display_df.rename(columns={"index": "Metric"}, inplace=True)
-
-        model = PandasModel(
-            display_df, parent=self, log_mode=True
-        )  # log_mode for general display
-        table_view.setModel(model)
-
+        table_view.setObjectName(f"{tab_page.objectName()}Table")
         table_view.setAlternatingRowColors(True)
         table_view.setSelectionBehavior(QTableView.SelectRows)
-        table_view.setWordWrap(False)  # Keep true if descriptions are long
+        table_view.setWordWrap(False)
         table_view.setSortingEnabled(True)
         table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        table_view.verticalHeader().setVisible(False)  # Hide row numbers
-        table_view.resizeColumnsToContents()
+        table_view.verticalHeader().setVisible(False)
 
-        # Make the 'Metric' column wider
-        try:
-            metric_col_idx = display_df.columns.get_loc("Metric")
-            table_view.setColumnWidth(metric_col_idx, 250)
-        except KeyError:
-            pass
+        # Initial display: Annual data, fallback to Quarterly if Annual is not available
+        initial_df_to_display = annual_data_df
+        current_period_type = "Annual"  # Keep track of which type is being processed
+        if (
+            initial_df_to_display is None
+            or not isinstance(initial_df_to_display, pd.DataFrame)
+            or initial_df_to_display.empty
+        ):
+            initial_df_to_display = quarterly_data_df
+            current_period_type = "Quarterly"
+            if initial_df_to_display is not None and not initial_df_to_display.empty:
+                period_combo.setCurrentText(
+                    "Quarterly"
+                )  # Reflect that quarterly is shown
 
-        layout.addWidget(table_view)
+        if (
+            initial_df_to_display is None
+            or not isinstance(initial_df_to_display, pd.DataFrame)
+            or initial_df_to_display.empty
+        ):
+            display_df_for_model = pd.DataFrame(columns=["Metric", "No Data Available"])
+            table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        else:
+            model_df_init = initial_df_to_display.copy()
+            # --- Format column headers (Dates) ---
+            if current_period_type == "Annual":
+                model_df_init.columns = [
+                    (
+                        pd.to_datetime(col).strftime("%Y")
+                        if isinstance(
+                            pd.to_datetime(col, errors="coerce"), pd.Timestamp
+                        )
+                        else str(col)
+                    )
+                    for col in model_df_init.columns
+                ]
+            elif current_period_type == "Quarterly":
+                new_cols_q_init = []
+                for col in model_df_init.columns:
+                    try:
+                        ts_init = pd.to_datetime(col)
+                        new_cols_q_init.append(f"Q{ts_init.quarter} {ts_init.year}")
+                    except (ValueError, TypeError):
+                        new_cols_q_init.append(str(col))
+                model_df_init.columns = new_cols_q_init
+            # --- End Column Formatting ---
+            if isinstance(model_df_init.index, pd.DatetimeIndex):
+                model_df_init.index = model_df_init.index.strftime("%Y-%m-%d")
+            display_df_for_model = model_df_init.reset_index()
+            display_df_for_model.rename(columns={"index": "Metric"}, inplace=True)
+
+        model = PandasModel(
+            display_df_for_model, parent=self._parent_app, log_mode=True
+        )  # Use _parent_app
+        table_view.setModel(model)
+
+        if not (initial_df_to_display is None or initial_df_to_display.empty):
+            table_view.resizeColumnsToContents()
+            try:
+                metric_col_idx = display_df_for_model.columns.get_loc("Metric")
+                table_view.setColumnWidth(metric_col_idx, 250)
+            except KeyError:
+                pass
+
+        tab_layout.addWidget(table_view)
+
+        # Connect ComboBox signal to update the table
+        period_combo.currentTextChanged.connect(
+            lambda text, tv=table_view, adf=annual_data_df, qdf=quarterly_data_df: self._update_financial_table_view(
+                text, tv, adf, qdf
+            )
+        )
+
+    def _update_financial_table_view(
+        self,
+        period_text: str,
+        table_view: QTableView,
+        annual_df: Optional[pd.DataFrame],
+        quarterly_df: Optional[pd.DataFrame],
+    ):
+        """Updates the QTableView with the selected financial data (annual or quarterly)."""
+        df_to_display = None
+        current_period_type_update = ""
+        if period_text == "Annual":
+            df_to_display = annual_df
+            current_period_type_update = "Annual"
+        elif period_text == "Quarterly":
+            df_to_display = quarterly_df
+            current_period_type_update = "Quarterly"
+
+        current_model = table_view.model()
+        if not isinstance(current_model, PandasModel):
+            logging.error("Table model is not a PandasModel instance. Cannot update.")
+            return
+
+        if (
+            df_to_display is None
+            or not isinstance(df_to_display, pd.DataFrame)
+            or df_to_display.empty
+        ):
+            display_df_for_model = pd.DataFrame(
+                columns=["Metric", f"{period_text} Data Not Available"]
+            )
+            table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        else:
+            model_df = df_to_display.copy()
+            # --- Format column headers (Dates) ---
+            if current_period_type_update == "Annual":
+                model_df.columns = [
+                    (
+                        pd.to_datetime(col).strftime("%Y")
+                        if isinstance(
+                            pd.to_datetime(col, errors="coerce"), pd.Timestamp
+                        )
+                        else str(col)
+                    )
+                    for col in model_df.columns
+                ]
+            elif current_period_type_update == "Quarterly":
+                new_cols_q_update = []
+                for col in model_df.columns:
+                    try:
+                        ts_update = pd.to_datetime(col)
+                        new_cols_q_update.append(
+                            f"Q{ts_update.quarter} {ts_update.year}"
+                        )
+                    except (ValueError, TypeError):
+                        new_cols_q_update.append(str(col))
+                model_df.columns = new_cols_q_update
+            # --- End Column Formatting ---
+            if isinstance(model_df.index, pd.DatetimeIndex):
+                model_df.index = model_df.index.strftime("%Y-%m-%d")
+            display_df_for_model = model_df.reset_index()
+            display_df_for_model.rename(columns={"index": "Metric"}, inplace=True)
+            table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+
+        current_model.updateData(display_df_for_model)
+
+        if not (df_to_display is None or df_to_display.empty):
+            table_view.resizeColumnsToContents()
+            try:
+                metric_col_idx = display_df_for_model.columns.get_loc("Metric")
+                table_view.setColumnWidth(metric_col_idx, 250)
+            except KeyError:
+                pass
+        table_view.viewport().update()
 
     def _populate_overview_tab(
         self, overview_tab_page: QWidget, fundamental_data_dict: Dict[str, Any]
@@ -1962,23 +2248,54 @@ class FundamentalDataDialog(QDialog):
         layout_valuation = QFormLayout(group_valuation)
         layout_valuation.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         layout_valuation.setLabelAlignment(Qt.AlignRight)
-        valuation_fields = [
+        valuation_fields = [  # Original yfinance fields
             ("marketCap", "Market Cap"),
+            ("enterpriseValue", "Enterprise Value"),
             ("trailingPE", "Trailing P/E"),
             ("forwardPE", "Forward P/E"),
             ("trailingEps", "Trailing EPS"),
             ("forwardEps", "Forward EPS"),
+            ("pegRatio", "PEG Ratio"),
+            ("priceToBook", "Price/Book (mrq)"),
+            ("priceToSalesTrailing12Months", "Price/Sales (ttm)"),
+            ("enterpriseToRevenue", "EV/Revenue (ttm)"),
+            ("enterpriseToEbitda", "EV/EBITDA (ttm)"),
             ("beta", "Beta"),
         ]
+        # Add current valuation ratios if available
+        current_valuation_ratios_data = fundamental_data_dict.get(
+            "current_valuation_ratios", {}
+        )
+        valuation_ratios_display_order = [
+            "P/E Ratio (TTM)",
+            "Forward P/E Ratio",
+            "Price-to-Sales (P/S) Ratio (TTM)",
+            "Price-to-Book (P/B) Ratio (MRQ)",
+            "Dividend Yield (%)",
+            "Enterprise Value to EBITDA",
+        ]
+        for ratio_key in valuation_ratios_display_order:
+            if (
+                ratio_key in current_valuation_ratios_data
+            ):  # Check if key exists in the fetched data
+                # Use ratio_key as friendly name if not in a predefined map, or map it
+                friendly_name_ratio = ratio_key  # Default to key itself
+                # Example mapping if needed:
+                # if ratio_key == "P/E Ratio (TTM)": friendly_name_ratio = "P/E (TTM)"
+                valuation_fields.append((ratio_key, friendly_name_ratio))
+
         for key, friendly_name in valuation_fields:
-            value = fundamental_data_dict.get(key)
+            value = fundamental_data_dict.get(key)  # Try direct yf key first
+            if (
+                value is None and key in current_valuation_ratios_data
+            ):  # Fallback to our calculated ratio
+                value = current_valuation_ratios_data.get(key)
+
             layout_valuation.addRow(
                 QLabel(f"<b>{friendly_name}:</b>"),
-                QLabel(self._dialog_format_value(key, value)),  # Use self method
+                QLabel(self._dialog_format_value(key, value)),
             )
-        form_layout_to_populate.addRow(
-            group_valuation
-        )  # Add to the correct form layout
+        form_layout_to_populate.addRow(group_valuation)
 
         # --- Group 3: Dividend Information ---
         group_dividend = QGroupBox("Dividend Information")
@@ -1986,16 +2303,26 @@ class FundamentalDataDialog(QDialog):
         layout_dividend.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         layout_dividend.setLabelAlignment(Qt.AlignRight)
         dividend_fields = [
-            ("dividendYield", "Dividend Yield"),
-            ("dividendRate", "Annual Dividend Rate"),  # Renamed for clarity
+            (
+                "dividendYield",
+                "Dividend Yield",
+            ),  # yfinance often provides this as a factor
+            ("dividendRate", "Annual Dividend Rate"),
+            (
+                "trailingAnnualDividendYield",
+                "Trailing Ann. Div. Yield",
+            ),  # yfinance factor
+            ("trailingAnnualDividendRate", "Trailing Ann. Div. Rate"),
+            ("fiveYearAvgDividendYield", "5Y Avg. Div. Yield"),  # yfinance factor
+            ("payoutRatio", "Payout Ratio"),  # yfinance factor
         ]
         for key, friendly_name in dividend_fields:
             value = fundamental_data_dict.get(key)
-            layout_dividend.addRow(  # Corrected layout variable
+            layout_dividend.addRow(
                 QLabel(f"<b>{friendly_name}:</b>"),
-                QLabel(self._dialog_format_value(key, value)),  # Use self method
+                QLabel(self._dialog_format_value(key, value)),
             )
-        form_layout_to_populate.addRow(group_dividend)  # Add to the correct form layout
+        form_layout_to_populate.addRow(group_dividend)
 
         # --- Group 4: Price Statistics ---
         group_price_stats = QGroupBox("Price Statistics")
@@ -2003,51 +2330,95 @@ class FundamentalDataDialog(QDialog):
         layout_price_stats.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         layout_price_stats.setLabelAlignment(Qt.AlignRight)
         price_stats_fields = [
+            ("currentPrice", "Current Price"),
+            ("regularMarketPrice", "Regular Market Price"),
+            ("regularMarketDayHigh", "Day High"),
+            ("regularMarketDayLow", "Day Low"),
+            ("regularMarketOpen", "Open"),
+            ("regularMarketPreviousClose", "Previous Close"),
             ("fiftyTwoWeekHigh", "52 Week High"),
             ("fiftyTwoWeekLow", "52 Week Low"),
             ("regularMarketVolume", "Volume"),
-            (
-                "averageVolume",
-                "Avg. Volume (3 month)",
-            ),  # yfinance 'averageVolume' is 3 month avg
+            ("averageVolume", "Avg. Volume (3 month)"),
             ("averageVolume10days", "Avg. Volume (10 day)"),
+            ("targetHighPrice", "Target High Est."),
+            ("targetLowPrice", "Target Low Est."),
+            ("targetMeanPrice", "Target Mean Est."),
+            ("targetMedianPrice", "Target Median Est."),
         ]
         for key, friendly_name in price_stats_fields:
             value = fundamental_data_dict.get(key)
-            # Handle averageVolume vs averageVolume10days preference
-            if (
-                key == "averageVolume"
-                and "averageVolume10days" in fundamental_data_dict
-            ):
-                continue  # Skip 3-month if 10-day is present
-            if (
-                key == "averageVolume10days"
-                and "averageVolume10days" not in fundamental_data_dict
-                and "averageVolume" in fundamental_data_dict
-            ):
-                # If 10days is missing but general averageVolume is present, use that one instead for the "Avg. Volume (10 day)" label
-                value_avg = fundamental_data_dict.get("averageVolume")
-                layout_price_stats.addRow(
-                    QLabel(f"<b>{friendly_name}:</b>"),
-                    QLabel(
-                        self._dialog_format_value("averageVolume", value_avg)
-                    ),  # Use self method
-                )
-            else:
-                layout_price_stats.addRow(
-                    QLabel(f"<b>{friendly_name}:</b>"),
-                    QLabel(self._dialog_format_value(key, value)),  # Use self method
-                )
-        form_layout_to_populate.addRow(
-            group_price_stats
-        )  # Add to the correct form layout
+            layout_price_stats.addRow(
+                QLabel(f"<b>{friendly_name}:</b>"),
+                QLabel(self._dialog_format_value(key, value)),
+            )
+        form_layout_to_populate.addRow(group_price_stats)
 
-        # --- Group 5: Business Summary ---
+        # --- Group 5: Financial Highlights ---
+        group_financial_highlights = QGroupBox("Financial Highlights")
+        layout_financial_highlights = QFormLayout(group_financial_highlights)
+        layout_financial_highlights.setFieldGrowthPolicy(
+            QFormLayout.ExpandingFieldsGrow
+        )
+        layout_financial_highlights.setLabelAlignment(Qt.AlignRight)
+        financial_fields = [
+            ("totalRevenue", "Total Revenue (ttm)"),
+            ("revenuePerShare", "Revenue/Share (ttm)"),
+            ("revenueGrowth", "Quarterly Revenue Growth (yoy)"),
+            ("grossProfits", "Gross Profit (ttm)"),
+            ("ebitda", "EBITDA (ttm)"),
+            ("profitMargins", "Profit Margin"),
+            ("grossMargins", "Gross Margin"),
+            ("ebitdaMargins", "EBITDA Margin"),
+            ("operatingMargins", "Operating Margin (ttm)"),
+            ("earningsQuarterlyGrowth", "Quarterly Earnings Growth (yoy)"),
+            ("returnOnAssets", "Return on Assets (ttm)"),
+            ("returnOnEquity", "Return on Equity (ttm)"),
+            ("totalCash", "Total Cash (mrq)"),
+            ("totalCashPerShare", "Cash/Share (mrq)"),
+            ("totalDebt", "Total Debt (mrq)"),
+            ("debtToEquity", "Debt/Equity (mrq)"),
+            ("currentRatio", "Current Ratio (mrq)"),
+            ("quickRatio", "Quick Ratio (mrq)"),
+            ("freeCashflow", "Free Cash Flow (ttm)"),
+            ("operatingCashflow", "Operating Cash Flow (ttm)"),
+        ]
+        for key, friendly_name in financial_fields:
+            value = fundamental_data_dict.get(key)
+            layout_financial_highlights.addRow(
+                QLabel(f"<b>{friendly_name}:</b>"),
+                QLabel(self._dialog_format_value(key, value)),
+            )
+        form_layout_to_populate.addRow(group_financial_highlights)
+
+        # --- Group 6: Share Statistics ---
+        group_share_stats = QGroupBox("Share Statistics")
+        layout_share_stats = QFormLayout(group_share_stats)
+        layout_share_stats.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        layout_share_stats.setLabelAlignment(Qt.AlignRight)
+        share_stats_fields = [
+            ("sharesOutstanding", "Shares Outstanding"),
+            ("floatShares", "Float Shares"),
+            ("heldPercentInsiders", "% Held by Insiders"),
+            ("heldPercentInstitutions", "% Held by Institutions"),
+            ("sharesShort", "Shares Short"),
+            ("shortRatio", "Short Ratio"),
+            ("shortPercentOfFloat", "Short % of Float"),
+            ("sharesShortPreviousMonthDate", "Short Prev. Month Date"),
+            ("sharesShortPriorMonth", "Shares Short Prev. Month"),
+        ]
+        for key, friendly_name in share_stats_fields:
+            value = fundamental_data_dict.get(key)
+            layout_share_stats.addRow(
+                QLabel(f"<b>{friendly_name}:</b>"),
+                QLabel(self._dialog_format_value(key, value)),
+            )
+        form_layout_to_populate.addRow(group_share_stats)
+
+        # --- Group 7: Business Summary ---
         group_summary = QGroupBox("Business Summary")
         layout_summary = QVBoxLayout(group_summary)
-        layout_summary.setContentsMargins(
-            5, 5, 5, 5
-        )  # Add some padding inside group box
+        layout_summary.setContentsMargins(5, 5, 5, 5)
         layout_summary.setSpacing(5)
 
         summary_text = fundamental_data_dict.get("longBusinessSummary", "N/A")
@@ -2055,33 +2426,158 @@ class FundamentalDataDialog(QDialog):
             summary_text_edit = QTextEdit()
             summary_text_edit.setPlainText(summary_text)
             summary_text_edit.setReadOnly(True)
-            summary_text_edit.setFixedHeight(150)  # Adjust height as needed
+            summary_text_edit.setFixedHeight(150)
             layout_summary.addWidget(summary_text_edit)
         else:
             layout_summary.addWidget(QLabel("N/A"))
 
-        form_layout_to_populate.addRow(group_summary)  # Add to the correct form layout
+        form_layout_to_populate.addRow(group_summary)
 
-        # --- End Groups ---
+    def _setup_key_ratios_tab(
+        self, tab_page: QWidget, ratios_df: Optional[pd.DataFrame]
+    ):
+        """Sets up the Key Ratios tab with a table view."""
+        tab_layout = QVBoxLayout(tab_page)
+        tab_layout.setContentsMargins(5, 5, 5, 5)
+
+        table_view = QTableView()
+        table_view.setObjectName(f"{tab_page.objectName()}Table")
+        table_view.setAlternatingRowColors(True)
+        table_view.setSelectionBehavior(QTableView.SelectRows)
+        table_view.setWordWrap(False)
+        table_view.setSortingEnabled(True)  # Allow sorting
+        table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        table_view.verticalHeader().setVisible(False)
+
+        if (
+            ratios_df is None
+            or not isinstance(ratios_df, pd.DataFrame)
+            or ratios_df.empty
+        ):
+            display_df_for_model = pd.DataFrame(columns=["Ratio", "No Data Available"])
+            table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        else:
+            # The ratios_df from calculate_key_ratios_timeseries has Period as index
+            # and ratios as columns. For display, we want ratios as rows and periods as columns.
+            # So, we transpose it.
+            model_df_transposed = (
+                ratios_df.transpose()
+            )  # Ratios as index, Periods as columns
+
+            # Format period columns (Dates)
+            model_df_transposed.columns = [
+                (
+                    pd.to_datetime(col).strftime("%Y-%m-%d")
+                    if isinstance(pd.to_datetime(col, errors="coerce"), pd.Timestamp)
+                    else str(col)
+                )
+                for col in model_df_transposed.columns
+            ]
+
+            display_df_for_model = model_df_transposed.reset_index()
+            display_df_for_model.rename(
+                columns={"index": "Financial Ratio"}, inplace=True
+            )
+            table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+
+        model = PandasModel(
+            display_df_for_model, parent=self, log_mode=True
+        )  # log_mode for direct display
+        table_view.setModel(model)
+
+        if not (ratios_df is None or ratios_df.empty):
+            table_view.resizeColumnsToContents()
+            try:
+                ratio_col_idx = display_df_for_model.columns.get_loc("Financial Ratio")
+                table_view.setColumnWidth(
+                    ratio_col_idx, 200
+                )  # Make ratio name column wider
+            except KeyError:
+                pass
+
+        tab_layout.addWidget(table_view)
 
 
 class FundamentalDataWorker(QRunnable):
     """Worker to fetch fundamental data in the background."""
 
-    def __init__(self, yf_symbol: str, display_symbol: str, signals: WorkerSignals):
+    def __init__(
+        self,
+        yf_symbol: str,
+        display_symbol: str,
+        signals: WorkerSignals,
+        financial_ratios_available_flag: bool,
+    ):
         super().__init__()
         self.yf_symbol = yf_symbol
         self.display_symbol = display_symbol
         self.signals = signals
+        self.financial_ratios_available = financial_ratios_available_flag
 
     @Slot()
     def run(self):
         try:
             market_provider = MarketDataProvider()  # Assuming default init is fine
             data = market_provider.get_fundamental_data(self.yf_symbol)
+            if data is None:  # Ensure data is a dict even if .info fetch fails
+                data = {}
+
+            # Fetch additional financial statements (both annual and quarterly)
+            financials_annual_df = market_provider.get_financials(
+                self.yf_symbol, period_type="annual"
+            )
+            financials_quarterly_df = market_provider.get_financials(
+                self.yf_symbol, period_type="quarterly"
+            )
+            balance_sheet_annual_df = market_provider.get_balance_sheet(
+                self.yf_symbol, period_type="annual"
+            )
+            balance_sheet_quarterly_df = market_provider.get_balance_sheet(
+                self.yf_symbol, period_type="quarterly"
+            )
+            cashflow_annual_df = market_provider.get_cashflow(
+                self.yf_symbol, period_type="annual"
+            )
+            cashflow_quarterly_df = market_provider.get_cashflow(
+                self.yf_symbol, period_type="quarterly"
+            )
+
+            if financials_annual_df is not None:
+                data["financials_annual"] = financials_annual_df
+            if financials_quarterly_df is not None:
+                data["financials_quarterly"] = financials_quarterly_df
+
+            if balance_sheet_annual_df is not None:
+                data["balance_sheet_annual"] = balance_sheet_annual_df
+            if balance_sheet_quarterly_df is not None:
+                data["balance_sheet_quarterly"] = balance_sheet_quarterly_df
+
+            if cashflow_annual_df is not None:
+                data["cashflow_annual"] = cashflow_annual_df
+            if cashflow_quarterly_df is not None:
+                data["cashflow_quarterly"] = cashflow_quarterly_df
+
+            # --- ADDED: Calculate and add key ratios ---
+            if self.financial_ratios_available:  # Use the instance attribute
+                # Pass annual statements for historical ratio series
+                key_ratios_df = calculate_key_ratios_timeseries(
+                    financials_df=financials_annual_df,
+                    balance_sheet_df=balance_sheet_annual_df,
+                    # cashflow_df=cashflow_annual_df # If needed by ratios
+                )
+                data["key_ratios_timeseries"] = key_ratios_df
+
+                current_valuation_ratios = calculate_current_valuation_ratios(
+                    ticker_info=data,  # Pass the main ticker_info dict
+                    financials_df_latest_annual=financials_annual_df,
+                    balance_sheet_df_latest_annual=balance_sheet_annual_df,
+                )
+                data["current_valuation_ratios"] = current_valuation_ratios
+            # --- END ADD ---
+
             if (
                 data is not None
-            ):  # data can be {} if symbol invalid, which is a valid result
+            ):  # data is now a dict, check if it's not None (though it's initialized to {} if .info fails)
                 self.signals.fundamental_data_ready.emit(self.display_symbol, data)
             else:  # Fetching itself failed (e.g. network error)
                 self.signals.error.emit(
@@ -6334,16 +6830,16 @@ The CSV file should contain the following columns (header names must match exact
         logging.debug("--- PortfolioApp __init__: END ---")
 
     # --- Theme Application Method ---
-    def apply_theme(self, theme_name: str):
+    def apply_theme(
+        self, theme_name: str
+    ):  # Removed _config_already_saved_for_theme from signature
         """Applies the selected theme (light or dark) to the application."""
         logging.info(f"Applying theme: {theme_name}")
 
-        # Check if the theme is already applied to prevent redundant work,
-        # but allow initial application even if self.current_theme matches default.
         if (
-            hasattr(self, "_style_sheet_applied_once")
-            and self._style_sheet_applied_once
+            hasattr(self, "current_theme")
             and self.current_theme == theme_name
+            and hasattr(self, "_style_sheet_applied_once")
         ):
             logging.debug(
                 f"Theme '{theme_name}' is already applied and stylesheet was set. Skipping full re-application of QSS."
@@ -6352,7 +6848,11 @@ The CSV file should contain the following columns (header names must match exact
             if (
                 hasattr(self, "light_theme_action")
                 and hasattr(self, "dark_theme_action")
-                and self.sender() in [self.light_theme_action, self.dark_theme_action]
+                and self.sender()
+                in [
+                    self.light_theme_action,
+                    self.dark_theme_action,
+                ]  # Only save if user action
             ):
                 self.config["theme"] = theme_name
                 self.save_config()
@@ -6611,11 +7111,10 @@ The CSV file should contain the following columns (header names must match exact
         logging.info(f"UI components refreshed for {theme_name} theme.")
 
         # Save the theme preference if triggered by menu action
-        if (
-            hasattr(self, "light_theme_action")
-            and hasattr(self, "dark_theme_action")
-            and self.sender() in [self.light_theme_action, self.dark_theme_action]
-        ):
+        if hasattr(self, "light_theme_action") and self.sender() in [
+            self.light_theme_action,
+            self.dark_theme_action,
+        ]:  # Only save if user action
             self.config["theme"] = theme_name
             self.save_config()
 
@@ -8045,9 +8544,10 @@ The CSV file should contain the following columns (header names must match exact
         label.setFont(label_font)
 
         value_font = QFont(
-            self.app_font if hasattr(self, "app_font") else QFont()
+            self.app_font if hasattr(self, "app_font") and self.app_font else QFont()
         )  # Use base app font or default
-        value_font.setPointSize(base_font_size + (2 if is_large else 1))
+        # Increase font size more for large value display
+        value_font.setPointSize(base_font_size + (4 if is_large else 1))
         value_font.setBold(True)
         value.setFont(value_font)
 
@@ -8217,6 +8717,14 @@ The CSV file should contain the following columns (header names must match exact
 
         if hasattr(self, "column_visibility"):  # Should always exist after __init__
             self.config["column_visibility"] = self.column_visibility
+
+        # Ensure the current theme is saved
+        if hasattr(self, "current_theme"):
+            self.config["theme"] = self.current_theme
+        else:  # Fallback if current_theme attribute somehow missing
+            self.config["theme"] = self.config.get(
+                "theme", "light"
+            )  # Get existing or default
 
         # Save bar chart periods
         if hasattr(self, "annual_periods_spinbox"):
@@ -16263,9 +16771,14 @@ The CSV file should contain the following columns (header names must match exact
         self.lookup_symbol_edit.setEnabled(False)
         self.lookup_button.setEnabled(False)
         # Optionally disable other controls if desired, e.g., self.set_controls_enabled(False)
-        # but the specific lookup controls are most important here.
+        # but the specific lookup controls are most important here. # type: ignore
 
-        worker = FundamentalDataWorker(yf_symbol, input_symbol, self.worker_signals)
+        worker = FundamentalDataWorker(
+            yf_symbol,
+            input_symbol,
+            self.worker_signals,
+            FINANCIAL_RATIOS_AVAILABLE,  # Pass the module-level flag
+        )
         self.threadpool.start(worker)
 
     @Slot(str, dict)
@@ -16325,7 +16838,12 @@ The CSV file should contain the following columns (header names must match exact
         )  # Disable direct lookup while context menu lookup is active
         self.lookup_button.setEnabled(False)
 
-        worker = FundamentalDataWorker(yf_symbol, internal_symbol, self.worker_signals)
+        worker = FundamentalDataWorker(
+            yf_symbol,
+            internal_symbol,
+            self.worker_signals,
+            FINANCIAL_RATIOS_AVAILABLE,  # Pass the module-level flag
+        )
         self.threadpool.start(worker)
 
     # --- End Fundamental Data Slots ---

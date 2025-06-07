@@ -3606,7 +3606,14 @@ def calculate_historical_performance(
     # ADDED: original_csv_file_path for daily_results_cache_key hash generation
     # This is needed because we no longer pass the CSV path directly to this function for loading
     original_csv_file_path: Optional[str] = None,
-) -> Tuple[pd.DataFrame, Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], str]:
+) -> Tuple[
+    pd.DataFrame,  # daily_df
+    Dict[str, pd.DataFrame],  # historical_prices_yf_adjusted
+    Dict[str, pd.DataFrame],  # historical_fx_yf
+    str,  # final_status_str
+    # pd.DataFrame, # key_ratios_df - Ratios are not calculated here
+    # Dict[str, Any] # current_valuation_ratios - Ratios are not calculated here
+]:
     CURRENT_HIST_VERSION = "v1.1"  # Bump version due to changes (e.g. Numba, cache key)
     start_time_hist = time.time()
     has_errors = False
