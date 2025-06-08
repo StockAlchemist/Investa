@@ -169,3 +169,20 @@ DARK_COLOR_TABLE_ALT_ROW = "#252525"    # Background color for alternating rows 
 DARK_COLOR_INPUT_BG = "#2a2a2a"         # Background for input fields
 DARK_COLOR_INPUT_TEXT = "#e0e0e0"       # Text color for input fields
 DARK_COLOR_INPUT_BORDER = "#555555"     # Border color for input fields
+
+
+# --- Helper function to determine correct path for bundled resources ---
+# Moved from main_gui.py
+import os
+import sys
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        # For development, __file__ is the path to the current script.
+        # os.path.dirname(__file__) gives the directory of the script.
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
