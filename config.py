@@ -28,7 +28,7 @@ CURRENT_QUOTE_CACHE_DURATION_MINUTES = 1  # For current stock/index quotes (pric
 
 # --- Logging Configuration ---
 # This level is a default; main_gui.py might override it for its own logging.
-LOGGING_LEVEL = logging.WARNING
+LOGGING_LEVEL = logging.DEBUG
 
 # --- Application Name (used by QStandardPaths if it doesn't infer from bundle) ---
 APP_NAME = "Investa"  # Used by db_utils.py for fallback folder if QStandardPaths fails

@@ -1219,12 +1219,14 @@ class PandasModel(QAbstractTableModel):
                 if pd.api.types.is_number(raw_cell_value) and pd.notna(raw_cell_value):
                     value_float = float(raw_cell_value)
 
-                    # General Gain/Loss indicators
+                    # General Gain/Loss indicators for positive/negative coloring
                     gain_loss_color_cols = [
                         "G/L",  # Catches "Unreal. G/L", "Real. G/L", "Total G/L", "FX G/L", and their % versions
                         "Ret %",  # Catches "Total Ret %"
                         "IRR",
                         "Day Chg",  # Catches "Day Chg" and "Day Chg %"
+                        "Value Change",  # Added for Periodic Value Change table's absolute change column
+                        "(%)",  # Added for general percentage columns like "Portfolio (%)" in PVC
                         "Yield",  # Catches "Yield (Cost) %" and "Yield (Mkt) %"
                         "Income",  # Catches "Est. Income"
                     ]
@@ -5440,6 +5442,10 @@ class PortfolioApp(QMainWindow):
                 if hasattr(config, "DIVIDEND_CHART_DEFAULT_PERIODS_MONTHLY")
                 else 24
             ),
+            # Defaults for Periodic Value Change spinboxes
+            "pvc_annual_periods": 10,
+            "pvc_monthly_periods": 12,
+            "pvc_weekly_periods": 12,
             "last_csv_import_path": QStandardPaths.writableLocation(
                 QStandardPaths.DocumentsLocation
             )
@@ -5623,6 +5629,14 @@ class PortfolioApp(QMainWindow):
             "dividend_chart_default_periods_quarterly",
             "dividend_chart_default_periods_monthly",
         ]
+        # Add PVC spinbox keys
+        numeric_spinbox_keys.extend(
+            [
+                "pvc_annual_periods",
+                "pvc_monthly_periods",
+                "pvc_weekly_periods",
+            ]
+        )
         for key in numeric_spinbox_keys:
             if key in loaded_app_config:
                 try:
@@ -6710,6 +6724,9 @@ The CSV file should contain the following columns (header names must match exact
         self.index_quote_data: Dict[str, Dict[str, Any]] = {}
         self.full_historical_data = pd.DataFrame()
         self.periodic_returns_data: Dict[str, pd.DataFrame] = {}
+        self.periodic_value_changes_data: Dict[str, pd.DataFrame] = (
+            {}
+        )  # ADDED for absolute value changes
         self.dividend_history_data = pd.DataFrame()
         self.historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}
         self.historical_fx_yf: Dict[str, pd.DataFrame] = {}
@@ -7107,7 +7124,7 @@ The CSV file should contain the following columns (header names must match exact
         self.update_dashboard_summary()  # Re-apply palette colors to summary labels
         self.update_header_info()  # Re-color header text
 
-        self.update()  # General repaint for the main window
+        self._update_periodic_value_change_display()  # Update new tab
         logging.info(f"UI components refreshed for {theme_name} theme.")
 
         # Save the theme preference if triggered by menu action
@@ -8731,6 +8748,7 @@ The CSV file should contain the following columns (header names must match exact
             self.config["bar_periods_annual"] = self.annual_periods_spinbox.value()
         if hasattr(self, "monthly_periods_spinbox"):
             self.config["bar_periods_monthly"] = self.monthly_periods_spinbox.value()
+        # Save PVC tab spinbox values
         if hasattr(self, "weekly_periods_spinbox"):
             self.config["bar_periods_weekly"] = self.weekly_periods_spinbox.value()
 
@@ -8743,6 +8761,12 @@ The CSV file should contain the following columns (header names must match exact
             self.config["dividend_periods_to_show"] = (
                 self.dividend_periods_spinbox.value()
             )
+        if hasattr(self, "pvc_annual_graph_spinbox"):
+            self.config["pvc_annual_periods"] = self.pvc_annual_graph_spinbox.value()
+        if hasattr(self, "pvc_monthly_graph_spinbox"):
+            self.config["pvc_monthly_periods"] = self.pvc_monthly_graph_spinbox.value()
+        if hasattr(self, "pvc_weekly_graph_spinbox"):
+            self.config["pvc_weekly_periods"] = self.pvc_weekly_graph_spinbox.value()
 
         # Also save the default spinbox values (these are loaded by load_config if key exists)
         # self.config["dividend_chart_default_periods_annual"] = self.config.get("dividend_chart_default_periods_annual", 10)
@@ -8848,6 +8872,10 @@ The CSV file should contain the following columns (header names must match exact
         # Tab 4 for Dividend History will be initialized in _init_ui_widgets
         # The "Holdings Overview" tab is now removed.
         logging.debug("--- _init_ui_structure: END ---")
+
+    def _init_periodic_value_change_tab_widgets(self):
+        """Initializes widgets for the Periodic Value Change tab."""
+        pass  # To be implemented in _init_ui_widgets
 
     def _init_transactions_log_tab_widgets(self):
         """Initializes widgets for the Transactions Log tab."""
@@ -9433,6 +9461,10 @@ The CSV file should contain the following columns (header names must match exact
         # Initialize Capital Gains tab widgets
         self._init_capital_gains_tab_widgets()
         logging.debug("--- _init_ui_widgets: After _init_table_panel_widgets ---")
+
+        # --- Tab: Periodic Value Change ---
+        self._init_periodic_value_change_tab_widgets_content()
+
         # --- Tab 4: Dividend History ---
         # (This will become Tab 4 after we add Transactions Log and Asset Allocation)
         logging.debug("--- _init_ui_widgets: Entering Dividend History Tab setup ---")
@@ -9785,6 +9817,163 @@ The CSV file should contain the following columns (header names must match exact
         self._create_status_bar()
         logging.debug("--- _init_ui_widgets: After _create_status_bar ---")
         logging.debug("--- _init_ui_widgets: END ---")
+
+    def _init_periodic_value_change_tab_widgets_content(self):
+        """Initializes the content for the Periodic Value Change tab."""
+        self.periodic_value_change_tab = QWidget()
+        self.periodic_value_change_tab.setObjectName("PeriodicValueChangeTab")
+        main_layout = QVBoxLayout(self.periodic_value_change_tab)
+        main_layout.setContentsMargins(5, 5, 5, 5)
+
+        splitter = QSplitter(Qt.Vertical)
+        main_layout.addWidget(splitter)
+
+        # --- Top Pane: Graphs ---
+        top_pane_widget = QWidget()
+        top_pane_layout = QHBoxLayout(top_pane_widget)
+
+        graph_configs = [
+            (
+                "Annual",
+                "pvc_annual_graph",
+                "Annual Value Change Graph",
+                "pvc_annual_graph_spinbox",
+                10,
+            ),
+            (
+                "Monthly",
+                "pvc_monthly_graph",
+                "Monthly Value Change Graph",
+                "pvc_monthly_graph_spinbox",
+                12,
+            ),
+            (
+                "Weekly",
+                "pvc_weekly_graph",
+                "Weekly Value Change Graph",
+                "pvc_weekly_graph_spinbox",
+                12,
+            ),
+        ]
+
+        for (
+            period_name,
+            attr_prefix,
+            group_title,
+            spinbox_attr,
+            default_periods,
+        ) in graph_configs:
+            group_box = QGroupBox(group_title)
+            group_layout = QVBoxLayout(group_box)
+
+            controls_layout = QHBoxLayout()
+            controls_layout.addWidget(QLabel("Periods:"))
+            spinbox = QSpinBox()
+            spinbox.setMinimum(1)
+            spinbox.setMaximum(100)
+            spinbox.setValue(
+                self.config.get(f"pvc_{period_name.lower()}_periods", default_periods)
+            )
+            spinbox.setObjectName(spinbox_attr)
+            setattr(self, spinbox_attr, spinbox)
+            controls_layout.addWidget(spinbox)
+            controls_layout.addStretch()
+            group_layout.addLayout(controls_layout)
+
+            fig = Figure(
+                figsize=(4.5, 2.5), dpi=CHART_DPI
+            )  # Slightly taller for better bar display
+            ax = fig.add_subplot(111)
+            canvas = FigureCanvas(fig)
+            # --- ADDED: Set fixed height for the canvas based on figure's intended pixel height ---
+            canvas_pixel_height = int(fig.get_figheight() * fig.dpi)
+            canvas.setFixedHeight(canvas_pixel_height)
+            canvas.setObjectName(f"{attr_prefix}_canvas")
+            setattr(self, f"{attr_prefix}_fig", fig)
+            setattr(self, f"{attr_prefix}_ax", ax)
+            setattr(self, f"{attr_prefix}_canvas", canvas)
+            group_layout.addWidget(canvas)
+            top_pane_layout.addWidget(group_box)
+
+        splitter.addWidget(top_pane_widget)
+
+        # --- Bottom Pane: Tables ---
+        bottom_pane_widget = QWidget()
+        bottom_pane_layout = QHBoxLayout(bottom_pane_widget)
+
+        table_configs = [
+            ("Annual", "pvc_annual_table", "Annual Value Change Table"),
+            ("Monthly", "pvc_monthly_table", "Monthly Value Change Table"),
+            ("Weekly", "pvc_weekly_table", "Weekly Value Change Table"),
+        ]
+
+        for period_name, attr_prefix, group_title in table_configs:
+            group_box = QGroupBox(group_title)
+            group_layout = QVBoxLayout(group_box)
+
+            table_view = QTableView()
+            table_view.setObjectName(f"{attr_prefix}_view")
+            table_view.setAlternatingRowColors(True)
+            table_view.setSelectionBehavior(QTableView.SelectRows)
+            table_view.setWordWrap(False)
+            table_view.setSortingEnabled(True)
+            table_view.horizontalHeader().setSectionResizeMode(
+                QHeaderView.Stretch
+            )  # Stretch columns
+            table_view.verticalHeader().setVisible(False)
+
+            model = PandasModel(
+                parent=self, log_mode=True
+            )  # log_mode for direct display
+            table_view.setModel(model)
+
+            setattr(self, f"{attr_prefix}_view", table_view)
+            setattr(self, f"{attr_prefix}_model", model)
+
+            group_layout.addWidget(table_view)
+            bottom_pane_layout.addWidget(group_box)
+
+        splitter.addWidget(bottom_pane_widget)
+
+        # Set stretch factors: top panel should not stretch, bottom panel should.
+        splitter.setStretchFactor(0, 0)  # Index 0 is top_pane_widget
+        splitter.setStretchFactor(1, 1)  # Index 1 is bottom_pane_widget
+
+        # Set initial sizes. With stretch factor 0 for the top, it should respect its sizeHint.
+        # The top panel's height is driven by the fixed-height canvases (2.5 inches * 95 DPI = 237.5px)
+        # plus controls and GroupBox chrome (estimate ~70-80px).
+        estimated_top_panel_height = (
+            310  # Approx. 238px for canvas + 72px for controls/padding
+        )
+
+        # The total_height for setSizes refers to the splitter's current height.
+        # If the window isn't shown yet, this might be small.
+        # However, the stretch factors should ensure the top panel adheres to its content size.
+        total_height = self.height() if self.height() > 0 else 800  # Fallback height
+        bottom_panel_height = max(
+            100, total_height - estimated_top_panel_height
+        )  # Ensure bottom has some space
+        splitter.setSizes([estimated_top_panel_height, bottom_panel_height])
+
+        self.main_tab_widget.addTab(
+            self.periodic_value_change_tab, "Periodic Value Change"
+        )
+        logging.debug(
+            "--- _init_ui_widgets: Periodic Value Change Tab widgets initialized ---"
+        )
+
+    def _update_periodic_value_change_display(self):
+        """Updates the graphs and tables in the Periodic Value Change tab."""
+        # This method will be called from handle_results and when spinboxes change.
+        # It will iterate through Annual, Monthly, Weekly, get data from
+        # self.periodic_returns_data, filter by spinbox value, and update
+        # the corresponding graph and table.
+        # For now, it's a placeholder. The detailed implementation will be complex.
+        logging.info("Placeholder: _update_periodic_value_change_display called.")
+        # Actual plotting and table updates will go here.
+        # Example for one period (Annual):
+        # self._plot_pvc_graph(self.pvc_annual_graph_ax, self.pvc_annual_graph_canvas, 'Y', self.pvc_annual_graph_spinbox.value())
+        # self._update_pvc_table(self.pvc_annual_table_model, 'Y', self.pvc_annual_graph_spinbox.value())
 
     def _init_capital_gains_tab_widgets(self):
         """Initializes widgets for the Capital Gains tab."""
@@ -10610,6 +10799,73 @@ The CSV file should contain the following columns (header names must match exact
                     "Cannot calculate periodic returns: full_historical_data is empty."
                 )
 
+        # --- Calculate Absolute Periodic Value Changes for Portfolio ---
+        self.periodic_value_changes_data = {}
+        intervals_map_abs_val = {"Y": "YE", "M": "ME", "W": "W-FRI"}
+
+        if (
+            isinstance(self.full_historical_data, pd.DataFrame)
+            and not self.full_historical_data.empty
+            and "Portfolio Value" in self.full_historical_data.columns
+        ):
+            for interval_key, freq_code in intervals_map_abs_val.items():
+                try:
+                    period_end_values = (
+                        self.full_historical_data["Portfolio Value"]
+                        .resample(freq_code)
+                        .last()
+                    )
+                    period_start_values = period_end_values.shift(1)
+
+                    period_net_flows = pd.Series(dtype=float)
+                    if "net_flow" in self.full_historical_data.columns:
+                        period_net_flows = (
+                            self.full_historical_data["net_flow"]
+                            .resample(freq_code)
+                            .sum()
+                            .fillna(0.0)
+                        )
+                    else:
+                        period_net_flows = pd.Series(0.0, index=period_end_values.index)
+
+                    df_aligned = pd.DataFrame(
+                        {
+                            "end_value": period_end_values,
+                            "start_value": period_start_values,
+                        }
+                    )
+                    df_aligned["net_flow"] = period_net_flows.reindex(
+                        df_aligned.index
+                    ).fillna(0.0)
+
+                    value_change_series = (
+                        df_aligned["end_value"]
+                        - df_aligned["start_value"]
+                        - df_aligned["net_flow"]
+                    )
+
+                    self.periodic_value_changes_data[interval_key] = pd.DataFrame(
+                        {f"Portfolio Value Change": value_change_series}
+                    ).dropna(subset=[f"Portfolio Value Change"])
+
+                    logging.debug(
+                        f"Calculated absolute periodic VALUE CHANGES for interval '{interval_key}':"
+                    )
+                    if not self.periodic_value_changes_data[interval_key].empty:
+                        logging.debug(
+                            f"  Tail:\n{self.periodic_value_changes_data[interval_key].tail().to_string()}"
+                        )
+
+                except Exception as e_pvc_abs:
+                    logging.error(
+                        f"Error calculating absolute periodic value changes for interval {interval_key}: {e_pvc_abs}"
+                    )
+                    self.periodic_value_changes_data[interval_key] = pd.DataFrame()
+        else:
+            logging.warning(
+                "Cannot calculate absolute periodic value changes: full_historical_data is empty, invalid, or missing 'Portfolio Value'."
+            )
+
         # --- ADDED: Filter full data to get data for line graphs ---
         self.historical_data = pd.DataFrame()  # Initialize filtered data
         if (
@@ -10948,6 +11204,8 @@ The CSV file should contain the following columns (header names must match exact
                 # --- END ADDED LOGGING ---
                 self._update_capital_gains_display()  # Update Capital Gains tab
 
+                self._update_periodic_value_change_display()  # Update new tab
+
             else:
                 logging.info(
                     "Hiding bar charts frame as no periodic data is available."
@@ -11220,6 +11478,27 @@ The CSV file should contain the following columns (header names must match exact
             self._update_capital_gains_display
         )
         self.cg_periods_spinbox.valueChanged.connect(self._update_capital_gains_display)
+
+        # Periodic Value Change Tab Spinboxes
+        if hasattr(
+            self, "pvc_annual_graph_spinbox"
+        ):  # Check if tab widgets are initialized
+            self.pvc_annual_graph_spinbox.valueChanged.connect(
+                self._update_periodic_value_change_display
+            )
+            self.pvc_monthly_graph_spinbox.valueChanged.connect(
+                self._update_periodic_value_change_display
+            )
+            self.pvc_weekly_graph_spinbox.valueChanged.connect(
+                self._update_periodic_value_change_display
+            )
+
+        # --- ADDED: Connect tab change signal for PVC tab default sort ---
+        if hasattr(self, "main_tab_widget") and self.main_tab_widget:
+            self.main_tab_widget.currentChanged.connect(
+                self._handle_pvc_tab_visibility_change
+            )
+        # --- END ADDED ---
 
     def _update_table_display(self):
         """Updates the table view, pie charts, and title based on current filters."""
@@ -13866,6 +14145,17 @@ The CSV file should contain the following columns (header names must match exact
         self.dividend_history_data = pd.DataFrame()  # Clear dividend data
         # Keep selected_accounts as loaded from config, validation happens on load
         self._update_table_view_with_filtered_columns(pd.DataFrame())
+        # Clear PVC tab
+        if hasattr(self, "pvc_annual_graph_ax"):
+            self.pvc_annual_graph_ax.clear()
+            self.pvc_annual_graph_canvas.draw()
+            self.pvc_monthly_graph_ax.clear()
+            self.pvc_monthly_graph_canvas.draw()
+            self.pvc_weekly_graph_ax.clear()
+            self.pvc_weekly_graph_canvas.draw()
+            self.pvc_annual_table_model.updateData(pd.DataFrame())
+            self.pvc_monthly_table_model.updateData(pd.DataFrame())
+            self.pvc_weekly_table_model.updateData(pd.DataFrame())
         self.apply_column_visibility()
         self.update_dashboard_summary()
         self.update_account_pie_chart()
@@ -15529,7 +15819,7 @@ The CSV file should contain the following columns (header names must match exact
             # ax.tick_params(axis="y", colors=COLOR_TEXT_SECONDARY, labelsize=7)
 
             fig = config["ax"].get_figure()
-            fig.tight_layout(pad=0.5)
+            fig.tight_layout(pad=0.2)
             canvas.draw()
 
     def _update_dividend_bar_chart(self):
@@ -15740,6 +16030,431 @@ The CSV file should contain the following columns (header names must match exact
 
         # Update the summary table with the plotted data
         self._update_dividend_summary_table(plot_data_for_table)
+
+    def _plot_pvc_graph(self, ax, canvas, interval_key, num_periods):
+        """Helper to plot a single graph for the Periodic Value Change tab."""
+        ax.clear()
+        fig = ax.get_figure()
+        if fig:
+            fig.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
+        ax.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
+
+        returns_df = self.periodic_returns_data.get(interval_key)
+        # --- ADDED: Clear previous mplcursors if they exist for this axis ---
+        if (
+            interval_key == "Y"
+            and hasattr(self, "pvc_annual_cursor")
+            and self.pvc_annual_cursor
+        ):
+            self.pvc_annual_cursor.remove()
+        elif (
+            interval_key == "M"
+            and hasattr(self, "pvc_monthly_cursor")
+            and self.pvc_monthly_cursor
+        ):
+            self.pvc_monthly_cursor.remove()
+        elif (
+            interval_key == "W"
+            and hasattr(self, "pvc_weekly_cursor")
+            and self.pvc_weekly_cursor
+        ):
+            self.pvc_weekly_cursor.remove()
+        # --- END ADDED ---
+        value_change_df = self.periodic_value_changes_data.get(interval_key)
+
+        if value_change_df is None or value_change_df.empty:
+            ax.text(
+                0.5,
+                0.5,
+                "No Data",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                color=COLOR_TEXT_SECONDARY,
+            )
+            canvas.draw()
+            return
+
+        portfolio_value_change_col_name = (
+            "Portfolio Value Change"  # Column name from new dict
+        )
+        if portfolio_value_change_col_name not in value_change_df.columns:
+            ax.text(
+                0.5,
+                0.5,
+                "Portfolio Return Data Missing",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                color=COLOR_TEXT_SECONDARY,
+            )
+            canvas.draw()
+            return
+
+        plot_data = (
+            value_change_df[[portfolio_value_change_col_name]].tail(num_periods).copy()
+        )
+
+        if plot_data.empty:
+            ax.text(
+                0.5,
+                0.5,
+                "No Data for Selected Periods",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                color=COLOR_TEXT_SECONDARY,
+            )
+            canvas.draw()
+            return
+
+        date_format_map = {"Y": "%Y", "M": "%Y-%m", "W": "%Y-%m-%d"}
+        x_tick_labels = plot_data.index.strftime(
+            date_format_map.get(interval_key, "%Y-%m-%d")
+        )
+
+        bar_colors = [
+            (
+                self.QCOLOR_GAIN_THEMED.name()
+                if val >= 0
+                else self.QCOLOR_LOSS_THEMED.name()
+            )
+            for val in plot_data[portfolio_value_change_col_name]
+        ]
+
+        bars = ax.bar(
+            x_tick_labels,
+            plot_data[portfolio_value_change_col_name],
+            color=bar_colors,
+            width=0.8,  # Increased bar width
+        )
+
+        # Format Y axis as currency
+        currency_symbol_for_axis = self._get_currency_symbol()
+        ax.yaxis.set_major_formatter(
+            mtick.FuncFormatter(lambda x, p: f"{currency_symbol_for_axis}{x:,.0f}")
+        )
+
+        ax.tick_params(
+            axis="x",
+            labelrotation=45,
+            labelsize=7,
+            colors=self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
+        )
+        ax.tick_params(
+            axis="y", labelsize=7, colors=self.QCOLOR_TEXT_SECONDARY_THEMED.name()
+        )
+        ax.grid(
+            True,
+            axis="y",
+            linestyle="--",
+            linewidth=0.5,
+            color=self.QCOLOR_BORDER_THEMED.name(),
+        )
+        ax.axhline(0, color=self.QCOLOR_BORDER_THEMED.name(), linewidth=0.6)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["bottom"].set_color(self.QCOLOR_BORDER_THEMED.name())
+        ax.spines["left"].set_color(self.QCOLOR_BORDER_THEMED.name())
+
+        # --- ADDED: mplcursors for hover annotations ---
+        if MPLCURSORS_AVAILABLE and not plot_data.empty:
+            try:
+                # Define the callback function within the scope to capture x_tick_labels and currency_symbol_for_axis
+                def on_add_pvc_bar(
+                    sel,
+                    local_x_labels=x_tick_labels,
+                    local_currency_sym=currency_symbol_for_axis,
+                ):
+                    bar_index = int(
+                        sel.index
+                    )  # sel.index is the index of the bar in the container
+                    period_label = (
+                        local_x_labels[bar_index]
+                        if bar_index < len(local_x_labels)
+                        else "Unknown Period"
+                    )
+                    value = sel.artist.patches[
+                        sel.index
+                    ].get_height()  # Height of the specific bar
+
+                    annotation_text = (
+                        f"{period_label}\nValue: {local_currency_sym}{value:,.0f}"
+                    )
+                    sel.annotation.set_text(annotation_text)
+                    sel.annotation.get_bbox_patch().set(
+                        facecolor="lightyellow", alpha=0.9, edgecolor="gray"
+                    )
+                    sel.annotation.set_fontsize(8)
+
+                cursor = mplcursors.cursor(bars, hover=mplcursors.HoverMode.Transient)
+                cursor.connect("add", on_add_pvc_bar)
+
+                # Store the cursor object to keep it alive
+                if interval_key == "Y":
+                    self.pvc_annual_cursor = cursor
+                elif interval_key == "M":
+                    self.pvc_monthly_cursor = cursor
+                elif interval_key == "W":
+                    self.pvc_weekly_cursor = cursor
+
+            except Exception as e_cursor_pvc:
+                logging.error(
+                    f"Error activating mplcursors for PVC graph (Interval: {interval_key}): {e_cursor_pvc}"
+                )
+        # --- END ADDED ---
+
+        fig.tight_layout(pad=0.5)
+        canvas.draw()
+
+    def _update_pvc_table(
+        self, table_model: PandasModel, interval_key: str, num_periods: int
+    ):
+        """Helper to update a single table in the Periodic Value Change tab."""
+        percent_returns_df_full = self.periodic_returns_data.get(interval_key)
+        value_changes_df_full = self.periodic_value_changes_data.get(interval_key)
+
+        if (percent_returns_df_full is None or percent_returns_df_full.empty) and (
+            value_changes_df_full is None or value_changes_df_full.empty
+        ):
+            table_model.updateData(pd.DataFrame())
+            return
+
+        # Select data for the last N periods
+        df_percent_returns_table = pd.DataFrame()
+        if percent_returns_df_full is not None and not percent_returns_df_full.empty:
+            df_percent_returns_table = percent_returns_df_full.tail(num_periods).copy()
+
+        df_value_changes_table = pd.DataFrame()
+        if value_changes_df_full is not None and not value_changes_df_full.empty:
+            df_value_changes_table = value_changes_df_full.tail(num_periods).copy()
+
+        # Combine the dataframes based on index (Period)
+        if not df_percent_returns_table.empty and not df_value_changes_table.empty:
+            df_for_table = pd.merge(
+                df_value_changes_table,
+                df_percent_returns_table,
+                left_index=True,
+                right_index=True,
+                how="outer",
+            )
+        elif not df_value_changes_table.empty:
+            df_for_table = df_value_changes_table
+        elif not df_percent_returns_table.empty:
+            df_for_table = df_percent_returns_table
+        else:
+            table_model.updateData(pd.DataFrame())
+            return
+
+        # Format index (dates)
+        date_format_map = {"Y": "%Y", "M": "%Y-%m", "W": "%Y-%m-%d"}
+        df_for_table.index = df_for_table.index.strftime(
+            date_format_map.get(interval_key, "%Y-%m-%d")
+        )
+        df_for_table = df_for_table.reset_index()
+        df_for_table.rename(columns={"index": "Period"}, inplace=True)
+        # Rename columns for display (remove interval key suffix, map benchmark tickers to names)
+        new_column_names = {}
+        currency_sym = self._get_currency_symbol()
+        for col in df_for_table.columns:
+            if col == "Period":
+                new_column_names[col] = "Period"
+            elif col == "Portfolio Value Change":  # New column for absolute change
+                new_column_names[col] = f"Portfolio Value Change ({currency_sym})"
+            elif col.startswith("Portfolio"):
+                new_column_names[col] = "Portfolio (%)"
+            else:  # Benchmark column
+                yf_ticker_part = col.split(f" {interval_key}-Return")[0]
+                display_name = yf_ticker_part  # Default to ticker if not in map
+                for name, ticker_in_map in BENCHMARK_MAPPING.items():
+                    if ticker_in_map == yf_ticker_part:
+                        display_name = name
+                        break
+                # Check if it's a value change or return column for benchmarks if they were added
+                if (
+                    "Value Change" in col
+                ):  # Hypothetical if benchmarks value change was added
+                    new_column_names[col] = (
+                        f"{display_name} Value Change ({currency_sym})"
+                    )
+                else:  # Default to return %
+                    new_column_names[col] = f"{display_name} (%)"
+        df_for_table.rename(columns=new_column_names, inplace=True)
+
+        table_model.updateData(df_for_table)
+        logging.debug(f"PVC Table ({interval_key}): Data updated in model.")
+        table_model.updateData(df_for_table)
+
+        # --- ADDED: Apply default sort by Period (Descending) ---
+        # Find the QTableView associated with this model to apply sort
+        table_view_to_sort = None
+        if table_model == self.pvc_annual_table_model:
+            table_view_to_sort = self.pvc_annual_table_view
+        elif table_model == self.pvc_monthly_table_model:
+            table_view_to_sort = self.pvc_monthly_table_view
+        elif table_model == self.pvc_weekly_table_model:
+            table_view_to_sort = self.pvc_weekly_table_view
+
+        if table_view_to_sort and not df_for_table.empty:
+            try:
+                # Find the column index in the *model* based on the UI name "Period"
+                # This is safer if the model reorders/renames columns internally (though unlikely for PandasModel here)
+                model_period_col_idx = -1
+                for i in range(table_model.columnCount()):
+                    header_ui_name = table_model.headerData(
+                        i, Qt.Horizontal, Qt.DisplayRole
+                    )
+                    if (
+                        str(header_ui_name).strip() == "Date (%)"
+                    ):  # MODIFIED: Target column for PVC tables
+                        model_period_col_idx = i
+                        break
+
+                if model_period_col_idx != -1:
+                    logging.debug(
+                        f"PVC Table ({interval_key}): Found 'Date (%)' in model at index {model_period_col_idx}. Sorting view."
+                    )
+                    # Directly apply sort. Visibility handler will also cover it.
+                    table_view_to_sort.sortByColumn(
+                        model_period_col_idx, Qt.DescendingOrder
+                    )
+                    logging.debug(
+                        f"PVC Table ({interval_key}): sortByColumn called directly for 'Date (%)' index {model_period_col_idx} Descending."
+                    )
+                else:
+                    logging.warning(
+                        f"PVC Table ({interval_key}): Could not find 'Period' column in the model's headers to sort view."
+                    )
+
+            except KeyError:
+                logging.warning(
+                    f"PVC Table ({interval_key}): KeyError finding 'Period' column in df_for_table for sorting view."
+                )
+            except Exception as e_sort_pvc:
+                logging.error(
+                    f"PVC Table ({interval_key}): Error applying default sort to view: {e_sort_pvc}"
+                )
+        else:
+            if not table_view_to_sort:
+                logging.warning(
+                    f"PVC Table ({interval_key}): table_view_to_sort is None."
+                )
+            if df_for_table.empty:
+                logging.debug(
+                    f"PVC Table ({interval_key}): df_for_table is empty, skipping view sort."
+                )
+        # --- END ADDED ---
+
+    # --- ADDED: Methods for PVC tab visibility and default sort ---
+    @Slot(int)
+    def _handle_pvc_tab_visibility_change(self, index: int):
+        """
+        Slot connected to main_tab_widget.currentChanged signal.
+        If the Periodic Value Change tab becomes visible, applies default sort to its tables.
+        """
+        try:
+            current_tab_widget = self.main_tab_widget.widget(index)
+            if current_tab_widget == self.periodic_value_change_tab:
+                logging.debug(
+                    "Periodic Value Change tab became visible. Applying default sorts."
+                )
+                self._apply_default_sort_to_pvc_tables()
+        except Exception as e:
+            logging.error(
+                f"Error in _handle_pvc_tab_visibility_change: {e}", exc_info=True
+            )
+
+    def _apply_default_sort_to_pvc_tables(self):
+        """Applies default sort (Period Descending) to all tables in the PVC tab."""
+        pvc_tables_config = [
+            (self.pvc_annual_table_view, self.pvc_annual_table_model, "Annual"),
+            (self.pvc_monthly_table_view, self.pvc_monthly_table_model, "Monthly"),
+            (self.pvc_weekly_table_view, self.pvc_weekly_table_model, "Weekly"),
+        ]
+
+        for table_view, table_model, interval_key_debug in pvc_tables_config:
+            if table_view and table_model and not table_model._data.empty:
+                try:
+                    model_period_col_idx = -1
+                    # ---- ADDED LOGGING ----
+                    model_headers_from_visibility_handler = [
+                        table_model.headerData(i, Qt.Horizontal, Qt.DisplayRole)
+                        for i in range(table_model.columnCount())
+                    ]
+                    logging.debug(
+                        f"PVC Tab Visible Sort ({interval_key_debug}): Model headers found by visibility handler: {model_headers_from_visibility_handler}"
+                    )
+                    # ---- END ADDED LOGGING ----
+                    for i in range(table_model.columnCount()):
+                        header_ui_name = table_model.headerData(
+                            i, Qt.Horizontal, Qt.DisplayRole
+                        )
+                        if (
+                            str(header_ui_name).strip() == "Date (%)"
+                        ):  # MODIFIED: Target column for PVC tables
+                            model_period_col_idx = i
+                            break
+
+                    if model_period_col_idx != -1:
+                        logging.debug(
+                            f"PVC Tab Visible Sort ({interval_key_debug}): Applying sort by 'Date (%)' index {model_period_col_idx} Descending."
+                        )
+                        table_view.sortByColumn(
+                            model_period_col_idx, Qt.DescendingOrder
+                        )
+                    else:
+                        logging.warning(
+                            f"PVC Tab Visible Sort ({interval_key_debug}): Could not find 'Period' column in model headers. (Actual headers: {model_headers_from_visibility_handler})"
+                        )
+                except Exception as e_sort:
+                    logging.error(
+                        f"Error applying default sort to PVC table ({interval_key_debug}) on visibility: {e_sort}",
+                        exc_info=True,
+                    )
+            elif table_model and table_model._data.empty:
+                logging.debug(
+                    f"PVC Tab Visible Sort ({interval_key_debug}): Model is empty, skipping sort."
+                )
+            elif not table_view:
+                logging.warning(
+                    f"PVC Tab Visible Sort ({interval_key_debug}): TableView is None."
+                )
+            elif not table_model:
+                logging.warning(
+                    f"PVC Tab Visible Sort ({interval_key_debug}): TableModel is None."
+                )
+
+    # --- END ADDED ---
+
+    def _update_periodic_value_change_display(self):
+        """Updates all graphs and tables in the Periodic Value Change tab."""
+        self._plot_pvc_graph(
+            self.pvc_annual_graph_ax,
+            self.pvc_annual_graph_canvas,
+            "Y",
+            self.pvc_annual_graph_spinbox.value(),
+        )
+        self._update_pvc_table(
+            self.pvc_annual_table_model, "Y", self.pvc_annual_graph_spinbox.value()
+        )
+        self._plot_pvc_graph(
+            self.pvc_monthly_graph_ax,
+            self.pvc_monthly_graph_canvas,
+            "M",
+            self.pvc_monthly_graph_spinbox.value(),
+        )
+        self._update_pvc_table(
+            self.pvc_monthly_table_model, "M", self.pvc_monthly_graph_spinbox.value()
+        )
+        self._plot_pvc_graph(
+            self.pvc_weekly_graph_ax,
+            self.pvc_weekly_graph_canvas,
+            "W",
+            self.pvc_weekly_graph_spinbox.value(),
+        )
+        self._update_pvc_table(
+            self.pvc_weekly_table_model, "W", self.pvc_weekly_graph_spinbox.value()
+        )
 
     def _update_dividend_summary_table(self, plot_data: pd.Series):
         """Updates the dividend summary table view with aggregated data."""
