@@ -1145,7 +1145,15 @@ class PandasModel(QAbstractTableModel):
                 col_name_str = str(col_name)
                 col_data = self._data.iloc[:, col]
                 if col_name_str in ["Account", "Symbol", "Price Source"]:
-                    alignment = int(Qt.AlignLeft | Qt.AlignVCenter)
+                    alignment = int(
+                        Qt.AlignLeft | Qt.AlignVCenter
+                    )  # Keep left alignment for these
+                elif (
+                    col_name_str == "Period"
+                ):  # For PVC, Dividend Summary, CG Summary tables
+                    alignment = int(
+                        Qt.AlignCenter | Qt.AlignVCenter
+                    )  # Center align "Period" column
                 elif pd.api.types.is_numeric_dtype(
                     col_data.dtype
                 ) and not pd.api.types.is_datetime64_any_dtype(
@@ -9918,8 +9926,8 @@ The CSV file should contain the following columns (header names must match exact
             table_view.setWordWrap(False)
             table_view.setSortingEnabled(True)
             table_view.horizontalHeader().setSectionResizeMode(
-                QHeaderView.Stretch
-            )  # Stretch columns
+                QHeaderView.Interactive
+            )  # Allow column resizing
             table_view.verticalHeader().setVisible(False)
 
             model = PandasModel(
@@ -11266,8 +11274,10 @@ The CSV file should contain the following columns (header names must match exact
             )
 
             filtered_df = self.original_data[
-                (self.original_data["Stock / ETF Symbol"] == symbol_to_filter)
-                & (self.original_data["Investment Account"] == account)
+                (
+                    self.original_data["Symbol"] == symbol_to_filter
+                )  # Use cleaned column name
+                & (self.original_data["Account"] == account)  # Use cleaned column name
             ].copy()
 
             if filtered_df.empty:
@@ -15676,7 +15686,7 @@ The CSV file should contain the following columns (header names must match exact
 
             # Plotting
             n_series = len(plot_data.columns)
-            bar_width = 0.8 / n_series  # Adjust width based on number of series
+            bar_width = 0.9 / n_series  # Adjust width based on number of series
             index = np.arange(len(plot_data))
 
             # --- Store x-axis labels before clearing ticks ---
@@ -16126,7 +16136,7 @@ The CSV file should contain the following columns (header names must match exact
             x_tick_labels,
             plot_data[portfolio_value_change_col_name],
             color=bar_colors,
-            width=0.8,  # Increased bar width
+            width=0.9,  # Increased bar width
         )
 
         # Format Y axis as currency
@@ -16246,43 +16256,87 @@ The CSV file should contain the following columns (header names must match exact
             table_model.updateData(pd.DataFrame())
             return
 
-        # Format index (dates)
-        date_format_map = {"Y": "%Y", "M": "%Y-%m", "W": "%Y-%m-%d"}
-        df_for_table.index = df_for_table.index.strftime(
-            date_format_map.get(interval_key, "%Y-%m-%d")
+        # Step 1: Reset index to move DatetimeIndex to a column
+        original_index_name = (
+            df_for_table.index.name
+        )  # Store original index name, could be None
+        df_for_table.reset_index(inplace=True)
+
+        # Identify the column that came from the index
+        # If original_index_name was None, reset_index creates 'index'. Otherwise, it uses original_index_name.
+        date_column_name_after_reset = (
+            original_index_name if original_index_name is not None else "index"
         )
-        df_for_table = df_for_table.reset_index()
-        df_for_table.rename(columns={"index": "Period"}, inplace=True)
+
+        # Ensure this column exists, if not, try to find a 'Date' column as a fallback
+        if date_column_name_after_reset not in df_for_table.columns:
+            if (
+                "Date" in df_for_table.columns
+            ):  # Common fallback if index was named 'Date'
+                date_column_name_after_reset = "Date"
+            elif (
+                "index" in df_for_table.columns
+            ):  # If original_index_name was something else but 'index' was created
+                date_column_name_after_reset = "index"
+            else:
+                if not df_for_table.empty:
+                    date_column_name_after_reset = df_for_table.columns[0]
+                    logging.warning(
+                        f"PVC Table ({interval_key}): Could not reliably identify the date column after reset_index. "
+                        f"Original index name was '{original_index_name}'. Assuming first column '{date_column_name_after_reset}' is the date column."
+                    )
+                else:
+                    logging.error(
+                        f"PVC Table ({interval_key}): DataFrame is empty after reset_index, cannot identify date column."
+                    )
+                    table_model.updateData(pd.DataFrame())
+                    return
+
         # Rename columns for display (remove interval key suffix, map benchmark tickers to names)
+        # The date column (currently `date_column_name_after_reset`) still holds datetime objects.
         new_column_names = {}
         currency_sym = self._get_currency_symbol()
+
         for col in df_for_table.columns:
-            if col == "Period":
-                new_column_names[col] = "Period"
-            elif col == "Portfolio Value Change":  # New column for absolute change
-                new_column_names[col] = f"Portfolio Value Change ({currency_sym})"
-            elif col.startswith("Portfolio"):
+            if col == date_column_name_after_reset:  # This is our date column
+                new_column_names[col] = "Period"  # Target name
+            elif col == "Portfolio Value Change":
+                new_column_names[col] = f"Value Change ({currency_sym})"  # MODIFIED
+            elif col.startswith("Portfolio") and f" {interval_key}-Return" in col:
                 new_column_names[col] = "Portfolio (%)"
             else:  # Benchmark column
-                yf_ticker_part = col.split(f" {interval_key}-Return")[0]
-                display_name = yf_ticker_part  # Default to ticker if not in map
-                for name, ticker_in_map in BENCHMARK_MAPPING.items():
-                    if ticker_in_map == yf_ticker_part:
-                        display_name = name
-                        break
-                # Check if it's a value change or return column for benchmarks if they were added
                 if (
-                    "Value Change" in col
-                ):  # Hypothetical if benchmarks value change was added
-                    new_column_names[col] = (
-                        f"{display_name} Value Change ({currency_sym})"
-                    )
-                else:  # Default to return %
+                    f" {interval_key}-Return" in col
+                ):  # Check if it's a benchmark return column
+                    yf_ticker_part = col.split(f" {interval_key}-Return")[0]
+                    display_name = yf_ticker_part
+                    for name, ticker_in_map in BENCHMARK_MAPPING.items():
+                        if ticker_in_map == yf_ticker_part:
+                            display_name = name
+                            break
                     new_column_names[col] = f"{display_name} (%)"
+                # else: # Other columns, if any, keep their names or handle as needed
+                #    new_column_names[col] = col # Implicitly handled if not in conditions
+
         df_for_table.rename(columns=new_column_names, inplace=True)
 
-        table_model.updateData(df_for_table)
-        logging.debug(f"PVC Table ({interval_key}): Data updated in model.")
+        # Step 3: Now that the "Period" column is correctly named and contains datetime objects, format it to string.
+        if "Period" in df_for_table.columns:
+            date_format_map = {"Y": "%Y", "M": "%Y-%m", "W": "%Y-%m-%d"}
+            df_for_table["Period"] = pd.to_datetime(
+                df_for_table["Period"], errors="coerce"
+            )
+            df_for_table["Period"] = df_for_table["Period"].dt.strftime(
+                date_format_map.get(interval_key, "%Y-%m-%d")
+            )
+            df_for_table["Period"] = df_for_table["Period"].replace(
+                {"NaT": "-"}, regex=False
+            )  # Handle any NaT from coerce
+        else:
+            logging.warning(
+                f"PVC Table ({interval_key}): 'Period' column not found after renaming, for date string formatting."
+            )
+
         table_model.updateData(df_for_table)
 
         # --- ADDED: Apply default sort by Period (Descending) ---
@@ -16304,27 +16358,26 @@ The CSV file should contain the following columns (header names must match exact
                     header_ui_name = table_model.headerData(
                         i, Qt.Horizontal, Qt.DisplayRole
                     )
-                    if (
-                        str(header_ui_name).strip() == "Date (%)"
-                    ):  # MODIFIED: Target column for PVC tables
-                        model_period_col_idx = i
+                    if str(header_ui_name).strip() == "Period":
+                        model_period_col_idx = (
+                            i  # This should be the index of the "Period" column
+                        )
                         break
-
                 if model_period_col_idx != -1:
                     logging.debug(
-                        f"PVC Table ({interval_key}): Found 'Date (%)' in model at index {model_period_col_idx}. Sorting view."
+                        f"PVC Table ({interval_key}): Found 'Period' in model at index {model_period_col_idx}. Sorting view."
                     )
                     # Directly apply sort. Visibility handler will also cover it.
                     table_view_to_sort.sortByColumn(
                         model_period_col_idx, Qt.DescendingOrder
                     )
                     logging.debug(
-                        f"PVC Table ({interval_key}): sortByColumn called directly for 'Date (%)' index {model_period_col_idx} Descending."
+                        f"PVC Table ({interval_key}): sortByColumn called directly for 'Period' index {model_period_col_idx} Descending."
                     )
                 else:
                     logging.warning(
                         f"PVC Table ({interval_key}): Could not find 'Period' column in the model's headers to sort view."
-                    )
+                    )  # This log might appear if the column name isn't "Period" after rename
 
             except KeyError:
                 logging.warning(
@@ -16389,18 +16442,19 @@ The CSV file should contain the following columns (header names must match exact
                         header_ui_name = table_model.headerData(
                             i, Qt.Horizontal, Qt.DisplayRole
                         )
-                        if (
-                            str(header_ui_name).strip() == "Date (%)"
-                        ):  # MODIFIED: Target column for PVC tables
-                            model_period_col_idx = i
+                        if str(header_ui_name).strip() == "Period":
+                            model_period_col_idx = (
+                                i  # This should be the index of the "Period" column
+                            )
                             break
 
                     if model_period_col_idx != -1:
                         logging.debug(
-                            f"PVC Tab Visible Sort ({interval_key_debug}): Applying sort by 'Date (%)' index {model_period_col_idx} Descending."
+                            f"PVC Tab Visible Sort ({interval_key_debug}): Applying sort by 'Period' index {model_period_col_idx} Descending."
                         )
                         table_view.sortByColumn(
-                            model_period_col_idx, Qt.DescendingOrder
+                            model_period_col_idx,
+                            Qt.DescendingOrder,  # This should sort by "Period"
                         )
                     else:
                         logging.warning(
