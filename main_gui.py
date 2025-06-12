@@ -1049,12 +1049,17 @@ class PortfolioCalculatorWorker(QRunnable):
 class PandasModel(QAbstractTableModel):
     """A Qt Table Model for displaying pandas DataFrames in a QTableView.
 
-    Handles data access, header information, sorting (with special handling for
-    cash rows), and custom cell formatting (alignment, color, currency/percentage).
+    Handles data access, header information, sorting, and custom cell formatting.
+    Special formatting can be applied for financial statement tables.
+
+    Attributes:
+        _is_financial_statement_model (bool): True if this model displays financial statement data
+                                              requiring values in millions.
+        _currency_symbol_override (Optional[str]): Specific currency symbol for this model instance.
     """
 
     def __init__(
-        self, data=pd.DataFrame(), parent=None, log_mode=False
+        self, data=pd.DataFrame(), parent=None, log_mode=False, **kwargs
     ):  # ADDED log_mode
         """
         Initializes the model with optional data and a parent reference.
@@ -1066,6 +1071,8 @@ class PandasModel(QAbstractTableModel):
                                         application window, used to access shared
                                         information like the current currency symbol.
                                         Defaults to None.
+            is_financial_statement_model (bool): Flag for financial statement specific formatting.
+            currency_symbol_override (Optional[str]): Specific currency symbol for this model.
             log_mode (bool, optional): If True, disables special cash row handling during sort.
                                        Defaults to False.
         """
@@ -1073,6 +1080,12 @@ class PandasModel(QAbstractTableModel):
         self._data = data
         self._parent = parent
         self._log_mode = log_mode  # STORE log_mode
+        # --- ADDED for financial statement formatting ---
+        self._is_financial_statement_model = kwargs.get(
+            "is_financial_statement_model", False
+        )
+        self._currency_symbol_override = kwargs.get("currency_symbol_override", None)
+        # --- END ADDED ---
         # In PandasModel, access themed colors via the parent (PortfolioApp instance)
         if (
             parent
@@ -1280,14 +1293,105 @@ class PandasModel(QAbstractTableModel):
                 # logging.info(f"Coloring Error (Row:{row}, Col:{col}, Name:'{self._data.columns[col]}'): {e}")
                 return None  # Fallback to QSS on any error
 
-        # --- Display Text ---
+                # --- Display Text ---
         if role == Qt.DisplayRole or role == Qt.EditRole:
             original_value = "ERR"  # Default in case of early error
             try:
                 original_value = self._data.iloc[row, col]
-                col_name_orig_type = self._data.columns[
-                    col
-                ]  # Original type (can be Timestamp)
+                col_name_orig_type = self._data.columns[col]
+                col_name = str(col_name_orig_type)
+
+                # --- MODIFIED: Financial Statement Formatting ---
+                if self._is_financial_statement_model:
+                    active_currency_symbol = (
+                        self._currency_symbol_override
+                        if self._currency_symbol_override
+                        else self._get_currency_symbol_safe()
+                    )
+
+                    metric_column_name = "Metric"
+                    if "Financial Ratio" in self._data.columns:
+                        metric_column_name = "Financial Ratio"
+
+                    if col_name != metric_column_name and isinstance(
+                        original_value, (int, float, np.number)
+                    ):
+                        if pd.notna(original_value):
+                            # --- START OF THE FIX ---
+                            metric_name_for_row = ""
+                            try:
+                                metric_name_for_row = str(self._data.iloc[row, 0])
+                            except IndexError:
+                                pass
+
+                            # Define keywords for different formatting types.
+                            # These will be compiled into regex patterns to match whole words only.
+                            ratio_percent_words = [
+                                "rate",
+                                "ratio",
+                                "margin",
+                                "yield",
+                                "payout",
+                                "%",
+                            ]
+                            integer_count_words = ["shares", "employees"]
+                            # EPS is a per-share currency value, not a ratio, so it's an exception.
+                            currency_exception_words = ["eps"]
+
+                            # Compile regex patterns with word boundaries (\b) for precise matching.
+                            ratio_percent_pattern = re.compile(
+                                f"\\b({'|'.join(ratio_percent_words)})\\b",
+                                re.IGNORECASE,
+                            )
+                            integer_count_pattern = re.compile(
+                                f"\\b({'|'.join(integer_count_words)})\\b",
+                                re.IGNORECASE,
+                            )
+                            currency_exception_pattern = re.compile(
+                                f"\\b({'|'.join(currency_exception_words)})\\b",
+                                re.IGNORECASE,
+                            )
+
+                            # Use regex search to check for whole-word matches.
+                            is_currency_exception = bool(
+                                currency_exception_pattern.search(metric_name_for_row)
+                            )
+                            is_ratio_metric = (
+                                bool(ratio_percent_pattern.search(metric_name_for_row))
+                                and not is_currency_exception
+                            )
+                            is_count_metric = (
+                                bool(integer_count_pattern.search(metric_name_for_row))
+                                and not is_currency_exception
+                            )
+
+                            value_float = float(original_value)
+
+                            if is_ratio_metric:
+                                # Format as a percentage. Heuristic: yfinance ratios are often factors < 1.
+                                if abs(value_float) <= 1.0:
+                                    return f"{(value_float * 100):.2f}%"
+                                else:  # Otherwise, assume it's already a percentage value.
+                                    return f"{value_float:.2f}%"
+                            elif is_count_metric:
+                                # Format as a plain integer with commas.
+                                return format_integer_with_commas(int(value_float))
+                            else:
+                                # Default to currency formatting for all other numeric items.
+                                if abs(value_float) >= 1_000_000.0:
+                                    value_in_millions = value_float / 1_000_000.0
+                                    return f"{active_currency_symbol}{value_in_millions:,.1f}M"
+                                else:
+                                    return format_currency_value(
+                                        value_float, active_currency_symbol, decimals=2
+                                    )
+                            # --- END OF THE FIX ---
+                        else:
+                            return "-"
+
+                # --- END MODIFIED ---
+
+                # Original formatting logic continues below if not handled by financial statement formatting
                 col_name = str(col_name_orig_type)  # Use string version for comparisons
 
                 # --- Special Formatting for CASH Symbol ---
@@ -1326,77 +1430,49 @@ class PandasModel(QAbstractTableModel):
                 # --- Formatting based on value type and column name ---
                 if isinstance(original_value, (int, float, np.number)):
                     value_float = float(original_value)
-                    display_value_float = abs(value_float)
+                    display_value_float = abs(
+                        value_float
+                    )  # This variable is unused and can be removed
                     if abs(value_float) < 1e-9:
-                        display_value_float = 0.0
+                        display_value_float = (
+                            0.0  # This variable is unused and can be removed
+                        )
 
                     if "Quantity" in col_name:
-                        return f"{value_float:,.4f}"  # Keep original sign for Quantity, up to 10 decimal places
+                        return f"{value_float:,.4f}"
 
-                    # Combined Percentage and IRR formatting
-                    elif (
-                        "%" in col_name
-                    ):  # Check if it's a percentage column (incl. IRR(%))
+                    elif "%" in col_name:
                         if np.isinf(value_float):
                             return "Inf %"
-                        # Use original signed value for percentages (already scaled if IRR)
-                        return f"{value_float:,.2f}%"  # Add % sign
+                        return f"{value_float:,.2f}%"
 
-                    # --- ADDED: FX Gain/Loss Formatting ---
                     elif col_name == "FX G/L":
                         current_currency_symbol = self._get_currency_symbol_safe()
                         return f"{current_currency_symbol}{value_float:,.2f}"
                     elif col_name == "FX G/L %":
                         return f"{value_float:,.2f}%"
-                    # --- END ADDED ---
 
-                    # --- MODIFIED Currency Check & Formatting ---
-                    elif self._parent and hasattr(self._parent, "_get_currency_symbol"):
-                        # This block is for columns that are likely currency but not explicitly percentage.
-                        # We first check against a list of known UI names that represent currency.
-                        currency_ui_names = (
-                            [  # These are UI-facing names that PandasModel receives
-                                "Avg Cost",
-                                "Price",
-                                "Cost Basis",
-                                "Est. Income",
-                                "Mkt Val",
-                                "Unreal. G/L",
-                                "Real. G/L",
-                                "Divs",
-                                "Fees",
-                                "Total G/L",
-                                "Day Chg",  # "Day Chg" is the UI name
-                            ]
-                        )
+                    # --- MODIFIED: Restructure the currency check ---
+                    # Check for currency, but don't let it block the fallback
+                    if self._parent and hasattr(self._parent, "_get_currency_symbol"):
+                        currency_ui_names = [
+                            "Avg Cost",
+                            "Price",
+                            "Cost Basis",
+                            "Est. Income",
+                            "Mkt Val",
+                            "Unreal. G/L",
+                            "Real. G/L",
+                            "Divs",
+                            "Fees",
+                            "Total G/L",
+                            "Day Chg",
+                        ]
                         is_currency_col = col_name in currency_ui_names
 
-                        # Then, we check for dynamically generated names, like "Total Dividends ($)"
                         current_display_currency_symbol_for_check = (
                             self._get_currency_symbol_safe()
                         )
-
-                        # --- Start Debug Logging for "Total Dividends" column ---
-                        if "Total Dividends" in col_name:
-                            logging.debug(
-                                f"PandasModel.data: Processing column: '{col_name}' (Row: {row}, Value: {original_value})"
-                            )
-                            logging.debug(
-                                f"  Initial is_currency_col: {is_currency_col}"
-                            )
-                            logging.debug(
-                                f"  current_display_currency_symbol_for_check: '{current_display_currency_symbol_for_check}'"
-                            )
-                            logging.debug(
-                                f"  Condition 1 (contains symbol in parens): {f'({current_display_currency_symbol_for_check})' in col_name}"
-                            )
-                            logging.debug(
-                                f"  Condition 2 (startswith Total Dividends): {col_name.startswith('Total Dividends')}"
-                            )
-                            logging.debug(
-                                f"  Condition 3 (endswith symbol in parens): {col_name.endswith(f'({current_display_currency_symbol_for_check})')}"
-                            )
-                        # --- End Debug Logging ---
 
                         if not is_currency_col and (
                             f"({current_display_currency_symbol_for_check})" in col_name
@@ -1408,26 +1484,15 @@ class PandasModel(QAbstractTableModel):
                             )
                         ):
                             is_currency_col = True
-                            if (
-                                "Total Dividends" in col_name
-                            ):  # Log if it becomes true for our target
-                                logging.debug(
-                                    f"  Updated is_currency_col to True for '{col_name}'"
-                                )
 
                         if is_currency_col:
-                            # current_currency_symbol = self._get_currency_symbol_safe() # Already got it as current_display_currency_symbol_for_check
-                            if "Total Dividends" in col_name:  # Log before returning
-                                logging.debug(
-                                    f"  Formatting '{col_name}' as currency: {current_display_currency_symbol_for_check}{value_float:,.2f}"
-                                )
                             return f"{current_display_currency_symbol_for_check}{value_float:,.2f}"
-                    # --- END MODIFIED Currency Check & Formatting ---
+                    # --- END MODIFICATION ---
 
-                    # Fallback for other numeric types (should be very rare now)
-                    # This should theoretically not be hit often if col names are consistent
-                    else:
-                        return f"{value_float:,.2f}"  # Default formatting, keeps sign
+                    # --- CORRECTED FALLBACK ---
+                    # This is now the guaranteed fallback for any numeric type that wasn't
+                    # a Quantity, Percentage, or specific Currency column.
+                    return f"{value_float:,.2f}"
 
                 # General fallback for non-numeric types
                 return str(original_value)
@@ -2122,8 +2187,13 @@ class FundamentalDataDialog(QDialog):
             display_df_for_model = model_df_init.reset_index()
             display_df_for_model.rename(columns={"index": "Metric"}, inplace=True)
 
+        # Pass the financial statement flag and currency override to the model
         model = PandasModel(
-            display_df_for_model, parent=self._parent_app, log_mode=True
+            display_df_for_model,
+            parent=self._parent_app,
+            log_mode=True,
+            is_financial_statement_model=True,
+            currency_symbol_override=self._get_dialog_currency_symbol(),
         )  # Use _parent_app
         table_view.setModel(model)
 
@@ -2208,6 +2278,9 @@ class FundamentalDataDialog(QDialog):
             table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
 
         current_model.updateData(display_df_for_model)
+        # Ensure the model's currency symbol override is still correct if model is reused
+        if hasattr(current_model, "_currency_symbol_override"):
+            current_model._currency_symbol_override = self._get_dialog_currency_symbol()
 
         if not (df_to_display is None or df_to_display.empty):
             table_view.resizeColumnsToContents()
@@ -2490,8 +2563,28 @@ class FundamentalDataDialog(QDialog):
             )
             table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
 
+            # --- ADDED: Ensure numeric conversion for ratio value columns ---
+            if not display_df_for_model.empty:
+                for col_to_convert in display_df_for_model.columns:
+                    # Skip the first column which contains ratio names (strings)
+                    if col_to_convert != "Financial Ratio":
+                        try:
+                            # errors='coerce' will turn unconvertible strings into NaN
+                            display_df_for_model[col_to_convert] = pd.to_numeric(
+                                display_df_for_model[col_to_convert], errors="coerce"
+                            )
+                        except Exception as e_conv:
+                            logging.warning(
+                                f"Key Ratios Tab: Could not convert column '{col_to_convert}' to numeric: {e_conv}"
+                            )
+            # --- END ADDED ---
+
+        # For Key Ratios, we don't want the "millions" formatting.
         model = PandasModel(
-            display_df_for_model, parent=self, log_mode=True
+            display_df_for_model,
+            parent=self._parent_app,  # parent should be PortfolioApp for themes
+            log_mode=True,
+            is_financial_statement_model=False,  # Key Ratios are not large currency values
         )  # log_mode for direct display
         table_view.setModel(model)
 
@@ -12438,6 +12531,16 @@ The CSV file should contain the following columns (header names must match exact
         if val_col in results_df.columns:
             vv_full = results_df[val_col].dropna()  # Plot FULL data
             if not vv_full.empty:
+                # Plot the area under the curve first
+                self.abs_value_ax.fill_between(
+                    vv_full.index,
+                    vv_full.values,  # Use .values for y1
+                    0,  # Fill down to the x-axis
+                    color=portfolio_color,
+                    alpha=0.3,  # Adjust transparency as needed
+                    label="_nolegend_",  # Avoid duplicate legend entry if line has label
+                )
+                # Then plot the line on top
                 (line,) = self.abs_value_ax.plot(
                     vv_full.index,
                     vv_full,
