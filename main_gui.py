@@ -1437,6 +1437,13 @@ class PandasModel(QAbstractTableModel):
                 if pd.isna(original_value):
                     return "-"
 
+                # --- START OF THE FIX ---
+                # ADDED: Explicitly format date/datetime objects to remove the time component.
+                # This check comes before the generic numeric/string checks.
+                if isinstance(original_value, (datetime, date, pd.Timestamp)):
+                    return original_value.strftime("%Y-%m-%d")
+                # --- END OF THE FIX ---
+
                 # --- Formatting based on value type and column name ---
                 if isinstance(original_value, (int, float, np.number)):
                     value_float = float(original_value)
