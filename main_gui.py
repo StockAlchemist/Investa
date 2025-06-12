@@ -1301,6 +1301,19 @@ class PandasModel(QAbstractTableModel):
                 col_name_orig_type = self._data.columns[col]
                 col_name = str(col_name_orig_type)
 
+                # --- ADDED: Specific handling for 'original_index' ---
+                if col_name == "original_index":
+                    if pd.isna(original_value):
+                        return "-"
+                    try:
+                        # Ensure it's an integer before converting to string for display
+                        return str(
+                            int(float(original_value))
+                        )  # float() handles if it's already float-like string or int
+                    except (ValueError, TypeError):
+                        return str(original_value)  # Fallback if not convertible to int
+                # --- END ADDED ---
+
                 # --- MODIFIED: Financial Statement Formatting ---
                 if self._is_financial_statement_model:
                     active_currency_symbol = (
@@ -1317,15 +1330,12 @@ class PandasModel(QAbstractTableModel):
                         original_value, (int, float, np.number)
                     ):
                         if pd.notna(original_value):
-                            # --- START OF THE FIX ---
                             metric_name_for_row = ""
                             try:
                                 metric_name_for_row = str(self._data.iloc[row, 0])
                             except IndexError:
                                 pass
 
-                            # Define keywords for different formatting types.
-                            # These will be compiled into regex patterns to match whole words only.
                             ratio_percent_words = [
                                 "rate",
                                 "ratio",
@@ -1335,10 +1345,8 @@ class PandasModel(QAbstractTableModel):
                                 "%",
                             ]
                             integer_count_words = ["shares", "employees"]
-                            # EPS is a per-share currency value, not a ratio, so it's an exception.
                             currency_exception_words = ["eps"]
 
-                            # Compile regex patterns with word boundaries (\b) for precise matching.
                             ratio_percent_pattern = re.compile(
                                 f"\\b({'|'.join(ratio_percent_words)})\\b",
                                 re.IGNORECASE,
@@ -1352,32 +1360,35 @@ class PandasModel(QAbstractTableModel):
                                 re.IGNORECASE,
                             )
 
-                            # Use regex search to check for whole-word matches.
+                            metric_name_lower = metric_name_for_row.lower()
+
+                            # --- START OF THE FIX ---
+                            # Use regex search, but add a specific exclusion for "exchange rate" metrics.
                             is_currency_exception = bool(
-                                currency_exception_pattern.search(metric_name_for_row)
+                                currency_exception_pattern.search(metric_name_lower)
                             )
                             is_ratio_metric = (
-                                bool(ratio_percent_pattern.search(metric_name_for_row))
+                                bool(ratio_percent_pattern.search(metric_name_lower))
                                 and not is_currency_exception
+                                and "exchange rate"
+                                not in metric_name_lower  # <-- ADDED EXCEPTION
                             )
                             is_count_metric = (
-                                bool(integer_count_pattern.search(metric_name_for_row))
+                                bool(integer_count_pattern.search(metric_name_lower))
                                 and not is_currency_exception
                             )
+                            # --- END OF THE FIX ---
 
                             value_float = float(original_value)
 
                             if is_ratio_metric:
-                                # Format as a percentage. Heuristic: yfinance ratios are often factors < 1.
                                 if abs(value_float) <= 1.0:
                                     return f"{(value_float * 100):.2f}%"
-                                else:  # Otherwise, assume it's already a percentage value.
+                                else:
                                     return f"{value_float:.2f}%"
                             elif is_count_metric:
-                                # Format as a plain integer with commas.
                                 return format_integer_with_commas(int(value_float))
                             else:
-                                # Default to currency formatting for all other numeric items.
                                 if abs(value_float) >= 1_000_000.0:
                                     value_in_millions = value_float / 1_000_000.0
                                     return f"{active_currency_symbol}{value_in_millions:,.1f}M"
@@ -1385,7 +1396,6 @@ class PandasModel(QAbstractTableModel):
                                     return format_currency_value(
                                         value_float, active_currency_symbol, decimals=2
                                     )
-                            # --- END OF THE FIX ---
                         else:
                             return "-"
 
