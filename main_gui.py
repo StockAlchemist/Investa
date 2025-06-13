@@ -1246,7 +1246,7 @@ class PandasModel(QAbstractTableModel):
                         "Ret %",  # Catches "Total Ret %"
                         "IRR",
                         "Day Chg",  # Catches "Day Chg" and "Day Chg %"
-                        "Value Change",  # Added for Periodic Value Change table's absolute change column
+                        "Value Change",  # Added for Asset Change table's absolute change column
                         "(%)",  # Added for general percentage columns like "Portfolio (%)" in PVC
                         "Yield",  # Catches "Yield (Cost) %" and "Yield (Mkt) %"
                         "Income",  # Catches "Est. Income"
@@ -5560,7 +5560,7 @@ class PortfolioApp(QMainWindow):
                 if hasattr(config, "DIVIDEND_CHART_DEFAULT_PERIODS_MONTHLY")
                 else 24
             ),
-            # Defaults for Periodic Value Change spinboxes
+            # Defaults for Asset Change spinboxes
             "pvc_annual_periods": 10,
             "pvc_monthly_periods": 12,
             "pvc_weekly_periods": 12,
@@ -6665,11 +6665,13 @@ The CSV file should contain the following columns (header names must match exact
                 currency_symbol = self._get_currency_symbol()
                 # Use a simplified version of the axis formatter logic
                 if abs(y_val) >= 1e6:
-                    formatted_y = f"{currency_symbol}{y_val/1e6:,.1f}M"
+                    formatted_y = f"{currency_symbol}{y_val/1e6:,.4f}M"
                 elif abs(y_val) >= 1e3:
-                    formatted_y = f"{currency_symbol}{y_val/1e3:,.0f}K"
+                    formatted_y = f"{currency_symbol}{y_val/1e3:,.2f}K"
                 else:
-                    formatted_y = f"{currency_symbol}{y_val:,.0f}"
+                    formatted_y = (
+                        f"{currency_symbol}{y_val:,.2f}"  # Changed to 2 decimal places
+                    )
             else:  # Fallback if axis doesn't match expected ones
                 formatted_y = f"{y_val:,.2f}"
 
@@ -8992,7 +8994,7 @@ The CSV file should contain the following columns (header names must match exact
         logging.debug("--- _init_ui_structure: END ---")
 
     def _init_periodic_value_change_tab_widgets(self):
-        """Initializes widgets for the Periodic Value Change tab."""
+        """Initializes widgets for the Asset Change tab."""
         pass  # To be implemented in _init_ui_widgets
 
     def _init_transactions_log_tab_widgets(self):
@@ -9580,7 +9582,7 @@ The CSV file should contain the following columns (header names must match exact
         self._init_capital_gains_tab_widgets()
         logging.debug("--- _init_ui_widgets: After _init_table_panel_widgets ---")
 
-        # --- Tab: Periodic Value Change ---
+        # --- Tab: Asset Change ---
         self._init_periodic_value_change_tab_widgets_content()
 
         # --- Tab 4: Dividend History ---
@@ -9937,9 +9939,9 @@ The CSV file should contain the following columns (header names must match exact
         logging.debug("--- _init_ui_widgets: END ---")
 
     def _init_periodic_value_change_tab_widgets_content(self):
-        """Initializes the content for the Periodic Value Change tab."""
+        """Initializes the content for the Asset Change tab."""
         self.periodic_value_change_tab = QWidget()
-        self.periodic_value_change_tab.setObjectName("PeriodicValueChangeTab")
+        self.periodic_value_change_tab.setObjectName("AssetChangeTab")
         main_layout = QVBoxLayout(self.periodic_value_change_tab)
         main_layout.setContentsMargins(5, 5, 5, 5)
 
@@ -10073,15 +10075,11 @@ The CSV file should contain the following columns (header names must match exact
         )  # Ensure bottom has some space
         splitter.setSizes([estimated_top_panel_height, bottom_panel_height])
 
-        self.main_tab_widget.addTab(
-            self.periodic_value_change_tab, "Periodic Value Change"
-        )
-        logging.debug(
-            "--- _init_ui_widgets: Periodic Value Change Tab widgets initialized ---"
-        )
+        self.main_tab_widget.addTab(self.periodic_value_change_tab, "Asset Change")
+        logging.debug("--- _init_ui_widgets: Asset Change Tab widgets initialized ---")
 
     def _update_periodic_value_change_display(self):
-        """Updates the graphs and tables in the Periodic Value Change tab."""
+        """Updates the graphs and tables in the Asset Change tab."""
         # This method will be called from handle_results and when spinboxes change.
         # It will iterate through Annual, Monthly, Weekly, get data from
         # self.periodic_returns_data, filter by spinbox value, and update
@@ -10917,7 +10915,7 @@ The CSV file should contain the following columns (header names must match exact
                     "Cannot calculate periodic returns: full_historical_data is empty."
                 )
 
-        # --- Calculate Absolute Periodic Value Changes for Portfolio ---
+        # --- Calculate Absolute Asset Changes for Portfolio ---
         self.periodic_value_changes_data = {}
         intervals_map_abs_val = {"Y": "YE", "M": "ME", "W": "W-FRI"}
 
@@ -11599,7 +11597,7 @@ The CSV file should contain the following columns (header names must match exact
         )
         self.cg_periods_spinbox.valueChanged.connect(self._update_capital_gains_display)
 
-        # Periodic Value Change Tab Spinboxes
+        # Asset Change Tab Spinboxes
         if hasattr(
             self, "pvc_annual_graph_spinbox"
         ):  # Check if tab widgets are initialized
@@ -16162,7 +16160,7 @@ The CSV file should contain the following columns (header names must match exact
         self._update_dividend_summary_table(plot_data_for_table)
 
     def _plot_pvc_graph(self, ax, canvas, interval_key, num_periods):
-        """Helper to plot a single graph for the Periodic Value Change tab."""
+        """Helper to plot a single graph for the Asset Change tab."""
         ax.clear()
         fig = ax.get_figure()
         if fig:
@@ -16340,7 +16338,7 @@ The CSV file should contain the following columns (header names must match exact
     def _update_pvc_table(
         self, table_model: PandasModel, interval_key: str, num_periods: int
     ):
-        """Helper to update a single table in the Periodic Value Change tab."""
+        """Helper to update a single table in the Asset Change tab."""
         percent_returns_df_full = self.periodic_returns_data.get(interval_key)
         value_changes_df_full = self.periodic_value_changes_data.get(interval_key)
 
@@ -16523,13 +16521,13 @@ The CSV file should contain the following columns (header names must match exact
     def _handle_pvc_tab_visibility_change(self, index: int):
         """
         Slot connected to main_tab_widget.currentChanged signal.
-        If the Periodic Value Change tab becomes visible, applies default sort to its tables.
+        If the Asset Change tab becomes visible, applies default sort to its tables.
         """
         try:
             current_tab_widget = self.main_tab_widget.widget(index)
             if current_tab_widget == self.periodic_value_change_tab:
                 logging.debug(
-                    "Periodic Value Change tab became visible. Applying default sorts."
+                    "Asset Change tab became visible. Applying default sorts."
                 )
                 self._apply_default_sort_to_pvc_tables()
         except Exception as e:
@@ -16601,7 +16599,7 @@ The CSV file should contain the following columns (header names must match exact
     # --- END ADDED ---
 
     def _update_periodic_value_change_display(self):
-        """Updates all graphs and tables in the Periodic Value Change tab."""
+        """Updates all graphs and tables in the Asset Change tab."""
         self._plot_pvc_graph(
             self.pvc_annual_graph_ax,
             self.pvc_annual_graph_canvas,
@@ -16913,7 +16911,7 @@ The CSV file should contain the following columns (header names must match exact
                             ax.text(
                                 bar.get_x() + bar.get_width() / 2.0,
                                 yval + offset,
-                                f"{display_currency_symbol}{yval:,.0f}",
+                                f"{display_currency_symbol}{yval:,.2f}",
                                 ha="center",
                                 va=va,
                                 fontsize=7,
