@@ -131,16 +131,27 @@ The special symbol **`$CASH`** is crucial for accurately tracking your portfolio
                 * `Account`: Brokerage A
     * **TWR Impact:** Selling a stock is an **internal asset conversion**. Cash increases, stock holding decreases. Not an external flow.
 
-  * **Dividends Received in Cash:**
-    * If a stock pays a dividend and it lands in your account as cash:
-      * `Date`: 2023-05-15
-      * `Type`: Dividend
-      * `Symbol`: MSFT (the stock that paid the dividend)
-      * `Quantity`: (Can be 0 or 1, or actual shares if DRIP but you're logging cash component)
-      * `Price/Share`: (Can be 0 or 1)
-      * `Total Amount`: 50 (the cash amount of the dividend)
-      * `Account`: Brokerage A
-    * **TWR Impact:** Dividends received are treated as part of the return on investment. The system internally recognizes this as an increase in the account's cash balance, contributing positively to performance.
+  * **Dividends Received in Cash (Two-Step Process):**
+    * To accurately track both the return from your stock and the corresponding increase in your cash balance, you should record **two transactions**.
+
+    **Step 1: Record the dividend gain from the stock.** This attributes the return to the correct asset.
+    * `Date`: 2023-05-15
+    * `Type`: Dividend
+    * `Symbol`: MSFT (the stock that paid the dividend)
+    * `Total Amount`: 50 (the cash amount of the dividend)
+    * `Account`: Brokerage A
+
+    **Step 2: Record the cash increase in your account.** This reflects the cash landing in your brokerage account.
+    * `Date`: 2023-05-15
+    * `Type`: Buy
+    * `Symbol`: $CASH
+    * `Quantity`: 50
+    * `Price/Share`: 1
+    * `Account`: Brokerage A
+
+    * **Why two steps?**
+      * The `Dividend` transaction on `MSFT` ensures that the $50 is correctly included in MSFT's "Total Gain" and "Total Return %".
+      * The `Buy` transaction on `$CASH` increases your cash balance. Using `Buy` (instead of `Deposit`) correctly tells the system this is an *internal* cash movement (a return from an existing asset), not new external capital. This is crucial for accurate Time-Weighted Return (TWR) calculation.
 
   * **Fees Paid From Cash:** For general account fees not tied to a specific trade.
     * `Date`: 2023-06-01
