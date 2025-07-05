@@ -4002,10 +4002,12 @@ class AddTransactionDialog(QDialog):
         # Auto-calculation (ensure these are connected AFTER validators for proper behavior)
         self.quantity_edit.textChanged.connect(self._auto_calculate_total)
         self.price_edit.textChanged.connect(self._auto_calculate_total)
-        # User typing in total_amount_edit should lock it
-        self.total_amount_edit.textEdited.connect(
-            lambda text: setattr(self, "total_amount_locked_by_user", bool(text))
+        # --- FIX: Store lambda as an attribute to allow disconnection ---
+        self._total_amount_edited_slot = lambda text: setattr(
+            self, "total_amount_locked_by_user", bool(text)
         )
+        self.total_amount_edit.textEdited.connect(self._total_amount_edited_slot)
+        # --- END FIX ---
 
         if edit_data:
             self._populate_fields_for_edit(edit_data)
@@ -4746,10 +4748,7 @@ class AddTransactionDialog(QDialog):
         signals_to_disconnect = [
             (self.quantity_edit.textChanged, self._auto_calculate_total),
             (self.price_edit.textChanged, self._auto_calculate_total),
-            (
-                self.total_amount_edit.textEdited,
-                lambda text: setattr(self, "total_amount_locked_by_user", bool(text)),
-            ),
+            (self.total_amount_edit.textEdited, self._total_amount_edited_slot),
             (self.type_combo.currentTextChanged, self._update_field_states_wrapper),
             (self.symbol_edit.textChanged, self._update_field_states_wrapper_symbol),
         ]
@@ -4760,8 +4759,6 @@ class AddTransactionDialog(QDialog):
                 logging.debug(
                     f"Signal already disconnected or never connected for pre-fill: {widget_signal}"
                 )
-            except TypeError:  # slot_func might be a lambda
-                logging.debug(f"Cannot disconnect lambda for pre-fill: {widget_signal}")
 
         # --- Date ---
         date_val_str = data.get(
@@ -5012,6 +5009,8 @@ class ManageTransactionsDialogDB(QDialog):
 
         # --- Action Buttons ---
         button_layout = QHBoxLayout()
+        self.add_button = QPushButton("Add Transaction")
+        self.add_button.setIcon(QIcon.fromTheme("list-add"))
         self.edit_button = QPushButton("Edit Selected")
         self.edit_button.setIcon(QIcon.fromTheme("document-edit"))
         self.delete_button = QPushButton("Delete Selected")
@@ -5019,6 +5018,7 @@ class ManageTransactionsDialogDB(QDialog):
         self.close_button = QPushButton("Close")  # Changed from "Close & Refresh Main"
         self.close_button.setIcon(QIcon.fromTheme("window-close"))
 
+        button_layout.addWidget(self.add_button)
         button_layout.addWidget(self.edit_button)
         button_layout.addWidget(self.delete_button)
         button_layout.addStretch(1)
@@ -5026,6 +5026,7 @@ class ManageTransactionsDialogDB(QDialog):
         layout.addLayout(button_layout)
 
         # --- Connections ---
+        self.add_button.clicked.connect(self.add_new_transaction_db)
         self.edit_button.clicked.connect(self.edit_selected_transaction_db)
         self.delete_button.clicked.connect(self.delete_selected_transaction_db)
         self.close_button.clicked.connect(
@@ -5038,6 +5039,47 @@ class ManageTransactionsDialogDB(QDialog):
                 self.setStyleSheet(parent_app.styleSheet())
             if hasattr(parent_app, "font"):
                 self.setFont(parent_app.font())
+
+    @Slot()
+    def add_new_transaction_db(self):
+        """Opens the AddTransactionDialog to add a new transaction to the database."""
+        # Get available accounts and symbols from the current data for dialog autocompletion
+        accounts_for_dialog = (
+            sorted(list(self._current_data_df["Account"].unique()))
+            if "Account" in self._current_data_df.columns
+            else []
+        )
+        symbols_for_dialog = (
+            sorted(list(self._current_data_df["Symbol"].unique()))
+            if "Symbol" in self._current_data_df.columns
+            else []
+        )
+
+        add_dialog = AddTransactionDialog(
+            existing_accounts=accounts_for_dialog,
+            portfolio_symbols=symbols_for_dialog,
+            parent=self,  # The dialog's parent is this ManageTransactionsDialogDB
+        )
+
+        if add_dialog.exec():  # True if Save was clicked and dialog validation passed
+            new_data_dict_pytypes = (
+                add_dialog.get_transaction_data()
+            )  # Returns dict with Python types, CSV-like keys
+            if new_data_dict_pytypes:
+                # The parent app's save_new_transaction method handles the DB interaction
+                # and the main app's refresh.
+                if hasattr(self._parent_app, "save_new_transaction"):
+                    self._parent_app.save_new_transaction(new_data_dict_pytypes)
+                    # After the parent app saves, we can refresh our own view.
+                    self._refresh_dialog_table()
+                    self.data_changed.emit()  # Signal to the main window that data has changed.
+                else:
+                    QMessageBox.critical(
+                        self,
+                        "Internal Error",
+                        "The main application does not have a 'save_new_transaction' method.",
+                    )
+            # If validation fails, get_transaction_data shows its own message box, so no extra message is needed.
 
     def _refresh_dialog_table(self):
         """Reloads data from DB and updates this dialog's table view."""

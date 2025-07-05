@@ -3,6 +3,15 @@
 import pytest
 import logging
 from datetime import date
+import sys
+import os
+
+# --- Add src directory to sys.path for module import ---
+# This ensures that the test runner can find the 'config' module.
+src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
+# --- End Path Addition ---
 
 # --- Import constants from the NEW config module ---
 try:
@@ -44,15 +53,8 @@ try:
         # --- End moved constants ---
     )
 
-    CONFIG_IMPORTED = True
 except ImportError as e:
-    print(f"ERROR: Could not import from config module: {e}")
-    CONFIG_IMPORTED = False
-
-# Skip all tests in this file if config couldn't be imported
-pytestmark = pytest.mark.skipif(
-    not CONFIG_IMPORTED, reason="config.py module not found or import failed"
-)
+    pytest.fail(f"Failed to import from config module: {e}")
 
 
 def test_import_and_types():

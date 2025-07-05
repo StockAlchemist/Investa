@@ -8,6 +8,14 @@ import tempfile
 import os
 import hashlib
 from unittest.mock import patch, mock_open  # For mocking file operations
+import sys
+
+# --- Add src directory to sys.path for module import ---
+# This ensures that the test runner can find the 'finutils' module.
+src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
+# --- End Path Addition ---
 
 # --- Import functions from the NEW finutils module ---
 try:
@@ -23,15 +31,8 @@ try:
         # Add other functions you moved if needed
     )
 
-    FINUTILS_IMPORTED = True
 except ImportError as e:
-    print(f"ERROR: Could not import from finutils module: {e}")
-    FINUTILS_IMPORTED = False
-
-# Skip all tests in this file if finutils couldn't be imported
-pytestmark = pytest.mark.skipif(
-    not FINUTILS_IMPORTED, reason="finutils.py module not found or import failed"
-)
+    pytest.fail(f"Failed to import from finutils module: {e}")
 
 # --- Tests for _get_file_hash ---
 
