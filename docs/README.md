@@ -64,41 +64,40 @@ For a step-by-step guide on how to set up and use Investa, please see our detail
 * **GUI:** PySide6 (Qt for Python)
 * **Data Handling & Analysis:** pandas, NumPy
 * **Database:** sqlite3
-* **Financial Calculations:** SciPy (for IRR/NPV), Numba
+* **Financial Calculations:** SciPy, Numba
 * **Market Data:** yfinance
 * **Charting:** Matplotlib (embedded in PySide6), mplcursors (for interactive tooltips)
 * **Concurrency:** QThreadPool, QRunnable, multiprocessing
 
-## Prerequisites
+## Installation
 
-* Python 3.8 or higher
-* pip (Python package installer)
+This project requires Python 3.8 or higher.
 
-## Installation & Setup
-
-1. **Clone the repository:**
+1. **Clone the Repository**
 
     ```bash
-    git clone https://github.com/StockAlchemist/Investa
-    cd Investa # Or your repository name
+    git clone https://github.com/StockAlchemist/Investa.git
+    cd Investa
     ```
 
-2. **Create a virtual environment (recommended):**
+2. **Create and Activate a Virtual Environment** (Recommended)
 
     ```bash
+    # For macOS/Linux
     python3 -m venv venv
-    source venv/bin/activate  # On macOS/Linux
-    # .\venv\Scripts\activate  # On Windows
+    source venv/bin/activate
+
+    # For Windows
+    # python -m venv venv
+    # .\venv\Scripts\activate
     ```
 
-3. **Install dependencies:**
-    A `requirements.txt` file should be created. If not present, you can install the main packages:
+3. **Install Dependencies**
+    All required packages are listed in `requirements.txt`. Install them with:
 
     ```bash
-    pip install PySide6 pandas numpy matplotlib yfinance scipy mplcursors requests numba
+    pip install -r requirements.txt
     ```
-
-    *(It's recommended to generate a `requirements.txt` file for easier dependency management: `pip freeze > requirements.txt`)*
 
 ## Configuration
 
@@ -180,83 +179,72 @@ For detailed examples and specific requirements for each transaction type, pleas
 
 ## Usage
 
-For a detailed step-by-step guide on using Investa, check out our (work in progress) **User Tutorial**.
-
-Here's a quick overview:
-
-1. **Run the application:**
+1. **Launch the Application**
+    After installing dependencies, run the main script from the project's root directory:
 
     ```bash
-    python main_gui.py
+    python src/main_gui.py
     ```
 
-2. **Database Setup:**
-    * **On first run:** You'll be prompted to either open an existing Investa database file (`.db`) or create a new one.
-    * **Creating a New Database:** Use `File > New Database File...`. An empty database file will be created at your chosen location.
-    * **Opening an Existing Database:** Use `File > Open Database...` to load your transaction data. The path to the last used database is saved in `gui_config.json`.
-    * **Automatic CSV Migration (First Run):** If the database is empty and a CSV file is specified as a fallback in the configuration (e.g., from a previous version or manual setup), Investa may prompt you to migrate transactions from this CSV into the new database.
+2. **Initial Setup (First Launch)**
+    * You will be prompted to create a new SQLite database (`.db`) or open an existing one. This file will store all your transaction data.
+    * The application will remember the location of your database for future sessions.
 
-3. **Importing Transactions (Optional):**
-    * If you have transaction data in a CSV file, you can import it into the current database via `File > Import Transactions from CSV...`.
-    * The application provides a utility to help map your CSV columns to the required format and standardize headers if needed.
-    * It's recommended to review imported data in the "Transaction Log" tab.
+3. **Populate Your Data**
+    * **Add Manually:** Use the `Transactions` menu to add, edit, or delete individual records (Buy, Sell, Dividend, etc.).
+    * **Import from CSV:** Use `File > Import Transactions from CSV...` to bulk-import your history. Refer to the "Input Data Format" section or the in-app help for formatting details.
 
-4. **Adding/Managing Transactions:**
-    * Manually add new transactions (Buy, Sell, Dividend, etc.) using the `Transactions > Add Transaction...` menu item or dedicated buttons.
-    * Edit or delete existing transactions using `Transactions > Manage Transactions...`. This opens a dialog where you can filter, select, edit, or delete records. Changes are saved directly to the database.
+4. **Analyze Your Portfolio**
+    * Click **Refresh All (F5)** to fetch the latest market data and recalculate all portfolio metrics.
+    * Use the dashboard controls to filter by account, change display currency, and adjust chart settings.
+    * Interact with tables and charts to explore your data in detail.
 
-5. **Refresh Data & View Portfolio:**
-    * Click the "Refresh All" button (or press F5) to:
-        * Load all transactions from the database.
-        * Fetch current market prices for your holdings.
-        * Calculate portfolio metrics, historical performance, and generate charts.
-    * Use "Update Accounts" if you only change account filters (e.g., show/hide specific brokerage accounts).
-    * Use "Update Graphs" if you only change graph parameters (e.g., date ranges, time intervals, benchmark selections).
+For a more comprehensive guide, please see our detailed tutorial: ➡️ **Investa User Tutorial**
 
-6. **Interact with the Dashboard:**
-    * Use the controls to change display currency, show/hide closed positions, filter by account, and adjust graph settings.
-    * Right-click on the holdings table header to customize visible columns.
-    * Right-click on a holding in the table for context menu options like viewing its transaction history or charting its price.
+## Building a Standalone Application (Optional)
 
-## Building a Native macOS App (Optional)
+You can package Investa as a standalone desktop application using PyInstaller.
 
-If you wish to package Investa as a standalone macOS application (`.app` bundle), you can use PyInstaller:
-
-1. **Install PyInstaller:**
+1. **Install PyInstaller**
 
     ```bash
     pip install pyinstaller
     ```
 
-2. **Prepare an App Icon:** Create an icon in `.icns` format (e.g., `app_icon.icns`).
-3. **Build the App:**
-    Navigate to your project directory in the terminal (e.g., `/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/`). Then, run PyInstaller with options suitable for a macOS GUI application.
+2. **Generate a `.spec` File (Recommended First Step)**
+    For a complex application, it's best to use a `.spec` file to manage build configurations. Generate a base file with:
 
     ```bash
-    pyinstaller --name Investa \
-                --onefile \
-                --windowed \
-                --icon=Investa.icns \
-                --add-data "style.qss:." \
-    * `--collect-data matplotlib --collect-data scipy --collect-data pandas --collect-data numpy --collect-data yfinance \
-                main_gui.py
+    pyi-makespec --windowed --name Investa src/main_gui.py
     ```
 
-    The bundled app will be in the `dist` folder.
+    This creates `Investa.spec` in the `src/` directory. You should then edit this file to include necessary data files, hidden imports, and other options. A well-configured `.spec` file is more reliable than a long command-line string.
 
-    **Explanation of options:**
-    * `--name Investa`: Sets the application name.
-    * `--onefile`: Bundles everything into a single executable.
-    * `--windowed`: Prevents a terminal window from opening (essential for GUI apps).
-    * `--icon=app_icon.icns`: Specifies your application icon (replace `app_icon.icns` with your actual icon file name/path).
-    * `--add-data "style.qss:."`: Includes your stylesheet. The `:.` copies it to the root of the bundle.
-    * `--collect-data matplotlib`: Helps PyInstaller find data files required by Matplotlib.
-    * `main_gui.py`: Your main application script.
+    *Example modifications for `src/Investa.spec`*:
 
-4. **Further Customization (Optional):**
-    * PyInstaller generates a `.spec` file (e.g., `Investa.spec`) the first time you run it. This file contains the build configuration.
-    * For more complex projects or if you need to fine-tune the build (e.g., add more data files, manage hidden imports for libraries like pandas, numpy, scipy, PySide6, numba, or adjust other PyInstaller settings), you can edit this `Investa.spec` file directly.
-    * After modifying the `.spec` file, you can run `pyinstaller Investa.spec` for subsequent builds instead of re-typing the full command. This provides greater control and flexibility over the packaging process.
+    ```python
+    # In src/Investa.spec
+    a = Analysis(['src/main_gui.py'],
+                 ...
+                 datas=[('src/gui/style.qss', 'gui'), ('src/gui/style_dark.qss', 'gui'), ('src/gui/style_minimal.qss', 'gui'), ('src/Investa.icns', '.')], # Add data files
+                 hiddenimports=['pandas', 'numpy', 'scipy', 'PySide6.QtSvg'], # Add hidden imports
+                 ...
+                 )
+    ...
+    app = BUNDLE(exe,
+             name='Investa.app',
+             icon='src/Investa.icns', # Specify icon for macOS
+             bundle_identifier=None)
+    ```
+
+3. **Build the Application**
+    Once your `.spec` file is configured, run the build from the project root:
+
+    ```bash
+    pyinstaller src/Investa.spec
+    ```
+
+    The final application bundle will be located in the `dist/` directory.
 
 ## Contributing
 

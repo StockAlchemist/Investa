@@ -173,7 +173,7 @@ The special symbol **`$CASH`** is crucial for accurately tracking your portfolio
     Open your terminal, ensure your virtual environment is active (if used), navigate to the Investa project directory, and run:
 
     ```bash
-    python main_gui.py
+    python src/main_gui.py
     ```
 
 2. **Database Initialization (First Run):**
@@ -528,7 +528,7 @@ Here are some general tips and common troubleshooting steps, reflecting Investa'
 * **Use the Status Bar:** The bottom of the Investa window often displays messages about current operations (e.g., "Fetching prices...", "Calculations complete...", "Database loaded"). This can give you an idea of what the application is doing, especially during longer operations.
 * **CSV Format Help (`Help > CSV Format Help...`):**
   * Even though the database is primary, this in-app guide is still very useful if you are preparing a CSV file for import. It details the expected headers and data for each transaction type.
-* **Troubleshooting Steps (Consult README.md for more detail):**
+* **Troubleshooting Steps (Consult docs/README.md for more detail):**
   * **Market Data Not Loading (Prices are 0 or NaN):**
     * Check your internet connection.
     * Verify symbol correctness (use `Settings > Symbol Settings...` for mapping if needed).
