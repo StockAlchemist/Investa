@@ -7053,7 +7053,7 @@ The CSV file should contain the following columns (header names must match exact
             True  # Mark that a stylesheet has been applied at least once
         )
 
-        qss_file = "style.qss" if theme_name == "light" else "style_dark.qss"
+        qss_file = "gui/style.qss" if theme_name == "light" else "gui/style_dark.qss"
 
         try:
             qss_path = resource_path(qss_file)

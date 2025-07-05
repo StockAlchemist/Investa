@@ -67,5 +67,7 @@ investa_transactions_export_20250604.csv
 style_dark.txt
 investa_transactions_export_20250608.csv
 my_transactions.db
-my_transactions_export_20250612.csv
-my_transactions_export_20250619.csv
+data/transactions/my_test_transactions.csv
+data/transactions/my_transactions_export_20250612.csv
+data/transactions/my_transactions_export_20250619.csv
+data/transactions/my_transactions_export_20250705.csv

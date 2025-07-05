@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_data_files
 
-datas = [('style.qss', '.')]
+datas = [('gui/ui_components/style.qss', 'gui/ui_components')]
 datas += collect_data_files('matplotlib')
 
 
