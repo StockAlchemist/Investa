@@ -12,3 +12,4 @@ profiling/
 docs/plans/
 scripts/
 my_transactions.db
+tests/
