@@ -13,3 +13,5 @@ docs/plans/
 scripts/
 my_transactions.db
 tests/
+src/Investa.spec
+requirements.in
