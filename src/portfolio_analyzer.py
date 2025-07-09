@@ -84,10 +84,7 @@ except ImportError:
         return 0.0
 
 
-# --- Define a constant for the aggregated cash account name ---
-_AGGREGATE_CASH_ACCOUNT_NAME_ = "Cash"
-
-# --- Moved Functions ---
+from config import _AGGREGATE_CASH_ACCOUNT_NAME_
 
 
 # --- REVISED: _process_transactions_to_holdings (Split applied to all accounts) ---

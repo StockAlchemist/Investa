@@ -43,6 +43,9 @@ HISTORICAL_DEBUG_SYMBOL = None
 # --- Core Symbols ---
 CASH_SYMBOL_CSV = "$CASH"  # Standardized cash symbol
 
+# --- Define a constant for the aggregated cash account name ---
+_AGGREGATE_CASH_ACCOUNT_NAME_ = "Cash"
+
 # --- Caching Configuration ---
 DEFAULT_CURRENT_CACHE_FILE_PATH = (
     "portfolio_cache_yf.json"  # Used by MarketDataProvider default for current quotes
