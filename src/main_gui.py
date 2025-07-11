@@ -1458,12 +1458,16 @@ The CSV file should contain the following columns (header names must match exact
             if self.available_accounts
             else list(current_map.keys())
         )
+        # Get the list of user-selectable currencies from the config
+        user_currencies = self.config.get("user_currencies", COMMON_CURRENCIES.copy())
 
         updated_settings = AccountCurrencyDialog.get_settings(
             parent=self,
             current_map=current_map,
             current_default=current_default,
             all_accounts=accounts_to_show,
+            # Pass the list of currencies to the dialog
+            user_currencies=user_currencies,
         )
 
         if updated_settings:  # If user clicked Save
@@ -3437,12 +3441,16 @@ The CSV file should contain the following columns (header names must match exact
             if self.available_accounts
             else list(current_map.keys())
         )
+        # Get the list of user-selectable currencies from the config
+        user_currencies = self.config.get("user_currencies", COMMON_CURRENCIES.copy())
 
         updated_settings = AccountCurrencyDialog.get_settings(
             parent=self,
             current_map=current_map,
             current_default=current_default,
             all_accounts=accounts_to_show,
+            # Pass the list of currencies to the dialog
+            user_currencies=user_currencies,
         )
 
         if updated_settings:  # If user clicked Save
@@ -4316,7 +4324,7 @@ The CSV file should contain the following columns (header names must match exact
         # Summary Grid
         summary_grid_widget = QWidget()
         summary_layout = QGridLayout(summary_grid_widget)
-        summary_layout.setContentsMargins(10, 25, 10, 10)
+        summary_layout.setContentsMargins(10, 10, 10, 10)
         summary_layout.setHorizontalSpacing(15)
         summary_layout.setVerticalSpacing(30)
         self.summary_net_value = self.create_summary_item("Net Value", True)
@@ -10262,40 +10270,8 @@ The CSV file should contain the following columns (header names must match exact
         self.table_model.updateData(df_for_table)
         if not df_for_table.empty:
             self.table_view.resizeColumnsToContents()
-            try:
-                display_currency = self.currency_combo.currentText()
-                col_widths = {
-                    "Symbol": 100,
-                    "Account": 90,
-                    "Quantity": 90,
-                    f"Day Chg": 95,
-                    "Day Chg %": 75,
-                    "Mkt Val": 110,
-                    "Unreal. G/L": 95,
-                    "Unreal. G/L %": 95,
-                    "Total Ret %": 80,
-                    "Real. G/L": 95,
-                    "IRR (%)": 70,
-                    "Fees": 70,
-                    "Divs": 80,
-                    "Avg Cost": 70,
-                    "Price": 70,
-                    "Cost Basis": 100,
-                }
-                # Add new dividend columns to width adjustments if needed
-                col_widths["FX G/L"] = 95
-                col_widths["FX G/L %"] = 80
-                col_widths[f"Est. Income"] = (
-                    90  # Assuming this is the UI name from get_column_definitions
-                )
-
-                for ui_header_name, width in col_widths.items():
-                    if ui_header_name in df_for_table.columns:
-                        col_index = df_for_table.columns.get_loc(ui_header_name)
-                        self.table_view.setColumnWidth(col_index, width)
-                self.table_view.horizontalHeader().setStretchLastSection(False)
-            except Exception as e:
-                logging.warning(f"Warning: Could not set specific column width: {e}")
+            # The fixed-width setting logic has been removed to allow dynamic resizing.
+            self.table_view.horizontalHeader().setStretchLastSection(False)
         else:
             try:
                 self.table_view.horizontalHeader().setStretchLastSection(False)

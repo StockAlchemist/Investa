@@ -113,27 +113,27 @@ QWidget#PerfGraphsContainer {
 }
 
 QLabel#SummaryLabel {
-    font-size: 11pt;
+    font-size: 14pt;
     /* Normal Summary Label */
     color: #6C757D;
     padding-right: 5px;
 }
 
 QLabel#SummaryLabelLarge {
-    font-size: 13pt;
+    font-size: 16pt;
     /* Large Summary Label */
     color: #6C757D;
     padding-right: 5px;
 }
 
 QLabel#SummaryValue {
-    font-size: 12pt;
+    font-size: 16pt;
     /* Normal Summary Value */
     font-weight: bold;
 }
 
 QLabel#SummaryValueLarge {
-    font-size: 14pt;
+    font-size: 20pt;
     /* Large Summary Value */
     font-weight: bold;
 }
@@ -171,7 +171,7 @@ QLabel#HoldingsPieTitleLabel {
 
 QLabel#TableTitleLabel {
     /* Right side: Detail */
-    font-size: 10pt;
+    font-size: 12pt;
     /* Table Header */
     font-weight: bold;
     color: #495057;
@@ -180,7 +180,7 @@ QLabel#TableTitleLabel {
 
 QLabel#TableScopeLabel {
     /* Left side: Scope */
-    font-size: 9pt;
+    font-size: 10pt;
     /* Table Scope */
     font-weight: normal;
     color: #6C757D;
@@ -195,7 +195,7 @@ QTableView#HoldingsTable {
     alternate-background-color: #fAfBff;
     selection-background-color: #E9ECEF;
     selection-color: #212529;
-    font-size: 10pt;
+    font-size: 12pt;
     /* Table Data */
 }
 

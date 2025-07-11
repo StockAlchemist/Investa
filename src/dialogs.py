@@ -908,6 +908,7 @@ class AccountCurrencyDialog(QDialog):
         current_default: str,
         all_accounts: List[str],
         parent=None,
+        user_currencies: Optional[List[str]] = None,
     ):
         super().__init__(parent)
         self._parent_app = parent  # Store reference if needed
@@ -917,6 +918,9 @@ class AccountCurrencyDialog(QDialog):
         # Store original values and all unique accounts found
         self._original_map = current_map.copy()
         self._original_default = current_default
+        self._user_currencies = (
+            user_currencies if user_currencies else COMMON_CURRENCIES.copy()
+        )
         # Ensure all_accounts is a unique list
         self._all_accounts = sorted(list(set(all_accounts)))
 
@@ -933,7 +937,7 @@ class AccountCurrencyDialog(QDialog):
         self.default_currency_combo = QComboBox()
         # Ensure default and common currencies are available
         default_currencies = sorted(
-            list(set([self._original_default] + COMMON_CURRENCIES))
+            list(set([self._original_default] + self._user_currencies))
         )
         self.default_currency_combo.addItems(default_currencies)
         self.default_currency_combo.setCurrentText(self._original_default)
@@ -1006,7 +1010,7 @@ class AccountCurrencyDialog(QDialog):
                 list(
                     set(
                         [current_assigned_currency, self._original_default]
-                        + COMMON_CURRENCIES
+                        + self._user_currencies
                     )
                 )
             )
@@ -1050,7 +1054,11 @@ class AccountCurrencyDialog(QDialog):
     # --- Static method to retrieve results cleanly ---
     @staticmethod
     def get_settings(
-        parent=None, current_map=None, current_default=None, all_accounts=None
+        parent=None,
+        current_map=None,
+        current_default=None,
+        all_accounts=None,
+        user_currencies=None,
     ) -> Optional[Tuple[Dict[str, str], str]]:
         """Creates, shows dialog, and returns updated settings if saved."""
         if current_map is None:
@@ -1059,9 +1067,11 @@ class AccountCurrencyDialog(QDialog):
             current_default = "USD"
         if all_accounts is None:
             all_accounts = list(current_map.keys())
+        if user_currencies is None:
+            user_currencies = COMMON_CURRENCIES.copy()
 
         dialog = AccountCurrencyDialog(
-            current_map, current_default, all_accounts, parent
+            current_map, current_default, all_accounts, parent, user_currencies
         )
         if dialog.exec():  # Returns 1 if accepted (Save clicked), 0 if rejected
             return dialog.updated_map, dialog.updated_default

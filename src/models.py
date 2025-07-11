@@ -391,7 +391,7 @@ class PandasModel(QAbstractTableModel):
                         account_val_idx = self._data.columns.get_loc("Account")
                         account_val = self._data.iloc[row, account_val_idx]
                         if account_val == _AGGREGATE_CASH_ACCOUNT_NAME_:
-                            return f"Total Cash ({self._parent._get_currency_symbol(get_name=True)})"
+                            return f"Cash ({self._parent._get_currency_symbol(get_name=True)})"
                         # Fallback for any other cash symbol (should not happen with new logic but safe)
                         # else:
                         #     display_currency_name = self._parent._get_currency_symbol(get_name=True) if self._parent else "CUR"
