@@ -215,6 +215,12 @@ class PandasModel(QAbstractTableModel):
                 if pd.api.types.is_number(raw_cell_value) and pd.notna(raw_cell_value):
                     value_float = float(raw_cell_value)
 
+                    if self._is_financial_statement_model:
+                        if value_float > 1e-9:
+                            return self._gain_color
+                        elif value_float < -1e-9:
+                            return self._loss_color
+
                     # General Gain/Loss indicators for positive/negative coloring
                     gain_loss_color_cols = [
                         "G/L",  # Catches "Unreal. G/L", "Real. G/L", "Total G/L", "FX G/L", and their % versions

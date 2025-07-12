@@ -78,6 +78,7 @@ FALLBACK_QCOLOR_ACCENT_TEAL = QColor("#1abc9c")
 FALLBACK_QCOLOR_BORDER_LIGHT = QColor("#bbb")
 FALLBACK_QCOLOR_BORDER_DARK = QColor("#555")
 FALLBACK_QCOLOR_LOSS = QColor("#e74c3c")
+FALLBACK_QCOLOR_GAIN = QColor("#2ecc71")
 
 from config import CASH_SYMBOL_CSV, CSV_DATE_FORMAT
 from data_loader import load_all_transactions_from_db
@@ -180,11 +181,12 @@ class FundamentalDataDialog(QDialog):
                 currency_symbol = self._parent_app._get_currency_symbol()
         return currency_symbol
 
-    def _dialog_format_value(self, key, value):
+    def _dialog_format_value(self, key, value) -> Tuple[str, Optional[QColor]]:
         if value is None or pd.isna(value):
-            return "N/A"
+            return "N/A", None
 
         currency_symbol_for_formatting = self._get_dialog_currency_symbol()
+        color = None  # Default color is None (i.e., use default text color)
 
         # Define sets of keys for different formatting types
         LARGE_CURRENCY_KEYS = {
@@ -199,9 +201,6 @@ class FundamentalDataDialog(QDialog):
             "totalDebt",
         }
         PERCENTAGE_KEYS_AS_FACTORS = {  # These values are factors (e.g., 0.05 for 5%)
-            "dividendYield",
-            "trailingAnnualDividendYield",
-            "fiveYearAvgDividendYield",
             "payoutRatio",
             "heldPercentInsiders",
             "heldPercentInstitutions",
@@ -216,6 +215,9 @@ class FundamentalDataDialog(QDialog):
             "earningsQuarterlyGrowth",  # e.g., yfinance 'earningsQuarterlyGrowth'
         }
         PERCENTAGE_KEYS_ALREADY_PERCENTAGES = {  # These values are already percentages (e.g., 5.0 for 5%)
+            "dividendYield",
+            "trailingAnnualDividendYield",
+            "fiveYearAvgDividendYield",
             "Dividend Yield (%)",  # From current_valuation_ratios
             # Ratios from key_ratios_timeseries (though not directly used by overview tab's _dialog_format_value)
             "Gross Profit Margin (%)",
@@ -264,6 +266,7 @@ class FundamentalDataDialog(QDialog):
             "Forward P/E Ratio",
             "Price-to-Sales (P/S) Ratio (TTM)",
             "Price-to-Book (P/B) Ratio (MRQ)",
+            "Dividend Yield (%)",
             "Enterprise Value to EBITDA",
             # Ratios from key_ratios_timeseries (not directly formatted by this func for Overview, but good to list)
             "Current Ratio",
@@ -283,44 +286,71 @@ class FundamentalDataDialog(QDialog):
             "sharesShortPriorMonth",
         }
 
+        # Keys that should be colored based on their value (positive/negative)
+        COLOR_CODED_KEYS = {
+            "revenueGrowth",
+            "earningsQuarterlyGrowth",
+            "profitMargins",
+            "grossMargins",
+            "ebitdaMargins",
+            "operatingMargins",
+            "returnOnAssets",
+            "returnOnEquity",
+        }
+
         if isinstance(value, (int, float)):  # Common check for most numeric types
+            # --- Start Color Logic ---
+            if key in COLOR_CODED_KEYS:
+                if value > 0:
+                    color = (
+                        self._parent_app.QCOLOR_GAIN_THEMED
+                        if self._parent_app
+                        else FALLBACK_QCOLOR_GAIN
+                    )
+                elif value < 0:
+                    color = (
+                        self._parent_app.QCOLOR_LOSS_THEMED
+                        if self._parent_app
+                        else FALLBACK_QCOLOR_LOSS
+                    )
+            # --- End Color Logic ---
+
             if key in LARGE_CURRENCY_KEYS:
-                return format_large_number_display(
+                formatted_value = format_large_number_display(
                     value, currency_symbol_for_formatting
                 )
             elif key in PERCENTAGE_KEYS_AS_FACTORS:
-                return format_percentage_value(value, decimals=2)
+                formatted_value = format_percentage_value(value * 100, decimals=2)
             elif key in PERCENTAGE_KEYS_ALREADY_PERCENTAGES:
-                return format_percentage_value(
+                formatted_value = format_percentage_value(
                     value, decimals=2
                 )  # Already a percentage
             elif key in CURRENCY_PER_SHARE_OR_PRICE_KEYS:
-                return format_currency_value(
+                formatted_value = format_currency_value(
                     value, currency_symbol_for_formatting, decimals=2
                 )
             elif key in RATIO_KEYS_NO_CURRENCY:
-                return format_float_with_commas(value, decimals=2)  # No currency symbol
+                formatted_value = format_float_with_commas(value, decimals=2)  # No currency symbol
             elif key in INTEGER_COUNT_KEYS:
-                return format_integer_with_commas(value)
+                formatted_value = format_integer_with_commas(value)
             elif key == "sharesShortPreviousMonthDate":  # Timestamp
                 try:
-                    return datetime.fromtimestamp(value).strftime("%Y-%m-%d")
+                    formatted_value = datetime.fromtimestamp(value).strftime("%Y-%m-%d")
                 except:
-                    return str(value)  # Fallback
+                    formatted_value = str(value)  # Fallback
             else:  # General fallback for other numeric values not explicitly categorized
-                # This is a catch-all. If it's a financial value from yfinance, it likely needs currency.
-                # If it's a ratio we missed, it needs no currency.
-                # Defaulting to currency for unknown numeric yfinance fields is often safer.
                 logging.debug(
                     f"Key '{key}' not in specific format lists, formatting as currency by default."
                 )
-                return format_currency_value(
+                formatted_value = format_currency_value(
                     value, currency_symbol_for_formatting, decimals=2
                 )
         elif isinstance(value, str):  # Handle strings directly
-            return value  # Return the string as is
+            formatted_value = value
         else:
-            return str(value)
+            formatted_value = str(value)
+
+        return formatted_value, color
 
     def _create_scrollable_form_tab(self) -> Tuple[QWidget, QFormLayout]:
         """Creates a scrollable tab with a QFormLayout."""
@@ -561,10 +591,13 @@ class FundamentalDataDialog(QDialog):
         ]
         for key, friendly_name in overview_fields:
             value = fundamental_data_dict.get(key)
-            layout_overview.addRow(
-                QLabel(f"<b>{friendly_name}:</b>"),
-                QLabel(self._dialog_format_value(key, value)),  # Use self method
-            )
+            formatted_value, color = self._dialog_format_value(key, value)
+            value_label = QLabel(formatted_value)
+            if color:
+                palette = value_label.palette()
+                palette.setColor(value_label.foregroundRole(), color)
+                value_label.setPalette(palette)
+            layout_overview.addRow(QLabel(f"<b>{friendly_name}:</b>"), value_label)
         form_layout_to_populate.addRow(group_overview)  # Add to the correct form layout
 
         # --- Group 2: Valuation Metrics ---
@@ -615,10 +648,13 @@ class FundamentalDataDialog(QDialog):
             ):  # Fallback to our calculated ratio
                 value = current_valuation_ratios_data.get(key)
 
-            layout_valuation.addRow(
-                QLabel(f"<b>{friendly_name}:</b>"),
-                QLabel(self._dialog_format_value(key, value)),
-            )
+            formatted_value, color = self._dialog_format_value(key, value)
+            value_label = QLabel(formatted_value)
+            if color:
+                palette = value_label.palette()
+                palette.setColor(value_label.foregroundRole(), color)
+                value_label.setPalette(palette)
+            layout_valuation.addRow(QLabel(f"<b>{friendly_name}:</b>"), value_label)
         form_layout_to_populate.addRow(group_valuation)
 
         # --- Group 3: Dividend Information ---
@@ -642,10 +678,13 @@ class FundamentalDataDialog(QDialog):
         ]
         for key, friendly_name in dividend_fields:
             value = fundamental_data_dict.get(key)
-            layout_dividend.addRow(
-                QLabel(f"<b>{friendly_name}:</b>"),
-                QLabel(self._dialog_format_value(key, value)),
-            )
+            formatted_value, color = self._dialog_format_value(key, value)
+            value_label = QLabel(formatted_value)
+            if color:
+                palette = value_label.palette()
+                palette.setColor(value_label.foregroundRole(), color)
+                value_label.setPalette(palette)
+            layout_dividend.addRow(QLabel(f"<b>{friendly_name}:</b>"), value_label)
         form_layout_to_populate.addRow(group_dividend)
 
         # --- Group 4: Price Statistics ---
@@ -672,10 +711,13 @@ class FundamentalDataDialog(QDialog):
         ]
         for key, friendly_name in price_stats_fields:
             value = fundamental_data_dict.get(key)
-            layout_price_stats.addRow(
-                QLabel(f"<b>{friendly_name}:</b>"),
-                QLabel(self._dialog_format_value(key, value)),
-            )
+            formatted_value, color = self._dialog_format_value(key, value)
+            value_label = QLabel(formatted_value)
+            if color:
+                palette = value_label.palette()
+                palette.setColor(value_label.foregroundRole(), color)
+                value_label.setPalette(palette)
+            layout_price_stats.addRow(QLabel(f"<b>{friendly_name}:</b>"), value_label)
         form_layout_to_populate.addRow(group_price_stats)
 
         # --- Group 5: Financial Highlights ---
@@ -709,9 +751,14 @@ class FundamentalDataDialog(QDialog):
         ]
         for key, friendly_name in financial_fields:
             value = fundamental_data_dict.get(key)
+            formatted_value, color = self._dialog_format_value(key, value)
+            value_label = QLabel(formatted_value)
+            if color:
+                palette = value_label.palette()
+                palette.setColor(value_label.foregroundRole(), color)
+                value_label.setPalette(palette)
             layout_financial_highlights.addRow(
-                QLabel(f"<b>{friendly_name}:</b>"),
-                QLabel(self._dialog_format_value(key, value)),
+                QLabel(f"<b>{friendly_name}:</b>"), value_label
             )
         form_layout_to_populate.addRow(group_financial_highlights)
 
@@ -733,10 +780,13 @@ class FundamentalDataDialog(QDialog):
         ]
         for key, friendly_name in share_stats_fields:
             value = fundamental_data_dict.get(key)
-            layout_share_stats.addRow(
-                QLabel(f"<b>{friendly_name}:</b>"),
-                QLabel(self._dialog_format_value(key, value)),
-            )
+            formatted_value, color = self._dialog_format_value(key, value)
+            value_label = QLabel(formatted_value)
+            if color:
+                palette = value_label.palette()
+                palette.setColor(value_label.foregroundRole(), color)
+                value_label.setPalette(palette)
+            layout_share_stats.addRow(QLabel(f"<b>{friendly_name}:</b>"), value_label)
         form_layout_to_populate.addRow(group_share_stats)
 
         # --- Group 7: Business Summary ---
@@ -1194,7 +1244,8 @@ class SymbolChartDialog(QDialog):
         price_data,
         currency_symbol_display,  # e.g. $
         currency_code_label,
-    ):  # e.g. USD
+    ):
+        # e.g. USD
         """Helper method to perform the actual plotting."""
         ax = self.ax
         ax.clear()
@@ -3490,7 +3541,7 @@ class ManageTransactionsDialogDB(QDialog):
         )
         if reply == QMessageBox.Yes:
             # Call PortfolioApp's method to handle the DB delete
-            if self._parent_app._delete_transaction_from_db(db_id):
+            if self._parent_app._delete_transaction_in_db(db_id):
                 self._refresh_dialog_table()  # Refresh this dialog's view from DB
                 self.data_changed.emit()  # Signal main window to refresh its data
                 # Success message handled by main app or here if desired
