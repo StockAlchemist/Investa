@@ -4664,9 +4664,6 @@ The CSV file should contain the following columns (header names must match exact
         self.table_view.setSortingEnabled(True)
         self.table_model = PandasModel(parent=self)
         self.table_view.setModel(self.table_model)
-        table_font = QFont(self.app_font)
-        table_font.setPointSize(self.app_font.pointSize() + 1)
-        self.table_view.setFont(table_font)
         self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.table_view.horizontalHeader().setStretchLastSection(False)
         self.table_view.verticalHeader().setVisible(False)
@@ -7707,6 +7704,46 @@ The CSV file should contain the following columns (header names must match exact
                 )
                 value_lines_plotted.append(line)
                 value_data_plotted_full = True
+
+                # --- ADDED: Add annotation for value change ---
+                if len(vv_full) >= 2:
+                    start_value = vv_full.iloc[0]
+                    end_value = vv_full.iloc[-1]
+                    abs_change = end_value - start_value
+                    pct_change = (
+                        (abs_change / start_value) * 100.0
+                        if abs(start_value) > 1e-9
+                        else np.nan
+                    )
+
+                    change_text = f"Period Change: {currency_symbol}{abs_change:,.0f}"
+                    if pd.notna(pct_change):
+                        change_text += f" ({pct_change:+.2f}%)"
+
+                    change_color = (
+                        self.QCOLOR_GAIN_THEMED
+                        if abs_change >= -1e-9
+                        else self.QCOLOR_LOSS_THEMED
+                    )
+
+                    self.abs_value_ax.text(
+                        0.98,
+                        0.05,
+                        change_text,
+                        transform=self.abs_value_ax.transAxes,
+                        fontsize=9,
+                        fontweight="bold",
+                        color=change_color.name(),
+                        va="bottom",
+                        ha="right",
+                        bbox=dict(
+                            boxstyle="round,pad=0.3",
+                            fc=self.QCOLOR_BACKGROUND_THEMED.name(),
+                            alpha=0.7,
+                            ec="none",
+                        ),
+                    )
+                # --- END ADDED ---
 
                 # --- Define currency formatter ---
                 def currency_formatter(x, pos):

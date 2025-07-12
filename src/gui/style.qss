@@ -16,7 +16,7 @@ SPDX-License-Identifier: MIT
 /* --- START OF FILE style.qss --- */
 QWidget {
     font-family: "Arial", "DejaVu Sans", "Helvetica";
-    font-size: 10pt;
+    font-size: 12pt;
     /* Base size for controls etc. */
 }
 

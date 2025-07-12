@@ -16,7 +16,7 @@ SPDX-License-Identifier: MIT
 import pandas as pd
 import numpy as np
 import logging
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, Optional, Tuple, List, Any
 
 
 def _get_statement_value(
