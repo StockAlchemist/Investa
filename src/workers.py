@@ -4,6 +4,7 @@ from typing import Dict, Any, Set, Optional
 import pandas as pd
 import logging
 import traceback
+from datetime import datetime, timedelta
 
 from market_data import MarketDataProvider
 from portfolio_analyzer import (
@@ -50,8 +51,8 @@ class WorkerSignals(QObject):
         pd.DataFrame,  # dividend_history_df
         pd.DataFrame,  # capital_gains_history_df
         pd.DataFrame,  # correlation_matrix_df
-        dict,          # factor_analysis_results
-        dict,          # scenario_analysis_result
+        dict,  # factor_analysis_results
+        dict,  # scenario_analysis_result
     )
 
     fundamental_data_ready = Signal(str, dict)  # display_symbol, data_dict
@@ -78,9 +79,10 @@ class PortfolioCalculatorWorker(QRunnable):
         manual_overrides_dict: Dict[str, Dict[str, Any]],
         user_symbol_map: Dict[str, str],
         user_excluded_symbols: Set[str],
-        market_data_provider: MarketDataProvider, # ADDED
+        market_data_provider: MarketDataProvider,  # ADDED
         historical_fn_supports_exclude=False,
         market_provider_available=True,
+        factor_model_name: str = "Fama-French 3-Factor",
     ):
         """
         Initializes the worker with calculation functions and arguments.
@@ -114,6 +116,7 @@ class PortfolioCalculatorWorker(QRunnable):
         self.user_excluded_symbols = user_excluded_symbols
         self.signals = worker_signals  # <-- USE PASSED SIGNALS
         self.market_data_provider = market_data_provider
+        self.factor_model_name = factor_model_name
         self.original_data = pd.DataFrame()
 
     @Slot()
@@ -411,26 +414,51 @@ class PortfolioCalculatorWorker(QRunnable):
             logging.info("WORKER: Calculating correlation matrix...")
             try:
                 # Get all unique stock symbols from transactions
-                all_transactions_df = self.portfolio_kwargs.get("all_transactions_df_for_worker")
-                logging.debug(f"WORKER: all_transactions_df_for_worker received: {type(all_transactions_df)}, empty: {all_transactions_df.empty if isinstance(all_transactions_df, pd.DataFrame) else 'N/A'}")
+                all_transactions_df = self.portfolio_kwargs.get(
+                    "all_transactions_df_for_worker"
+                )
+                logging.debug(
+                    f"WORKER: all_transactions_df_for_worker received: {type(all_transactions_df)}, empty: {all_transactions_df.empty if isinstance(all_transactions_df, pd.DataFrame) else 'N/A'}"
+                )
                 if all_transactions_df is None or all_transactions_df.empty:
-                    logging.warning("WORKER: No transactions data available for correlation matrix calculation.")
+                    logging.warning(
+                        "WORKER: No transactions data available for correlation matrix calculation."
+                    )
                     raise ValueError("No transactions data")
 
                 # Filter for stock/ETF transactions and get unique symbols
-                print(f"DEBUG WORKER: Columns in all_transactions_df: {all_transactions_df.columns.tolist()}") # Direct print for debugging
-                logging.debug(f"WORKER: Columns in all_transactions_df: {all_transactions_df.columns.tolist()}")
+                logging.debug(
+                    f"DEBUG WORKER: Columns in all_transactions_df: {all_transactions_df.columns.tolist()}"
+                )  # Direct print for debugging
+                logging.debug(
+                    f"WORKER: Columns in all_transactions_df: {all_transactions_df.columns.tolist()}"
+                )
 
                 if "Type" not in all_transactions_df.columns:
-                    logging.error("WORKER: 'Type' column missing from transactions DataFrame. Cannot calculate correlation matrix for individual stocks.")
+                    logging.error(
+                        "WORKER: 'Type' column missing from transactions DataFrame. Cannot calculate correlation matrix for individual stocks."
+                    )
                     raise ValueError("'Type' column missing")
 
                 stock_transactions = all_transactions_df[
-                    (all_transactions_df["Type"].isin(["Buy", "Sell", "Dividend", "Split"])) &
-                    (all_transactions_df["Symbol"] != config.CASH_SYMBOL_CSV)
+                    (
+                        all_transactions_df["Type"].str.lower().isin(
+                            ["buy", "sell", "dividend", "split"]
+                        )
+                    )
+                    & (all_transactions_df["Symbol"] != config.CASH_SYMBOL_CSV)
                 ]
                 unique_stock_symbols = stock_transactions["Symbol"].unique().tolist()
-                
+                logging.debug(f"WORKER: Unique stock symbols from all transactions: {unique_stock_symbols}")
+
+                # Filter to include only currently held stocks
+                if not holdings_df.empty and "Symbol" in holdings_df.columns:
+                    currently_held_symbols = holdings_df["Symbol"].unique().tolist()
+                    unique_stock_symbols = [sym for sym in unique_stock_symbols if sym in currently_held_symbols]
+                    logging.debug(f"WORKER: Unique stock symbols (currently held only): {unique_stock_symbols}")
+                else:
+                    logging.warning("WORKER: Holdings DataFrame is empty or missing 'Symbol' column. Cannot filter for currently held stocks.")
+
                 if not unique_stock_symbols:
                     logging.info("WORKER: No stock/ETF symbols found in transactions for correlation matrix.")
                     raise ValueError("No stock symbols")
@@ -445,6 +473,7 @@ class PortfolioCalculatorWorker(QRunnable):
                         internal_to_yf_map_for_corr[yf_sym] = internal_sym # Store YF -> Internal mapping
                     else:
                         logging.warning(f"WORKER: Skipping {internal_sym} for correlation: no YF mapping or excluded.")
+                logging.debug(f"WORKER: YF symbols for correlation after mapping: {yf_symbols_for_corr}")
 
                 if not yf_symbols_for_corr:
                     logging.info("WORKER: No valid YF symbols for correlation matrix after mapping/exclusion.")
@@ -469,6 +498,8 @@ class PortfolioCalculatorWorker(QRunnable):
                     use_cache=True,
                     cache_key=f"CORR_HIST::{start_date_corr}::{end_date_corr}::{hash(frozenset(yf_symbols_for_corr))}"
                 )
+                logging.debug(f"WORKER: Historical prices fetched for correlation: {list(historical_prices_for_corr.keys())}. Fetch failed status: {fetch_failed_corr}")
+
 
                 if fetch_failed_corr or not historical_prices_for_corr:
                     logging.warning("WORKER: Failed to fetch historical prices for correlation matrix.")
@@ -480,13 +511,16 @@ class PortfolioCalculatorWorker(QRunnable):
                     if not price_df.empty and "price" in price_df.columns:
                         internal_sym = internal_to_yf_map_for_corr.get(yf_sym, yf_sym) # Use internal symbol as column name
                         returns_for_corr[internal_sym] = price_df["price"].pct_change()
-                
+                logging.debug(f"WORKER: Returns DataFrame before dropna (shape: {returns_for_corr.shape}):\n{returns_for_corr.head().to_string()}")
+
                 if returns_for_corr.empty:
                     logging.warning("WORKER: No valid returns calculated for correlation matrix.")
                     raise ValueError("No valid returns")
 
                 # Drop rows with NaNs (e.g., first row after pct_change)
                 returns_for_corr.dropna(inplace=True)
+                logging.debug(f"WORKER: Returns DataFrame after dropna (shape: {returns_for_corr.shape}):\n{returns_for_corr.head().to_string()}")
+
 
                 # Calculate correlation matrix
                 if returns_for_corr.shape[1] > 1: # Need at least 2 columns for correlation
@@ -511,28 +545,39 @@ class PortfolioCalculatorWorker(QRunnable):
                 # For factor analysis, we need portfolio returns.
                 # Let's use 'Portfolio Accumulated Gain' to derive returns.
                 portfolio_returns_series = pd.Series()
-                if 'Portfolio Accumulated Gain' in full_historical_data_df.columns:
+                if "Portfolio Accumulated Gain" in full_historical_data_df.columns:
                     # Convert accumulated gain to periodic returns
-                    portfolio_returns_series = full_historical_data_df['Portfolio Accumulated Gain'].pct_change().dropna()
-                    portfolio_returns_series.name = 'Portfolio_Returns' # Name the series for the factor_analyzer
+                    portfolio_returns_series = (
+                        full_historical_data_df["Portfolio Accumulated Gain"]
+                        .pct_change()
+                        .dropna()
+                    )
+                    portfolio_returns_series.name = (
+                        "Portfolio_Returns"  # Name the series for the factor_analyzer
+                    )
 
                 if not portfolio_returns_series.empty:
                     # For simplicity, let's run Fama-French 3-Factor.
                     # The actual model choice would come from UI input.
-                    ff3_results = run_factor_regression(portfolio_returns_series, "Fama-French 3-Factor")
+                    ff3_results = run_factor_regression(portfolio_returns_series, self.factor_model_name)
                     if ff3_results:
                         # Store relevant parts of the summary, e.g., params, pvalues, rsquared
                         factor_analysis_results = {
-                            'params': ff3_results.params.to_dict(),
-                            'pvalues': ff3_results.pvalues.to_dict(),
-                            'rsquared': ff3_results.rsquared,
-                            'summary_text': str(ff3_results.summary()) # Store full summary for display
+                            "params": ff3_results.params.to_dict(),
+                            "pvalues": ff3_results.pvalues.to_dict(),
+                            "rsquared": ff3_results.rsquared,
+                            "summary_text": str(
+                                ff3_results.summary()
+                            ),  # Store full summary for display
+                            "model_name": self.factor_model_name, # NEW: Store the model name
                         }
                         logging.info("WORKER: Factor analysis completed successfully.")
                     else:
                         logging.warning("WORKER: Factor analysis returned no results.")
                 else:
-                    logging.warning("WORKER: No portfolio returns data for factor analysis.")
+                    logging.warning(
+                        "WORKER: No portfolio returns data for factor analysis."
+                    )
             except Exception as fa_e:
                 logging.error(
                     f"WORKER: --- Error during factor analysis: {fa_e} ---",
@@ -548,22 +593,28 @@ class PortfolioCalculatorWorker(QRunnable):
                 # This function typically takes user input (scenario shocks) and factor betas.
                 # Since this is a worker, we'll just pass dummy data for now.
                 # In a real implementation, scenario_shocks would be passed from the main thread.
-                dummy_factor_betas = factor_analysis_results.get('params', {}) # Use betas from factor analysis
-                if 'const' in dummy_factor_betas:
-                    del dummy_factor_betas['const'] # Remove intercept
-                
-                dummy_scenario_shocks = {'Mkt-RF': -0.05, 'SMB': 0.01} # Example shock
-                dummy_portfolio_value = portfolio_summary_metrics.get('market_value', 0.0)
+                dummy_factor_betas = factor_analysis_results.get(
+                    "params", {}
+                )  # Use betas from factor analysis
+                if "const" in dummy_factor_betas:
+                    del dummy_factor_betas["const"]  # Remove intercept
+
+                dummy_scenario_shocks = {"Mkt-RF": -0.05, "SMB": 0.01}  # Example shock
+                dummy_portfolio_value = portfolio_summary_metrics.get(
+                    "market_value", 0.0
+                )
 
                 if dummy_factor_betas and dummy_portfolio_value != 0.0:
                     scenario_analysis_result = run_scenario_analysis(
                         factor_betas=dummy_factor_betas,
                         scenario_shocks=dummy_scenario_shocks,
-                        portfolio_value=dummy_portfolio_value
+                        portfolio_value=dummy_portfolio_value,
                     )
                     logging.info("WORKER: Scenario analysis placeholder completed.")
                 else:
-                    logging.warning("WORKER: Skipping scenario analysis due to missing betas or portfolio value.")
+                    logging.warning(
+                        "WORKER: Skipping scenario analysis due to missing betas or portfolio value."
+                    )
             except Exception as sa_e:
                 logging.error(
                     f"WORKER: --- Error during scenario analysis: {sa_e} ---",
@@ -635,9 +686,9 @@ class PortfolioCalculatorWorker(QRunnable):
                     combined_ignored_reasons,
                     dividend_history_df,  # EMIT ACTUAL DATA
                     capital_gains_history_df,  # EMIT ACTUAL DATA
-                    correlation_matrix_df, # NEW
-                    factor_analysis_results, # NEW
-                    scenario_analysis_result, # NEW
+                    correlation_matrix_df,  # NEW
+                    factor_analysis_results,  # NEW
+                    scenario_analysis_result,  # NEW
                 )
                 logging.debug(
                     "WORKER: Emitting result signal with actual calculated data."

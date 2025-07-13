@@ -5377,13 +5377,11 @@ The CSV file should contain the following columns (header names must match exact
 
         self.correlation_fig = Figure(figsize=(6, 6), dpi=CHART_DPI)
         self.correlation_canvas = FigureCanvas(self.correlation_fig)
+        corr_layout.addStretch(1)
         corr_layout.addWidget(self.correlation_canvas)
+        corr_layout.addStretch(1)
 
-        self.correlation_table = QTableView()
-        self.correlation_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.correlation_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.correlation_table.verticalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        corr_layout.addWidget(self.correlation_table)
+        
 
         logging.debug("Correlation Matrix tab initialized.")
 
@@ -5813,6 +5811,7 @@ The CSV file should contain the following columns (header names must match exact
             market_data_provider=self.market_data_provider, # ADDED
             historical_fn_supports_exclude=HISTORICAL_FN_SUPPORTS_EXCLUDE,
             market_provider_available=MARKET_PROVIDER_AVAILABLE,
+            factor_model_name=self.factor_model_combo.currentText(),
         )
         # Signals are already connected in __init__ to self.worker_signals
         self.threadpool.start(worker)
@@ -12080,12 +12079,14 @@ The CSV file should contain the following columns (header names must match exact
 
         if self.correlation_matrix_df.empty:
             ax.text(0.5, 0.5, "No Correlation Data", ha="center", va="center", transform=ax.transAxes, color=COLOR_TEXT_SECONDARY)
-            self.correlation_table.setModel(PandasModel(pd.DataFrame(), parent=self))
+            
         else:
             import seaborn as sns
             sns.heatmap(self.correlation_matrix_df, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
             ax.set_title("Asset Correlation Matrix")
-            self.correlation_table.setModel(PandasModel(self.correlation_matrix_df, parent=self))
+            ax.set_xticklabels(ax.get_xticklabels(), rotation=0, ha="center")
+            ax.set_yticklabels(ax.get_yticklabels(), rotation=0, va="center")
+            
 
         self.correlation_fig.tight_layout()
         self.correlation_canvas.draw()
@@ -12094,9 +12095,40 @@ The CSV file should contain the following columns (header names must match exact
         """Updates the Factor Analysis display."""
         logging.debug("Updating Factor Analysis display...")
         if self.factor_analysis_results:
-            self.factor_analysis_results_text.setText(self.factor_analysis_results.get('summary_text', ''))
+            params = self.factor_analysis_results.get('params', {})
+            pvalues = self.factor_analysis_results.get('pvalues', {})
+            rsquared = self.factor_analysis_results.get('rsquared', None)
+
+            model_name = self.factor_analysis_results.get('model_name', 'Unknown Factor Model')
+
+            display_text = f"<h3>Factor Analysis Results ({model_name})</h3>"
+            display_text += "<p>This analysis helps understand how much of your portfolio's returns can be explained by common risk factors.</p>"
+
+            if params:
+                display_text += "<h4>Factor Betas (Coefficients):</h4>"
+                display_text += "<table border='1' cellpadding='5' cellspacing='0'><tr><th>Factor</th><th>Beta</th><th>P-Value</th></tr>"
+                for factor, beta in params.items():
+                    p_value = pvalues.get(factor, float('nan'))
+                    display_text += f"<tr><td>{factor}</td><td>{beta:.4f}</td><td>{p_value:.4f}</td></tr>"
+                display_text += "</table>"
+                display_text += "<p><b>Interpretation:</b><br>"
+                display_text += "- <b>Mkt-RF (Market Risk Premium):</b> Sensitivity to overall market movements. A beta > 1 means more volatile than the market.<br>"
+                display_text += "- <b>SMB (Small Minus Big):</b> Sensitivity to small-cap vs. large-cap stocks. Positive beta means exposure to small-cap.<br>"
+                display_text += "- <b>HML (High Minus Low):</b> Sensitivity to value vs. growth stocks. Positive beta means exposure to value stocks.<br>"
+                if model_name == "Carhart 4-Factor":
+                    display_text += "- <b>UMD (Up Minus Down / Momentum):</b> Sensitivity to momentum factor. Positive beta means exposure to past winning stocks.<br>"
+                display_text += "- <b>const (Alpha):</b> The portfolio's excess return not explained by the factors. Ideally positive and statistically significant (low P-value).</p>"
+
+            if rsquared is not None:
+                display_text += f"<h4>R-squared: {rsquared:.4f}</h4>"
+                display_text += "<p><b>Interpretation:</b> R-squared indicates the proportion of the variance in your portfolio's returns that can be explained by the factors. A higher R-squared means the model explains more of your portfolio's movements.</p>"
+
+            if not params and rsquared is None:
+                display_text += "<p>No detailed factor analysis results available. This might happen if there's insufficient historical data or an error during calculation.</p>"
+
+            self.factor_analysis_results_text.setHtml(display_text)
         else:
-            self.factor_analysis_results_text.setText("No Factor Analysis Results")
+            self.factor_analysis_results_text.setText("No Factor Analysis Results. Ensure you have sufficient historical data and valid transactions.")
 
     def _update_scenario_analysis_display(self):
         """Updates the Scenario Analysis display."""
@@ -12114,9 +12146,9 @@ The CSV file should contain the following columns (header names must match exact
 
     @Slot()
     def _run_factor_analysis(self):
-        """Placeholder slot for running factor analysis."""
-        logging.info("Run Factor Analysis button clicked.")
-        self.factor_analysis_results_text.setText("Running factor analysis... (Not yet implemented)")
+        """Triggers a full data refresh, which includes factor analysis calculation."""
+        logging.info("Run Factor Analysis button clicked. Triggering full data refresh.")
+        self.refresh_data()
 
     @Slot()
     def _run_scenario_analysis(self):
