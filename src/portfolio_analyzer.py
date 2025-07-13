@@ -1906,6 +1906,61 @@ def calculate_periodic_returns(
     return periodic_returns
 
 
+def calculate_correlation_matrix(
+    historical_returns_df: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Calculates the correlation matrix for historical returns of assets.
+
+    Args:
+        historical_returns_df (pd.DataFrame): DataFrame where each column represents
+                                             an asset's historical returns.
+
+    Returns:
+        pd.DataFrame: The correlation matrix.
+    """
+    if historical_returns_df.empty:
+        logging.warning("Input historical_returns_df is empty. Cannot calculate correlation matrix.")
+        return pd.DataFrame()
+    
+    # Ensure all columns are numeric
+    numeric_df = historical_returns_df.select_dtypes(include=[np.number])
+    if numeric_df.empty:
+        logging.warning("No numeric columns found in historical_returns_df. Cannot calculate correlation matrix.")
+        return pd.DataFrame()
+
+    correlation_matrix = numeric_df.corr()
+    return correlation_matrix
+
+def run_scenario_analysis(
+    factor_betas: Dict[str, float],
+    scenario_shocks: Dict[str, float],
+    portfolio_value: float
+) -> Dict[str, float]:
+    """
+    Calculates the estimated portfolio impact based on factor betas and scenario shocks.
+
+    Args:
+        factor_betas (Dict[str, float]): Dictionary of factor betas (e.g., {'Mkt-RF': 1.2, 'SMB': 0.5}).
+        scenario_shocks (Dict[str, float]): Dictionary of factor shocks (e.g., {'Mkt-RF': -0.10}).
+        portfolio_value (float): The current market value of the portfolio.
+
+    Returns:
+        Dict[str, float]: A dictionary containing the estimated portfolio return and impact.
+    """
+    estimated_portfolio_return = 0.0
+    for factor, shock in scenario_shocks.items():
+        beta = factor_betas.get(factor, 0.0)
+        estimated_portfolio_return += beta * shock
+
+    estimated_portfolio_impact = portfolio_value * estimated_portfolio_return
+
+    return {
+        "estimated_portfolio_return": estimated_portfolio_return,
+        "estimated_portfolio_impact": estimated_portfolio_impact
+    }
+
+
 def extract_dividend_history(
     all_transactions_df: pd.DataFrame,
     display_currency: str,  # <-- Keep existing parameters

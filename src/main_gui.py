@@ -1931,6 +1931,7 @@ The CSV file should contain the following columns (header names must match exact
         self.table_filter_timer.setSingleShot(True)
         self._initial_file_selection = False  # Used by select_database_file now
         self.worker_signals = WorkerSignals()
+        self.market_data_provider = MarketDataProvider() # Initialize MarketDataProvider
 
         # --- Configuration Loading ---
         self.config = (
@@ -1986,6 +1987,22 @@ The CSV file should contain the following columns (header names must match exact
         self.dividend_history_data = pd.DataFrame()
         self.historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}
         self.historical_fx_yf: Dict[str, pd.DataFrame] = {}
+
+        # Advanced Analysis Tab Attributes
+        self.correlation_fig = None
+        self.correlation_canvas = None
+        self.correlation_table = None
+        self.factor_model_combo = None
+        self.run_factor_analysis_button = None
+        self.factor_analysis_results_text = None
+        self.scenario_input_line_edit = None
+        self.run_scenario_button = None
+        self.scenario_impact_label = None
+
+        # Data attributes for Advanced Analysis
+        self.correlation_matrix_df = pd.DataFrame()
+        self.factor_analysis_results = None  # Store the regression summary object
+        self.scenario_analysis_result = {}
         self.available_accounts: List[str] = []
         self.selected_accounts: List[str] = self.config.get("selected_accounts", [])
         self.selected_benchmarks = self.config.get(
@@ -4129,6 +4146,12 @@ The CSV file should contain the following columns (header names must match exact
         self.capital_gains_tab = QWidget()
         self.main_tab_widget.addTab(self.capital_gains_tab, "Capital Gains")
 
+        # --- Advanced Analysis Tab ---
+        self.advanced_analysis_tab = QWidget()
+        self.advanced_analysis_tab.setObjectName("advanced_analysis_tab")
+        self.main_tab_widget.addTab(self.advanced_analysis_tab, "Advanced Analysis")
+        self._init_advanced_analysis_tab()
+
         # Tab 4 for Dividend History will be initialized in _init_ui_widgets
         # The "Holdings Overview" tab is now removed.
         logging.debug("--- _init_ui_structure: END ---")
@@ -5319,11 +5342,98 @@ The CSV file should contain the following columns (header names must match exact
         )  # Tables area takes 2 parts of vertical space
 
         logging.debug("--- _init_ui_widgets: Capital Gains Tab widgets initialized ---")
-        # --- End Asset Allocation Tab ---
 
-        self._create_status_bar()
-        logging.debug("--- _init_ui_widgets: After _create_status_bar ---")
-        logging.debug("--- _init_ui_widgets: END ---")
+    def _init_advanced_analysis_tab(self):
+        """Initializes the Advanced Analysis tab with its sub-tabs and layouts."""
+        logging.debug("Initializing Advanced Analysis tab.")
+        aa_layout = QVBoxLayout(self.advanced_analysis_tab)
+        self.advanced_analysis_tab.setLayout(aa_layout)
+
+        self.advanced_analysis_sub_tab_widget = QTabWidget()
+        aa_layout.addWidget(self.advanced_analysis_sub_tab_widget)
+
+        # Correlation Matrix Tab
+        self.correlation_matrix_tab = QWidget()
+        self.advanced_analysis_sub_tab_widget.addTab(self.correlation_matrix_tab, "Correlation Matrix")
+        self._init_correlation_matrix_tab()
+
+        # Factor Analysis Tab
+        self.factor_analysis_tab = QWidget()
+        self.advanced_analysis_sub_tab_widget.addTab(self.factor_analysis_tab, "Factor Analysis")
+        self._init_factor_analysis_tab()
+
+        # Scenario Analysis Tab
+        self.scenario_analysis_tab = QWidget()
+        self.advanced_analysis_sub_tab_widget.addTab(self.scenario_analysis_tab, "Scenario Analysis")
+        self._init_scenario_analysis_tab()
+
+        logging.debug("Advanced Analysis tab initialized.")
+
+    def _init_correlation_matrix_tab(self):
+        """Initializes the Correlation Matrix sub-tab."""
+        logging.debug("Initializing Correlation Matrix tab.")
+        corr_layout = QVBoxLayout(self.correlation_matrix_tab)
+        self.correlation_matrix_tab.setLayout(corr_layout)
+
+        self.correlation_fig = Figure(figsize=(6, 6), dpi=CHART_DPI)
+        self.correlation_canvas = FigureCanvas(self.correlation_fig)
+        corr_layout.addWidget(self.correlation_canvas)
+
+        self.correlation_table = QTableView()
+        self.correlation_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.correlation_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.correlation_table.verticalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        corr_layout.addWidget(self.correlation_table)
+
+        logging.debug("Correlation Matrix tab initialized.")
+
+    def _init_factor_analysis_tab(self):
+        """Initializes the Factor Analysis sub-tab."""
+        logging.debug("Initializing Factor Analysis tab.")
+        factor_layout = QVBoxLayout(self.factor_analysis_tab)
+        self.factor_analysis_tab.setLayout(factor_layout)
+
+        controls_layout = QHBoxLayout()
+        controls_layout.addWidget(QLabel("Factor Model:"))
+        self.factor_model_combo = QComboBox()
+        self.factor_model_combo.addItems(["Fama-French 3-Factor", "Carhart 4-Factor"])
+        controls_layout.addWidget(self.factor_model_combo)
+        self.run_factor_analysis_button = QPushButton("Run Analysis")
+        controls_layout.addWidget(self.run_factor_analysis_button)
+        controls_layout.addStretch(1)
+        factor_layout.addLayout(controls_layout)
+
+        self.factor_analysis_results_text = QTextEdit()
+        self.factor_analysis_results_text.setReadOnly(True)
+        factor_layout.addWidget(self.factor_analysis_results_text)
+
+        logging.debug("Factor Analysis tab initialized.")
+
+    def _init_scenario_analysis_tab(self):
+        """Initializes the Scenario Analysis sub-tab."""
+        logging.debug("Initializing Scenario Analysis tab.")
+        scenario_layout = QVBoxLayout(self.scenario_analysis_tab)
+        self.scenario_analysis_tab.setLayout(scenario_layout)
+
+        input_form_layout = QFormLayout()
+        self.scenario_input_line_edit = QLineEdit()
+        self.scenario_input_line_edit.setPlaceholderText("e.g., Mkt-RF: -0.10, SMB: 0.05")
+        input_form_layout.addRow("Scenario (Factor: Shock):", self.scenario_input_line_edit)
+        scenario_layout.addLayout(input_form_layout)
+
+        self.run_scenario_button = QPushButton("Run Scenario")
+        scenario_layout.addWidget(self.run_scenario_button)
+
+        results_group_box = QGroupBox("Scenario Results")
+        results_layout = QVBoxLayout(results_group_box)
+        self.scenario_impact_label = QLabel("Estimated Portfolio Impact: N/A")
+        results_layout.addWidget(self.scenario_impact_label)
+        results_group_box.setLayout(results_layout)
+        scenario_layout.addWidget(results_group_box)
+
+        scenario_layout.addStretch(1)
+
+        logging.debug("Scenario Analysis tab initialized.")
 
     def _update_transaction_log_tables(self):
         """Populates the stock and cash transaction log tables."""
@@ -5630,6 +5740,7 @@ The CSV file should contain the following columns (header names must match exact
             "manual_overrides_dict": self.manual_overrides_dict,
             "user_symbol_map": self.user_symbol_map_config,
             "user_excluded_symbols": self.user_excluded_symbols_config,
+            "all_transactions_df_for_worker": self.all_transactions_df_cleaned_for_logic.copy(), # Pass for correlation
         }
         current_cache_dir_base = QStandardPaths.writableLocation(
             QStandardPaths.CacheLocation
@@ -5686,6 +5797,7 @@ The CSV file should contain the following columns (header names must match exact
         logging.info(
             f"Graph Params: Start={start_date_hist}, End={end_date_hist}, Interval={interval_hist}, Benchmarks (Tickers)={selected_benchmark_tickers}{exclude_log_msg}"
         )
+        logging.debug(f"DEBUG: all_transactions_df_cleaned_for_logic shape before worker init: {self.all_transactions_df_cleaned_for_logic.shape}")
 
         worker = PortfolioCalculatorWorker(
             portfolio_fn=calculate_portfolio_summary,
@@ -5698,6 +5810,7 @@ The CSV file should contain the following columns (header names must match exact
             manual_overrides_dict=self.manual_overrides_dict,
             user_symbol_map=self.user_symbol_map_config,
             user_excluded_symbols=self.user_excluded_symbols_config,
+            market_data_provider=self.market_data_provider, # ADDED
             historical_fn_supports_exclude=HISTORICAL_FN_SUPPORTS_EXCLUDE,
             market_provider_available=MARKET_PROVIDER_AVAILABLE,
         )
@@ -5798,7 +5911,10 @@ The CSV file should contain the following columns (header names must match exact
         combined_ignored_indices,
         combined_ignored_reasons,
         dividend_history_df,
-        capital_gains_history_df,  # <-- ADDED
+        capital_gains_history_df,
+        correlation_matrix_df,
+        factor_analysis_results,
+        scenario_analysis_result,
     ):
         """Stores data received from the worker into self attributes and handles status.
         Args:
@@ -5811,7 +5927,11 @@ The CSV file should contain the following columns (header names must match exact
             hist_fx (dict): Raw historical FX rates used by worker.
             combined_ignored_indices (set): Set of original indices ignored during load or processing.
             combined_ignored_reasons (dict): Maps 'original_index' to a string describing the reason the row was ignored.
+            dividend_history_df (pd.DataFrame): Realized capital gains history.
             capital_gains_history_df (pd.DataFrame): Realized capital gains history.
+            correlation_matrix_df (pd.DataFrame): DataFrame of correlation matrix.
+            factor_analysis_results (dict): Results from factor analysis.
+            scenario_analysis_result (dict): Results from scenario analysis.
         """
 
         # --- Handle Status Messages and TWR ---
@@ -5847,7 +5967,18 @@ The CSV file should contain the following columns (header names must match exact
         self.capital_gains_history_data = (
             capital_gains_history_df
             if capital_gains_history_df is not None
-            else pd.DataFrame()  # Already present
+            else pd.DataFrame()
+        )
+        self.correlation_matrix_df = (
+            correlation_matrix_df
+            if correlation_matrix_df is not None
+            else pd.DataFrame()
+        )
+        self.factor_analysis_results = (
+            factor_analysis_results if factor_analysis_results is not None else {}
+        )
+        self.scenario_analysis_result = (
+            scenario_analysis_result if scenario_analysis_result is not None else {}
         )
         logging.debug(
             f"  _store_worker_data assigned self.dividend_history_data (shape {self.dividend_history_data.shape if isinstance(self.dividend_history_data, pd.DataFrame) else 'Not a DF'}):"
@@ -6395,6 +6526,11 @@ The CSV file should contain the following columns (header names must match exact
             self.update_performance_graphs()  # Uses self.historical_data (which reflects scope)
             self.update_header_info()  # Uses self.index_quote_data
 
+            # Update Advanced Analysis tabs
+            self._update_correlation_matrix_display()
+            self._update_factor_analysis_display()
+            self._update_scenario_analysis_display()
+
             # --- ADDED LOGGING ---
             logging.debug(
                 f"  Calling _update_fx_rate_display with currency: {self.currency_combo.currentText()}"
@@ -6735,6 +6871,12 @@ The CSV file should contain the following columns (header names must match exact
             self._update_capital_gains_display
         )
         self.cg_periods_spinbox.valueChanged.connect(self._update_capital_gains_display)
+
+        # Advanced Analysis Tab Connections
+        if hasattr(self, 'run_factor_analysis_button'):
+            self.run_factor_analysis_button.clicked.connect(self._run_factor_analysis)
+        if hasattr(self, 'run_scenario_button'):
+            self.run_scenario_button.clicked.connect(self._run_scenario_analysis)
 
         # Asset Change Tab Spinboxes
         if hasattr(
@@ -10538,7 +10680,7 @@ The CSV file should contain the following columns (header names must match exact
         self.setCursor(Qt.WaitCursor if not enabled else Qt.ArrowCursor)
 
     # --- Signal Handlers from Worker ---
-    @Slot(  # MODIFIED: Signature matches WorkerSignals.result (11 args)
+    @Slot(  # MODIFIED: Signature matches WorkerSignals.result (15 args)
         dict,
         pd.DataFrame,
         dict,
@@ -10550,6 +10692,9 @@ The CSV file should contain the following columns (header names must match exact
         dict,
         pd.DataFrame,
         pd.DataFrame,  # capital_gains_history_df
+        pd.DataFrame,  # correlation_matrix_df
+        dict,          # factor_analysis_results
+        dict,          # scenario_analysis_result
     )
     def handle_results(
         self,
@@ -10564,6 +10709,9 @@ The CSV file should contain the following columns (header names must match exact
         combined_ignored_reasons,
         dividend_history_df,
         capital_gains_history_df,
+        correlation_matrix_df,
+        factor_analysis_results,
+        scenario_analysis_result,
     ):
         logging.info("HANDLE_RESULTS: Slot entered.")
         """
@@ -10616,7 +10764,10 @@ The CSV file should contain the following columns (header names must match exact
                 combined_ignored_indices,
                 combined_ignored_reasons,
                 dividend_history_df,
-                capital_gains_history_df,  # Pass the new argument
+                capital_gains_history_df,
+                correlation_matrix_df,
+                factor_analysis_results,
+                scenario_analysis_result,
             )
             logging.info("HANDLE_RESULTS: Finished _store_worker_data.")
             # Log after storing
@@ -11920,6 +12071,59 @@ The CSV file should contain the following columns (header names must match exact
         self._update_capital_gains_bar_chart()
         # _update_capital_gains_summary_table will be called by _update_capital_gains_bar_chart
         self._update_capital_gains_table()
+
+    def _update_correlation_matrix_display(self):
+        """Updates the Correlation Matrix display."""
+        logging.debug("Updating Correlation Matrix display...")
+        ax = self.correlation_fig.add_subplot(111)
+        ax.clear()
+
+        if self.correlation_matrix_df.empty:
+            ax.text(0.5, 0.5, "No Correlation Data", ha="center", va="center", transform=ax.transAxes, color=COLOR_TEXT_SECONDARY)
+            self.correlation_table.setModel(PandasModel(pd.DataFrame(), parent=self))
+        else:
+            import seaborn as sns
+            sns.heatmap(self.correlation_matrix_df, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
+            ax.set_title("Asset Correlation Matrix")
+            self.correlation_table.setModel(PandasModel(self.correlation_matrix_df, parent=self))
+
+        self.correlation_fig.tight_layout()
+        self.correlation_canvas.draw()
+
+    def _update_factor_analysis_display(self):
+        """Updates the Factor Analysis display."""
+        logging.debug("Updating Factor Analysis display...")
+        if self.factor_analysis_results:
+            self.factor_analysis_results_text.setText(self.factor_analysis_results.get('summary_text', ''))
+        else:
+            self.factor_analysis_results_text.setText("No Factor Analysis Results")
+
+    def _update_scenario_analysis_display(self):
+        """Updates the Scenario Analysis display."""
+        logging.debug("Updating Scenario Analysis display...")
+        if self.scenario_analysis_result:
+            estimated_return = self.scenario_analysis_result.get('estimated_portfolio_return', 0.0)
+            estimated_impact = self.scenario_analysis_result.get('estimated_portfolio_impact', 0.0)
+            display_currency_symbol = self._get_currency_symbol()
+            self.scenario_impact_label.setText(
+                f"Estimated Portfolio Return: {estimated_return:.2%}\n"
+                f"Estimated Portfolio Impact: {display_currency_symbol}{estimated_impact:,.2f}"
+            )
+        else:
+            self.scenario_impact_label.setText("No Scenario Analysis Results")
+
+    @Slot()
+    def _run_factor_analysis(self):
+        """Placeholder slot for running factor analysis."""
+        logging.info("Run Factor Analysis button clicked.")
+        self.factor_analysis_results_text.setText("Running factor analysis... (Not yet implemented)")
+
+    @Slot()
+    def _run_scenario_analysis(self):
+        """Placeholder slot for running scenario analysis."""
+        logging.info("Run Scenario Analysis button clicked.")
+        scenario_text = self.scenario_input_line_edit.text()
+        self.scenario_impact_label.setText(f"Running scenario analysis for: {scenario_text} (Not yet implemented)")
 
     def _update_capital_gains_bar_chart(self):
         """Updates the Capital Gains bar chart."""

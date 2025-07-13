@@ -35,7 +35,7 @@ matplotlib==3.10.3
     #   -r /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/requirements.in
     #   mplcursors
 mplcursors==0.6
-    # via -r /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/requirements.in
+    # via -r /Users/kmatan/Library/CloudStorage/OneDrive-MahiInvesta/finance/Stocks/Evaluations/python/Investa/requirements.in
 multitasking==0.0.11
     # via yfinance
 numpy==2.3.1
@@ -102,3 +102,4 @@ websockets==15.0.1
     # via yfinance
 yfinance==0.2.65
     # via -r /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/requirements.in
+seaborn
