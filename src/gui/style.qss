@@ -294,17 +294,6 @@ QDateEdit:disabled {
     border-color: #cccccc;
 }
 
-QComboBox::drop-down,
-QDateEdit::drop-down {
-    subcontrol-origin: padding;
-    subcontrol-position: top right;
-    width: 15px;
-    border-left: 1px solid #ADB5BD;
-    border-top-right-radius: 3px;
-    border-bottom-right-radius: 3px;
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #fdfdfd, stop:1 #f0f0f0);
-}
-
 QComboBox QAbstractItemView {
     font-size: 10pt;
     /* Match control size */
@@ -442,6 +431,12 @@ QMenu::separator {
 #SymbolChartToolbar QToolBarSeparator {
      width: 0px;
      margin: 0px;
+}
+
+QLabel#ExplanationLabel {
+    font-size: 14pt;
+    color: #212529; /* Or a suitable color for explanations */
+    padding: 5px; /* Add some padding around the text */
 }
 
 /* --- QTabWidget and QTabBar Styling --- */

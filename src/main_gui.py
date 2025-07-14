@@ -1931,7 +1931,9 @@ The CSV file should contain the following columns (header names must match exact
         self.table_filter_timer.setSingleShot(True)
         self._initial_file_selection = False  # Used by select_database_file now
         self.worker_signals = WorkerSignals()
-        self.market_data_provider = MarketDataProvider() # Initialize MarketDataProvider
+        self.market_data_provider = (
+            MarketDataProvider()
+        )  # Initialize MarketDataProvider
 
         # --- Configuration Loading ---
         self.config = (
@@ -5354,17 +5356,23 @@ The CSV file should contain the following columns (header names must match exact
 
         # Correlation Matrix Tab
         self.correlation_matrix_tab = QWidget()
-        self.advanced_analysis_sub_tab_widget.addTab(self.correlation_matrix_tab, "Correlation Matrix")
+        self.advanced_analysis_sub_tab_widget.addTab(
+            self.correlation_matrix_tab, "Correlation Matrix"
+        )
         self._init_correlation_matrix_tab()
 
         # Factor Analysis Tab
         self.factor_analysis_tab = QWidget()
-        self.advanced_analysis_sub_tab_widget.addTab(self.factor_analysis_tab, "Factor Analysis")
+        self.advanced_analysis_sub_tab_widget.addTab(
+            self.factor_analysis_tab, "Factor Analysis"
+        )
         self._init_factor_analysis_tab()
 
         # Scenario Analysis Tab
         self.scenario_analysis_tab = QWidget()
-        self.advanced_analysis_sub_tab_widget.addTab(self.scenario_analysis_tab, "Scenario Analysis")
+        self.advanced_analysis_sub_tab_widget.addTab(
+            self.scenario_analysis_tab, "Scenario Analysis"
+        )
         self._init_scenario_analysis_tab()
 
         logging.debug("Advanced Analysis tab initialized.")
@@ -5377,11 +5385,22 @@ The CSV file should contain the following columns (header names must match exact
 
         self.correlation_fig = Figure(figsize=(6, 6), dpi=CHART_DPI)
         self.correlation_canvas = FigureCanvas(self.correlation_fig)
-        corr_layout.addStretch(1)
+        explanation_label = QLabel(
+            """<p>The <b>Correlation Matrix</b> visualizes the statistical relationship between the historical daily returns of assets in your portfolio. Each value, ranging from -1 to +1, indicates how two assets move together:</p>
+            <ul>
+            <li><b>+1 (Perfect Positive Correlation):</b> Assets move in the exact same direction.</li>
+            <li><b>-1 (Perfect Negative Correlation):</b> Assets move in opposite directions.</li>
+            <li><b>0 (No Linear Correlation):</b> No consistent linear relationship.</li>
+            </ul>
+            <p><b>What is calculated:</b> This matrix calculates the Pearson correlation coefficient for the daily returns of each pair of assets.</p>
+            <p><b>Why it's useful:</b> Understanding correlations is crucial for diversification. Combining assets with low or negative correlations can help reduce overall portfolio risk by offsetting losses in one asset with gains in another.</p>"""
+        )
+        explanation_label.setWordWrap(True)
+        explanation_label.setObjectName("ExplanationLabel")  # For potential styling
+        corr_layout.addWidget(explanation_label)
+
         corr_layout.addWidget(self.correlation_canvas)
         corr_layout.addStretch(1)
-
-        
 
         logging.debug("Correlation Matrix tab initialized.")
 
@@ -5390,6 +5409,21 @@ The CSV file should contain the following columns (header names must match exact
         logging.debug("Initializing Factor Analysis tab.")
         factor_layout = QVBoxLayout(self.factor_analysis_tab)
         self.factor_analysis_tab.setLayout(factor_layout)
+
+        explanation_label = QLabel(
+            """<p>The <b>Factor Analysis</b> tab performs a regression analysis to explain your portfolio's returns based on its exposure to various market factors. Common factors include:</p>
+            <ul>
+            <li><b>Market Risk Premium (Mkt-RF):</b> Measures sensitivity to the overall stock market. A beta > 1 suggests higher volatility than the market.</li>
+            <li><b>Small Minus Big (SMB):</b> Captures exposure to small-capitalization stocks versus large-capitalization stocks. Positive SMB indicates a tilt towards small-cap.</li>
+            <li><b>High Minus Low (HML):</b> Represents exposure to value stocks (high book-to-market ratio) versus growth stocks (low book-to-market ratio). Positive HML indicates a value tilt.</li>
+            <li><b>Up Minus Down (UMD / Momentum):</b> Reflects exposure to stocks with recent strong performance (momentum). Positive UMD indicates a preference for recent winners.</li>
+            </ul>
+            <p><b>What is calculated:</b> The analysis estimates <b>Factor Betas</b> (coefficients indicating your portfolio's sensitivity to each factor), <b>R-squared</b> (the proportion of your portfolio's return variance explained by these factors), and <b>P-values</b> (statistical significance of each factor's influence).</p>
+            <p><b>Why it's useful:</b> This helps identify the primary drivers of your portfolio's performance, uncover unintended factor exposures, and refine your investment strategy to align with specific risk premiums.</p>"""
+        )
+        explanation_label.setWordWrap(True)
+        explanation_label.setObjectName("ExplanationLabel")  # For potential styling
+        factor_layout.addWidget(explanation_label)
 
         controls_layout = QHBoxLayout()
         controls_layout.addWidget(QLabel("Factor Model:"))
@@ -5413,10 +5447,23 @@ The CSV file should contain the following columns (header names must match exact
         scenario_layout = QVBoxLayout(self.scenario_analysis_tab)
         self.scenario_analysis_tab.setLayout(scenario_layout)
 
+        explanation_label = QLabel(
+            """The <b>Scenario Analysis</b> tab allows you to simulate the potential impact of hypothetical market movements (scenarios) on your portfolio's value and returns.<br>
+            <b>What is calculated:</b> You define a scenario by specifying changes in key market variables (e.g., a percentage change in a specific index or factor). The system then estimates the potential impact on your portfolio based on its current holdings and sensitivities to these variables.<br>            
+            <b>Why it's useful:</b> This tool is valuable for stress-testing your portfolio against adverse market conditions, assessing potential downside risks, and making informed decisions about portfolio adjustments to mitigate those risks."""
+        )
+        explanation_label.setWordWrap(True)
+        explanation_label.setObjectName("ExplanationLabel")  # For potential styling
+        scenario_layout.addWidget(explanation_label)
+
         input_form_layout = QFormLayout()
         self.scenario_input_line_edit = QLineEdit()
-        self.scenario_input_line_edit.setPlaceholderText("e.g., Mkt-RF: -0.10, SMB: 0.05")
-        input_form_layout.addRow("Scenario (Factor: Shock):", self.scenario_input_line_edit)
+        self.scenario_input_line_edit.setPlaceholderText(
+            "e.g., Mkt-RF: -0.10, SMB: 0.05"
+        )
+        input_form_layout.addRow(
+            "Scenario (Factor: Shock):", self.scenario_input_line_edit
+        )
         scenario_layout.addLayout(input_form_layout)
 
         self.run_scenario_button = QPushButton("Run Scenario")
@@ -5738,7 +5785,7 @@ The CSV file should contain the following columns (header names must match exact
             "manual_overrides_dict": self.manual_overrides_dict,
             "user_symbol_map": self.user_symbol_map_config,
             "user_excluded_symbols": self.user_excluded_symbols_config,
-            "all_transactions_df_for_worker": self.all_transactions_df_cleaned_for_logic.copy(), # Pass for correlation
+            "all_transactions_df_for_worker": self.all_transactions_df_cleaned_for_logic.copy(),  # Pass for correlation
         }
         current_cache_dir_base = QStandardPaths.writableLocation(
             QStandardPaths.CacheLocation
@@ -5795,7 +5842,9 @@ The CSV file should contain the following columns (header names must match exact
         logging.info(
             f"Graph Params: Start={start_date_hist}, End={end_date_hist}, Interval={interval_hist}, Benchmarks (Tickers)={selected_benchmark_tickers}{exclude_log_msg}"
         )
-        logging.debug(f"DEBUG: all_transactions_df_cleaned_for_logic shape before worker init: {self.all_transactions_df_cleaned_for_logic.shape}")
+        logging.debug(
+            f"DEBUG: all_transactions_df_cleaned_for_logic shape before worker init: {self.all_transactions_df_cleaned_for_logic.shape}"
+        )
 
         worker = PortfolioCalculatorWorker(
             portfolio_fn=calculate_portfolio_summary,
@@ -5808,7 +5857,7 @@ The CSV file should contain the following columns (header names must match exact
             manual_overrides_dict=self.manual_overrides_dict,
             user_symbol_map=self.user_symbol_map_config,
             user_excluded_symbols=self.user_excluded_symbols_config,
-            market_data_provider=self.market_data_provider, # ADDED
+            market_data_provider=self.market_data_provider,  # ADDED
             historical_fn_supports_exclude=HISTORICAL_FN_SUPPORTS_EXCLUDE,
             market_provider_available=MARKET_PROVIDER_AVAILABLE,
             factor_model_name=self.factor_model_combo.currentText(),
@@ -6872,9 +6921,9 @@ The CSV file should contain the following columns (header names must match exact
         self.cg_periods_spinbox.valueChanged.connect(self._update_capital_gains_display)
 
         # Advanced Analysis Tab Connections
-        if hasattr(self, 'run_factor_analysis_button'):
+        if hasattr(self, "run_factor_analysis_button"):
             self.run_factor_analysis_button.clicked.connect(self._run_factor_analysis)
-        if hasattr(self, 'run_scenario_button'):
+        if hasattr(self, "run_scenario_button"):
             self.run_scenario_button.clicked.connect(self._run_scenario_analysis)
 
         # Asset Change Tab Spinboxes
@@ -10692,8 +10741,8 @@ The CSV file should contain the following columns (header names must match exact
         pd.DataFrame,
         pd.DataFrame,  # capital_gains_history_df
         pd.DataFrame,  # correlation_matrix_df
-        dict,          # factor_analysis_results
-        dict,          # scenario_analysis_result
+        dict,  # factor_analysis_results
+        dict,  # scenario_analysis_result
     )
     def handle_results(
         self,
@@ -12078,15 +12127,31 @@ The CSV file should contain the following columns (header names must match exact
         ax.clear()
 
         if self.correlation_matrix_df.empty:
-            ax.text(0.5, 0.5, "No Correlation Data", ha="center", va="center", transform=ax.transAxes, color=COLOR_TEXT_SECONDARY)
-            
+            ax.text(
+                0.5,
+                0.5,
+                "No Correlation Data",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                color=COLOR_TEXT_SECONDARY,
+            )
+
         else:
             import seaborn as sns
-            sns.heatmap(self.correlation_matrix_df, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
+
+            # Sort the index and columns alphabetically for consistent display
+            sorted_corr_matrix = self.correlation_matrix_df.sort_index(
+                axis=0
+            ).sort_index(axis=1)
+            sns.heatmap(
+                sorted_corr_matrix, annot=True, cmap="coolwarm", fmt=".2f", ax=ax
+            )
             ax.set_title("Asset Correlation Matrix")
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=0, ha="center")
+            ax.set_xticklabels(
+                ax.get_xticklabels(), rotation=90, ha="right"
+            )  # Rotate x-axis labels for better readability
             ax.set_yticklabels(ax.get_yticklabels(), rotation=0, va="center")
-            
 
         self.correlation_fig.tight_layout()
         self.correlation_canvas.draw()
@@ -12095,11 +12160,13 @@ The CSV file should contain the following columns (header names must match exact
         """Updates the Factor Analysis display."""
         logging.debug("Updating Factor Analysis display...")
         if self.factor_analysis_results:
-            params = self.factor_analysis_results.get('params', {})
-            pvalues = self.factor_analysis_results.get('pvalues', {})
-            rsquared = self.factor_analysis_results.get('rsquared', None)
+            params = self.factor_analysis_results.get("params", {})
+            pvalues = self.factor_analysis_results.get("pvalues", {})
+            rsquared = self.factor_analysis_results.get("rsquared", None)
 
-            model_name = self.factor_analysis_results.get('model_name', 'Unknown Factor Model')
+            model_name = self.factor_analysis_results.get(
+                "model_name", "Unknown Factor Model"
+            )
 
             display_text = f"<h3>Factor Analysis Results ({model_name})</h3>"
             display_text += "<p>This analysis helps understand how much of your portfolio's returns can be explained by common risk factors.</p>"
@@ -12108,7 +12175,7 @@ The CSV file should contain the following columns (header names must match exact
                 display_text += "<h4>Factor Betas (Coefficients):</h4>"
                 display_text += "<table border='1' cellpadding='5' cellspacing='0'><tr><th>Factor</th><th>Beta</th><th>P-Value</th></tr>"
                 for factor, beta in params.items():
-                    p_value = pvalues.get(factor, float('nan'))
+                    p_value = pvalues.get(factor, float("nan"))
                     display_text += f"<tr><td>{factor}</td><td>{beta:.4f}</td><td>{p_value:.4f}</td></tr>"
                 display_text += "</table>"
                 display_text += "<p><b>Interpretation:</b><br>"
@@ -12128,14 +12195,20 @@ The CSV file should contain the following columns (header names must match exact
 
             self.factor_analysis_results_text.setHtml(display_text)
         else:
-            self.factor_analysis_results_text.setText("No Factor Analysis Results. Ensure you have sufficient historical data and valid transactions.")
+            self.factor_analysis_results_text.setText(
+                "No Factor Analysis Results. Ensure you have sufficient historical data and valid transactions."
+            )
 
     def _update_scenario_analysis_display(self):
         """Updates the Scenario Analysis display."""
         logging.debug("Updating Scenario Analysis display...")
         if self.scenario_analysis_result:
-            estimated_return = self.scenario_analysis_result.get('estimated_portfolio_return', 0.0)
-            estimated_impact = self.scenario_analysis_result.get('estimated_portfolio_impact', 0.0)
+            estimated_return = self.scenario_analysis_result.get(
+                "estimated_portfolio_return", 0.0
+            )
+            estimated_impact = self.scenario_analysis_result.get(
+                "estimated_portfolio_impact", 0.0
+            )
             display_currency_symbol = self._get_currency_symbol()
             self.scenario_impact_label.setText(
                 f"Estimated Portfolio Return: {estimated_return:.2%}\n"
@@ -12147,15 +12220,18 @@ The CSV file should contain the following columns (header names must match exact
     @Slot()
     def _run_factor_analysis(self):
         """Triggers a full data refresh, which includes factor analysis calculation."""
-        logging.info("Run Factor Analysis button clicked. Triggering full data refresh.")
+        logging.info(
+            "Run Factor Analysis button clicked. Triggering full data refresh."
+        )
         self.refresh_data()
 
     @Slot()
     def _run_scenario_analysis(self):
-        """Placeholder slot for running scenario analysis."""
-        logging.info("Run Scenario Analysis button clicked.")
-        scenario_text = self.scenario_input_line_edit.text()
-        self.scenario_impact_label.setText(f"Running scenario analysis for: {scenario_text} (Not yet implemented)")
+        """Triggers a full data refresh, which includes scenario analysis calculation."""
+        logging.info(
+            "Run Scenario Analysis button clicked. Triggering full data refresh."
+        )
+        self.refresh_data()
 
     def _update_capital_gains_bar_chart(self):
         """Updates the Capital Gains bar chart."""
