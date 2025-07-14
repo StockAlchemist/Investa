@@ -5457,12 +5457,27 @@ The CSV file should contain the following columns (header names must match exact
         scenario_layout.addWidget(explanation_label)
 
         input_form_layout = QFormLayout()
+
+        # Preset Scenarios
+        preset_scenario_layout = QHBoxLayout()
+        self.preset_scenario_combo = QComboBox()
+        self.preset_scenario_combo.addItem("Select a Preset Scenario")
+        self.preset_scenario_combo.addItem("Market Downturn (Mkt-RF: -0.10, HML: 0.05)")
+        self.preset_scenario_combo.addItem("Interest Rate Hike (Mkt-RF: -0.05, SMB: -0.03, HML: 0.07)")
+        self.preset_scenario_combo.addItem("Inflation Surge (Mkt-RF: -0.07, HML: 0.08, RMW: -0.02)")
+        preset_scenario_layout.addWidget(self.preset_scenario_combo)
+
+        self.load_preset_button = QPushButton("Load Preset")
+        self.load_preset_button.clicked.connect(self._load_preset_scenario)
+        preset_scenario_layout.addWidget(self.load_preset_button)
+        input_form_layout.addRow("Preset Scenarios:", preset_scenario_layout)
+
         self.scenario_input_line_edit = QLineEdit()
         self.scenario_input_line_edit.setPlaceholderText(
             "e.g., Mkt-RF: -0.10, SMB: 0.05"
         )
         input_form_layout.addRow(
-            "Scenario (Factor: Shock):", self.scenario_input_line_edit
+            "Custom Scenario (Factor: Shock):", self.scenario_input_line_edit
         )
         scenario_layout.addLayout(input_form_layout)
 
@@ -12232,6 +12247,25 @@ The CSV file should contain the following columns (header names must match exact
             "Run Scenario Analysis button clicked. Triggering full data refresh."
         )
         self.refresh_data()
+
+    @Slot()
+    def _load_preset_scenario(self):
+        """Loads the selected preset scenario into the custom scenario input field."""
+        selected_text = self.preset_scenario_combo.currentText()
+        if selected_text == "Select a Preset Scenario":
+            self.scenario_input_line_edit.clear()
+            return
+
+        # Extract the scenario string from the preset text
+        # Example: "Market Downturn (Mkt-RF: -0.10, HML: 0.05)"
+        # We want: "Mkt-RF: -0.10, HML: 0.05"
+        match = re.search(r'\((.*)\)', selected_text)
+        if match:
+            scenario_string = match.group(1)
+            self.scenario_input_line_edit.setText(scenario_string)
+        else:
+            self.scenario_input_line_edit.clear()
+            logging.warning(f"Could not parse scenario from preset: {selected_text}")
 
     def _update_capital_gains_bar_chart(self):
         """Updates the Capital Gains bar chart."""
