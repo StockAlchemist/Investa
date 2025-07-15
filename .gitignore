@@ -16,3 +16,4 @@ tests/
 src/Investa.spec
 requirements.in
 src/refactor_main_gui.py.py
+git_commit.txt

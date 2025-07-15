@@ -5383,7 +5383,7 @@ The CSV file should contain the following columns (header names must match exact
         corr_layout = QVBoxLayout(self.correlation_matrix_tab)
         self.correlation_matrix_tab.setLayout(corr_layout)
 
-        self.correlation_fig = Figure(figsize=(6, 6), dpi=CHART_DPI)
+        self.correlation_fig = Figure(figsize=(8, 8), dpi=CHART_DPI)
         self.correlation_canvas = FigureCanvas(self.correlation_fig)
         explanation_label = QLabel(
             """<p>The <b>Correlation Matrix</b> visualizes the statistical relationship between the historical daily returns of assets in your portfolio. Each value, ranging from -1 to +1, indicates how two assets move together:</p>
@@ -5399,7 +5399,14 @@ The CSV file should contain the following columns (header names must match exact
         explanation_label.setObjectName("ExplanationLabel")  # For potential styling
         corr_layout.addWidget(explanation_label)
 
-        corr_layout.addWidget(self.correlation_canvas)
+        # --- Center the canvas horizontally ---
+        h_layout = QHBoxLayout()
+        h_layout.addStretch(1)
+        h_layout.addWidget(self.correlation_canvas)
+        h_layout.addStretch(1)
+        corr_layout.addLayout(h_layout)
+        # --- End centering ---
+
         corr_layout.addStretch(1)
 
         logging.debug("Correlation Matrix tab initialized.")
@@ -5462,6 +5469,15 @@ The CSV file should contain the following columns (header names must match exact
         preset_scenario_layout = QHBoxLayout()
         self.preset_scenario_combo = QComboBox()
         self.preset_scenario_combo.addItem("Select a Preset Scenario")
+        self.preset_scenario_combo.addItem("S&P500 Change: +30% (Mkt-RF: 0.30)")
+        self.preset_scenario_combo.addItem("S&P500 Change: +20% (Mkt-RF: 0.20)")
+        self.preset_scenario_combo.addItem("S&P500 Change: +10% (Mkt-RF: 0.10)")
+        self.preset_scenario_combo.addItem("S&P500 Change: +5% (Mkt-RF: 0.05)")
+        self.preset_scenario_combo.addItem("S&P500 Change: -5% (Mkt-RF: -0.05)")
+        self.preset_scenario_combo.addItem("S&P500 Change: -10% (Mkt-RF: -0.10)")
+        self.preset_scenario_combo.addItem("S&P500 Change: -20% (Mkt-RF: -0.20)")
+        self.preset_scenario_combo.addItem("S&P500 Change: -30% (Mkt-RF: -0.30)")
+        self.preset_scenario_combo.insertSeparator(9)
         self.preset_scenario_combo.addItem("Market Downturn (Mkt-RF: -0.10, HML: 0.05)")
         self.preset_scenario_combo.addItem("Interest Rate Hike (Mkt-RF: -0.05, SMB: -0.03, HML: 0.07)")
         self.preset_scenario_combo.addItem("Inflation Surge (Mkt-RF: -0.07, HML: 0.08, RMW: -0.02)")

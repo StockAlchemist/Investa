@@ -442,41 +442,63 @@ class PortfolioCalculatorWorker(QRunnable):
 
                 stock_transactions = all_transactions_df[
                     (
-                        all_transactions_df["Type"].str.lower().isin(
-                            ["buy", "sell", "dividend", "split"]
-                        )
+                        all_transactions_df["Type"]
+                        .str.lower()
+                        .isin(["buy", "sell", "dividend", "split"])
                     )
                     & (all_transactions_df["Symbol"] != config.CASH_SYMBOL_CSV)
                 ]
                 unique_stock_symbols = stock_transactions["Symbol"].unique().tolist()
-                logging.debug(f"WORKER: Unique stock symbols from all transactions: {unique_stock_symbols}")
+                logging.debug(
+                    f"WORKER: Unique stock symbols from all transactions: {unique_stock_symbols}"
+                )
 
                 # Filter to include only currently held stocks
                 if not holdings_df.empty and "Symbol" in holdings_df.columns:
                     currently_held_symbols = holdings_df["Symbol"].unique().tolist()
-                    unique_stock_symbols = [sym for sym in unique_stock_symbols if sym in currently_held_symbols]
-                    logging.debug(f"WORKER: Unique stock symbols (currently held only): {unique_stock_symbols}")
+                    unique_stock_symbols = [
+                        sym
+                        for sym in unique_stock_symbols
+                        if sym in currently_held_symbols
+                    ]
+                    logging.debug(
+                        f"WORKER: Unique stock symbols (currently held only): {unique_stock_symbols}"
+                    )
                 else:
-                    logging.warning("WORKER: Holdings DataFrame is empty or missing 'Symbol' column. Cannot filter for currently held stocks.")
+                    logging.warning(
+                        "WORKER: Holdings DataFrame is empty or missing 'Symbol' column. Cannot filter for currently held stocks."
+                    )
 
                 if not unique_stock_symbols:
-                    logging.info("WORKER: No stock/ETF symbols found in transactions for correlation matrix.")
+                    logging.info(
+                        "WORKER: No stock/ETF symbols found in transactions for correlation matrix."
+                    )
                     raise ValueError("No stock symbols")
 
                 # Map internal symbols to YF symbols
                 yf_symbols_for_corr = []
                 internal_to_yf_map_for_corr = {}
                 for internal_sym in unique_stock_symbols:
-                    yf_sym = map_to_yf_symbol(internal_sym, self.user_symbol_map, self.user_excluded_symbols)
+                    yf_sym = map_to_yf_symbol(
+                        internal_sym, self.user_symbol_map, self.user_excluded_symbols
+                    )
                     if yf_sym:
                         yf_symbols_for_corr.append(yf_sym)
-                        internal_to_yf_map_for_corr[yf_sym] = internal_sym # Store YF -> Internal mapping
+                        internal_to_yf_map_for_corr[yf_sym] = (
+                            internal_sym  # Store YF -> Internal mapping
+                        )
                     else:
-                        logging.warning(f"WORKER: Skipping {internal_sym} for correlation: no YF mapping or excluded.")
-                logging.debug(f"WORKER: YF symbols for correlation after mapping: {yf_symbols_for_corr}")
+                        logging.info(
+                            f"WORKER: Skipping {internal_sym} for correlation: no YF mapping or excluded."
+                        )
+                logging.debug(
+                    f"WORKER: YF symbols for correlation after mapping: {yf_symbols_for_corr}"
+                )
 
                 if not yf_symbols_for_corr:
-                    logging.info("WORKER: No valid YF symbols for correlation matrix after mapping/exclusion.")
+                    logging.info(
+                        "WORKER: No valid YF symbols for correlation matrix after mapping/exclusion."
+                    )
                     raise ValueError("No valid YF symbols")
 
                 # Determine date range for historical data
@@ -486,49 +508,75 @@ class PortfolioCalculatorWorker(QRunnable):
                     start_date_corr = start_date_corr.date()
                     end_date_corr = end_date_corr.date()
                 else:
-                    logging.warning("WORKER: Invalid date range for historical data for correlation. Using default.")
-                    start_date_corr = datetime.now().date() - timedelta(days=365*2) # Last 2 years
+                    logging.warning(
+                        "WORKER: Invalid date range for historical data for correlation. Using default."
+                    )
+                    start_date_corr = datetime.now().date() - timedelta(
+                        days=365 * 2
+                    )  # Last 2 years
                     end_date_corr = datetime.now().date()
 
                 # Fetch historical prices for individual stocks
-                historical_prices_for_corr, fetch_failed_corr = self.market_data_provider.get_historical_data(
-                    symbols_yf=yf_symbols_for_corr,
-                    start_date=start_date_corr,
-                    end_date=end_date_corr,
-                    use_cache=True,
-                    cache_key=f"CORR_HIST::{start_date_corr}::{end_date_corr}::{hash(frozenset(yf_symbols_for_corr))}"
+                historical_prices_for_corr, fetch_failed_corr = (
+                    self.market_data_provider.get_historical_data(
+                        symbols_yf=yf_symbols_for_corr,
+                        start_date=start_date_corr,
+                        end_date=end_date_corr,
+                        use_cache=True,
+                        cache_key=f"CORR_HIST::{start_date_corr}::{end_date_corr}::{hash(frozenset(yf_symbols_for_corr))}",
+                    )
                 )
-                logging.debug(f"WORKER: Historical prices fetched for correlation: {list(historical_prices_for_corr.keys())}. Fetch failed status: {fetch_failed_corr}")
-
+                logging.debug(
+                    f"WORKER: Historical prices fetched for correlation: {list(historical_prices_for_corr.keys())}. Fetch failed status: {fetch_failed_corr}"
+                )
 
                 if fetch_failed_corr or not historical_prices_for_corr:
-                    logging.warning("WORKER: Failed to fetch historical prices for correlation matrix.")
+                    logging.warning(
+                        "WORKER: Failed to fetch historical prices for correlation matrix."
+                    )
                     raise ValueError("Historical price fetch failed")
 
                 # Calculate daily returns for each stock
                 returns_for_corr = pd.DataFrame()
                 for yf_sym, price_df in historical_prices_for_corr.items():
                     if not price_df.empty and "price" in price_df.columns:
-                        internal_sym = internal_to_yf_map_for_corr.get(yf_sym, yf_sym) # Use internal symbol as column name
+                        internal_sym = internal_to_yf_map_for_corr.get(
+                            yf_sym, yf_sym
+                        )  # Use internal symbol as column name
                         returns_for_corr[internal_sym] = price_df["price"].pct_change()
-                logging.debug(f"WORKER: Returns DataFrame before dropna (shape: {returns_for_corr.shape}):\n{returns_for_corr.head().to_string()}")
+                logging.debug(
+                    f"WORKER: Returns DataFrame before dropna (shape: {returns_for_corr.shape}):\n{returns_for_corr.head().to_string()}"
+                )
 
                 if returns_for_corr.empty:
-                    logging.warning("WORKER: No valid returns calculated for correlation matrix.")
+                    logging.warning(
+                        "WORKER: No valid returns calculated for correlation matrix."
+                    )
                     raise ValueError("No valid returns")
 
                 # Drop rows with NaNs (e.g., first row after pct_change)
                 returns_for_corr.dropna(inplace=True)
-                logging.debug(f"WORKER: Returns DataFrame after dropna (shape: {returns_for_corr.shape}):\n{returns_for_corr.head().to_string()}")
-
+                logging.debug(
+                    f"WORKER: Returns DataFrame after dropna (shape: {returns_for_corr.shape}):\n{returns_for_corr.head().to_string()}"
+                )
 
                 # Calculate correlation matrix
-                if returns_for_corr.shape[1] > 1: # Need at least 2 columns for correlation
-                    correlation_matrix_df = calculate_correlation_matrix(returns_for_corr)
-                    logging.info(f"WORKER: Correlation matrix calculated (shape: {correlation_matrix_df.shape}).")
+                if (
+                    returns_for_corr.shape[1] > 1
+                ):  # Need at least 2 columns for correlation
+                    correlation_matrix_df = calculate_correlation_matrix(
+                        returns_for_corr
+                    )
+                    logging.info(
+                        f"WORKER: Correlation matrix calculated (shape: {correlation_matrix_df.shape})."
+                    )
                 else:
-                    logging.info("WORKER: Not enough stock symbols with valid returns to calculate correlation matrix (>1 needed).")
-                    correlation_matrix_df = pd.DataFrame() # Ensure it's empty if not enough data
+                    logging.info(
+                        "WORKER: Not enough stock symbols with valid returns to calculate correlation matrix (>1 needed)."
+                    )
+                    correlation_matrix_df = (
+                        pd.DataFrame()
+                    )  # Ensure it's empty if not enough data
 
             except Exception as corr_e:
                 logging.error(
@@ -559,7 +607,9 @@ class PortfolioCalculatorWorker(QRunnable):
                 if not portfolio_returns_series.empty:
                     # For simplicity, let's run Fama-French 3-Factor.
                     # The actual model choice would come from UI input.
-                    ff3_results = run_factor_regression(portfolio_returns_series, self.factor_model_name)
+                    ff3_results = run_factor_regression(
+                        portfolio_returns_series, self.factor_model_name
+                    )
                     if ff3_results:
                         # Store relevant parts of the summary, e.g., params, pvalues, rsquared
                         factor_analysis_results = {
@@ -569,7 +619,7 @@ class PortfolioCalculatorWorker(QRunnable):
                             "summary_text": str(
                                 ff3_results.summary()
                             ),  # Store full summary for display
-                            "model_name": self.factor_model_name, # NEW: Store the model name
+                            "model_name": self.factor_model_name,  # NEW: Store the model name
                         }
                         logging.info("WORKER: Factor analysis completed successfully.")
                     else:
@@ -612,7 +662,7 @@ class PortfolioCalculatorWorker(QRunnable):
                     )
                     logging.info("WORKER: Scenario analysis placeholder completed.")
                 else:
-                    logging.warning(
+                    logging.info(
                         "WORKER: Skipping scenario analysis due to missing betas or portfolio value."
                     )
             except Exception as sa_e:
