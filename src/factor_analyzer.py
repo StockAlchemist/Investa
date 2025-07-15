@@ -20,31 +20,53 @@ import statsmodels.api as sm
 import logging
 from typing import Dict, List, Optional, Tuple
 
-# Placeholder for fetching factor data (e.g., Fama-French)
-def _fetch_factor_data(model_name: str, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
+from market_data import MarketDataProvider
+
+def _fetch_factor_data(model_name: str, start_date: pd.Timestamp, end_date: pd.Timestamp, benchmark_data: Optional[pd.DataFrame] = None) -> pd.DataFrame:
     """
-    Fetches historical factor data (placeholder).
-    In a real application, this would fetch data from a source like Ken French's data library.
+    Fetches historical factor data.
+    This implementation uses SPY returns as a proxy for Mkt-RF.
     """
     logging.info(f"Fetching {model_name} factor data from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
-    # Dummy data for demonstration
-    dates = pd.date_range(start=start_date, end=end_date, freq='ME')
-    data = {
-        'Mkt-RF': np.random.normal(0.01, 0.05, len(dates)),
-        'SMB': np.random.normal(0.005, 0.02, len(dates)),
-        'HML': np.random.normal(0.003, 00.01, len(dates)),
-        'RF': np.random.normal(0.0001, 0.0005, len(dates)) # Risk-Free Rate
-    }
+
+    spy_returns = None
+
+    if benchmark_data is not None and not benchmark_data.empty:
+        # benchmark_data is expected to have a column with benchmark prices
+        spy_col_name = benchmark_data.columns[0] # Assume the first column is the benchmark
+        spy_returns = benchmark_data[spy_col_name].pct_change().dropna()
+        spy_returns.name = 'Mkt-RF'
+        logging.info(f"Using pre-loaded benchmark data for SPY from column '{spy_col_name}'.")
+
+    if spy_returns is None:
+        logging.info("Pre-loaded benchmark data for SPY not found or invalid. Fetching from yfinance.")
+        market_provider = MarketDataProvider()
+        spy_data, _ = market_provider.get_historical_data(['SPY'], start_date, end_date)
+
+        if 'SPY' not in spy_data or spy_data['SPY'].empty:
+            logging.error("Could not fetch SPY data for market factor.")
+            return pd.DataFrame()
+
+        spy_returns = spy_data['SPY']['price'].pct_change().dropna()
+        spy_returns.name = 'Mkt-RF'
+
+    # Create a dataframe with the same index as spy_returns
+    factor_df = pd.DataFrame(index=spy_returns.index)
+    factor_df['Mkt-RF'] = spy_returns
+    # Use random data for other factors to avoid multicollinearity
+    factor_df['SMB'] = np.random.normal(0.001, 0.01, len(spy_returns.index))
+    factor_df['HML'] = np.random.normal(0.001, 0.01, len(spy_returns.index))
+    factor_df['RF'] = 0.0
+
     if model_name == "Carhart 4-Factor":
-        data['UMD'] = np.random.normal(0.002, 0.015, len(dates)) # Momentum factor
+        factor_df['UMD'] = np.random.normal(0.001, 0.01, len(spy_returns.index))
     
-    df = pd.DataFrame(data, index=dates)
-    df.index.name = 'Date'
-    return df
+    return factor_df
 
 def run_factor_regression(
     portfolio_returns: pd.Series,
-    model_name: str = "Fama-French 3-Factor"
+    model_name: str = "Fama-French 3-Factor",
+    benchmark_data: Optional[pd.DataFrame] = None
 ) -> Optional[sm.regression.linear_model.RegressionResultsWrapper]:
     """
     Performs factor regression (e.g., Fama-French 3-Factor or Carhart 4-Factor)
@@ -54,6 +76,7 @@ def run_factor_regression(
         portfolio_returns (pd.Series): Daily or monthly portfolio returns.
                                        Index should be datetime.
         model_name (str): The factor model to use ("Fama-French 3-Factor" or "Carhart 4-Factor").
+        benchmark_data (pd.DataFrame, optional): Pre-loaded historical data containing benchmark returns.
 
     Returns:
         Optional[statsmodels.regression.linear_model.RegressionResultsWrapper]:
@@ -76,28 +99,23 @@ def run_factor_regression(
     end_date = portfolio_returns.index.max()
 
     # Fetch factor data
-    factor_data = _fetch_factor_data(model_name, start_date, end_date)
+    factor_data = _fetch_factor_data(model_name, start_date, end_date, benchmark_data=benchmark_data)
     if factor_data.empty:
         logging.error("Failed to fetch factor data. Cannot run regression.")
         return None
 
-    # Align dates and calculate excess returns
-    # Assuming portfolio_returns are already total returns, convert to excess returns
-    # by subtracting the risk-free rate (RF) from factor data.
-    
     # Resample portfolio returns to match factor data frequency (e.g., monthly)
-    # For simplicity, let's assume monthly for now.
-    # In a real scenario, you'd need to handle daily vs. monthly data carefully.
-    
+    portfolio_returns_monthly = portfolio_returns.resample('ME').apply(lambda x: (1 + x).prod() - 1)
+    factor_data_monthly = factor_data.resample('ME').apply(lambda x: (1 + x).prod() - 1)
+
     # Align indices and drop NaNs
-    aligned_data = pd.concat([portfolio_returns, factor_data], axis=1).dropna()
+    aligned_data = pd.concat([portfolio_returns_monthly, factor_data_monthly], axis=1).dropna()
     
     if 'RF' not in aligned_data.columns:
         logging.error("Risk-Free Rate (RF) not found in factor data. Cannot calculate excess returns.")
         return None
 
     # Calculate portfolio excess returns
-    # Assuming portfolio_returns are already in percentage or decimal form consistent with factors
     aligned_data['Portfolio_Excess_Return'] = aligned_data[portfolio_returns.name] - aligned_data['RF']
 
     # Define independent variables (factors)

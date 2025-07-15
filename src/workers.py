@@ -83,6 +83,7 @@ class PortfolioCalculatorWorker(QRunnable):
         historical_fn_supports_exclude=False,
         market_provider_available=True,
         factor_model_name: str = "Fama-French 3-Factor",
+        scenario_shocks: Optional[Dict[str, float]] = None,  # <-- ADDED
     ):
         """
         Initializes the worker with calculation functions and arguments.
@@ -98,6 +99,7 @@ class PortfolioCalculatorWorker(QRunnable):
             manual_overrides_dict (dict): Dictionary of manual overrides (price, asset_type, sector, geography, industry).
             user_symbol_map (Dict[str, str]): User-defined symbol map.
             user_excluded_symbols (Set[str]): User-defined excluded symbols.
+            scenario_shocks (Optional[Dict[str, float]]): User-defined scenario shocks.
         """
         super().__init__()
         self.portfolio_fn = portfolio_fn
@@ -117,6 +119,7 @@ class PortfolioCalculatorWorker(QRunnable):
         self.signals = worker_signals  # <-- USE PASSED SIGNALS
         self.market_data_provider = market_data_provider
         self.factor_model_name = factor_model_name
+        self.scenario_shocks = scenario_shocks  # <-- ADDED
         self.original_data = pd.DataFrame()
 
     @Slot()
@@ -591,24 +594,32 @@ class PortfolioCalculatorWorker(QRunnable):
             logging.info("WORKER: Running factor analysis...")
             try:
                 # For factor analysis, we need portfolio returns.
-                # Let's use 'Portfolio Accumulated Gain' to derive returns.
                 portfolio_returns_series = pd.Series()
-                if "Portfolio Accumulated Gain" in full_historical_data_df.columns:
-                    # Convert accumulated gain to periodic returns
+                if "Portfolio Value" in full_historical_data_df.columns:
+                    df_for_analysis = full_historical_data_df.copy()
+                    if 'Date' in df_for_analysis.columns and not isinstance(df_for_analysis.index, pd.DatetimeIndex):
+                        df_for_analysis['Date'] = pd.to_datetime(df_for_analysis['Date'])
+                        df_for_analysis.set_index('Date', inplace=True)
+
+                    # Convert portfolio value to periodic returns
                     portfolio_returns_series = (
-                        full_historical_data_df["Portfolio Accumulated Gain"]
+                        df_for_analysis["Portfolio Value"]
                         .pct_change()
                         .dropna()
                     )
-                    portfolio_returns_series.name = (
-                        "Portfolio_Returns"  # Name the series for the factor_analyzer
-                    )
+                    portfolio_returns_series.name = "Portfolio_Returns"
 
                 if not portfolio_returns_series.empty:
-                    # For simplicity, let's run Fama-French 3-Factor.
-                    # The actual model choice would come from UI input.
+                    # Use the first selected benchmark as the market factor
+                    benchmark_data_for_factor_analysis = None
+                    if self.historical_kwargs.get("benchmark_symbols_yf"):
+                        first_benchmark_ticker = self.historical_kwargs["benchmark_symbols_yf"][0]
+                        benchmark_col_name = f"{first_benchmark_ticker} Price"
+                        if benchmark_col_name in df_for_analysis.columns:
+                            benchmark_data_for_factor_analysis = df_for_analysis[[benchmark_col_name]]
+
                     ff3_results = run_factor_regression(
-                        portfolio_returns_series, self.factor_model_name
+                        portfolio_returns_series, self.factor_model_name, benchmark_data=benchmark_data_for_factor_analysis
                     )
                     if ff3_results:
                         # Store relevant parts of the summary, e.g., params, pvalues, rsquared
@@ -649,21 +660,20 @@ class PortfolioCalculatorWorker(QRunnable):
                 if "const" in dummy_factor_betas:
                     del dummy_factor_betas["const"]  # Remove intercept
 
-                dummy_scenario_shocks = {"Mkt-RF": -0.05, "SMB": 0.01}  # Example shock
                 dummy_portfolio_value = portfolio_summary_metrics.get(
                     "market_value", 0.0
                 )
 
-                if dummy_factor_betas and dummy_portfolio_value != 0.0:
+                if dummy_factor_betas and self.scenario_shocks and dummy_portfolio_value != 0.0:
                     scenario_analysis_result = run_scenario_analysis(
                         factor_betas=dummy_factor_betas,
-                        scenario_shocks=dummy_scenario_shocks,
+                        scenario_shocks=self.scenario_shocks,
                         portfolio_value=dummy_portfolio_value,
                     )
-                    logging.info("WORKER: Scenario analysis placeholder completed.")
+                    logging.info("WORKER: Scenario analysis completed.")
                 else:
                     logging.info(
-                        "WORKER: Skipping scenario analysis due to missing betas or portfolio value."
+                        "WORKER: Skipping scenario analysis due to missing betas, scenario shocks, or portfolio value."
                     )
             except Exception as sa_e:
                 logging.error(

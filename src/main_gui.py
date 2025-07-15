@@ -5479,8 +5479,12 @@ The CSV file should contain the following columns (header names must match exact
         self.preset_scenario_combo.addItem("S&P500 Change: -30% (Mkt-RF: -0.30)")
         self.preset_scenario_combo.insertSeparator(9)
         self.preset_scenario_combo.addItem("Market Downturn (Mkt-RF: -0.10, HML: 0.05)")
-        self.preset_scenario_combo.addItem("Interest Rate Hike (Mkt-RF: -0.05, SMB: -0.03, HML: 0.07)")
-        self.preset_scenario_combo.addItem("Inflation Surge (Mkt-RF: -0.07, HML: 0.08, RMW: -0.02)")
+        self.preset_scenario_combo.addItem(
+            "Interest Rate Hike (Mkt-RF: -0.05, SMB: -0.03, HML: 0.07)"
+        )
+        self.preset_scenario_combo.addItem(
+            "Inflation Surge (Mkt-RF: -0.07, HML: 0.08, RMW: -0.02)"
+        )
         preset_scenario_layout.addWidget(self.preset_scenario_combo)
 
         self.load_preset_button = QPushButton("Load Preset")
@@ -5491,6 +5495,10 @@ The CSV file should contain the following columns (header names must match exact
         self.scenario_input_line_edit = QLineEdit()
         self.scenario_input_line_edit.setPlaceholderText(
             "e.g., Mkt-RF: -0.10, SMB: 0.05"
+        )
+        self.scenario_input_line_edit.setMinimumWidth(400)  # Set a fixed minimum width
+        self.scenario_input_line_edit.setSizePolicy(
+            QSizePolicy.MinimumExpanding, QSizePolicy.Preferred
         )
         input_form_layout.addRow(
             "Custom Scenario (Factor: Shock):", self.scenario_input_line_edit
@@ -5888,10 +5896,11 @@ The CSV file should contain the following columns (header names must match exact
             manual_overrides_dict=self.manual_overrides_dict,
             user_symbol_map=self.user_symbol_map_config,
             user_excluded_symbols=self.user_excluded_symbols_config,
-            market_data_provider=self.market_data_provider,  # ADDED
+            market_data_provider=self.market_data_provider,
             historical_fn_supports_exclude=HISTORICAL_FN_SUPPORTS_EXCLUDE,
             market_provider_available=MARKET_PROVIDER_AVAILABLE,
             factor_model_name=self.factor_model_combo.currentText(),
+            scenario_shocks=self._get_scenario_shocks_from_input(),
         )
         # Signals are already connected in __init__ to self.worker_signals
         self.threadpool.start(worker)
@@ -12157,6 +12166,15 @@ The CSV file should contain the following columns (header names must match exact
         ax = self.correlation_fig.add_subplot(111)
         ax.clear()
 
+        # Explicitly set background and text colors to match the current theme
+        bg_color = self.QCOLOR_BACKGROUND_THEMED.name()
+        text_color = self.QCOLOR_TEXT_PRIMARY_THEMED.name()
+        secondary_text_color = self.QCOLOR_TEXT_SECONDARY_THEMED.name()
+
+        self.correlation_fig.patch.set_facecolor(bg_color)
+        ax.patch.set_facecolor(bg_color)
+        ax.tick_params(colors=text_color, which="both")
+
         if self.correlation_matrix_df.empty:
             ax.text(
                 0.5,
@@ -12165,7 +12183,7 @@ The CSV file should contain the following columns (header names must match exact
                 ha="center",
                 va="center",
                 transform=ax.transAxes,
-                color=COLOR_TEXT_SECONDARY,
+                color=secondary_text_color,
             )
 
         else:
@@ -12178,7 +12196,7 @@ The CSV file should contain the following columns (header names must match exact
             sns.heatmap(
                 sorted_corr_matrix, annot=True, cmap="coolwarm", fmt=".2f", ax=ax
             )
-            ax.set_title("Asset Correlation Matrix")
+            ax.set_title("Asset Correlation Matrix", color=text_color)
             ax.set_xticklabels(
                 ax.get_xticklabels(), rotation=90, ha="right"
             )  # Rotate x-axis labels for better readability
@@ -12235,15 +12253,24 @@ The CSV file should contain the following columns (header names must match exact
         logging.debug("Updating Scenario Analysis display...")
         if self.scenario_analysis_result:
             estimated_return = self.scenario_analysis_result.get(
-                "estimated_portfolio_return", 0.0
+                "estimated_portfolio_return", np.nan
             )
             estimated_impact = self.scenario_analysis_result.get(
-                "estimated_portfolio_impact", 0.0
+                "estimated_portfolio_impact", np.nan
             )
             display_currency_symbol = self._get_currency_symbol()
+
+            # Determine color for return and impact
+            return_color = COLOR_GAIN if estimated_return >= 0 else COLOR_LOSS
+            impact_color = COLOR_GAIN if estimated_impact >= 0 else COLOR_LOSS
+
+            # Format return and impact, handling NaN values
+            formatted_return = f"{estimated_return:+.2%}" if pd.notna(estimated_return) else "N/A"
+            formatted_impact = f"{display_currency_symbol}{estimated_impact:+,.2f}" if pd.notna(estimated_impact) else "N/A"
+
             self.scenario_impact_label.setText(
-                f"Estimated Portfolio Return: {estimated_return:.2%}\n"
-                f"Estimated Portfolio Impact: {display_currency_symbol}{estimated_impact:,.2f}"
+                f"<b>Estimated Portfolio Return:</b> <font color='{return_color}'>{formatted_return}</font><br>"
+                f"<b>Estimated Portfolio Impact:</b> <font color='{impact_color}'>{formatted_impact}</font>"
             )
         else:
             self.scenario_impact_label.setText("No Scenario Analysis Results")
@@ -12268,20 +12295,44 @@ The CSV file should contain the following columns (header names must match exact
     def _load_preset_scenario(self):
         """Loads the selected preset scenario into the custom scenario input field."""
         selected_text = self.preset_scenario_combo.currentText()
-        if selected_text == "Select a Preset Scenario":
+        if "Select a Preset Scenario" in selected_text:
             self.scenario_input_line_edit.clear()
             return
 
         # Extract the scenario string from the preset text
         # Example: "Market Downturn (Mkt-RF: -0.10, HML: 0.05)"
         # We want: "Mkt-RF: -0.10, HML: 0.05"
-        match = re.search(r'\((.*)\)', selected_text)
+        match = re.search(r"\((.*)\)", selected_text)
         if match:
             scenario_string = match.group(1)
             self.scenario_input_line_edit.setText(scenario_string)
         else:
             self.scenario_input_line_edit.clear()
             logging.warning(f"Could not parse scenario from preset: {selected_text}")
+
+    def _get_scenario_shocks_from_input(self) -> Optional[Dict[str, float]]:
+        """Parses the scenario input field and returns a dictionary of shocks."""
+        shocks_text = self.scenario_input_line_edit.text().strip()
+        if not shocks_text:
+            return None
+
+        shocks = {}
+        try:
+            parts = shocks_text.split(",")
+            for part in parts:
+                factor, value = part.split(":")
+                factor = factor.strip()
+                value = float(value.strip())
+                shocks[factor] = value
+            return shocks
+        except ValueError:
+            logging.error(f"Invalid scenario format: {shocks_text}")
+            QMessageBox.warning(
+                self,
+                "Invalid Scenario",
+                "Invalid scenario format. Please use 'Factor: Value, Factor: Value'.",
+            )
+            return None
 
     def _update_capital_gains_bar_chart(self):
         """Updates the Capital Gains bar chart."""
