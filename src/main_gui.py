@@ -4808,26 +4808,23 @@ The CSV file should contain the following columns (header names must match exact
         # --- END MODIFICATION ---
         self.dividend_periods_spinbox.setFixedWidth(60)
         dividend_controls_layout.addWidget(self.dividend_periods_spinbox)
-        dividend_controls_layout.addStretch()
-        dividend_history_layout.addLayout(dividend_controls_layout)
-        logging.debug("--- _init_ui_widgets: Dividend controls layout added ---")
 
         # --- ADDED: Estimated Annual Dividend Income Display ---
-        est_annual_income_layout = QHBoxLayout()
-        est_annual_income_layout.setContentsMargins(
-            0, 5, 0, 5
-        )  # Add some vertical margin
-
+        # Moved to the same line as "Aggregate by:"
+        dividend_controls_layout.addStretch() # This stretch pushes "Aggregate by:" to the left and "Estimated Dividend Income" to the right
         self.est_annual_income_label = QLabel("<b>Est. Next 12m Dividend Income:</b>")
         self.est_annual_income_label.setObjectName("EstAnnualIncomeLabel")
-        est_annual_income_layout.addWidget(self.est_annual_income_label)
+        dividend_controls_layout.addWidget(self.est_annual_income_label)
 
         self.est_annual_income_value_label = QLabel("N/A")
         self.est_annual_income_value_label.setObjectName("EstAnnualIncomeValueLabel")
-        est_annual_income_layout.addWidget(self.est_annual_income_value_label)
-        est_annual_income_layout.addStretch()
-        dividend_history_layout.addLayout(est_annual_income_layout)
-        # --- END ADDED ---
+        # Set font size for the value label
+        self.est_annual_income_value_label.setStyleSheet("font-size: 16pt;")
+        dividend_controls_layout.addWidget(self.est_annual_income_value_label)
+        # No stretch needed here, as the previous stretch will push it to the right
+
+        dividend_history_layout.addLayout(dividend_controls_layout)
+        logging.debug("--- _init_ui_widgets: Dividend controls layout added ---")
 
         # Dividend Bar Graph Canvas
         self.dividend_bar_fig = Figure(
