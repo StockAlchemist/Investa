@@ -61,7 +61,7 @@ SYMBOL_MAP_TO_YFINANCE = {}
 # "SET:ADVANC": "ADVANC.BK" # Example for Thai stock
 # }
 
-YFINANCE_EXCLUDED_SYMBOLS = set()
+YFINANCE_EXCLUDED_SYMBOLS = {}
 # {"VTSAX", "VTIAX"} # Example: Mutual funds often don't have good YF data
 SHORTABLE_SYMBOLS = {"AAPL", "RIMM"}
 
