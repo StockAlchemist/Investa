@@ -141,7 +141,7 @@ from PySide6.QtWidgets import QDialog, QVBoxLayout, QWidget, QLabel
 from PySide6.QtCore import Qt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas  # type: ignore
-from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
+
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.dates as mdates
 import matplotlib.ticker as mtick
@@ -202,9 +202,7 @@ except Exception as e:
     logging.warning(f"Warning: Could not configure Matplotlib font: {e}")
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qtagg import (
-    NavigationToolbar2QT as NavigationToolbar,
-)
+
 from matplotlib.figure import Figure
 import matplotlib.ticker as mtick
 
@@ -4143,9 +4141,13 @@ The CSV file should contain the following columns (header names must match exact
         )
         # --- END MODIFIED ORDER ---
         # Tabs will be added in _add_main_tabs for clear ordering.
-        self.performance_summary_tab.setObjectName("performance_summary_tab") # Ensure object name is set for styling
+        self.performance_summary_tab.setObjectName(
+            "performance_summary_tab"
+        )  # Ensure object name is set for styling
         self.capital_gains_tab = QWidget()
-        self.capital_gains_tab.setObjectName("capital_gains_tab") # Ensure object name is set for styling
+        self.capital_gains_tab.setObjectName(
+            "capital_gains_tab"
+        )  # Ensure object name is set for styling
         self.advanced_analysis_tab = QWidget()
         self.advanced_analysis_tab.setObjectName("advanced_analysis_tab")
         self._init_advanced_analysis_tab()
@@ -4407,14 +4409,9 @@ The CSV file should contain the following columns (header names must match exact
         # This layout holds the two vertical (Graph+Toolbar) widgets side-by-side
         perf_graphs_main_layout = QHBoxLayout(perf_graphs_container_widget)
         perf_graphs_main_layout.setContentsMargins(0, 0, 0, 0)
-        perf_graphs_main_layout.setSpacing(8)  # Spacing between the two graph columns
+        perf_graphs_main_layout.setSpacing(0)  # Spacing between the two graph columns
 
-        # -- Layout for Return Graph + Toolbar (Left Column) --
-        perf_return_widget = QWidget()  # Container for left graph + toolbar
-        perf_return_layout = QVBoxLayout(perf_return_widget)
-        perf_return_layout.setContentsMargins(0, 0, 0, 0)
-        perf_return_layout.setSpacing(2)  # Spacing between graph and its toolbar
-
+        # -- Return Graph (Left Column) --
         self.perf_return_fig = Figure(figsize=PERF_CHART_FIG_SIZE, dpi=CHART_DPI)
         self.perf_return_ax = self.perf_return_fig.add_subplot(111)
         self.perf_return_canvas = FigureCanvas(self.perf_return_fig)
@@ -4422,31 +4419,11 @@ The CSV file should contain the following columns (header names must match exact
         self.perf_return_canvas.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
-        perf_return_layout.addWidget(
-            self.perf_return_canvas, 1
-        )  # Canvas takes vertical space
-
-        # Create and configure the toolbar for the return graph
-        self.perf_return_toolbar = NavigationToolbar(
-            self.perf_return_canvas, perf_return_widget
-        )
-        # --- OR use the Compact Toolbar if you implemented it ---
-        # self.perf_return_toolbar = CompactNavigationToolbar(self.perf_return_canvas, perf_return_widget, coordinates=False)
-        self.perf_return_toolbar.setObjectName("PerfReturnToolbar")
-
-        perf_return_layout.addWidget(
-            self.perf_return_toolbar
-        )  # Add toolbar below graph
         perf_graphs_main_layout.addWidget(
-            perf_return_widget
-        )  # Add left column to main layout
+            self.perf_return_canvas, 1
+        )  # Add canvas directly
 
-        # -- Layout for Absolute Value Graph + Toolbar (Right Column) --
-        abs_value_widget = QWidget()  # Container for right graph + toolbar
-        abs_value_layout = QVBoxLayout(abs_value_widget)
-        abs_value_layout.setContentsMargins(0, 0, 0, 0)
-        abs_value_layout.setSpacing(2)  # Spacing between graph and its toolbar
-
+        # -- Absolute Value Graph (Right Column) --
         self.abs_value_fig = Figure(figsize=PERF_CHART_FIG_SIZE, dpi=CHART_DPI)
         self.abs_value_ax = self.abs_value_fig.add_subplot(111)
         self.abs_value_canvas = FigureCanvas(self.abs_value_fig)
@@ -4454,22 +4431,9 @@ The CSV file should contain the following columns (header names must match exact
         self.abs_value_canvas.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
-        abs_value_layout.addWidget(
-            self.abs_value_canvas, 1
-        )  # Canvas takes vertical space
-
-        # Create and configure the toolbar for the value graph
-        self.abs_value_toolbar = NavigationToolbar(
-            self.abs_value_canvas, abs_value_widget
-        )
-        # --- OR use the Compact Toolbar ---
-        # self.abs_value_toolbar = CompactNavigationToolbar(self.abs_value_canvas, abs_value_widget, coordinates=False)
-        self.abs_value_toolbar.setObjectName("AbsValueToolbar")
-
-        abs_value_layout.addWidget(self.abs_value_toolbar)  # Add toolbar below graph
         perf_graphs_main_layout.addWidget(
-            abs_value_widget
-        )  # Add right column to main layout
+            self.abs_value_canvas, 1
+        )  # Add canvas directly
 
         # Add the main performance graphs container to the summary/graphs frame
         summary_graphs_layout.addWidget(perf_graphs_container_widget, 20)
@@ -4482,7 +4446,7 @@ The CSV file should contain the following columns (header names must match exact
         bar_charts_main_layout = QHBoxLayout(
             self.bar_charts_frame
         )  # Use self.bar_charts_frame
-        bar_charts_main_layout.setContentsMargins(10, 5, 10, 5)
+        bar_charts_main_layout.setContentsMargins(0, 0, 0, 0)
         bar_charts_main_layout.setSpacing(10)
 
         # Function to create a single bar chart widget
@@ -4807,7 +4771,7 @@ The CSV file should contain the following columns (header names must match exact
 
         # --- ADDED: Estimated Annual Dividend Income Display ---
         # Moved to the same line as "Aggregate by:"
-        dividend_controls_layout.addStretch() # This stretch pushes "Aggregate by:" to the left and "Estimated Dividend Income" to the right
+        dividend_controls_layout.addStretch()  # This stretch pushes "Aggregate by:" to the left and "Estimated Dividend Income" to the right
         self.est_annual_income_label = QLabel("<b>Est. Next 12m Dividend Income:</b>")
         self.est_annual_income_label.setObjectName("EstAnnualIncomeLabel")
         dividend_controls_layout.addWidget(self.est_annual_income_label)
@@ -4939,7 +4903,6 @@ The CSV file should contain the following columns (header names must match exact
             True
         )  # Ensure the page widget itself is visible
 
-        
         # --- End Dividend History Tab ---
 
         # --- Tab 2: Transactions Log ---
@@ -5088,7 +5051,7 @@ The CSV file should contain the following columns (header names must match exact
 
         self._create_status_bar()
         logging.debug("--- _init_ui_widgets: After _create_status_bar ---")
-        self._add_main_tabs() # Add tabs in desired order
+        self._add_main_tabs()  # Add tabs in desired order
         logging.debug("--- _init_ui_widgets: END ---")
 
     def _add_main_tabs(self):
@@ -7637,18 +7600,7 @@ The CSV file should contain the following columns (header names must match exact
                 fontsize=10,
                 color=self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
             )
-            self.perf_return_ax.set_title(
-                return_graph_title,
-                fontsize=10,
-                weight="bold",
-                color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
-            )
-            self.abs_value_ax.set_title(
-                value_graph_title,
-                fontsize=10,
-                weight="bold",
-                color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
-            )
+
             if plot_start_date and plot_end_date:
                 try:
                     self.perf_return_ax.set_xlim(plot_start_date, plot_end_date)
@@ -7852,12 +7804,7 @@ The CSV file should contain the following columns (header names must match exact
                     facecolor=self.QCOLOR_BACKGROUND_THEMED.name(),
                     edgecolor=self.QCOLOR_BORDER_THEMED.name(),
                 )  # Adjusted legend position
-            self.perf_return_ax.set_title(
-                return_graph_title,
-                fontsize=10,
-                weight="bold",
-                color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
-            )
+
             self.perf_return_ax.set_ylabel(
                 "Accumulated Gain (%)",
                 fontsize=9,
@@ -7915,12 +7862,7 @@ The CSV file should contain the following columns (header names must match exact
                 fontsize=10,
                 color=self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
             )
-            self.perf_return_ax.set_title(
-                return_graph_title,
-                fontsize=10,
-                weight="bold",
-                color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
-            )
+
             self.perf_return_ax.set_ylim(-10, 10)  # Default Y range if no data
 
         # --- Plot 2: Absolute Value ---
@@ -8008,12 +7950,12 @@ The CSV file should contain the following columns (header names must match exact
                 self.abs_value_ax.yaxis.set_major_formatter(formatter)
                 # --- End currency formatter ---
 
-                self.abs_value_ax.set_title(
-                    value_graph_title,
-                    fontsize=10,
-                    weight="bold",
-                    color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
-                )
+                # self.abs_value_ax.set_title(
+                #     value_graph_title,
+                #     fontsize=10,
+                #     weight="bold",
+                #     color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
+                # )
                 self.abs_value_ax.set_ylabel(
                     f"Value ({currency_symbol})",
                     fontsize=9,
@@ -8071,12 +8013,12 @@ The CSV file should contain the following columns (header names must match exact
                     fontsize=10,
                     color=self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
                 )
-                self.abs_value_ax.set_title(
-                    value_graph_title,
-                    fontsize=10,
-                    weight="bold",
-                    color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
-                )
+                # self.abs_value_ax.set_title(
+                #     value_graph_title,
+                #     fontsize=10,
+                #     weight="bold",
+                #     color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
+                # )
                 self.abs_value_ax.set_ylim(0, 100)  # Default Y range
 
         else:  # Value column doesn't even exist in full data
@@ -8090,12 +8032,7 @@ The CSV file should contain the following columns (header names must match exact
                 fontsize=10,
                 color=self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
             )
-            self.abs_value_ax.set_title(
-                value_graph_title,
-                fontsize=10,
-                weight="bold",
-                color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
-            )
+
             self.abs_value_ax.set_ylim(0, 100)
 
         # --- Apply Final Layout Adjustments and X Limits ---
@@ -8111,7 +8048,9 @@ The CSV file should contain the following columns (header names must match exact
 
                 # Option 2: Or, more explicitly, adjust subplot parameters
                 # You might need to experiment with the 'top' value (0.0 to 1.0)
-                fig.subplots_adjust(top=0.90)  # e.g., leave 10% margin at the top
+                fig.subplots_adjust(
+                    top=1.0, bottom=0.0, left=0.17, right=1.0
+                )  # Maximize plotting area by removing all margins
 
                 fig.autofmt_xdate(rotation=15)
                 # --- MODIFIED: Adjust x-axis start limit ---
@@ -12280,8 +12219,14 @@ The CSV file should contain the following columns (header names must match exact
             impact_color = COLOR_GAIN if estimated_impact >= 0 else COLOR_LOSS
 
             # Format return and impact, handling NaN values
-            formatted_return = f"{estimated_return:+.2%}" if pd.notna(estimated_return) else "N/A"
-            formatted_impact = f"{display_currency_symbol}{estimated_impact:+,.2f}" if pd.notna(estimated_impact) else "N/A"
+            formatted_return = (
+                f"{estimated_return:+.2%}" if pd.notna(estimated_return) else "N/A"
+            )
+            formatted_impact = (
+                f"{display_currency_symbol}{estimated_impact:+,.2f}"
+                if pd.notna(estimated_impact)
+                else "N/A"
+            )
 
             self.scenario_impact_label.setText(
                 f"<b>Estimated Portfolio Return:</b> <font color='{return_color}'>{formatted_return}</font><br>"
