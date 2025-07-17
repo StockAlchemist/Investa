@@ -3804,7 +3804,7 @@ The CSV file should contain the following columns (header names must match exact
             return False
 
     # --- Helper to create summary items (moved from initUI) ---
-    def create_summary_item(self, label_text, is_large=False):
+    def create_summary_item(self, label_text, is_large=False, has_percentage=False):
         """
         Creates a QLabel pair (label and value) for the summary grid.
 
@@ -3812,9 +3812,12 @@ The CSV file should contain the following columns (header names must match exact
             label_text (str): The text for the descriptive label (e.g., "Net Value").
             is_large (bool, optional): If True, uses slightly larger fonts for emphasis.
                                        Defaults to False.
+            has_percentage (bool, optional): If True, creates an additional QLabel for percentage.
+                                             Defaults to False.
 
         Returns:
-            Tuple[QLabel, QLabel]: A tuple containing the created label and value QLabels.
+            Tuple[QLabel, QLabel] or Tuple[QLabel, QLabel, QLabel]: A tuple containing
+            the created label and value QLabels, and optionally a percentage QLabel.
         """
         label = QLabel(label_text + ":")
         label.setObjectName("SummaryLabelLarge" if is_large else "SummaryLabel")
@@ -3845,7 +3848,19 @@ The CSV file should contain the following columns (header names must match exact
         value_font.setBold(True)
         value.setFont(value_font)
 
-        return label, value
+        if has_percentage:
+            percentage_value = QLabel("N/A")
+            percentage_value.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            percentage_value.setObjectName("SummaryPercentageValue")
+            percentage_value.setTextFormat(Qt.RichText)
+            percentage_font = QFont(
+                self.app_font if hasattr(self, "app_font") else QFont()
+            )
+            percentage_font.setPointSize(base_font_size - 1)  # Smaller font for percentage
+            percentage_value.setFont(percentage_font)
+            return label, value, percentage_value
+        else:
+            return label, value
 
     # --- Column Visibility Methods (Define BEFORE initUI) ---
 
@@ -4351,7 +4366,7 @@ The CSV file should contain the following columns (header names must match exact
         summary_layout.setHorizontalSpacing(15)
         summary_layout.setVerticalSpacing(30)
         self.summary_net_value = self.create_summary_item("Net Value", True)
-        self.summary_day_change = self.create_summary_item("Day's G/L", True)
+        self.summary_day_change_label, self.summary_day_change_value, self.summary_day_change_pct = self.create_summary_item("Day's G/L", True, has_percentage=True)
         self.summary_total_gain = self.create_summary_item("Total G/L")
         self.summary_realized_gain = self.create_summary_item("Realized G/L")
         self.summary_unrealized_gain = self.create_summary_item("Unrealized G/L")
@@ -4370,8 +4385,15 @@ The CSV file should contain the following columns (header names must match exact
 
         summary_layout.addWidget(self.summary_net_value[0], 0, 0, Qt.AlignRight)
         summary_layout.addWidget(self.summary_net_value[1], 0, 1)
-        summary_layout.addWidget(self.summary_day_change[0], 0, 2, Qt.AlignRight)
-        summary_layout.addWidget(self.summary_day_change[1], 0, 3)
+        # Container for Daily G/L Value and Percentage
+        daily_gl_value_pct_container = QVBoxLayout()
+        daily_gl_value_pct_container.setContentsMargins(0, 0, 0, 0)
+        daily_gl_value_pct_container.setSpacing(0)
+        daily_gl_value_pct_container.addWidget(self.summary_day_change_value)
+        daily_gl_value_pct_container.addWidget(self.summary_day_change_pct)
+
+        summary_layout.addWidget(self.summary_day_change_label, 0, 2, Qt.AlignRight)
+        summary_layout.addLayout(daily_gl_value_pct_container, 0, 3)
         summary_layout.addWidget(self.summary_total_gain[0], 1, 0, Qt.AlignRight)
         summary_layout.addWidget(self.summary_total_gain[1], 1, 1)
         summary_layout.addWidget(self.summary_realized_gain[0], 1, 2, Qt.AlignRight)
@@ -8218,7 +8240,7 @@ The CSV file should contain the following columns (header names must match exact
 
         summary_widgets = {
             "net_value": self.summary_net_value,
-            "day_change": self.summary_day_change,
+            "day_change": (self.summary_day_change_label, self.summary_day_change_value),
             "total_gain": self.summary_total_gain,
             "realized_gain": self.summary_realized_gain,
             "unrealized_gain": self.summary_unrealized_gain,
@@ -8302,7 +8324,7 @@ The CSV file should contain the following columns (header names must match exact
             day_change_pct = data_source_current.get(
                 "day_change_percent"
             )  # This is the % value from backend
-            day_change_text_override = "N/A"
+            
 
             if pd.notna(day_change_val):
                 # Format the absolute currency change
@@ -8320,18 +8342,26 @@ The CSV file should contain the following columns (header names must match exact
                     day_change_pct_str = " (Inf%)"  # Handle infinity
 
                 # Combine the strings
-                day_change_text_override = day_change_abs_val_str + day_change_pct_str
+                
             # --- END FIX ---
 
             self.update_summary_value(
-                self.summary_day_change[1],
+                self.summary_day_change_value,
                 day_change_val,
                 currency_symbol,
                 True,
                 False,
                 "day_change",
-                day_change_text_override,
             )
+            self.update_summary_value(
+                self.summary_day_change_pct,
+                day_change_pct,
+                currency_symbol,
+                False,
+                True,
+                "day_change_pct",
+            )
+                
             self.update_summary_value(
                 self.summary_total_gain[1],
                 data_source_current.get("total_gain"),
@@ -8481,7 +8511,6 @@ The CSV file should contain the following columns (header names must match exact
         is_currency=True,
         is_percent=False,
         metric_type=None,
-        override_text=None,
     ):
         """Formats and updates a single summary value QLabel.
 
@@ -8496,8 +8525,7 @@ The CSV file should contain the following columns (header names must match exact
             is_percent (bool, optional): If True, format as percentage. Defaults to False.
             metric_type (str | None, optional): A string identifying the metric type (e.g.,
                 'net_value', 'total_gain', 'fees') to help determine text color. Defaults to None.
-            override_text (str | None, optional): If provided, sets the label's text directly,
-                bypassing formatting. Used for combined values like day change. Defaults to None.
+            
         """
         # (Keep implementation as before)
         text = "N/A"
@@ -8572,9 +8600,7 @@ The CSV file should contain the following columns (header names must match exact
                 else:
                     target_color = self.QCOLOR_TEXT_PRIMARY_THEMED  # Use themed color
 
-        if override_text is not None:
-            text = override_text
-        elif original_value_float is not None:
+        if original_value_float is not None:
             value_float_abs = abs(original_value_float)
             if abs(original_value_float) < 1e-9:
                 value_float_abs = 0.0
