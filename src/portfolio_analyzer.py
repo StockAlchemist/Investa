@@ -2504,3 +2504,88 @@ def extract_realized_capital_gains_history(
     df_gains.sort_values(by=["Date", "Symbol", "Account"], inplace=True)
     logging.info(f"Extracted {len(df_gains)} realized capital gains records.")
     return df_gains
+
+
+def calculate_rebalancing_trades(holdings_df: pd.DataFrame, target_alloc_pct: dict, new_cash: float = 0.0, display_currency: str = "USD"):
+    """
+    Calculates the trades required to rebalance the portfolio to the target allocation.
+
+    Args:
+        holdings_df (pd.DataFrame): DataFrame of current holdings.
+        target_alloc_pct (dict): Dictionary mapping symbols to their target percentage.
+        new_cash (float): New cash to be added or withdrawn from the portfolio.
+        display_currency (str): The display currency.
+
+    Returns:
+        tuple: A tuple containing:
+            - pd.DataFrame: Suggested trades to execute.
+            - dict: Summary metrics of the rebalancing plan.
+    """
+    if holdings_df.empty:
+        return pd.DataFrame(), {}
+
+    mkt_val_col = f"Market Value ({display_currency})"
+    price_col = f"Price ({display_currency})"
+
+    # Get current cash holding
+    current_cash_row = holdings_df[holdings_df['Symbol'] == CASH_SYMBOL_CSV]
+    current_cash_value = current_cash_row[mkt_val_col].iloc[0] if not current_cash_row.empty else 0.0
+
+    # Calculate total portfolio value including new cash injection/withdrawal
+    # This is the total value we are rebalancing towards
+    current_total_market_value_excluding_cash = holdings_df[holdings_df['Symbol'] != CASH_SYMBOL_CSV][mkt_val_col].sum()
+    total_rebalance_value = current_total_market_value_excluding_cash + current_cash_value + new_cash
+
+    trades = []
+    summary = {
+        "Total Portfolio Value (After Rebalance)": total_rebalance_value,
+        "Total Value to Sell": 0.0,
+        "Total Value to Buy": 0.0,
+        "Net Cash Change": 0.0, # This will be calculated based on target cash
+        "Estimated Number of Trades": 0,
+    }
+
+    # Create a dictionary for quick lookup of current holdings (excluding cash for now)
+    current_holdings_values = holdings_df[holdings_df['Symbol'] != CASH_SYMBOL_CSV].set_index('Symbol')[mkt_val_col].to_dict()
+    current_holdings_prices = holdings_df[holdings_df['Symbol'] != CASH_SYMBOL_CSV].set_index('Symbol')[price_col].to_dict()
+    current_holdings_accounts = holdings_df[holdings_df['Symbol'] != CASH_SYMBOL_CSV].set_index('Symbol')['Account'].to_dict()
+
+
+    # Process each symbol in the target allocation
+    for symbol, target_pct in target_alloc_pct.items():
+        target_dollar_value = total_rebalance_value * (target_pct / 100.0)
+
+        if symbol == CASH_SYMBOL_CSV:
+            # For CASH, calculate the required cash movement
+            cash_movement_needed = target_dollar_value - current_cash_value
+            summary["Net Cash Change"] = cash_movement_needed # This is the final cash adjustment
+            # No trade record for CASH itself
+        else:
+            current_dollar_value = current_holdings_values.get(symbol, 0.0)
+            trade_value = target_dollar_value - current_dollar_value
+
+            if abs(trade_value) > 0.01:  # Only consider trades above a certain threshold
+                action = "BUY" if trade_value > 0 else "SELL"
+                price = current_holdings_prices.get(symbol, 0.0)
+                account = current_holdings_accounts.get(symbol, "N/A")
+
+                # If price is 0, quantity will be 0. This is a safe fallback.
+                quantity = trade_value / price if price > 0 else 0
+
+                trades.append({
+                    "Action": action,
+                    "Symbol": symbol,
+                    "Account": account,
+                    "Quantity": quantity,
+                    "Current Price": price,
+                    "Estimated Trade Value": trade_value,
+                    "Note": "Rebalance to target"
+                })
+
+                if action == "BUY":
+                    summary["Total Value to Buy"] += trade_value
+                else:
+                    summary["Total Value to Sell"] += abs(trade_value)
+
+    summary["Estimated Number of Trades"] = len(trades)
+    return pd.DataFrame(trades), summary
