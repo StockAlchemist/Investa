@@ -658,7 +658,7 @@ def calculate_portfolio_summary(
         summary_df_unfiltered_temp = pd.DataFrame(portfolio_summary_rows)
         if "Symbol" in summary_df_unfiltered_temp.columns:
             symbols_in_summary = summary_df_unfiltered_temp["Symbol"].unique()
-            sector_map, quote_type_map, country_map, industry_map = {}, {}, {}, {}
+            sector_map, quote_type_map, country_map, industry_map, investment_category_map = {}, {}, {}, {}, {}
 
             for internal_symbol in symbols_in_summary:
                 symbol_overrides = manual_overrides_effective.get(
@@ -668,6 +668,7 @@ def calculate_portfolio_summary(
                 manual_sector = symbol_overrides.get("sector", "").strip()
                 manual_geography = symbol_overrides.get("geography", "").strip()
                 manual_industry = symbol_overrides.get("industry", "").strip()
+                manual_investment_category = symbol_overrides.get("investment_category", "").strip()
 
                 if internal_symbol == CASH_SYMBOL_CSV or internal_symbol.startswith(
                     "Cash ("
@@ -676,6 +677,7 @@ def calculate_portfolio_summary(
                     quote_type_map[internal_symbol] = "CASH"
                     country_map[internal_symbol] = "Cash"
                     industry_map[internal_symbol] = "Cash"
+                    investment_category_map[internal_symbol] = "Cash"
                     continue
 
                 yf_ticker_for_sector = map_to_yf_symbol(
@@ -694,6 +696,9 @@ def calculate_portfolio_summary(
                 )
                 industry_map[internal_symbol] = (
                     manual_industry if manual_industry else "N/A (No YF/Manual)"
+                )
+                investment_category_map[internal_symbol] = (
+                    manual_investment_category if manual_investment_category else "Uncategorized"
                 )
 
                 if yf_ticker_for_sector and (
@@ -751,6 +756,11 @@ def calculate_portfolio_summary(
                 summary_df_unfiltered_temp["Symbol"]
                 .map(industry_map)
                 .fillna("Unknown Industry")
+            )
+            summary_df_unfiltered_temp["Investment Category"] = (
+                summary_df_unfiltered_temp["Symbol"]
+                .map(investment_category_map)
+                .fillna("Uncategorized")
             )
             portfolio_summary_rows = summary_df_unfiltered_temp.to_dict(
                 orient="records"
