@@ -5451,6 +5451,182 @@ The CSV file should contain the following columns (header names must match exact
         """Adds a new row to the rebalancing tables."""
         logging.info("Add rebalancing row button clicked.")
 
+    def _populate_rebalancing_data(self):
+        """Populates the rebalancing tab with data from the current portfolio."""
+        if not hasattr(self, 'holdings_data') or self.holdings_data.empty:
+            return
+
+        # Group by Investment Category
+        df = self.holdings_data.copy()
+        if 'Investment Category' not in df.columns:
+            df['Investment Category'] = 'Uncategorized' # Assign a default category if missing
+
+        # Ensure 'Mkt Val' column exists and is numeric
+        display_currency = self.currency_combo.currentText()
+        col_defs = get_column_definitions(display_currency)
+        value_col_actual = col_defs.get("Mkt Val")
+
+        if not value_col_actual or value_col_actual not in df.columns:
+            return
+
+        df[value_col_actual] = pd.to_numeric(df[value_col_actual], errors='coerce').fillna(0)
+
+        # Populate Current Portfolio table
+        current_portfolio_table = self.rebalancing_tab.findChild(QTableWidget)
+        if not current_portfolio_table:
+            return
+
+        current_portfolio_table.setRowCount(0)
+
+        # Calculate total portfolio value
+        total_portfolio_value = df[value_col_actual].sum()
+
+        # Group by category and calculate total value and allocation
+        category_data = df.groupby('Investment Category')[value_col_actual].sum().reset_index()
+        category_data.columns = ['Investment Category', 'Total Value']
+        category_data['% Asset Allocation'] = (category_data['Total Value'] / total_portfolio_value) * 100 if total_portfolio_value else 0
+
+        # Add total row
+        total_row = pd.DataFrame([['Total', total_portfolio_value, 100.0]], columns=['Investment Category', 'Total Value', '% Asset Allocation'])
+        category_data = pd.concat([total_row, category_data], ignore_index=True)
+
+        for _, row in category_data.iterrows():
+            row_position = current_portfolio_table.rowCount()
+            current_portfolio_table.insertRow(row_position)
+            current_portfolio_table.setItem(row_position, 0, QTableWidgetItem(row['Investment Category']))
+            current_portfolio_table.setItem(row_position, 1, QTableWidgetItem(f"${row['Total Value']:,.2f}"))
+            current_portfolio_table.setItem(row_position, 2, QTableWidgetItem(f"{row['% Asset Allocation']:.2f}%"))
+
+        # Populate the target allocation and trades tables
+        self._populate_rebalancing_trades(category_data, total_portfolio_value)
+
+    def _populate_rebalancing_trades(self, category_data, total_portfolio_value):
+        """Populates the target allocation and trades tables."""
+        self.target_allocation_table.setRowCount(len(category_data) - 1)
+        self.trades_table.setRowCount(len(category_data) - 1)
+
+        for i, (_, row) in enumerate(category_data.iloc[1:].iterrows()):
+            # Target Allocation
+            target_item = QTableWidgetItem("0.00")
+            self.target_allocation_table.setItem(i, 0, target_item)
+
+            # Trades Table
+            buy_sell_item = QTableWidgetItem("")
+            trade_amount_item = QTableWidgetItem("")
+
+            # Ticker dropdown
+            ticker_combo = QComboBox()
+            tickers = self.holdings_data[self.holdings_data['Investment Category'] == row['Investment Category']]['Symbol'].tolist()
+            ticker_combo.addItems(tickers)
+
+            self.trades_table.setItem(i, 0, buy_sell_item)
+            self.trades_table.setItem(i, 1, trade_amount_item)
+            self.trades_table.setCellWidget(i, 2, ticker_combo)
+            self.trades_table.setItem(i, 3, QTableWidgetItem("")) # Current Price
+            self.trades_table.setItem(i, 4, QTableWidgetItem("")) # Estimated Shares
+
+        self.target_allocation_table.itemChanged.connect(self._recalculate_trades)
+
+    def _recalculate_trades(self):
+        """Recalculates the trades based on the target asset allocation."""
+        if not hasattr(self, 'holdings_data') or self.holdings_data.empty:
+            return
+
+        total_portfolio_value = self.holdings_data[get_column_definitions(self.currency_combo.currentText()).get("Mkt Val")].sum()
+        contribution = float(self.contribution_input.text())
+        total_value_after_contribution = total_portfolio_value + contribution
+
+        for i in range(self.target_allocation_table.rowCount()):
+            target_percentage_item = self.target_allocation_table.item(i, 0)
+            if not target_percentage_item:
+                continue
+
+            target_percentage = float(target_percentage_item.text()) / 100.0
+
+            current_value_item = self.rebalancing_tab.findChild(QTableWidget).item(i + 1, 1)
+            if not current_value_item:
+                continue
+
+            current_value = float(current_value_item.text().replace('$', '').replace(',', ''))
+
+            target_value = total_value_after_contribution * target_percentage
+            trade_amount = target_value - current_value
+
+            buy_sell = "Buy" if trade_amount > 0 else "Sell"
+
+            self.trades_table.item(i, 0).setText(buy_sell)
+            self.trades_table.item(i, 1).setText(f"${abs(trade_amount):,.2f}")
+
+            # Connect ticker combo box signal
+            ticker_combo = self.trades_table.cellWidget(i, 2)
+            if ticker_combo:
+                ticker_combo.currentIndexChanged.connect(self._update_price_and_shares)
+
+    def _update_price_and_shares(self):
+        """Updates the price and shares when a new ticker is selected."""
+        sender_combo = self.sender()
+        if not isinstance(sender_combo, QComboBox):
+            return
+
+        row = self.trades_table.indexAt(sender_combo.pos()).row()
+        if row == -1:
+            return
+
+        ticker = sender_combo.currentText()
+        if not ticker:
+            return
+
+        # Fetch price from yfinance
+        try:
+            price = yfinance.Ticker(ticker).history(period="1d")['Close'].iloc[0]
+            self.trades_table.item(row, 3).setText(f"${price:,.2f}")
+
+            # Calculate estimated shares
+            trade_amount_item = self.trades_table.item(row, 1)
+            if trade_amount_item:
+                trade_amount = float(trade_amount_item.text().replace('$', '').replace(',', ''))
+                shares = trade_amount / price
+                self.trades_table.item(row, 4).setText(f"{shares:,.2f}")
+        except Exception as e:
+            logging.error(f"Error fetching price for {ticker}: {e}")
+            self.trades_table.item(row, 3).setText("N/A")
+            self.trades_table.item(row, 4).setText("N/A")
+
+        self._update_adjusted_portfolio()
+
+    def _update_adjusted_portfolio(self):
+        """Updates the 'Adjusted Portfolio' panel based on the calculated trades."""
+        if not hasattr(self, 'holdings_data') or self.holdings_data.empty:
+            return
+
+        adjusted_portfolio_table = self.rebalancing_tab.findChildren(QTableWidget)[2]
+        if not adjusted_portfolio_table:
+            return
+
+        adjusted_portfolio_table.setRowCount(0)
+
+        total_portfolio_value = self.holdings_data[get_column_definitions(self.currency_combo.currentText()).get("Mkt Val")].sum()
+        contribution = float(self.contribution_input.text())
+        total_value_after_contribution = total_portfolio_value + contribution
+
+        # Add total row
+        adjusted_portfolio_table.insertRow(0)
+        adjusted_portfolio_table.setItem(0, 0, QTableWidgetItem(f"${total_value_after_contribution:,.2f}"))
+        adjusted_portfolio_table.setItem(0, 1, QTableWidgetItem("100.00%"))
+
+        for i in range(self.target_allocation_table.rowCount()):
+            target_percentage_item = self.target_allocation_table.item(i, 0)
+            if not target_percentage_item:
+                continue
+
+            target_percentage = float(target_percentage_item.text())
+            adjusted_value = total_value_after_contribution * (target_percentage / 100.0)
+
+            row_position = adjusted_portfolio_table.rowCount()
+            adjusted_portfolio_table.insertRow(row_position)
+            adjusted_portfolio_table.setItem(row_position, 0, QTableWidgetItem(f"${adjusted_value:,.2f}"))
+            adjusted_portfolio_table.setItem(row_position, 1, QTableWidgetItem(f"{target_percentage:.2f}%"))
+
     def _create_rebalancing_panel(self, title, columns):
         panel = QGroupBox(title)
         panel.setStyleSheet("QGroupBox { background-color: #E6F4E6; }")
@@ -7106,7 +7282,21 @@ The CSV file should contain the following columns (header names must match exact
             self.main_tab_widget.currentChanged.connect(
                 self._handle_pvc_tab_visibility_change
             )
+            self.main_tab_widget.currentChanged.connect(self._handle_rebalancing_tab_visibility_change)
         # --- END ADDED ---
+
+    def _handle_rebalancing_tab_visibility_change(self, index: int):
+        """
+        Slot connected to main_tab_widget.currentChanged signal.
+        If the Rebalancing tab becomes visible, populates its data.
+        """
+        try:
+            current_tab_widget = self.main_tab_widget.widget(index)
+            if current_tab_widget == self.rebalancing_tab:
+                logging.debug("Rebalancing tab became visible. Populating data.")
+                self._populate_rebalancing_data()
+        except Exception as e:
+            logging.error(f"Error in _handle_rebalancing_tab_visibility_change: {e}", exc_info=True)
 
     def _update_table_display(self):
         """Updates the table view, pie charts, and title based on current filters."""
