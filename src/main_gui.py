@@ -5384,6 +5384,9 @@ The CSV file should contain the following columns (header names must match exact
         self._load_current_holdings_to_target_table()
 
     def _load_current_holdings_to_target_table(self):
+        logging.debug(f"Loading current holdings. Holdings data shape: {self.holdings_data.shape}")
+        if not self.holdings_data.empty:
+            logging.debug(f"Holdings data columns: {self.holdings_data.columns}")
         if self.holdings_data.empty:
             self.target_allocation_table.setRowCount(0)
             return
@@ -10933,6 +10936,10 @@ The CSV file should contain the following columns (header names must match exact
         logging.info(
             "HANDLE_RESULTS: Orchestrator entered."
         )  # Changed to INFO for visibility
+        logging.debug(f"handle_results received holdings_df with shape: {holdings_df.shape}")
+        if not holdings_df.empty:
+            logging.debug(f"handle_results received holdings_df columns: {holdings_df.columns}")
+            logging.debug(f"handle_results holdings_df head:\n{holdings_df.head()}")
         logging.debug(
             f"  Received full_historical_data_df shape: {full_historical_data_df.shape if isinstance(full_historical_data_df, pd.DataFrame) else 'Not DF'}"
         )
