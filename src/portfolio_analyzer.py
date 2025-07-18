@@ -2506,7 +2506,7 @@ def extract_realized_capital_gains_history(
     return df_gains
 
 
-def calculate_rebalancing_trades(holdings_df: pd.DataFrame, target_alloc_pct: dict, new_cash: float = 0.0):
+def calculate_rebalancing_trades(holdings_df: pd.DataFrame, target_alloc_pct: dict, new_cash: float = 0.0, display_currency: str = "USD"):
     """
     Calculates the trades required to rebalance the portfolio to the target allocation.
 
@@ -2514,6 +2514,7 @@ def calculate_rebalancing_trades(holdings_df: pd.DataFrame, target_alloc_pct: di
         holdings_df (pd.DataFrame): DataFrame of current holdings.
         target_alloc_pct (dict): Dictionary mapping symbols to their target percentage.
         new_cash (float): New cash to be added or withdrawn from the portfolio.
+        display_currency (str): The display currency.
 
     Returns:
         tuple: A tuple containing:
@@ -2523,7 +2524,9 @@ def calculate_rebalancing_trades(holdings_df: pd.DataFrame, target_alloc_pct: di
     if holdings_df.empty:
         return pd.DataFrame(), {}
 
-    current_total_market_value = holdings_df["Mkt Val"].sum()
+    mkt_val_col = f"Market Value ({display_currency})"
+    price_col = f"Price ({display_currency})"
+    current_total_market_value = holdings_df[mkt_val_col].sum()
     total_rebalance_value = current_total_market_value + new_cash
 
     trades = []
@@ -2535,7 +2538,7 @@ def calculate_rebalancing_trades(holdings_df: pd.DataFrame, target_alloc_pct: di
         "Estimated Number of Trades": 0,
     }
 
-    current_holdings = holdings_df.set_index('Symbol')['Mkt Val'].to_dict()
+    current_holdings = holdings_df.set_index('Symbol')[mkt_val_col].to_dict()
 
     for symbol, target_pct in target_alloc_pct.items():
         target_dollar_value = total_rebalance_value * (target_pct / 100.0)
@@ -2544,7 +2547,7 @@ def calculate_rebalancing_trades(holdings_df: pd.DataFrame, target_alloc_pct: di
 
         if abs(trade_value) > 0.01:  # Only consider trades above a certain threshold
             action = "BUY" if trade_value > 0 else "SELL"
-            price = holdings_df.loc[holdings_df['Symbol'] == symbol, 'Price'].iloc[0] if symbol in current_holdings else 0
+            price = holdings_df.loc[holdings_df['Symbol'] == symbol, price_col].iloc[0] if symbol in current_holdings else 0
             # If price is 0, quantity will be 0. This is a safe fallback.
             quantity = trade_value / price if price > 0 else 0
 

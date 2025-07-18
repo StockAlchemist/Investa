@@ -5388,11 +5388,15 @@ The CSV file should contain the following columns (header names must match exact
             self.target_allocation_table.setRowCount(0)
             return
 
+        display_currency = self.currency_combo.currentText()
+        mkt_val_col = f"Market Value ({display_currency})"
+        allocation_col = "Allocation %"
+
         self.target_allocation_table.setRowCount(self.holdings_data.shape[0])
         for i, row in self.holdings_data.iterrows():
             self.target_allocation_table.setItem(i, 0, QTableWidgetItem(row["Symbol"]))
-            self.target_allocation_table.setItem(i, 2, QTableWidgetItem(f"{row['Mkt Val']:.2f}"))
-            self.target_allocation_table.setItem(i, 3, QTableWidgetItem(f"{row['Allocation %']:.2f}"))
+            self.target_allocation_table.setItem(i, 2, QTableWidgetItem(f"{row[mkt_val_col]:.2f}"))
+            self.target_allocation_table.setItem(i, 3, QTableWidgetItem(f"{row.get(allocation_col, 0):.2f}"))
             self.target_allocation_table.setItem(i, 4, QTableWidgetItem("0.00"))
 
     def _handle_rebalance_calculation(self):
@@ -5403,8 +5407,9 @@ The CSV file should contain the following columns (header names must match exact
             target_alloc_pct[symbol] = target_pct
 
         new_cash = float(self.cash_to_add_line_edit.text() or 0.0)
+        display_currency = self.currency_combo.currentText()
 
-        trades_df, summary = calculate_rebalancing_trades(self.holdings_data, target_alloc_pct, new_cash)
+        trades_df, summary = calculate_rebalancing_trades(self.holdings_data, target_alloc_pct, new_cash, display_currency)
 
         self.suggested_trades_table.setRowCount(trades_df.shape[0])
         for i, row in trades_df.iterrows():
