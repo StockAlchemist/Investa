@@ -2504,3 +2504,64 @@ def extract_realized_capital_gains_history(
     df_gains.sort_values(by=["Date", "Symbol", "Account"], inplace=True)
     logging.info(f"Extracted {len(df_gains)} realized capital gains records.")
     return df_gains
+
+
+def calculate_rebalancing_trades(holdings_df: pd.DataFrame, target_alloc_pct: dict, new_cash: float = 0.0):
+    """
+    Calculates the trades required to rebalance the portfolio to the target allocation.
+
+    Args:
+        holdings_df (pd.DataFrame): DataFrame of current holdings.
+        target_alloc_pct (dict): Dictionary mapping symbols to their target percentage.
+        new_cash (float): New cash to be added or withdrawn from the portfolio.
+
+    Returns:
+        tuple: A tuple containing:
+            - pd.DataFrame: Suggested trades to execute.
+            - dict: Summary metrics of the rebalancing plan.
+    """
+    if holdings_df.empty:
+        return pd.DataFrame(), {}
+
+    current_total_market_value = holdings_df["Mkt Val"].sum()
+    total_rebalance_value = current_total_market_value + new_cash
+
+    trades = []
+    summary = {
+        "Total Portfolio Value (After Rebalance)": total_rebalance_value,
+        "Total Value to Sell": 0.0,
+        "Total Value to Buy": 0.0,
+        "Net Cash Change": new_cash,
+        "Estimated Number of Trades": 0,
+    }
+
+    current_holdings = holdings_df.set_index('Symbol')['Mkt Val'].to_dict()
+
+    for symbol, target_pct in target_alloc_pct.items():
+        target_dollar_value = total_rebalance_value * (target_pct / 100.0)
+        current_dollar_value = current_holdings.get(symbol, 0.0)
+        trade_value = target_dollar_value - current_dollar_value
+
+        if abs(trade_value) > 0.01:  # Only consider trades above a certain threshold
+            action = "BUY" if trade_value > 0 else "SELL"
+            price = holdings_df.loc[holdings_df['Symbol'] == symbol, 'Price'].iloc[0] if symbol in current_holdings else 0
+            # If price is 0, quantity will be 0. This is a safe fallback.
+            quantity = trade_value / price if price > 0 else 0
+
+            trades.append({
+                "Action": action,
+                "Symbol": symbol,
+                "Account": holdings_df.loc[holdings_df['Symbol'] == symbol, 'Account'].iloc[0] if symbol in current_holdings else "N/A",
+                "Quantity": quantity,
+                "Current Price": price,
+                "Estimated Trade Value": trade_value,
+                "Note": "Sell to rebalance" if action == "SELL" else "Buy with new cash"
+            })
+
+            if action == "BUY":
+                summary["Total Value to Buy"] += trade_value
+            else:
+                summary["Total Value to Sell"] += abs(trade_value)
+
+    summary["Estimated Number of Trades"] = len(trades)
+    return pd.DataFrame(trades), summary

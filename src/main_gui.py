@@ -301,6 +301,7 @@ try:
     )  # Add the new function
     from portfolio_analyzer import (
         extract_realized_capital_gains_history,
+        calculate_rebalancing_trades,
     )  # <-- ADDED for capital gains
 
     # --- END ADD ---
@@ -4163,6 +4164,7 @@ The CSV file should contain the following columns (header names must match exact
         self.capital_gains_tab.setObjectName(
             "capital_gains_tab"
         )  # Ensure object name is set for styling
+        self.rebalancing_tab = QWidget()
         self.advanced_analysis_tab = QWidget()
         self.advanced_analysis_tab.setObjectName("advanced_analysis_tab")
         self._init_advanced_analysis_tab()
@@ -4919,7 +4921,7 @@ The CSV file should contain the following columns (header names must match exact
             "--- _init_ui_widgets: Dividend transaction table view added to layout ---"
         )
         # """ # Original Content End (Commented out for testing) # Keep this line if you want to easily re-comment
-
+        self._init_rebalancing_tab_widgets()
         # Explicitly set the tab content widget to visible before adding to QTabWidget
         self.dividend_history_tab.setVisible(
             True
@@ -5091,6 +5093,7 @@ The CSV file should contain the following columns (header names must match exact
             (self.periodic_value_change_tab, "Asset Change"),
             (self.capital_gains_tab, "Capital Gains"),
             (self.dividend_history_tab, "Dividend"),
+            (self.rebalancing_tab, "Rebalancing"),
             (self.advanced_analysis_tab, "Advanced Analysis"),
         ]
 
@@ -5376,6 +5379,137 @@ The CSV file should contain the following columns (header names must match exact
         self._init_scenario_analysis_tab()
 
         logging.debug("Advanced Analysis tab initialized.")
+
+    def _update_rebalancing_tab(self):
+        self._load_current_holdings_to_target_table()
+
+    def _load_current_holdings_to_target_table(self):
+        if self.holdings_data.empty:
+            self.target_allocation_table.setRowCount(0)
+            return
+
+        self.target_allocation_table.setRowCount(self.holdings_data.shape[0])
+        for i, row in self.holdings_data.iterrows():
+            self.target_allocation_table.setItem(i, 0, QTableWidgetItem(row["Symbol"]))
+            self.target_allocation_table.setItem(i, 2, QTableWidgetItem(f"{row['Mkt Val']:.2f}"))
+            self.target_allocation_table.setItem(i, 3, QTableWidgetItem(f"{row['Allocation %']:.2f}"))
+            self.target_allocation_table.setItem(i, 4, QTableWidgetItem("0.00"))
+
+    def _handle_rebalance_calculation(self):
+        target_alloc_pct = {}
+        for i in range(self.target_allocation_table.rowCount()):
+            symbol = self.target_allocation_table.item(i, 0).text()
+            target_pct = float(self.target_allocation_table.item(i, 4).text())
+            target_alloc_pct[symbol] = target_pct
+
+        new_cash = float(self.cash_to_add_line_edit.text() or 0.0)
+
+        trades_df, summary = calculate_rebalancing_trades(self.holdings_data, target_alloc_pct, new_cash)
+
+        self.suggested_trades_table.setRowCount(trades_df.shape[0])
+        for i, row in trades_df.iterrows():
+            for j, col in enumerate(trades_df.columns):
+                self.suggested_trades_table.setItem(i, j, QTableWidgetItem(str(row[col])))
+
+        for key, value in summary.items():
+            if key == "Total Portfolio Value (After Rebalance)":
+                self.total_portfolio_value_label.setText(f"{value:.2f}")
+            elif key == "Total Value to Sell":
+                self.total_value_to_sell_label.setText(f"{value:.2f}")
+            elif key == "Total Value to Buy":
+                self.total_value_to_buy_label.setText(f"{value:.2f}")
+            elif key == "Net Cash Change":
+                self.net_cash_change_label.setText(f"{value:.2f}")
+            elif key == "Estimated Number of Trades":
+                self.estimated_trades_label.setText(str(value))
+
+    def _update_target_total_label(self):
+        total_pct = 0.0
+        for i in range(self.target_allocation_table.rowCount()):
+            try:
+                total_pct += float(self.target_allocation_table.item(i, 4).text())
+            except (ValueError, AttributeError):
+                pass
+        self.target_percent_total_label.setText(f"{total_pct:.2f}%")
+        if abs(total_pct - 100.0) > 0.01:
+            self.target_percent_total_label.setStyleSheet("color: red;")
+        else:
+            self.target_percent_total_label.setStyleSheet("")
+
+    def _init_rebalancing_tab_widgets(self):
+        """Initializes widgets for the Rebalancing tab."""
+        self.rebalancing_tab.setObjectName("RebalancingTab")
+        main_layout = QVBoxLayout(self.rebalancing_tab)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(8)
+
+        # Group 1: Target Allocation & Controls
+        target_group = QGroupBox("Target Allocation & Controls")
+        target_layout = QVBoxLayout(target_group)
+        main_layout.addWidget(target_group)
+
+        controls_layout = QHBoxLayout()
+        self.load_current_holdings_button = QPushButton("Load Current Holdings")
+        self.add_symbol_button = QPushButton("Add Symbol")
+        self.remove_symbol_button = QPushButton("Remove Selected Symbol")
+        self.cash_to_add_line_edit = QLineEdit()
+        self.cash_to_add_line_edit.setPlaceholderText("Cash to Add/Withdraw (-)")
+        self.calculate_rebalance_button = QPushButton("Calculate Rebalance")
+        self.calculate_rebalance_button.setObjectName("CalculateRebalanceButton")
+
+        controls_layout.addWidget(self.load_current_holdings_button)
+        controls_layout.addWidget(self.add_symbol_button)
+        controls_layout.addWidget(self.remove_symbol_button)
+        controls_layout.addSpacerItem(QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum))
+        controls_layout.addWidget(self.cash_to_add_line_edit)
+        controls_layout.addWidget(self.calculate_rebalance_button)
+        target_layout.addLayout(controls_layout)
+
+        self.target_allocation_table = QTableWidget()
+        self.target_allocation_table.setColumnCount(7)
+        self.target_allocation_table.setHorizontalHeaderLabels(["Symbol", "Asset Class", "Current Value", "Current %", "Target %", "Target Value", "Drift %"])
+        target_layout.addWidget(self.target_allocation_table)
+
+        summary_layout = QHBoxLayout()
+        summary_layout.addStretch()
+        summary_layout.addWidget(QLabel("Totals:"))
+        self.current_percent_total_label = QLabel("100.00%")
+        self.target_percent_total_label = QLabel("0.00%")
+        summary_layout.addWidget(self.current_percent_total_label)
+        summary_layout.addWidget(self.target_percent_total_label)
+        target_layout.addLayout(summary_layout)
+
+        # Group 2: Rebalancing Summary
+        summary_group = QGroupBox("Rebalancing Summary")
+        summary_grid_layout = QGridLayout(summary_group)
+        main_layout.addWidget(summary_group)
+
+        self.total_portfolio_value_label = QLabel("N/A")
+        self.total_value_to_sell_label = QLabel("N/A")
+        self.total_value_to_buy_label = QLabel("N/A")
+        self.net_cash_change_label = QLabel("N/A")
+        self.estimated_trades_label = QLabel("N/A")
+
+        summary_grid_layout.addWidget(QLabel("Total Portfolio Value (After Rebalance):"), 0, 0)
+        summary_grid_layout.addWidget(self.total_portfolio_value_label, 0, 1)
+        summary_grid_layout.addWidget(QLabel("Total Value to Sell:"), 1, 0)
+        summary_grid_layout.addWidget(self.total_value_to_sell_label, 1, 1)
+        summary_grid_layout.addWidget(QLabel("Total Value to Buy:"), 2, 0)
+        summary_grid_layout.addWidget(self.total_value_to_buy_label, 2, 1)
+        summary_grid_layout.addWidget(QLabel("Net Cash Change:"), 3, 0)
+        summary_grid_layout.addWidget(self.net_cash_change_label, 3, 1)
+        summary_grid_layout.addWidget(QLabel("Estimated Number of Trades:"), 4, 0)
+        summary_grid_layout.addWidget(self.estimated_trades_label, 4, 1)
+
+        # Group 3: Suggested Trades
+        trades_group = QGroupBox("Suggested Trades")
+        trades_layout = QVBoxLayout(trades_group)
+        main_layout.addWidget(trades_group)
+
+        self.suggested_trades_table = QTableWidget()
+        self.suggested_trades_table.setColumnCount(7)
+        self.suggested_trades_table.setHorizontalHeaderLabels(["Action", "Symbol", "Account", "Quantity", "Current Price", "Estimated Trade Value", "Note"])
+        trades_layout.addWidget(self.suggested_trades_table)
 
     def _init_correlation_matrix_tab(self):
         """Initializes the Correlation Matrix sub-tab."""
@@ -6986,6 +7120,11 @@ The CSV file should contain the following columns (header names must match exact
                 self._handle_pvc_tab_visibility_change
             )
         # --- END ADDED ---
+
+        # Rebalancing Tab Connections
+        self.load_current_holdings_button.clicked.connect(self._load_current_holdings_to_target_table)
+        self.calculate_rebalance_button.clicked.connect(self._handle_rebalance_calculation)
+        self.target_allocation_table.cellChanged.connect(self._update_target_total_label)
 
     def _update_table_display(self):
         """Updates the table view, pie charts, and title based on current filters."""
@@ -10892,6 +11031,7 @@ The CSV file should contain the following columns (header names must match exact
             logging.critical(f"CRITICAL ERROR in handle_results: {e}", exc_info=True)
             # Try to set error status even if other UI updates failed
             try:
+                self._update_rebalancing_tab()
                 self.status_label.setText(f"Error processing results: {e}")
             except Exception as e_status:
                 logging.error(
