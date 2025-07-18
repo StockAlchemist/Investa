@@ -2702,6 +2702,9 @@ The CSV file should contain the following columns (header names must match exact
                                 entry["industry"] = str(
                                     value_dict.get("industry", "")
                                 ).strip()
+                                entry["investment_category"] = str(  # <-- ADDED
+                                    value_dict.get("investment_category", "")
+                                ).strip()
                                 valid_price_overrides[key.upper().strip()] = entry
                             else:
                                 invalid_count += 1
