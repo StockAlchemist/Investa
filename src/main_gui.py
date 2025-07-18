@@ -4724,6 +4724,7 @@ The CSV file should contain the following columns (header names must match exact
         self._init_table_panel_widgets(content_layout)
         # Initialize Capital Gains tab widgets
         self._init_capital_gains_tab_widgets()
+        self._init_rebalancing_tab_widgets()
         logging.debug("--- _init_ui_widgets: After _init_table_panel_widgets ---")
 
         # --- Tab: Asset Change ---
@@ -5091,6 +5092,7 @@ The CSV file should contain the following columns (header names must match exact
             (self.periodic_value_change_tab, "Asset Change"),
             (self.capital_gains_tab, "Capital Gains"),
             (self.dividend_history_tab, "Dividend"),
+            (self.rebalancing_tab, "Rebalancing"),
             (self.advanced_analysis_tab, "Advanced Analysis"),
         ]
 
@@ -5376,6 +5378,125 @@ The CSV file should contain the following columns (header names must match exact
         self._init_scenario_analysis_tab()
 
         logging.debug("Advanced Analysis tab initialized.")
+
+    def _init_rebalancing_tab_widgets(self):
+        """Initializes the Rebalancing Tab with its layout and widgets."""
+        self.rebalancing_tab = QWidget()
+        self.rebalancing_tab.setObjectName("RebalancingTab")
+
+        # Main layout for the tab
+        main_layout = QVBoxLayout(self.rebalancing_tab)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Top Header and Control Section
+        header_frame = QFrame()
+        header_frame.setObjectName("RebalancingHeaderFrame")
+        header_frame.setStyleSheet("#RebalancingHeaderFrame { background-color: #008080; color: white; }")
+        header_layout = QVBoxLayout(header_frame)
+
+        title_label = QLabel("Re-Balancing Analysis")
+        title_label.setFont(QFont("Arial", 16, QFont.Bold))
+        title_label.setAlignment(Qt.AlignCenter)
+        header_layout.addWidget(title_label)
+
+        # User Input Area
+        input_area_layout = QHBoxLayout()
+        input_area_widget = QWidget()
+        input_area_widget.setLayout(input_area_layout)
+
+        form_layout = QFormLayout()
+        self.contribution_input = QLineEdit("0")
+        self.contribution_input.setStyleSheet("background-color: yellow;")
+        form_layout.addRow("Contribution or withdrawal amount - $USD:", self.contribution_input)
+
+        self.allow_selling_combo = QComboBox()
+        self.allow_selling_combo.addItems(["Yes", "No"])
+        form_layout.addRow("Allow for some of your investments to be sold (if needed)?", self.allow_selling_combo)
+
+        input_area_layout.addLayout(form_layout)
+
+        descriptive_text = QLabel(
+            "Enter a positive value for contributions or a negative value for withdrawals. "
+            "If selling is allowed, the tool may suggest selling assets to meet withdrawal needs or rebalancing targets."
+        )
+        descriptive_text.setWordWrap(True)
+        input_area_layout.addWidget(descriptive_text, 1)
+
+        header_layout.addWidget(input_area_widget)
+        main_layout.addWidget(header_frame)
+
+        # Three Main Panels
+        panels_layout = QHBoxLayout()
+        main_layout.addLayout(panels_layout)
+
+        # Left Panel: Current Portfolio
+        left_panel = self._create_rebalancing_panel("Your Current Portfolio (Before Trades)", ["Investment Category", "Total Value - $USD", "% Asset Allocation"])
+        panels_layout.addWidget(left_panel)
+
+        # Center Panel: Action Hub
+        center_panel = self._create_action_hub()
+        panels_layout.addWidget(center_panel)
+
+        # Right Panel: Adjusted Portfolio
+        right_panel = self._create_rebalancing_panel("Your Adjusted Portfolio (After Trades)", ["Total Value - $USD", "% Asset Allocation"])
+        panels_layout.addWidget(right_panel)
+
+        # Add more rows button
+        add_rows_button = QPushButton("Add more rows")
+        add_rows_button.clicked.connect(self._add_rebalancing_row)
+        main_layout.addWidget(add_rows_button, 0, Qt.AlignLeft)
+
+    def _add_rebalancing_row(self):
+        """Adds a new row to the rebalancing tables."""
+        logging.info("Add rebalancing row button clicked.")
+
+    def _create_rebalancing_panel(self, title, columns):
+        panel = QGroupBox(title)
+        panel.setStyleSheet("QGroupBox { background-color: #E6F4E6; }")
+        layout = QVBoxLayout(panel)
+
+        table = QTableWidget()
+        table.setColumnCount(len(columns))
+        table.setHorizontalHeaderLabels(columns)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+
+        # Add a total row
+        table.setRowCount(1)
+        table.setItem(0, 0, QTableWidgetItem("Total"))
+
+        layout.addWidget(table)
+        return panel
+
+    def _create_action_hub(self):
+        hub_widget = QWidget()
+        hub_layout = QHBoxLayout(hub_widget)
+
+        # Target Asset Allocation
+        target_allocation_group = QGroupBox("Your Target Asset Allocation %")
+        target_allocation_group.setStyleSheet("QGroupBox { background-color: yellow; }")
+        target_layout = QVBoxLayout(target_allocation_group)
+        self.target_allocation_table = QTableWidget()
+        self.target_allocation_table.setColumnCount(1)
+        self.target_allocation_table.setHorizontalHeaderLabels(["Target %"])
+        self.target_allocation_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        target_layout.addWidget(self.target_allocation_table)
+        hub_layout.addWidget(target_allocation_group)
+
+        # Trades to Re-Balance
+        trades_group = QGroupBox("Trades to Re-Balance Your Portfolio")
+        trades_layout = QVBoxLayout(trades_group)
+        self.trades_table = QTableWidget()
+        self.trades_table.setColumnCount(5)
+        self.trades_table.setHorizontalHeaderLabels([
+            "Buy or Sell?", "Trade Amount - $USD", "Selected Ticker to Buy or Sell",
+            "Current Price per Share (from Google Finance) - $USD", "Estimated # of Shares to Buy or Sell"
+        ])
+        self.trades_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        trades_layout.addWidget(self.trades_table)
+        hub_layout.addWidget(trades_group)
+
+        return hub_widget
 
     def _init_correlation_matrix_tab(self):
         """Initializes the Correlation Matrix sub-tab."""
