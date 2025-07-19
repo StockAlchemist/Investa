@@ -1336,6 +1336,15 @@ The CSV file should contain the following columns (header names must match exact
         try:
             start_date = self.graph_start_date_edit.date().toPython()
             end_date = self.graph_end_date_edit.date().toPython()
+
+            # --- ADDED: Ensure end_date is not in the future ---
+            today = date.today()
+            if end_date > today:
+                end_date = today
+                self.graph_end_date_edit.setDate(QDate(end_date)) # Update UI
+                logging.info(f"Graph end date was in future, reset to today: {end_date}")
+            # --- END ADDED ---
+
             if start_date >= end_date:
                 QMessageBox.warning(
                     self,
@@ -3338,6 +3347,15 @@ The CSV file should contain the following columns (header names must match exact
         try:
             start_date = self.graph_start_date_edit.date().toPython()
             end_date = self.graph_end_date_edit.date().toPython()
+
+            # --- ADDED: Ensure end_date is not in the future ---
+            today = date.today()
+            if end_date > today:
+                end_date = today
+                self.graph_end_date_edit.setDate(QDate(end_date)) # Update UI
+                logging.info(f"Graph end date was in future, reset to today: {end_date}")
+            # --- END ADDED ---
+
             if start_date >= end_date:
                 QMessageBox.warning(
                     self,
@@ -5632,6 +5650,14 @@ The CSV file should contain the following columns (header names must match exact
         else:
             QMessageBox.warning(self, "No Selection", "Please select a symbol to remove.")
 
+    @Slot()
+    def _clear_target_allocation_table(self):
+        """Clears the contents of the target allocation table and repopulates with current holdings (zero target)."""
+        logging.info("Clearing target allocation table.")
+        self.target_allocation_table.clearContents()
+        self.target_allocation_table.setRowCount(0)
+        self._populate_target_allocation_table() # Repopulate with current holdings, which will have 0% target initially
+
     def _init_rebalancing_tab_widgets(self):
         """Initializes widgets for the Rebalancing tab."""
         self.rebalancing_tab.setObjectName("RebalancingTab")
@@ -5699,9 +5725,9 @@ The CSV file should contain the following columns (header names must match exact
         bottom_splitter.addWidget(target_group)
 
         controls_layout = QHBoxLayout()
-        self.load_current_holdings_button = QPushButton("Load Current Holdings")
-        self.add_symbol_button = QPushButton("Add Symbol")
-        self.remove_symbol_button = QPushButton("Remove Selected Symbol")
+        self.load_current_holdings_button = QPushButton("Load Holdings")
+        self.add_symbol_button = QPushButton("Add")
+        self.remove_symbol_button = QPushButton("Remove")
         self.cash_to_add_line_edit = QLineEdit()
         self.cash_to_add_line_edit.setPlaceholderText("Cash to Add/Withdraw (-)")
         self.calculate_rebalance_button = QPushButton("Calculate Rebalance")
@@ -5713,6 +5739,8 @@ The CSV file should contain the following columns (header names must match exact
         controls_layout.addWidget(self.load_current_holdings_button)
         controls_layout.addWidget(self.add_symbol_button)
         controls_layout.addWidget(self.remove_symbol_button)
+        self.clear_targets_button = QPushButton("Clear")
+        controls_layout.addWidget(self.clear_targets_button)
         controls_layout.addSpacerItem(QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum))
         controls_layout.addWidget(self.cash_to_add_line_edit)
         controls_layout.addWidget(self.calculate_rebalance_button)
