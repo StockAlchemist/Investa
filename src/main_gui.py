@@ -6045,35 +6045,74 @@ The CSV file should contain the following columns (header names must match exact
             elif key == "Estimated Number of Trades":
                 self.estimated_trades_label.setText(str(value))
 
-    def _update_target_total_label(self):
+    def _update_target_total_label(self, changed_row: int = -1, changed_column: int = -1):
         # Block signals to prevent infinite loop during internal updates
         self.target_allocation_table.blockSignals(True)
 
-        total_pct_non_cash = 0.0
-        cash_row_index = -1
+        display_currency = self.currency_combo.currentText()
+        try:
+            new_cash_input = float(self.cash_to_add_line_edit.text() or 0.0)
+        except ValueError:
+            new_cash_input = 0.0
 
-        # First pass: Calculate total percentage of non-cash items and find cash row
+        mkt_val_col = f"Market Value ({display_currency})"
+        current_total_market_value = self.holdings_data[mkt_val_col].sum()
+        total_portfolio_value_after_new_cash = (
+            current_total_market_value + new_cash_input
+        )
+
+        total_pct_sum = 0.0
+        cash_row_index = -1
+        
+        # First pass: Collect all target percentages and find cash row
+        # This loop will also update the target value and drift for the *changed* row if applicable
+        # and for all other rows based on their existing target percentage.
         for i in range(self.target_allocation_table.rowCount()):
             item_symbol = self.target_allocation_table.item(i, 0)
             if item_symbol:
                 symbol = item_symbol.text()
                 if symbol == "$CASH":
                     cash_row_index = i
-                else:
-                    try:
-                        target_pct_str = (
-                            self.target_allocation_table.item(i, 4)
-                            .text()
-                            .replace("%", "")
-                        )
-                        total_pct_non_cash += float(target_pct_str)
-                    except (ValueError, AttributeError):
-                        pass
+                    # We'll handle CASH separately after summing non-cash
+                    continue
 
-        # Adjust CASH target percentage if cash row exists
+                try:
+                    target_pct_str = self.target_allocation_table.item(i, 4).text().replace("%", "")
+                    target_pct = float(target_pct_str)
+                    total_pct_sum += target_pct
+
+                    # Recalculate Target Value for this row based on its Target %
+                    new_target_value = total_portfolio_value_after_new_cash * (target_pct / 100.0)
+                    self.target_allocation_table.setItem(
+                        i,
+                        5,
+                        QTableWidgetItem(
+                            format_currency_value(new_target_value, self._get_currency_symbol())
+                        ),
+                    )
+
+                    # Recalculate Drift for this row
+                    current_pct_item = self.target_allocation_table.item(i, 3)
+                    current_pct_str = current_pct_item.text().replace("%", "")
+                    current_pct = float(current_pct_str)
+                    drift_pct = current_pct - target_pct
+                    drift_item = self.target_allocation_table.item(i, 6)
+                    drift_item.setText(format_percentage_value(drift_pct, show_plus_sign=True))
+                    if drift_pct > 0.01:
+                        drift_item.setForeground(self.QCOLOR_GAIN_THEMED)
+                    elif drift_pct < -0.01:
+                        drift_item.setForeground(self.QCOLOR_LOSS_THEMED)
+                    else:
+                        drift_item.setForeground(self.QCOLOR_TEXT_PRIMARY_THEMED)
+
+                except (ValueError, AttributeError, IndexError) as e:
+                    logging.error(f"Error processing row {i} in rebalancing table: {e}")
+                    pass
+
+        # Adjust CASH target percentage and value if cash row exists
         if cash_row_index != -1:
-            remaining_for_cash = 100.0 - total_pct_non_cash
-            if remaining_for_cash < 0:  # If non-cash already exceeds 100%
+            remaining_for_cash = 100.0 - total_pct_sum
+            if remaining_for_cash < 0:
                 remaining_for_cash = 0.0
 
             # Update CASH target percentage
@@ -6083,20 +6122,7 @@ The CSV file should contain the following columns (header names must match exact
                 QTableWidgetItem(format_percentage_value(remaining_for_cash)),
             )
 
-            # Recalculate CASH target value and drift
-            display_currency = self.currency_combo.currentText()
-
-            try:
-                new_cash_input = float(self.cash_to_add_line_edit.text() or 0.0)
-            except ValueError:
-                new_cash_input = 0.0
-
-            mkt_val_col = f"Market Value ({display_currency})"
-            current_total_market_value = self.holdings_data[mkt_val_col].sum()
-            total_portfolio_value_after_new_cash = (
-                current_total_market_value + new_cash_input
-            )
-
+            # Recalculate CASH target value
             cash_target_value = total_portfolio_value_after_new_cash * (
                 remaining_for_cash / 100.0
             )
@@ -6111,11 +6137,8 @@ The CSV file should contain the following columns (header names must match exact
             )
 
             # Update CASH drift
-            current_cash_pct_str = (
-                self.target_allocation_table.item(cash_row_index, 3)
-                .text()
-                .replace("%", "")
-            )
+            current_cash_pct_item = self.target_allocation_table.item(cash_row_index, 3)
+            current_cash_pct_str = current_cash_pct_item.text().replace("%", "")
             current_cash_pct = float(current_cash_pct_str)
             cash_drift_pct = current_cash_pct - remaining_for_cash
             cash_drift_item = self.target_allocation_table.item(cash_row_index, 6)
@@ -6128,22 +6151,16 @@ The CSV file should contain the following columns (header names must match exact
                 cash_drift_item.setForeground(self.QCOLOR_LOSS_THEMED)
             else:
                 cash_drift_item.setForeground(self.QCOLOR_TEXT_PRIMARY_THEMED)
+            
+            # Add cash percentage to total_pct_sum for final label update
+            total_pct_sum += remaining_for_cash
 
-        # Second pass: Recalculate total_pct for the label based on all (potentially adjusted) target percentages
-        total_pct = 0.0
-        for i in range(self.target_allocation_table.rowCount()):
-            try:
-                target_pct_str = (
-                    self.target_allocation_table.item(i, 4).text().replace("%", "")
-                )
-                total_pct += float(target_pct_str)
-            except (ValueError, AttributeError):
-                pass
 
-        self.target_percent_total_label.setText(f"{total_pct:.2f}%")
+        # Update the total percentage label
+        self.target_percent_total_label.setText(f"{total_pct_sum:.2f}%")
 
         # Color the total label based on whether it's exactly 100%
-        if abs(total_pct - 100.0) > 0.01:
+        if abs(total_pct_sum - 100.0) > 0.01:
             self.target_percent_total_label.setStyleSheet("color: red;")
         else:
             self.target_percent_total_label.setStyleSheet("")
