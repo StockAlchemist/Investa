@@ -133,7 +133,7 @@ from PySide6.QtWidgets import (
     QSpinBox,  # <-- Import QSpinBox
     QCompleter,  # <-- ADDED for symbol autocompletion
     QListWidgetItem,
-    QInputDialog, # <-- ADDED for rebalancing tab
+    QInputDialog,  # <-- ADDED for rebalancing tab
     QSpacerItem,  # <-- ADDED for layout spacing
 )
 
@@ -265,7 +265,6 @@ from dialogs import (
     SymbolChartDialog,
     ManualPriceDialog,
     AddTransactionDialog,
-    
 )
 from workers import (
     WorkerSignals,
@@ -292,6 +291,8 @@ try:
     LOGIC_AVAILABLE = True
     # --- ADDED Import from data_loader ---
     from data_loader import load_and_clean_transactions
+    from data_loader import COLUMN_MAPPING_CSV_TO_INTERNAL
+    from csv_utils import DESIRED_CLEANED_COLUMN_ORDER
 
     # --- ADDED Import from portfolio_analyzer ---
     from portfolio_analyzer import (
@@ -406,8 +407,6 @@ except Exception as import_err:
     logging.warning(f"Warning: Using fallback CASH_SYMBOL_CSV: {CASH_SYMBOL_CSV}")
 
 
-
-
 # --- ADDED: db_utils import ---
 from db_utils import (
     DB_FILENAME,
@@ -485,7 +484,6 @@ class PortfolioApp(QMainWindow):
             "light": ("theme", "list-add"),
             "dark": ("sp", QStyle.SP_FileIcon),  # Changed from SP_FileDialogNewButton
         },
-        
     }
 
     # For the QPushButton used for fundamental lookup (not a QAction on toolbar directly from menu)
@@ -678,9 +676,9 @@ class PortfolioApp(QMainWindow):
             "cg_agg_period": "Annual",  # Default for Capital Gains aggregation
             "cg_periods_to_show": 10,  # Default periods for Capital Gains chart
             "theme": "light",  # Added theme configuration
-            "transactions_management_columns": {}, # For column visibility in the main transactions table
-            "stock_tx_columns": {}, # For column visibility in the stock transactions table
-            "cash_tx_columns": {}, # For column visibility in the cash transactions table
+            "transactions_management_columns": {},  # For column visibility in the main transactions table
+            "stock_tx_columns": {},  # For column visibility in the stock transactions table
+            "cash_tx_columns": {},  # For column visibility in the cash transactions table
         }
         loaded_app_config = config_defaults.copy()  # Start with defaults
 
@@ -787,13 +785,21 @@ class PortfolioApp(QMainWindow):
                     ]
 
                 # Validate new column visibility settings
-                for key in ["transactions_management_columns", "stock_tx_columns", "cash_tx_columns"]:
+                for key in [
+                    "transactions_management_columns",
+                    "stock_tx_columns",
+                    "cash_tx_columns",
+                ]:
                     if key in loaded_app_config:
                         if not isinstance(loaded_app_config[key], dict):
-                            logging.warning(f"Invalid '{key}' in config. Resetting to default empty dict.")
+                            logging.warning(
+                                f"Invalid '{key}' in config. Resetting to default empty dict."
+                            )
                             loaded_app_config[key] = {}
                     else:
-                        loaded_app_config[key] = {} # Ensure key exists with default empty dict
+                        loaded_app_config[key] = (
+                            {}
+                        )  # Ensure key exists with default empty dict
 
             except Exception as e:
                 logging.warning(
@@ -1103,8 +1109,6 @@ class PortfolioApp(QMainWindow):
         self.add_transaction_action.triggered.connect(self.open_add_transaction_dialog)
         tx_menu.addAction(self.add_transaction_action)
 
-        
-
         # --- Settings Menu ---
         settings_menu = menu_bar.addMenu("&Settings")
         acc_currency_action = QAction("Account &Currencies...", self)
@@ -1113,8 +1117,6 @@ class PortfolioApp(QMainWindow):
         )
         acc_currency_action.triggered.connect(self.show_account_currency_dialog)
         settings_menu.addAction(acc_currency_action)
-
-        
 
         symbol_settings_action = QAction("&Symbol Settings...", self)
         symbol_settings_action.setStatusTip(
@@ -1294,8 +1296,10 @@ The CSV file should contain the following columns (header names must match exact
             today = date.today()
             if end_date > today:
                 end_date = today
-                self.graph_end_date_edit.setDate(QDate(end_date)) # Update UI
-                logging.info(f"Graph end date was in future, reset to today: {end_date}")
+                self.graph_end_date_edit.setDate(QDate(end_date))  # Update UI
+                logging.info(
+                    f"Graph end date was in future, reset to today: {end_date}"
+                )
             # --- END ADDED ---
 
             if start_date >= end_date:
@@ -3307,8 +3311,10 @@ The CSV file should contain the following columns (header names must match exact
             today = date.today()
             if end_date > today:
                 end_date = today
-                self.graph_end_date_edit.setDate(QDate(end_date)) # Update UI
-                logging.info(f"Graph end date was in future, reset to today: {end_date}")
+                self.graph_end_date_edit.setDate(QDate(end_date))  # Update UI
+                logging.info(
+                    f"Graph end date was in future, reset to today: {end_date}"
+                )
             # --- END ADDED ---
 
             if start_date >= end_date:
@@ -3831,7 +3837,9 @@ The CSV file should contain the following columns (header names must match exact
             percentage_font = QFont(
                 self.app_font if hasattr(self, "app_font") else QFont()
             )
-            percentage_font.setPointSize(base_font_size - 1)  # Smaller font for percentage
+            percentage_font.setPointSize(
+                base_font_size - 1
+            )  # Smaller font for percentage
             percentage_value.setFont(percentage_font)
             return label, value, percentage_value
         else:
@@ -4338,7 +4346,11 @@ The CSV file should contain the following columns (header names must match exact
         summary_layout.setHorizontalSpacing(15)
         summary_layout.setVerticalSpacing(30)
         self.summary_net_value = self.create_summary_item("Net Value", True)
-        self.summary_day_change_label, self.summary_day_change_value, self.summary_day_change_pct = self.create_summary_item("Day's G/L", True, has_percentage=True)
+        (
+            self.summary_day_change_label,
+            self.summary_day_change_value,
+            self.summary_day_change_pct,
+        ) = self.create_summary_item("Day's G/L", True, has_percentage=True)
         self.summary_total_gain = self.create_summary_item("Total G/L")
         self.summary_realized_gain = self.create_summary_item("Realized G/L")
         self.summary_unrealized_gain = self.create_summary_item("Unrealized G/L")
@@ -4659,7 +4671,6 @@ The CSV file should contain the following columns (header names must match exact
         content_layout.addWidget(table_panel, 4)
 
         self.view_ignored_button.clicked.connect(self.show_ignored_log)
-        
 
     def _init_ui_widgets(self):
         """Orchestrates the initialization of all UI widgets within their frames."""
@@ -4928,9 +4939,13 @@ The CSV file should contain the following columns (header names must match exact
         self.stock_transactions_table_view.verticalHeader().setVisible(False)
         stock_tx_layout.addWidget(self.stock_transactions_table_view)
         # Context menu for column visibility
-        self.stock_transactions_table_view.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
+        self.stock_transactions_table_view.horizontalHeader().setContextMenuPolicy(
+            Qt.CustomContextMenu
+        )
         self.stock_transactions_table_view.horizontalHeader().customContextMenuRequested.connect(
-            lambda pos: self._show_column_context_menu(self.stock_transactions_table_view, pos, "stock_tx_columns")
+            lambda pos: self._show_column_context_menu(
+                self.stock_transactions_table_view, pos, "stock_tx_columns"
+            )
         )
         splitter.addWidget(stock_tx_group)
 
@@ -4953,9 +4968,13 @@ The CSV file should contain the following columns (header names must match exact
         self.cash_transactions_table_view.verticalHeader().setVisible(False)
         cash_tx_layout.addWidget(self.cash_transactions_table_view)
         # Context menu for column visibility
-        self.cash_transactions_table_view.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
+        self.cash_transactions_table_view.horizontalHeader().setContextMenuPolicy(
+            Qt.CustomContextMenu
+        )
         self.cash_transactions_table_view.horizontalHeader().customContextMenuRequested.connect(
-            lambda pos: self._show_column_context_menu(self.cash_transactions_table_view, pos, "cash_tx_columns")
+            lambda pos: self._show_column_context_menu(
+                self.cash_transactions_table_view, pos, "cash_tx_columns"
+            )
         )
         splitter.addWidget(cash_tx_group)
 
@@ -5248,24 +5267,42 @@ The CSV file should contain the following columns (header names must match exact
 
         # --- Table View ---
         self.transactions_management_table_view = QTableView()
-        self.transactions_management_table_view.setObjectName("ManageTransactionsDBTable")
-        self.transactions_management_table_model = PandasModel(parent=self, log_mode=True)
-        self.transactions_management_table_view.setModel(self.transactions_management_table_model)
+        self.transactions_management_table_view.setObjectName(
+            "ManageTransactionsDBTable"
+        )
+        self.transactions_management_table_model = PandasModel(
+            parent=self, log_mode=True
+        )
+        self.transactions_management_table_view.setModel(
+            self.transactions_management_table_model
+        )
 
-        self.transactions_management_table_view.setSelectionBehavior(QTableView.SelectRows)
-        self.transactions_management_table_view.setSelectionMode(QTableView.SingleSelection)
+        self.transactions_management_table_view.setSelectionBehavior(
+            QTableView.SelectRows
+        )
+        self.transactions_management_table_view.setSelectionMode(
+            QTableView.SingleSelection
+        )
         self.transactions_management_table_view.setAlternatingRowColors(True)
         self.transactions_management_table_view.setSortingEnabled(True)
-        self.transactions_management_table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.transactions_management_table_view.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Interactive
+        )
         self.transactions_management_table_view.verticalHeader().setVisible(False)
 
         parent_layout.addWidget(self.transactions_management_table_view)
         self.transactions_management_table_view.resizeColumnsToContents()
 
         # Context menu for column visibility
-        self.transactions_management_table_view.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
+        self.transactions_management_table_view.horizontalHeader().setContextMenuPolicy(
+            Qt.CustomContextMenu
+        )
         self.transactions_management_table_view.horizontalHeader().customContextMenuRequested.connect(
-            lambda pos: self._show_column_context_menu(self.transactions_management_table_view, pos, "transactions_management_columns")
+            lambda pos: self._show_column_context_menu(
+                self.transactions_management_table_view,
+                pos,
+                "transactions_management_columns",
+            )
         )
 
         # --- Action Buttons ---
@@ -5287,12 +5324,20 @@ The CSV file should contain the following columns (header names must match exact
         parent_layout.addLayout(button_layout)
 
         # --- Connections ---
-        self.apply_filter_button.clicked.connect(self._apply_filter_to_transactions_view)
-        self.clear_filter_button.clicked.connect(self._clear_filter_in_transactions_view)
+        self.apply_filter_button.clicked.connect(
+            self._apply_filter_to_transactions_view
+        )
+        self.clear_filter_button.clicked.connect(
+            self._clear_filter_in_transactions_view
+        )
         self.add_transaction_button.clicked.connect(self.add_new_transaction_db)
         self.edit_transaction_button.clicked.connect(self.edit_selected_transaction_db)
-        self.delete_transaction_button.clicked.connect(self.delete_selected_transaction_db)
-        self.export_transactions_button.clicked.connect(self._export_transactions_to_csv)
+        self.delete_transaction_button.clicked.connect(
+            self.delete_selected_transaction_db
+        )
+        self.export_transactions_button.clicked.connect(
+            self._export_transactions_to_csv
+        )
 
         # Initial data load for the table
         self._refresh_transactions_view()
@@ -5312,7 +5357,10 @@ The CSV file should contain the following columns (header names must match exact
         if success and df_updated is not None:
             self._current_data_df = df_updated.copy()
             self._apply_filter_to_transactions_view()  # Re-apply any active filters to the new data
-            self._apply_column_visibility(self.transactions_management_table_view, "transactions_management_columns")
+            self._apply_column_visibility(
+                self.transactions_management_table_view,
+                "transactions_management_columns",
+            )
             logging.debug(
                 f"PortfolioApp: Transactions table refreshed with {len(self._current_data_df)} rows."
             )
@@ -5323,7 +5371,9 @@ The CSV file should contain the following columns (header names must match exact
                 "Could not refresh transaction list from database.",
             )
             self._current_data_df = pd.DataFrame()  # Clear data on error
-            self.transactions_management_table_model.updateData(self._current_data_df)  # Update view with empty
+            self.transactions_management_table_model.updateData(
+                self._current_data_df
+            )  # Update view with empty
 
     def _apply_filter_to_transactions_view(self):
         """Filters the transactions table view based on symbol/account input using DB column names."""
@@ -5356,7 +5406,9 @@ The CSV file should contain the following columns (header names must match exact
                 logging.warning(f"Error applying account filter: {e}")
 
         self.transactions_management_table_model.updateData(df_to_display)
-        self._apply_column_visibility(self.transactions_management_table_view, "transactions_management_columns")
+        self._apply_column_visibility(
+            self.transactions_management_table_view, "transactions_management_columns"
+        )
         self.transactions_management_table_view.resizeColumnsToContents()
         self.transactions_management_table_view.viewport().update()  # Force viewport repaint
 
@@ -5364,14 +5416,12 @@ The CSV file should contain the following columns (header names must match exact
         if "Date" in df_to_display.columns:
             try:
                 date_col_idx = df_to_display.columns.get_loc("Date")
-                self.transactions_management_table_view.sortByColumn(date_col_idx, Qt.DescendingOrder)
-                logging.debug(
-                    "PortfolioApp: Re-applied sort by Date descending."
+                self.transactions_management_table_view.sortByColumn(
+                    date_col_idx, Qt.DescendingOrder
                 )
+                logging.debug("PortfolioApp: Re-applied sort by Date descending.")
             except KeyError:
-                logging.warning(
-                    "PortfolioApp: 'Date' column not found for re-sorting."
-                )
+                logging.warning("PortfolioApp: 'Date' column not found for re-sorting.")
         # --- END ADDED ---
 
     def get_selected_db_id(self) -> Optional[int]:
@@ -5379,14 +5429,18 @@ The CSV file should contain the following columns (header names must match exact
         Gets the 'original_index' (internal DB ID) of the currently selected row
         from the transactions management table model.
         """
-        selected_indexes = self.transactions_management_table_view.selectionModel().selectedRows()
+        selected_indexes = (
+            self.transactions_management_table_view.selectionModel().selectedRows()
+        )
         if not selected_indexes or len(selected_indexes) != 1:
             return None  # No single row selected
 
         selected_view_index = selected_indexes[
             0
         ]  # QModelIndex of the first cell in the selected row
-        source_model = self.transactions_management_table_model  # This is the PandasModel instance
+        source_model = (
+            self.transactions_management_table_model
+        )  # This is the PandasModel instance
 
         try:
             # 'original_index' column in the model's DataFrame (_data) holds the internal DB ID
@@ -5417,7 +5471,8 @@ The CSV file should contain the following columns (header names must match exact
             )
         except (AttributeError, KeyError, IndexError, ValueError, TypeError) as e:
             logging.error(
-                f"Error getting DB ID from transactions management selection: {e}", exc_info=True
+                f"Error getting DB ID from transactions management selection: {e}",
+                exc_info=True,
             )
             return None
 
@@ -5545,9 +5600,7 @@ The CSV file should contain the following columns (header names must match exact
             )  # Returns dict with Python types, CSV-like keys
             if new_data_dict_pytypes:
                 # Call PortfolioApp's method to handle the DB update
-                if self._edit_transaction_in_db(
-                    db_id, new_data_dict_pytypes
-                ):
+                if self._edit_transaction_in_db(db_id, new_data_dict_pytypes):
                     self._refresh_transactions_view()  # Refresh this dialog's view from DB after successful save
                     # self.data_changed.emit()  # Signal main window to refresh its data
                     # Success message will be shown by PortfolioApp after its refresh typically,
@@ -5628,8 +5681,8 @@ The CSV file should contain the following columns (header names must match exact
             try:
                 df_to_export = self.transactions_management_table_model.dataFrame()
                 # Exclude 'original_index' column if it exists, as it's an internal DB ID
-                if 'original_index' in df_to_export.columns:
-                    df_to_export = df_to_export.drop(columns=['original_index'])
+                if "original_index" in df_to_export.columns:
+                    df_to_export = df_to_export.drop(columns=["original_index"])
                 df_to_export.to_csv(file_path, index=False)
                 QMessageBox.information(
                     self, "Export Successful", f"Transactions exported to:\n{file_path}"
@@ -5790,7 +5843,9 @@ The CSV file should contain the following columns (header names must match exact
         self._load_current_holdings_to_target_table()
 
     def _load_current_holdings_to_target_table(self):
-        logging.debug(f"Loading current holdings. Holdings data shape: {self.holdings_data.shape}")
+        logging.debug(
+            f"Loading current holdings. Holdings data shape: {self.holdings_data.shape}"
+        )
         if not self.holdings_data.empty:
             logging.debug(f"Holdings data columns: {self.holdings_data.columns}")
 
@@ -5802,14 +5857,20 @@ The CSV file should contain the following columns (header names must match exact
         mkt_val_col = f"Market Value ({display_currency})"
 
         if mkt_val_col not in self.holdings_data.columns:
-            logging.error(f"Required column '{mkt_val_col}' not found in holdings_data.")
+            logging.error(
+                f"Required column '{mkt_val_col}' not found in holdings_data."
+            )
             return
 
-        total_portfolio_value = self.summary_metrics_data.get(f"Total Portfolio Value ({display_currency})")
+        total_portfolio_value = self.summary_metrics_data.get(
+            f"Total Portfolio Value ({display_currency})"
+        )
         if not total_portfolio_value or total_portfolio_value == 0:
             total_portfolio_value = self.holdings_data[mkt_val_col].sum()
 
-        total_portfolio_value = self.summary_metrics_data.get(f"Total Portfolio Value ({display_currency})")
+        total_portfolio_value = self.summary_metrics_data.get(
+            f"Total Portfolio Value ({display_currency})"
+        )
         if not total_portfolio_value or total_portfolio_value == 0:
             total_portfolio_value = self.holdings_data[mkt_val_col].sum()
 
@@ -5820,7 +5881,11 @@ The CSV file should contain the following columns (header names must match exact
         for i, row in self.holdings_data.iterrows():
             symbol = row["Symbol"]
             current_value = row[mkt_val_col]
-            current_pct = (current_value / total_portfolio_value) * 100.0 if total_portfolio_value > 0 else 0.0
+            current_pct = (
+                (current_value / total_portfolio_value) * 100.0
+                if total_portfolio_value > 0
+                else 0.0
+            )
 
             if symbol == CASH_SYMBOL_CSV:
                 cash_row = {
@@ -5828,32 +5893,38 @@ The CSV file should contain the following columns (header names must match exact
                     "Asset Class": "Cash",
                     "Current Value": current_value,
                     "Current %": current_pct,
-                    "Target %": current_pct, # Initial target is current
+                    "Target %": current_pct,  # Initial target is current
                     "Target Value": current_value,
-                    "Drift %": 0.0
+                    "Drift %": 0.0,
                 }
             else:
-                table_data.append({
-                    "Symbol": symbol,
-                    "Asset Class": row.get("quoteType", row.get("Sector", "Unknown")),
-                    "Current Value": current_value,
-                    "Current %": current_pct,
-                    "Target %": current_pct, # Initial target is current
-                    "Target Value": current_value,
-                    "Drift %": 0.0
-                })
-        
+                table_data.append(
+                    {
+                        "Symbol": symbol,
+                        "Asset Class": row.get(
+                            "quoteType", row.get("Sector", "Unknown")
+                        ),
+                        "Current Value": current_value,
+                        "Current %": current_pct,
+                        "Target %": current_pct,  # Initial target is current
+                        "Target Value": current_value,
+                        "Drift %": 0.0,
+                    }
+                )
+
         # Sort non-cash holdings by current value descending, then add cash at the end
         table_data.sort(key=lambda x: x["Current Value"], reverse=True)
-        if cash_row: # Ensure cash is always at the bottom
+        if cash_row:  # Ensure cash is always at the bottom
             table_data.append(cash_row)
 
         self.target_allocation_table.setRowCount(len(table_data))
 
         # Disconnect signal to prevent infinite loop during population
         try:
-            self.target_allocation_table.cellChanged.disconnect(self._update_target_total_label)
-        except TypeError: # Handle case where it might not be connected yet
+            self.target_allocation_table.cellChanged.disconnect(
+                self._update_target_total_label
+            )
+        except TypeError:  # Handle case where it might not be connected yet
             pass
 
         for i, data_row in enumerate(table_data):
@@ -5866,16 +5937,36 @@ The CSV file should contain the following columns (header names must match exact
             drift_pct = data_row["Drift %"]
 
             self.target_allocation_table.setItem(i, 0, QTableWidgetItem(symbol))
-            self.target_allocation_table.setItem(i, 1, QTableWidgetItem(str(asset_class)))
-            self.target_allocation_table.setItem(i, 2, QTableWidgetItem(format_currency_value(current_value, self._get_currency_symbol())))
-            self.target_allocation_table.setItem(i, 3, QTableWidgetItem(format_percentage_value(current_pct)))
-            self.target_allocation_table.setItem(i, 4, QTableWidgetItem(format_percentage_value(target_pct)))
-            self.target_allocation_table.setItem(i, 5, QTableWidgetItem(format_currency_value(target_value, self._get_currency_symbol())))
+            self.target_allocation_table.setItem(
+                i, 1, QTableWidgetItem(str(asset_class))
+            )
+            self.target_allocation_table.setItem(
+                i,
+                2,
+                QTableWidgetItem(
+                    format_currency_value(current_value, self._get_currency_symbol())
+                ),
+            )
+            self.target_allocation_table.setItem(
+                i, 3, QTableWidgetItem(format_percentage_value(current_pct))
+            )
+            self.target_allocation_table.setItem(
+                i, 4, QTableWidgetItem(format_percentage_value(target_pct))
+            )
+            self.target_allocation_table.setItem(
+                i,
+                5,
+                QTableWidgetItem(
+                    format_currency_value(target_value, self._get_currency_symbol())
+                ),
+            )
             drift_item = QTableWidgetItem(format_percentage_value(drift_pct))
             self.target_allocation_table.setItem(i, 6, drift_item)
 
         # Reconnect signal after population
-        self.target_allocation_table.cellChanged.connect(self._update_target_total_label)
+        self.target_allocation_table.cellChanged.connect(
+            self._update_target_total_label
+        )
         # Manually trigger update after initial load
         self._update_target_total_label()
 
@@ -5883,13 +5974,17 @@ The CSV file should contain the following columns (header names must match exact
         target_alloc_pct = {}
         for i in range(self.target_allocation_table.rowCount()):
             symbol = self.target_allocation_table.item(i, 0).text()
-            target_pct = float(self.target_allocation_table.item(i, 4).text().replace('%', ''))
+            target_pct = float(
+                self.target_allocation_table.item(i, 4).text().replace("%", "")
+            )
             target_alloc_pct[symbol] = target_pct
 
         new_cash = float(self.cash_to_add_line_edit.text() or 0.0)
         display_currency = self.currency_combo.currentText()
 
-        trades_df, summary = calculate_rebalancing_trades(self.holdings_data, target_alloc_pct, new_cash, display_currency)
+        trades_df, summary = calculate_rebalancing_trades(
+            self.holdings_data, target_alloc_pct, new_cash, display_currency
+        )
 
         self.suggested_trades_table.setRowCount(trades_df.shape[0])
         for i, row in trades_df.iterrows():
@@ -5910,21 +6005,43 @@ The CSV file should contain the following columns (header names must match exact
             self.suggested_trades_table.setItem(i, 0, action_item)
             self.suggested_trades_table.setItem(i, 1, QTableWidgetItem(symbol))
             self.suggested_trades_table.setItem(i, 2, QTableWidgetItem(account))
-            self.suggested_trades_table.setItem(i, 3, QTableWidgetItem(format_float_with_commas(quantity, 4)))
-            self.suggested_trades_table.setItem(i, 4, QTableWidgetItem(format_currency_value(price, self._get_currency_symbol())))
-            self.suggested_trades_table.setItem(i, 5, QTableWidgetItem(format_currency_value(trade_value, self._get_currency_symbol())))
+            self.suggested_trades_table.setItem(
+                i, 3, QTableWidgetItem(format_float_with_commas(quantity, 4))
+            )
+            self.suggested_trades_table.setItem(
+                i,
+                4,
+                QTableWidgetItem(
+                    format_currency_value(price, self._get_currency_symbol())
+                ),
+            )
+            self.suggested_trades_table.setItem(
+                i,
+                5,
+                QTableWidgetItem(
+                    format_currency_value(trade_value, self._get_currency_symbol())
+                ),
+            )
             self.suggested_trades_table.setItem(i, 6, QTableWidgetItem(note))
 
         currency_symbol = self._get_currency_symbol()
         for key, value in summary.items():
             if key == "Total Portfolio Value (After Rebalance)":
-                self.total_portfolio_value_label.setText(format_currency_value(value, currency_symbol))
+                self.total_portfolio_value_label.setText(
+                    format_currency_value(value, currency_symbol)
+                )
             elif key == "Total Value to Sell":
-                self.total_value_to_sell_label.setText(format_currency_value(value, currency_symbol))
+                self.total_value_to_sell_label.setText(
+                    format_currency_value(value, currency_symbol)
+                )
             elif key == "Total Value to Buy":
-                self.total_value_to_buy_label.setText(format_currency_value(value, currency_symbol))
+                self.total_value_to_buy_label.setText(
+                    format_currency_value(value, currency_symbol)
+                )
             elif key == "Net Cash Change":
-                self.net_cash_change_label.setText(format_currency_value(value, currency_symbol, show_plus_sign=True))
+                self.net_cash_change_label.setText(
+                    format_currency_value(value, currency_symbol, show_plus_sign=True)
+                )
             elif key == "Estimated Number of Trades":
                 self.estimated_trades_label.setText(str(value))
 
@@ -5944,7 +6061,11 @@ The CSV file should contain the following columns (header names must match exact
                     cash_row_index = i
                 else:
                     try:
-                        target_pct_str = self.target_allocation_table.item(i, 4).text().replace('%', '')
+                        target_pct_str = (
+                            self.target_allocation_table.item(i, 4)
+                            .text()
+                            .replace("%", "")
+                        )
                         total_pct_non_cash += float(target_pct_str)
                     except (ValueError, AttributeError):
                         pass
@@ -5952,15 +6073,19 @@ The CSV file should contain the following columns (header names must match exact
         # Adjust CASH target percentage if cash row exists
         if cash_row_index != -1:
             remaining_for_cash = 100.0 - total_pct_non_cash
-            if remaining_for_cash < 0: # If non-cash already exceeds 100%
+            if remaining_for_cash < 0:  # If non-cash already exceeds 100%
                 remaining_for_cash = 0.0
-            
+
             # Update CASH target percentage
-            self.target_allocation_table.setItem(cash_row_index, 4, QTableWidgetItem(format_percentage_value(remaining_for_cash)))
+            self.target_allocation_table.setItem(
+                cash_row_index,
+                4,
+                QTableWidgetItem(format_percentage_value(remaining_for_cash)),
+            )
 
             # Recalculate CASH target value and drift
             display_currency = self.currency_combo.currentText()
-            
+
             try:
                 new_cash_input = float(self.cash_to_add_line_edit.text() or 0.0)
             except ValueError:
@@ -5968,17 +6093,35 @@ The CSV file should contain the following columns (header names must match exact
 
             mkt_val_col = f"Market Value ({display_currency})"
             current_total_market_value = self.holdings_data[mkt_val_col].sum()
-            total_portfolio_value_after_new_cash = current_total_market_value + new_cash_input
+            total_portfolio_value_after_new_cash = (
+                current_total_market_value + new_cash_input
+            )
 
-            cash_target_value = total_portfolio_value_after_new_cash * (remaining_for_cash / 100.0)
-            self.target_allocation_table.setItem(cash_row_index, 5, QTableWidgetItem(format_currency_value(cash_target_value, self._get_currency_symbol())))
+            cash_target_value = total_portfolio_value_after_new_cash * (
+                remaining_for_cash / 100.0
+            )
+            self.target_allocation_table.setItem(
+                cash_row_index,
+                5,
+                QTableWidgetItem(
+                    format_currency_value(
+                        cash_target_value, self._get_currency_symbol()
+                    )
+                ),
+            )
 
             # Update CASH drift
-            current_cash_pct_str = self.target_allocation_table.item(cash_row_index, 3).text().replace('%', '')
+            current_cash_pct_str = (
+                self.target_allocation_table.item(cash_row_index, 3)
+                .text()
+                .replace("%", "")
+            )
             current_cash_pct = float(current_cash_pct_str)
             cash_drift_pct = current_cash_pct - remaining_for_cash
             cash_drift_item = self.target_allocation_table.item(cash_row_index, 6)
-            cash_drift_item.setText(format_percentage_value(cash_drift_pct, show_plus_sign=True))
+            cash_drift_item.setText(
+                format_percentage_value(cash_drift_pct, show_plus_sign=True)
+            )
             if cash_drift_pct > 0.01:
                 cash_drift_item.setForeground(self.QCOLOR_GAIN_THEMED)
             elif cash_drift_pct < -0.01:
@@ -5990,7 +6133,9 @@ The CSV file should contain the following columns (header names must match exact
         total_pct = 0.0
         for i in range(self.target_allocation_table.rowCount()):
             try:
-                target_pct_str = self.target_allocation_table.item(i, 4).text().replace('%', '')
+                target_pct_str = (
+                    self.target_allocation_table.item(i, 4).text().replace("%", "")
+                )
                 total_pct += float(target_pct_str)
             except (ValueError, AttributeError):
                 pass
@@ -6007,35 +6152,59 @@ The CSV file should contain the following columns (header names must match exact
         self.target_allocation_table.blockSignals(False)
 
     def _add_new_symbol_to_target_table(self):
-        '''Adds a new row to the target allocation table for a user-inputted symbol.'''
-        symbol, ok = QInputDialog.getText(self, 'Add Symbol', 'Enter Symbol:')
+        """Adds a new row to the target allocation table for a user-inputted symbol."""
+        symbol, ok = QInputDialog.getText(self, "Add Symbol", "Enter Symbol:")
         if ok and symbol:
             symbol = symbol.upper().strip()
             # Check if symbol already exists
             for row in range(self.target_allocation_table.rowCount()):
                 if self.target_allocation_table.item(row, 0).text() == symbol:
-                    QMessageBox.warning(self, "Symbol Exists", f"The symbol '{symbol}' is already in the table.")
+                    QMessageBox.warning(
+                        self,
+                        "Symbol Exists",
+                        f"The symbol '{symbol}' is already in the table.",
+                    )
                     return
 
             row_position = self.target_allocation_table.rowCount()
             self.target_allocation_table.insertRow(row_position)
 
-            self.target_allocation_table.setItem(row_position, 0, QTableWidgetItem(symbol))
-            self.target_allocation_table.setItem(row_position, 1, QTableWidgetItem("N/A"))
-            self.target_allocation_table.setItem(row_position, 2, QTableWidgetItem(format_currency_value(0, self._get_currency_symbol())))
-            self.target_allocation_table.setItem(row_position, 3, QTableWidgetItem(format_percentage_value(0)))
-            self.target_allocation_table.setItem(row_position, 4, QTableWidgetItem(format_percentage_value(0)))
-            self.target_allocation_table.setItem(row_position, 5, QTableWidgetItem(format_currency_value(0, self._get_currency_symbol())))
-            self.target_allocation_table.setItem(row_position, 6, QTableWidgetItem(format_percentage_value(0)))
+            self.target_allocation_table.setItem(
+                row_position, 0, QTableWidgetItem(symbol)
+            )
+            self.target_allocation_table.setItem(
+                row_position, 1, QTableWidgetItem("N/A")
+            )
+            self.target_allocation_table.setItem(
+                row_position,
+                2,
+                QTableWidgetItem(format_currency_value(0, self._get_currency_symbol())),
+            )
+            self.target_allocation_table.setItem(
+                row_position, 3, QTableWidgetItem(format_percentage_value(0))
+            )
+            self.target_allocation_table.setItem(
+                row_position, 4, QTableWidgetItem(format_percentage_value(0))
+            )
+            self.target_allocation_table.setItem(
+                row_position,
+                5,
+                QTableWidgetItem(format_currency_value(0, self._get_currency_symbol())),
+            )
+            self.target_allocation_table.setItem(
+                row_position, 6, QTableWidgetItem(format_percentage_value(0))
+            )
 
     def _remove_selected_symbol_from_target_table(self):
-        '''Removes the selected row from the target allocation table.'''
+        """Removes the selected row from the target allocation table."""
         selected_row = self.target_allocation_table.currentRow()
         if selected_row >= 0:
             self.target_allocation_table.removeRow(selected_row)
-            self._update_target_total_label() # Recalculate total
+            self._update_target_total_label()  # Recalculate total
         else:
-            QMessageBox.warning(self, "No Selection", "Please select a symbol to remove.")
+            QMessageBox.warning(
+                self, "No Selection", "Please select a symbol to remove."
+            )
 
     @Slot()
     def _clear_target_allocation_table(self):
@@ -6065,7 +6234,7 @@ The CSV file should contain the following columns (header names must match exact
 
         summary_layout.addWidget(QLabel("<b>Total Value (After):</b>"))
         summary_layout.addWidget(self.total_portfolio_value_label)
-        
+
         separator1 = QFrame()
         separator1.setFrameShape(QFrame.VLine)
         separator1.setFrameShadow(QFrame.Sunken)
@@ -6099,12 +6268,11 @@ The CSV file should contain the following columns (header names must match exact
         summary_layout.addWidget(self.estimated_trades_label)
 
         summary_layout.addStretch(1)
-        main_layout.addWidget(summary_group, 0) # Stretch factor 0 for summary
-
+        main_layout.addWidget(summary_group, 0)  # Stretch factor 0 for summary
 
         # Bottom section with two tables
         bottom_splitter = QSplitter(Qt.Horizontal)
-        main_layout.addWidget(bottom_splitter, 1) # Stretch factor 1 for splitter
+        main_layout.addWidget(bottom_splitter, 1)  # Stretch factor 1 for splitter
 
         # Group 2: Target Allocation & Controls (Left)
         target_group = QGroupBox("Target Allocation & Controls")
@@ -6121,7 +6289,9 @@ The CSV file should contain the following columns (header names must match exact
         self.calculate_rebalance_button.setObjectName("CalculateRebalanceButton")
 
         self.add_symbol_button.clicked.connect(self._add_new_symbol_to_target_table)
-        self.remove_symbol_button.clicked.connect(self._remove_selected_symbol_from_target_table)
+        self.remove_symbol_button.clicked.connect(
+            self._remove_selected_symbol_from_target_table
+        )
 
         controls_layout.addWidget(self.load_current_holdings_button)
         controls_layout.addWidget(self.add_symbol_button)
@@ -6129,14 +6299,26 @@ The CSV file should contain the following columns (header names must match exact
         self.clear_targets_button = QPushButton("Clear")
         controls_layout.addWidget(self.clear_targets_button)
         self.clear_targets_button.clicked.connect(self._clear_target_allocation_table)
-        controls_layout.addSpacerItem(QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum))
+        controls_layout.addSpacerItem(
+            QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        )
         controls_layout.addWidget(self.cash_to_add_line_edit)
         controls_layout.addWidget(self.calculate_rebalance_button)
         target_layout.addLayout(controls_layout)
 
         self.target_allocation_table = QTableWidget()
         self.target_allocation_table.setColumnCount(7)
-        self.target_allocation_table.setHorizontalHeaderLabels(["Symbol", "Asset Class", "Current Value", "Current %", "Target %", "Target Value", "Drift %"])
+        self.target_allocation_table.setHorizontalHeaderLabels(
+            [
+                "Symbol",
+                "Asset Class",
+                "Current Value",
+                "Current %",
+                "Target %",
+                "Target Value",
+                "Drift %",
+            ]
+        )
         target_layout.addWidget(self.target_allocation_table)
 
         target_summary_layout = QHBoxLayout()
@@ -6153,11 +6335,23 @@ The CSV file should contain the following columns (header names must match exact
 
         self.suggested_trades_table = QTableWidget()
         self.suggested_trades_table.setColumnCount(7)
-        self.suggested_trades_table.setHorizontalHeaderLabels(["Action", "Symbol", "Account", "Quantity", "Current Price", "Estimated Trade Value", "Note"])
+        self.suggested_trades_table.setHorizontalHeaderLabels(
+            [
+                "Action",
+                "Symbol",
+                "Account",
+                "Quantity",
+                "Current Price",
+                "Estimated Trade Value",
+                "Note",
+            ]
+        )
         trades_layout.addWidget(self.suggested_trades_table)
 
         # Defer setting the splitter sizes until the UI is shown to get accurate widths
-        QTimer.singleShot(0, lambda: bottom_splitter.setSizes([self.width() // 2, self.width() // 2]))
+        QTimer.singleShot(
+            0, lambda: bottom_splitter.setSizes([self.width() // 2, self.width() // 2])
+        )
 
     def _init_correlation_matrix_tab(self):
         """Initializes the Correlation Matrix sub-tab."""
@@ -7488,8 +7682,6 @@ The CSV file should contain the following columns (header names must match exact
 
         logging.debug("Exiting handle_results.")
 
-    
-
     @Slot(
         str, str
     )  # Ensure Slot decorator is imported: from PySide6.QtCore import Slot
@@ -7755,9 +7947,15 @@ The CSV file should contain the following columns (header names must match exact
         # --- END ADDED ---
 
         # Rebalancing Tab Connections
-        self.load_current_holdings_button.clicked.connect(self._load_current_holdings_to_target_table)
-        self.calculate_rebalance_button.clicked.connect(self._handle_rebalance_calculation)
-        self.target_allocation_table.cellChanged.connect(self._update_target_total_label)
+        self.load_current_holdings_button.clicked.connect(
+            self._load_current_holdings_to_target_table
+        )
+        self.calculate_rebalance_button.clicked.connect(
+            self._handle_rebalance_calculation
+        )
+        self.target_allocation_table.cellChanged.connect(
+            self._update_target_total_label
+        )
 
     def _update_table_display(self):
         """Updates the table view, pie charts, and title based on current filters."""
@@ -9012,7 +9210,10 @@ The CSV file should contain the following columns (header names must match exact
 
         summary_widgets = {
             "net_value": self.summary_net_value,
-            "day_change": (self.summary_day_change_label, self.summary_day_change_value),
+            "day_change": (
+                self.summary_day_change_label,
+                self.summary_day_change_value,
+            ),
             "total_gain": self.summary_total_gain,
             "realized_gain": self.summary_realized_gain,
             "unrealized_gain": self.summary_unrealized_gain,
@@ -9096,7 +9297,6 @@ The CSV file should contain the following columns (header names must match exact
             day_change_pct = data_source_current.get(
                 "day_change_percent"
             )  # This is the % value from backend
-            
 
             if pd.notna(day_change_val):
                 # Format the absolute currency change
@@ -9114,7 +9314,7 @@ The CSV file should contain the following columns (header names must match exact
                     day_change_pct_str = " (Inf%)"  # Handle infinity
 
                 # Combine the strings
-                
+
             # --- END FIX ---
 
             self.update_summary_value(
@@ -9133,7 +9333,7 @@ The CSV file should contain the following columns (header names must match exact
                 True,
                 "day_change_pct",
             )
-                
+
             self.update_summary_value(
                 self.summary_total_gain[1],
                 data_source_current.get("total_gain"),
@@ -9297,7 +9497,7 @@ The CSV file should contain the following columns (header names must match exact
             is_percent (bool, optional): If True, format as percentage. Defaults to False.
             metric_type (str | None, optional): A string identifying the metric type (e.g.,
                 'net_value', 'total_gain', 'fees') to help determine text color. Defaults to None.
-            
+
         """
         # (Keep implementation as before)
         text = "N/A"
@@ -9394,8 +9594,6 @@ The CSV file should contain the following columns (header names must match exact
 
         # Apply color using rich text
         value_label.setText(f"<font color='{target_color.name()}'>{text}</font>")
-
-    
 
     def _edit_transaction_in_db(
         self, transaction_id: int, new_data_dict_from_dialog_pytypes: Dict[str, Any]
@@ -9568,7 +9766,7 @@ The CSV file should contain the following columns (header names must match exact
                 self._add_new_account_if_needed(
                     str(new_account_name_edited)
                 )  # Update GUI's available accounts
-            
+
         else:
             logging.error(f"Failed to update transaction ID {transaction_id} in DB.")
             # db_utils.update_transaction_in_db would show a log, PortfolioApp can show a general message
@@ -9879,7 +10077,7 @@ The CSV file should contain the following columns (header names must match exact
     def _delete_transaction_from_db(self, transaction_id: int) -> bool:
         """
         Deletes a transaction from the database using its ID.
-        
+
 
         Args:
             transaction_id (int): The database ID of the transaction to delete.
@@ -9904,7 +10102,7 @@ The CSV file should contain the following columns (header names must match exact
             logging.info(
                 f"Successfully deleted transaction ID {transaction_id} from DB."
             )
-            
+
             # No need for a QMessageBox here as the dialog handles user feedback.
         else:
             logging.error(f"Failed to delete transaction ID {transaction_id} from DB.")
@@ -10502,12 +10700,14 @@ The CSV file should contain the following columns (header names must match exact
                 "NaT", "-", regex=False
             )  # Handle potential NaT
 
-        
-
         self.stock_transactions_table_model.updateData(stock_tx_df)
-        self._apply_column_visibility(self.stock_transactions_table_view, "stock_tx_columns")
+        self._apply_column_visibility(
+            self.stock_transactions_table_view, "stock_tx_columns"
+        )
         self.cash_transactions_table_model.updateData(cash_tx_df)
-        self._apply_column_visibility(self.cash_transactions_table_view, "cash_tx_columns")
+        self._apply_column_visibility(
+            self.cash_transactions_table_view, "cash_tx_columns"
+        )
 
         # --- ADDED: Apply default sort by Date (Descending) ---
         # So, we find the index of `date_col_name_to_use_for_sort` in the respective DataFrames.
@@ -11506,9 +11706,13 @@ The CSV file should contain the following columns (header names must match exact
         logging.info(
             "HANDLE_RESULTS: Orchestrator entered."
         )  # Changed to INFO for visibility
-        logging.debug(f"handle_results received holdings_df with shape: {holdings_df.shape}")
+        logging.debug(
+            f"handle_results received holdings_df with shape: {holdings_df.shape}"
+        )
         if not holdings_df.empty:
-            logging.debug(f"handle_results received holdings_df columns: {holdings_df.columns}")
+            logging.debug(
+                f"handle_results received holdings_df columns: {holdings_df.columns}"
+            )
             logging.debug(f"handle_results holdings_df head:\n{holdings_df.head()}")
         logging.debug(
             f"  Received full_historical_data_df shape: {full_historical_data_df.shape if isinstance(full_historical_data_df, pd.DataFrame) else 'Not DF'}"
@@ -12427,7 +12631,7 @@ The CSV file should contain the following columns (header names must match exact
         self, table_model: PandasModel, interval_key: str, num_periods: int
     ):
         """Helper to update a single table in the Asset Change tab."""
-        original_index_name = None # Initialize to None
+        original_index_name = None  # Initialize to None
         percent_returns_df_full = self.periodic_returns_data.get(interval_key)
         value_changes_df_full = self.periodic_value_changes_data.get(interval_key)
 
@@ -12464,7 +12668,8 @@ The CSV file should contain the following columns (header names must match exact
             return
 
         # Step 1: Reset index to move DatetimeIndex to a column
-        L12498: original_index_name = ( # The name of the column that holds the original index/DB ID
+        # The name of the column that holds the original index/DB ID
+        original_index_name = (
             df_for_table.index.name
         )  # Store original index name, could be None
         df_for_table.reset_index(inplace=True)
@@ -13802,8 +14007,6 @@ The CSV file should contain the following columns (header names must match exact
     # main_window.show() # This should be in __main__
     # sys.exit(app.exec()) # This should be in __main__
 
-    
-
     # --- Slots for Fundamental Data Lookup ---
     @Slot()
     def _handle_direct_symbol_lookup(self):
@@ -13831,7 +14034,9 @@ The CSV file should contain the following columns (header names must match exact
         )
 
     @Slot()
-    def _show_column_context_menu(self, table_view: QTableView, pos: QPoint, config_key: str):
+    def _show_column_context_menu(
+        self, table_view: QTableView, pos: QPoint, config_key: str
+    ):
         """
         Displays a context menu for table headers to toggle column visibility.
         The visibility state is stored in self.config under the given config_key.
@@ -13849,25 +14054,37 @@ The CSV file should contain the following columns (header names must match exact
             action = menu.addAction(column_name)
             action.setCheckable(True)
             # Get initial state from config, fallback to current view state
-            initial_checked_state = self.config[config_key].get(column_name, not table_view.isColumnHidden(i))
+            initial_checked_state = self.config[config_key].get(
+                column_name, not table_view.isColumnHidden(i)
+            )
             action.setChecked(initial_checked_state)
 
             # Connect action to a lambda that toggles visibility and saves config
             action.triggered.connect(
-                lambda checked, col_idx=i, col_name=column_name, tv=table_view, ck=config_key:
-                    self._toggle_column_visibility(tv, col_idx, col_name, checked, ck)
+                lambda checked, col_idx=i, col_name=column_name, tv=table_view, ck=config_key: self._toggle_column_visibility(
+                    tv, col_idx, col_name, checked, ck
+                )
             )
         menu.exec(header.mapToGlobal(pos))
 
     @Slot()
-    def _toggle_column_visibility(self, table_view: QTableView, column_index: int, column_name: str, visible: bool, config_key: str):
+    def _toggle_column_visibility(
+        self,
+        table_view: QTableView,
+        column_index: int,
+        column_name: str,
+        visible: bool,
+        config_key: str,
+    ):
         """
         Toggles the visibility of a column and saves the state to config.
         """
         table_view.setColumnHidden(column_index, not visible)
         self.config[config_key][column_name] = visible
-        self.save_config() # Save config immediately after change
-        logging.debug(f"Column '{column_name}' visibility set to {visible} for {config_key}.")
+        self.save_config()  # Save config immediately after change
+        logging.debug(
+            f"Column '{column_name}' visibility set to {visible} for {config_key}."
+        )
 
     def _apply_column_visibility(self, table_view: QTableView, config_key: str):
         """
@@ -13878,7 +14095,9 @@ The CSV file should contain the following columns (header names must match exact
             return
 
         column_visibility_settings = self.config[config_key]
-        logging.debug(f"Applying column visibility for {config_key}. Settings: {column_visibility_settings}")
+        logging.debug(
+            f"Applying column visibility for {config_key}. Settings: {column_visibility_settings}"
+        )
         model = table_view.model()
 
         for i in range(model.columnCount()):
@@ -13886,7 +14105,9 @@ The CSV file should contain the following columns (header names must match exact
             # Default to visible if not found in settings
             is_visible = column_visibility_settings.get(column_name, True)
             table_view.setColumnHidden(i, not is_visible)
-            logging.debug(f"  Column '{column_name}' (index {i}): is_visible={is_visible}, set hidden={not is_visible}")
+            logging.debug(
+                f"  Column '{column_name}' (index {i}): is_visible={is_visible}, set hidden={not is_visible}"
+            )
         logging.debug(f"Finished applying column visibility for {config_key}.")
 
     @Slot(str, dict)
@@ -13970,23 +14191,46 @@ The CSV file should contain the following columns (header names must match exact
         )
 
         if reply == QMessageBox.Yes:
+            cache_dir_base = QStandardPaths.writableLocation(
+                QStandardPaths.CacheLocation
+            )
+            if not cache_dir_base:
+                QMessageBox.critical(
+                    self,
+                    "Clear Cache Error",
+                    "Could not determine cache directory path.",
+                )
+                logging.error(
+                    "Failed to clear cache: QStandardPaths.CacheLocation is not writable or available."
+                )
+                return
             try:
                 if os.path.exists(cache_dir_base):
                     shutil.rmtree(cache_dir_base)
-                    logging.info(f"Successfully deleted cache directory: {cache_dir_base}")
+                    logging.info(
+                        f"Successfully deleted cache directory: {cache_dir_base}"
+                    )
                 os.makedirs(cache_dir_base, exist_ok=True)
-                logging.info(f"Successfully recreated cache directory: {cache_dir_base}")
+                logging.info(
+                    f"Successfully recreated cache directory: {cache_dir_base}"
+                )
                 QMessageBox.information(
-                    self, "Clear Cache", "All application cache files have been cleared."
+                    self,
+                    "Clear Cache",
+                    "All application cache files have been cleared.",
                 )
             except Exception as e:
                 QMessageBox.critical(
                     self, "Clear Cache Error", f"Failed to clear cache: {e}"
                 )
-                logging.error(f"Error clearing cache directory {cache_dir_base}: {e}", exc_info=True)
+                logging.error(
+                    f"Error clearing cache directory {cache_dir_base}: {e}",
+                    exc_info=True,
+                )
         else:
             QMessageBox.information(self, "Clear Cache", "Cache clearing cancelled.")
             logging.info("Cache clearing cancelled by user.")
+
     # This block handles:
     # - Checking for required library dependencies.
     # - Setting up basic logging.
