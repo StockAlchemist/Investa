@@ -265,7 +265,7 @@ from dialogs import (
     SymbolChartDialog,
     ManualPriceDialog,
     AddTransactionDialog,
-    ManageTransactionsDialogDB,
+    
 )
 from workers import (
     WorkerSignals,
@@ -508,14 +508,7 @@ class PortfolioApp(QMainWindow):
             "light": ("theme", "list-add"),
             "dark": ("sp", QStyle.SP_FileIcon),  # Changed from SP_FileDialogNewButton
         },
-        "manage_transactions_action": {  # Original uses SP_FileDialogDetailedView
-            "light": ("sp", QStyle.SP_FileDialogDetailedView, QStyle.SP_DirIcon),
-            "dark": (
-                "sp",
-                QStyle.SP_FileDialogDetailedView,
-                QStyle.SP_DirIcon,
-            ),  # Assuming SP_FileDialogDetailedView is fine
-        },
+        
     }
 
     # For the QPushButton used for fundamental lookup (not a QAction on toolbar directly from menu)
@@ -1121,26 +1114,7 @@ class PortfolioApp(QMainWindow):
         self.add_transaction_action.triggered.connect(self.open_add_transaction_dialog)
         tx_menu.addAction(self.add_transaction_action)
 
-        self.manage_transactions_action = QAction(
-            self.style().standardIcon(QStyle.SP_FileDialogDetailedView),
-            "&Manage Transactions...",
-            self,
-        )
-        self.manage_transactions_action.setStatusTip(
-            "Edit or delete existing transactions in the database"
-        )  # MODIFIED Tip
-        if self.manage_transactions_action.icon().isNull():
-            logging.warning(
-                f"Menu Action Icon for '{self.manage_transactions_action.text()}' is NULL. Check icon theme for 'document-edit'."
-            )
-        else:
-            logging.debug(
-                f"Menu Action Icon for '{self.manage_transactions_action.text()}' is VALID."
-            )
-        self.manage_transactions_action.triggered.connect(
-            self.show_manage_transactions_dialog
-        )
-        tx_menu.addAction(self.manage_transactions_action)
+        
 
         # --- Settings Menu ---
         settings_menu = menu_bar.addMenu("&Settings")
@@ -4708,9 +4682,7 @@ The CSV file should contain the following columns (header names must match exact
         content_layout.addWidget(table_panel, 4)
 
         self.view_ignored_button.clicked.connect(self.show_ignored_log)
-        self.manage_transactions_button.clicked.connect(
-            self.show_manage_transactions_dialog
-        )
+        
 
     def _init_ui_widgets(self):
         """Orchestrates the initialization of all UI widgets within their frames."""
@@ -4955,8 +4927,10 @@ The CSV file should contain the following columns (header names must match exact
         transactions_log_main_layout.setContentsMargins(10, 10, 10, 10)
         transactions_log_main_layout.setSpacing(8)
 
+        self._init_transactions_management_widgets(transactions_log_main_layout)
+
         # Create a splitter to divide the tab
-        splitter = QSplitter(Qt.Vertical)
+        splitter = QSplitter(Qt.Horizontal)
 
         # Group for Stock/ETF Transactions
         stock_tx_group = QGroupBox("Stock/ETF Transactions")
@@ -5260,6 +5234,424 @@ The CSV file should contain the following columns (header names must match exact
         splitter.setSizes([estimated_top_panel_height, bottom_panel_height])
 
         self.main_tab_widget.addTab(self.periodic_value_change_tab, "Asset Change")
+
+    def _init_transactions_management_widgets(self, parent_layout: QVBoxLayout):
+        """Initializes widgets for managing transactions within the Transactions Log tab."""
+        # --- Filter Widgets ---
+        filter_layout = QHBoxLayout()
+        filter_layout.addWidget(QLabel("Filter Symbol:"))
+        self.filter_symbol_edit = QLineEdit()
+        self.filter_symbol_edit.setPlaceholderText("Enter symbol to filter...")
+        filter_layout.addWidget(self.filter_symbol_edit)
+
+        filter_layout.addWidget(QLabel("Account:"))
+        self.filter_account_edit = QLineEdit()
+        self.filter_account_edit.setPlaceholderText("Enter account to filter...")
+        filter_layout.addWidget(self.filter_account_edit)
+
+        self.apply_filter_button = QPushButton("Apply Filter")
+        self.apply_filter_button.setIcon(QIcon.fromTheme("edit-find"))
+        filter_layout.addWidget(self.apply_filter_button)
+
+        self.clear_filter_button = QPushButton("Clear Filters")
+        self.clear_filter_button.setIcon(QIcon.fromTheme("edit-clear"))
+        filter_layout.addWidget(self.clear_filter_button)
+        filter_layout.addStretch(1)
+        parent_layout.addLayout(filter_layout)
+
+        # --- Table View ---
+        self.transactions_management_table_view = QTableView()
+        self.transactions_management_table_view.setObjectName("ManageTransactionsDBTable")
+        self.transactions_management_table_model = PandasModel(parent=self, log_mode=True)
+        self.transactions_management_table_view.setModel(self.transactions_management_table_model)
+
+        self.transactions_management_table_view.setSelectionBehavior(QTableView.SelectRows)
+        self.transactions_management_table_view.setSelectionMode(QTableView.SingleSelection)
+        self.transactions_management_table_view.setAlternatingRowColors(True)
+        self.transactions_management_table_view.setSortingEnabled(True)
+        self.transactions_management_table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.transactions_management_table_view.verticalHeader().setVisible(False)
+
+        parent_layout.addWidget(self.transactions_management_table_view)
+        self.transactions_management_table_view.resizeColumnsToContents()
+
+        # --- Action Buttons ---
+        button_layout = QHBoxLayout()
+        self.add_transaction_button = QPushButton("Add Transaction")
+        self.add_transaction_button.setIcon(QIcon.fromTheme("list-add"))
+        self.edit_transaction_button = QPushButton("Edit Selected")
+        self.edit_transaction_button.setIcon(QIcon.fromTheme("document-edit"))
+        self.delete_transaction_button = QPushButton("Delete Selected")
+        self.delete_transaction_button.setIcon(QIcon.fromTheme("edit-delete"))
+        self.export_transactions_button = QPushButton("Export to CSV")
+        self.export_transactions_button.setIcon(QIcon.fromTheme("document-save"))
+
+        button_layout.addWidget(self.add_transaction_button)
+        button_layout.addWidget(self.edit_transaction_button)
+        button_layout.addWidget(self.delete_transaction_button)
+        button_layout.addStretch(1)
+        button_layout.addWidget(self.export_transactions_button)
+        parent_layout.addLayout(button_layout)
+
+        # --- Connections ---
+        self.apply_filter_button.clicked.connect(self._apply_filter_to_transactions_view)
+        self.clear_filter_button.clicked.connect(self._clear_filter_in_transactions_view)
+        self.add_transaction_button.clicked.connect(self.add_new_transaction_db)
+        self.edit_transaction_button.clicked.connect(self.edit_selected_transaction_db)
+        self.delete_transaction_button.clicked.connect(self.delete_selected_transaction_db)
+        self.export_transactions_button.clicked.connect(self._export_transactions_to_csv)
+
+        # Initial data load for the table
+        self._refresh_transactions_view()
+
+    def _refresh_transactions_view(self):
+        """Reloads data from DB and updates the transactions table view."""
+        logging.debug("PortfolioApp: Refreshing transactions table from database...")
+        acc_map_config_refresh = self.config.get("account_currency_map", {})
+        def_curr_config_refresh = self.config.get(
+            "default_currency", config.DEFAULT_CURRENCY
+        )
+        df_updated, success = load_all_transactions_from_db(
+            self.db_conn,
+            account_currency_map=acc_map_config_refresh,
+            default_currency=def_curr_config_refresh,
+        )
+        if success and df_updated is not None:
+            self._current_data_df = df_updated.copy()
+            self._apply_filter_to_transactions_view()  # Re-apply any active filters to the new data
+            logging.debug(
+                f"PortfolioApp: Transactions table refreshed with {len(self._current_data_df)} rows."
+            )
+        else:
+            QMessageBox.warning(
+                self,
+                "Refresh Error",
+                "Could not refresh transaction list from database.",
+            )
+            self._current_data_df = pd.DataFrame()  # Clear data on error
+            self.transactions_management_table_model.updateData(self._current_data_df)  # Update view with empty
+
+    def _apply_filter_to_transactions_view(self):
+        """Filters the transactions table view based on symbol/account input using DB column names."""
+        symbol_filter_text = self.filter_symbol_edit.text().strip().upper()
+        account_filter_text = (
+            self.filter_account_edit.text().strip()
+        )  # Keep case for account name
+        df_to_display = self._current_data_df.copy()  # Start with full current data
+
+        # Filter by Symbol (column name in DB is "Symbol")
+        if symbol_filter_text and "Symbol" in df_to_display.columns:
+            try:
+                df_to_display = df_to_display[
+                    df_to_display["Symbol"]
+                    .astype(str)
+                    .str.contains(symbol_filter_text, case=False, na=False)
+                ]
+            except Exception as e:
+                logging.warning(f"Error applying symbol filter: {e}")
+
+        # Filter by Account (column name in DB is "Account")
+        if account_filter_text and "Account" in df_to_display.columns:
+            try:
+                df_to_display = df_to_display[
+                    df_to_display["Account"]
+                    .astype(str)
+                    .str.contains(account_filter_text, case=False, na=False)
+                ]
+            except Exception as e:
+                logging.warning(f"Error applying account filter: {e}")
+
+        self.transactions_management_table_model.updateData(df_to_display)
+        self.transactions_management_table_view.resizeColumnsToContents()
+        self.transactions_management_table_view.viewport().update()  # Force viewport repaint
+
+        # --- ADDED: Re-apply sort after data update ---
+        if "Date" in df_to_display.columns:
+            try:
+                date_col_idx = df_to_display.columns.get_loc("Date")
+                self.transactions_management_table_view.sortByColumn(date_col_idx, Qt.DescendingOrder)
+                logging.debug(
+                    "PortfolioApp: Re-applied sort by Date descending."
+                )
+            except KeyError:
+                logging.warning(
+                    "PortfolioApp: 'Date' column not found for re-sorting."
+                )
+        # --- END ADDED ---
+
+    def get_selected_db_id(self) -> Optional[int]:
+        """
+        Gets the 'original_index' (which is the DB 'id') of the currently selected row
+        from the transactions management table model.
+        """
+        selected_indexes = self.transactions_management_table_view.selectionModel().selectedRows()
+        if not selected_indexes or len(selected_indexes) != 1:
+            return None  # No single row selected
+
+        selected_view_index = selected_indexes[
+            0
+        ]  # QModelIndex of the first cell in the selected row
+        source_model = self.transactions_management_table_model  # This is the PandasModel instance
+
+        try:
+            # 'original_index' column in the model's DataFrame (_data) holds the DB ID
+            # This column was created by load_all_transactions_from_db aliasing `id as original_index`
+            if "original_index" not in source_model._data.columns:
+                logging.error(
+                    "'original_index' column not found in transactions management model data."
+                )
+                return None
+
+            original_index_col_idx = source_model._data.columns.get_loc(
+                "original_index"
+            )
+
+            # Get the model index for the specific cell in the 'original_index' column
+            target_model_index = source_model.index(
+                selected_view_index.row(), original_index_col_idx
+            )
+
+            db_id_val = source_model.data(
+                target_model_index, Qt.DisplayRole
+            )  # Get display data
+
+            return (
+                int(db_id_val)
+                if db_id_val is not None and str(db_id_val).strip() != "-"
+                else None
+            )
+        except (AttributeError, KeyError, IndexError, ValueError, TypeError) as e:
+            logging.error(
+                f"Error getting DB ID from transactions management selection: {e}", exc_info=True
+            )
+            return None
+
+    @Slot()
+    def add_new_transaction_db(self):
+        """Opens the AddTransactionDialog to add a new transaction to the database."""
+        # Get available accounts and symbols from the current data for dialog autocompletion
+        accounts_for_dialog = (
+            sorted(list(self._current_data_df["Account"].unique()))
+            if "Account" in self._current_data_df.columns
+            else []
+        )
+        symbols_for_dialog = (
+            sorted(list(self._current_data_df["Symbol"].unique()))
+            if "Symbol" in self._current_data_df.columns
+            else []
+        )
+
+        add_dialog = AddTransactionDialog(
+            existing_accounts=accounts_for_dialog,
+            portfolio_symbols=symbols_for_dialog,
+            parent=self,  # The dialog's parent is this PortfolioApp
+        )
+
+        if add_dialog.exec():  # True if Save was clicked and dialog validation passed
+            new_data_dict_pytypes = (
+                add_dialog.get_transaction_data()
+            )  # Returns dict with Python types, CSV-like keys
+            if new_data_dict_pytypes:
+                # The parent app's save_new_transaction method handles the DB interaction
+                # and the main app's refresh.
+                if hasattr(self, "save_new_transaction"):
+                    self.save_new_transaction(new_data_dict_pytypes)
+                    # After the parent app saves, we can refresh our own view.
+                    self._refresh_transactions_view()
+                    # self.data_changed.emit()  # Signal to the main window that data has changed.
+                else:
+                    QMessageBox.critical(
+                        self,
+                        "Internal Error",
+                        "The main application does not have a 'save_new_transaction' method.",
+                    )
+            # If validation fails, get_transaction_data shows its own message box, so no extra message is needed.
+
+    @Slot()
+    def edit_selected_transaction_db(self):
+        db_id = self.get_selected_db_id()
+        if db_id is None:
+            QMessageBox.warning(
+                self, "Selection Error", "Please select a single transaction to edit."
+            )
+            return
+
+        # Fetch the row with DB column names from self._current_data_df
+        try:
+            transaction_row_series = self._current_data_df[
+                self._current_data_df["original_index"] == db_id
+            ].iloc[0]
+        except IndexError:
+            QMessageBox.warning(
+                self,
+                "Data Error",
+                f"Could not find transaction with ID {db_id} for editing in the current view.",
+            )
+            return
+
+        # Map DB data to the format AddTransactionDialog expects for pre-filling
+        # (keys are CSV-like headers, values are strings or appropriate types for QDateEdit)
+        dialog_prefill_data: Dict[str, Any] = {
+            "Date (MMM DD, YYYY)": (
+                pd.to_datetime(transaction_row_series.get("Date")).strftime(
+                    CSV_DATE_FORMAT
+                )
+                if pd.notna(transaction_row_series.get("Date"))
+                else ""
+            ),
+            "Transaction Type": transaction_row_series.get("Type", ""),
+            "Stock / ETF Symbol": transaction_row_series.get("Symbol", ""),
+            # For numeric, pass as string, AddTransactionDialog's _populate_fields_for_edit will format
+            "Quantity of Units": str(
+                transaction_row_series.get("Quantity", "")
+                if pd.notna(transaction_row_series.get("Quantity"))
+                else ""
+            ),
+            "Amount per unit": str(
+                transaction_row_series.get("Price/Share", "")
+                if pd.notna(transaction_row_series.get("Price/Share"))
+                else ""
+            ),
+            "Total Amount": str(
+                transaction_row_series.get("Total Amount", "")
+                if pd.notna(transaction_row_series.get("Total Amount"))
+                else ""
+            ),
+            "Fees": str(
+                transaction_row_series.get("Commission", "")
+                if pd.notna(transaction_row_series.get("Commission"))
+                else ""
+            ),
+            "Investment Account": transaction_row_series.get("Account", ""),
+            "Split Ratio (new shares per old share)": str(
+                transaction_row_series.get("Split Ratio", "")
+                if pd.notna(transaction_row_series.get("Split Ratio"))
+                else ""
+            ),
+            "Note": transaction_row_series.get("Note", ""),
+            # Local Currency is not directly part of AddTransactionDialog fields, it's derived by PortfolioApp
+        }
+
+        accounts_for_dialog = (
+            sorted(list(self._current_data_df["Account"].unique()))
+            if "Account" in self._current_data_df.columns
+            else []
+        )
+
+        edit_dialog = AddTransactionDialog(
+            existing_accounts=accounts_for_dialog,
+            parent=self,
+            edit_data=dialog_prefill_data,
+        )
+
+        if edit_dialog.exec():  # True if Save was clicked and dialog validation passed
+            new_data_dict_pytypes = (
+                edit_dialog.get_transaction_data()
+            )  # Returns dict with Python types, CSV-like keys
+            if new_data_dict_pytypes:
+                # Call PortfolioApp's method to handle the DB update
+                if self._edit_transaction_in_db(
+                    db_id, new_data_dict_pytypes
+                ):
+                    self._refresh_transactions_view()  # Refresh this dialog's view from DB after successful save
+                    # self.data_changed.emit()  # Signal main window to refresh its data
+                    # Success message will be shown by PortfolioApp after its refresh typically,
+                    # or we can add one here if preferred.
+                    # QMessageBox.information(self, "Success", "Transaction updated in database.")
+                else:
+                    QMessageBox.critical(
+                        self,
+                        "Update Error",
+                        "Failed to update transaction in the database. Check logs.",
+                    )
+            else:  # Dialog validation failed (get_transaction_data returned None)
+                QMessageBox.warning(
+                    self,
+                    "Validation Error",
+                    "Transaction data was not valid. No changes were saved.",
+                )
+
+    @Slot()
+    def delete_selected_transaction_db(self):
+        db_id = self.get_selected_db_id()
+        if db_id is None:
+            QMessageBox.warning(
+                self, "Selection Error", "Please select a single transaction to delete."
+            )
+            return
+
+        # Get some details of the transaction for the confirmation message
+        tx_details_str = "this transaction"
+        try:
+            row_to_delete = self._current_data_df[
+                self._current_data_df["original_index"] == db_id
+            ].iloc[0]
+            tx_date_str = (
+                pd.to_datetime(row_to_delete.get("Date")).strftime("%Y-%m-%d")
+                if pd.notna(row_to_delete.get("Date"))
+                else "N/A"
+            )
+            tx_symbol = row_to_delete.get("Symbol", "N/A")
+            tx_type = row_to_delete.get("Type", "N/A")
+            tx_details_str = (
+                f"Type: {tx_type}, Symbol: {tx_symbol}, Date: {tx_date_str}"
+            )
+        except Exception:
+            pass  # Stick with generic message if details can't be fetched
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Are you sure you want to permanently delete this transaction from the database?\n\n{tx_details_str}",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            # Call PortfolioApp's method to handle the DB delete
+            if self._delete_transaction_in_db(db_id):
+                self._refresh_transactions_view()  # Refresh this dialog's view from DB
+                # self.data_changed.emit()  # Signal main window to refresh its data
+                # Success message handled by main app or here if desired
+                # QMessageBox.information(self, "Success", "Transaction deleted from database.")
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Delete Error",
+                    "Failed to delete transaction from the database. Check logs.",
+                )
+
+    def _export_transactions_to_csv(self):
+        """Exports the currently displayed transactions to a CSV file."""
+        if self.transactions_management_table_model.rowCount() == 0:
+            QMessageBox.information(self, "Export", "No data to export.")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Export Transactions to CSV", "", "CSV Files (*.csv);;All Files (*)"
+        )
+        if file_path:
+            try:
+                df_to_export = self.transactions_management_table_model.dataFrame()
+                # Exclude 'original_index' column if it exists, as it's an internal DB ID
+                if 'original_index' in df_to_export.columns:
+                    df_to_export = df_to_export.drop(columns=['original_index'])
+                df_to_export.to_csv(file_path, index=False)
+                QMessageBox.information(
+                    self, "Export Successful", f"Transactions exported to:\n{file_path}"
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    self, "Export Error", f"Failed to export transactions: {e}"
+                )
+
+    def _clear_filter_in_transactions_view(self):
+        """Clears filters and shows all current data loaded from the DB."""
+        self.filter_symbol_edit.clear()
+        self.filter_account_edit.clear()
+        self.transactions_management_table_model.updateData(
+            self._current_data_df.copy()
+        )  # Reset to full current data
+        self.transactions_management_table_view.resizeColumnsToContents()
         logging.debug("--- _init_ui_widgets: Asset Change Tab widgets initialized ---")
 
     def _update_periodic_value_change_display(self):
@@ -9022,60 +9414,7 @@ The CSV file should contain the following columns (header names must match exact
         # Apply color using rich text
         value_label.setText(f"<font color='{target_color.name()}'>{text}</font>")
 
-    @Slot()
-    def show_manage_transactions_dialog(self):
-        """
-        Opens the dialog to view, edit, and delete transactions.
-        Loads data directly from the SQLite database.
-        """
-        if not self.db_conn:
-            QMessageBox.warning(
-                self,
-                "No Database Connection",
-                "Please open or create a database file first to manage transactions.",
-            )
-            return
-
-        # Load current transactions directly from DB for the dialog
-        # load_all_transactions_from_db returns a DataFrame with 'original_index' as DB id
-        # and DB column names (e.g., "Date" as datetime, "Price/Share" as float).
-        # Use account_currency_map and default_currency from config for cleaning after DB load
-        acc_map_config_dialog = self.config.get("account_currency_map", {})
-        def_curr_config_dialog = self.config.get(
-            "default_currency",
-            config.DEFAULT_CURRENCY if hasattr(config, "DEFAULT_CURRENCY") else "USD",
-        )
-
-        df_for_dialog, load_success = load_all_transactions_from_db(
-            self.db_conn, acc_map_config_dialog, def_curr_config_dialog
-        )  # MODIFIED: Pass map and default
-        # END MODIFIED
-
-        if not load_success or df_for_dialog is None:
-            QMessageBox.critical(
-                self,
-                "Load Error",
-                "Failed to load transactions from the database for management.",
-            )
-            # Potentially clear any stale display if necessary
-            # self.manage_transactions_dialog_instance.table_model.updateData(pd.DataFrame()) # If dialog was persistent
-            return
-        if df_for_dialog.empty:
-            QMessageBox.information(
-                self, "No Data", "No transactions found in the database to manage."
-            )
-            return
-
-        # Instantiate the DB-aware dialog, passing the loaded DataFrame and DB connection
-        dialog = ManageTransactionsDialogDB(
-            df_for_dialog, self.db_conn, self
-        )  # Pass self as parent_app
-
-        # Connect the dialog's data_changed signal to the main app's refresh_data slot
-        # This ensures that if the dialog makes changes (edit/delete), the main UI refreshes.
-        dialog.data_changed.connect(self.refresh_data)
-
-        dialog.exec()  # Show the dialog modally
+    
 
     def _edit_transaction_in_db(
         self, transaction_id: int, new_data_dict_from_dialog_pytypes: Dict[str, Any]
@@ -9248,7 +9587,7 @@ The CSV file should contain the following columns (header names must match exact
                 self._add_new_account_if_needed(
                     str(new_account_name_edited)
                 )  # Update GUI's available accounts
-            # Main window's refresh_data will be triggered by ManageTransactionsDialogDB's data_changed signal
+            
         else:
             logging.error(f"Failed to update transaction ID {transaction_id} in DB.")
             # db_utils.update_transaction_in_db would show a log, PortfolioApp can show a general message
@@ -9559,7 +9898,7 @@ The CSV file should contain the following columns (header names must match exact
     def _delete_transaction_from_db(self, transaction_id: int) -> bool:
         """
         Deletes a transaction from the database using its ID.
-        This method is called by ManageTransactionsDialogDB.
+        
 
         Args:
             transaction_id (int): The database ID of the transaction to delete.
@@ -9584,7 +9923,7 @@ The CSV file should contain the following columns (header names must match exact
             logging.info(
                 f"Successfully deleted transaction ID {transaction_id} from DB."
             )
-            # The ManageTransactionsDialogDB will emit data_changed, which triggers self.refresh_data() in PortfolioApp.
+            
             # No need for a QMessageBox here as the dialog handles user feedback.
         else:
             logging.error(f"Failed to delete transaction ID {transaction_id} from DB.")
@@ -13689,106 +14028,33 @@ The CSV file should contain the following columns (header names must match exact
 
     @Slot()
     def clear_cache_files_action_triggered(self):
-        """
-        Handles the 'Clear Cache Files' menu action.
-        Deletes known cache files from the application's standard cache directory.
-        """
-        cache_dir_base = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
-        if not cache_dir_base:
-            QMessageBox.critical(
-                self, "Error", "Could not determine cache directory location."
-            )
-            logging.error(
-                "Failed to get QStandardPaths.CacheLocation for clearing cache."
-            )
-            return
-
-        found_cache_file_paths = set()  # Use a set to avoid duplicates
-
-        # 1. Explicitly named files
-        # This cache is for current quotes from portfolio_summary
-        explicit_files_to_check = ["portfolio_cache_yf.json"]
-        for fname in explicit_files_to_check:
-            full_path = os.path.join(cache_dir_base, fname)
-            if os.path.exists(full_path) and os.path.isfile(full_path):
-                found_cache_file_paths.add(full_path)
-
-        # 2. Pattern-matched files
-        # These are typically historical data caches from historical_performance
-        # yf_portfolio_hist_raw_adjusted* -> raw historical prices/fx
-        # yf_portfolio_daily_results* -> daily calculated portfolio/benchmark values
-        prefixes_to_match = [
-            "yf_portfolio_hist_raw_adjusted",
-            "yf_portfolio_daily_results",
-        ]
-
-        if os.path.isdir(
-            cache_dir_base
-        ):  # Only attempt to list files if the directory exists
-            try:
-                for filename_in_dir in os.listdir(cache_dir_base):
-                    for prefix in prefixes_to_match:
-                        if filename_in_dir.startswith(prefix):
-                            full_path = os.path.join(cache_dir_base, filename_in_dir)
-                            if os.path.isfile(full_path):  # Ensure it's a file
-                                found_cache_file_paths.add(full_path)
-                            break  # Found a match for this file, move to next file in directory
-            except OSError as e:
-                logging.warning(f"Could not list cache directory {cache_dir_base}: {e}")
-
-        existing_cache_files = sorted(list(found_cache_file_paths))
-
-        if not existing_cache_files:
-            QMessageBox.information(
-                self, "Cache Clear", "No cache files found to delete."
-            )
-            logging.info("Clear cache action: No cache files found.")
-            return
-
-        confirm_msg = "This will delete the following cache files:\n\n"
-        confirm_msg += "\n".join([os.path.basename(p) for p in existing_cache_files])
-        confirm_msg += (
-            "\n\nThe application may be slower on the next data refresh. Are you sure?"
-        )
-
+        # Ask for confirmation to delete all cache files
         reply = QMessageBox.question(
             self,
-            "Confirm Cache Clear",
-            confirm_msg,
+            "Confirm Clear Cache",
+            "Are you sure you want to delete ALL application cache files?\n\nThis action cannot be undone.",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
 
         if reply == QMessageBox.Yes:
-            deleted_files_count = 0
-            errors = []
-            for file_path in existing_cache_files:
-                try:
-                    os.remove(file_path)
-                    deleted_files_count += 1
-                    logging.info(f"Cache file deleted: {file_path}")
-                except Exception as e:
-                    logging.error(f"Error deleting cache file {file_path}: {e}")
-                    errors.append(
-                        f"Could not delete {os.path.basename(file_path)}: {e}"
-                    )
-
-            if errors:
-                QMessageBox.warning(
-                    self,
-                    "Cache Clear Issues",
-                    f"Deleted {deleted_files_count} cache file(s).\nEncountered errors:\n"
-                    + "\n".join(errors),
-                )
-            else:
+            try:
+                if os.path.exists(cache_dir_base):
+                    shutil.rmtree(cache_dir_base)
+                    logging.info(f"Successfully deleted cache directory: {cache_dir_base}")
+                os.makedirs(cache_dir_base, exist_ok=True)
+                logging.info(f"Successfully recreated cache directory: {cache_dir_base}")
                 QMessageBox.information(
-                    self,
-                    "Cache Cleared",
-                    f"Successfully deleted {deleted_files_count} cache file(s).",
+                    self, "Clear Cache", "All application cache files have been cleared."
                 )
-
-    # --- Run Application Entry Point ---
-    # (No function here, but the `if __name__ == "__main__":` block executes)
+            except Exception as e:
+                QMessageBox.critical(
+                    self, "Clear Cache Error", f"Failed to clear cache: {e}"
+                )
+                logging.error(f"Error clearing cache directory {cache_dir_base}: {e}", exc_info=True)
+        else:
+            QMessageBox.information(self, "Clear Cache", "Cache clearing cancelled.")
+            logging.info("Cache clearing cancelled by user.")
     # This block handles:
     # - Checking for required library dependencies.
     # - Setting up basic logging.
