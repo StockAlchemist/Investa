@@ -540,8 +540,10 @@ class PandasModel(QAbstractTableModel):
         if role == Qt.DisplayRole:
             if orientation == Qt.Horizontal:  # Column headers
                 try:
-                    # The model's internal _data DataFrame now has UI-friendly column names
-                    return str(self._data.columns[section])
+                    col_name = str(self._data.columns[section])
+                    if col_name == "original_index":
+                        return "No."
+                    return col_name
                 except IndexError:
                     return ""  # Return empty string if index out of bounds
             if orientation == Qt.Vertical:  # Row headers (row numbers)

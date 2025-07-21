@@ -1499,7 +1499,7 @@ class ManualPriceDialog(QDialog):
 
         self._populate_overrides_table()
         self.overrides_table_widget.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.Stretch
+            0, QHeaderView.ResizeToContents
         )
         for col_idx in range(1, 6):
             self.overrides_table_widget.horizontalHeader().setSectionResizeMode(
@@ -1526,7 +1526,7 @@ class ManualPriceDialog(QDialog):
         self.symbol_map_table_widget.setSortingEnabled(True)
         self._populate_symbol_map_table()
         self.symbol_map_table_widget.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.Stretch
+            0, QHeaderView.ResizeToContents
         )
         self.symbol_map_table_widget.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.Stretch
@@ -1556,7 +1556,7 @@ class ManualPriceDialog(QDialog):
         self.excluded_symbols_table_widget.setSortingEnabled(True)
         self._populate_excluded_symbols_table()
         self.excluded_symbols_table_widget.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.Stretch
+            0, QHeaderView.ResizeToContents
         )
         excluded_symbols_layout.addWidget(self.excluded_symbols_table_widget)
         self.tab_widget.addTab(self.excluded_symbols_tab, "Excluded Symbols")

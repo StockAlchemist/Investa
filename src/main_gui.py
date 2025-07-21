@@ -406,30 +406,7 @@ except Exception as import_err:
     logging.warning(f"Warning: Using fallback CASH_SYMBOL_CSV: {CASH_SYMBOL_CSV}")
 
 
-# --- ADDED: Import the new CSV utility ---
-try:
-    from csv_utils import (
-        convert_csv_headers_to_cleaned_format,
-        DESIRED_CLEANED_COLUMN_ORDER,
-        STANDARD_ORIGINAL_TO_CLEANED_MAP as COLUMN_MAPPING_CSV_TO_INTERNAL,  # Alias for use in commented block
-    )
 
-    CSV_UTILS_AVAILABLE = True
-except ImportError:
-    logging.error(
-        "ERROR: csv_utils.py not found. CSV header standardization will not be available."
-    )
-    CSV_UTILS_AVAILABLE = False
-
-    # Define fallbacks for the imported names if csv_utils is not available
-    def convert_csv_headers_to_cleaned_format(*args, **kwargs) -> Tuple[bool, str]:
-        logging.error(
-            "Fallback convert_csv_headers_to_cleaned_format called because csv_utils is unavailable."
-        )
-        return False, "CSV utility not available."
-
-    DESIRED_CLEANED_COLUMN_ORDER: List[str] = []
-    COLUMN_MAPPING_CSV_TO_INTERNAL: Dict[str, str] = {}
 
 # --- ADDED: db_utils import ---
 from db_utils import (
@@ -701,6 +678,9 @@ class PortfolioApp(QMainWindow):
             "cg_agg_period": "Annual",  # Default for Capital Gains aggregation
             "cg_periods_to_show": 10,  # Default periods for Capital Gains chart
             "theme": "light",  # Added theme configuration
+            "transactions_management_columns": {}, # For column visibility in the main transactions table
+            "stock_tx_columns": {}, # For column visibility in the stock transactions table
+            "cash_tx_columns": {}, # For column visibility in the cash transactions table
         }
         loaded_app_config = config_defaults.copy()  # Start with defaults
 
@@ -805,6 +785,15 @@ class PortfolioApp(QMainWindow):
                     loaded_app_config["default_currency"] = config_defaults[
                         "default_currency"
                     ]
+
+                # Validate new column visibility settings
+                for key in ["transactions_management_columns", "stock_tx_columns", "cash_tx_columns"]:
+                    if key in loaded_app_config:
+                        if not isinstance(loaded_app_config[key], dict):
+                            logging.warning(f"Invalid '{key}' in config. Resetting to default empty dict.")
+                            loaded_app_config[key] = {}
+                    else:
+                        loaded_app_config[key] = {} # Ensure key exists with default empty dict
 
             except Exception as e:
                 logging.warning(
@@ -1125,17 +1114,7 @@ class PortfolioApp(QMainWindow):
         acc_currency_action.triggered.connect(self.show_account_currency_dialog)
         settings_menu.addAction(acc_currency_action)
 
-        if CSV_UTILS_AVAILABLE:
-            standardize_headers_action = QAction(
-                "Standardize &External CSV Headers...", self
-            )
-            standardize_headers_action.setStatusTip(
-                "Convert headers in a selected CSV file (for import help)"
-            )
-            standardize_headers_action.triggered.connect(
-                self.run_standardize_external_csv_headers
-            )
-            settings_menu.addAction(standardize_headers_action)
+        
 
         symbol_settings_action = QAction("&Symbol Settings...", self)
         symbol_settings_action.setStatusTip(
@@ -1483,7 +1462,7 @@ The CSV file should contain the following columns (header names must match exact
 
         # Load all transactions from the database.
         # load_all_transactions_from_db returns a DataFrame with 'cleaned' column names
-        # and 'original_index' as the DB id.
+        # and 'original_index' (displayed as 'No.') as the DB id.
         # Use account_currency_map and default_currency from config for cleaning after DB load
         acc_map_config_export = self.config.get("account_currency_map", {})
         def_curr_config_export = self.config.get(
@@ -1543,11 +1522,11 @@ The CSV file should contain the following columns (header names must match exact
                 # 1. Map cleaned DB column names back to standard "verbose" CSV headers for user-friendliness.
                 # 2. Order columns according to DESIRED_CLEANED_COLUMN_ORDER (which implies verbose headers).
                 # 3. Format Date column to "MMM DD, YYYY".
-                # 4. Drop the 'original_index' (DB id) column or rename it.
+                # 4. Drop the 'original_index' (internal DB ID) column or rename it for export.
 
                 df_export_prepared = df_to_export.copy()
 
-                # Drop 'original_index' or rename if you want to keep it
+                # Drop 'original_index' (internal DB ID) or rename if you want to keep it
                 if "original_index" in df_export_prepared.columns:
                     df_export_prepared.drop(columns=["original_index"], inplace=True)
                     # Or rename: df_export_prepared.rename(columns={'original_index': 'DatabaseID'}, inplace=True)
@@ -2017,6 +1996,8 @@ The CSV file should contain the following columns (header names must match exact
         )  # Holds the most recently loaded full dataset
         # This stores the DataFrame representing the original source data, primarily for context
         # when displaying ignored rows if they originated from a CSV with different headers.
+
+        self._create_status_bar()
         # If data is purely from DB, this might be similar/identical to all_transactions_df_cleaned_for_logic.
         self.original_transactions_df_for_ignored_context = pd.DataFrame()
         self.original_to_cleaned_header_map_from_csv: Dict[str, str] = (
@@ -4337,11 +4318,7 @@ The CSV file should contain the following columns (header names must match exact
 
         # Spacer & Right Aligned Controls
         controls_layout.addStretch(1)
-        self.exchange_rate_display_label = QLabel("")
-        self.exchange_rate_display_label.setObjectName("ExchangeRateLabel")
-        self.exchange_rate_display_label.setVisible(False)
         controls_layout.addWidget(self.view_ignored_button)  # ADDED to right group
-        controls_layout.addWidget(self.exchange_rate_display_label)
         self.refresh_button = QPushButton("Refresh All")
         self.refresh_button.setObjectName("RefreshButton")
         self.refresh_button.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
@@ -4950,6 +4927,11 @@ The CSV file should contain the following columns (header names must match exact
         )
         self.stock_transactions_table_view.verticalHeader().setVisible(False)
         stock_tx_layout.addWidget(self.stock_transactions_table_view)
+        # Context menu for column visibility
+        self.stock_transactions_table_view.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
+        self.stock_transactions_table_view.horizontalHeader().customContextMenuRequested.connect(
+            lambda pos: self._show_column_context_menu(self.stock_transactions_table_view, pos, "stock_tx_columns")
+        )
         splitter.addWidget(stock_tx_group)
 
         # Group for $CASH Transactions
@@ -4970,6 +4952,11 @@ The CSV file should contain the following columns (header names must match exact
         )
         self.cash_transactions_table_view.verticalHeader().setVisible(False)
         cash_tx_layout.addWidget(self.cash_transactions_table_view)
+        # Context menu for column visibility
+        self.cash_transactions_table_view.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
+        self.cash_transactions_table_view.horizontalHeader().customContextMenuRequested.connect(
+            lambda pos: self._show_column_context_menu(self.cash_transactions_table_view, pos, "cash_tx_columns")
+        )
         splitter.addWidget(cash_tx_group)
 
         # Set initial sizes for the splitter (optional)
@@ -5275,6 +5262,12 @@ The CSV file should contain the following columns (header names must match exact
         parent_layout.addWidget(self.transactions_management_table_view)
         self.transactions_management_table_view.resizeColumnsToContents()
 
+        # Context menu for column visibility
+        self.transactions_management_table_view.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
+        self.transactions_management_table_view.horizontalHeader().customContextMenuRequested.connect(
+            lambda pos: self._show_column_context_menu(self.transactions_management_table_view, pos, "transactions_management_columns")
+        )
+
         # --- Action Buttons ---
         button_layout = QHBoxLayout()
         self.add_transaction_button = QPushButton("Add Transaction")
@@ -5319,6 +5312,7 @@ The CSV file should contain the following columns (header names must match exact
         if success and df_updated is not None:
             self._current_data_df = df_updated.copy()
             self._apply_filter_to_transactions_view()  # Re-apply any active filters to the new data
+            self._apply_column_visibility(self.transactions_management_table_view, "transactions_management_columns")
             logging.debug(
                 f"PortfolioApp: Transactions table refreshed with {len(self._current_data_df)} rows."
             )
@@ -5362,6 +5356,7 @@ The CSV file should contain the following columns (header names must match exact
                 logging.warning(f"Error applying account filter: {e}")
 
         self.transactions_management_table_model.updateData(df_to_display)
+        self._apply_column_visibility(self.transactions_management_table_view, "transactions_management_columns")
         self.transactions_management_table_view.resizeColumnsToContents()
         self.transactions_management_table_view.viewport().update()  # Force viewport repaint
 
@@ -5381,7 +5376,7 @@ The CSV file should contain the following columns (header names must match exact
 
     def get_selected_db_id(self) -> Optional[int]:
         """
-        Gets the 'original_index' (which is the DB 'id') of the currently selected row
+        Gets the 'original_index' (internal DB ID) of the currently selected row
         from the transactions management table model.
         """
         selected_indexes = self.transactions_management_table_view.selectionModel().selectedRows()
@@ -5394,11 +5389,11 @@ The CSV file should contain the following columns (header names must match exact
         source_model = self.transactions_management_table_model  # This is the PandasModel instance
 
         try:
-            # 'original_index' column in the model's DataFrame (_data) holds the DB ID
-            # This column was created by load_all_transactions_from_db aliasing `id as original_index`
+            # 'original_index' column in the model's DataFrame (_data) holds the internal DB ID
+            # This column was created by load_all_transactions_from_db aliasing `id as original_index` (internal ID)
             if "original_index" not in source_model._data.columns:
                 logging.error(
-                    "'original_index' column not found in transactions management model data."
+                    "'original_index' (internal ID) column not found in transactions management model data."
                 )
                 return None
 
@@ -6390,7 +6385,10 @@ The CSV file should contain the following columns (header names must match exact
         self.progress_bar.setObjectName("StatusBarProgressBar")
         self.progress_bar.setVisible(False)  # Initially hidden
         self.status_bar.addPermanentWidget(self.progress_bar)  # RESTORED
-        # Use the exchange rate label defined in _create_controls_widget
+
+        self.exchange_rate_display_label = QLabel("")
+        self.exchange_rate_display_label.setObjectName("ExchangeRateLabel")
+        self.exchange_rate_display_label.setVisible(False)
         self.status_bar.addPermanentWidget(self.exchange_rate_display_label)  # RESTORED
 
     @Slot()
@@ -6800,7 +6798,7 @@ The CSV file should contain the following columns (header names must match exact
             hist_prices_adj (dict): Raw ADJUSTED historical prices used by worker.
             hist_fx (dict): Raw historical FX rates used by worker.
             combined_ignored_indices (set): Set of original indices ignored during load or processing.
-            combined_ignored_reasons (dict): Maps 'original_index' to a string describing the reason the row was ignored.
+            combined_ignored_reasons (dict): Maps 'original_index' (internal DB ID) to a string describing the reason the row was ignored.
             dividend_history_df (pd.DataFrame): Realized capital gains history.
             capital_gains_history_df (pd.DataFrame): Realized capital gains history.
             correlation_matrix_df (pd.DataFrame): DataFrame of correlation matrix.
@@ -6921,7 +6919,7 @@ The CSV file should contain the following columns (header names must match exact
                 f"Processing {len(combined_ignored_indices)} ignored row indices..."
             )
             try:
-                # Ensure original_index exists in the stored original data
+                # Ensure original_index (internal DB ID) exists in the stored original data
                 if "original_index" in self.original_data.columns:
                     # Filter the original DataFrame to get rows matching the ignored indices
                     # Ensure indices are integers if needed, though set should handle mixed types okay
@@ -6935,7 +6933,7 @@ The CSV file should contain the following columns (header names must match exact
 
                     if not ignored_rows_df.empty:
                         # Add the reason using the combined reasons dictionary
-                        # Make sure keys in reasons dict match the type in original_index (likely int)
+                        # Make sure keys in reasons dict match the type in original_index (internal DB ID, likely int)
                         reasons_mapped = (
                             ignored_rows_df["original_index"]
                             .map(combined_ignored_reasons)
@@ -6954,7 +6952,7 @@ The CSV file should contain the following columns (header names must match exact
                         )
                 else:
                     logging.warning(
-                        "Cannot build ignored_data: 'original_index' missing from stored original data."
+                        "Cannot build ignored_data: 'original_index' (internal DB ID) missing from stored original data."
                     )
 
             except Exception as e_ignored:
@@ -7489,25 +7487,7 @@ The CSV file should contain the following columns (header names must match exact
 
         logging.debug("Exiting handle_results.")
 
-    def _create_status_bar(self):
-        """Creates and configures the application's status bar."""
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
-        self.status_label = QLabel("Ready")
-        self.status_label.setObjectName("StatusLabel")
-        self.status_bar.addWidget(self.status_label, 1)
-        self.yahoo_attribution_label = QLabel(  # RESTORED
-            "Financial data provided by Yahoo Finance"
-        )
-        self.yahoo_attribution_label.setObjectName("YahooAttributionLabel")
-        self.status_bar.addPermanentWidget(self.yahoo_attribution_label)  # RESTORED
-        # --- ADD Progress Bar ---
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setObjectName("StatusBarProgressBar")
-        self.progress_bar.setVisible(False)  # Initially hidden
-        self.status_bar.addPermanentWidget(self.progress_bar)  # RESTORED
-        # Use the exchange rate label defined in _create_controls_widget
-        self.status_bar.addPermanentWidget(self.exchange_rate_display_label)  # RESTORED
+    
 
     @Slot(
         str, str
@@ -9777,11 +9757,11 @@ The CSV file should contain the following columns (header names must match exact
         self, original_index_to_edit: int, new_data_dict: Dict[str, str]
     ) -> bool:
         """
-        Finds a transaction by its 'original_index', updates it with new_data_dict,
+        Finds a transaction by its 'original_index' (internal DB ID), updates it with new_data_dict,
         and rewrites the entire CSV file.
         Triggers a data refresh via ManageTransactionsDialog's data_changed signal if successful.
         """
-        """Finds a transaction by original_index, updates it, and rewrites the CSV."""
+        """Finds a transaction by original_index (internal DB ID), updates it, and rewrites the CSV."""
         if not hasattr(self, "original_data") or self.original_data.empty:
             QMessageBox.critical(
                 self,
@@ -9791,12 +9771,12 @@ The CSV file should contain the following columns (header names must match exact
             return False
 
         logging.info(
-            f"Attempting to edit transaction with original_index: {original_index_to_edit}"
+            f"Attempting to edit transaction with original_index (internal DB ID): {original_index_to_edit}"
         )
         # Work on a copy
         df_modified = self.original_data.copy()
 
-        # Find the row index in the DataFrame corresponding to the original_index
+        # Find the row index in the DataFrame corresponding to the original_index (internal DB ID)
         row_mask = df_modified["original_index"] == original_index_to_edit
         if not row_mask.any():
             QMessageBox.critical(
@@ -9880,7 +9860,7 @@ The CSV file should contain the following columns (header names must match exact
                     )
 
         # Rewrite the entire CSV
-        # The _rewrite_csv method should handle dropping 'original_index' if it's still there
+        # L9896: # The _rewrite_csv method should handle dropping 'original_index' (internal DB ID) if it's still there
         rewrite_successful = self._rewrite_csv(df_modified)
 
         if rewrite_successful:
@@ -9934,7 +9914,7 @@ The CSV file should contain the following columns (header names must match exact
     def _delete_transactions_from_csv(
         self, original_indices_to_delete: List[int]
     ) -> bool:
-        """Removes transactions by original_index and rewrites the CSV."""
+        """Removes transactions by original_index (internal DB ID) and rewrites the CSV."""
         if not hasattr(self, "original_data") or self.original_data.empty:
             QMessageBox.critical(
                 self,
@@ -10521,14 +10501,12 @@ The CSV file should contain the following columns (header names must match exact
                 "NaT", "-", regex=False
             )  # Handle potential NaT
 
-        # Drop the 'original_index' column before displaying in logs
-        if "original_index" in stock_tx_df.columns:
-            stock_tx_df.drop(columns=["original_index"], inplace=True)
-        if "original_index" in cash_tx_df.columns:
-            cash_tx_df.drop(columns=["original_index"], inplace=True)
+        
 
         self.stock_transactions_table_model.updateData(stock_tx_df)
+        self._apply_column_visibility(self.stock_transactions_table_view, "stock_tx_columns")
         self.cash_transactions_table_model.updateData(cash_tx_df)
+        self._apply_column_visibility(self.cash_transactions_table_view, "cash_tx_columns")
 
         # --- ADDED: Apply default sort by Date (Descending) ---
         # So, we find the index of `date_col_name_to_use_for_sort` in the respective DataFrames.
@@ -12448,6 +12426,7 @@ The CSV file should contain the following columns (header names must match exact
         self, table_model: PandasModel, interval_key: str, num_periods: int
     ):
         """Helper to update a single table in the Asset Change tab."""
+        original_index_name = None # Initialize to None
         percent_returns_df_full = self.periodic_returns_data.get(interval_key)
         value_changes_df_full = self.periodic_value_changes_data.get(interval_key)
 
@@ -12484,13 +12463,13 @@ The CSV file should contain the following columns (header names must match exact
             return
 
         # Step 1: Reset index to move DatetimeIndex to a column
-        original_index_name = (
+        L12498: original_index_name = ( # The name of the column that holds the original index/DB ID
             df_for_table.index.name
         )  # Store original index name, could be None
         df_for_table.reset_index(inplace=True)
 
         # Identify the column that came from the index
-        # If original_index_name was None, reset_index creates 'index'. Otherwise, it uses original_index_name.
+        # If original_index_name was None, reset_index creates 'index'. Otherwise, it uses original_index_name (which is the internal DB ID).
         date_column_name_after_reset = (
             original_index_name if original_index_name is not None else "index"
         )
@@ -12503,14 +12482,14 @@ The CSV file should contain the following columns (header names must match exact
                 date_column_name_after_reset = "Date"
             elif (
                 "index" in df_for_table.columns
-            ):  # If original_index_name was something else but 'index' was created
+            ):  # If original_index_name was something else but 'index' was created (and is the internal DB ID)
                 date_column_name_after_reset = "index"
             else:
                 if not df_for_table.empty:
                     date_column_name_after_reset = df_for_table.columns[0]
                     logging.warning(
                         f"PVC Table ({interval_key}): Could not reliably identify the date column after reset_index. "
-                        f"Original index name was '{original_index_name}'. Assuming first column '{date_column_name_after_reset}' is the date column."
+                        f"Original index name was '{original_index_name}'. Assuming first column '{date_column_name_after_reset}' is the date column (and original_index is handled by PandasModel)."
                     )
                 else:
                     logging.error(
@@ -13822,101 +13801,7 @@ The CSV file should contain the following columns (header names must match exact
     # main_window.show() # This should be in __main__
     # sys.exit(app.exec()) # This should be in __main__
 
-    @Slot()
-    def run_standardize_external_csv_headers(self):
-        """
-        Prompts the user to select an external CSV file, standardizes its headers
-        using csv_utils, and saves it to a new file chosen by the user.
-        This does not interact with the current database or loaded data.
-        """
-        if not CSV_UTILS_AVAILABLE:
-            QMessageBox.critical(
-                self,
-                "Utility Not Available",
-                "The CSV header standardization utility is not available.",
-            )
-            return
-
-        # Select the input CSV file to standardize
-        start_dir_input = self.config.get(
-            "last_csv_import_path", ""
-        )  # Use import path as a sensible default
-        if not start_dir_input or not os.path.isdir(start_dir_input):
-            start_dir_input = (
-                QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
-                or os.getcwd()
-            )
-
-        csv_to_standardize, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select CSV File to Standardize Headers",
-            start_dir_input,
-            "CSV Files (*.csv);;All Files (*)",
-        )
-
-        if not csv_to_standardize:
-            logging.info("Standardize external CSV headers: No input file selected.")
-            return
-
-        # Suggest an output filename
-        input_dir = os.path.dirname(csv_to_standardize)
-        input_basename = os.path.basename(csv_to_standardize)
-        name_part, ext_part = os.path.splitext(input_basename)
-        output_fname_default = f"{name_part}_standardized{ext_part}"
-
-        output_csv_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save Standardized CSV As",
-            os.path.join(input_dir, output_fname_default),
-            "CSV Files (*.csv);;All Files (*)",
-        )
-
-        if not output_csv_path:
-            logging.info(
-                "Standardize external CSV headers: No output file selected for saving."
-            )
-            return
-
-        # Ensure output has .csv extension
-        if not output_csv_path.lower().endswith(".csv"):
-            output_csv_path += ".csv"
-
-        logging.info(
-            f"Attempting to standardize headers for '{csv_to_standardize}' and save to '{output_csv_path}'"
-        )
-        self.status_label.setText(
-            f"Standardizing headers for {os.path.basename(csv_to_standardize)}..."
-        )
-        self.set_controls_enabled(False)  # Disable UI during processing
-        QApplication.processEvents()
-
-        convert_success, convert_msg = convert_csv_headers_to_cleaned_format(
-            csv_to_standardize,
-            output_csv_path,
-        )
-
-        self.set_controls_enabled(True)  # Re-enable UI
-
-        if convert_success:
-            QMessageBox.information(
-                self,
-                "Standardization Successful",
-                f"Headers standardized successfully.\n\nInput: {os.path.basename(csv_to_standardize)}\nOutput: {os.path.basename(output_csv_path)}\n\n{convert_msg}",
-            )
-            logging.info(f"External CSV headers standardized: '{output_csv_path}'.")
-            self.status_label.setText(
-                f"Standardized {os.path.basename(output_csv_path)}"
-            )
-        else:
-            QMessageBox.critical(
-                self,
-                "Standardization Failed",
-                f"Could not standardize CSV headers for '{os.path.basename(csv_to_standardize)}':\n{convert_msg}",
-            )
-            logging.error(f"Failed to standardize external CSV headers: {convert_msg}")
-            self.status_label.setText("External CSV header standardization failed.")
-
-    # --- END ADDED ---
+    
 
     # --- Slots for Fundamental Data Lookup ---
     @Slot()
@@ -13943,19 +13828,65 @@ The CSV file should contain the following columns (header names must match exact
         logging.info(
             f"Direct fundamental lookup requested for: {input_symbol} (YF: {yf_symbol})"
         )
-        self.status_label.setText(f"Fetching fundamentals for {input_symbol}...")
-        self.lookup_symbol_edit.setEnabled(False)
-        self.lookup_button.setEnabled(False)
-        # Optionally disable other controls if desired, e.g., self.set_controls_enabled(False)
-        # but the specific lookup controls are most important here. # type: ignore
 
-        worker = FundamentalDataWorker(
-            yf_symbol,
-            input_symbol,
-            self.worker_signals,
-            FINANCIAL_RATIOS_AVAILABLE,  # Pass the module-level flag
-        )
-        self.threadpool.start(worker)
+    @Slot()
+    def _show_column_context_menu(self, table_view: QTableView, pos: QPoint, config_key: str):
+        """
+        Displays a context menu for table headers to toggle column visibility.
+        The visibility state is stored in self.config under the given config_key.
+        """
+        menu = QMenu(self)
+        header = table_view.horizontalHeader()
+        model = table_view.model()
+
+        # Ensure the config structure exists for this table
+        if config_key not in self.config:
+            self.config[config_key] = {}
+
+        for i in range(model.columnCount()):
+            column_name = model.headerData(i, Qt.Horizontal)
+            action = menu.addAction(column_name)
+            action.setCheckable(True)
+            # Get initial state from config, fallback to current view state
+            initial_checked_state = self.config[config_key].get(column_name, not table_view.isColumnHidden(i))
+            action.setChecked(initial_checked_state)
+
+            # Connect action to a lambda that toggles visibility and saves config
+            action.triggered.connect(
+                lambda checked, col_idx=i, col_name=column_name, tv=table_view, ck=config_key:
+                    self._toggle_column_visibility(tv, col_idx, col_name, checked, ck)
+            )
+        menu.exec(header.mapToGlobal(pos))
+
+    @Slot()
+    def _toggle_column_visibility(self, table_view: QTableView, column_index: int, column_name: str, visible: bool, config_key: str):
+        """
+        Toggles the visibility of a column and saves the state to config.
+        """
+        table_view.setColumnHidden(column_index, not visible)
+        self.config[config_key][column_name] = visible
+        self.save_config() # Save config immediately after change
+        logging.debug(f"Column '{column_name}' visibility set to {visible} for {config_key}.")
+
+    def _apply_column_visibility(self, table_view: QTableView, config_key: str):
+        """
+        Applies saved column visibility settings from config to the given table view.
+        """
+        if config_key not in self.config:
+            # If no config for this table, all columns are visible by default
+            return
+
+        column_visibility_settings = self.config[config_key]
+        logging.debug(f"Applying column visibility for {config_key}. Settings: {column_visibility_settings}")
+        model = table_view.model()
+
+        for i in range(model.columnCount()):
+            column_name = model.headerData(i, Qt.Horizontal)
+            # Default to visible if not found in settings
+            is_visible = column_visibility_settings.get(column_name, True)
+            table_view.setColumnHidden(i, not is_visible)
+            logging.debug(f"  Column '{column_name}' (index {i}): is_visible={is_visible}, set hidden={not is_visible}")
+        logging.debug(f"Finished applying column visibility for {config_key}.")
 
     @Slot(str, dict)
     def _show_fundamental_data_dialog_from_worker(
