@@ -6039,11 +6039,11 @@ The CSV file should contain the following columns (header names must match exact
 
     @Slot()
     def _clear_target_allocation_table(self):
-        """Clears the contents of the target allocation table and repopulates with current holdings (zero target)."""
+        """Clears the contents of the target allocation table."""
         logging.info("Clearing target allocation table.")
         self.target_allocation_table.clearContents()
         self.target_allocation_table.setRowCount(0)
-        self._populate_target_allocation_table() # Repopulate with current holdings, which will have 0% target initially
+        # Removed call to _populate_target_allocation_table()
 
     def _init_rebalancing_tab_widgets(self):
         """Initializes widgets for the Rebalancing tab."""
@@ -6128,6 +6128,7 @@ The CSV file should contain the following columns (header names must match exact
         controls_layout.addWidget(self.remove_symbol_button)
         self.clear_targets_button = QPushButton("Clear")
         controls_layout.addWidget(self.clear_targets_button)
+        self.clear_targets_button.clicked.connect(self._clear_target_allocation_table)
         controls_layout.addSpacerItem(QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum))
         controls_layout.addWidget(self.cash_to_add_line_edit)
         controls_layout.addWidget(self.calculate_rebalance_button)
