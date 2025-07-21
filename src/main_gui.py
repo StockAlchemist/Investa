@@ -6045,7 +6045,9 @@ The CSV file should contain the following columns (header names must match exact
             elif key == "Estimated Number of Trades":
                 self.estimated_trades_label.setText(str(value))
 
-    def _update_target_total_label(self, changed_row: int = -1, changed_column: int = -1):
+    def _update_target_total_label(
+        self, changed_row: int = -1, changed_column: int = -1
+    ):
         # Block signals to prevent infinite loop during internal updates
         self.target_allocation_table.blockSignals(True)
 
@@ -6063,7 +6065,7 @@ The CSV file should contain the following columns (header names must match exact
 
         total_pct_sum = 0.0
         cash_row_index = -1
-        
+
         # First pass: Collect all target percentages and find cash row
         # This loop will also update the target value and drift for the *changed* row if applicable
         # and for all other rows based on their existing target percentage.
@@ -6077,17 +6079,23 @@ The CSV file should contain the following columns (header names must match exact
                     continue
 
                 try:
-                    target_pct_str = self.target_allocation_table.item(i, 4).text().replace("%", "")
+                    target_pct_str = (
+                        self.target_allocation_table.item(i, 4).text().replace("%", "")
+                    )
                     target_pct = float(target_pct_str)
                     total_pct_sum += target_pct
 
                     # Recalculate Target Value for this row based on its Target %
-                    new_target_value = total_portfolio_value_after_new_cash * (target_pct / 100.0)
+                    new_target_value = total_portfolio_value_after_new_cash * (
+                        target_pct / 100.0
+                    )
                     self.target_allocation_table.setItem(
                         i,
                         5,
                         QTableWidgetItem(
-                            format_currency_value(new_target_value, self._get_currency_symbol())
+                            format_currency_value(
+                                new_target_value, self._get_currency_symbol()
+                            )
                         ),
                     )
 
@@ -6097,7 +6105,9 @@ The CSV file should contain the following columns (header names must match exact
                     current_pct = float(current_pct_str)
                     drift_pct = current_pct - target_pct
                     drift_item = self.target_allocation_table.item(i, 6)
-                    drift_item.setText(format_percentage_value(drift_pct, show_plus_sign=True))
+                    drift_item.setText(
+                        format_percentage_value(drift_pct, show_plus_sign=True)
+                    )
                     if drift_pct > 0.01:
                         drift_item.setForeground(self.QCOLOR_GAIN_THEMED)
                     elif drift_pct < -0.01:
@@ -6151,10 +6161,9 @@ The CSV file should contain the following columns (header names must match exact
                 cash_drift_item.setForeground(self.QCOLOR_LOSS_THEMED)
             else:
                 cash_drift_item.setForeground(self.QCOLOR_TEXT_PRIMARY_THEMED)
-            
+
             # Add cash percentage to total_pct_sum for final label update
             total_pct_sum += remaining_for_cash
-
 
         # Update the total percentage label
         self.target_percent_total_label.setText(f"{total_pct_sum:.2f}%")
@@ -6301,6 +6310,11 @@ The CSV file should contain the following columns (header names must match exact
         self.add_symbol_button = QPushButton("Add")
         self.remove_symbol_button = QPushButton("Remove")
         self.cash_to_add_line_edit = QLineEdit()
+        # Allow positive and negative numbers for cash injection/withdrawal
+        cash_validator = QDoubleValidator(-1e12, 1e12, 2, self)
+        cash_validator.setNotation(QDoubleValidator.StandardNotation)
+        self.cash_to_add_line_edit.setValidator(cash_validator)
+
         self.cash_to_add_line_edit.setPlaceholderText("Cash to Add/Withdraw (-)")
         self.calculate_rebalance_button = QPushButton("Calculate Rebalance")
         self.calculate_rebalance_button.setObjectName("CalculateRebalanceButton")
@@ -7972,6 +7986,9 @@ The CSV file should contain the following columns (header names must match exact
         )
         self.target_allocation_table.cellChanged.connect(
             self._update_target_total_label
+        )
+        self.cash_to_add_line_edit.textChanged.connect(
+            lambda: self._update_target_total_label()
         )
 
     def _update_table_display(self):
