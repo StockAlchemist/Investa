@@ -679,6 +679,7 @@ class PortfolioApp(QMainWindow):
             "transactions_management_columns": {},  # For column visibility in the main transactions table
             "stock_tx_columns": {},  # For column visibility in the stock transactions table
             "cash_tx_columns": {},  # For column visibility in the cash transactions table
+            "rebalancing_targets": {},  # For remembering target percentages
         }
         loaded_app_config = config_defaults.copy()  # Start with defaults
 
@@ -899,6 +900,14 @@ class PortfolioApp(QMainWindow):
 
         if loaded_app_config.get("cg_agg_period") not in ["Annual", "Quarterly"]:
             loaded_app_config["cg_agg_period"] = config_defaults["cg_agg_period"]
+
+        # Validate rebalancing targets
+        if "rebalancing_targets" in loaded_app_config:
+            if not isinstance(loaded_app_config["rebalancing_targets"], dict):
+                logging.warning("Invalid 'rebalancing_targets' in config. Resetting.")
+                loaded_app_config["rebalancing_targets"] = {}
+        else:
+            loaded_app_config["rebalancing_targets"] = {}
 
         if loaded_app_config.get("dividend_agg_period") not in [
             "Annual",
@@ -4036,6 +4045,29 @@ The CSV file should contain the following columns (header names must match exact
             self.config["dividend_periods_to_show"] = (
                 self.dividend_periods_spinbox.value()
             )
+
+        # Save rebalancing targets from the table
+        if hasattr(self, "target_allocation_table"):
+            rebalancing_targets = {}
+            for i in range(self.target_allocation_table.rowCount()):
+                symbol_item = self.target_allocation_table.item(i, 0)
+                target_pct_item = self.target_allocation_table.item(i, 4)
+                if symbol_item and target_pct_item:
+                    symbol = symbol_item.text()
+                    try:
+                        target_pct = float(target_pct_item.text().replace("%", ""))
+                        rebalancing_targets[symbol] = target_pct
+                    except (ValueError, AttributeError):
+                        logging.warning(
+                            f"Could not parse target % for '{symbol}' while saving config."
+                        )
+            self.config["rebalancing_targets"] = rebalancing_targets
+
+        # Save PVC tab spinbox values
+        if hasattr(self, "pvc_annual_graph_spinbox"):
+            self.config["pvc_annual_periods"] = self.pvc_annual_graph_spinbox.value()
+        if hasattr(self, "pvc_monthly_graph_spinbox"):
+            self.config["pvc_monthly_periods"] = self.pvc_monthly_graph_spinbox.value()
         if hasattr(self, "pvc_annual_graph_spinbox"):
             self.config["pvc_annual_periods"] = self.pvc_annual_graph_spinbox.value()
         if hasattr(self, "pvc_monthly_graph_spinbox"):
@@ -5874,6 +5906,8 @@ The CSV file should contain the following columns (header names must match exact
         if not total_portfolio_value or total_portfolio_value == 0:
             total_portfolio_value = self.holdings_data[mkt_val_col].sum()
 
+        saved_targets = self.config.get("rebalancing_targets", {})
+
         # Prepare data for the table, including CASH
         table_data = []
         cash_row = None
@@ -5894,6 +5928,7 @@ The CSV file should contain the following columns (header names must match exact
                     "Current Value": current_value,
                     "Current %": current_pct,
                     "Target %": current_pct,  # Initial target is current
+                    "Target %": saved_targets.get(symbol, current_pct),
                     "Target Value": current_value,
                     "Drift %": 0.0,
                 }
@@ -5907,6 +5942,7 @@ The CSV file should contain the following columns (header names must match exact
                         "Current Value": current_value,
                         "Current %": current_pct,
                         "Target %": current_pct,  # Initial target is current
+                        "Target %": saved_targets.get(symbol, current_pct),
                         "Target Value": current_value,
                         "Drift %": 0.0,
                     }
