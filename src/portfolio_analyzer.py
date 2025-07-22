@@ -2578,8 +2578,8 @@ def calculate_rebalancing_trades(holdings_df: pd.DataFrame, target_alloc_pct: di
                     "Account": account,
                     "Quantity": quantity,
                     "Current Price": price,
-                    "Estimated Trade Value": trade_value,
-                    "Note": "Rebalance to target"
+                    "Trade Value": trade_value,
+                    "Note": f"Rebalance to {target_pct:.2f}%"
                 })
 
                 if action == "BUY":

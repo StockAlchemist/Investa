@@ -6029,21 +6029,28 @@ The CSV file should contain the following columns (header names must match exact
             account = row["Account"]
             quantity = row["Quantity"]
             price = row["Current Price"]
-            trade_value = row["Estimated Trade Value"]
+            trade_value = row["Trade Value"]
             note = row["Note"]
 
             action_item = QTableWidgetItem(action)
+            quantity_item = QTableWidgetItem(format_float_with_commas(quantity, 4))
+            trade_value_item = QTableWidgetItem(
+                format_currency_value(trade_value, self._get_currency_symbol())
+            )
+
             if action == "SELL":
                 action_item.setForeground(self.QCOLOR_LOSS_THEMED)
+                quantity_item.setForeground(self.QCOLOR_LOSS_THEMED)
+                trade_value_item.setForeground(self.QCOLOR_LOSS_THEMED)
             elif action == "BUY":
                 action_item.setForeground(self.QCOLOR_GAIN_THEMED)
+                quantity_item.setForeground(self.QCOLOR_GAIN_THEMED)
+                trade_value_item.setForeground(self.QCOLOR_GAIN_THEMED)
 
             self.suggested_trades_table.setItem(i, 0, action_item)
             self.suggested_trades_table.setItem(i, 1, QTableWidgetItem(symbol))
             self.suggested_trades_table.setItem(i, 2, QTableWidgetItem(account))
-            self.suggested_trades_table.setItem(
-                i, 3, QTableWidgetItem(format_float_with_commas(quantity, 4))
-            )
+            self.suggested_trades_table.setItem(i, 3, quantity_item)
             self.suggested_trades_table.setItem(
                 i,
                 4,
@@ -6051,13 +6058,7 @@ The CSV file should contain the following columns (header names must match exact
                     format_currency_value(price, self._get_currency_symbol())
                 ),
             )
-            self.suggested_trades_table.setItem(
-                i,
-                5,
-                QTableWidgetItem(
-                    format_currency_value(trade_value, self._get_currency_symbol())
-                ),
-            )
+            self.suggested_trades_table.setItem(i, 5, trade_value_item)
             self.suggested_trades_table.setItem(i, 6, QTableWidgetItem(note))
 
         currency_symbol = self._get_currency_symbol()
@@ -6386,6 +6387,7 @@ The CSV file should contain the following columns (header names must match exact
                 "Drift %",
             ]
         )
+        self.target_allocation_table.verticalHeader().setVisible(False)
         target_layout.addWidget(self.target_allocation_table)
 
         target_summary_layout = QHBoxLayout()
@@ -6409,10 +6411,11 @@ The CSV file should contain the following columns (header names must match exact
                 "Account",
                 "Quantity",
                 "Current Price",
-                "Estimated Trade Value",
+                "Trade Value",
                 "Note",
             ]
         )
+        self.suggested_trades_table.verticalHeader().setVisible(False)
         trades_layout.addWidget(self.suggested_trades_table)
 
         # Defer setting the splitter sizes until the UI is shown to get accurate widths
