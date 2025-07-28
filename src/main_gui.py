@@ -672,6 +672,10 @@ class PortfolioApp(QMainWindow):
                 QStandardPaths.DocumentsLocation
             )
             or os.getcwd(),  # For export dialog
+            "last_graph_export_path": QStandardPaths.writableLocation(
+                QStandardPaths.DocumentsLocation
+            )
+            or os.getcwd(),  # For graph export dialog
             "user_currencies": COMMON_CURRENCIES.copy(),  # Default list of user-selectable currencies
             "cg_agg_period": "Annual",  # Default for Capital Gains aggregation
             "cg_periods_to_show": 10,  # Default periods for Capital Gains chart
@@ -4460,6 +4464,11 @@ The CSV file should contain the following columns (header names must match exact
         perf_graphs_main_layout.addWidget(
             self.perf_return_canvas, 1
         )  # Add canvas directly
+        # Enable context menu for the return graph
+        self.perf_return_canvas.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.perf_return_canvas.customContextMenuRequested.connect(
+            lambda pos: self._show_graph_context_menu(pos, "return")
+        )
 
         # -- Absolute Value Graph (Right Column) --
         self.abs_value_fig = Figure(figsize=PERF_CHART_FIG_SIZE, dpi=CHART_DPI)
@@ -4472,6 +4481,11 @@ The CSV file should contain the following columns (header names must match exact
         perf_graphs_main_layout.addWidget(
             self.abs_value_canvas, 1
         )  # Add canvas directly
+        # Enable context menu for the value graph
+        self.abs_value_canvas.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.abs_value_canvas.customContextMenuRequested.connect(
+            lambda pos: self._show_graph_context_menu(pos, "value")
+        )
 
         # Add the main performance graphs container to the summary/graphs frame
         summary_graphs_layout.addWidget(perf_graphs_container_widget, 20)
@@ -7899,6 +7913,107 @@ The CSV file should contain the following columns (header names must match exact
         # --- END ADD ---
 
         menu.exec(global_pos)
+
+    @Slot(QPoint)
+    def _show_graph_context_menu(self, pos: QPoint, figure_type: str):
+        """Shows a context menu for the graph right-clicked."""
+        menu = QMenu(self)
+        menu.setStyleSheet(self.styleSheet())
+
+        # Determine which figure was clicked based on figure_type
+        fig = None
+        if figure_type == "return":
+            fig = self.perf_return_fig
+        elif figure_type == "value":
+            fig = self.abs_value_fig
+
+        if fig is None:
+            logging.warning(f"Context menu requested for unknown figure type: {figure_type}")
+            return
+
+        # Add save actions
+        save_png_action = QAction("Save Graph as PNG...", self)
+        save_png_action.triggered.connect(lambda: self._save_graph_as_image(fig, "png"))
+        menu.addAction(save_png_action)
+
+        save_jpg_action = QAction("Save Graph as JPG...", self)
+        save_jpg_action.triggered.connect(lambda: self._save_graph_as_image(fig, "jpg"))
+        menu.addAction(save_jpg_action)
+
+        save_svg_action = QAction("Save Graph as SVG...", self)
+        save_svg_action.triggered.connect(lambda: self._save_graph_as_image(fig, "svg"))
+        menu.addAction(save_svg_action)
+
+        save_pdf_action = QAction("Save Graph as PDF...", self)
+        save_pdf_action.triggered.connect(lambda: self._save_graph_as_image(fig, "pdf"))
+        menu.addAction(save_pdf_action)
+
+        # Map the click position within the canvas to global screen coordinates
+        # Need to get the canvas that was clicked to map its local position to global
+        canvas = None
+        if figure_type == "return":
+            canvas = self.perf_return_canvas
+        elif figure_type == "value":
+            canvas = self.abs_value_canvas
+
+        if canvas:
+            global_pos = canvas.mapToGlobal(pos)
+            menu.exec(global_pos)
+        else:
+            logging.error(f"Could not find canvas for figure type: {figure_type}")
+
+    def _save_graph_as_image(self, fig: Figure, file_format: str):
+        """Saves the given matplotlib figure to a file in the specified format."""
+        if fig is None:
+            logging.error("Attempted to save a None figure.")
+            QMessageBox.warning(self, "Save Error", "No graph to save.")
+            return
+
+        # Determine default filename based on figure title or a generic name
+        default_filename = "graph"
+        if fig.axes and fig.axes[0].get_title():
+            default_filename = fig.axes[0].get_title().replace(" ", "_").replace(":", "")
+        
+        # Sanitize filename for file system
+        default_filename = re.sub(r'[<>:"/\\|?*]', '', default_filename)
+        if not default_filename:
+            default_filename = "graph"
+
+        # Suggest starting directory based on last export or Documents
+        start_dir = self.config.get("last_graph_export_path", "")
+        if not start_dir or not os.path.isdir(start_dir):
+            start_dir = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation) or os.getcwd()
+
+        file_dialog_filter = f"{file_format.upper()} Files (*.{file_format});;All Files (*)"
+        fname, _ = QFileDialog.getSaveFileName(
+            self,
+            f"Save Graph as {file_format.upper()}",
+            os.path.join(start_dir, f"{default_filename}.{file_format}"),
+            file_dialog_filter,
+        )
+
+        if fname:
+            # Ensure correct extension
+            if not fname.lower().endswith(f".{file_format}"):
+                fname += f".{file_format}"
+
+            # Save the directory for next time
+            self.config["last_graph_export_path"] = os.path.dirname(fname)
+            self.save_config()
+
+            try:
+                fig.savefig(fname, bbox_inches='tight', dpi=300) # High DPI for quality
+                QMessageBox.information(
+                    self, "Save Successful", f"Graph saved successfully to:\n{fname}"
+                )
+                logging.info(f"Graph saved to: {fname}")
+            except Exception as e:
+                logging.error(f"Error saving graph to {fname}: {e}", exc_info=True)
+                QMessageBox.critical(
+                    self, "Save Error", f"Failed to save graph:\n{e}"
+                )
+        else:
+            logging.info("Graph save cancelled by user.")
 
     def _connect_signals(self):
         """Connects signals from UI widgets (buttons, combos, etc.) to their slots."""
