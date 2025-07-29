@@ -7800,18 +7800,18 @@ The CSV file should contain the following columns (header names must match exact
         #         "Hiding bar charts frame as no periodic data is available."
         #     )
 
-        # except Exception as ui_update_e:
-        #     logging.error(
-        #         f"--- CRITICAL ERROR during UI update in handle_results: {ui_update_e} ---"
-        #     )
-        #     traceback.print_exc()
-        #     QMessageBox.critical(
-        #         self,
-        #         "UI Update Error",
-        #         f"Failed to update display after calculation:\n{ui_update_e}",
-        #     )
-
-        logging.debug("Exiting handle_results.")
+        except Exception as ui_update_e:
+            logging.error(
+                f"--- CRITICAL ERROR during UI update in handle_results: {ui_update_e} ---"
+            )
+            traceback.print_exc()
+            QMessageBox.critical(
+                self,
+                "UI Update Error",
+                f"Failed to update display after calculation:\n{ui_update_e}",
+            )
+        finally:
+            logging.debug("Exiting handle_results.")
 
     @Slot(
         str, str
