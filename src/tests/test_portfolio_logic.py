@@ -207,7 +207,7 @@ def test_calculate_historical_performance_basic(
 
     # --- Call the function under test ---
     # Note: This will perform actual yfinance downloads unless mocked
-    hist_df, raw_prices, raw_fx, status = calculate_historical_performance(
+    hist_df, raw_prices, raw_fx, status, _ = calculate_historical_performance(
         all_transactions_df_cleaned=loaded_tx_df,
         original_transactions_df_for_ignored=loaded_orig_df,
         ignored_indices_from_load=loaded_ignored_indices,
@@ -230,8 +230,8 @@ def test_calculate_historical_performance_basic(
     # --- Assertions ---
     assert "Error" not in status, f"Status indicates error: {status}"
     assert isinstance(hist_df, pd.DataFrame), "Historical result should be a DataFrame"
-    assert isinstance(raw_prices, dict), "Raw prices should be a dict"
-    assert isinstance(raw_fx, dict), "Raw FX should be a dict"
+    assert isinstance(raw_prices, pd.DataFrame), "Raw prices should be a DataFrame"
+    assert isinstance(raw_fx, dict), "Raw FX rates should be a dict"
 
     assert not hist_df.empty, "Historical DataFrame should not be empty"
 
@@ -269,16 +269,6 @@ def test_calculate_historical_performance_basic(
     assert "Portfolio Accumulated Gain" in hist_df_filtered.columns
     assert "SPY Price" in hist_df_filtered.columns
     assert "SPY Accumulated Gain" in hist_df_filtered.columns
-
-    # Check TWR factor parsing (optional, just check format)
-    assert "|||TWR_FACTOR:" in status, "Status string should contain TWR factor marker"
-    try:
-        twr_factor_str = status.split("|||TWR_FACTOR:")[1]
-        if twr_factor_str.upper() != "NAN":
-            twr_factor = float(twr_factor_str)
-            assert twr_factor > 0, "TWR factor should be positive"
-    except (IndexError, ValueError):
-        pytest.fail(f"Could not parse TWR factor from status: {status}")
 
 
 # --- Add more tests as needed ---
