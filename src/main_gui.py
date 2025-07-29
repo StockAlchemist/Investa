@@ -7795,21 +7795,21 @@ The CSV file should contain the following columns (header names must match exact
         self._populate_ratio_selectors()
         self._update_holdings_analysis_tab()
 
-            else:
-                logging.info(
-                    "Hiding bar charts frame as no periodic data is available."
-                )
+        # else:
+        #     logging.info(
+        #         "Hiding bar charts frame as no periodic data is available."
+        #     )
 
-        except Exception as ui_update_e:
-            logging.error(
-                f"--- CRITICAL ERROR during UI update in handle_results: {ui_update_e} ---"
-            )
-            traceback.print_exc()
-            QMessageBox.critical(
-                self,
-                "UI Update Error",
-                f"Failed to update display after calculation:\n{ui_update_e}",
-            )
+        # except Exception as ui_update_e:
+        #     logging.error(
+        #         f"--- CRITICAL ERROR during UI update in handle_results: {ui_update_e} ---"
+        #     )
+        #     traceback.print_exc()
+        #     QMessageBox.critical(
+        #         self,
+        #         "UI Update Error",
+        #         f"Failed to update display after calculation:\n{ui_update_e}",
+        #     )
 
         logging.debug("Exiting handle_results.")
 
