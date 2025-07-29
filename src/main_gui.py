@@ -7792,11 +7792,13 @@ The CSV file should contain the following columns (header names must match exact
                 self._update_capital_gains_display()  # Update Capital Gains tab
 
                 self._update_periodic_value_change_display()  # Update new tab
-        try:
-            self._populate_ratio_selectors()
-            self._update_holdings_analysis_tab()
-        except Exception as e:
-            logging.error(f"Error updating holdings analysis tab: {e}")
+            try:
+                self._populate_ratio_selectors()
+                self._update_holdings_analysis_tab()
+            except Exception as e:
+                logging.error(f"Error updating holdings analysis tab: {e}")
+        finally:
+            pass
 
         # else:
         #     logging.info(
