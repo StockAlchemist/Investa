@@ -1968,6 +1968,7 @@ The CSV file should contain the following columns (header names must match exact
         self.dividend_history_data = pd.DataFrame()
         self.historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}
         self.historical_fx_yf: Dict[str, pd.DataFrame] = {}
+        self.historical_contributions_df = pd.DataFrame()
 
         # Advanced Analysis Tab Attributes
         self.correlation_fig = None
@@ -1986,6 +1987,7 @@ The CSV file should contain the following columns (header names must match exact
         self.scenario_analysis_result = {}
         self.available_accounts: List[str] = []
         self.selected_accounts: List[str] = self.config.get("selected_accounts", [])
+        self.historical_ratios_data = {}
         self.selected_benchmarks = self.config.get(
             "graph_benchmarks", DEFAULT_GRAPH_BENCHMARKS
         )
@@ -4187,6 +4189,9 @@ The CSV file should contain the following columns (header names must match exact
         self.advanced_analysis_tab.setObjectName("advanced_analysis_tab")
         self._init_advanced_analysis_tab()
 
+        self.holdings_analysis_tab = QWidget()
+        self.holdings_analysis_tab.setObjectName("holdings_analysis_tab")
+
         # Tab 4 for Dividend History will be initialized in _init_ui_widgets
         # The "Holdings Overview" tab is now removed.
         logging.debug("--- _init_ui_structure: END ---")
@@ -5118,6 +5123,43 @@ The CSV file should contain the following columns (header names must match exact
         )
         # --- End Asset Allocation Tab ---
 
+        # --- Tab: Holdings Analysis ---
+        holdings_analysis_layout = QVBoxLayout(self.holdings_analysis_tab)
+        holdings_analysis_splitter = QSplitter(Qt.Vertical)
+        holdings_analysis_layout.addWidget(holdings_analysis_splitter)
+
+        # Top pane for contributions graph
+        contributions_group = QGroupBox("Historical Portfolio Contributions")
+        contributions_layout = QVBoxLayout(contributions_group)
+        self.contributions_canvas = FigureCanvas(Figure(figsize=(7, 4), dpi=CHART_DPI))
+        self.contributions_fig = self.contributions_canvas.figure
+        self.contributions_ax = self.contributions_fig.add_subplot(111)
+        contributions_layout.addWidget(self.contributions_canvas)
+        contributions_group.setLayout(contributions_layout)
+        holdings_analysis_splitter.addWidget(contributions_group)
+
+        # Bottom pane for ratios graph
+        ratios_group = QGroupBox("Historical Ratios")
+        ratios_layout = QVBoxLayout(ratios_group)
+
+        ratios_controls_layout = QHBoxLayout()
+        ratios_layout.addLayout(ratios_controls_layout)
+
+        self.ratio_holding_selector = QComboBox()
+        self.ratio_type_selector = QComboBox()
+        ratios_controls_layout.addWidget(QLabel("Holding:"))
+        ratios_controls_layout.addWidget(self.ratio_holding_selector)
+        ratios_controls_layout.addWidget(QLabel("Ratio:"))
+        ratios_controls_layout.addWidget(self.ratio_type_selector)
+        ratios_controls_layout.addStretch()
+
+        self.ratios_canvas = FigureCanvas(Figure(figsize=(7, 4), dpi=CHART_DPI))
+        self.ratios_fig = self.ratios_canvas.figure
+        self.ratios_ax = self.ratios_fig.add_subplot(111)
+        ratios_layout.addWidget(self.ratios_canvas)
+        ratios_group.setLayout(ratios_layout)
+        holdings_analysis_splitter.addWidget(ratios_group)
+
         self._create_status_bar()
         logging.debug("--- _init_ui_widgets: After _create_status_bar ---")
         self._add_main_tabs()  # Add tabs in desired order
@@ -5140,6 +5182,7 @@ The CSV file should contain the following columns (header names must match exact
             (self.dividend_history_tab, "Dividend"),
             (self.rebalancing_tab, "Rebalancing"),
             (self.advanced_analysis_tab, "Advanced Analysis"),
+            (self.holdings_analysis_tab, "Holdings Analysis"),
         ]
 
         for tab_widget, tab_name in tab_order:
@@ -7066,6 +7109,7 @@ The CSV file should contain the following columns (header names must match exact
         correlation_matrix_df,
         factor_analysis_results,
         scenario_analysis_result,
+        historical_contributions_df,
     ):
         """Stores data received from the worker into self attributes and handles status.
         Args:
@@ -7084,6 +7128,7 @@ The CSV file should contain the following columns (header names must match exact
             factor_analysis_results (dict): Results from factor analysis.
             scenario_analysis_result (dict): Results from scenario analysis.
         """
+        self.historical_contributions_df = historical_contributions_df
 
         # --- Handle Status Messages and TWR ---
         portfolio_status = summary_metrics.pop("status_msg", "Status Unknown")
@@ -7747,6 +7792,8 @@ The CSV file should contain the following columns (header names must match exact
                 self._update_capital_gains_display()  # Update Capital Gains tab
 
                 self._update_periodic_value_change_display()  # Update new tab
+        self._populate_ratio_selectors()
+        self._update_holdings_analysis_tab()
 
             else:
                 logging.info(
@@ -8039,6 +8086,9 @@ The CSV file should contain the following columns (header names must match exact
         )
         self.benchmark_select_button.clicked.connect(self.show_benchmark_selection_menu)
         self.graph_update_button.clicked.connect(self.refresh_data)
+        self.graph_update_button.clicked.connect(self._update_holdings_analysis_tab)
+        self.ratio_holding_selector.currentTextChanged.connect(self._update_ratios_chart)
+        self.ratio_type_selector.currentTextChanged.connect(self._update_ratios_chart)
         self.refresh_button.clicked.connect(self.refresh_data)
         self.table_view.horizontalHeader().customContextMenuRequested.connect(
             self.show_header_context_menu
@@ -8072,6 +8122,7 @@ The CSV file should contain the following columns (header names must match exact
         self.worker_signals.error.connect(self.handle_error)
         self.worker_signals.finished.connect(self.calculation_finished)
         self.worker_signals.progress.connect(self.update_progress)
+        self.worker_signals.historical_ratios_ready.connect(self._handle_historical_ratios)
 
         # Table Context Menu Connection
         self.table_view.customContextMenuRequested.connect(
@@ -8123,6 +8174,84 @@ The CSV file should contain the following columns (header names must match exact
             self.pvc_weekly_graph_spinbox.valueChanged.connect(
                 self._update_periodic_value_change_display
             )
+
+    def _update_contributions_chart(self):
+        """Updates the historical contributions chart."""
+        self.contributions_ax.clear()
+
+        if not hasattr(self, 'historical_contributions_df') or self.historical_contributions_df.empty:
+            self.contributions_ax.text(0.5, 0.5, "No Contributions Data", ha='center', va='center', transform=self.contributions_ax.transAxes)
+            self.contributions_canvas.draw()
+            return
+
+        df = self.historical_contributions_df.copy()
+        start_date = self.graph_start_date_edit.date().toPython()
+        end_date = self.graph_end_date_edit.date().toPython()
+        df = df[(df.index >= pd.to_datetime(start_date)) & (df.index <= pd.to_datetime(end_date))]
+
+        if len(df.columns) > 10:
+            other = df.iloc[:, 10:].sum(axis=1)
+            df = df.iloc[:, :10]
+            df['Other'] = other
+
+        self.contributions_ax.stackplot(df.index, df.values.T, labels=df.columns)
+        self.contributions_ax.legend(loc='upper left')
+        self.contributions_ax.set_title("Historical Portfolio Contributions")
+        self.contributions_ax.set_ylabel(f"Value ({self.currency_combo.currentText()})")
+        self.contributions_canvas.draw()
+
+    def _update_ratios_chart(self):
+        """Updates the historical ratios chart."""
+        self.ratios_ax.clear()
+
+        selected_holding = self.ratio_holding_selector.currentText()
+        selected_ratio = self.ratio_type_selector.currentText()
+
+        if not selected_holding or not selected_ratio or not self.historical_ratios_data:
+            self.ratios_ax.text(0.5, 0.5, "Select a Holding and Ratio", ha='center', va='center', transform=self.ratios_ax.transAxes)
+            self.ratios_canvas.draw()
+            return
+
+        ratios_df = self.historical_ratios_data.get(selected_holding)
+        if ratios_df is None or ratios_df.empty:
+            self.ratios_ax.text(0.5, 0.5, f"No Ratio Data for {selected_holding}", ha='center', va='center', transform=self.ratios_ax.transAxes)
+            self.ratios_canvas.draw()
+            return
+
+        start_date = self.graph_start_date_edit.date().toPython()
+        end_date = self.graph_end_date_edit.date().toPython()
+        ratios_df = ratios_df[(ratios_df.index >= pd.to_datetime(start_date)) & (ratios_df.index <= pd.to_datetime(end_date))]
+
+        if selected_ratio not in ratios_df.columns:
+            self.ratios_ax.text(0.5, 0.5, f"Ratio '{selected_ratio}' not available for {selected_holding}", ha='center', va='center', transform=self.ratios_ax.transAxes)
+            self.ratios_canvas.draw()
+            return
+
+        self.ratios_ax.plot(ratios_df.index, ratios_df[selected_ratio], label=selected_ratio)
+        self.ratios_ax.legend(loc='upper left')
+        self.ratios_ax.set_title(f"Historical {selected_ratio} for {selected_holding}")
+        self.ratios_ax.set_ylabel(selected_ratio)
+        self.ratios_canvas.draw()
+
+    def _update_holdings_analysis_tab(self):
+        """Updates both charts in the Holdings Analysis tab."""
+        self._update_contributions_chart()
+        self._update_ratios_chart()
+
+    def _populate_ratio_selectors(self):
+        """Populates the holding and ratio selectors."""
+        self.ratio_holding_selector.clear()
+        self.ratio_type_selector.clear()
+
+        if not hasattr(self, 'holdings_data') or self.holdings_data.empty:
+            return
+
+        holdings = sorted([s for s in self.holdings_data['Symbol'].unique() if s != CASH_SYMBOL_CSV])
+        self.ratio_holding_selector.addItems(holdings)
+
+        # Assuming a fixed list of ratios for now
+        ratios = ["P/E Ratio (TTM)", "Return on Equity (ROE) (%)"]
+        self.ratio_type_selector.addItems(ratios)
 
         # --- ADDED: Connect tab change signal for PVC tab default sort ---
         if hasattr(self, "main_tab_widget") and self.main_tab_widget:
@@ -10798,6 +10927,10 @@ The CSV file should contain the following columns (header names must match exact
             self.view_ignored_button.setEnabled(False)  # Disable when clearing
         self._update_dividend_bar_chart()  # Clear dividend chart
         self._update_dividend_table()  # Clear dividend table
+        self.contributions_ax.clear()
+        self.contributions_canvas.draw()
+        self.ratios_ax.clear()
+        self.ratios_canvas.draw()
 
     def _update_transaction_log_tables_content(self):
         """Populates the stock and cash transaction log tables using self.original_data."""
@@ -11868,6 +12001,7 @@ The CSV file should contain the following columns (header names must match exact
         pd.DataFrame,  # correlation_matrix_df
         dict,  # factor_analysis_results
         dict,  # scenario_analysis_result
+        pd.DataFrame, # historical_contributions_df
     )
     def handle_results(
         self,
@@ -11885,6 +12019,7 @@ The CSV file should contain the following columns (header names must match exact
         correlation_matrix_df,
         factor_analysis_results,
         scenario_analysis_result,
+        historical_contributions_df,
     ):
         logging.info("HANDLE_RESULTS: Slot entered.")
         """
@@ -11949,6 +12084,7 @@ The CSV file should contain the following columns (header names must match exact
                 correlation_matrix_df,
                 factor_analysis_results,
                 scenario_analysis_result,
+        historical_contributions_df,
             )
             logging.info("HANDLE_RESULTS: Finished _store_worker_data.")
             # Log after storing
@@ -14364,6 +14500,35 @@ The CSV file should contain the following columns (header names must match exact
         self.threadpool.start(worker)
 
     # --- End Fundamental Data Slots ---
+
+    def _fetch_all_historical_ratios(self):
+        """
+        Fetches historical ratios for all unique, non-cash symbols in the portfolio.
+        """
+        if not hasattr(self, "holdings_data") or self.holdings_data.empty:
+            return
+
+        symbols = self.holdings_data["Symbol"].unique()
+        for symbol in symbols:
+            if symbol == CASH_SYMBOL_CSV:
+                continue
+
+            yf_symbol = self.internal_to_yf_map.get(symbol)
+            if yf_symbol:
+                worker = FundamentalDataWorker(
+                    yf_symbol,
+                    symbol,
+                    self.worker_signals,
+                    FINANCIAL_RATIOS_AVAILABLE,
+                )
+                self.threadpool.start(worker)
+
+    @Slot(str, pd.DataFrame)
+    def _handle_historical_ratios(self, symbol, ratios_df):
+        """
+        Stores the historical ratios for a symbol.
+        """
+        self.historical_ratios_data[symbol] = ratios_df
 
     # --- End Fundamental Data Slots ---
 

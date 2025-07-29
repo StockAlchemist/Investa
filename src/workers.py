@@ -53,9 +53,11 @@ class WorkerSignals(QObject):
         pd.DataFrame,  # correlation_matrix_df
         dict,  # factor_analysis_results
         dict,  # scenario_analysis_result
+        pd.DataFrame, # historical_contributions_df
     )
 
     fundamental_data_ready = Signal(str, dict)  # display_symbol, data_dict
+    historical_ratios_ready = Signal(str, pd.DataFrame)
 
 
 class PortfolioCalculatorWorker(QRunnable):
@@ -288,8 +290,8 @@ class PortfolioCalculatorWorker(QRunnable):
                 )
                 # --- END DEBUG LOG ---
 
-                # MODIFIED: Unpack 4 items (full_daily_df, prices, fx, status)
-                full_hist_df, h_prices_adj, h_fx, hist_status = self.historical_fn(
+                # MODIFIED: Unpack 5 items (full_daily_df, contributions, prices, fx, status)
+                full_hist_df, historical_contributions_df, h_prices_adj, h_fx, hist_status = self.historical_fn(
                     transactions_df_for_hist,  # Pass positionally
                     *self.historical_args,
                     **current_historical_kwargs,
@@ -749,6 +751,7 @@ class PortfolioCalculatorWorker(QRunnable):
                     correlation_matrix_df,  # NEW
                     factor_analysis_results,  # NEW
                     scenario_analysis_result,  # NEW
+                    historical_contributions_df, # NEW
                 )
                 logging.debug(
                     "WORKER: Emitting result signal with actual calculated data."

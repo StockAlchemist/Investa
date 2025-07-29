@@ -1276,7 +1276,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
     default_currency: str,
     manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]],  # ADDED
     processed_warnings: set,
-) -> Tuple[float, bool]:
+) -> Tuple[float, bool, Dict[str, float]]:
     """
     Calculates the total portfolio market value for a specific date using UNADJUSTED historical prices (Pure Python version).
 
@@ -1303,10 +1303,12 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
         processed_warnings (set): A set used to track and avoid logging duplicate warnings.
 
     Returns:
-        Tuple[float, bool]:
+        Tuple[float, bool, Dict[str, float]]:
             - total_market_value_display_curr_agg (float): The total portfolio market value
                 in the target currency for the date. Returns np.nan if any critical price/FX lookup fails.
             - any_lookup_nan_on_date (bool): True if any required price or FX rate lookup failed critically.
+            - daily_holding_values (Dict[str, float]): A dictionary mapping internal symbols to their
+              market value in the target currency for the given date.
     """
     # ... (Function body remains unchanged) ...
     IS_DEBUG_DATE = (
@@ -1323,7 +1325,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
     if transactions_til_date.empty:
         if IS_DEBUG_DATE:
             logging.debug(f"  No transactions found up to {target_date}.")
-        return 0.0, False
+        return 0.0, False, {}
 
     holdings: Dict[Tuple[str, str], Dict] = {}
     for index, row in transactions_til_date.iterrows():
@@ -1479,6 +1481,8 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
     }
     total_market_value_display_curr_agg = 0.0
     any_lookup_nan_on_date = False
+    daily_holding_values: Dict[str, float] = defaultdict(float)
+
     if IS_DEBUG_DATE:
         logging.debug(
             f"  Value Aggregation Start - Combined Positions ({len(all_positions)}): {list(all_positions.keys())}"
@@ -1614,6 +1618,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
             break
         else:
             total_market_value_display_curr_agg += market_value_display
+            daily_holding_values[internal_symbol] += market_value_display
             if DO_DETAILED_LOG:
                 logging.debug(
                     f"      Running Total MV Display: {total_market_value_display_curr_agg:.2f}"
@@ -1623,7 +1628,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
         logging.debug(
             f"--- DEBUG VALUE CALC for {target_date} END --- Final Value: {total_market_value_display_curr_agg}, Lookup Failed: {any_lookup_nan_on_date}"
         )
-    return total_market_value_display_curr_agg, any_lookup_nan_on_date
+    return total_market_value_display_curr_agg, any_lookup_nan_on_date, dict(daily_holding_values)
 
 
 # --- START NUMBA HELPER FUNCTION ---
@@ -1901,7 +1906,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     type_to_id: Dict[str, int],
     currency_to_id: Dict[str, int],
     id_to_currency: Dict[int, str],
-) -> Tuple[float, bool]:  # type: ignore
+) -> Tuple[float, bool, Dict[str, float]]:  # type: ignore
     """
     Calculates the total portfolio market value for a specific date using UNADJUSTED historical prices (Numba version).
 
@@ -2030,6 +2035,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     # --- Valuation Loop (using results from Numba) ---
     total_market_value_display_curr_agg = 0.0
     any_lookup_nan_on_date = False
+    daily_holding_values: Dict[str, float] = defaultdict(float)
 
     # Iterate through stock holdings
     stock_indices = np.argwhere(np.abs(holdings_qty_np) > 1e-9)
@@ -2123,6 +2129,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             break
         else:
             total_market_value_display_curr_agg += market_value_display
+            daily_holding_values[internal_symbol] += market_value_display
 
     # Iterate through cash balances if no failure yet
     if not any_lookup_nan_on_date:
@@ -2154,13 +2161,17 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
                 break
             else:
                 total_market_value_display_curr_agg += market_value_display
+                daily_holding_values[CASH_SYMBOL_CSV] += market_value_display
 
     if IS_DEBUG_DATE:
         logging.debug(
             f"--- DEBUG VALUE CALC (Numba) for {target_date} END --- Final Value: {total_market_value_display_curr_agg}, Lookup Failed: {any_lookup_nan_on_date}"
         )
 
-    return total_market_value_display_curr_agg, any_lookup_nan_on_date
+    # Numba cannot return a dict, so we return an empty one to match the Python function's signature.
+    # The actual aggregation for Numba would need to happen outside if required, but for this
+    # feature, we will rely on the Python implementation to provide the holding values.
+    return total_market_value_display_curr_agg, any_lookup_nan_on_date, {}
 
 
 # --- Dispatcher Function ---
@@ -2184,12 +2195,13 @@ def _calculate_portfolio_value_at_date_unadjusted(
     currency_to_id: Dict[str, int],
     id_to_currency: Dict[int, str],
     method: str = "numba",  # Default to numba # type: ignore
-) -> Tuple[float, bool]:
+) -> Tuple[float, bool, Dict[str, float]]:
     """
     Dispatcher function to calculate portfolio value using either Python or Numba method.
     """
     if method == "numba":
-        return _calculate_portfolio_value_at_date_unadjusted_numba(
+        # Numba version is faster but doesn't return holding values yet.
+        total_value, lookup_failed, _ = _calculate_portfolio_value_at_date_unadjusted_numba(
             target_date,
             transactions_df,
             historical_prices_yf_unadjusted,
@@ -2198,7 +2210,7 @@ def _calculate_portfolio_value_at_date_unadjusted(
             internal_to_yf_map,
             account_currency_map,
             default_currency,
-            manual_overrides_dict,  # Pass through
+            manual_overrides_dict,
             processed_warnings,
             symbol_to_id,
             id_to_symbol,
@@ -2208,8 +2220,23 @@ def _calculate_portfolio_value_at_date_unadjusted(
             currency_to_id,
             id_to_currency,
         )
+        # For now, if using Numba, we must call the Python version anyway to get holding values.
+        # This is inefficient and should be optimized later if possible.
+        _, _, daily_holdings = _calculate_portfolio_value_at_date_unadjusted_python(
+             target_date,
+            transactions_df,
+            historical_prices_yf_unadjusted,
+            historical_fx_yf,
+            target_currency,
+            internal_to_yf_map,
+            account_currency_map,
+            default_currency,
+            manual_overrides_dict,
+            processed_warnings,
+        )
+
     elif method == "python":
-        return _calculate_portfolio_value_at_date_unadjusted_python(
+        total_value, lookup_failed, daily_holdings = _calculate_portfolio_value_at_date_unadjusted_python(
             target_date,
             transactions_df,
             historical_prices_yf_unadjusted,
@@ -2218,14 +2245,12 @@ def _calculate_portfolio_value_at_date_unadjusted(
             internal_to_yf_map,
             account_currency_map,
             default_currency,
-            manual_overrides_dict,  # Pass through
+            manual_overrides_dict,
             processed_warnings,
         )
     else:
-        logging.error(
-            f"Invalid calculation method specified: {method}. Defaulting to python."
-        )
-        return _calculate_portfolio_value_at_date_unadjusted_python(
+        logging.error(f"Invalid calculation method specified: {method}. Defaulting to python.")
+        total_value, lookup_failed, daily_holdings = _calculate_portfolio_value_at_date_unadjusted_python(
             target_date,
             transactions_df,
             historical_prices_yf_unadjusted,
@@ -2234,9 +2259,10 @@ def _calculate_portfolio_value_at_date_unadjusted(
             internal_to_yf_map,
             account_currency_map,
             default_currency,
-            manual_overrides_dict,  # Pass through
+            manual_overrides_dict,
             processed_warnings,
         )
+    return total_value, lookup_failed, daily_holdings
 
 
 @profile
@@ -2308,7 +2334,7 @@ def _calculate_daily_metrics_worker(
         start_time = time.time()
         dummy_warnings_set = set()
 
-        portfolio_value_main, val_lookup_failed_main = (
+        portfolio_value_main, val_lookup_failed_main, daily_holding_values = (
             _calculate_portfolio_value_at_date_unadjusted(
                 eval_date,
                 transactions_df,
@@ -2411,6 +2437,7 @@ def _calculate_daily_metrics_worker(
             "value_lookup_failed": val_lookup_failed,
             "flow_lookup_failed": flow_lookup_failed,
             "bench_lookup_failed": bench_lookup_failed,
+            "daily_holding_values": daily_holding_values, # This now comes from the dispatcher
         }
         result_row.update(benchmark_prices)
         return result_row
@@ -2796,7 +2823,7 @@ def _load_or_calculate_daily_results(
     num_processes: Optional[int] = None,
     current_hist_version: str = "v10",
     filter_desc: str = "All Accounts",
-) -> Tuple[pd.DataFrame, bool, str]:  # type: ignore
+) -> Tuple[pd.DataFrame, bool, str, pd.DataFrame]:  # type: ignore
     """
     Loads calculated daily results from cache or calculates them using parallel processing.
 
@@ -3304,7 +3331,18 @@ def _load_or_calculate_daily_results(
                     f"Hist WARN (Scope: {filter_desc}): Error writing daily cache: {e_save_cache}"
                 )
 
-    return daily_df, cache_valid_daily_results, status_update
+    historical_contributions_df = pd.DataFrame()
+    if not daily_df.empty and 'daily_holding_values' in daily_df.columns:
+        # The column contains dictionaries, so we can expand it directly
+        temp_contributions_df = pd.DataFrame(daily_df['daily_holding_values'].tolist(), index=daily_df.index)
+        temp_contributions_df.fillna(0, inplace=True)
+        # Ensure all columns are numeric
+        for col in temp_contributions_df.columns:
+            temp_contributions_df[col] = pd.to_numeric(temp_contributions_df[col], errors='coerce')
+        temp_contributions_df.fillna(0, inplace=True)
+        historical_contributions_df = temp_contributions_df
+
+    return daily_df, cache_valid_daily_results, status_update, historical_contributions_df
 
 
 # --- Accumulated Gain and Resampling (Keep as is) ---
@@ -3608,11 +3646,10 @@ def calculate_historical_performance(
     original_csv_file_path: Optional[str] = None,
 ) -> Tuple[
     pd.DataFrame,  # daily_df
+    pd.DataFrame,  # historical_contributions_df
     Dict[str, pd.DataFrame],  # historical_prices_yf_adjusted
     Dict[str, pd.DataFrame],  # historical_fx_yf
     str,  # final_status_str
-    # pd.DataFrame, # key_ratios_df - Ratios are not calculated here
-    # Dict[str, Any] # current_valuation_ratios - Ratios are not calculated here
 ]:
     CURRENT_HIST_VERSION = "v1.1"  # Bump version due to changes (e.g. Numba, cache key)
     start_time_hist = time.time()
@@ -3848,7 +3885,7 @@ def calculate_historical_performance(
     # --- 5 & 6. Load or Calculate Daily Results ---
     # Pass original_csv_file_path to _load_or_calculate_daily_results for cache validation.
     # If it's None (e.g., data loaded from DB), the mtime check in daily results cache will be skipped or handled.
-    daily_df, cache_was_valid_daily, status_update_daily = (
+    daily_df, cache_was_valid_daily, status_update_daily, historical_contributions_df = (
         _load_or_calculate_daily_results(
             use_daily_results_cache=use_daily_results_cache,
             daily_results_cache_file=daily_results_cache_file,
@@ -3969,7 +4006,7 @@ def calculate_historical_performance(
         daily_df.rename(columns={"value": "Portfolio Value"}, inplace=True)
         logging.debug("Renamed 'value' column to 'Portfolio Value' in daily_df.")
 
-    return daily_df, historical_prices_yf_adjusted, historical_fx_yf, final_status_str
+    return daily_df, historical_contributions_df, historical_prices_yf_adjusted, historical_fx_yf, final_status_str
 
 
 # --- Helper to generate mappings (Needed for standalone profiling) ---
