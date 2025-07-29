@@ -5138,27 +5138,24 @@ The CSV file should contain the following columns (header names must match exact
         contributions_group.setLayout(contributions_layout)
         holdings_analysis_splitter.addWidget(contributions_group)
 
-        # Bottom pane for ratios graph
-        ratios_group = QGroupBox("Historical Ratios")
-        ratios_layout = QVBoxLayout(ratios_group)
+        # Bottom pane for contribution ratio graph
+        contribution_ratios_group = QGroupBox("Historical Contribution Ratios")
+        contribution_ratios_layout = QVBoxLayout(contribution_ratios_group)
 
-        ratios_controls_layout = QHBoxLayout()
-        ratios_layout.addLayout(ratios_controls_layout)
+        contribution_ratios_controls_layout = QHBoxLayout()
+        contribution_ratios_layout.addLayout(contribution_ratios_controls_layout)
 
-        self.ratio_holding_selector = QComboBox()
-        self.ratio_type_selector = QComboBox()
-        ratios_controls_layout.addWidget(QLabel("Holding:"))
-        ratios_controls_layout.addWidget(self.ratio_holding_selector)
-        ratios_controls_layout.addWidget(QLabel("Ratio:"))
-        ratios_controls_layout.addWidget(self.ratio_type_selector)
-        ratios_controls_layout.addStretch()
+        self.contribution_ratio_holding_selector = QComboBox()
+        contribution_ratios_controls_layout.addWidget(QLabel("Holding:"))
+        contribution_ratios_controls_layout.addWidget(self.contribution_ratio_holding_selector)
+        contribution_ratios_controls_layout.addStretch()
 
-        self.ratios_canvas = FigureCanvas(Figure(figsize=(7, 4), dpi=CHART_DPI))
-        self.ratios_fig = self.ratios_canvas.figure
-        self.ratios_ax = self.ratios_fig.add_subplot(111)
-        ratios_layout.addWidget(self.ratios_canvas)
-        ratios_group.setLayout(ratios_layout)
-        holdings_analysis_splitter.addWidget(ratios_group)
+        self.contribution_ratios_canvas = FigureCanvas(Figure(figsize=(7, 4), dpi=CHART_DPI))
+        self.contribution_ratios_fig = self.contribution_ratios_canvas.figure
+        self.contribution_ratios_ax = self.contribution_ratios_fig.add_subplot(111)
+        contribution_ratios_layout.addWidget(self.contribution_ratios_canvas)
+        contribution_ratios_group.setLayout(contribution_ratios_layout)
+        holdings_analysis_splitter.addWidget(contribution_ratios_group)
 
         self._create_status_bar()
         logging.debug("--- _init_ui_widgets: After _create_status_bar ---")
@@ -7793,7 +7790,7 @@ The CSV file should contain the following columns (header names must match exact
 
                 self._update_periodic_value_change_display()  # Update new tab
             try:
-                self._populate_ratio_selectors()
+            self._populate_contribution_ratio_selectors()
                 self._update_holdings_analysis_tab()
             except Exception as e:
                 logging.error(f"Error updating holdings analysis tab: {e}")
@@ -8092,8 +8089,7 @@ The CSV file should contain the following columns (header names must match exact
         self.benchmark_select_button.clicked.connect(self.show_benchmark_selection_menu)
         self.graph_update_button.clicked.connect(self.refresh_data)
         self.graph_update_button.clicked.connect(self._update_holdings_analysis_tab)
-        self.ratio_holding_selector.currentTextChanged.connect(self._update_ratios_chart)
-        self.ratio_type_selector.currentTextChanged.connect(self._update_ratios_chart)
+        self.contribution_ratio_holding_selector.currentTextChanged.connect(self._update_contribution_ratios_chart)
         self.refresh_button.clicked.connect(self.refresh_data)
         self.table_view.horizontalHeader().customContextMenuRequested.connect(
             self.show_header_context_menu
@@ -8205,58 +8201,50 @@ The CSV file should contain the following columns (header names must match exact
         self.contributions_ax.set_ylabel(f"Value ({self.currency_combo.currentText()})")
         self.contributions_canvas.draw()
 
-    def _update_ratios_chart(self):
-        """Updates the historical ratios chart."""
-        self.ratios_ax.clear()
+    def _update_contribution_ratios_chart(self):
+        """Updates the historical contribution ratios chart."""
+        self.contribution_ratios_ax.clear()
 
-        selected_holding = self.ratio_holding_selector.currentText()
-        selected_ratio = self.ratio_type_selector.currentText()
+        selected_holding = self.contribution_ratio_holding_selector.currentText()
 
-        if not selected_holding or not selected_ratio or not self.historical_ratios_data:
-            self.ratios_ax.text(0.5, 0.5, "Select a Holding and Ratio", ha='center', va='center', transform=self.ratios_ax.transAxes)
-            self.ratios_canvas.draw()
+        if not selected_holding:
+            self.contribution_ratios_ax.text(0.5, 0.5, "Select a Holding", ha='center', va='center', transform=self.contribution_ratios_ax.transAxes)
+            self.contribution_ratios_canvas.draw()
             return
 
-        ratios_df = self.historical_ratios_data.get(selected_holding)
-        if ratios_df is None or ratios_df.empty:
-            self.ratios_ax.text(0.5, 0.5, f"No Ratio Data for {selected_holding}", ha='center', va='center', transform=self.ratios_ax.transAxes)
-            self.ratios_canvas.draw()
+        if not hasattr(self, 'historical_contributions_df') or self.historical_contributions_df.empty:
+            self.contribution_ratios_ax.text(0.5, 0.5, "No Contributions Data", ha='center', va='center', transform=self.contribution_ratios_ax.transAxes)
+            self.contribution_ratios_canvas.draw()
             return
 
+        df = self.historical_contributions_df.copy()
         start_date = self.graph_start_date_edit.date().toPython()
         end_date = self.graph_end_date_edit.date().toPython()
-        ratios_df = ratios_df[(ratios_df.index >= pd.to_datetime(start_date)) & (ratios_df.index <= pd.to_datetime(end_date))]
+        df = df[(df.index >= pd.to_datetime(start_date)) & (df.index <= pd.to_datetime(end_date))]
 
-        if selected_ratio not in ratios_df.columns:
-            self.ratios_ax.text(0.5, 0.5, f"Ratio '{selected_ratio}' not available for {selected_holding}", ha='center', va='center', transform=self.ratios_ax.transAxes)
-            self.ratios_canvas.draw()
-            return
+        total_portfolio_value = df.sum(axis=1)
+        contribution_ratio = (df[selected_holding] / total_portfolio_value) * 100
 
-        self.ratios_ax.plot(ratios_df.index, ratios_df[selected_ratio], label=selected_ratio)
-        self.ratios_ax.legend(loc='upper left')
-        self.ratios_ax.set_title(f"Historical {selected_ratio} for {selected_holding}")
-        self.ratios_ax.set_ylabel(selected_ratio)
-        self.ratios_canvas.draw()
+        self.contribution_ratios_ax.plot(contribution_ratio.index, contribution_ratio.values, label=f"{selected_holding} Contribution Ratio")
+        self.contribution_ratios_ax.legend(loc='upper left')
+        self.contribution_ratios_ax.set_title(f"Historical Contribution Ratio for {selected_holding}")
+        self.contribution_ratios_ax.set_ylabel("Contribution Ratio (%)")
+        self.contribution_ratios_canvas.draw()
 
     def _update_holdings_analysis_tab(self):
         """Updates both charts in the Holdings Analysis tab."""
         self._update_contributions_chart()
-        self._update_ratios_chart()
+        self._update_contribution_ratios_chart()
 
-    def _populate_ratio_selectors(self):
-        """Populates the holding and ratio selectors."""
-        self.ratio_holding_selector.clear()
-        self.ratio_type_selector.clear()
+    def _populate_contribution_ratio_selectors(self):
+        """Populates the holding selector for the contribution ratio chart."""
+        self.contribution_ratio_holding_selector.clear()
 
         if not hasattr(self, 'holdings_data') or self.holdings_data.empty:
             return
 
         holdings = sorted([s for s in self.holdings_data['Symbol'].unique() if s != CASH_SYMBOL_CSV])
-        self.ratio_holding_selector.addItems(holdings)
-
-        # Assuming a fixed list of ratios for now
-        ratios = ["P/E Ratio (TTM)", "Return on Equity (ROE) (%)"]
-        self.ratio_type_selector.addItems(ratios)
+        self.contribution_ratio_holding_selector.addItems(holdings)
 
         # --- ADDED: Connect tab change signal for PVC tab default sort ---
         if hasattr(self, "main_tab_widget") and self.main_tab_widget:
