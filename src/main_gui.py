@@ -141,9 +141,7 @@ from PySide6.QtWidgets import QProgressBar  # <-- ADDED for progress bar
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QWidget, QLabel
 from PySide6.QtCore import Qt
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas  # type: ignore
-
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.dates as mdates
 import matplotlib.ticker as mtick
 import pandas as pd
@@ -5553,3 +5551,9 @@ The CSV file should contain the following columns (header names must match exact
                         logging.info(
                             f"Calculated PERIOD TWR Factor ({plot_start_date} to {plot_end_date}): {self.last_hist_twr_factor:.6f}"
                         )
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = PortfolioApp()
+    window.show()
+    sys.exit(app.exec())
