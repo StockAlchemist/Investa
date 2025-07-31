@@ -5128,6 +5128,9 @@ The CSV file should contain the following columns (header names must match exact
 
         # Insert the Asset Allocation tab at index 2 (making it the third tab)
         self.main_tab_widget.insertTab(2, self.asset_allocation_tab, "Asset Allocation")
+        self.main_tab_widget.insertTab(
+            3, self.historical_holdings_tab, "Historical Holdings"
+        )
         logging.debug(
             "--- _init_ui_widgets: Asset Allocation Tab added to main_tab_widget ---"
         )
@@ -5135,34 +5138,17 @@ The CSV file should contain the following columns (header names must match exact
 
         self._create_status_bar()
         logging.debug("--- _init_ui_widgets: After _create_status_bar ---")
-        self._add_main_tabs()  # Add tabs in desired order
+        self.main_tab_widget.addTab(self.performance_summary_tab, "Performance")
+        self.main_tab_widget.addTab(self.transactions_log_tab, "Transactions")
+        self.main_tab_widget.addTab(self.asset_allocation_tab, "Asset Allocation")
+        self.main_tab_widget.addTab(self.historical_holdings_tab, "Historical Holdings")
+        self.main_tab_widget.addTab(self.periodic_value_change_tab, "Asset Change")
+        self.main_tab_widget.addTab(self.capital_gains_tab, "Capital Gains")
+        self.main_tab_widget.addTab(self.dividend_history_tab, "Dividend")
+        self.main_tab_widget.addTab(self.rebalancing_tab, "Rebalancing")
+        self.main_tab_widget.addTab(self.advanced_analysis_tab, "Advanced Analysis")
         logging.debug("--- _init_ui_widgets: END ---")
 
-    def _add_main_tabs(self):
-        """Adds all main tabs to the main_tab_widget in a defined order."""
-        logging.debug("--- _add_main_tabs: START ---")
-        # Clear existing tabs if any (useful for reordering or dynamic tab creation)
-        while self.main_tab_widget.count() > 0:
-            self.main_tab_widget.removeTab(0)
-
-        # Define the desired order of tabs
-        tab_order = [
-            (self.performance_summary_tab, "Performance"),
-            (self.transactions_log_tab, "Transactions"),
-            (self.asset_allocation_tab, "Asset Allocation"),
-            (self.historical_holdings_tab, "Historical Holdings"),
-            (self.periodic_value_change_tab, "Asset Change"),
-            (self.capital_gains_tab, "Capital Gains"),
-            (self.dividend_history_tab, "Dividend"),
-            (self.rebalancing_tab, "Rebalancing"),
-            (self.advanced_analysis_tab, "Advanced Analysis"),
-        ]
-
-        for tab_widget, tab_name in tab_order:
-            # All tab widgets should be initialized by this point
-            self.main_tab_widget.addTab(tab_widget, tab_name)
-            logging.debug(f"Added tab: {tab_name}")
-        logging.debug("--- _add_main_tabs: END ---")
 
     def _init_periodic_value_change_tab_widgets_content(self):
         """Initializes the content for the Asset Change tab."""
