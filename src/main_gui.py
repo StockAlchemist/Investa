@@ -1969,7 +1969,7 @@ The CSV file should contain the following columns (header names must match exact
         self.dividend_history_data = pd.DataFrame()
         self.historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}
         self.historical_fx_yf: Dict[str, pd.DataFrame] = {}
-        self.historical_holdings_values_df = pd.DataFrame()
+        self.historical_holdings_values_df = {}
 
         # Advanced Analysis Tab Attributes
         self.correlation_fig = None
@@ -13199,7 +13199,7 @@ The CSV file should contain the following columns (header names must match exact
             ax.yaxis.label.set_color(self.QCOLOR_TEXT_PRIMARY_THEMED.name())
 
 
-        if initial or self.historical_holdings_values_df.empty:
+        if initial or not isinstance(self.historical_holdings_values_df, pd.DataFrame) or self.historical_holdings_values_df.empty:
             for ax, title in [(percent_ax, "Historical Contribution (%)"), (value_ax, "Historical Contribution (Value)")]:
                 ax.text(0.5, 0.5, "No Data Available", ha="center", va="center", transform=ax.transAxes, color=self.QCOLOR_TEXT_SECONDARY_THEMED.name())
             percent_canvas.draw()
