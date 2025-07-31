@@ -207,7 +207,7 @@ def test_calculate_historical_performance_basic(
 
     # --- Call the function under test ---
     # Note: This will perform actual yfinance downloads unless mocked
-    hist_df, raw_prices, raw_fx, status = calculate_historical_performance(
+    hist_df, raw_prices, raw_fx, status, _ = calculate_historical_performance(
         all_transactions_df_cleaned=loaded_tx_df,
         original_transactions_df_for_ignored=loaded_orig_df,
         ignored_indices_from_load=loaded_ignored_indices,

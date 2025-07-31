@@ -2796,7 +2796,7 @@ def _load_or_calculate_daily_results(
     num_processes: Optional[int] = None,
     current_hist_version: str = "v10",
     filter_desc: str = "All Accounts",
-) -> Tuple[pd.DataFrame, bool, str]:  # type: ignore
+) -> Tuple[pd.DataFrame, pd.DataFrame, bool, str]:
     """
     Loads calculated daily results from cache or calculates them using parallel processing.
 
@@ -3187,6 +3187,7 @@ def _load_or_calculate_daily_results(
             # --- END ADDED ---
 
             return (
+                pd.DataFrame(),
                 pd.DataFrame(),
                 False,
                 status_update + " All daily calculations failed in worker.",
@@ -3607,12 +3608,11 @@ def calculate_historical_performance(
     # This is needed because we no longer pass the CSV path directly to this function for loading
     original_csv_file_path: Optional[str] = None,
 ) -> Tuple[
-    pd.DataFrame,  # daily_df
-    Dict[str, pd.DataFrame],  # historical_prices_yf_adjusted
-    Dict[str, pd.DataFrame],  # historical_fx_yf
-    str,  # final_status_str
-    # pd.DataFrame, # key_ratios_df - Ratios are not calculated here
-    # Dict[str, Any] # current_valuation_ratios - Ratios are not calculated here
+    pd.DataFrame,
+    Dict[str, pd.DataFrame],
+    Dict[str, pd.DataFrame],
+    str,
+    pd.DataFrame,
 ]:
     CURRENT_HIST_VERSION = "v1.1"  # Bump version due to changes (e.g. Numba, cache key)
     start_time_hist = time.time()
@@ -3624,6 +3624,7 @@ def calculate_historical_performance(
     daily_df = pd.DataFrame()
     historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}  # Ensure type
     historical_fx_yf: Dict[str, pd.DataFrame] = {}  # Ensure type
+    historical_holdings_values_df = pd.DataFrame()
 
     if not MARKET_PROVIDER_AVAILABLE:
         return pd.DataFrame(), {}, {}, "Error: MarketDataProvider not available."
@@ -3969,7 +3970,13 @@ def calculate_historical_performance(
         daily_df.rename(columns={"value": "Portfolio Value"}, inplace=True)
         logging.debug("Renamed 'value' column to 'Portfolio Value' in daily_df.")
 
-    return daily_df, historical_prices_yf_adjusted, historical_fx_yf, final_status_str
+    return (
+        daily_df,
+        historical_prices_yf_adjusted,
+        historical_fx_yf,
+        final_status_str,
+        historical_holdings_values_df,
+    )
 
 
 # --- Helper to generate mappings (Needed for standalone profiling) ---
