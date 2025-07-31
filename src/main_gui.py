@@ -136,6 +136,7 @@ from PySide6.QtWidgets import (
     QInputDialog,  # <-- ADDED for rebalancing tab
     QSpacerItem,  # <-- ADDED for layout spacing
 )
+from src.gui.historical_holdings_tab import HistoricalHoldingsTab
 
 from PySide6.QtWidgets import QProgressBar  # <-- ADDED for progress bar
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QWidget, QLabel
@@ -5940,6 +5941,9 @@ The CSV file should contain the following columns (header names must match exact
             self.scenario_analysis_tab, "Scenario Analysis"
         )
         self._init_scenario_analysis_tab()
+
+        self.historical_holdings_tab = HistoricalHoldingsTab()
+        self.main_tab_widget.addTab(self.historical_holdings_tab, "Historical Holdings")
 
         logging.debug("Advanced Analysis tab initialized.")
 

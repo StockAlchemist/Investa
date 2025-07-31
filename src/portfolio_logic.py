@@ -1276,7 +1276,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
     default_currency: str,
     manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]],  # ADDED
     processed_warnings: set,
-) -> Tuple[float, bool, Dict[Tuple[str, str], float]]:
+) -> Tuple[float, bool]:
     """
     Calculates the total portfolio market value for a specific date using UNADJUSTED historical prices (Pure Python version).
 
@@ -1303,11 +1303,10 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
         processed_warnings (set): A set used to track and avoid logging duplicate warnings.
 
     Returns:
-        Tuple[float, bool, Dict[Tuple[str, str], float]]:
+        Tuple[float, bool]:
             - total_market_value_display_curr_agg (float): The total portfolio market value
                 in the target currency for the date. Returns np.nan if any critical price/FX lookup fails.
             - any_lookup_nan_on_date (bool): True if any required price or FX rate lookup failed critically.
-            - holdings_values (Dict): A dictionary mapping (symbol, account) to its market value.
     """
     # ... (Function body remains unchanged) ...
     IS_DEBUG_DATE = (
@@ -1480,7 +1479,6 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
     }
     total_market_value_display_curr_agg = 0.0
     any_lookup_nan_on_date = False
-    holdings_values: Dict[Tuple[str, str], float] = {}
     if IS_DEBUG_DATE:
         logging.debug(
             f"  Value Aggregation Start - Combined Positions ({len(all_positions)}): {list(all_positions.keys())}"
@@ -1611,13 +1609,11 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
         if pd.isna(market_value_display):
             any_lookup_nan_on_date = True
             total_market_value_display_curr_agg = np.nan
-            holdings_values = {}
             if DO_DETAILED_LOG:
                 logging.debug(f"      CRITICAL: MV Display is NaN. Aborting.")
             break
         else:
             total_market_value_display_curr_agg += market_value_display
-            holdings_values[(internal_symbol, account)] = market_value_display
             if DO_DETAILED_LOG:
                 logging.debug(
                     f"      Running Total MV Display: {total_market_value_display_curr_agg:.2f}"
@@ -1627,11 +1623,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
         logging.debug(
             f"--- DEBUG VALUE CALC for {target_date} END --- Final Value: {total_market_value_display_curr_agg}, Lookup Failed: {any_lookup_nan_on_date}"
         )
-    return (
-        total_market_value_display_curr_agg,
-        any_lookup_nan_on_date,
-        holdings_values,
-    )
+    return total_market_value_display_curr_agg, any_lookup_nan_on_date
 
 
 # --- START NUMBA HELPER FUNCTION ---
@@ -1909,7 +1901,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     type_to_id: Dict[str, int],
     currency_to_id: Dict[str, int],
     id_to_currency: Dict[int, str],
-) -> Tuple[float, bool, Dict[Tuple[str, str], float]]:
+) -> Tuple[float, bool]:  # type: ignore
     """
     Calculates the total portfolio market value for a specific date using UNADJUSTED historical prices (Numba version).
 
@@ -2038,7 +2030,6 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     # --- Valuation Loop (using results from Numba) ---
     total_market_value_display_curr_agg = 0.0
     any_lookup_nan_on_date = False
-    holdings_values: Dict[Tuple[str, str], float] = {}
 
     # Iterate through stock holdings
     stock_indices = np.argwhere(np.abs(holdings_qty_np) > 1e-9)
@@ -2129,11 +2120,9 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         if pd.isna(market_value_display):
             any_lookup_nan_on_date = True
             total_market_value_display_curr_agg = np.nan
-            holdings_values = {}
             break
         else:
             total_market_value_display_curr_agg += market_value_display
-            holdings_values[(internal_symbol, account)] = market_value_display
 
     # Iterate through cash balances if no failure yet
     if not any_lookup_nan_on_date:
@@ -2162,22 +2151,16 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             if pd.isna(market_value_display):
                 any_lookup_nan_on_date = True
                 total_market_value_display_curr_agg = np.nan
-                holdings_values = {}
                 break
             else:
                 total_market_value_display_curr_agg += market_value_display
-                holdings_values[(CASH_SYMBOL_CSV, account)] = market_value_display
 
     if IS_DEBUG_DATE:
         logging.debug(
             f"--- DEBUG VALUE CALC (Numba) for {target_date} END --- Final Value: {total_market_value_display_curr_agg}, Lookup Failed: {any_lookup_nan_on_date}"
         )
 
-    return (
-        total_market_value_display_curr_agg,
-        any_lookup_nan_on_date,
-        holdings_values,
-    )
+    return total_market_value_display_curr_agg, any_lookup_nan_on_date
 
 
 # --- Dispatcher Function ---
@@ -2201,7 +2184,7 @@ def _calculate_portfolio_value_at_date_unadjusted(
     currency_to_id: Dict[str, int],
     id_to_currency: Dict[int, str],
     method: str = "numba",  # Default to numba # type: ignore
-) -> Tuple[float, bool, Dict[Tuple[str, str], float]]:
+) -> Tuple[float, bool]:
     """
     Dispatcher function to calculate portfolio value using either Python or Numba method.
     """
@@ -2325,7 +2308,7 @@ def _calculate_daily_metrics_worker(
         start_time = time.time()
         dummy_warnings_set = set()
 
-        portfolio_value_main, val_lookup_failed_main, holdings_values = (
+        portfolio_value_main, val_lookup_failed_main = (
             _calculate_portfolio_value_at_date_unadjusted(
                 eval_date,
                 transactions_df,
@@ -2425,7 +2408,6 @@ def _calculate_daily_metrics_worker(
             "Date": eval_date,
             "value": portfolio_value,
             "net_flow": net_cash_flow,
-            "holdings_values": holdings_values,
             "value_lookup_failed": val_lookup_failed,
             "flow_lookup_failed": flow_lookup_failed,
             "bench_lookup_failed": bench_lookup_failed,
@@ -2445,7 +2427,6 @@ def _calculate_daily_metrics_worker(
         failed_row["bench_lookup_failed"] = True
         failed_row["worker_error"] = True
         failed_row["worker_error_msg"] = str(e)
-        failed_row["holdings_values"] = {}
         return failed_row
 
 
@@ -2815,7 +2796,7 @@ def _load_or_calculate_daily_results(
     num_processes: Optional[int] = None,
     current_hist_version: str = "v10",
     filter_desc: str = "All Accounts",
-) -> Tuple[pd.DataFrame, pd.DataFrame, bool, str]:
+) -> Tuple[pd.DataFrame, bool, str]:  # type: ignore
     """
     Loads calculated daily results from cache or calculates them using parallel processing.
 
@@ -2859,7 +2840,6 @@ def _load_or_calculate_daily_results(
             - daily_df (pd.DataFrame): DataFrame indexed by date, containing columns like
               'value', 'net_flow', 'daily_gain', 'daily_return', and benchmark prices.
               Empty DataFrame on critical failure.
-            - historical_holdings_values_df (pd.DataFrame): DataFrame with daily holdings values.
             - cache_valid_daily_results (bool): True if the data was loaded from a valid cache.
             - status_update (str): String describing the outcome (cache load, calculation, errors).
     """
@@ -3176,12 +3156,7 @@ def _load_or_calculate_daily_results(
                 f"Hist CRITICAL (Scope: {filter_desc}): Pool failed: {e_pool}"
             )
             traceback.print_exc()
-            return (
-                pd.DataFrame(),
-                pd.DataFrame(),
-                False,
-                status_update + " Multiprocessing failed.",
-            )
+            return pd.DataFrame(), False, status_update + " Multiprocessing failed."
         finally:
             pool_end_time = time.time()
             logging.info(
@@ -3213,7 +3188,6 @@ def _load_or_calculate_daily_results(
 
             return (
                 pd.DataFrame(),
-                pd.DataFrame(),
                 False,
                 status_update + " All daily calculations failed in worker.",
             )
@@ -3239,7 +3213,6 @@ def _load_or_calculate_daily_results(
                 )
             if daily_df.empty:
                 return (
-                    pd.DataFrame(),
                     pd.DataFrame(),
                     False,
                     status_update + " All rows dropped due to NaN portfolio value.",
@@ -3275,7 +3248,6 @@ def _load_or_calculate_daily_results(
             ):
                 return (
                     pd.DataFrame(),
-                    pd.DataFrame(),
                     False,
                     status_update + " Failed calc daily gain/return.",
                 )
@@ -3285,22 +3257,7 @@ def _load_or_calculate_daily_results(
                 f"Hist CRITICAL (Scope: {filter_desc}): Failed create/process daily DF from results: {e_df_create}"
             )
             traceback.print_exc()
-            return (
-                pd.DataFrame(),
-                pd.DataFrame(),
-                False,
-                status_update + " Error processing results.",
-            )
-
-        historical_holdings_values_df = pd.DataFrame(
-            [d.get("holdings_values", {}) for d in successful_results],
-            index=daily_df.index,
-        )
-        if not historical_holdings_values_df.empty:
-            # The columns are tuples (symbol, account), we need to aggregate by symbol
-            historical_holdings_values_df = (
-                historical_holdings_values_df.T.groupby(level=0).sum().T
-            )
+            return pd.DataFrame(), False, status_update + " Error processing results."
 
         if (
             use_daily_results_cache
@@ -3347,12 +3304,7 @@ def _load_or_calculate_daily_results(
                     f"Hist WARN (Scope: {filter_desc}): Error writing daily cache: {e_save_cache}"
                 )
 
-    return (
-        daily_df,
-        historical_holdings_values_df,
-        cache_valid_daily_results,
-        status_update,
-    )
+    return daily_df, cache_valid_daily_results, status_update
 
 
 # --- Accumulated Gain and Resampling (Keep as is) ---
@@ -3655,11 +3607,12 @@ def calculate_historical_performance(
     # This is needed because we no longer pass the CSV path directly to this function for loading
     original_csv_file_path: Optional[str] = None,
 ) -> Tuple[
-    pd.DataFrame,
-    Dict[str, pd.DataFrame],
-    Dict[str, pd.DataFrame],
-    str,
-    pd.DataFrame,
+    pd.DataFrame,  # daily_df
+    Dict[str, pd.DataFrame],  # historical_prices_yf_adjusted
+    Dict[str, pd.DataFrame],  # historical_fx_yf
+    str,  # final_status_str
+    # pd.DataFrame, # key_ratios_df - Ratios are not calculated here
+    # Dict[str, Any] # current_valuation_ratios - Ratios are not calculated here
 ]:
     CURRENT_HIST_VERSION = "v1.1"  # Bump version due to changes (e.g. Numba, cache key)
     start_time_hist = time.time()
@@ -3673,11 +3626,11 @@ def calculate_historical_performance(
     historical_fx_yf: Dict[str, pd.DataFrame] = {}  # Ensure type
 
     if not MARKET_PROVIDER_AVAILABLE:
-        return pd.DataFrame(), {}, {}, "Error: MarketDataProvider not available.", pd.DataFrame()
+        return pd.DataFrame(), {}, {}, "Error: MarketDataProvider not available."
     if start_date >= end_date:
-        return pd.DataFrame(), {}, {}, "Error: Start date must be before end date.", pd.DataFrame()
+        return pd.DataFrame(), {}, {}, "Error: Start date must be before end date."
     if interval not in ["D", "W", "M", "ME"]:
-        return pd.DataFrame(), {}, {}, f"Error: Invalid interval '{interval}'.", pd.DataFrame()
+        return pd.DataFrame(), {}, {}, f"Error: Invalid interval '{interval}'."
 
     clean_benchmark_symbols_yf = (
         [
@@ -3741,7 +3694,7 @@ def calculate_historical_performance(
 
     if transactions_df_effective is None:  # Check if prep failed
         status_msg = "Error: Failed to prepare inputs from preloaded DataFrame."
-        return pd.DataFrame(), {}, {}, status_msg, pd.DataFrame()
+        return pd.DataFrame(), {}, {}, status_msg
 
     status_parts.append(f"Inputs prepared ({filter_desc})")
     if combined_ignored_reasons_prep:  # Use reasons from prep
@@ -3830,7 +3783,6 @@ def calculate_historical_performance(
             historical_prices_yf_adjusted,
             historical_fx_yf,
             final_status,
-            pd.DataFrame(),
         )
 
     # --- 4. Derive Unadjusted Prices ---
@@ -3896,14 +3848,10 @@ def calculate_historical_performance(
     # --- 5 & 6. Load or Calculate Daily Results ---
     # Pass original_csv_file_path to _load_or_calculate_daily_results for cache validation.
     # If it's None (e.g., data loaded from DB), the mtime check in daily results cache will be skipped or handled.
-    (
-        daily_df,
-        historical_holdings_values_df,
-        cache_was_valid_daily,
-        status_update_daily,
-    ) = _load_or_calculate_daily_results(
-        use_daily_results_cache=use_daily_results_cache,
-        daily_results_cache_file=daily_results_cache_file,
+    daily_df, cache_was_valid_daily, status_update_daily = (
+        _load_or_calculate_daily_results(
+            use_daily_results_cache=use_daily_results_cache,
+            daily_results_cache_file=daily_results_cache_file,
             worker_signals=worker_signals,
             transactions_csv_file=(
                 original_csv_file_path  # Pass None or actual path for mtime check
@@ -3941,16 +3889,6 @@ def calculate_historical_performance(
         else:
             has_warnings = True
         status_parts.append("Daily calc failed/empty")
-    historical_holdings_values_df = pd.DataFrame(
-        [d.get("holdings_values", {}) for d in daily_results_list],
-        index=[d["Date"] for d in daily_results_list],
-    )
-    if not historical_holdings_values_df.empty:
-        # The columns are tuples (symbol, account), we need to aggregate by symbol
-        historical_holdings_values_df = historical_holdings_values_df.T.groupby(
-            level=0
-        ).sum().T
-
     if "Error" in status_update_daily or "failed" in status_update_daily.lower():
         has_errors = True
     elif "WARN" in status_update_daily.upper():
@@ -4031,13 +3969,7 @@ def calculate_historical_performance(
         daily_df.rename(columns={"value": "Portfolio Value"}, inplace=True)
         logging.debug("Renamed 'value' column to 'Portfolio Value' in daily_df.")
 
-    return (
-        daily_df,
-        historical_prices_yf_adjusted,
-        historical_fx_yf,
-        final_status_str,
-        historical_holdings_values_df,
-    )
+    return daily_df, historical_prices_yf_adjusted, historical_fx_yf, final_status_str
 
 
 # --- Helper to generate mappings (Needed for standalone profiling) ---
@@ -4072,6 +4004,62 @@ def generate_mappings(transactions_df_effective):
         currency_to_id,
         id_to_currency,
     )
+
+
+def calculate_historical_holdings(
+    transactions_df: pd.DataFrame,
+    start_date: date,
+    end_date: date,
+    historical_prices_yf_unadjusted: Dict[str, pd.DataFrame],
+    historical_fx_yf: Dict[str, pd.DataFrame],
+    target_currency: str,
+    internal_to_yf_map: Dict[str, str],
+    account_currency_map: Dict[str, str],
+    default_currency: str,
+    manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]],
+    processed_warnings: set,
+    symbol_to_id: Dict[str, int],
+    id_to_symbol: Dict[int, str],
+    account_to_id: Dict[str, int],
+    id_to_account: Dict[int, str],
+    type_to_id: Dict[str, int],
+    currency_to_id: Dict[str, int],
+    id_to_currency: Dict[int, str],
+    calc_method: str = HISTORICAL_CALC_METHOD,
+) -> pd.DataFrame:
+    """
+    Calculates the historical value of each holding over a given period.
+    """
+    all_dates = pd.date_range(start=start_date, end=end_date, freq="D")
+    holdings_over_time = {}
+
+    for target_date in all_dates:
+        target_date = target_date.date()
+        _, _, holdings_values = _calculate_portfolio_value_at_date_unadjusted(
+            target_date,
+            transactions_df,
+            historical_prices_yf_unadjusted,
+            historical_fx_yf,
+            target_currency,
+            internal_to_yf_map,
+            account_currency_map,
+            default_currency,
+            manual_overrides_dict,
+            processed_warnings,
+            symbol_to_id,
+            id_to_symbol,
+            account_to_id,
+            id_to_account,
+            type_to_id,
+            currency_to_id,
+            id_to_currency,
+            method=calc_method,
+        )
+        holdings_over_time[target_date] = {
+            symbol: value for (symbol, account), value in holdings_values.items()
+        }
+
+    return pd.DataFrame.from_dict(holdings_over_time, orient="index")
 
 
 # --- Example Usage (Main block for testing this file directly) ---
