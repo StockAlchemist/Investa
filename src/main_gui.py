@@ -136,7 +136,7 @@ from PySide6.QtWidgets import (
     QInputDialog,  # <-- ADDED for rebalancing tab
     QSpacerItem,  # <-- ADDED for layout spacing
 )
-from src.gui.historical_holdings_tab import HistoricalHoldingsTab
+from gui.historical_holdings_tab import HistoricalHoldingsTab
 
 from PySide6.QtWidgets import QProgressBar  # <-- ADDED for progress bar
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QWidget, QLabel
