@@ -53,6 +53,7 @@ class WorkerSignals(QObject):
         pd.DataFrame,  # correlation_matrix_df
         dict,  # factor_analysis_results
         dict,  # scenario_analysis_result
+        pd.DataFrame,
     )
 
     fundamental_data_ready = Signal(str, dict)  # display_symbol, data_dict
@@ -141,6 +142,7 @@ class PortfolioCalculatorWorker(QRunnable):
         combined_ignored_indices = set()
         combined_ignored_reasons = {}
         capital_gains_history_df = pd.DataFrame()  # Initialize for capital gains
+        historical_holdings_values_df = pd.DataFrame()
 
         portfolio_status = "Error: Portfolio calc not run"
         historical_status = "Error: Historical calc not run"
@@ -289,7 +291,13 @@ class PortfolioCalculatorWorker(QRunnable):
                 # --- END DEBUG LOG ---
 
                 # MODIFIED: Unpack 4 items (full_daily_df, prices, fx, status)
-                full_hist_df, h_prices_adj, h_fx, hist_status = self.historical_fn(
+                (
+                    full_hist_df,
+                    h_prices_adj,
+                    h_fx,
+                    hist_status,
+                    historical_holdings_values_df,
+                ) = self.historical_fn(
                     transactions_df_for_hist,  # Pass positionally
                     *self.historical_args,
                     **current_historical_kwargs,
@@ -331,6 +339,7 @@ class PortfolioCalculatorWorker(QRunnable):
                 full_historical_data_df = pd.DataFrame()  # Clear data on error
                 hist_prices_adj = {}
                 hist_fx = {}
+                historical_holdings_values_df = pd.DataFrame()
             except Exception as hist_e:
                 logging.error(
                     f"WORKER: --- Error during historical performance calculation: {hist_e} ---",
@@ -342,6 +351,7 @@ class PortfolioCalculatorWorker(QRunnable):
                 full_historical_data_df = pd.DataFrame()  # Clear data on error
                 hist_prices_adj = {}
                 hist_fx = {}
+                historical_holdings_values_df = pd.DataFrame()
 
             # --- 4. Extract Dividend History ---
             logging.info("WORKER: Extracting dividend history...")
@@ -749,6 +759,7 @@ class PortfolioCalculatorWorker(QRunnable):
                     correlation_matrix_df,  # NEW
                     factor_analysis_results,  # NEW
                     scenario_analysis_result,  # NEW
+                    historical_holdings_values_df,
                 )
                 logging.debug(
                     "WORKER: Emitting result signal with actual calculated data."
@@ -780,6 +791,7 @@ class PortfolioCalculatorWorker(QRunnable):
                 pd.DataFrame(),  # correlation_matrix_df
                 {},  # factor_analysis_results
                 {},  # scenario_analysis_result
+                pd.DataFrame(),
             )
             logging.debug(
                 "WORKER: Emitted empty/default results due to critical worker error."

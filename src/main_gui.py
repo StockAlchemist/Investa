@@ -1968,6 +1968,7 @@ The CSV file should contain the following columns (header names must match exact
         self.dividend_history_data = pd.DataFrame()
         self.historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}
         self.historical_fx_yf: Dict[str, pd.DataFrame] = {}
+        self.historical_holdings_values_df = pd.DataFrame()
 
         # Advanced Analysis Tab Attributes
         self.correlation_fig = None
@@ -1985,6 +1986,15 @@ The CSV file should contain the following columns (header names must match exact
         self.factor_analysis_results = None  # Store the regression summary object
         self.scenario_analysis_result = {}
         self.available_accounts: List[str] = []
+
+        self.historical_holdings_tab = QWidget()
+        self.holdings_historical_percent_fig = None
+        self.holdings_historical_percent_canvas = None
+        self.holdings_historical_percent_ax = None
+        self.holdings_historical_value_fig = None
+        self.holdings_historical_value_canvas = None
+        self.holdings_historical_value_ax = None
+
         self.selected_accounts: List[str] = self.config.get("selected_accounts", [])
         self.selected_benchmarks = self.config.get(
             "graph_benchmarks", DEFAULT_GRAPH_BENCHMARKS
@@ -2381,6 +2391,7 @@ The CSV file should contain the following columns (header names must match exact
         self.update_header_info()  # Re-color header text
 
         self._update_periodic_value_change_display()  # Update new tab
+        self._update_historical_holdings_graphs()
         logging.info(f"UI components refreshed for {theme_name} theme.")
 
         # Save the theme preference if triggered by menu action
@@ -4753,6 +4764,9 @@ The CSV file should contain the following columns (header names must match exact
         self._init_capital_gains_tab_widgets()
         logging.debug("--- _init_ui_widgets: After _init_table_panel_widgets ---")
 
+        # --- Tab: Historical Holdings ---
+        self._init_historical_holdings_tab_widgets()
+
         # --- Tab: Asset Change ---
         self._init_periodic_value_change_tab_widgets_content()
 
@@ -5135,6 +5149,7 @@ The CSV file should contain the following columns (header names must match exact
             (self.performance_summary_tab, "Performance"),
             (self.transactions_log_tab, "Transactions"),
             (self.asset_allocation_tab, "Asset Allocation"),
+            (self.historical_holdings_tab, "Historical Holdings"),
             (self.periodic_value_change_tab, "Asset Change"),
             (self.capital_gains_tab, "Capital Gains"),
             (self.dividend_history_tab, "Dividend"),
@@ -5286,6 +5301,49 @@ The CSV file should contain the following columns (header names must match exact
         splitter.setSizes([estimated_top_panel_height, bottom_panel_height])
 
         self.main_tab_widget.addTab(self.periodic_value_change_tab, "Asset Change")
+
+    def _init_historical_holdings_tab_widgets(self):
+        """Initializes widgets for the Historical Holdings tab."""
+        self.historical_holdings_tab.setObjectName("HistoricalHoldingsTab")
+        main_layout = QVBoxLayout(self.historical_holdings_tab)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(8)
+
+        # Create a splitter to hold the two graphs
+        splitter = QSplitter(Qt.Vertical)
+        main_layout.addWidget(splitter)
+
+        # Top pane: Percentage contribution
+        percent_group = QGroupBox("Historical Contribution by Percentage")
+        percent_layout = QVBoxLayout(percent_group)
+        self.holdings_historical_percent_fig = Figure(figsize=(7, 4), dpi=CHART_DPI)
+        self.holdings_historical_percent_ax = self.holdings_historical_percent_fig.add_subplot(
+            111
+        )
+        self.holdings_historical_percent_canvas = FigureCanvas(
+            self.holdings_historical_percent_fig
+        )
+        self.holdings_historical_percent_canvas.setObjectName(
+            "HoldingsHistoricalPercentCanvas"
+        )
+        percent_layout.addWidget(self.holdings_historical_percent_canvas)
+        splitter.addWidget(percent_group)
+
+        # Bottom pane: Value contribution
+        value_group = QGroupBox("Historical Contribution by Value")
+        value_layout = QVBoxLayout(value_group)
+        self.holdings_historical_value_fig = Figure(figsize=(7, 4), dpi=CHART_DPI)
+        self.holdings_historical_value_ax = (
+            self.holdings_historical_value_fig.add_subplot(111)
+        )
+        self.holdings_historical_value_canvas = FigureCanvas(
+            self.holdings_historical_value_fig
+        )
+        self.holdings_historical_value_canvas.setObjectName(
+            "HoldingsHistoricalValueCanvas"
+        )
+        value_layout.addWidget(self.holdings_historical_value_canvas)
+        splitter.addWidget(value_group)
 
     def _init_transactions_management_widgets(self, parent_layout: QVBoxLayout):
         """Initializes widgets for managing transactions within the Transactions Log tab."""
@@ -7065,6 +7123,7 @@ The CSV file should contain the following columns (header names must match exact
         capital_gains_history_df,
         correlation_matrix_df,
         factor_analysis_results,
+        historical_holdings_values_df,
         scenario_analysis_result,
     ):
         """Stores data received from the worker into self attributes and handles status.
@@ -7082,6 +7141,7 @@ The CSV file should contain the following columns (header names must match exact
             capital_gains_history_df (pd.DataFrame): Realized capital gains history.
             correlation_matrix_df (pd.DataFrame): DataFrame of correlation matrix.
             factor_analysis_results (dict): Results from factor analysis.
+            historical_holdings_values_df (pd.DataFrame): Historical values for each holding.
             scenario_analysis_result (dict): Results from scenario analysis.
         """
 
@@ -7130,6 +7190,11 @@ The CSV file should contain the following columns (header names must match exact
         )
         self.scenario_analysis_result = (
             scenario_analysis_result if scenario_analysis_result is not None else {}
+        )
+        self.historical_holdings_values_df = (
+            historical_holdings_values_df
+            if historical_holdings_values_df is not None
+            else pd.DataFrame()
         )
         logging.debug(
             f"  _store_worker_data assigned self.dividend_history_data (shape {self.dividend_history_data.shape if isinstance(self.dividend_history_data, pd.DataFrame) else 'Not a DF'}):"
@@ -7747,11 +7812,13 @@ The CSV file should contain the following columns (header names must match exact
                 self._update_capital_gains_display()  # Update Capital Gains tab
 
                 self._update_periodic_value_change_display()  # Update new tab
+                self._update_historical_holdings_graphs()
 
             else:
                 logging.info(
                     "Hiding bar charts frame as no periodic data is available."
                 )
+                self._update_historical_holdings_graphs()
 
         except Exception as ui_update_e:
             logging.error(
@@ -10798,6 +10865,7 @@ The CSV file should contain the following columns (header names must match exact
             self.view_ignored_button.setEnabled(False)  # Disable when clearing
         self._update_dividend_bar_chart()  # Clear dividend chart
         self._update_dividend_table()  # Clear dividend table
+        self._update_historical_holdings_graphs(initial=True)
 
     def _update_transaction_log_tables_content(self):
         """Populates the stock and cash transaction log tables using self.original_data."""
@@ -11853,7 +11921,7 @@ The CSV file should contain the following columns (header names must match exact
         self.setCursor(Qt.WaitCursor if not enabled else Qt.ArrowCursor)
 
     # --- Signal Handlers from Worker ---
-    @Slot(  # MODIFIED: Signature matches WorkerSignals.result (15 args)
+    @Slot(  # MODIFIED: Signature matches WorkerSignals.result (16 args)
         dict,
         pd.DataFrame,
         dict,
@@ -11867,6 +11935,7 @@ The CSV file should contain the following columns (header names must match exact
         pd.DataFrame,  # capital_gains_history_df
         pd.DataFrame,  # correlation_matrix_df
         dict,  # factor_analysis_results
+        pd.DataFrame,  # historical_holdings_values_df
         dict,  # scenario_analysis_result
     )
     def handle_results(
@@ -11884,6 +11953,7 @@ The CSV file should contain the following columns (header names must match exact
         capital_gains_history_df,
         correlation_matrix_df,
         factor_analysis_results,
+        historical_holdings_values_df,
         scenario_analysis_result,
     ):
         logging.info("HANDLE_RESULTS: Slot entered.")
@@ -11948,6 +12018,7 @@ The CSV file should contain the following columns (header names must match exact
                 capital_gains_history_df,
                 correlation_matrix_df,
                 factor_analysis_results,
+                historical_holdings_values_df,
                 scenario_analysis_result,
             )
             logging.info("HANDLE_RESULTS: Finished _store_worker_data.")
@@ -13109,6 +13180,99 @@ The CSV file should contain the following columns (header names must match exact
         self._update_pvc_table(
             self.pvc_weekly_table_model, "W", self.pvc_weekly_graph_spinbox.value()
         )
+
+    def _update_historical_holdings_graphs(self, initial=False):
+        """Updates the historical holdings contribution stacked area charts."""
+        logging.debug("Updating historical holdings contribution graphs...")
+
+        percent_ax = self.holdings_historical_percent_ax
+        value_ax = self.holdings_historical_value_ax
+        percent_canvas = self.holdings_historical_percent_canvas
+        value_canvas = self.holdings_historical_value_canvas
+
+        # Clear both axes
+        percent_ax.clear()
+        value_ax.clear()
+
+        # Apply theme colors
+        for ax in [percent_ax, value_ax]:
+            fig = ax.get_figure()
+            fig.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
+            ax.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+            ax.spines["bottom"].set_color(self.QCOLOR_BORDER_THEMED.name())
+            ax.spines["left"].set_color(self.QCOLOR_BORDER_THEMED.name())
+            ax.tick_params(axis='x', colors=self.QCOLOR_TEXT_SECONDARY_THEMED.name())
+            ax.tick_params(axis='y', colors=self.QCOLOR_TEXT_SECONDARY_THEMED.name())
+            ax.title.set_color(self.QCOLOR_TEXT_PRIMARY_THEMED.name())
+            ax.yaxis.label.set_color(self.QCOLOR_TEXT_PRIMARY_THEMED.name())
+
+
+        if initial or self.historical_holdings_values_df.empty:
+            for ax, title in [(percent_ax, "Historical Contribution (%)"), (value_ax, "Historical Contribution (Value)")]:
+                ax.text(0.5, 0.5, "No Data Available", ha="center", va="center", transform=ax.transAxes, color=self.QCOLOR_TEXT_SECONDARY_THEMED.name())
+            percent_canvas.draw()
+            value_canvas.draw()
+            return
+
+        df = self.historical_holdings_values_df.copy()
+
+        # Filter by date range from main graph controls
+        start_date = self.graph_start_date_edit.date().toPython()
+        end_date = self.graph_end_date_edit.date().toPython()
+        df = df.loc[start_date:end_date]
+
+        if df.empty:
+            for ax, title in [(percent_ax, "Historical Contribution (%)"), (value_ax, "Historical Contribution (Value)")]:
+                ax.text(0.5, 0.5, "No Data in Selected Date Range", ha="center", va="center", transform=ax.transAxes, color=self.QCOLOR_TEXT_SECONDARY_THEMED.name())
+            percent_canvas.draw()
+            value_canvas.draw()
+            return
+
+        # Prepare data for plotting
+        labels = df.columns.tolist()
+        # Create a consistent color map for all holdings
+        cmap = plt.get_cmap('Spectral') # A good colormap for many distinct colors
+        colors = cmap(np.linspace(0, 1, len(labels)))
+
+        # --- 1. Value Chart ---
+        y_values = [df[label] for label in labels]
+        value_ax.stackplot(df.index, y_values, labels=labels, colors=colors)
+
+        currency_symbol = self._get_currency_symbol()
+        value_ax.set_title("Historical Contribution by Value", fontsize=10, weight="bold")
+        value_ax.set_ylabel(f"Value ({currency_symbol})", fontsize=9)
+        value_ax.yaxis.set_major_formatter(mtick.FuncFormatter(lambda x, p: f"{currency_symbol}{x:,.0f}"))
+        value_ax.grid(True, which='major', linestyle='--', linewidth=0.5, color=self.QCOLOR_BORDER_THEMED.name())
+
+
+        # --- 2. Percentage Chart ---
+        df_percent = df.div(df.sum(axis=1), axis=0) * 100
+        y_percent_values = [df_percent[label] for label in labels]
+
+        percent_ax.stackplot(df.index, y_percent_values, labels=labels, colors=colors)
+        percent_ax.set_title("Historical Contribution by Percentage", fontsize=10, weight="bold")
+        percent_ax.set_ylabel("Contribution (%)", fontsize=9)
+        percent_ax.yaxis.set_major_formatter(mtick.PercentFormatter())
+        percent_ax.set_ylim(0, 100)
+        percent_ax.grid(True, which='major', linestyle='--', linewidth=0.5, color=self.QCOLOR_BORDER_THEMED.name())
+
+        # --- Legend ---
+        # Create a single legend for both plots, placed outside
+        handles, labels = value_ax.get_legend_handles_labels()
+        # Use the figure's suptitle or another mechanism to place legend if needed, for now we place it on one graph
+        # For a large number of holdings, a legend can be problematic. Let's place it on the top graph.
+        percent_ax.legend(handles, labels, loc='upper left', bbox_to_anchor=(1.02, 1), fontsize=8, title='Holdings')
+
+
+        # Final adjustments and drawing
+        for fig in [percent_ax.get_figure(), value_ax.get_figure()]:
+            fig.autofmt_xdate(rotation=15)
+            fig.tight_layout(rect=[0, 0, 0.85, 1]) # Adjust rect to make space for legend
+
+        percent_canvas.draw()
+        value_canvas.draw()
 
     def _update_dividend_summary_table(self, plot_data: pd.Series):
         """Updates the dividend summary table view with aggregated data."""
