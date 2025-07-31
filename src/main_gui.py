@@ -13515,7 +13515,7 @@ The CSV file should contain the following columns (header names must match exact
     def _update_scenario_analysis_display(self):
         """Updates the Scenario Analysis display."""
         logging.debug("Updating Scenario Analysis display...")
-        if self.scenario_analysis_result:
+        if not self.scenario_analysis_result.empty:
             estimated_return = self.scenario_analysis_result.get(
                 "estimated_portfolio_return", np.nan
             )
