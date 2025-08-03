@@ -5355,22 +5355,6 @@ The CSV file should contain the following columns (header names must match exact
         button_layout.addWidget(self.export_transactions_button)
         parent_layout.addLayout(button_layout)
 
-        # --- Connections ---
-        self.apply_filter_button.clicked.connect(
-            self._apply_filter_to_transactions_view
-        )
-        self.clear_filter_button.clicked.connect(
-            self._clear_filter_in_transactions_view
-        )
-        self.add_transaction_button.clicked.connect(self.add_new_transaction_db)
-        self.edit_transaction_button.clicked.connect(self.edit_selected_transaction_db)
-        self.delete_transaction_button.clicked.connect(
-            self.delete_selected_transaction_db
-        )
-        self.export_transactions_button.clicked.connect(
-            self._export_transactions_to_csv
-        )
-
         # Initial data load for the table
         self._refresh_transactions_view()
 
@@ -7932,6 +7916,17 @@ The CSV file should contain the following columns (header names must match exact
         # Table Filter Connections
         # self.apply_table_filter_button.clicked.connect(self._apply_table_filter)
         self.clear_table_filter_button.clicked.connect(self._clear_table_filter)
+        # --- ADDED: Connect the button from the Transactions Log tab ---
+        # This button was previously connected in _init_transactions_management_widgets
+        # It is now correctly connected here with all other signals.
+        # self.add_transaction_button.clicked.connect(self.open_add_transaction_dialog)
+        # --- END ADDED ---
+        logging.debug(
+            "Connected add_transaction_button.clicked signal to open_add_transaction_dialog."
+        )
+        # Removed some signals to find if the button only triggers once
+        # Other signals are still in the code, just commented out for now.
+
         # Optional: Trigger apply on pressing Enter in the line edits
         self.filter_symbol_table_edit.returnPressed.connect(self._apply_table_filter)
         self.filter_account_table_edit.returnPressed.connect(self._apply_table_filter)
