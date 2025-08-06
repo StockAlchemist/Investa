@@ -6809,6 +6809,17 @@ The CSV file should contain the following columns (header names must match exact
         show_closed = self.show_closed_check.isChecked()
         start_date_hist = self.graph_start_date_edit.date().toPython()
         end_date_hist = self.graph_end_date_edit.date().toPython()
+
+        # --- ADDED: Ensure end_date is not in the future ---
+        today = date.today()
+        if end_date_hist > today:
+            end_date_hist = today
+            self.graph_end_date_edit.setDate(QDate(end_date_hist))  # Update UI
+            logging.info(
+                f"Graph end date was in future, reset to today: {end_date_hist}"
+            )
+        # --- END ADDED ---
+
         interval_hist = self.graph_interval_combo.currentText()
         selected_benchmark_tickers = [
             BENCHMARK_MAPPING.get(name)
