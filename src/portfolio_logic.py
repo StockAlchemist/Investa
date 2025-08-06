@@ -1308,7 +1308,6 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
                 in the target currency for the date. Returns np.nan if any critical price/FX lookup fails.
             - any_lookup_nan_on_date (bool): True if any required price or FX rate lookup failed critically.
     """
-    # ... (Function body remains unchanged) ...
     IS_DEBUG_DATE = (
         target_date == HISTORICAL_DEBUG_DATE_VALUE
         if "HISTORICAL_DEBUG_DATE_VALUE" in globals()
