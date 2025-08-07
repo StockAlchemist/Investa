@@ -146,9 +146,6 @@ except ImportError:
     raise
 
 
-
-
-
 # --- Main Calculation Function (Current Portfolio Summary) ---
 @profile
 def calculate_portfolio_summary(
@@ -954,18 +951,17 @@ def _unadjust_prices(
     Calculates the current portfolio summary using MarketDataProvider for market data
     and helper functions from portfolio_analyzer.py for calculations.
 
-    
+
     """
     logging.info("--- Starting Price Unadjustment ---")
     unadjusted_prices_yf = {}
     unadjusted_count = 0
 
     for yf_symbol, adj_price_df in adjusted_prices_yf.items():
-        
 
         # --- Handle Empty/Invalid Input DataFrame ---
         if adj_price_df.empty or "price" not in adj_price_df.columns:
-            
+
             unadjusted_prices_yf[yf_symbol] = (
                 adj_price_df.copy()
             )  # Return copy of input
@@ -980,14 +976,16 @@ def _unadjust_prices(
 
         # --- Handle No Splits ---
         if not symbol_splits:
-            
+
             unadjusted_prices_yf[yf_symbol] = (
                 adj_price_df.copy()
             )  # Return copy of input
             continue
         # --- END Handle No Splits ---
         else:
-            
+            logging.debug(
+                f"Unadjusting prices for {yf_symbol} with {len(symbol_splits)} splits."
+            )
 
         # --- Prepare DataFrame for Unadjustment ---
         unadj_df = adj_price_df.copy()
@@ -1006,7 +1004,7 @@ def _unadjust_prices(
                         f"Hist WARN: Failed converting index to date for {yf_symbol}: {e_idx}"
                     )
                     processed_warnings.add(warn_key)
-                
+
                 unadjusted_prices_yf[yf_symbol] = (
                     adj_price_df.copy()
                 )  # Return original on failure
@@ -1023,7 +1021,6 @@ def _unadjust_prices(
         sorted_splits_desc = sorted(
             symbol_splits, key=lambda x: x.get("Date", date.min), reverse=True
         )
-        
 
         # --- Process Splits (Robust Loop) ---
         for split_info in sorted_splits_desc:
@@ -1042,12 +1039,12 @@ def _unadjust_prices(
                     raise TypeError(f"Invalid split date type: {type(split_date_raw)}")
                 # Validate split ratio
                 if split_ratio <= 0:
-                    
+
                     continue  # Skip this invalid split
 
                 # Apply factor to dates *before* the split date
                 mask = forward_split_factor.index < split_date
-                
+
                 forward_split_factor.loc[mask] *= split_ratio
 
             except (KeyError, ValueError, TypeError, AttributeError) as e:
@@ -1060,7 +1057,7 @@ def _unadjust_prices(
                         f"Hist WARN: Error processing split for {yf_symbol} around {split_info.get('Date', 'N/A')}: {e}"
                     )
                     processed_warnings.add(warn_key)
-                
+
                 continue  # Skip this problematic split, but continue with others
         # --- END Process Splits ---
 
@@ -1075,7 +1072,7 @@ def _unadjust_prices(
         unadj_df["unadjusted_price"] = aligned_prices * aligned_factor
 
         # --- Debug Output (Conditional) ---
-        
+
         # --- END Debug Output ---
 
         # --- Prepare Output ---
@@ -1092,9 +1089,6 @@ def _unadjust_prices(
         f"--- Finished Price Unadjustment ({unadjusted_count} symbols processed with splits) ---"
     )
     return unadjusted_prices_yf
-
-
-
 
 
 # --- Helper Functions for Point-in-Time Historical Calculation ---
@@ -1647,10 +1641,6 @@ def _calculate_holdings_numba(
         if holdings_currency_np[symbol_id, account_id] == -1:
             holdings_currency_np[symbol_id, account_id] = currency_id
         # Optional: Check for currency mismatch if already set (more complex in Numba)
-
-        
-
-        
 
         # --- Standard Buy/Sell/Deposit/Withdrawal ---
         if type_id == buy_type_id or type_id == deposit_type_id:
