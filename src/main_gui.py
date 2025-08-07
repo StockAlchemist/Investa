@@ -9540,16 +9540,37 @@ The CSV file should contain the following columns (header names must match exact
         twr_factor = (
             self.last_hist_twr_factor
         )  # This factor now reflects the selected scope
-        start_date_val = (
-            self.graph_start_date_edit.date().toPython()
-            if hasattr(self, "graph_start_date_edit")
-            else None
-        )
-        end_date_val = (
-            self.graph_end_date_edit.date().toPython()
-            if hasattr(self, "graph_end_date_edit")
-            else None
-        )
+
+        # --- FIX: Use the actual date range from the filtered historical data for TWR annualization ---
+        start_date_val = None
+        end_date_val = None
+        if (
+            hasattr(self, "historical_data")
+            and isinstance(self.historical_data, pd.DataFrame)
+            and not self.historical_data.empty
+            and isinstance(self.historical_data.index, pd.DatetimeIndex)
+        ):
+            start_date_val = self.historical_data.index.min().date()
+            end_date_val = self.historical_data.index.max().date()
+            logging.debug(
+                f"Using historical_data date range for TWR annualization: {start_date_val} to {end_date_val}"
+            )
+        else:  # Fallback to UI controls if historical_data is not ready
+            start_date_val = (
+                self.graph_start_date_edit.date().toPython()
+                if hasattr(self, "graph_start_date_edit")
+                else None
+            )
+            end_date_val = (
+                self.graph_end_date_edit.date().toPython()
+                if hasattr(self, "graph_end_date_edit")
+                else None
+            )
+            logging.warning(
+                f"Fallback to UI date range for TWR annualization: {start_date_val} to {end_date_val}"
+            )
+        # --- END FIX ---
+
         annualized_twr_pct = self._calculate_annualized_twr(
             twr_factor, start_date_val, end_date_val
         )
