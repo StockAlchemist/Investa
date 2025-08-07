@@ -664,6 +664,7 @@ class PortfolioApp(QMainWindow):
             "pvc_annual_periods": 10,
             "pvc_monthly_periods": 12,
             "pvc_weekly_periods": 12,
+            "pvc_daily_periods": 30,  # For new daily chart
             "last_csv_import_path": QStandardPaths.writableLocation(
                 QStandardPaths.DocumentsLocation
             )
@@ -874,6 +875,7 @@ class PortfolioApp(QMainWindow):
                 "pvc_annual_periods",
                 "pvc_monthly_periods",
                 "pvc_weekly_periods",
+                "pvc_daily_periods",
             ]
         )
         for key in numeric_spinbox_keys:
@@ -4074,6 +4076,8 @@ The CSV file should contain the following columns (header names must match exact
             self.config["pvc_monthly_periods"] = self.pvc_monthly_graph_spinbox.value()
         if hasattr(self, "pvc_weekly_graph_spinbox"):
             self.config["pvc_weekly_periods"] = self.pvc_weekly_graph_spinbox.value()
+        if hasattr(self, "pvc_daily_graph_spinbox"):
+            self.config["pvc_daily_periods"] = self.pvc_daily_graph_spinbox.value()
 
         # Also save the default spinbox values (these are loaded by load_config if key exists)
         # self.config["dividend_chart_default_periods_annual"] = self.config.get("dividend_chart_default_periods_annual", 10)
@@ -5170,6 +5174,13 @@ The CSV file should contain the following columns (header names must match exact
                 "pvc_weekly_graph_spinbox",
                 12,
             ),
+            (
+                "Daily",
+                "pvc_daily_graph",
+                "Daily Value Change Graph",
+                "pvc_daily_graph_spinbox",
+                30,  # Default to 30 days
+            ),
         ]
 
         for (
@@ -5221,6 +5232,7 @@ The CSV file should contain the following columns (header names must match exact
             ("Annual", "pvc_annual_table", "Annual Value Change Table"),
             ("Monthly", "pvc_monthly_table", "Monthly Value Change Table"),
             ("Weekly", "pvc_weekly_table", "Weekly Value Change Table"),
+            ("Daily", "pvc_daily_table", "Daily Value Change Table"),
         ]
 
         for period_name, attr_prefix, group_title in table_configs:
@@ -7384,6 +7396,40 @@ The CSV file should contain the following columns (header names must match exact
                 "Cannot calculate absolute periodic value changes: full_historical_data is empty, invalid, or missing 'Portfolio Value'."
             )
 
+        # --- ADDED: Process Daily Data ---
+        if (
+            isinstance(self.full_historical_data, pd.DataFrame)
+            and not self.full_historical_data.empty
+        ):
+            logging.debug("Processing DAILY value changes and returns...")
+            daily_df = self.full_historical_data.copy()
+
+            # 1. Value Changes
+            if "daily_gain" in daily_df.columns:
+                self.periodic_value_changes_data["D"] = pd.DataFrame(
+                    {"Portfolio Value Change": daily_df["daily_gain"]}
+                )
+                logging.debug(
+                    f"  Created daily value change data, shape: {self.periodic_value_changes_data['D'].shape}"
+                )
+            else:
+                self.periodic_value_changes_data["D"] = pd.DataFrame()
+
+            # 2. Percentage Returns
+            daily_returns_df = pd.DataFrame(index=daily_df.index)
+            if "daily_return" in daily_df.columns:
+                daily_returns_df["Portfolio D-Return"] = (
+                    daily_df["daily_return"] * 100.0
+                )
+
+            for yf_ticker in selected_benchmark_tickers_for_periodic:
+                price_col = f"{yf_ticker} Price"
+                if price_col in daily_df.columns:
+                    daily_returns_df[f"{yf_ticker} D-Return"] = (
+                        daily_df[price_col].pct_change() * 100.0
+                    )
+            self.periodic_returns_data["D"] = daily_returns_df
+
         # --- ADDED: Filter full data to get data for line graphs ---
         self.historical_data = pd.DataFrame()  # Initialize filtered data
         if (
@@ -8012,6 +8058,10 @@ The CSV file should contain the following columns (header names must match exact
                 self._update_periodic_value_change_display
             )
             self.pvc_weekly_graph_spinbox.valueChanged.connect(
+                self._update_periodic_value_change_display
+            )
+        if hasattr(self, "pvc_daily_graph_spinbox"):
+            self.pvc_daily_graph_spinbox.valueChanged.connect(
                 self._update_periodic_value_change_display
             )
 
@@ -12839,6 +12889,8 @@ The CSV file should contain the following columns (header names must match exact
             table_view_to_sort = self.pvc_monthly_table_view
         elif table_model == self.pvc_weekly_table_model:
             table_view_to_sort = self.pvc_weekly_table_view
+        elif table_model == self.pvc_daily_table_model:
+            table_view_to_sort = self.pvc_daily_table_view
 
         if table_view_to_sort and not df_for_table.empty:
             try:
@@ -12914,6 +12966,7 @@ The CSV file should contain the following columns (header names must match exact
             (self.pvc_annual_table_view, self.pvc_annual_table_model, "Annual"),
             (self.pvc_monthly_table_view, self.pvc_monthly_table_model, "Monthly"),
             (self.pvc_weekly_table_view, self.pvc_weekly_table_model, "Weekly"),
+            (self.pvc_daily_table_view, self.pvc_daily_table_model, "Daily"),
         ]
 
         for table_view, table_model, interval_key_debug in pvc_tables_config:
@@ -12999,6 +13052,15 @@ The CSV file should contain the following columns (header names must match exact
         )
         self._update_pvc_table(
             self.pvc_weekly_table_model, "W", self.pvc_weekly_graph_spinbox.value()
+        )
+        self._plot_pvc_graph(
+            self.pvc_daily_graph_ax,
+            self.pvc_daily_graph_canvas,
+            "D",
+            self.pvc_daily_graph_spinbox.value(),
+        )
+        self._update_pvc_table(
+            self.pvc_daily_table_model, "D", self.pvc_daily_graph_spinbox.value()
         )
 
     def _update_dividend_summary_table(self, plot_data: pd.Series):
