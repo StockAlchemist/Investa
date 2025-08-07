@@ -9566,9 +9566,11 @@ The CSV file should contain the following columns (header names must match exact
                 if hasattr(self, "graph_end_date_edit")
                 else None
             )
-            logging.warning(
-                f"Fallback to UI date range for TWR annualization: {start_date_val} to {end_date_val}"
-            )
+            # Only log a warning if we expected data to be present (i.e., not in a cleared/initial state)
+            if self.summary_metrics_data:
+                logging.warning(
+                    f"Fallback to UI date range for TWR annualization: {start_date_val} to {end_date_val}"
+                )
         # --- END FIX ---
 
         annualized_twr_pct = self._calculate_annualized_twr(

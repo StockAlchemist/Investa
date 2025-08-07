@@ -2467,10 +2467,13 @@ def _prepare_historical_inputs(
         list(set(symbols_to_fetch_yf_portfolio + benchmark_symbols_yf))
     )
 
-    all_currencies_in_tx_effective = set(
-        transactions_df_effective["Local Currency"].unique()
+    # --- FIX: Use the *unfiltered* DataFrame to determine all possible currencies needed for the entire run ---
+    # This ensures that even if the historical graph scope is filtered (e.g., to a USD-only account),
+    # we still fetch FX rates needed for other parts of the analysis like dividend history which uses the full dataset.
+    all_currencies_in_tx_unfiltered = set(
+        all_transactions_df["Local Currency"].unique()
     )
-    all_currencies_needed = all_currencies_in_tx_effective.union(
+    all_currencies_needed = all_currencies_in_tx_unfiltered.union(
         {display_currency, default_currency}
     )
     # --- ADDED: More robust cleaning for all_currencies_needed ---
