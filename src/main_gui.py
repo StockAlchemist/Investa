@@ -4241,11 +4241,6 @@ The CSV file should contain the following columns (header names must match exact
             return separator
 
         # Buttons
-        self.add_transaction_button = QPushButton("Add Tx")
-        self.add_transaction_button.setObjectName("AddTransactionButton")
-        self.add_transaction_button.setIcon(
-            self.style().standardIcon(QStyle.SP_FileIcon)
-        )
         self.manage_transactions_button = QPushButton(
             "Manage Tx"
         )  # Keep button instance for menu/toolbar
@@ -4268,9 +4263,6 @@ The CSV file should contain the following columns (header names must match exact
         )
         self.view_ignored_button.setEnabled(False)  # Initially disabled
         # controls_layout.addWidget(self.view_ignored_button) # REMOVED from left group
-
-        self.add_transaction_button.setToolTip("Manually add a new transaction")
-        # controls_layout.addWidget(self.add_transaction_button) # REMOVED from controls bar
 
         # --- Separator 1 ---
         controls_layout.addWidget(create_separator())
@@ -5351,20 +5343,20 @@ The CSV file should contain the following columns (header names must match exact
 
         # --- Action Buttons ---
         button_layout = QHBoxLayout()
-        self.add_transaction_button = QPushButton("Add Transaction")
-        self.add_transaction_button.setIcon(QIcon.fromTheme("list-add"))
-        self.edit_transaction_button = QPushButton("Edit Selected")
-        self.edit_transaction_button.setIcon(QIcon.fromTheme("document-edit"))
-        self.delete_transaction_button = QPushButton("Delete Selected")
-        self.delete_transaction_button.setIcon(QIcon.fromTheme("edit-delete"))
-        self.export_transactions_button = QPushButton("Export to CSV")
-        self.export_transactions_button.setIcon(QIcon.fromTheme("document-save"))
+        self.manage_tab_add_button = QPushButton("Add Transaction")
+        self.manage_tab_add_button.setIcon(QIcon.fromTheme("list-add"))
+        self.manage_tab_edit_button = QPushButton("Edit Selected")
+        self.manage_tab_edit_button.setIcon(QIcon.fromTheme("document-edit"))
+        self.manage_tab_delete_button = QPushButton("Delete Selected")
+        self.manage_tab_delete_button.setIcon(QIcon.fromTheme("edit-delete"))
+        self.manage_tab_export_button = QPushButton("Export to CSV")
+        self.manage_tab_export_button.setIcon(QIcon.fromTheme("document-save"))
 
-        button_layout.addWidget(self.add_transaction_button)
-        button_layout.addWidget(self.edit_transaction_button)
-        button_layout.addWidget(self.delete_transaction_button)
+        button_layout.addWidget(self.manage_tab_add_button)
+        button_layout.addWidget(self.manage_tab_edit_button)
+        button_layout.addWidget(self.manage_tab_delete_button)
         button_layout.addStretch(1)
-        button_layout.addWidget(self.export_transactions_button)
+        button_layout.addWidget(self.manage_tab_export_button)
         parent_layout.addLayout(button_layout)
 
         # Initial data load for the table
@@ -5629,11 +5621,7 @@ The CSV file should contain the following columns (header names must match exact
             if new_data_dict_pytypes:
                 # Call PortfolioApp's method to handle the DB update
                 if self._edit_transaction_in_db(db_id, new_data_dict_pytypes):
-                    self._refresh_transactions_view()  # Refresh this dialog's view from DB after successful save
-                    # self.data_changed.emit()  # Signal main window to refresh its data
-                    # Success message will be shown by PortfolioApp after its refresh typically,
-                    # or we can add one here if preferred.
-                    # QMessageBox.information(self, "Success", "Transaction updated in database.")
+                    self.refresh_data()  # Trigger a full app refresh
                 else:
                     QMessageBox.critical(
                         self,
@@ -5685,10 +5673,7 @@ The CSV file should contain the following columns (header names must match exact
         if reply == QMessageBox.Yes:
             # Call PortfolioApp's method to handle the DB delete
             if self._delete_transaction_in_db(db_id):
-                self._refresh_transactions_view()  # Refresh this dialog's view from DB
-                # self.data_changed.emit()  # Signal main window to refresh its data
-                # Success message handled by main app or here if desired
-                # QMessageBox.information(self, "Success", "Transaction deleted from database.")
+                self.refresh_data()  # Trigger a full app refresh
             else:
                 QMessageBox.critical(
                     self,
@@ -7760,10 +7745,7 @@ The CSV file should contain the following columns (header names must match exact
                 logging.debug("  Calling _update_dividend_table...")
                 # --- END ADDED LOGGING ---
                 self._update_dividend_table()  # And dividend table
-                # --- ADDED LOGGING ---
-                logging.debug("  Calling _update_transaction_log_tables_content...")
-                # --- END ADDED LOGGING ---
-                self._update_transaction_log_tables_content()  # Update new log tables
+                self._update_all_transaction_tables()  # Update all three transaction tables
                 # --- ADDED LOGGING ---
                 logging.debug("  Calling _update_asset_allocation_charts...")
                 # --- END ADDED LOGGING ---
@@ -7943,7 +7925,6 @@ The CSV file should contain the following columns (header names must match exact
 
     def _connect_signals(self):
         """Connects signals from UI widgets (buttons, combos, etc.) to their slots."""
-        self.add_transaction_button.clicked.connect(self.open_add_transaction_dialog)
         self.account_select_button.clicked.connect(self.show_account_selection_menu)
         self.update_accounts_button.clicked.connect(self.refresh_data)
         self.currency_combo.currentTextChanged.connect(self.filter_changed_refresh)
@@ -7997,6 +7978,15 @@ The CSV file should contain the following columns (header names must match exact
         self.table_filter_timer.timeout.connect(
             self._apply_table_filter
         )  # Timer timeout applies filter
+
+        # --- Transactions Management Tab Connections ---
+        self.manage_tab_add_button.clicked.connect(self.add_new_transaction_db)
+        self.manage_tab_edit_button.clicked.connect(self.edit_selected_transaction_db)
+        self.manage_tab_delete_button.clicked.connect(
+            self.delete_selected_transaction_db
+        )
+        self.manage_tab_export_button.clicked.connect(self.export_transactions_to_csv)
+        # --- End Transactions Management Tab Connections ---
 
         # Fundamental Lookup Connections
         self.lookup_button.clicked.connect(self._handle_direct_symbol_lookup)
@@ -9919,15 +9909,6 @@ The CSV file should contain the following columns (header names must match exact
                     str(new_account_name_edited)
                 )  # Update GUI's available accounts
 
-        else:
-            logging.error(f"Failed to update transaction ID {transaction_id} in DB.")
-            # db_utils.update_transaction_in_db would show a log, PortfolioApp can show a general message
-            QMessageBox.critical(
-                self,
-                "Update Error",
-                "Failed to update transaction in the database. Check logs.",
-            )
-
         return success
 
     def _backup_csv(self, filename_to_backup=None):  # Add optional argument
@@ -10226,7 +10207,7 @@ The CSV file should contain the following columns (header names must match exact
             # _rewrite_csv would have shown its own error message
             return False
 
-    def _delete_transaction_from_db(self, transaction_id: int) -> bool:
+    def _delete_transaction_in_db(self, transaction_id: int) -> bool:
         """
         Deletes a transaction from the database using its ID.
 
@@ -10254,12 +10235,6 @@ The CSV file should contain the following columns (header names must match exact
             logging.info(
                 f"Successfully deleted transaction ID {transaction_id} from DB."
             )
-
-            # No need for a QMessageBox here as the dialog handles user feedback.
-        else:
-            logging.error(f"Failed to delete transaction ID {transaction_id} from DB.")
-            # db_utils.delete_transaction_from_db would have logged details.
-            # The dialog can show a generic "failed to delete" message.
         return success
 
     def _delete_transactions_from_csv(
@@ -10762,6 +10737,17 @@ The CSV file should contain the following columns (header names must match exact
             self.view_ignored_button.setEnabled(False)  # Disable when clearing
         self._update_dividend_bar_chart()  # Clear dividend chart
         self._update_dividend_table()  # Clear dividend table
+
+    def _update_all_transaction_tables(self):
+        """
+        Refreshes all three transaction tables in the 'Transactions' tab
+        using the main application data (self.original_data).
+        """
+        logging.debug("Updating all transaction tables...")
+        # This updates the top "management" table
+        self._refresh_transactions_view()
+        # This updates the bottom two "log" tables (Stock/ETF and $CASH)
+        self._update_transaction_log_tables_content()
 
     def _update_transaction_log_tables_content(self):
         """Populates the stock and cash transaction log tables using self.original_data."""
@@ -11794,7 +11780,6 @@ The CSV file should contain the following columns (header names must match exact
             enabled (bool): True to enable controls, False to disable.
         """
         controls_to_toggle = [
-            self.add_transaction_button,
             self.account_select_button,  # Use new button
             self.update_accounts_button,  # <-- ADDED Update Accounts button
             self.currency_combo,
