@@ -1906,6 +1906,8 @@ The CSV file should contain the following columns (header names must match exact
         self.internal_to_yf_map = {}
         self.table_filter_timer = QTimer(self)
         self.table_filter_timer.setSingleShot(True)
+        self.tx_filter_timer = QTimer(self)  # Timer for transactions tab filter
+        self.tx_filter_timer.setSingleShot(True)
         self._initial_file_selection = False  # Used by select_database_file now
         self.worker_signals = WorkerSignals()
         self.market_data_provider = (
@@ -5706,14 +5708,10 @@ The CSV file should contain the following columns (header names must match exact
                 )
 
     def _clear_filter_in_transactions_view(self):
-        """Clears filters and shows all current data loaded from the DB."""
+        """Clears filters and re-applies to show all current data."""
         self.filter_symbol_edit.clear()
         self.filter_account_edit.clear()
-        self.transactions_management_table_model.updateData(
-            self._current_data_df.copy()
-        )  # Reset to full current data
-        self.transactions_management_table_view.resizeColumnsToContents()
-        logging.debug("--- _init_ui_widgets: Asset Change Tab widgets initialized ---")
+        self._apply_filter_to_transactions_view()
 
     def _update_periodic_value_change_display(self):
         """Updates the graphs and tables in the Asset Change tab."""
@@ -7979,6 +7977,23 @@ The CSV file should contain the following columns (header names must match exact
             self._apply_table_filter
         )  # Timer timeout applies filter
 
+        # --- Transactions Management Filter Connections ---
+        self.apply_filter_button.clicked.connect(
+            self._apply_filter_to_transactions_view
+        )
+        self.clear_filter_button.clicked.connect(
+            self._clear_filter_in_transactions_view
+        )
+        self.filter_symbol_edit.textChanged.connect(self._on_tx_filter_text_changed)
+        self.filter_account_edit.textChanged.connect(self._on_tx_filter_text_changed)
+        self.tx_filter_timer.timeout.connect(self._apply_filter_to_transactions_view)
+        self.filter_symbol_edit.returnPressed.connect(
+            self._apply_filter_to_transactions_view
+        )
+        self.filter_account_edit.returnPressed.connect(
+            self._apply_filter_to_transactions_view
+        )
+
         # --- Transactions Management Tab Connections ---
         self.manage_tab_add_button.clicked.connect(self.add_new_transaction_db)
         self.manage_tab_edit_button.clicked.connect(self.edit_selected_transaction_db)
@@ -8113,6 +8128,14 @@ The CSV file should contain the following columns (header names must match exact
             f"Filter text changed: '{text}', restarting debounce timer ({DEBOUNCE_INTERVAL_MS}ms)."
         )
         self.table_filter_timer.start(DEBOUNCE_INTERVAL_MS)
+
+    @Slot(str)
+    def _on_tx_filter_text_changed(self, text: str):
+        """Restarts the debounce timer for the transactions tab filter."""
+        logging.debug(
+            f"Transaction filter text changed: '{text}', restarting debounce timer ({DEBOUNCE_INTERVAL_MS}ms)."
+        )
+        self.tx_filter_timer.start(DEBOUNCE_INTERVAL_MS)
 
     # --- Styling Method (Reads External File) ---
     def apply_styles(self):
