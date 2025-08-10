@@ -84,6 +84,14 @@ STOCK_QUANTITY_CLOSE_TOLERANCE = (
     1e-6  # Quantities smaller than this are considered closed
 )
 
+# --- Bar Chart Configuration ---
+BAR_CHART_MAX_PERIODS_ANNUAL = 50
+BAR_CHART_MAX_PERIODS_QUARTERLY = 60  # 15 years
+BAR_CHART_MAX_PERIODS_MONTHLY = 120  # 10 years
+BAR_CHART_MAX_PERIODS_WEEKLY = 260  # 5 years
+BAR_CHART_MAX_PERIODS_DAILY = 365  # 1 year
+
+
 # --- Dividend Chart Configuration ---
 DIVIDEND_CHART_DEFAULT_PERIODS_ANNUAL = 10
 DIVIDEND_CHART_DEFAULT_PERIODS_QUARTERLY = 12  # (3 years)

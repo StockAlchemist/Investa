@@ -247,6 +247,11 @@ from config import (
     COLOR_GAIN,
     COLOR_LOSS,
     DEFAULT_CSV,
+    BAR_CHART_MAX_PERIODS_ANNUAL,
+    BAR_CHART_MAX_PERIODS_QUARTERLY,
+    BAR_CHART_MAX_PERIODS_MONTHLY,
+    BAR_CHART_MAX_PERIODS_WEEKLY,
+    BAR_CHART_MAX_PERIODS_DAILY,
 )
 
 from utils import (
@@ -4493,6 +4498,7 @@ The CSV file should contain the following columns (header names must match exact
             ax_attr_name,
             spinbox_attr_name,
             default_periods,
+            max_periods,
         ):
             widget = QWidget()
             layout = QVBoxLayout(widget)
@@ -4513,7 +4519,7 @@ The CSV file should contain the following columns (header names must match exact
             spinbox = QSpinBox()
             spinbox.setObjectName(f"{spinbox_attr_name}")  # e.g., annualPeriodsSpinBox
             spinbox.setMinimum(1)
-            spinbox.setMaximum(100)  # Adjust max as needed
+            spinbox.setMaximum(max_periods)  # Adjust max as needed
             spinbox.setValue(default_periods)
             spinbox.setToolTip(f"Number of {title.split()[0].lower()} to display")
             spinbox.setFixedWidth(50)  # Keep it compact
@@ -4545,6 +4551,7 @@ The CSV file should contain the following columns (header names must match exact
             "annual_bar_ax",
             "annual_periods_spinbox",
             self.config.get("bar_periods_annual", 10),
+            BAR_CHART_MAX_PERIODS_ANNUAL,
         )
         self.monthly_bar_widget = create_bar_chart_widget(
             "Monthly Returns",
@@ -4553,6 +4560,7 @@ The CSV file should contain the following columns (header names must match exact
             "monthly_bar_ax",
             "monthly_periods_spinbox",
             self.config.get("bar_periods_monthly", 12),
+            BAR_CHART_MAX_PERIODS_MONTHLY,
         )
         self.weekly_bar_widget = create_bar_chart_widget(
             "Weekly Returns",
@@ -4561,6 +4569,7 @@ The CSV file should contain the following columns (header names must match exact
             "weekly_bar_ax",
             "weekly_periods_spinbox",
             self.config.get("bar_periods_weekly", 12),
+            BAR_CHART_MAX_PERIODS_WEEKLY,
         )
 
         # Add widgets to the layout
@@ -4790,7 +4799,17 @@ The CSV file should contain the following columns (header names must match exact
         )
         self.dividend_periods_spinbox.setObjectName("DividendPeriodsSpinbox")
         self.dividend_periods_spinbox.setMinimum(1)
-        self.dividend_periods_spinbox.setMaximum(50)
+
+        def update_dividend_max_periods(period_text):
+            if period_text == "Annual":
+                self.dividend_periods_spinbox.setMaximum(BAR_CHART_MAX_PERIODS_ANNUAL)
+            elif period_text == "Quarterly":
+                self.dividend_periods_spinbox.setMaximum(BAR_CHART_MAX_PERIODS_QUARTERLY)
+            elif period_text == "Monthly":
+                self.dividend_periods_spinbox.setMaximum(BAR_CHART_MAX_PERIODS_MONTHLY)
+
+        self.dividend_period_combo.currentTextChanged.connect(update_dividend_max_periods)
+        update_dividend_max_periods(self.dividend_period_combo.currentText())
         # Initialize based on default period (Annual)
         # --- MODIFIED: Set dividend periods spinbox from config ---
         # The _update_dividend_spinbox_default will be called once due to setCurrentText above,
@@ -5191,7 +5210,7 @@ The CSV file should contain the following columns (header names must match exact
             controls_layout.addWidget(QLabel("Periods:"))
             spinbox = QSpinBox()
             spinbox.setMinimum(1)
-            spinbox.setMaximum(100)
+            spinbox.setMaximum(eval(f"BAR_CHART_MAX_PERIODS_{period_name.upper()}"))
             spinbox.setValue(
                 self.config.get(f"pvc_{period_name.lower()}_periods", default_periods)
             )
@@ -5749,7 +5768,16 @@ The CSV file should contain the following columns (header names must match exact
         self.cg_periods_spinbox = QSpinBox()
         self.cg_periods_spinbox.setObjectName("CgPeriodsSpinbox")
         self.cg_periods_spinbox.setMinimum(1)
-        self.cg_periods_spinbox.setMaximum(50)  # Max periods to show
+
+        def update_cg_max_periods(period_text):
+            if period_text == "Annual":
+                self.cg_periods_spinbox.setMaximum(BAR_CHART_MAX_PERIODS_ANNUAL)
+            elif period_text == "Quarterly":
+                self.cg_periods_spinbox.setMaximum(BAR_CHART_MAX_PERIODS_QUARTERLY)
+        
+        self.cg_period_combo.currentTextChanged.connect(update_cg_max_periods)
+        update_cg_max_periods(self.cg_period_combo.currentText())
+
         self.cg_periods_spinbox.setValue(self.config.get("cg_periods_to_show", 10))
         self.cg_periods_spinbox.setFixedWidth(60)
         cg_controls_layout.addWidget(self.cg_periods_spinbox)
