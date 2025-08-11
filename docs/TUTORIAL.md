@@ -388,7 +388,7 @@ The **"Asset Allocation"** tab offers valuable pie charts that visually break do
 * **Missing Data:** If Yahoo Finance does not provide data for a specific category (like Sector or Industry) for some of your holdings, those holdings might be grouped under an "Unknown" or "N/A" slice in the pie chart, or they might not contribute to that specific chart if the information is entirely absent.
 * **Manual Overrides:** You have the power to correct or specify these classifications. Use **Settings > Symbol Settings...** to manually set the `Asset Type`, `Sector`, `Geography`, and `Industry` for any symbol. These overrides are stored in `manual_overrides.json` and will be used by the allocation charts. This is particularly useful for:
   * Assets not well-covered by Yahoo Finance.
-  * Correcting data you believe is misclassified by the API.
+  * Correcting data that you believe is misclassified by the API.
   * Defining custom classifications that suit your analysis style.
 * **Account Filtering:** Like other dashboard elements, these allocation charts respect the currently selected account filter.
 
@@ -396,7 +396,7 @@ By regularly reviewing these charts and ensuring your data (including manual ove
 
 ## Part 8: Understanding Capital Gains
 
-The **"Capital Gains"** tab provides a focused view on the profits or losses you've realized from selling assets (stocks, ETFs). This is distinct from unrealized gains/losses on assets you still hold.
+The **"Capital Gains"** tab provides a focused view of the profits or losses you've realized from selling assets (stocks, ETFs). This is distinct from unrealized gains/losses on assets you still hold.
 
 1. **Accessing the Tab:** Click on the "Capital Gains" tab in the main interface.
 
@@ -447,7 +447,57 @@ The **"Capital Gains"** tab provides a focused view on the profits or losses you
 
 This tab is essential for understanding the actual profits you've locked in from your trading activities and can be very useful for tax estimation purposes (though always consult with a tax professional for official advice).
 
-## Part 9: Handy Extras & Advanced Settings
+## Part 9: Rebalancing Your Portfolio
+
+The **"Rebalancing"** tab is a powerful tool that helps you align your current portfolio with your desired target allocations. It calculates the specific buy and sell trades needed to achieve your goals.
+
+1. **Accessing the Tab:** Click on the "Rebalancing" tab in the main interface.
+
+2. **How It Works:**
+    * **Load Current Holdings:** The tab automatically loads your current holdings based on the accounts selected in the main filter, displaying each asset's symbol, current quantity, price, and market value.
+    * **Define Target Allocations:** For each asset listed (including `$CASH`), enter your desired target allocation as a percentage in the "Target %" column. The total of all target percentages must equal 100%.
+    * **Calculate Trades:** Click the "Calculate Rebalance" button. Investa will compute the difference between your current allocation and your target allocation for each asset.
+
+3. **Interpreting the Results:**
+    * The table will update to show:
+        * `Target Value`: The ideal market value for each asset based on your target percentage.
+        * `Action`: The required action, which will be "Buy", "Sell", or "Hold".
+        * `Trade Value`: The total dollar amount to buy or sell for that asset.
+        * `Trade Quantity`: The number of shares to buy or sell.
+    * A summary at the bottom shows the total amount of funds that need to be freed up from sales and the total amount required for purchases, helping you manage the cash flow for the rebalancing process.
+
+This feature simplifies the often-complex task of rebalancing, providing clear, actionable steps to maintain your investment strategy.
+
+## Part 10: Advanced Portfolio Analysis
+
+The **"Advanced Analysis"** tab provides sophisticated tools to gain deeper insights into your portfolio's risk and return characteristics. It contains three sub-tabs.
+
+### Correlation Matrix
+
+* **Purpose:** This tab visualizes how the daily returns of your assets move in relation to one another.
+* **How to Use:** Simply click the "Calculate Correlation" button. The assets in your currently filtered portfolio will be analyzed.
+* **Interpretation:** A heatmap is generated.
+  * A value of **1** (dark green/blue) means the assets are perfectly positively correlated (they move in the same direction).
+  * A value of **-1** (dark red) means they are perfectly negatively correlated (they move in opposite directions).
+  * A value near **0** (neutral color) means there is little to no correlation.
+* This is useful for understanding diversification. A portfolio with many highly correlated assets may carry more concentrated risk.
+
+### Factor Analysis
+
+* **Purpose:** This tool performs a regression analysis to determine what market factors (e.g., the overall market, company size, value vs. growth) are driving your portfolio's returns.
+* **How to Use:** Select a model (`Fama-French 3-Factor` or `Carhart 4-Factor`) and click "Run Factor Analysis".
+* **Interpretation:** The results table shows key regression statistics:
+  * `alpha`: Represents the excess return of your portfolio above what would be expected based on the market factors. A positive alpha is often considered a sign of skill.
+  * `beta` (e.g., `Mkt-RF`, `SMB`, `HML`): Measures your portfolio's sensitivity to each factor. For example, a market beta greater than 1 indicates higher volatility than the market.
+  * `R-squared`: Shows the percentage of your portfolio's returns that can be explained by the model.
+
+### Scenario Analysis
+
+* **Purpose:** This tab allows you to simulate how your portfolio might perform under specific hypothetical market shocks.
+* **How to Use:** Select a scenario from the dropdown (e.g., "S&P 500 drops 10%") and click "Run Scenario".
+* **Interpretation:** The results table shows the `Estimated Impact` on the market value of each of your holdings and the portfolio as a whole, based on their historical correlation to the selected market index. This provides a tangible estimate of potential risk.
+
+## Part 11: Handy Extras & Advanced Settings
 
 Investa packs several additional features and settings to enhance your portfolio management experience:
 
@@ -455,10 +505,10 @@ Investa packs several additional features and settings to enhance your portfolio
     This powerful dialog is your go-to for managing how individual symbols are treated within Investa. It directly modifies the `manual_overrides.json` file.
   * **Manual Overrides Tab:**
     * If data fetched from Yahoo Finance for a symbol (like its current `price`, `asset_type`, `sector`, `geography`, or `industry`) is missing, incorrect, or you wish to use a custom value, you can set it here.
-    * Enter the `Symbol`, select the `Field to Override`, and provide the `New Value`. Click "Add/Update Override".
+    * Enter the `Symbol`, select the `Field to Override` (e.g., price, sector), and provide the `New Value`. Click "Add/Update Override".
     * This gives you fine-grained control over how your assets are classified and valued, which is especially useful for non-standard assets or correcting API data.
   * **Symbol Mapping Tab:**
-    * Useful if a ticker symbol has changed or if you use an alternative symbol in your records (e.g., `BRK.B` vs `BRK-B`).
+    * Useful if a ticker symbol has changed or if you use an alternative symbol in your records (e.g., `BRK.B` vs. `BRK-B`).
     * Enter the `Original Symbol` (as it might appear in your transactions or from an old data source) and the `Mapped Symbol` (the one Yahoo Finance recognizes or your preferred primary symbol).
     * Investa will then treat all instances of the original symbol as the mapped symbol for data fetching and calculations.
   * **Excluded Symbols Tab:**
@@ -468,7 +518,7 @@ Investa packs several additional features and settings to enhance your portfolio
   * Quickly look up detailed financial information for any stock. Enter a symbol in the "Symbol for Fundamentals" box on the toolbar and click "Get Fundamentals", or right-click a holding in the Holdings Table and select "View Fundamentals".
   * The viewer is organized into tabs:
     * **Summary:** Company profile, key statistics (Market Cap, P/E, EPS), dividend information, and price history.
-    * **Financials:** Annual and quarterly Income Statements.
+    * **Financials:** Annual and quarterly Income Statements. Now includes Dividend Yield and Rate.
     * **Balance Sheet:** Annual and quarterly Balance Sheet data.
     * **Cash Flow:** Annual and quarterly Cash Flow statements.
     * *(Options Tab might be present but is typically for future development).*
@@ -511,6 +561,8 @@ Investa packs several additional features and settings to enhance your portfolio
   * **Linux:** `~/.local/share/StockAlchemist/Investa/`
 
 ## Part 10: Tips & Troubleshooting
+
+## Part 12: Tips & Troubleshooting
 
 Here are some general tips and common troubleshooting steps, reflecting Investa's database-centric approach:
 

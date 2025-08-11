@@ -33,9 +33,16 @@ Investa is a desktop application designed to help you track, analyze, and visual
   * **Symbol Mapping:** Define aliases or map alternative ticker symbols to a primary symbol (e.g., map "BRK.B" to "BRK-B") for consistent data fetching and display.
   * **Symbol Exclusions:** Specify symbols to be excluded from market data fetching or certain calculations.
   * All managed via `Settings > Symbol Settings...` and stored in `manual_overrides.json`.
+* **Advanced Analysis Tab:**
+  * **Correlation Matrix:** Visualize the correlation of daily returns between portfolio assets.
+  * **Factor Analysis:** Perform Fama-French or Carhart factor analysis to identify the drivers of portfolio returns (alpha, beta).
+  * **Scenario Analysis:** Simulate the impact of hypothetical market shocks on your portfolio.
+* **Rebalancing Tab:**
+  * Load your current holdings and define target allocations for each asset.
+  * Automatically calculate the required buy/sell trades to rebalance your portfolio to your desired targets.
 * **Fundamental Data Viewer (Multi-Tab):**
   * Access key fundamental data for stock symbols directly within the app.
-  * **Overview Tab:** Company profile, key statistics (market cap, P/E, dividend yield), price stats (52-week high/low, volume), and business summary.
+  * **Overview Tab:** Company profile, key statistics (market cap, P/E, dividend yield & rate), price stats (52-week high/low, volume), and business summary.
   * **Financials, Balance Sheet, Cash Flow Tabs:** View detailed financial statements (annual and quarterly).
 * **Market Data Fetching & Caching:**
   * Retrieves near real-time stock quotes, index prices, and foreign exchange (FX) rates using Yahoo Finance.
