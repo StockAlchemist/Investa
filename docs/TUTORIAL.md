@@ -560,8 +560,6 @@ Investa packs several additional features and settings to enhance your portfolio
   * **Windows:** `C:\Users\<YourUserName>\AppData\Local\StockAlchemist\Investa\`
   * **Linux:** `~/.local/share/StockAlchemist/Investa/`
 
-## Part 10: Tips & Troubleshooting
-
 ## Part 12: Tips & Troubleshooting
 
 Here are some general tips and common troubleshooting steps, reflecting Investa's database-centric approach:
