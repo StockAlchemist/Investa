@@ -4804,11 +4804,15 @@ The CSV file should contain the following columns (header names must match exact
             if period_text == "Annual":
                 self.dividend_periods_spinbox.setMaximum(BAR_CHART_MAX_PERIODS_ANNUAL)
             elif period_text == "Quarterly":
-                self.dividend_periods_spinbox.setMaximum(BAR_CHART_MAX_PERIODS_QUARTERLY)
+                self.dividend_periods_spinbox.setMaximum(
+                    BAR_CHART_MAX_PERIODS_QUARTERLY
+                )
             elif period_text == "Monthly":
                 self.dividend_periods_spinbox.setMaximum(BAR_CHART_MAX_PERIODS_MONTHLY)
 
-        self.dividend_period_combo.currentTextChanged.connect(update_dividend_max_periods)
+        self.dividend_period_combo.currentTextChanged.connect(
+            update_dividend_max_periods
+        )
         update_dividend_max_periods(self.dividend_period_combo.currentText())
         # Initialize based on default period (Annual)
         # --- MODIFIED: Set dividend periods spinbox from config ---
@@ -5774,7 +5778,7 @@ The CSV file should contain the following columns (header names must match exact
                 self.cg_periods_spinbox.setMaximum(BAR_CHART_MAX_PERIODS_ANNUAL)
             elif period_text == "Quarterly":
                 self.cg_periods_spinbox.setMaximum(BAR_CHART_MAX_PERIODS_QUARTERLY)
-        
+
         self.cg_period_combo.currentTextChanged.connect(update_cg_max_periods)
         update_cg_max_periods(self.cg_period_combo.currentText())
 
@@ -14232,6 +14236,17 @@ The CSV file should contain the following columns (header names must match exact
         logging.info(
             f"Direct fundamental lookup requested for: {input_symbol} (YF: {yf_symbol})"
         )
+        self.status_label.setText(f"Fetching fundamentals for {input_symbol}...")
+        self.lookup_symbol_edit.setEnabled(False)
+        self.lookup_button.setEnabled(False)
+
+        worker = FundamentalDataWorker(
+            yf_symbol,
+            input_symbol,  # The display symbol is the one the user typed
+            self.worker_signals,
+            FINANCIAL_RATIOS_AVAILABLE,
+        )
+        self.threadpool.start(worker)
 
     @Slot()
     def _show_column_context_menu(

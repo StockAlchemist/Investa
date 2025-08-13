@@ -458,5 +458,38 @@ QTabBar::tab:selected {
     /* font-weight: bold; */
 }
 
+/* --- Tab Styling --- */
+QTabWidget::pane {
+    /* This is the content area below the tabs */
+    border: 1px solid #DEE2E6; /* Use your light border color */
+    border-top: none;
+    background-color: #FFFFFF;
+}
+
+QTabBar::tab {
+    /* Style for all non-selected tabs */
+    background-color: #F8F9FA; /* A slightly off-white/grey background */
+    color: #6C757D; /* Secondary text color */
+    padding: 8px 20px;
+    border: 1px solid #DEE2E6;
+    border-bottom: none; /* No bottom border for any tab */
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    margin-right: 2px;
+}
+
+QTabBar::tab:hover {
+    background-color: #e9ecef; /* A slightly darker hover effect */
+}
+
+QTabBar::tab:selected {
+    /* Style for the currently selected tab */
+    background-color: #FFFFFF; /* Match the window background */
+    color: #212529; /* Primary text color */
+    font-weight: bold;
+    border-color: #DEE2E6;
+    /* Make the bottom border match the pane background to create a "merged" look */
+    border-bottom: 1px solid #FFFFFF;
+}
 
 /* --- END OF FILE style.qss --- */
