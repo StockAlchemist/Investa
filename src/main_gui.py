@@ -7463,7 +7463,20 @@ The CSV file should contain the following columns (header names must match exact
                 if temp_df.index.tz is not None:
                     temp_df.index = temp_df.index.tz_localize(None)
 
-                self.historical_data = temp_df.loc[pd_start:pd_end].copy()
+                # Filter by date range first
+                filtered_by_date_df = temp_df.loc[pd_start:pd_end].copy()
+
+                # Now, resample the date-filtered data based on the UI interval setting
+                interval = self.graph_interval_combo.currentText()
+                if interval in ["W", "M"]:
+                    # Resample the data, taking the last available value in each period
+                    self.historical_data = filtered_by_date_df.resample(interval).last()
+                    logging.debug(
+                        f"Resampled historical data to interval '{interval}'. Shape: {self.historical_data.shape}"
+                    )
+                else:  # For 'D' or any other case, use the daily data
+                    self.historical_data = filtered_by_date_df
+
                 logging.debug(
                     f"Filtered self.historical_data for line graphs: {self.historical_data.shape} rows from {plot_start_date} to {plot_end_date}"
                 )
@@ -7476,7 +7489,6 @@ The CSV file should contain the following columns (header names must match exact
                     self.historical_data = self.full_historical_data.copy()  # Fallback
                 else:
                     self.historical_data = pd.DataFrame()  # Ensure it's an empty DF
-                self.historical_data = self.full_historical_data.copy()  # Fallback
         else:
             logging.warning(
                 "Full historical data is empty or invalid, cannot filter for line graphs."

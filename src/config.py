@@ -28,7 +28,7 @@ CURRENT_QUOTE_CACHE_DURATION_MINUTES = 1  # For current stock/index quotes (pric
 
 # --- Logging Configuration ---
 # This level is a default; main_gui.py might override it for its own logging.
-LOGGING_LEVEL = logging.WARNING
+LOGGING_LEVEL = logging.WARNING  # Default logging level for the application
 
 # --- Application Name (used by QStandardPaths if it doesn't infer from bundle) ---
 APP_NAME = "Investa"  # Used by db_utils.py for fallback folder if QStandardPaths fails
@@ -136,7 +136,7 @@ COMMON_CURRENCIES = [  # List of commonly used currency codes
 
 # --- Graph Defaults ---
 DEFAULT_GRAPH_DAYS_AGO = 365 * 2  # Default start for graphs, days relative to today
-DEFAULT_GRAPH_INTERVAL = "W"  # Default graph interval (D, W, M)
+DEFAULT_GRAPH_INTERVAL = "D"  # Default graph interval (D, W, M)
 
 # --- Benchmark Definitions ---
 # DEFAULT_GRAPH_BENCHMARKS uses display names.
