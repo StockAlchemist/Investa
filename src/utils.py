@@ -165,8 +165,9 @@ def get_column_definitions(display_currency="USD"):
 from PySide6.QtWidgets import QStyledItemDelegate, QStyle
 from PySide6.QtGui import QColor
 
+
 class GroupHeaderDelegate(QStyledItemDelegate):
-    def __init__(self, parent=None, theme='light'):
+    def __init__(self, parent=None, theme="light"):
         super().__init__(parent)
         self.theme = theme
 

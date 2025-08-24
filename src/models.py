@@ -1,6 +1,6 @@
 # Auto-generated from main_gui.py modularization
 from PySide6.QtCore import QAbstractTableModel, Qt, QModelIndex
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QFont
 from typing import Any, Optional
 import pandas as pd
 import numpy as np
@@ -185,6 +185,42 @@ class PandasModel(QAbstractTableModel):
             except (IndexError, AttributeError, KeyError) as e:
                 pass
             return alignment
+
+        # --- Background Color ---
+        if role == Qt.BackgroundRole:
+            try:
+                # Check if the 'is_group_header' column exists and is True for this row
+                if "is_group_header" in self._data.columns:
+                    is_header = self._data.iloc[
+                        row, self._data.columns.get_loc("is_group_header")
+                    ]
+                    if pd.notna(is_header) and is_header is True:
+                        # Use the themed header background color from the parent app
+                        if self._parent and hasattr(
+                            self._parent, "QCOLOR_HEADER_BACKGROUND_THEMED"
+                        ):
+                            return self._parent.QCOLOR_HEADER_BACKGROUND_THEMED
+            except (IndexError, KeyError):
+                # This might happen if the dataframe is modified while view is updating.
+                # It's safe to ignore and just not apply a background color.
+                pass
+            return None  # Default background
+
+        # --- Font (for bolding headers) ---
+        if role == Qt.FontRole:
+            try:
+                # Check if the 'is_group_header' column exists and is True for this row
+                if "is_group_header" in self._data.columns:
+                    is_header = self._data.iloc[
+                        row, self._data.columns.get_loc("is_group_header")
+                    ]
+                    if pd.notna(is_header) and is_header is True:
+                        font = QFont()
+                        font.setBold(True)
+                        return font
+            except (IndexError, KeyError):
+                pass
+            return None  # Default font
 
         # --- Text Color (Foreground) ---
         # ... (Coloring logic remains the same) ...

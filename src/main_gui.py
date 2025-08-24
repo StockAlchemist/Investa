@@ -2307,8 +2307,10 @@ The CSV file should contain the following columns (header names must match exact
         ]
 
         # Update the delegate with the new theme
-        if hasattr(self, 'table_view'):
-            self.table_view.setItemDelegate(GroupHeaderDelegate(self.table_view, theme=self.current_theme))
+        if hasattr(self, "table_view"):
+            self.table_view.setItemDelegate(
+                GroupHeaderDelegate(self.table_view, theme=self.current_theme)
+            )
 
         for attr_name in table_view_attr_names:
             if hasattr(self, attr_name):
@@ -4696,7 +4698,9 @@ The CSV file should contain the following columns (header names must match exact
 
         # Table View
         self.table_view = QTableView()
-        self.table_view.setItemDelegate(GroupHeaderDelegate(self.table_view, theme=self.current_theme))
+        self.table_view.setItemDelegate(
+            GroupHeaderDelegate(self.table_view, theme=self.current_theme)
+        )
         self.table_view.setObjectName("HoldingsTable")
         self.table_view.setAlternatingRowColors(True)
         self.table_view.setSelectionBehavior(QTableView.SelectRows)
@@ -7699,7 +7703,9 @@ The CSV file should contain the following columns (header names must match exact
             # --- END ADDED LOGGING ---
 
             df_for_pies = self._get_filtered_data(group_by_sector=False)
-            df_for_table = self._get_filtered_data(group_by_sector=self.group_by_sector_check.isChecked())
+            df_for_table = self._get_filtered_data(
+                group_by_sector=self.group_by_sector_check.isChecked()
+            )
 
             # --- ADDED LOGGING ---
             logging.debug(
@@ -7732,9 +7738,7 @@ The CSV file should contain the following columns (header names must match exact
             # --- ADDED LOGGING ---
             logging.debug("  Calling _update_table_view_with_filtered_columns...")
             # --- END ADDED LOGGING ---
-            self._update_table_view_with_filtered_columns(
-                df_for_table
-            )  # Update table
+            self._update_table_view_with_filtered_columns(df_for_table)  # Update table
             # --- ADDED LOGGING ---
             logging.debug("  Calling apply_column_visibility...")
             # --- END ADDED LOGGING ---
@@ -8151,8 +8155,8 @@ The CSV file should contain the following columns (header names must match exact
         """Updates the table view, pie charts, and title based on current filters."""
         logging.debug("Updating table display due to filter change...")
         # 1. Get data filtered by Account, Show Closed, AND Table Filters
-        df_display_filtered = (
-            self._get_filtered_data(group_by_sector=self.group_by_sector_check.isChecked())
+        df_display_filtered = self._get_filtered_data(
+            group_by_sector=self.group_by_sector_check.isChecked()
         )  # This now includes table filters
 
         # 2. Update the table view itself
@@ -9459,8 +9463,8 @@ The CSV file should contain the following columns (header names must match exact
             ):
                 try:
                     # Filter holdings_data based on selected accounts before summing cash
-                    df_filtered_for_cash = (
-                        self._get_filtered_data(group_by_sector=False)
+                    df_filtered_for_cash = self._get_filtered_data(
+                        group_by_sector=False
                     )  # Use existing filter logic
                     cash_mask = df_filtered_for_cash["Symbol"] == CASH_SYMBOL_CSV
                     cash_mask &= (
@@ -11647,10 +11651,19 @@ The CSV file should contain the following columns (header names must match exact
                         actual_to_ui_map[actual_col_name] = ui_name
             if cols_to_keep_actual:
                 df_intermediate = df_source_data[cols_to_keep_actual].copy()
+                # --- ADDED: Re-attach the 'is_group_header' column if it exists ---
+                # This column is used for styling and is dropped by the column selection logic above.
+                if "is_group_header" in df_source_data.columns:
+                    df_intermediate["is_group_header"] = df_source_data[
+                        "is_group_header"
+                    ]
+                # --- END ADDED ---
                 df_for_table = df_intermediate.rename(columns=actual_to_ui_map)
         self.table_model.updateData(df_for_table)
         if "is_group_header" in df_for_table.columns:
-            self.table_view.setColumnHidden(df_for_table.columns.get_loc("is_group_header"), True)
+            self.table_view.setColumnHidden(
+                df_for_table.columns.get_loc("is_group_header"), True
+            )
         if not df_for_table.empty:
             self.table_view.resizeColumnsToContents()
             # The fixed-width setting logic has been removed to allow dynamic resizing.
@@ -11776,9 +11789,9 @@ The CSV file should contain the following columns (header names must match exact
 
             # --- 4. Group by Sector ---
             if group_by_sector and "Sector" in df_filtered.columns:
-                df_filtered['Sector'] = df_filtered['Sector'].fillna('Unknown')
+                df_filtered["Sector"] = df_filtered["Sector"].fillna("Unknown")
                 grouped_data = []
-                
+
                 # Define columns to sum
                 currency = self._get_currency_symbol(get_name=True)
                 cols_to_sum = [
@@ -11791,12 +11804,12 @@ The CSV file should contain the following columns (header names must match exact
                     f"Total Gain ({currency})",
                     f"FX Gain/Loss ({currency})",
                     f"Est. Ann. Income ({currency})",
-                    "Market Value", # Fallback
+                    "Market Value",  # Fallback
                     "Day Change",
                 ]
 
                 for sector, group in df_filtered.groupby("Sector"):
-                    
+
                     group_header_data = {
                         "Symbol": f"--- {sector} ---",
                         "is_group_header": True,
@@ -11806,12 +11819,12 @@ The CSV file should contain the following columns (header names must match exact
                         if col in group.columns:
                             total = group[col].sum()
                             group_header_data[col] = total
-                    
+
                     group_header = pd.DataFrame([group_header_data])
-                    
+
                     grouped_data.append(group_header)
                     grouped_data.append(group)
-                
+
                 if grouped_data:
                     df_filtered = pd.concat(grouped_data, ignore_index=True)
 
@@ -11869,7 +11882,9 @@ The CSV file should contain the following columns (header names must match exact
 
         num_available = len(self.available_accounts)
         num_selected = len(self.selected_accounts)
-        df_display_filtered = self._get_filtered_data(group_by_sector=self.group_by_sector_check.isChecked())  # Get currently displayed data
+        df_display_filtered = self._get_filtered_data(
+            group_by_sector=self.group_by_sector_check.isChecked()
+        )  # Get currently displayed data
         num_rows_displayed = len(df_display_filtered)
 
         title_right_text = f"Holdings Detail ({num_rows_displayed} items shown)"
