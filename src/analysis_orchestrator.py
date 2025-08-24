@@ -723,6 +723,22 @@ def calculate_portfolio_summary(
                         if not manual_industry:
                             industry_map[internal_symbol] = "N/A (Fetch Error)"
 
+                # --- ADDED: Check for 'Other' and log a warning ---
+                final_sector = sector_map.get(internal_symbol, "")
+                if final_sector and final_sector.lower().strip() == "other":
+                    logging.warning(
+                        f"Asset '{internal_symbol}' has sector listed as 'Other'."
+                    )
+                    has_warnings = True
+
+                final_industry = industry_map.get(internal_symbol, "")
+                if final_industry and final_industry.lower().strip() == "other":
+                    logging.warning(
+                        f"Asset '{internal_symbol}' has industry listed as 'Other'."
+                    )
+                    has_warnings = True
+                # --- END ADDED ---
+
             summary_df_unfiltered_temp["Sector"] = (
                 summary_df_unfiltered_temp["Symbol"]
                 .map(sector_map)

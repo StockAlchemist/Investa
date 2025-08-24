@@ -51,7 +51,12 @@ from finutils import (
     format_float_with_commas,
 )
 
-from config import COMMON_CURRENCIES
+from config import (
+    COMMON_CURRENCIES,
+    STANDARD_SECTORS,
+    STANDARD_INDUSTRIES,
+)
+
 
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -81,7 +86,6 @@ FALLBACK_QCOLOR_LOSS = QColor("#e74c3c")
 FALLBACK_QCOLOR_GAIN = QColor("#2ecc71")
 
 from config import CASH_SYMBOL_CSV, CSV_DATE_FORMAT
-
 
 
 class FundamentalDataDialog(QDialog):
@@ -330,7 +334,9 @@ class FundamentalDataDialog(QDialog):
                     value, currency_symbol_for_formatting, decimals=2
                 )
             elif key in RATIO_KEYS_NO_CURRENCY:
-                formatted_value = format_float_with_commas(value, decimals=2)  # No currency symbol
+                formatted_value = format_float_with_commas(
+                    value, decimals=2
+                )  # No currency symbol
             elif key in INTEGER_COUNT_KEYS:
                 formatted_value = format_integer_with_commas(value)
             elif key == "sharesShortPreviousMonthDate":  # Timestamp
@@ -1461,6 +1467,10 @@ class ManualPriceDialog(QDialog):
             ),  # Store as list for dialog return
         }
 
+        # Store standard lists for comboboxes
+        self.standard_sectors = STANDARD_SECTORS
+        self.standard_industries = STANDARD_INDUSTRIES
+
         # --- Layout ---
         main_layout = QVBoxLayout(self)
 
@@ -1620,10 +1630,25 @@ class ManualPriceDialog(QDialog):
             price_str = f"{price:.4f}" if price is not None and pd.notna(price) else ""
             item_price = QTableWidgetItem(price_str)
             table.setItem(row_idx, 1, item_price)
-            table.setItem(row_idx, 2, QTableWidgetItem(asset_type))
-            table.setItem(row_idx, 3, QTableWidgetItem(sector))
-            table.setItem(row_idx, 4, QTableWidgetItem(geography))
-            table.setItem(row_idx, 5, QTableWidgetItem(industry))
+            table.setItem(row_idx, 2, QTableWidgetItem(str(asset_type)))
+
+            # --- Sector ComboBox (Column 3) ---
+            sector_combo = QComboBox()
+            sector_combo.addItems(self.standard_sectors)
+            if sector and sector not in self.standard_sectors:
+                sector_combo.addItem(sector)  # Add non-standard value if it exists
+            sector_combo.setCurrentText(str(sector))
+            table.setCellWidget(row_idx, 3, sector_combo)
+
+            table.setItem(row_idx, 4, QTableWidgetItem(str(geography)))
+
+            # --- Industry ComboBox (Column 5) ---
+            industry_combo = QComboBox()
+            industry_combo.addItems(self.standard_industries)
+            if industry and industry not in self.standard_industries:
+                industry_combo.addItem(industry)  # Add non-standard value if it exists
+            industry_combo.setCurrentText(str(industry))
+            table.setCellWidget(row_idx, 5, industry_combo)
 
         table.setSortingEnabled(True)
         table.resizeColumnsToContents()
@@ -1729,20 +1754,52 @@ class ManualPriceDialog(QDialog):
 
     def _add_row_to_current_tab(self):
         current_tab_index = self.tab_widget.currentIndex()
-        table_widget = None
-        num_cols = 0
 
         if current_tab_index == 0:  # Manual Overrides
             table_widget = self.overrides_table_widget
-            num_cols = 6
+            current_row_count = table_widget.rowCount()
+            table_widget.insertRow(current_row_count)
+
+            # Set QTableWidgetItems for text-based columns
+            for col_idx in [0, 1, 2, 4]:  # Symbol, Price, Asset Type, Geography
+                table_widget.setItem(current_row_count, col_idx, QTableWidgetItem(""))
+
+            # Set QComboBox for Sector column (col 3)
+            sector_combo = QComboBox()
+            sector_combo.addItems(self.standard_sectors)
+            table_widget.setCellWidget(current_row_count, 3, sector_combo)
+
+            # Set QComboBox for Industry column (col 5)
+            industry_combo = QComboBox()
+            industry_combo.addItems(self.standard_industries)
+            table_widget.setCellWidget(current_row_count, 5, industry_combo)
+
+            # Focus on the first cell
+            first_item = table_widget.item(current_row_count, 0)
+            if first_item:
+                table_widget.scrollToItem(first_item, QAbstractItemView.PositionAtTop)
+                table_widget.setCurrentItem(first_item)
+                table_widget.editItem(first_item)
+
         elif current_tab_index == 1:  # Symbol Mapping
             table_widget = self.symbol_map_table_widget
-            num_cols = 2
+            num_cols = table_widget.columnCount()
+            current_row_count = table_widget.rowCount()
+            table_widget.insertRow(current_row_count)
+            first_item = None
+            for col in range(num_cols):
+                item = QTableWidgetItem("")
+                table_widget.setItem(current_row_count, col, item)
+                if col == 0:
+                    first_item = item
+            if first_item:
+                table_widget.scrollToItem(first_item, QAbstractItemView.PositionAtTop)
+                table_widget.setCurrentItem(first_item)
+                table_widget.editItem(first_item)
+
         elif current_tab_index == 2:  # Excluded Symbols
             table_widget = self.excluded_symbols_table_widget
-            num_cols = 1
-
-        if table_widget:
+            num_cols = table_widget.columnCount()
             current_row_count = table_widget.rowCount()
             table_widget.insertRow(current_row_count)
             first_item = None
@@ -1808,9 +1865,9 @@ class ManualPriceDialog(QDialog):
             symbol_item = self.overrides_table_widget.item(row_idx, 0)
             price_item = self.overrides_table_widget.item(row_idx, 1)
             asset_type_item = self.overrides_table_widget.item(row_idx, 2)
-            sector_item = self.overrides_table_widget.item(row_idx, 3)
+            sector_combo_widget = self.overrides_table_widget.cellWidget(row_idx, 3)
             geography_item = self.overrides_table_widget.item(row_idx, 4)
-            industry_item = self.overrides_table_widget.item(row_idx, 5)
+            industry_combo_widget = self.overrides_table_widget.cellWidget(row_idx, 5)
 
             # Ensure all items exist for the row
             if not all(
@@ -1818,9 +1875,9 @@ class ManualPriceDialog(QDialog):
                     symbol_item,
                     price_item,
                     asset_type_item,
-                    sector_item,
+                    sector_combo_widget,
                     geography_item,
-                    industry_item,
+                    industry_combo_widget,
                 ]
             ):
                 QMessageBox.warning(
@@ -1832,9 +1889,9 @@ class ManualPriceDialog(QDialog):
             symbol = symbol_item.text().strip().upper()
             price_text = price_item.text().strip().replace(",", "")
             asset_type_text = asset_type_item.text().strip()
-            sector_text = sector_item.text().strip()
+            sector_text = sector_combo_widget.currentText().strip()
             geography_text = geography_item.text().strip()
-            industry_text = industry_item.text().strip()
+            industry_text = industry_combo_widget.currentText().strip()
             current_override_entry: Dict[str, Any] = {}
 
             # Validate Symbol
@@ -3111,9 +3168,6 @@ class AddTransactionDialog(QDialog):
             f"_update_field_states_wrapper_symbol (symbol changed): symbol='{symbol}', current_tx_type='{current_tx_type}'"
         )
         self._update_field_states(current_tx_type, symbol)
-
-
-
 
 
 # --- Main Application Window ---

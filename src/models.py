@@ -132,7 +132,13 @@ class PandasModel(QAbstractTableModel):
                 # Ensure col_name is treated as a string for subsequent checks
                 col_name_str = str(col_name)
                 col_data = self._data.iloc[:, col]
-                if col_name_str in ["Account", "Symbol", "Price Source"]:
+                if col_name_str in [
+                    "Account",
+                    "Symbol",
+                    "Price Source",
+                    "Sector",
+                    "Industry",
+                ]:
                     alignment = int(
                         Qt.AlignLeft | Qt.AlignVCenter
                     )  # Keep left alignment for these

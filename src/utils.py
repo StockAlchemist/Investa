@@ -132,6 +132,8 @@ def get_column_definitions(display_currency="USD"):
         # UI Header Name : Actual DataFrame Column Name (potentially with currency)
         "Account": "Account",
         "Symbol": "Symbol",
+        "Sector": "Sector",
+        "Industry": "Industry",
         "Quantity": "Quantity",
         f"Day Chg": f"Day Change ({display_currency})",
         "Day Chg %": "Day Change %",
