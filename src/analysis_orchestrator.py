@@ -702,9 +702,14 @@ def calculate_portfolio_summary(
                                 "sector", "Unknown Sector"
                             )
                         if not manual_asset_type:
-                            quote_type_map[internal_symbol] = fundamental_info.get(
+                            # Standardize EQUITY to Stock for consistency
+                            fetched_quote_type = fundamental_info.get(
                                 "quoteType", "UNKNOWN"
                             )
+                            if fetched_quote_type == "EQUITY":
+                                quote_type_map[internal_symbol] = "STOCK"
+                            else:
+                                quote_type_map[internal_symbol] = fetched_quote_type
                         if not manual_geography:
                             country_map[internal_symbol] = fundamental_info.get(
                                 "country", "Unknown Region"

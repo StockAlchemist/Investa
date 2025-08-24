@@ -11155,8 +11155,8 @@ The CSV file should contain the following columns (header names must match exact
             quote_type_series = df_alloc.loc[df_alloc["Symbol"] == symbol, "quoteType"]
             if not quote_type_series.empty:
                 quote_type = quote_type_series.iloc[0]
-                if quote_type == "EQUITY":
-                    return "Stock"
+                if quote_type == "STOCK":
+                    return "STOCK"
                 elif quote_type == "ETF":
                     return "ETF"
                 elif quote_type:  # Other known quote types

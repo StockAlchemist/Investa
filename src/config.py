@@ -110,6 +110,19 @@ DEFAULT_API_KEY = (
 )
 
 # --- Asset Allocation & Symbol Settings ---
+STANDARD_ASSET_TYPES = [
+    "",  # Blank for 'not set'
+    "STOCK",
+    "ETF",
+    "MUTUALFUND",
+    "CURRENCY",
+    "INDEX",
+    "FUTURE",
+    "OPTION",
+    "CRYPTOCURRENCY",
+    "Other",
+]
+
 STANDARD_SECTORS = sorted(
     list(
         set(
@@ -225,14 +238,35 @@ SECTOR_INDUSTRY_MAP = {
     ),
     "Exchange-Traded Fund": sorted(
         [
-            "Broad Market Index",
-            "Dividend Growth",
+            "Broad Market - Emerging Markets",
+            "Broad Market - International Developed",
+            "Broad Market - US",
+            "Commodity - Gold",
+            "Commodity - Oil",
+            "Commodity - Silver",
+            "Dividend - Growth",
+            "Dividend - High Yield",
+            "Factor - Growth",
+            "Factor - Low Volatility",
+            "Factor - Momentum",
+            "Factor - Quality",
+            "Factor - Value",
             "Fixed Income - Corporate Bond",
-            "Fixed Income - Government Bond",
-            "Sector - Technology",
-            "Sector - Healthcare",
+            "Fixed Income - Government Bond (Long-Term)",
+            "Fixed Income - Government Bond (Short-Term)",
+            "Fixed Income - High-Yield Bond",
+            "Fixed Income - Municipal Bond",
+            "Sector - Communication Services",
+            "Sector - Consumer Cyclical",
+            "Sector - Consumer Defensive",
+            "Sector - Energy",
             "Sector - Financials",
+            "Sector - Healthcare",
+            "Sector - Industrials",
+            "Sector - Materials",
             "Sector - Real Estate",
+            "Sector - Technology",
+            "Sector - Utilities",
             "Thematic",
         ]
     ),
