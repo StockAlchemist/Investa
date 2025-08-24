@@ -1,0 +1,12 @@
+feat: Implement holdings table grouping by sector with subtotals
+
+This commit introduces a new feature allowing users to group the main holdings table by sector.
+
+Key changes include:
+- Added a "Group by Sector" checkbox to the main GUI.
+- Enhanced `_get_filtered_data` to perform data grouping by sector, inserting header rows with subtotals for relevant financial columns (e.g., Market Value, Day Change, Unrealized Gain).
+- Refactored UI update logic to ensure the "Value by Holding" pie chart always displays ungrouped data, while the table reflects the grouping preference.
+- Implemented theme-aware background coloring for sector header rows to improve visual distinction.
+- Resolved dependency conflicts by downgrading NumPy to a compatible version and adding `statsmodels` to project requirements.
+
+This feature significantly improves the analytical capabilities of the holdings table by providing aggregated views at the sector level.
