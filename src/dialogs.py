@@ -54,7 +54,7 @@ from finutils import (
 from config import (
     COMMON_CURRENCIES,
     STANDARD_SECTORS,
-    STANDARD_INDUSTRIES,
+    SECTOR_INDUSTRY_MAP,
 )
 
 
@@ -1468,8 +1468,8 @@ class ManualPriceDialog(QDialog):
         }
 
         # Store standard lists for comboboxes
-        self.standard_sectors = STANDARD_SECTORS
-        self.standard_industries = STANDARD_INDUSTRIES
+        self.standard_sectors = sorted(list(SECTOR_INDUSTRY_MAP.keys()))
+        self.sector_industry_map = SECTOR_INDUSTRY_MAP
 
         # --- Layout ---
         main_layout = QVBoxLayout(self)
@@ -1644,11 +1644,20 @@ class ManualPriceDialog(QDialog):
 
             # --- Industry ComboBox (Column 5) ---
             industry_combo = QComboBox()
-            industry_combo.addItems(self.standard_industries)
-            if industry and industry not in self.standard_industries:
+            # Populate industries based on the current sector
+            industries_for_sector = self.sector_industry_map.get(sector, [""])
+            industry_combo.addItems(industries_for_sector)
+
+            # If the saved industry is not in the standard list for that sector, add it.
+            if industry and industry not in industries_for_sector:
                 industry_combo.addItem(industry)  # Add non-standard value if it exists
             industry_combo.setCurrentText(str(industry))
             table.setCellWidget(row_idx, 5, industry_combo)
+
+            # Connect sector change signal to update industry options
+            sector_combo.currentTextChanged.connect(
+                lambda text, r=row_idx: self._update_industry_options(r, text)
+            )
 
         table.setSortingEnabled(True)
         table.resizeColumnsToContents()
@@ -1771,8 +1780,14 @@ class ManualPriceDialog(QDialog):
 
             # Set QComboBox for Industry column (col 5)
             industry_combo = QComboBox()
-            industry_combo.addItems(self.standard_industries)
+            # Initially, populate with industries for the blank sector
+            industry_combo.addItems(self.sector_industry_map.get("", [""]))
             table_widget.setCellWidget(current_row_count, 5, industry_combo)
+
+            # Connect the new sector combo to update the new industry combo
+            sector_combo.currentTextChanged.connect(
+                lambda text, r=current_row_count: self._update_industry_options(r, text)
+            )
 
             # Focus on the first cell
             first_item = table_widget.item(current_row_count, 0)
@@ -1849,6 +1864,28 @@ class ManualPriceDialog(QDialog):
         if reply == QMessageBox.Yes:
             table_widget.removeRow(row_to_delete)
             logging.info(f"Row for '{symbol}' removed from dialog.")
+
+    def _update_industry_options(self, row: int, sector_text: str):
+        """Updates the industry dropdown options based on the selected sector for a given row."""
+        try:
+            industry_combo = self.overrides_table_widget.cellWidget(row, 5)
+            if not isinstance(industry_combo, QComboBox):
+                return
+
+            # Get the list of standard industries for the new sector
+            industries_for_sector = self.sector_industry_map.get(sector_text, [])
+
+            # Always ensure a blank option is at the top
+            final_industry_list = sorted(list(set([""] + industries_for_sector)))
+
+            industry_combo.clear()
+            industry_combo.addItems(final_industry_list)
+
+            # After repopulating, the combobox will automatically select the first item ("").
+            # This is the desired behavior when a sector changes, as the old industry is likely invalid.
+
+        except Exception as e:
+            logging.error(f"Error updating industry options for row {row}: {e}")
 
     def accept(self):
         """Overrides accept to validate all data and store results."""
