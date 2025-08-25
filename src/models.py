@@ -741,7 +741,53 @@ class PandasModel(QAbstractTableModel):
                 key_func = lambda x: x.astype(str).fillna("")
             # --- End key_func determination ---
 
-            if self._log_mode:
+            # --- NEW: Group-aware sorting logic ---
+            if (
+                "is_group_header" in self._data.columns
+                and "group_key" in self._data.columns
+                and not self._log_mode
+            ):
+                logging.info(f"Performing group-aware sort on column '{col_name}'.")
+
+                # Create a boolean mask for header rows for robustness
+                # Using '== True' is a robust way to create a boolean mask from a
+                # column that may contain True and NaN values, avoiding FutureWarning
+                # about downcasting from .fillna().
+                header_mask = self._data["is_group_header"] == True
+
+                # Separate headers and data rows
+                headers = self._data[header_mask].copy()
+                data_rows = self._data[~header_mask].copy()
+
+                # --- FIX: Ensure headers are always in a stable, alphabetical order ---
+                if not headers.empty:
+                    headers.sort_values(by="group_key", inplace=True)
+
+                # Rebuild the DataFrame, sorting data within each group
+                final_df_list = []
+                # Iterate through the now-sorted headers to maintain their order
+                for _, header_row in headers.iterrows():
+                    group_key = header_row["group_key"]
+                    final_df_list.append(pd.DataFrame([header_row]))
+
+                    # Get the data for this group
+                    group_data = data_rows[data_rows["group_key"] == group_key]
+
+                    # Sort this small group
+                    if not group_data.empty:
+                        sorted_group = group_data.sort_values(
+                            by=col_name,
+                            ascending=ascending_order,
+                            na_position="last",
+                            key=key_func,
+                            kind="mergesort",
+                        )
+                        final_df_list.append(sorted_group)
+
+                # Concatenate all parts. Cash rows are handled within their group.
+                self._data = pd.concat(final_df_list, ignore_index=True)
+
+            elif self._log_mode:
                 logging.debug(
                     f"DEBUG Sort (Log Mode): Sorting by '{col_name}' using determined key_func."
                 )

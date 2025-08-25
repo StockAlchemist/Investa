@@ -11657,6 +11657,9 @@ The CSV file should contain the following columns (header names must match exact
                     df_intermediate["is_group_header"] = df_source_data[
                         "is_group_header"
                     ]
+                # This column is used for stable group sorting and is also dropped.
+                if "group_key" in df_source_data.columns:
+                    df_intermediate["group_key"] = df_source_data["group_key"]
                 # --- END ADDED ---
                 df_for_table = df_intermediate.rename(columns=actual_to_ui_map)
         self.table_model.updateData(df_for_table)
@@ -11664,6 +11667,10 @@ The CSV file should contain the following columns (header names must match exact
             self.table_view.setColumnHidden(
                 df_for_table.columns.get_loc("is_group_header"), True
             )
+            if "group_key" in df_for_table.columns:
+                self.table_view.setColumnHidden(
+                    df_for_table.columns.get_loc("group_key"), True
+                )
         if not df_for_table.empty:
             self.table_view.resizeColumnsToContents()
             # The fixed-width setting logic has been removed to allow dynamic resizing.
@@ -11789,6 +11796,12 @@ The CSV file should contain the following columns (header names must match exact
 
             # --- 4. Group by Sector ---
             if group_by_sector and "Sector" in df_filtered.columns:
+                # --- NEW: Assign cash rows to a dedicated "Cash" sector for grouping ---
+                if "Symbol" in df_filtered.columns:
+                    cash_mask = df_filtered["Symbol"] == CASH_SYMBOL_CSV
+                    df_filtered.loc[cash_mask, "Sector"] = "Cash"
+                # --- END NEW ---
+
                 df_filtered["Sector"] = df_filtered["Sector"].fillna("Unknown")
                 grouped_data = []
 
@@ -11808,11 +11821,13 @@ The CSV file should contain the following columns (header names must match exact
                     "Day Change",
                 ]
 
-                for sector, group in df_filtered.groupby("Sector"):
+                # Use sorted groupby to ensure sectors are in alphabetical order
+                for sector, group in df_filtered.groupby("Sector", sort=True):
 
                     group_header_data = {
                         "Symbol": f"--- {sector} ---",
                         "is_group_header": True,
+                        "group_key": sector,  # Add group key for stable sorting
                     }
 
                     for col in cols_to_sum:
@@ -11822,8 +11837,12 @@ The CSV file should contain the following columns (header names must match exact
 
                     group_header = pd.DataFrame([group_header_data])
 
+                    # Add group key to the data rows as well
+                    group_with_key = group.copy()
+                    group_with_key["group_key"] = sector
+
                     grouped_data.append(group_header)
-                    grouped_data.append(group)
+                    grouped_data.append(group_with_key)
 
                 if grouped_data:
                     df_filtered = pd.concat(grouped_data, ignore_index=True)
