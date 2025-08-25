@@ -482,6 +482,10 @@ class PortfolioApp(QMainWindow):
         #     ),  # Added SP_DialogSaveButton as fallback
         #     "dark": ("sp", QStyle.SP_DialogSaveButton),  # Dark theme already uses SP
         # },
+        "export_excel_action": {
+            "light": ("theme", "document-save-as", QStyle.SP_DialogSaveButton),
+            "dark": ("sp", QStyle.SP_DialogSaveButton),
+        },
         "refresh_action": {
             "light": ("theme", "view-refresh"),
             "dark": ("sp", QStyle.SP_BrowserReload),
@@ -679,6 +683,10 @@ class PortfolioApp(QMainWindow):
                 QStandardPaths.DocumentsLocation
             )
             or os.getcwd(),  # For export dialog
+            "last_excel_export_path": QStandardPaths.writableLocation(
+                QStandardPaths.DocumentsLocation
+            )
+            or os.getcwd(),  # For export dialog
             "last_image_export_path": QStandardPaths.writableLocation(
                 QStandardPaths.DocumentsLocation
             )
@@ -843,6 +851,7 @@ class PortfolioApp(QMainWindow):
                     "transactions_file_csv_fallback",
                     "last_csv_import_path",
                     "last_csv_export_path",
+                    "last_excel_export_path",
                     "last_image_export_path",
                 ]
                 if key not in allowed_flexible_types or (
@@ -1088,6 +1097,18 @@ class PortfolioApp(QMainWindow):
         )
         self.export_csv_action.triggered.connect(self.export_transactions_to_csv)
         file_menu.addAction(self.export_csv_action)
+
+        # NEW: Export Holdings to Excel
+        self.export_excel_action = QAction(
+            QIcon.fromTheme("x-office-spreadsheet"),
+            "Export &Holdings to Excel...",
+            self,
+        )
+        self.export_excel_action.setStatusTip(
+            "Export the current holdings view to an Excel file"
+        )
+        self.export_excel_action.triggered.connect(self.export_holdings_to_excel)
+        file_menu.addAction(self.export_excel_action)
 
         file_menu.addSeparator()
 
@@ -1649,6 +1670,87 @@ The CSV file should contain the following columns (header names must match exact
             logging.info("CSV export cancelled by user.")
             self.status_label.setText("Export cancelled.")
 
+    @Slot()
+    def export_holdings_to_excel(self):
+        """Exports the current main holdings table view to an Excel (.xlsx) file."""
+        if not hasattr(self, "table_model") or self.table_model.rowCount() == 0:
+            QMessageBox.warning(self, "No Data", "There is no holdings data to export.")
+            return
+
+        # Suggest starting directory and filename
+        start_dir = self.config.get("last_excel_export_path", "")
+        if not start_dir or not os.path.isdir(start_dir):
+            start_dir = (
+                QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+                or os.getcwd()
+            )
+
+        default_export_filename = (
+            f"Investa_Holdings_{datetime.now().strftime('%Y%m%d')}.xlsx"
+        )
+
+        # Open file dialog
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Holdings to Excel",
+            os.path.join(start_dir, default_export_filename),
+            "Excel Files (*.xlsx);;All Files (*)",
+        )
+
+        if file_path:
+            # Ensure correct extension
+            if not file_path.lower().endswith(".xlsx"):
+                file_path += ".xlsx"
+
+            # Save the directory for next time
+            self.config["last_excel_export_path"] = os.path.dirname(file_path)
+            self.save_config()
+
+            logging.info(f"Attempting to export holdings to Excel: {file_path}")
+            self.status_label.setText(
+                f"Exporting holdings to {os.path.basename(file_path)}..."
+            )
+            QApplication.processEvents()
+
+            try:
+                # Get the DataFrame from the model
+                df_to_export = self.table_model._data.copy()
+
+                # The model's data might have internal columns like 'is_group_header'
+                # and 'group_key'. We should remove these before exporting.
+                internal_cols = ["is_group_header", "group_key"]
+                cols_to_drop = [
+                    col for col in internal_cols if col in df_to_export.columns
+                ]
+                if cols_to_drop:
+                    df_to_export.drop(columns=cols_to_drop, inplace=True)
+
+                # Write to Excel file
+                df_to_export.to_excel(file_path, index=False, engine="openpyxl")
+
+                QMessageBox.information(
+                    self,
+                    "Export Successful",
+                    f"Holdings table exported successfully to:\n{file_path}",
+                )
+                self.status_label.setText(f"Exported to {os.path.basename(file_path)}")
+
+            except ImportError:
+                logging.error("Export to Excel failed: 'openpyxl' library not found.")
+                QMessageBox.critical(
+                    self,
+                    "Dependency Missing",
+                    "Could not export to Excel because the 'openpyxl' library is not installed.\n\n"
+                    "Please install it by running:\n<b>pip install openpyxl</b>",
+                )
+                self.status_label.setText("Export failed: openpyxl missing.")
+            except Exception as e:
+                logging.error(f"Error exporting holdings to Excel: {e}", exc_info=True)
+                QMessageBox.critical(
+                    self, "Export Error", f"Could not export holdings to Excel:\n{e}"
+                )
+                self.status_label.setText("Export failed.")
+
     def show_about_dialog(self):
         # Placeholder - shows a simple message box with app info
         QMessageBox.about(
@@ -2159,6 +2261,8 @@ The CSV file should contain the following columns (header names must match exact
             icon = QIcon()  # Start with a null icon
             if icon_type == "theme":
                 icon = QIcon.fromTheme(primary_spec)
+                if icon.isNull() and fallback_spec:
+                    icon = self.style().standardIcon(fallback_spec)
             elif icon_type == "sp":
                 icon = self.style().standardIcon(primary_spec)
                 if icon.isNull() and fallback_spec:
@@ -4040,6 +4144,9 @@ The CSV file should contain the following columns (header names must match exact
         )
         self.config["last_csv_export_path"] = self.config.get(
             "last_csv_export_path", os.getcwd()
+        )
+        self.config["last_excel_export_path"] = self.config.get(
+            "last_excel_export_path", os.getcwd()
         )
         self.config["last_image_export_path"] = self.config.get(
             "last_image_export_path", os.getcwd()
@@ -14351,6 +14458,10 @@ The CSV file should contain the following columns (header names must match exact
                 import_icon = self.style().standardIcon(QStyle.SP_ArrowDown)
                 self.import_csv_action.setIcon(import_icon)
             self.toolbar.addAction(self.import_csv_action)
+
+        # NEW: Add Excel export action to toolbar
+        if hasattr(self, "export_excel_action") and self.export_excel_action:
+            self.toolbar.addAction(self.export_excel_action)
 
         if hasattr(self, "refresh_action"):
             self.toolbar.addAction(self.refresh_action)
