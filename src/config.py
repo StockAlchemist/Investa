@@ -166,6 +166,7 @@ SECTOR_INDUSTRY_MAP = {
             "Silver",
             "Specialty Chemicals",
             "Steel",
+            "Thematic",
         ]
     ),
     "Communication Services": sorted(
@@ -178,6 +179,7 @@ SECTOR_INDUSTRY_MAP = {
             "Internet Content & Information",
             "Publishing",
             "Telecom Services",
+            "Thematic",
         ]
     ),
     "Consumer Cyclical": sorted(
@@ -205,6 +207,7 @@ SECTOR_INDUSTRY_MAP = {
             "Specialty Retail",
             "Textile Manufacturing",
             "Travel Services",
+            "Thematic",
         ]
     ),
     "Consumer Defensive": sorted(
@@ -222,6 +225,7 @@ SECTOR_INDUSTRY_MAP = {
             "Packaged Foods",
             "Pharmaceutical Retailers",
             "Tobacco",
+            "Thematic",
         ]
     ),
     "Energy": sorted(
@@ -234,6 +238,7 @@ SECTOR_INDUSTRY_MAP = {
             "Oil & Gas Refining & Marketing",
             "Thermal Coal",
             "Uranium",
+            "Thematic",
         ]
     ),
     "Exchange-Traded Fund": sorted(
@@ -267,7 +272,6 @@ SECTOR_INDUSTRY_MAP = {
             "Sector - Real Estate",
             "Sector - Technology",
             "Sector - Utilities",
-            "Thematic",
         ]
     ),
     "Financial Services": sorted(
@@ -286,6 +290,7 @@ SECTOR_INDUSTRY_MAP = {
             "Insurance Brokers",
             "Mortgage Finance",
             "Shell Companies",
+            "Thematic",
         ]
     ),
     "Healthcare": sorted(
@@ -300,6 +305,7 @@ SECTOR_INDUSTRY_MAP = {
             "Medical Devices",
             "Medical Distribution",
             "Medical Instruments & Supplies",
+            "Thematic",
         ]
     ),
     "Industrials": sorted(
@@ -329,6 +335,7 @@ SECTOR_INDUSTRY_MAP = {
             "Tools & Accessories",
             "Trucking",
             "Waste Management",
+            "Thematic",
         ]
     ),
     "Real Estate": sorted(
@@ -345,6 +352,7 @@ SECTOR_INDUSTRY_MAP = {
             "REIT - Residential",
             "REIT - Retail",
             "REIT - Specialty",
+            "Thematic",
         ]
     ),
     "Technology": sorted(
@@ -360,6 +368,7 @@ SECTOR_INDUSTRY_MAP = {
             "Software - Application",
             "Software - Infrastructure",
             "Solar",
+            "Thematic",
         ]
     ),
     "Utilities": sorted(
@@ -370,6 +379,7 @@ SECTOR_INDUSTRY_MAP = {
             "Utilities - Regulated Gas",
             "Utilities - Regulated Water",
             "Utilities - Renewable",
+            "Thematic",
         ]
     ),
 }
