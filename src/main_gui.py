@@ -679,6 +679,10 @@ class PortfolioApp(QMainWindow):
                 QStandardPaths.DocumentsLocation
             )
             or os.getcwd(),  # For export dialog
+            "last_image_export_path": QStandardPaths.writableLocation(
+                QStandardPaths.DocumentsLocation
+            )
+            or os.getcwd(),  # For export dialog
             "user_currencies": COMMON_CURRENCIES.copy(),  # Default list of user-selectable currencies
             "cg_agg_period": "Annual",  # Default for Capital Gains aggregation
             "cg_periods_to_show": 10,  # Default periods for Capital Gains chart
@@ -839,6 +843,7 @@ class PortfolioApp(QMainWindow):
                     "transactions_file_csv_fallback",
                     "last_csv_import_path",
                     "last_csv_export_path",
+                    "last_image_export_path",
                 ]
                 if key not in allowed_flexible_types or (
                     loaded_app_config[key] is not None
@@ -3381,6 +3386,66 @@ The CSV file should contain the following columns (header names must match exact
                 f"Failed to display chart for {symbol}:\n{e_dialog}",
             )
 
+    @Slot(QPoint, Figure, str)
+    def _show_graph_context_menu(self, pos: QPoint, figure: Figure, graph_name: str):
+        """Shows a context menu on a graph canvas to allow saving the graph."""
+        canvas = figure.canvas
+        if not canvas:
+            return
+
+        menu = QMenu(self)
+        menu.setStyleSheet(self.styleSheet())
+
+        save_action = QAction("Save Graph as Image...", self)
+        save_action.triggered.connect(
+            lambda: self._save_figure_as_image(figure, graph_name)
+        )
+        menu.addAction(save_action)
+
+        global_pos = canvas.mapToGlobal(pos)
+        menu.exec(global_pos)
+
+    def _save_figure_as_image(self, figure: Figure, default_name_prefix: str):
+        """Opens a file dialog to save a Matplotlib figure as an image."""
+        if not figure:
+            return
+
+        current_date_str = date.today().strftime("%Y%m%d")
+        suggested_filename = f"{default_name_prefix}_{current_date_str}.png"
+        start_dir = self.config.get(
+            "last_image_export_path",
+            QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+            or os.getcwd(),
+        )
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Graph",
+            os.path.join(start_dir, suggested_filename),
+            "PNG Image (*.png);;JPEG Image (*.jpg *.jpeg);;SVG Vector Image (*.svg);;PDF Document (*.pdf);;All Files (*)",
+        )
+
+        if file_path:
+            self.config["last_image_export_path"] = os.path.dirname(file_path)
+            self.save_config()
+            try:
+                figure.savefig(
+                    file_path,
+                    dpi=300,
+                    bbox_inches="tight",
+                    facecolor=figure.get_facecolor(),
+                )
+                QMessageBox.information(
+                    self,
+                    "Save Successful",
+                    f"Graph saved successfully to:\n{file_path}",
+                )
+            except Exception as e:
+                logging.error(f"Error saving graph to {file_path}: {e}", exc_info=True)
+                QMessageBox.critical(
+                    self, "Save Error", f"Could not save the graph:\n{e}"
+                )
+
     def _get_currency_for_symbol(self, symbol_to_find: str) -> Optional[str]:
         """
         Finds the local currency code associated with a symbol based on transaction data
@@ -3976,6 +4041,9 @@ The CSV file should contain the following columns (header names must match exact
         self.config["last_csv_export_path"] = self.config.get(
             "last_csv_export_path", os.getcwd()
         )
+        self.config["last_image_export_path"] = self.config.get(
+            "last_image_export_path", os.getcwd()
+        )
 
         self.config.pop("fmp_api_key", None)  # Ensure API key is not saved
 
@@ -4471,6 +4539,7 @@ The CSV file should contain the following columns (header names must match exact
         self.perf_return_canvas.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
+        self.perf_return_canvas.setContextMenuPolicy(Qt.CustomContextMenu)
         perf_graphs_main_layout.addWidget(
             self.perf_return_canvas, 1
         )  # Add canvas directly
@@ -4483,6 +4552,7 @@ The CSV file should contain the following columns (header names must match exact
         self.abs_value_canvas.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
+        self.abs_value_canvas.setContextMenuPolicy(Qt.CustomContextMenu)
         perf_graphs_main_layout.addWidget(
             self.abs_value_canvas, 1
         )  # Add canvas directly
@@ -8079,6 +8149,18 @@ The CSV file should contain the following columns (header names must match exact
         self.table_view.customContextMenuRequested.connect(
             self.show_table_context_menu
         )  # Connect table's signal
+
+        # Performance Graph Context Menus
+        self.perf_return_canvas.customContextMenuRequested.connect(
+            lambda pos: self._show_graph_context_menu(
+                pos, self.perf_return_fig, "TWR_Graph"
+            )
+        )
+        self.abs_value_canvas.customContextMenuRequested.connect(
+            lambda pos: self._show_graph_context_menu(
+                pos, self.abs_value_fig, "Value_Graph"
+            )
+        )
 
         # Bar Chart Period Spinbox Connections
         self.annual_periods_spinbox.valueChanged.connect(
