@@ -4108,12 +4108,19 @@ The CSV file should contain the following columns (header names must match exact
             header_name = self.table_model.headerData(
                 col_index, Qt.Horizontal, Qt.DisplayRole
             )
-            if header_name:
+            if header_name:  # header_name can be None if model is empty
+                # --- ADDED: Explicitly hide internal helper columns ---
+                # These columns are needed in the model for styling/sorting but should never be visible.
+                if str(header_name) in ["is_group_header", "group_key"]:
+                    header.setSectionHidden(col_index, True)
+                    continue  # Move to the next column
+                # --- END ADDED ---
+
                 # Look up the visibility state for this header name
                 is_visible = self.column_visibility.get(
                     str(header_name), True
                 )  # Default to visible
-                # Hide or show the section (column) in the header/table
+                # Hide or show the section (column) based on user's preference
                 header.setSectionHidden(col_index, not is_visible)
 
     def save_config(self):
@@ -11852,14 +11859,6 @@ The CSV file should contain the following columns (header names must match exact
                 # --- END ADDED ---
                 df_for_table = df_intermediate.rename(columns=actual_to_ui_map)
         self.table_model.updateData(df_for_table)
-        if "is_group_header" in df_for_table.columns:
-            self.table_view.setColumnHidden(
-                df_for_table.columns.get_loc("is_group_header"), True
-            )
-            if "group_key" in df_for_table.columns:
-                self.table_view.setColumnHidden(
-                    df_for_table.columns.get_loc("group_key"), True
-                )
         if not df_for_table.empty:
             self.table_view.resizeColumnsToContents()
             # The fixed-width setting logic has been removed to allow dynamic resizing.
