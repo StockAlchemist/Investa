@@ -8806,6 +8806,11 @@ The CSV file should contain the following columns (header names must match exact
             return
 
         holdings_values = df_display.groupby("Symbol")[value_col_actual].sum()
+        # Filter out the "TOTALS" summary row if it exists, as it's not a holding
+        if "is_summary_row" in df_display.columns:
+            df_display = df_display[df_display["is_summary_row"] != True].copy()
+            # Recalculate holdings_values after filtering out the summary row
+            holdings_values = df_display.groupby("Symbol")[value_col_actual].sum()
         holdings_values = holdings_values[
             holdings_values.abs() > 1e-3
         ]  # Filter out near-zero values
