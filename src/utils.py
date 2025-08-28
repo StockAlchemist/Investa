@@ -150,6 +150,7 @@ def get_column_definitions(display_currency="USD"):
         "Total Ret %": "Total Return %",  # Calculated using Cumulative Investment
         "IRR (%)": "IRR (%)",
         # Optional columns that might be added for debugging or other features:
+        "Total Buy Cost": f"Total Buy Cost ({display_currency})",
         "Yield (Cost) %": f"Div. Yield (Cost) %",
         "Yield (Mkt) %": f"Div. Yield (Current) %",
         "FX G/L": f"FX Gain/Loss ({display_currency})",

@@ -11959,6 +11959,78 @@ The CSV file should contain the following columns (header names must match exact
         Returns:
             pd.DataFrame: The filtered DataFrame ready for display or charting.
         """
+
+        def _calculate_summary_percentages(
+            df_subset: pd.DataFrame, summed_values: dict
+        ) -> dict:
+            """Calculates percentage metrics for a given DataFrame subset and its summed values."""
+            percentages = {}
+            currency = self._get_currency_symbol(get_name=True)
+
+            # Define column names
+            mkt_val_col = f"Market Value ({currency})"
+            day_chg_col = f"Day Change ({currency})"
+            unreal_gain_col = f"Unreal. Gain ({currency})"
+            cost_basis_col = f"Cost Basis ({currency})"
+            total_gain_col = f"Total Gain ({currency})"
+            total_buy_cost_col = f"Total Buy Cost ({currency})"
+            est_income_col = f"Est. Ann. Income ({currency})"
+            irr_col = "IRR (%)"
+
+            # Get summed values
+            sum_mkt_val = summed_values.get(mkt_val_col, 0.0)
+            sum_day_chg = summed_values.get(day_chg_col, 0.0)
+            sum_unreal_gain = summed_values.get(unreal_gain_col, 0.0)
+            sum_cost_basis = summed_values.get(cost_basis_col, 0.0)
+            sum_total_gain = summed_values.get(total_gain_col, 0.0)
+            sum_total_buy_cost = summed_values.get(total_buy_cost_col, 0.0)
+            sum_est_income = summed_values.get(est_income_col, 0.0)
+
+            def safe_division_pct(numerator, denominator):
+                if abs(denominator) > 1e-9:
+                    return (numerator / denominator) * 100.0
+                elif abs(numerator) < 1e-9:
+                    return 0.0
+                else:
+                    return np.inf
+
+            # Day Chg %
+            prev_day_val = sum_mkt_val - sum_day_chg
+            percentages["Day Change %"] = safe_division_pct(sum_day_chg, prev_day_val)
+
+            # Unreal. G/L %
+            percentages["Unreal. Gain %"] = safe_division_pct(
+                sum_unreal_gain, sum_cost_basis
+            )
+
+            # Total Ret. %
+            percentages["Total Return %"] = safe_division_pct(
+                sum_total_gain, sum_total_buy_cost
+            )
+
+            # Yield (Cost) % & Yield (Mkt) %
+            percentages["Div. Yield (Cost) %"] = safe_division_pct(
+                sum_est_income, sum_cost_basis
+            )
+            percentages["Div. Yield (Current) %"] = safe_division_pct(
+                sum_est_income, sum_mkt_val
+            )
+
+            # IRR (%) - Weighted Average by Market Value
+            if (
+                irr_col in df_subset.columns
+                and mkt_val_col in df_subset.columns
+                and abs(sum_mkt_val) > 1e-9
+            ):
+                weighted_irr_sum = (
+                    df_subset[irr_col].fillna(0) * df_subset[mkt_val_col].fillna(0)
+                ).sum()
+                percentages[irr_col] = weighted_irr_sum / sum_mkt_val
+            else:
+                percentages[irr_col] = np.nan
+
+            return percentages
+
         df_filtered = pd.DataFrame()
         if (
             isinstance(self.holdings_data, pd.DataFrame)
@@ -12073,6 +12145,7 @@ The CSV file should contain the following columns (header names must match exact
                 "FX G/L",
                 "Est. Income",
                 "Cost Basis",
+                "Total Buy Cost",  # ADDED
             ]
             cols_to_sum_actual = [
                 all_col_defs[ui_name]
@@ -12117,20 +12190,32 @@ The CSV file should contain the following columns (header names must match exact
                         "group_key": sector,  # Add group key for stable sorting
                     }
 
-                    # Add summed values to the header row
+                    summed_values = {}
                     for col in cols_to_sum_actual:
                         if col in group.columns and pd.api.types.is_numeric_dtype(
                             group[col]
                         ):
-                            group_header_data[col] = group[col].sum()
-                    # --- END MODIFIED ---
+                            summed_values[col] = group[col].sum()
 
-                    for col in cols_to_sum:
-                        if col in group.columns:
-                            total = group[col].sum()
-                            group_header_data[col] = total
+                    # First, update the dictionary with all summed values
+                    group_header_data.update(summed_values)
 
+                    # Then, calculate and add percentage metrics
+                    group_percentages = _calculate_summary_percentages(
+                        group, summed_values
+                    )
+                    group_header_data.update(group_percentages)
+
+                    # Now, create the DataFrame from the fully populated dictionary
                     group_header = pd.DataFrame([group_header_data])
+                    group_header_data.update(summed_values)
+
+                    # Calculate and add percentage metrics
+                    group_percentages = _calculate_summary_percentages(
+                        group, summed_values
+                    )
+                    group_header_data.update(group_percentages)
+
                     grouped_data.append(group_header)
 
                     group_with_key = (
@@ -12160,11 +12245,22 @@ The CSV file should contain the following columns (header names must match exact
                 summary_row["Symbol"] = "TOTALS"
                 summary_row["is_summary_row"] = True  # Internal flag for styling
 
+                summed_values_total = {}
                 for col in cols_to_sum_actual:
                     if col in data_rows.columns and pd.api.types.is_numeric_dtype(
                         data_rows[col]
                     ):
-                        summary_row[col] = data_rows[col].sum()
+                        summed_values_total[col] = data_rows[col].sum()
+
+                for col, total in summed_values_total.items():
+                    summary_row[col] = total
+
+                # Calculate and add percentage metrics for the total row
+                total_percentages = _calculate_summary_percentages(
+                    data_rows, summed_values_total
+                )
+                for col, pct_val in total_percentages.items():
+                    summary_row[col] = pct_val
 
                 summary_df = pd.DataFrame([summary_row])
                 # Append the summary row to the main DataFrame
