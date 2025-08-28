@@ -7096,20 +7096,51 @@ The CSV file should contain the following columns (header names must match exact
         # --- Prepare for worker ---
         display_currency = self.currency_combo.currentText()
         show_closed = self.show_closed_check.isChecked()
-        start_date_hist = self.graph_start_date_edit.date().toPython()
-        end_date_hist = self.graph_end_date_edit.date().toPython()
+
+        # Get dates from UI for validation and for line graph display filtering later
+        start_date_ui = self.graph_start_date_edit.date().toPython()
+        end_date_ui = self.graph_end_date_edit.date().toPython()
 
         # --- ADDED: Ensure end_date is not in the future ---
         today = date.today()
-        if end_date_hist > today:
-            end_date_hist = today
-            self.graph_end_date_edit.setDate(QDate(end_date_hist))  # Update UI
-            logging.info(
-                f"Graph end date was in future, reset to today: {end_date_hist}"
-            )
+        if end_date_ui > today:
+            end_date_ui = today
+            self.graph_end_date_edit.setDate(QDate(end_date_ui))  # Update UI
+            logging.info(f"Graph end date was in future, reset to today: {end_date_ui}")
         # --- END ADDED ---
 
-        interval_hist = self.graph_interval_combo.currentText()
+        if start_date_ui >= end_date_ui:
+            QMessageBox.warning(
+                self, "Invalid Date Range", "Graph start date must be before end date."
+            )
+            self.calculation_finished()
+            return
+
+        # For historical calculation, use the full range of transactions.
+        # The UI date pickers will be used later to filter the line graph display.
+        if not self.all_transactions_df_cleaned_for_logic.empty:
+            # Ensure 'Date' is datetime to find min/max
+            if not pd.api.types.is_datetime64_any_dtype(
+                self.all_transactions_df_cleaned_for_logic["Date"]
+            ):
+                self.all_transactions_df_cleaned_for_logic["Date"] = pd.to_datetime(
+                    self.all_transactions_df_cleaned_for_logic["Date"]
+                )
+
+            start_date_hist_calc = (
+                self.all_transactions_df_cleaned_for_logic["Date"].min().date()
+            )
+            end_date_hist_calc = date.today()  # Always calculate up to today
+        else:
+            # Fallback if no transactions: use UI dates
+            start_date_hist_calc = start_date_ui
+            end_date_hist_calc = end_date_ui
+
+        # The interval for the underlying historical data calculation should always be daily
+        # to provide the most granular data for all other calculations (like periodic returns).
+        # The UI interval combo will be used to resample this data for display.
+        interval_hist_calc = "D"
+
         selected_benchmark_tickers = [
             BENCHMARK_MAPPING.get(name)
             for name in self.selected_benchmarks
@@ -7128,13 +7159,6 @@ The CSV file should contain the following columns (header names must match exact
             "default_currency",
             config.DEFAULT_CURRENCY if hasattr(config, "DEFAULT_CURRENCY") else "USD",
         )
-
-        if start_date_hist >= end_date_hist:
-            QMessageBox.warning(
-                self, "Invalid Date Range", "Graph start date must be before end date."
-            )
-            self.calculation_finished()
-            return
         if not selected_benchmark_tickers:  # Fallback if no valid benchmarks selected
             selected_benchmark_tickers = (
                 [BENCHMARK_MAPPING.get(DEFAULT_GRAPH_BENCHMARKS[0], "SPY")]
@@ -7176,9 +7200,9 @@ The CSV file should contain the following columns (header names must match exact
             "original_transactions_df_for_ignored": self.original_transactions_df_for_ignored_context.copy(),
             "ignored_indices_from_load": ignored_indices_load_db,
             "ignored_reasons_from_load": ignored_reasons_load_db,
-            "start_date": start_date_hist,
-            "end_date": end_date_hist,
-            "interval": interval_hist,
+            "start_date": start_date_hist_calc,
+            "end_date": end_date_hist_calc,
+            "interval": interval_hist_calc,
             "benchmark_symbols_yf": selected_benchmark_tickers,
             "display_currency": display_currency,
             "account_currency_map": acc_map_config,
@@ -7212,7 +7236,7 @@ The CSV file should contain the following columns (header names must match exact
             else ""
         )
         logging.info(
-            f"Graph Params: Start={start_date_hist}, End={end_date_hist}, Interval={interval_hist}, Benchmarks (Tickers)={selected_benchmark_tickers}{exclude_log_msg}"
+            f"Graph Params: Start={start_date_hist_calc}, End={end_date_hist_calc}, Interval={interval_hist_calc}, Benchmarks (Tickers)={selected_benchmark_tickers}{exclude_log_msg}"
         )
         logging.debug(
             f"DEBUG: all_transactions_df_cleaned_for_logic shape before worker init: {self.all_transactions_df_cleaned_for_logic.shape}"
