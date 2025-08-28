@@ -189,13 +189,48 @@ class PandasModel(QAbstractTableModel):
         # --- Background Color ---
         if role == Qt.BackgroundRole:
             try:
+                # --- ADDED: Summary Row Background Color ---
+                if "is_summary_row" in self._data.columns:
+                    is_summary = self._data.iloc[
+                        row, self._data.columns.get_loc("is_summary_row")
+                    ]
+                    if pd.notna(is_summary) and is_summary:
+                        # Use the themed header background color from the parent app
+                        if self._parent and hasattr(
+                            self._parent, "QCOLOR_HEADER_BACKGROUND_THEMED"
+                        ):
+                            return self._parent.QCOLOR_HEADER_BACKGROUND_THEMED
+                # --- END ADDED ---
+
                 # Check if the 'is_group_header' column exists and is True for this row
                 if "is_group_header" in self._data.columns:
                     is_header = self._data.iloc[
                         row, self._data.columns.get_loc("is_group_header")
                     ]
-                    if pd.notna(is_header) and is_header is True:
-                        # Use the themed header background color from the parent app
+                    if pd.notna(is_header) and is_header:
+                        # Check expansion state to apply a different color for collapsed headers
+                        if self._parent and hasattr(
+                            self._parent, "group_expansion_states"
+                        ):
+                            try:
+                                group_key = self._data.iloc[
+                                    row, self._data.columns.get_loc("group_key")
+                                ]
+                                is_expanded = self._parent.group_expansion_states.get(
+                                    str(group_key), True
+                                )
+
+                                if not is_expanded and hasattr(
+                                    self._parent,
+                                    "QCOLOR_COLLAPSED_HEADER_BACKGROUND_THEMED",
+                                ):
+                                    return (
+                                        self._parent.QCOLOR_COLLAPSED_HEADER_BACKGROUND_THEMED
+                                    )
+                            except (KeyError, IndexError):
+                                pass  # Fallback to the default header color below
+
+                        # Default color for expanded headers
                         if self._parent and hasattr(
                             self._parent, "QCOLOR_HEADER_BACKGROUND_THEMED"
                         ):
@@ -209,15 +244,27 @@ class PandasModel(QAbstractTableModel):
         # --- Font (for bolding headers) ---
         if role == Qt.FontRole:
             try:
+                is_header_or_summary = False
+                # --- ADDED: Check for summary row ---
+                if "is_summary_row" in self._data.columns:
+                    is_summary = self._data.iloc[
+                        row, self._data.columns.get_loc("is_summary_row")
+                    ]
+                    if pd.notna(is_summary) and is_summary:
+                        is_header_or_summary = True
+                # --- END ADDED ---
+
                 # Check if the 'is_group_header' column exists and is True for this row
-                if "is_group_header" in self._data.columns:
+                if not is_header_or_summary and "is_group_header" in self._data.columns:
                     is_header = self._data.iloc[
                         row, self._data.columns.get_loc("is_group_header")
                     ]
                     if pd.notna(is_header) and is_header is True:
-                        font = QFont()
-                        font.setBold(True)
-                        return font
+                        is_header_or_summary = True
+                if is_header_or_summary:
+                    font = QFont()
+                    font.setBold(True)
+                    return font
             except (IndexError, KeyError):
                 pass
             return None  # Default font
@@ -226,6 +273,52 @@ class PandasModel(QAbstractTableModel):
         # ... (Coloring logic remains the same) ...
         if role == Qt.ForegroundRole:
             try:
+                # --- MODIFIED: Group Header Text Color ---
+                # For group headers, color the text differently, but allow gain/loss
+                # columns to be colored based on their value.
+                is_group_header_row = False
+                if "is_group_header" in self._data.columns:
+                    val = self._data.iloc[
+                        row, self._data.columns.get_loc("is_group_header")
+                    ]
+                    if pd.notna(val) and val:
+                        is_group_header_row = True
+                if is_group_header_row:
+                    if True:  # This block was already here, just re-indenting
+                        col_name_fg = str(self._data.columns[col])
+                        raw_cell_value = self._data.iloc[row, col]
+
+                        # Check if the column is a numeric column that should be colored
+                        # based on value (gain/loss/fee).
+                        is_value_colored_col = False
+                        if pd.api.types.is_number(raw_cell_value):
+                            gain_loss_indicators = [
+                                "G/L",
+                                "Day Chg",
+                                "Ret %",
+                                "IRR",
+                                "Income",
+                                "Yield",
+                                "Value Change",
+                                "(%)",
+                            ]
+                            fee_indicators = ["Fee", "Commission", "Fees"]
+                            if any(
+                                ind in col_name_fg for ind in gain_loss_indicators
+                            ) or any(ind in col_name_fg for ind in fee_indicators):
+                                is_value_colored_col = True
+
+                        # If it's not a value-colored column (e.g., it's the sector name or Mkt Val),
+                        # then apply the accent color. Otherwise, let it fall through to the
+                        # main coloring logic below.
+                        if not is_value_colored_col:
+                            if self._parent and hasattr(
+                                self._parent, "QCOLOR_ACCENT_THEMED"
+                            ):
+                                return self._parent.QCOLOR_ACCENT_THEMED
+                            return QColor("#007bff")  # Fallback accent color
+                # --- END MODIFIED ---
+
                 col_name_orig_type_fg = self._data.columns[col]  # Original type
                 col_name_fg = str(
                     col_name_orig_type_fg
@@ -652,11 +745,23 @@ class PandasModel(QAbstractTableModel):
 
             self.layoutAboutToBeChanged.emit()  # Notify view about layout change start
 
+            # --- ADDED: Separate summary row to keep it at the bottom ---
+            summary_df = pd.DataFrame()
+            main_data = self._data
+            if "is_summary_row" in self._data.columns:
+                summary_mask = self._data["is_summary_row"] == True
+                if summary_mask.any():
+                    summary_df = self._data[summary_mask].copy()
+                    main_data = self._data[
+                        ~summary_mask
+                    ].copy()  # Use a copy of the non-summary data
+            # --- END ADDED ---
+
             # --- Determine key_func (hoisted to be available for both modes) ---
             symbol_col_name_internal = "Symbol"
             symbol_col_name_original = "Stock / ETF Symbol"
             actual_symbol_col = None
-            if symbol_col_name_internal in self._data.columns:
+            if symbol_col_name_internal in main_data.columns:
                 actual_symbol_col = symbol_col_name_internal
             elif symbol_col_name_original in self._data.columns:
                 actual_symbol_col = symbol_col_name_original
@@ -743,21 +848,18 @@ class PandasModel(QAbstractTableModel):
 
             # --- NEW: Group-aware sorting logic ---
             if (
-                "is_group_header" in self._data.columns
-                and "group_key" in self._data.columns
+                "is_group_header" in main_data.columns
+                and "group_key" in main_data.columns
                 and not self._log_mode
             ):
                 logging.info(f"Performing group-aware sort on column '{col_name}'.")
 
                 # Create a boolean mask for header rows for robustness
-                # Using '== True' is a robust way to create a boolean mask from a
-                # column that may contain True and NaN values, avoiding FutureWarning
-                # about downcasting from .fillna().
-                header_mask = self._data["is_group_header"] == True
+                header_mask = main_data["is_group_header"] == True
 
-                # Separate headers and data rows
-                headers = self._data[header_mask].copy()
-                data_rows = self._data[~header_mask].copy()
+                # Separate headers and data rows from the main data (which excludes summary)
+                headers = main_data[header_mask].copy()
+                data_rows = main_data[~header_mask].copy()
 
                 # --- FIX: Ensure headers are always in a stable, alphabetical order ---
                 if not headers.empty:
@@ -785,14 +887,14 @@ class PandasModel(QAbstractTableModel):
                         final_df_list.append(sorted_group)
 
                 # Concatenate all parts. Cash rows are handled within their group.
-                self._data = pd.concat(final_df_list, ignore_index=True)
+                main_data = pd.concat(final_df_list, ignore_index=True)
 
             elif self._log_mode:
                 logging.debug(
                     f"DEBUG Sort (Log Mode): Sorting by '{col_name}' using determined key_func."
                 )
                 try:
-                    self._data.sort_values(
+                    main_data.sort_values(
                         by=col_name,
                         ascending=ascending_order,
                         na_position="last",
@@ -806,7 +908,7 @@ class PandasModel(QAbstractTableModel):
                     )
                     # Fallback to simple string sort on error
                     try:
-                        self._data.sort_values(
+                        main_data.sort_values(
                             by=col_name,
                             ascending=ascending_order,
                             na_position="last",
@@ -820,12 +922,12 @@ class PandasModel(QAbstractTableModel):
                         )
             else:  # Original logic for main table (non-log_mode)
                 cash_rows = pd.DataFrame()
-                non_cash_rows = self._data.copy()
+                non_cash_rows = main_data.copy()
 
                 if actual_symbol_col is None:
                     # ADDED DEBUG LOG: Log columns when symbol column is not found
                     logging.debug(
-                        f"DEBUG Sort (Non-Log Mode): Symbol column not found. Current columns: {self._data.columns.tolist()}"
+                        f"DEBUG Sort (Non-Log Mode): Symbol column not found. Current columns: {main_data.columns.tolist()}"
                     )
 
                 if actual_symbol_col:
@@ -833,7 +935,7 @@ class PandasModel(QAbstractTableModel):
                         base_cash_symbol = CASH_SYMBOL_CSV
                         cash_mask = (
                             self._data[actual_symbol_col].astype(str)
-                            == base_cash_symbol
+                            == base_cash_symbol  # This should be main_data
                         )
                         if (
                             actual_symbol_col == symbol_col_name_internal
@@ -846,19 +948,19 @@ class PandasModel(QAbstractTableModel):
                             )
                             cash_display_symbol = f"Cash ({display_currency_name})"
                             cash_mask |= (
-                                self._data[actual_symbol_col].astype(str)
+                                main_data[actual_symbol_col].astype(str)
                                 == cash_display_symbol
                             )
 
                         if cash_mask.any():
-                            cash_rows = self._data[cash_mask].copy()
-                            non_cash_rows = self._data[~cash_mask].copy()
+                            cash_rows = main_data[cash_mask].copy()
+                            non_cash_rows = main_data[~cash_mask].copy()
                     except Exception as e_cash_sep:
                         logging.warning(
                             f"Warning: Error separating cash rows during sort: {e_cash_sep}"
                         )
                         cash_rows = pd.DataFrame()
-                        non_cash_rows = self._data.copy()
+                        non_cash_rows = main_data.copy()
                 else:
                     logging.warning(
                         f"Warning: Could not find symbol column for cash separation in sort."
@@ -894,9 +996,13 @@ class PandasModel(QAbstractTableModel):
                                 non_cash_rows  # Keep original order on error
                             )
 
-                self._data = pd.concat(
+                main_data = pd.concat(
                     [sorted_non_cash_rows, cash_rows], ignore_index=True
                 )
+
+            # --- ADDED: Re-attach summary row at the end ---
+            self._data = pd.concat([main_data, summary_df], ignore_index=True)
+            # --- END ADDED ---
 
             self.layoutChanged.emit()  # Notify view about layout change end
             logging.info(f"Sorting finished for '{col_name}'.")

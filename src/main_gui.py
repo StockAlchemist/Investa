@@ -42,7 +42,7 @@ import numpy as np
 import json
 import traceback
 import csv
-import re  # <-- ADDED for parsing formatted currency strings
+import re
 import sqlite3  # Added import for sqlite3
 import shutil
 import logging
@@ -154,6 +154,7 @@ from PySide6.QtGui import QColor, QPalette, QFont, QIcon, QPixmap, QAction, QAct
 from PySide6.QtCore import (
     Qt,
     QAbstractTableModel,
+    QModelIndex,
     QThreadPool,
     QRunnable,
     Signal,
@@ -1939,6 +1940,9 @@ The CSV file should contain the following columns (header names must match exact
         self.QCOLOR_HEADER_BACKGROUND_THEMED = QColor(config.COLOR_BG_HEADER_LIGHT)
         self.QCOLOR_BORDER_THEMED = QColor(config.COLOR_BORDER_LIGHT)  # Initialize here
         self.QCOLOR_ACCENT_THEMED = QColor(config.COLOR_ACCENT_TEAL)
+        self.QCOLOR_COLLAPSED_HEADER_BACKGROUND_THEMED = QColor(
+            "#343a40"
+        )  # A slightly different dark shade
         self.QCOLOR_INPUT_BACKGROUND_THEMED = QColor(config.COLOR_BG_DARK)
         self.QCOLOR_INPUT_TEXT_THEMED = QColor(config.COLOR_TEXT_DARK)
         self.QCOLOR_TABLE_ALT_ROW_THEMED = QColor("#fAfBff")
@@ -2114,6 +2118,7 @@ The CSV file should contain the following columns (header names must match exact
         self.column_visibility: Dict[str, bool] = self.config.get(
             "column_visibility", {}
         )
+        self.group_expansion_states: Dict[str, bool] = {}
         self._ensure_all_columns_in_visibility()
         self.threadpool = QThreadPool()
         logging.info(f"Max threads: {self.threadpool.maxThreadCount()}")
@@ -2377,6 +2382,9 @@ The CSV file should contain the following columns (header names must match exact
             self.QCOLOR_HEADER_BACKGROUND_THEMED = QColor(config.COLOR_BG_HEADER_LIGHT)
             self.QCOLOR_BORDER_THEMED = QColor(config.COLOR_BORDER_LIGHT)
             self.QCOLOR_ACCENT_THEMED = QColor(config.COLOR_ACCENT_TEAL)
+            self.QCOLOR_COLLAPSED_HEADER_BACKGROUND_THEMED = QColor(
+                "#E9ECEF"
+            )  # A slightly darker light gray
             self.QCOLOR_INPUT_BACKGROUND_THEMED = QColor(
                 config.COLOR_BG_DARK
             )  # White for light theme inputs
@@ -2954,6 +2962,58 @@ The CSV file should contain the following columns (header names must match exact
                 f"An unexpected error occurred saving symbol settings:\n{e}",
             )
             return False
+
+    def _apply_row_visibility_for_grouping(self):
+        """Hides or shows data rows based on the group's expansion state."""
+        if not self.group_by_sector_check.isChecked():
+            # If grouping is off, ensure all rows are visible
+            for i in range(self.table_model.rowCount()):
+                if self.table_view.isRowHidden(i):
+                    self.table_view.setRowHidden(i, False)
+            return
+
+        if "is_group_header" not in self.table_model._data.columns:
+            return
+
+        try:
+            is_header_col_idx = self.table_model._data.columns.get_loc(
+                "is_group_header"
+            )
+            group_key_col_idx = self.table_model._data.columns.get_loc("group_key")
+
+            for i in range(self.table_model.rowCount()):
+                is_header = self.table_model._data.iat[i, is_header_col_idx]
+                if pd.notna(is_header) and is_header:
+                    continue  # Always show header rows
+
+                group_key = self.table_model._data.iat[i, group_key_col_idx]
+                if pd.notna(group_key):
+                    is_expanded = self.group_expansion_states.get(group_key, True)
+                    if self.table_view.isRowHidden(i) == is_expanded:
+                        self.table_view.setRowHidden(i, not is_expanded)
+        except (KeyError, IndexError) as e:
+            logging.error(f"Error applying group visibility: {e}")
+
+    @Slot(QModelIndex)
+    def on_table_view_clicked(self, index: QModelIndex):
+        """Handles clicks on the table to expand/collapse groups."""
+        if not index.isValid() or not self.group_by_sector_check.isChecked():
+            return
+
+        row = index.row()
+        try:
+            is_header = self.table_model._data.iat[
+                row, self.table_model._data.columns.get_loc("is_group_header")
+            ]
+            if pd.notna(is_header) and is_header:
+                group_key = self.table_model._data.iat[
+                    row, self.table_model._data.columns.get_loc("group_key")
+                ]
+                current_state = self.group_expansion_states.get(group_key, True)
+                self.group_expansion_states[group_key] = not current_state
+                self._get_filtered_data(group_by_sector=True, update_view=True)
+        except (KeyError, IndexError) as e:
+            logging.warning(f"Could not process click for collapse/expand: {e}")
 
     # --- Helper Methods (Define BEFORE they are called in __init__) ---
     def _ensure_all_columns_in_visibility(self):
@@ -4111,7 +4171,11 @@ The CSV file should contain the following columns (header names must match exact
             if header_name:  # header_name can be None if model is empty
                 # --- ADDED: Explicitly hide internal helper columns ---
                 # These columns are needed in the model for styling/sorting but should never be visible.
-                if str(header_name) in ["is_group_header", "group_key"]:
+                if str(header_name) in [
+                    "is_group_header",
+                    "group_key",
+                    "is_summary_row",
+                ]:
                     header.setSectionHidden(col_index, True)
                     continue  # Move to the next column
                 # --- END ADDED ---
@@ -8263,6 +8327,9 @@ The CSV file should contain the following columns (header names must match exact
         self.table_view.customContextMenuRequested.connect(
             self.show_table_context_menu
         )  # Connect table's signal
+        self.table_view.clicked.connect(
+            self.on_table_view_clicked
+        )  # For collapse/expand
 
         # Performance Graph Context Menus
         self.perf_return_canvas.customContextMenuRequested.connect(
@@ -11856,9 +11923,18 @@ The CSV file should contain the following columns (header names must match exact
                 # This column is used for stable group sorting and is also dropped.
                 if "group_key" in df_source_data.columns:
                     df_intermediate["group_key"] = df_source_data["group_key"]
+                # --- ADDED: Re-attach the 'is_summary_row' column ---
+                # This column is used for styling the totals row.
+                if "is_summary_row" in df_source_data.columns:
+                    df_intermediate["is_summary_row"] = df_source_data["is_summary_row"]
+                # --- END ADDED ---
                 # --- END ADDED ---
                 df_for_table = df_intermediate.rename(columns=actual_to_ui_map)
         self.table_model.updateData(df_for_table)
+        # --- ADDED: Apply row visibility for groups ---
+        self._apply_row_visibility_for_grouping()
+        # --- END ADDED ---
+
         if not df_for_table.empty:
             self.table_view.resizeColumnsToContents()
             # The fixed-width setting logic has been removed to allow dynamic resizing.
@@ -11866,10 +11942,10 @@ The CSV file should contain the following columns (header names must match exact
         else:
             try:
                 self.table_view.horizontalHeader().setStretchLastSection(False)
-            except Exception as e:
+            except Exception as e:  # pragma: no cover
                 logging.warning(f"Warning: Could not unset stretch last section: {e}")
 
-    def _get_filtered_data(self, group_by_sector=False):
+    def _get_filtered_data(self, group_by_sector=False, update_view=False):
         """
         Filters the main holdings DataFrame based on selected accounts and 'Show Closed'.
 
@@ -11878,6 +11954,7 @@ The CSV file should contain the following columns (header names must match exact
 
         Args:
             group_by_sector (bool): If True, groups the data by sector.
+            update_view (bool): If True, updates the table view directly.
 
         Returns:
             pd.DataFrame: The filtered DataFrame ready for display or charting.
@@ -11982,13 +12059,29 @@ The CSV file should contain the following columns (header names must match exact
                     )
             # --- End Table Text Filters ---
 
+            # --- MOVED UP: Define columns to sum so it's available for group footers AND summary row ---
+            currency = self._get_currency_symbol(get_name=True)
+            all_col_defs = get_column_definitions(currency)
+            cols_to_sum_ui = [
+                "Mkt Val",
+                "Day Chg",
+                "Unreal. G/L",
+                "Real. G/L",
+                "Divs",
+                "Fees",
+                "Total G/L",
+                "FX G/L",
+                "Est. Income",
+                "Cost Basis",
+            ]
+            cols_to_sum_actual = [
+                all_col_defs[ui_name]
+                for ui_name in cols_to_sum_ui
+                if ui_name in all_col_defs
+            ]
+
             # --- 4. Group by Sector ---
             if group_by_sector and "Sector" in df_filtered.columns:
-                # --- NEW: Assign cash rows to a dedicated "Cash" sector for grouping ---
-                if "Symbol" in df_filtered.columns:
-                    cash_mask = df_filtered["Symbol"] == CASH_SYMBOL_CSV
-                    df_filtered.loc[cash_mask, "Sector"] = "Cash"
-                # --- END NEW ---
 
                 df_filtered["Sector"] = df_filtered["Sector"].fillna("Unknown")
                 grouped_data = []
@@ -12012,11 +12105,25 @@ The CSV file should contain the following columns (header names must match exact
                 # Use sorted groupby to ensure sectors are in alphabetical order
                 for sector, group in df_filtered.groupby("Sector", sort=True):
 
+                    # --- ADDED: Get expansion state for indicator ---
+                    is_expanded = self.group_expansion_states.get(sector, True)
+                    indicator = "▾" if is_expanded else "▸"
+                    # --- END ADDED ---
+
+                    # --- MODIFIED: Combine header and footer summary ---
                     group_header_data = {
-                        "Symbol": f"--- {sector} ---",
+                        "Symbol": f"{indicator} {sector}",
                         "is_group_header": True,
                         "group_key": sector,  # Add group key for stable sorting
                     }
+
+                    # Add summed values to the header row
+                    for col in cols_to_sum_actual:
+                        if col in group.columns and pd.api.types.is_numeric_dtype(
+                            group[col]
+                        ):
+                            group_header_data[col] = group[col].sum()
+                    # --- END MODIFIED ---
 
                     for col in cols_to_sum:
                         if col in group.columns:
@@ -12024,16 +12131,50 @@ The CSV file should contain the following columns (header names must match exact
                             group_header_data[col] = total
 
                     group_header = pd.DataFrame([group_header_data])
-
-                    # Add group key to the data rows as well
-                    group_with_key = group.copy()
-                    group_with_key["group_key"] = sector
-
                     grouped_data.append(group_header)
+
+                    group_with_key = (
+                        group.copy()
+                    )  # Add group key to the data rows as well
+                    group_with_key["group_key"] = sector
                     grouped_data.append(group_with_key)
 
                 if grouped_data:
                     df_filtered = pd.concat(grouped_data, ignore_index=True)
+
+        # --- ADDED: Summary Row Calculation ---
+        if not df_filtered.empty:
+            # Create a copy to avoid SettingWithCopyWarning
+            df_for_summary_calc = df_filtered.copy()
+
+            # Exclude group headers from summation
+            if "is_group_header" in df_for_summary_calc.columns:
+                data_rows = df_for_summary_calc[
+                    df_for_summary_calc["is_group_header"] != True
+                ]
+            else:
+                data_rows = df_for_summary_calc
+
+            if not data_rows.empty:
+                summary_row = pd.Series(index=df_filtered.columns, dtype=object)
+                summary_row["Symbol"] = "TOTALS"
+                summary_row["is_summary_row"] = True  # Internal flag for styling
+
+                for col in cols_to_sum_actual:
+                    if col in data_rows.columns and pd.api.types.is_numeric_dtype(
+                        data_rows[col]
+                    ):
+                        summary_row[col] = data_rows[col].sum()
+
+                summary_df = pd.DataFrame([summary_row])
+                # Append the summary row to the main DataFrame
+                df_filtered = pd.concat([df_filtered, summary_df], ignore_index=True)
+        # --- END ADDED ---
+
+        if update_view:
+            self._update_table_view_with_filtered_columns(df_filtered)
+            self.apply_column_visibility()
+            return
 
         return df_filtered  # Return the DataFrame after all filters
 
