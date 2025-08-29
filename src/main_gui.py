@@ -8690,9 +8690,8 @@ The CSV file should contain the following columns (header names must match exact
             return
 
         account_values = df_to_use.groupby("Account")[value_col_actual].sum()
-        account_values = account_values[
-            account_values.abs() > 1e-3
-        ]  # Filter out near-zero values
+        # --- FIX: Filter for positive values for pie chart ---
+        account_values = account_values[account_values > 1e-3]
 
         if account_values.empty:
             self.account_canvas.draw()
@@ -8839,9 +8838,8 @@ The CSV file should contain the following columns (header names must match exact
             df_display = df_display[df_display["is_summary_row"] != True].copy()
             # Recalculate holdings_values after filtering out the summary row
             holdings_values = df_display.groupby("Symbol")[value_col_actual].sum()
-        holdings_values = holdings_values[
-            holdings_values.abs() > 1e-3
-        ]  # Filter out near-zero values
+        # --- FIX: Filter for positive values for pie chart ---
+        holdings_values = holdings_values[holdings_values > 1e-3]
 
         if holdings_values.empty:
             # self.holdings_ax.text(0.5, 0.5, 'No Holdings > 0', ha='center', va='center', transform=self.holdings_ax.transAxes, fontsize=9, color=COLOR_TEXT_SECONDARY)
@@ -11479,9 +11477,8 @@ The CSV file should contain the following columns (header names must match exact
         asset_type_values = df_alloc.groupby("Asset Type", observed=False)[
             value_col_actual
         ].sum()
-        asset_type_values = asset_type_values[
-            asset_type_values.abs() > 1e-3
-        ]  # Filter out tiny values
+        # --- FIX: Filter for positive values for pie chart ---
+        asset_type_values = asset_type_values[asset_type_values > 1e-3]
 
         if not asset_type_values.empty:
             # Axis should be 'on' from the _clear_asset_allocation_charts call
@@ -11579,9 +11576,9 @@ The CSV file should contain the following columns (header names must match exact
             sector_values = df_alloc_for_sector_chart.groupby("Sector", observed=False)[
                 value_col_actual
             ].sum()
-            sector_values = sector_values[sector_values.abs() > 1e-3].sort_values(
+            sector_values = sector_values[sector_values > 1e-3].sort_values(
                 ascending=False
-            )
+            )  # FIX: Only positive values
 
             if not sector_values.empty:
                 self.sector_pie_ax.axis("on")  # Turn axis on for plotting
@@ -11695,9 +11692,9 @@ The CSV file should contain the following columns (header names must match exact
             country_values = df_alloc_for_geo_chart.groupby("Country", observed=False)[
                 value_col_actual
             ].sum()
-            country_values = country_values[country_values.abs() > 1e-3].sort_values(
+            country_values = country_values[country_values > 1e-3].sort_values(
                 ascending=False
-            )
+            )  # FIX: Only positive values
 
             if not country_values.empty:
                 self.geo_pie_ax.axis("on")
@@ -11805,9 +11802,9 @@ The CSV file should contain the following columns (header names must match exact
             industry_values = df_alloc_for_industry_chart.groupby(
                 "Industry", observed=False
             )[value_col_actual].sum()
-            industry_values = industry_values[industry_values.abs() > 1e-3].sort_values(
+            industry_values = industry_values[industry_values > 1e-3].sort_values(
                 ascending=False
-            )
+            )  # FIX: Only positive values
 
             if not industry_values.empty:
                 self.industry_pie_ax.axis("on")
