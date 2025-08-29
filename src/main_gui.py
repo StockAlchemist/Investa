@@ -72,6 +72,7 @@ except ImportError:
 
 from typing import Dict, Any, Optional, List, Tuple, Set  # Added Set
 import logging
+from collections import defaultdict
 
 # --- Configure Logging Globally (as early as possible) ---
 # The LOGGING_LEVEL is imported from config.py and used here.
@@ -248,6 +249,7 @@ from config import (
     COLOR_GAIN,
     COLOR_LOSS,
     DEFAULT_CSV,
+    SHORTABLE_SYMBOLS,
     BAR_CHART_MAX_PERIODS_ANNUAL,
     BAR_CHART_MAX_PERIODS_QUARTERLY,
     BAR_CHART_MAX_PERIODS_MONTHLY,
@@ -323,6 +325,8 @@ try:
         format_large_number_display,
         format_integer_with_commas,
         format_float_with_commas,
+        calculate_irr,
+        get_historical_rate_via_usd_bridge,
     )
 
     # --- End Import ---
@@ -12033,9 +12037,23 @@ The CSV file should contain the following columns (header names must match exact
             )
 
             # Total Ret. %
-            percentages["Total Return %"] = safe_division_pct(
-                sum_total_gain, sum_total_buy_cost
-            )
+            # --- START OF FIX ---
+            # Check if this is the cash sector group to avoid division by zero,
+            # as cash has no 'buy cost'. The concept of "Total Return %" based on
+            # buy cost is not applicable to cash holdings.
+            is_cash_sector = False
+            if "Sector" in df_subset.columns and not df_subset.empty:
+                unique_sectors = df_subset["Sector"].dropna().unique()
+                if len(unique_sectors) == 1 and unique_sectors[0] == "Cash":
+                    is_cash_sector = True
+
+            if is_cash_sector:
+                percentages["Total Return %"] = np.nan  # Not applicable for cash
+            else:
+                percentages["Total Return %"] = safe_division_pct(
+                    sum_total_gain, sum_total_buy_cost
+                )
+            # --- END OF FIX ---
 
             # Yield (Cost) % & Yield (Mkt) %
             percentages["Div. Yield (Cost) %"] = safe_division_pct(
