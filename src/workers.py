@@ -354,7 +354,7 @@ class PortfolioCalculatorWorker(QRunnable):
                 if (
                     not hist_fx
                 ):  # hist_fx might be empty if no FX conversion was needed by historical calc
-                    logging.warning(
+                    logging.info(
                         "WORKER: Historical FX data from historical calc is empty. "
                         "Dividend history will rely on same-currency or default FX handling."
                     )
@@ -597,15 +597,17 @@ class PortfolioCalculatorWorker(QRunnable):
                 portfolio_returns_series = pd.Series()
                 if "Portfolio Value" in full_historical_data_df.columns:
                     df_for_analysis = full_historical_data_df.copy()
-                    if 'Date' in df_for_analysis.columns and not isinstance(df_for_analysis.index, pd.DatetimeIndex):
-                        df_for_analysis['Date'] = pd.to_datetime(df_for_analysis['Date'])
-                        df_for_analysis.set_index('Date', inplace=True)
+                    if "Date" in df_for_analysis.columns and not isinstance(
+                        df_for_analysis.index, pd.DatetimeIndex
+                    ):
+                        df_for_analysis["Date"] = pd.to_datetime(
+                            df_for_analysis["Date"]
+                        )
+                        df_for_analysis.set_index("Date", inplace=True)
 
                     # Convert portfolio value to periodic returns
                     portfolio_returns_series = (
-                        df_for_analysis["Portfolio Value"]
-                        .pct_change()
-                        .dropna()
+                        df_for_analysis["Portfolio Value"].pct_change().dropna()
                     )
                     portfolio_returns_series.name = "Portfolio_Returns"
 
@@ -613,13 +615,19 @@ class PortfolioCalculatorWorker(QRunnable):
                     # Use the first selected benchmark as the market factor
                     benchmark_data_for_factor_analysis = None
                     if self.historical_kwargs.get("benchmark_symbols_yf"):
-                        first_benchmark_ticker = self.historical_kwargs["benchmark_symbols_yf"][0]
+                        first_benchmark_ticker = self.historical_kwargs[
+                            "benchmark_symbols_yf"
+                        ][0]
                         benchmark_col_name = f"{first_benchmark_ticker} Price"
                         if benchmark_col_name in df_for_analysis.columns:
-                            benchmark_data_for_factor_analysis = df_for_analysis[[benchmark_col_name]]
+                            benchmark_data_for_factor_analysis = df_for_analysis[
+                                [benchmark_col_name]
+                            ]
 
                     ff3_results = run_factor_regression(
-                        portfolio_returns_series, self.factor_model_name, benchmark_data=benchmark_data_for_factor_analysis
+                        portfolio_returns_series,
+                        self.factor_model_name,
+                        benchmark_data=benchmark_data_for_factor_analysis,
                     )
                     if ff3_results:
                         # Store relevant parts of the summary, e.g., params, pvalues, rsquared
@@ -664,7 +672,11 @@ class PortfolioCalculatorWorker(QRunnable):
                     "market_value", 0.0
                 )
 
-                if dummy_factor_betas and self.scenario_shocks and dummy_portfolio_value != 0.0:
+                if (
+                    dummy_factor_betas
+                    and self.scenario_shocks
+                    and dummy_portfolio_value != 0.0
+                ):
                     scenario_analysis_result = run_scenario_analysis(
                         factor_betas=dummy_factor_betas,
                         scenario_shocks=self.scenario_shocks,

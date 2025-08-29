@@ -168,6 +168,8 @@ from PySide6.QtCore import (
     QStandardPaths,
     QByteArray,
     QTimer,
+    QItemSelection,
+    QItemSelectionModel,
 )
 from PySide6.QtGui import QValidator, QIcon  # <-- ADDED Import QValidator
 from PySide6.QtCore import QSize  # <-- ADDED Import QSize
@@ -864,6 +866,7 @@ class PortfolioApp(QMainWindow):
                     "last_csv_export_path",
                     "last_excel_export_path",
                     "last_image_export_path",
+                    "holdings_table_header_state",  # Allow str even if default is None
                 ]
                 if key not in allowed_flexible_types or (
                     loaded_app_config[key] is not None
@@ -3036,6 +3039,41 @@ The CSV file should contain the following columns (header names must match exact
         except (KeyError, IndexError) as e:
             logging.warning(f"Could not process click for collapse/expand: {e}")
 
+    # --- ADDED: Slots for synchronizing frozen table selection ---
+    @Slot(QItemSelection, QItemSelection)
+    def _sync_main_to_frozen_selection(
+        self, selected: QItemSelection, deselected: QItemSelection
+    ):
+        """When the main table selection changes, update the frozen table's selection."""
+        if not hasattr(self, "frozen_table_view") or not self.frozen_table_view:
+            return
+        frozen_model = self.frozen_table_view.selectionModel()
+        if not frozen_model:
+            return
+        frozen_model.blockSignals(True)
+        try:
+            frozen_model.select(selected, QItemSelectionModel.Select)
+            frozen_model.select(deselected, QItemSelectionModel.Deselect)
+        finally:
+            frozen_model.blockSignals(False)
+
+    @Slot(QItemSelection, QItemSelection)
+    def _sync_frozen_to_main_selection(
+        self, selected: QItemSelection, deselected: QItemSelection
+    ):
+        """When the frozen table selection changes, update the main table's selection."""
+        if not hasattr(self, "table_view") or not self.table_view:
+            return
+        main_model = self.table_view.selectionModel()
+        if not main_model:
+            return
+        main_model.blockSignals(True)
+        try:
+            main_model.select(selected, QItemSelectionModel.Select)
+            main_model.select(deselected, QItemSelectionModel.Deselect)
+        finally:
+            main_model.blockSignals(False)
+
     # --- Helper Methods (Define BEFORE they are called in __init__) ---
     def _ensure_all_columns_in_visibility(self):
         """
@@ -5087,12 +5125,12 @@ The CSV file should contain the following columns (header names must match exact
             self.frozen_table_view.verticalScrollBar().setValue
         )
 
-        # Synchronize selection
+        # Synchronize selection - using explicit slots to prevent recursion and warnings
         self.table_view.selectionModel().selectionChanged.connect(
-            self.frozen_table_view.selectionModel().select
+            self._sync_main_to_frozen_selection
         )
         self.frozen_table_view.selectionModel().selectionChanged.connect(
-            self.table_view.selectionModel().select
+            self._sync_frozen_to_main_selection
         )
 
         self.view_ignored_button.clicked.connect(self.show_ignored_log)
