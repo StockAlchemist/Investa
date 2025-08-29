@@ -39,6 +39,14 @@ except ImportError:
     SHORTABLE_SYMBOLS = {"AAPL", "RIMM"}
 
 
+# --- Constants for _get_file_hash ---
+HASH_CHUNK_SIZE = 8192
+HASH_ERROR_NOT_FOUND = "FILE_NOT_FOUND"
+HASH_ERROR_PERMISSION = "HASHING_ERROR_PERMISSION"
+HASH_ERROR_IO = "HASHING_ERROR_IO"
+HASH_ERROR_UNEXPECTED = "HASHING_ERROR_UNEXPECTED"
+
+
 # --- File Hashing Helper ---
 def _get_file_hash(filepath: str) -> str:
     """Calculates the SHA256 hash of a file.
@@ -55,21 +63,21 @@ def _get_file_hash(filepath: str) -> str:
     hasher = hashlib.sha256()
     try:
         with open(filepath, "rb") as file:
-            while chunk := file.read(8192):  # Read in chunks
+            while chunk := file.read(HASH_CHUNK_SIZE):  # Read in chunks
                 hasher.update(chunk)
         return hasher.hexdigest()
     except FileNotFoundError:
         logging.warning(f"Warning: File not found for hashing: {filepath}")
-        return "FILE_NOT_FOUND"
+        return HASH_ERROR_NOT_FOUND
     except PermissionError:
         logging.error(f"Permission denied accessing file {filepath} for hashing.")
-        return "HASHING_ERROR_PERMISSION"
+        return HASH_ERROR_PERMISSION
     except IOError as e:
         logging.error(f"I/O error hashing file {filepath}: {e}")
-        return "HASHING_ERROR_IO"
+        return HASH_ERROR_IO
     except Exception as e:
         logging.exception(f"Unexpected error hashing file {filepath}")
-        return "HASHING_ERROR_UNEXPECTED"
+        return HASH_ERROR_UNEXPECTED
 
 
 # --- IRR/MWR Calculation Functions ---
@@ -197,6 +205,15 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
     if len(dates) < 2 or len(cash_flows) < 2 or len(dates) != len(cash_flows):
         logging.debug("DEBUG IRR: Fail - Length mismatch or < 2")
         return np.nan
+
+    # --- ADDED: Handle zero-duration investments ---
+    # If all transactions occur on the same day, the time delta is always zero,
+    # making the IRR calculation mathematically undefined or infinite.
+    if all(d == dates[0] for d in dates):
+        logging.debug("DEBUG IRR: Fail - All cash flows occur on the same date.")
+        return np.nan
+    # --- END ADDED ---
+
     if any(
         not isinstance(cf, (int, float)) or not np.isfinite(cf) for cf in cash_flows
     ):
@@ -213,7 +230,8 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
         logging.debug(f"DEBUG IRR: Fail - Date validation error: {e}")
         return np.nan
 
-    # 2. Cash Flow Pattern Validation (Stricter)
+    # 2. Cash Flow Pattern Validation
+    # A valid investment for IRR requires an initial outflow (negative) and at least one inflow (positive).
     first_non_zero_flow = None
     first_non_zero_idx = -1
     non_zero_cfs_list = []
@@ -223,14 +241,18 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
             if first_non_zero_flow is None:
                 first_non_zero_flow = cf
                 first_non_zero_idx = idx
+
+    # Case 1: All cash flows are zero.
     if first_non_zero_flow is None:
         logging.debug("DEBUG IRR: Fail - All flows are zero")
         return np.nan
+    # Case 2: The first cash flow must be an investment (negative).
     if first_non_zero_flow >= -1e-9:
         logging.debug(
             f"DEBUG IRR: Fail - First non-zero flow is non-negative: {first_non_zero_flow} in {cash_flows}"
         )
         return np.nan
+    # Case 3: There must be at least one positive cash flow (a return).
     has_positive_flow = any(cf > 1e-9 for cf in non_zero_cfs_list)
     if not has_positive_flow:
         logging.debug(f"DEBUG IRR: Fail - No positive flows found: {cash_flows}")
@@ -238,6 +260,7 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
 
     # 3. Solver Logic
     irr_result = np.nan
+    # First, try the Newton-Raphson method. It's fast but needs a good guess and can fail to converge.
     try:
         irr_result = optimize.newton(
             calculate_npv, x0=0.1, args=(dates, cash_flows), tol=1e-6, maxiter=100
@@ -250,12 +273,20 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
         if not np.isclose(
             npv_check, 0.0, atol=1e-4
         ):  # Check if it finds the root accurately
-            raise RuntimeError("Newton result did not produce zero NPV")
+            raise RuntimeError(
+                f"Newton result did not produce zero NPV (NPV={npv_check:.4f})"
+            )
     except (RuntimeError, OverflowError):
+        # If Newton fails, fall back to the more robust Brent's method (brentq).
+        # This method requires a bracket [a, b] where the NPV at a and b have opposite signs.
         try:
             lower_bound, upper_bound = -0.9999, 50.0
             npv_low = calculate_npv(lower_bound, dates, cash_flows)
             npv_high = calculate_npv(upper_bound, dates, cash_flows)
+            # --- ADDED: More explicit logging for brentq failure ---
+            logging.debug(
+                f"DEBUG IRR: Newton failed. Brentq bounds NPV: Low={npv_low}, High={npv_high}"
+            )
             if (
                 pd.notna(npv_low) and pd.notna(npv_high) and npv_low * npv_high < 0
             ):  # Check sign change
@@ -272,6 +303,9 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
                     irr_result = np.nan
             else:
                 irr_result = np.nan
+                logging.debug(
+                    "DEBUG IRR: Brentq skipped - NPV at bounds do not have opposite signs."
+                )
         except (ValueError, RuntimeError, OverflowError, Exception):
             irr_result = np.nan
 

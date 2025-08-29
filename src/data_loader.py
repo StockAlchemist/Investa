@@ -612,22 +612,28 @@ def load_and_clean_transactions(
         )
         has_warnings = True  # Adding this column based on map is a "fix"
     else:  # Local Currency column exists, fill blanks
-        is_empty_local_currency = df["Local Currency"].isin(["", None, np.nan, pd.NA])
-        # --- ADDED: Also check for the string "<NA>" specifically ---
-        if pd.api.types.is_string_dtype(df["Local Currency"]):
-            is_empty_local_currency |= (
-                df["Local Currency"].astype(str).str.upper().str.strip() == "<NA>"
-            )
-        # --- END ADDED ---
-        if is_empty_local_currency.any():
-            df.loc[is_empty_local_currency, "Local Currency"] = (
-                df.loc[is_empty_local_currency, "Account"]
+        # --- MODIFIED: More robust cleaning for Local Currency ---
+        # Create a boolean mask for rows with invalid or missing currency codes.
+        # This logic mirrors the robust check in _process_transactions_to_holdings.
+        # 1. Strip whitespace and convert to uppercase for consistent comparison.
+        # 2. Check for various null-like strings, non-3-char codes, or actual NaNs.
+        normalized_currency = df["Local Currency"].astype(str).str.strip().str.upper()
+        invalid_currency_mask = (
+            normalized_currency.isin(["", "<NA>", "NAN", "NONE", "N/A"])
+            | (normalized_currency.str.len() != 3)
+            | (df["Local Currency"].isna())
+        )
+
+        if invalid_currency_mask.any():
+            # For rows with invalid currency, map the account to its currency.
+            # Use .loc with the mask to update only the necessary rows.
+            df.loc[invalid_currency_mask, "Local Currency"] = (
+                df.loc[invalid_currency_mask, "Account"]
                 .map(account_currency_map)
                 .fillna(default_currency)
             )
             logging.info(
-                f"Filled {is_empty_local_currency.sum()} missing Local Currency values."
-                # has_warnings is already True if this block is entered
+                f"Filled or corrected {invalid_currency_mask.sum()} missing/invalid Local Currency values."
             )
             has_warnings = True
     df["Local Currency"] = df["Local Currency"].str.upper()  # Standardize to uppercase

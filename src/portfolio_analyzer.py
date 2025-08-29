@@ -115,6 +115,10 @@ def _process_transactions_to_holdings(
     ignored_row_indices_local = set()
     ignored_reasons_local = {}
     has_warnings = False
+    # --- PERFORMANCE OPTIMIZATION ---
+    # Auxiliary map to track which accounts hold a given symbol, to avoid iterating
+    # over all holdings for every split transaction.
+    symbol_to_accounts_map: Dict[str, Set[str]] = defaultdict(set)
 
     logging.debug(
         "Processing filtered stock/ETF transactions (split logic modified)..."
@@ -213,6 +217,9 @@ def _process_transactions_to_holdings(
                 "total_buy_cost_local": 0.0,
                 "total_cost_display_historical_fx": 0.0,  # NEW: Track cost in display currency at historical FX
             }
+            # --- PERFORMANCE OPTIMIZATION ---
+            # Track that this account now holds this symbol.
+            symbol_to_accounts_map[symbol].add(account)
         elif (
             holdings[holding_key_from_row]["local_currency"] != local_currency_from_row
         ):
@@ -241,45 +248,38 @@ def _process_transactions_to_holdings(
                 logging.debug(
                     f"Processing SPLIT for {symbol} on {tx_date} (Ratio: {split_ratio}). Applying to all accounts holding it."
                 )
-                logging.debug("  Holdings state BEFORE applying split:")
-                for h_key, h_data in holdings.items():
-                    if h_key[0] == symbol:
-                        logging.debug(
-                            f"    {h_key}: Qty={h_data.get('qty', 'N/A')}, ShortQty={h_data.get('short_original_qty', 'N/A')}"
-                        )
 
                 affected_accounts = []
-                for h_key, h_data in holdings.items():
-                    h_symbol, h_account_iter = h_key
-                    if h_symbol == symbol:
-                        affected_accounts.append(h_account_iter)
+                # --- PERFORMANCE OPTIMIZATION ---
+                # Instead of iterating all holdings, use the map to find relevant accounts.
+                if symbol in symbol_to_accounts_map:
+                    affected_accounts = list(symbol_to_accounts_map[symbol])
+                    for acc_name in affected_accounts:
+                        h_key = (symbol, acc_name)
+                        h_data = holdings[h_key]
                         old_qty = h_data["qty"]
                         if abs(old_qty) >= 1e-9:
                             h_data["qty"] *= split_ratio
                             logging.debug(
-                                f"  Applied split to {h_symbol}/{h_account_iter}: Qty {old_qty:.4f} -> {h_data['qty']:.4f}"
+                                f"  Applied split to {symbol}/{acc_name}: Qty {old_qty:.4f} -> {h_data['qty']:.4f}"
                             )
                             if old_qty < -1e-9 and symbol in shortable_symbols:
                                 h_data["short_original_qty"] *= split_ratio
                                 if abs(h_data["short_original_qty"]) < 1e-9:
                                     h_data["short_original_qty"] = 0.0
                                 logging.debug(
-                                    f"  Adjusted short original qty for {h_symbol}/{h_account_iter}"
+                                    f"  Adjusted short original qty for {symbol}/{acc_name}"
                                 )
                             if abs(h_data["qty"]) < 1e-9:
                                 h_data["qty"] = 0.0
                         else:
                             logging.debug(
-                                f"  Skipped split qty adjust for {h_symbol}/{h_account_iter} (Qty near zero: {old_qty:.4f})"
+                                f"  Skipped split qty adjust for {symbol}/{acc_name} (Qty near zero: {old_qty:.4f})"
                             )
 
                 logging.debug(
                     f"Split for {symbol} applied to accounts: {affected_accounts}"
                 )
-                logging.debug("  Holdings state AFTER applying split:")
-                for h_key, h_data in holdings.items():
-                    if h_key[0] == symbol:
-                        logging.debug(f"    {h_key}: Qty={h_data.get('qty', 'N/A')}")
 
                 if commission_local_for_this_tx != 0:
                     holding_for_fee = holdings.get(holding_key_from_row)
