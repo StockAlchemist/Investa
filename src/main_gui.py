@@ -11521,348 +11521,159 @@ The CSV file should contain the following columns (header names must match exact
             except Exception as e:  # pragma: no cover
                 logging.warning(f"Warning: Could not unset stretch last section: {e}")
 
+    def _apply_grouping(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Groups the DataFrame by sector and adds header/summary rows."""
+        if not self.group_by_sector_check.isChecked() or "Sector" not in df.columns:
+            return df
+
+        df_grouped = df.copy()
+        df_grouped["Sector"] = df_grouped["Sector"].fillna("Unknown")
+        grouped_data = []
+
+        currency = self._get_currency_symbol(get_name=True)
+        all_col_defs = get_column_definitions(currency)
+        cols_to_sum_ui = [
+            "Mkt Val",
+            "Day Chg",
+            "Unreal. G/L",
+            "Real. G/L",
+            "Divs",
+            "Fees",
+            "Total G/L",
+            "FX G/L",
+            "Est. Income",
+            "Cost Basis",
+            "Total Buy Cost",
+        ]
+        cols_to_sum_actual = [
+            all_col_defs[ui_name]
+            for ui_name in cols_to_sum_ui
+            if ui_name in all_col_defs and all_col_defs[ui_name] in df_grouped.columns
+        ]
+
+        for sector, group in df_grouped.groupby("Sector", sort=True):
+            is_expanded = self.group_expansion_states.get(sector, True)
+            indicator = "▾" if is_expanded else "▸"
+
+            summed_values = {
+                col: group[col].sum()
+                for col in cols_to_sum_actual
+                if pd.api.types.is_numeric_dtype(group[col])
+            }
+
+            group_header_data = {
+                "Symbol": f"{indicator} {sector}",
+                "is_group_header": True,
+                "group_key": sector,
+            }
+            group_header_data.update(summed_values)
+            group_header_data.update(
+                self._calculate_summary_percentages(group, summed_values)
+            )
+
+            grouped_data.append(pd.DataFrame([group_header_data]))
+
+            group_with_key = group.copy()
+            group_with_key["group_key"] = sector
+            grouped_data.append(group_with_key)
+
+        return (
+            pd.concat(grouped_data, ignore_index=True)
+            if grouped_data
+            else pd.DataFrame()
+        )
+
+    def _add_summary_row(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Calculates and appends a 'TOTALS' summary row to the DataFrame."""
+        if df.empty:
+            return df
+
+        df_with_summary = df.copy()
+
+        # Exclude group headers from summation
+        if "is_group_header" in df_with_summary.columns:
+            data_rows = df_with_summary[df_with_summary["is_group_header"] != True]
+        else:
+            data_rows = df_with_summary
+
+        if data_rows.empty:
+            return df  # Return original if only headers exist
+
+        currency = self._get_currency_symbol(get_name=True)
+        all_col_defs = get_column_definitions(currency)
+        cols_to_sum_ui = [
+            "Mkt Val",
+            "Day Chg",
+            "Unreal. G/L",
+            "Real. G/L",
+            "Divs",
+            "Fees",
+            "Total G/L",
+            "FX G/L",
+            "Est. Income",
+            "Cost Basis",
+            "Total Buy Cost",
+        ]
+        cols_to_sum_actual = [
+            all_col_defs[ui_name]
+            for ui_name in cols_to_sum_ui
+            if ui_name in all_col_defs and all_col_defs[ui_name] in data_rows.columns
+        ]
+
+        summary_row = pd.Series(index=df.columns, dtype=object)
+        summary_row["Symbol"] = "TOTALS"
+        summary_row["is_summary_row"] = True
+
+        summed_values_total = {
+            col: data_rows[col].sum()
+            for col in cols_to_sum_actual
+            if pd.api.types.is_numeric_dtype(data_rows[col])
+        }
+
+        for col, total in summed_values_total.items():
+            summary_row[col] = total
+
+        total_percentages = self._calculate_summary_percentages(
+            data_rows, summed_values_total
+        )
+        for col, pct_val in total_percentages.items():
+            summary_row[col] = pct_val
+
+        return pd.concat(
+            [df_with_summary, pd.DataFrame([summary_row])], ignore_index=True
+        )
+
     def _get_filtered_data(self, group_by_sector=False, update_view=False):
         """
-        Filters the main holdings DataFrame based on selected accounts and 'Show Closed'.
-
-        Uses `self.holdings_data`, `self.selected_accounts`, `self.available_accounts`,
-        and the state of the 'Show Closed' checkbox.
+        Filters and processes the main holdings DataFrame through a pipeline of helper methods.
 
         Args:
             group_by_sector (bool): If True, groups the data by sector.
             update_view (bool): If True, updates the table view directly.
 
         Returns:
-            pd.DataFrame: The filtered DataFrame ready for display or charting.
+            pd.DataFrame: The fully processed DataFrame ready for display.
         """
+        if not isinstance(self.holdings_data, pd.DataFrame) or self.holdings_data.empty:
+            return pd.DataFrame()
 
-        def _calculate_summary_percentages(
-            df_subset: pd.DataFrame, summed_values: dict
-        ) -> dict:
-            """Calculates percentage metrics for a given DataFrame subset and its summed values."""
-            percentages = {}
-            currency = self._get_currency_symbol(get_name=True)
+        # Start the pipeline
+        df_processed = self._apply_base_filters(self.holdings_data)
+        df_processed = self._apply_text_filters(df_processed)
 
-            # Define column names
-            mkt_val_col = f"Market Value ({currency})"
-            day_chg_col = f"Day Change ({currency})"
-            unreal_gain_col = f"Unreal. Gain ({currency})"
-            cost_basis_col = f"Cost Basis ({currency})"
-            total_gain_col = f"Total Gain ({currency})"
-            total_buy_cost_col = f"Total Buy Cost ({currency})"
-            est_income_col = f"Est. Ann. Income ({currency})"
-            irr_col = "IRR (%)"
+        if group_by_sector:
+            df_processed = self._apply_grouping(df_processed)
 
-            # Get summed values
-            sum_mkt_val = summed_values.get(mkt_val_col, 0.0)
-            sum_day_chg = summed_values.get(day_chg_col, 0.0)
-            sum_unreal_gain = summed_values.get(unreal_gain_col, 0.0)
-            sum_cost_basis = summed_values.get(cost_basis_col, 0.0)
-            sum_total_gain = summed_values.get(total_gain_col, 0.0)
-            sum_total_buy_cost = summed_values.get(total_buy_cost_col, 0.0)
-            sum_est_income = summed_values.get(est_income_col, 0.0)
+        df_processed = self._add_summary_row(df_processed)
 
-            def safe_division_pct(numerator, denominator):
-                if abs(denominator) > 1e-9:
-                    return (numerator / denominator) * 100.0
-                elif abs(numerator) < 1e-9:
-                    return 0.0
-                else:
-                    return np.inf
-
-            # Day Chg %
-            prev_day_val = sum_mkt_val - sum_day_chg
-            percentages["Day Change %"] = safe_division_pct(sum_day_chg, prev_day_val)
-
-            # Unreal. G/L %
-            percentages["Unreal. Gain %"] = safe_division_pct(
-                sum_unreal_gain, sum_cost_basis
-            )
-
-            # Total Ret. %
-            # --- START OF FIX ---
-            # Check if this is the cash sector group to avoid division by zero,
-            # as cash has no 'buy cost'. The concept of "Total Return %" based on
-            # buy cost is not applicable to cash holdings.
-            is_cash_sector = False
-            if "Sector" in df_subset.columns and not df_subset.empty:
-                unique_sectors = df_subset["Sector"].dropna().unique()
-                if len(unique_sectors) == 1 and unique_sectors[0] == "Cash":
-                    is_cash_sector = True
-
-            if is_cash_sector:
-                percentages["Total Return %"] = np.nan  # Not applicable for cash
-            else:
-                percentages["Total Return %"] = safe_division_pct(
-                    sum_total_gain, sum_total_buy_cost
-                )
-            # --- END OF FIX ---
-
-            # Yield (Cost) % & Yield (Mkt) %
-            percentages["Div. Yield (Cost) %"] = safe_division_pct(
-                sum_est_income, sum_cost_basis
-            )
-            percentages["Div. Yield (Current) %"] = safe_division_pct(
-                sum_est_income, sum_mkt_val
-            )
-
-            # IRR (%) - Weighted Average by Market Value
-            if (
-                irr_col in df_subset.columns
-                and mkt_val_col in df_subset.columns
-                and abs(sum_mkt_val) > 1e-9
-            ):
-                weighted_irr_sum = (
-                    df_subset[irr_col].fillna(0) * df_subset[mkt_val_col].fillna(0)
-                ).sum()
-                percentages[irr_col] = weighted_irr_sum / sum_mkt_val
-            else:
-                percentages[irr_col] = np.nan
-
-            return percentages
-
-        df_filtered = pd.DataFrame()
-        if (
-            isinstance(self.holdings_data, pd.DataFrame)
-            and not self.holdings_data.empty
-        ):
-            df_to_filter = self.holdings_data.copy()
-
-            # --- 1. Filter by selected accounts ---
-            all_selected_or_empty = not self.selected_accounts or (
-                set(self.selected_accounts) == set(self.available_accounts)
-                if self.available_accounts
-                else True
-            )
-            if not all_selected_or_empty and "Account" in df_to_filter.columns:
-                # Keep rows that match selected accounts OR the special aggregate cash account
-                account_filter_mask = (
-                    df_to_filter["Account"].isin(self.selected_accounts)
-                ) | (df_to_filter["Account"] == _AGGREGATE_CASH_ACCOUNT_NAME_)
-                df_filtered = df_to_filter[account_filter_mask].copy()
-                logging.debug(
-                    f"Applied account filter, kept {len(df_filtered)} rows including aggregate cash."
-                )
-            else:
-                df_filtered = df_to_filter  # Use all if selection empty/all
-
-            # --- 2. Filter by 'Show Closed' ---
-            show_closed = self.show_closed_check.isChecked()
-            if (
-                not show_closed
-                and "Quantity" in df_filtered.columns
-                and "Symbol" in df_filtered.columns
-            ):
-                try:
-                    numeric_quantity = pd.to_numeric(
-                        df_filtered["Quantity"], errors="coerce"
-                    ).fillna(0)
-                    # Correctly handle CASH display name when filtering closed
-                    cash_display_symbol = (
-                        f"Cash ({self._get_currency_symbol(get_name=True)})"
-                    )
-                    keep_mask = (
-                        (numeric_quantity.abs() > 1e-9)
-                        | (df_filtered["Symbol"] == CASH_SYMBOL_CSV)
-                        | (df_filtered["Symbol"] == cash_display_symbol)
-                    )
-                    df_filtered = df_filtered[keep_mask]
-                except Exception as e:
-                    logging.warning(f"Warning: Error filtering 'Show Closed': {e}")
-
-            # --- 3. Apply Table Text Filters ---
-            symbol_filter_text = ""
-            account_filter_text = ""
-            if hasattr(self, "filter_symbol_table_edit"):  # Check widgets exist
-                symbol_filter_text = self.filter_symbol_table_edit.text().strip()
-            if hasattr(self, "filter_account_table_edit"):
-                account_filter_text = self.filter_account_table_edit.text().strip()
-
-            # Filter by Symbol (if text entered and column exists)
-            if symbol_filter_text and "Symbol" in df_filtered.columns:
-                try:
-                    # Match against the symbol itself OR the "Cash (CUR)" display format
-                    base_cash_symbol = CASH_SYMBOL_CSV
-                    cash_display_symbol = (
-                        f"Cash ({self._get_currency_symbol(get_name=True)})"
-                    )
-
-                    symbol_mask = (
-                        df_filtered["Symbol"]
-                        .astype(str)
-                        .str.contains(symbol_filter_text, case=False, na=False)
-                    )
-
-                    # If filtering for "CASH", also match the formatted display name
-                    if "CASH" in symbol_filter_text.upper():
-                        symbol_mask |= (
-                            df_filtered["Symbol"]
-                            .astype(str)
-                            .str.contains(cash_display_symbol, case=False, na=False)
-                        )
-
-                    df_filtered = df_filtered[symbol_mask]
-                except Exception as e_sym_filt:
-                    logging.warning(
-                        f"Warning: Error applying symbol table filter: {e_sym_filt}"
-                    )
-
-            # Filter by Account (if text entered and column exists)
-            if account_filter_text and "Account" in df_filtered.columns:
-                try:
-                    df_filtered = df_filtered[
-                        df_filtered["Account"]
-                        .astype(str)
-                        .str.contains(account_filter_text, case=False, na=False)
-                    ]
-                except Exception as e_acc_filt:
-                    logging.warning(
-                        f"Warning: Error applying account table filter: {e_acc_filt}"
-                    )
-            # --- End Table Text Filters ---
-
-            # --- MOVED UP: Define columns to sum so it's available for group footers AND summary row ---
-            currency = self._get_currency_symbol(get_name=True)
-            all_col_defs = get_column_definitions(currency)
-            cols_to_sum_ui = [
-                "Mkt Val",
-                "Day Chg",
-                "Unreal. G/L",
-                "Real. G/L",
-                "Divs",
-                "Fees",
-                "Total G/L",
-                "FX G/L",
-                "Est. Income",
-                "Cost Basis",
-                "Total Buy Cost",  # ADDED
-            ]
-            cols_to_sum_actual = [
-                all_col_defs[ui_name]
-                for ui_name in cols_to_sum_ui
-                if ui_name in all_col_defs
-            ]
-
-            # --- 4. Group by Sector ---
-            if group_by_sector and "Sector" in df_filtered.columns:
-
-                df_filtered["Sector"] = df_filtered["Sector"].fillna("Unknown")
-                grouped_data = []
-
-                # Define columns to sum
-                currency = self._get_currency_symbol(get_name=True)
-                cols_to_sum = [
-                    f"Market Value ({currency})",
-                    f"Day Change ({currency})",
-                    f"Unreal. Gain ({currency})",
-                    f"Realized Gain ({currency})",
-                    f"Dividends ({currency})",
-                    f"Commissions ({currency})",
-                    f"Total Gain ({currency})",
-                    f"FX Gain/Loss ({currency})",
-                    f"Est. Ann. Income ({currency})",
-                    "Market Value",  # Fallback
-                    "Day Change",
-                ]
-
-                # Use sorted groupby to ensure sectors are in alphabetical order
-                for sector, group in df_filtered.groupby("Sector", sort=True):
-
-                    # --- ADDED: Get expansion state for indicator ---
-                    is_expanded = self.group_expansion_states.get(sector, True)
-                    indicator = "▾" if is_expanded else "▸"
-                    # --- END ADDED ---
-
-                    # --- MODIFIED: Combine header and footer summary ---
-                    group_header_data = {
-                        "Symbol": f"{indicator} {sector}",
-                        "is_group_header": True,
-                        "group_key": sector,  # Add group key for stable sorting
-                    }
-
-                    summed_values = {}
-                    for col in cols_to_sum_actual:
-                        if col in group.columns and pd.api.types.is_numeric_dtype(
-                            group[col]
-                        ):
-                            summed_values[col] = group[col].sum()
-
-                    # First, update the dictionary with all summed values
-                    group_header_data.update(summed_values)
-
-                    # Then, calculate and add percentage metrics
-                    group_percentages = _calculate_summary_percentages(
-                        group, summed_values
-                    )
-                    group_header_data.update(group_percentages)
-
-                    # Now, create the DataFrame from the fully populated dictionary
-                    group_header = pd.DataFrame([group_header_data])
-                    group_header_data.update(summed_values)
-
-                    # Calculate and add percentage metrics
-                    group_percentages = _calculate_summary_percentages(
-                        group, summed_values
-                    )
-                    group_header_data.update(group_percentages)
-
-                    grouped_data.append(group_header)
-
-                    group_with_key = (
-                        group.copy()
-                    )  # Add group key to the data rows as well
-                    group_with_key["group_key"] = sector
-                    grouped_data.append(group_with_key)
-
-                if grouped_data:
-                    df_filtered = pd.concat(grouped_data, ignore_index=True)
-
-        # --- ADDED: Summary Row Calculation ---
-        if not df_filtered.empty:
-            # Create a copy to avoid SettingWithCopyWarning
-            df_for_summary_calc = df_filtered.copy()
-
-            # Exclude group headers from summation
-            if "is_group_header" in df_for_summary_calc.columns:
-                data_rows = df_for_summary_calc[
-                    df_for_summary_calc["is_group_header"] != True
-                ]
-            else:
-                data_rows = df_for_summary_calc
-
-            if not data_rows.empty:
-                summary_row = pd.Series(index=df_filtered.columns, dtype=object)
-                summary_row["Symbol"] = "TOTALS"
-                summary_row["is_summary_row"] = True  # Internal flag for styling
-
-                summed_values_total = {}
-                for col in cols_to_sum_actual:
-                    if col in data_rows.columns and pd.api.types.is_numeric_dtype(
-                        data_rows[col]
-                    ):
-                        summed_values_total[col] = data_rows[col].sum()
-
-                for col, total in summed_values_total.items():
-                    summary_row[col] = total
-
-                # Calculate and add percentage metrics for the total row
-                total_percentages = _calculate_summary_percentages(
-                    data_rows, summed_values_total
-                )
-                for col, pct_val in total_percentages.items():
-                    summary_row[col] = pct_val
-
-                summary_df = pd.DataFrame([summary_row])
-                # Append the summary row to the main DataFrame
-                df_filtered = pd.concat([df_filtered, summary_df], ignore_index=True)
-        # --- END ADDED ---
+        # This path is no longer used but kept for safety
 
         if update_view:
-            self._update_table_view_with_filtered_columns(df_filtered)
+            self._update_table_view_with_filtered_columns(df_processed)
             self.apply_column_visibility()
-            return
+            return None  # Explicitly return None as view is updated
 
-        return df_filtered  # Return the DataFrame after all filters
+        return df_processed
 
     def _update_fx_rate_display(self, display_currency):
         """
@@ -11939,6 +11750,182 @@ The CSV file should contain the following columns (header names must match exact
 
         title_right_label.setText(title_right_text)
         title_left_label.setText(scope_text)
+
+    # --- Filtering and Grouping Helpers for _get_filtered_data ---
+
+    def _calculate_summary_percentages(
+        self, df_subset: pd.DataFrame, summed_values: dict
+    ) -> dict:
+        """Calculates percentage metrics for a given DataFrame subset and its summed values."""
+        percentages = {}
+        currency = self._get_currency_symbol(get_name=True)
+
+        # Define column names
+        mkt_val_col = f"Market Value ({currency})"
+        day_chg_col = f"Day Change ({currency})"
+        unreal_gain_col = f"Unreal. Gain ({currency})"
+        cost_basis_col = f"Cost Basis ({currency})"
+        total_gain_col = f"Total Gain ({currency})"
+        total_buy_cost_col = f"Total Buy Cost ({currency})"
+        est_income_col = f"Est. Ann. Income ({currency})"
+        irr_col = "IRR (%)"
+
+        # Get summed values
+        sum_mkt_val = summed_values.get(mkt_val_col, 0.0)
+        sum_day_chg = summed_values.get(day_chg_col, 0.0)
+        sum_unreal_gain = summed_values.get(unreal_gain_col, 0.0)
+        sum_cost_basis = summed_values.get(cost_basis_col, 0.0)
+        sum_total_gain = summed_values.get(total_gain_col, 0.0)
+        sum_total_buy_cost = summed_values.get(total_buy_cost_col, 0.0)
+        sum_est_income = summed_values.get(est_income_col, 0.0)
+
+        def safe_division_pct(numerator, denominator):
+            if abs(denominator) > 1e-9:
+                return (numerator / denominator) * 100.0
+            elif abs(numerator) < 1e-9:
+                return 0.0
+            else:
+                return np.inf
+
+        # Day Chg %
+        prev_day_val = sum_mkt_val - sum_day_chg
+        percentages["Day Change %"] = safe_division_pct(sum_day_chg, prev_day_val)
+
+        # Unreal. G/L %
+        percentages["Unreal. Gain %"] = safe_division_pct(
+            sum_unreal_gain, sum_cost_basis
+        )
+
+        # Total Ret. %
+        is_cash_sector = False
+        if "Sector" in df_subset.columns and not df_subset.empty:
+            unique_sectors = df_subset["Sector"].dropna().unique()
+            if len(unique_sectors) == 1 and unique_sectors[0] == "Cash":
+                is_cash_sector = True
+
+        if is_cash_sector:
+            percentages["Total Return %"] = np.nan
+        else:
+            percentages["Total Return %"] = safe_division_pct(
+                sum_total_gain, sum_total_buy_cost
+            )
+
+        # Yield (Cost) % & Yield (Mkt) %
+        percentages["Div. Yield (Cost) %"] = safe_division_pct(
+            sum_est_income, sum_cost_basis
+        )
+        percentages["Div. Yield (Current) %"] = safe_division_pct(
+            sum_est_income, sum_mkt_val
+        )
+
+        # IRR (%) - Weighted Average by Market Value
+        if (
+            irr_col in df_subset.columns
+            and mkt_val_col in df_subset.columns
+            and abs(sum_mkt_val) > 1e-9
+        ):
+            weighted_irr_sum = (
+                df_subset[irr_col].fillna(0) * df_subset[mkt_val_col].fillna(0)
+            ).sum()
+            percentages[irr_col] = weighted_irr_sum / sum_mkt_val
+        else:
+            percentages[irr_col] = np.nan
+
+        return percentages
+
+    def _apply_base_filters(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Applies account and 'show closed' filters to the holdings data."""
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            return pd.DataFrame()
+
+        df_filtered = df.copy()
+
+        # Filter by selected accounts
+        all_selected_or_empty = not self.selected_accounts or (
+            set(self.selected_accounts) == set(self.available_accounts)
+            if self.available_accounts
+            else True
+        )
+        if not all_selected_or_empty and "Account" in df_filtered.columns:
+            account_filter_mask = (
+                df_filtered["Account"].isin(self.selected_accounts)
+            ) | (df_filtered["Account"] == _AGGREGATE_CASH_ACCOUNT_NAME_)
+            df_filtered = df_filtered[account_filter_mask].copy()
+
+        # Filter by 'Show Closed'
+        show_closed = self.show_closed_check.isChecked()
+        if (
+            not show_closed
+            and "Quantity" in df_filtered.columns
+            and "Symbol" in df_filtered.columns
+        ):
+            try:
+                numeric_quantity = pd.to_numeric(
+                    df_filtered["Quantity"], errors="coerce"
+                ).fillna(0)
+                cash_display_symbol = (
+                    f"Cash ({self._get_currency_symbol(get_name=True)})"
+                )
+                keep_mask = (
+                    (numeric_quantity.abs() > 1e-9)
+                    | (df_filtered["Symbol"] == CASH_SYMBOL_CSV)
+                    | (df_filtered["Symbol"] == cash_display_symbol)
+                )
+                df_filtered = df_filtered[keep_mask]
+            except Exception as e:
+                logging.warning(f"Warning: Error filtering 'Show Closed': {e}")
+
+        return df_filtered
+
+    def _apply_text_filters(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Applies live text filters from the UI to the DataFrame."""
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            return df
+
+        df_filtered = df.copy()
+
+        symbol_filter_text = ""
+        account_filter_text = ""
+        if hasattr(self, "filter_symbol_table_edit"):
+            symbol_filter_text = self.filter_symbol_table_edit.text().strip()
+        if hasattr(self, "filter_account_table_edit"):
+            account_filter_text = self.filter_account_table_edit.text().strip()
+
+        if symbol_filter_text and "Symbol" in df_filtered.columns:
+            try:
+                cash_display_symbol = (
+                    f"Cash ({self._get_currency_symbol(get_name=True)})"
+                )
+                symbol_mask = (
+                    df_filtered["Symbol"]
+                    .astype(str)
+                    .str.contains(symbol_filter_text, case=False, na=False)
+                )
+                if "CASH" in symbol_filter_text.upper():
+                    symbol_mask |= (
+                        df_filtered["Symbol"]
+                        .astype(str)
+                        .str.contains(cash_display_symbol, case=False, na=False)
+                    )
+                df_filtered = df_filtered[symbol_mask]
+            except Exception as e_sym_filt:
+                logging.warning(
+                    f"Warning: Error applying symbol table filter: {e_sym_filt}"
+                )
+
+        if account_filter_text and "Account" in df_filtered.columns:
+            try:
+                df_filtered = df_filtered[
+                    df_filtered["Account"]
+                    .astype(str)
+                    .str.contains(account_filter_text, case=False, na=False)
+                ]
+            except Exception as e_acc_filt:
+                logging.warning(
+                    f"Warning: Error applying account table filter: {e_acc_filt}"
+                )
+
+        return df_filtered
 
     # --- End New Helper ---
 
