@@ -4467,7 +4467,7 @@ The CSV file should contain the following columns (header names must match exact
         self.update_performance_graphs(initial=True)
         self._update_account_button_text()
         self._update_benchmark_button_text()
-        self._update_table_title()
+        self._update_table_title(pd.DataFrame())
 
         # --- ADDED: Restore header state ---
         if self.config.get("holdings_table_header_state"):
@@ -8121,61 +8121,46 @@ The CSV file should contain the following columns (header names must match exact
         logging.debug("Entering _update_ui_components_after_calculation...")
         logging.debug("Updating UI elements after receiving results...")
         try:
-            # Enable/Disable "View Log" button based on the newly constructed ignored_data
-            # --- ADDED LOGGING ---
             logging.debug(
                 f"  Ignored data shape: {self.ignored_data.shape if isinstance(self.ignored_data, pd.DataFrame) else 'Not a DF'}"
             )
-            # --- END ADDED LOGGING ---
             if hasattr(self, "view_ignored_button"):
                 self.view_ignored_button.setEnabled(not self.ignored_data.empty)
 
-            # Get Filtered Data for Display (uses self.holdings_data and current filters)
-            # IMPORTANT: _get_filtered_data uses self.holdings_data which was just updated
-            # --- ADDED LOGGING ---
-            logging.debug("  Calling _get_filtered_data...")
-            # --- END ADDED LOGGING ---
-
-            df_for_pies = self._get_filtered_data(group_by_sector=False)
-            df_for_table = self._get_filtered_data(
-                group_by_sector=self.group_by_sector_check.isChecked()
+            # --- REFACTOR: Call _get_filtered_data once per required configuration ---
+            logging.debug(
+                "  Calling _get_filtered_data to generate display DataFrames..."
             )
+            df_for_pies = self._get_filtered_data(group_by_sector=False)
 
-            # --- ADDED LOGGING ---
+            is_grouped = self.group_by_sector_check.isChecked()
+            if is_grouped:
+                df_for_table = self._get_filtered_data(group_by_sector=True)
+            else:
+                df_for_table = df_for_pies  # No need to call again if not grouping
+
             logging.debug(
                 f"  _get_filtered_data (for pies) returned DataFrame shape: {df_for_pies.shape}"
             )
             logging.debug(
-                f"  _get_filtered_data (for table) returned DataFrame shape: {df_for_table.shape}"
+                f"  _get_filtered_data (for table, grouped={is_grouped}) returned DataFrame shape: {df_for_table.shape}"
             )
-            # --- END ADDED LOGGING ---
+            # --- END REFACTOR ---
 
             # Update UI components
-            # --- ADDED LOGGING ---
             logging.debug("  Calling _update_table_title...")
-            # --- END ADDED LOGGING ---
-            self._update_table_title()  # Uses available/selected accounts state
-            # --- ADDED LOGGING ---
+            self._update_table_title(df_for_table)  # Pass the generated DataFrame
             logging.debug("  Calling update_dashboard_summary...")
-            # --- END ADDED LOGGING ---
             self.update_dashboard_summary()  # Uses self.summary_metrics_data and filtered data for cash
             # Account pie needs data grouped by account *within the selected scope*
             # We can derive this from the df_for_pies
-            # --- ADDED LOGGING ---
             logging.debug("  Calling update_account_pie_chart...")
-            # --- END ADDED LOGGING ---
             self.update_account_pie_chart(df_for_pies)
-            # --- ADDED LOGGING ---
             logging.debug("  Calling update_holdings_pie_chart...")
-            # --- END ADDED LOGGING ---
             self.update_holdings_pie_chart(df_for_pies)  # Uses filtered data
-            # --- ADDED LOGGING ---
             logging.debug("  Calling _update_table_view_with_filtered_columns...")
-            # --- END ADDED LOGGING ---
             self._update_table_view_with_filtered_columns(df_for_table)  # Update table
-            # --- ADDED LOGGING ---
             logging.debug("  Calling apply_column_visibility...")
-            # --- END ADDED LOGGING ---
             self.apply_column_visibility()  # Re-apply visibility
             self.update_performance_graphs()  # Uses self.historical_data (which reflects scope)
             self.update_header_info()  # Uses self.index_quote_data
@@ -8185,11 +8170,9 @@ The CSV file should contain the following columns (header names must match exact
             self._update_factor_analysis_display()
             self._update_scenario_analysis_display()
 
-            # --- ADDED LOGGING ---
             logging.debug(
                 f"  Calling _update_fx_rate_display with currency: {self.currency_combo.currentText()}"
             )
-            # --- END ADDED LOGGING ---
 
             self._update_fx_rate_display(
                 self.currency_combo.currentText()
@@ -8210,7 +8193,6 @@ The CSV file should contain the following columns (header names must match exact
                 logging.debug(
                     f"[Handle Results] PRE-CHECK: any(not df.empty...) = {any(not df.empty for df in self.periodic_returns_data.values() if isinstance(df, pd.DataFrame))}"
                 )
-            # --- END ADDED ---
             # Check if the dictionary itself is non-empty AND if it contains data for *any* interval
             bar_charts_have_data = bool(self.periodic_returns_data) and any(
                 not df.empty
@@ -8221,29 +8203,18 @@ The CSV file should contain the following columns (header names must match exact
                 f"[Handle Results] Bar charts visibility check: bar_charts_have_data = {bar_charts_have_data}"
             )  # ADDED LOG
             self.bar_charts_frame.setVisible(bar_charts_have_data)
-            # --- END MODIFY ---
             if bar_charts_have_data:  # Only call plot if there's data
-                # --- ADDED LOGGING ---
                 logging.debug("  Calling _update_periodic_bar_charts...")
-                # --- END ADDED LOGGING ---
                 self._update_periodic_bar_charts()
-                # --- ADDED LOGGING ---
                 logging.debug("  Calling _update_dividend_bar_chart...")
-                # --- END ADDED LOGGING ---
                 self._update_dividend_bar_chart()  # Also update dividend chart
                 # _update_dividend_summary_table will be called by _update_dividend_bar_chart
-                # --- ADDED LOGGING ---
                 logging.debug("  Calling _update_dividend_table...")
-                # --- END ADDED LOGGING ---
                 self._update_dividend_table()  # And dividend table
                 self._update_all_transaction_tables()  # Update all three transaction tables
-                # --- ADDED LOGGING ---
                 logging.debug("  Calling _update_asset_allocation_charts...")
-                # --- END ADDED LOGGING ---
                 self._update_asset_allocation_charts()  # Update new allocation charts
-                # --- ADDED LOGGING ---
                 logging.debug("  Calling _update_capital_gains_display...")
-                # --- END ADDED LOGGING ---
                 self._update_capital_gains_display()  # Update Capital Gains tab
 
                 self._update_periodic_value_change_display()  # Update new tab
@@ -8633,11 +8604,13 @@ The CSV file should contain the following columns (header names must match exact
         self._update_table_view_with_filtered_columns(df_display_filtered)
         self.apply_column_visibility()  # Re-apply visibility
 
-        # 3. Update the holdings pie chart based on this filtered data
+        # 3. Update the holdings pie chart based on this filtered data.
+        #    The account pie chart is not updated here as it reflects the broader
+        #    account scope, not the live text filter.
         self.update_holdings_pie_chart(df_display_filtered)
 
-        # 4. Update the table title to reflect the number of items *shown*
-        self._update_table_title()  # This uses _get_filtered_data internally again, which is fine
+        # 4. Update the table title to reflect the number of items *shown*.
+        self._update_table_title(df_display_filtered)
 
     @Slot()
     def _apply_table_filter(self):
@@ -11279,7 +11252,7 @@ The CSV file should contain the following columns (header names must match exact
         self.update_holdings_pie_chart(pd.DataFrame())
         self.update_performance_graphs(initial=True)
         self.status_label.setText("Ready")
-        self._update_table_title()  # Update table title
+        self._update_table_title(pd.DataFrame())  # Update table title
         self._update_account_button_text()  # Update button text
         self.stock_transactions_table_model.updateData(
             pd.DataFrame()
@@ -12543,7 +12516,7 @@ The CSV file should contain the following columns (header names must match exact
         self.exchange_rate_display_label.setVisible(show_rate)
 
     # --- New Helper: Update Table Title ---
-    def _update_table_title(self):
+    def _update_table_title(self, df_display_filtered: pd.DataFrame):
         """Updates the title above the main holdings table to reflect the current scope."""
         title_right_label = getattr(self, "table_title_label_right", None)
         title_left_label = getattr(self, "table_title_label_left", None)
@@ -12553,9 +12526,6 @@ The CSV file should contain the following columns (header names must match exact
 
         num_available = len(self.available_accounts)
         num_selected = len(self.selected_accounts)
-        df_display_filtered = self._get_filtered_data(
-            group_by_sector=self.group_by_sector_check.isChecked()
-        )  # Get currently displayed data
         num_rows_displayed = len(df_display_filtered)
 
         title_right_text = f"Holdings Detail ({num_rows_displayed} items shown)"
@@ -14031,8 +14001,10 @@ The CSV file should contain the following columns (header names must match exact
     def _update_correlation_matrix_display(self):
         """Updates the Correlation Matrix display."""
         logging.debug("Updating Correlation Matrix display...")
+        # Clear the entire figure to remove old axes and color bars
+        self.correlation_fig.clear()
+        # Add a new subplot for the new heatmap
         ax = self.correlation_fig.add_subplot(111)
-        ax.clear()
 
         # Explicitly set background and text colors to match the current theme
         bg_color = self.QCOLOR_BACKGROUND_THEMED.name()
