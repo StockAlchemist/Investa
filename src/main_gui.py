@@ -452,6 +452,10 @@ except ImportError:
         return {}
 
 
+# --- ADDED: Class attribute for frozen columns ---
+FROZEN_COLUMNS_UI = ["Account", "Symbol"]
+
+
 class PortfolioApp(QMainWindow):
     """Main application window for the Investa Portfolio Dashboard."""
 
@@ -2072,6 +2076,9 @@ The CSV file should contain the following columns (header names must match exact
         self.is_calculating = False
         self.last_calc_status = ""
         self.last_hist_twr_factor = np.nan
+        # --- ADDED: Attribute for frozen table view ---
+        self.frozen_table_view = None
+        # --- END ADDED ---
         self.holdings_data = pd.DataFrame()  # Initialize as empty DataFrame
         self.ignored_data = (
             pd.DataFrame()
@@ -2972,6 +2979,10 @@ The CSV file should contain the following columns (header names must match exact
         if not self.group_by_sector_check.isChecked():
             # If grouping is off, ensure all rows are visible
             for i in range(self.table_model.rowCount()):
+                # --- ADDED: Also show rows in frozen table ---
+                if self.frozen_table_view and self.frozen_table_view.isRowHidden(i):
+                    self.frozen_table_view.setRowHidden(i, False)
+                # --- END ADDED ---
                 if self.table_view.isRowHidden(i):
                     self.table_view.setRowHidden(i, False)
             return
@@ -2994,7 +3005,11 @@ The CSV file should contain the following columns (header names must match exact
                 if pd.notna(group_key):
                     is_expanded = self.group_expansion_states.get(group_key, True)
                     if self.table_view.isRowHidden(i) == is_expanded:
+                        # --- MODIFIED: Apply to both tables ---
                         self.table_view.setRowHidden(i, not is_expanded)
+                        if self.frozen_table_view:
+                            self.frozen_table_view.setRowHidden(i, not is_expanded)
+                        # --- END MODIFIED ---
         except (KeyError, IndexError) as e:
             logging.error(f"Error applying group visibility: {e}")
 
@@ -4109,7 +4124,13 @@ The CSV file should contain the following columns (header names must match exact
         Args:
             pos (QPoint): The position where the right-click occurred within the header.
         """
-        header = self.table_view.horizontalHeader()
+        header = self.sender()
+        if not isinstance(header, QHeaderView):
+            logging.warning(
+                f"show_header_context_menu called by non-QHeaderView sender: {type(header)}"
+            )
+            return
+
         global_pos = header.mapToGlobal(
             pos
         )  # Map local position to global screen position
@@ -4156,9 +4177,12 @@ The CSV file should contain the following columns (header names must match exact
     def apply_column_visibility(self):
         """Applies the current column visibility state to the QTableView."""
         # Ensure table_view and model exist
+        # --- MODIFIED: Check for both table views ---
         if (
             not hasattr(self, "table_view")
             or not self.table_view
+            or not hasattr(self, "frozen_table_view")
+            or not self.frozen_table_view
             or not hasattr(self, "table_model")
             or not isinstance(self.table_model, PandasModel)
             or self.table_model.columnCount() == 0
@@ -4166,30 +4190,52 @@ The CSV file should contain the following columns (header names must match exact
             return  # Cannot apply if table/model not ready
 
         header = self.table_view.horizontalHeader()
+        frozen_header = self.frozen_table_view.horizontalHeader()
+        frozen_view_width = 0
+
         # Iterate through the columns currently in the model
         for col_index in range(self.table_model.columnCount()):
             # Get the header name displayed in the UI for this column index
             header_name = self.table_model.headerData(
                 col_index, Qt.Horizontal, Qt.DisplayRole
             )
-            if header_name:  # header_name can be None if model is empty
-                # --- ADDED: Explicitly hide internal helper columns ---
-                # These columns are needed in the model for styling/sorting but should never be visible.
-                if str(header_name) in [
-                    "is_group_header",
-                    "group_key",
-                    "is_summary_row",
-                ]:
-                    header.setSectionHidden(col_index, True)
-                    continue  # Move to the next column
-                # --- END ADDED ---
+            if not header_name:
+                continue
 
-                # Look up the visibility state for this header name
-                is_visible = self.column_visibility.get(
-                    str(header_name), True
-                )  # Default to visible
-                # Hide or show the section (column) based on user's preference
-                header.setSectionHidden(col_index, not is_visible)
+            is_frozen_col = str(header_name) in FROZEN_COLUMNS_UI
+            is_visible = self.column_visibility.get(str(header_name), True)
+            is_internal_col = str(header_name) in [
+                "is_group_header",
+                "group_key",
+                "is_summary_row",
+            ]
+
+            if is_internal_col:
+                self.table_view.setColumnHidden(col_index, True)
+                self.frozen_table_view.setColumnHidden(col_index, True)
+                continue
+
+            if is_frozen_col:
+                # This column belongs to the frozen view
+                self.frozen_table_view.setColumnHidden(col_index, not is_visible)
+                self.table_view.setColumnHidden(
+                    col_index, True
+                )  # Hide in scrollable view
+                if is_visible:
+                    # Use resizeColumnsToContents before getting width
+                    self.frozen_table_view.resizeColumnToContents(col_index)
+                    frozen_view_width += self.frozen_table_view.columnWidth(col_index)
+            else:  # scrollable column
+                # This column belongs to the scrollable view
+                self.frozen_table_view.setColumnHidden(
+                    col_index, True
+                )  # Hide in frozen view
+                self.table_view.setColumnHidden(col_index, not is_visible)
+
+        # Add a small buffer for borders/etc.
+        # The vertical header is not visible, so we don't need to add its width.
+        self.frozen_table_view.setFixedWidth(frozen_view_width + 4)
+        # --- END MODIFICATION ---
 
     def save_config(self):
         """Saves the current application configuration to gui_config.json."""
@@ -4948,32 +4994,80 @@ The CSV file should contain the following columns (header names must match exact
         # Add the combined header/filter layout to the main table layout
         table_layout.addLayout(table_header_and_filter_layout)
 
-        # Table View
+        # --- MODIFIED: Setup for dual table view (frozen + scrollable) ---
+        self.table_model = PandasModel(parent=self)
+
+        # Main (scrollable) table view
         self.table_view = QTableView()
+        self.table_view.setObjectName("HoldingsTable")
+        self.table_view.setModel(self.table_model)
         self.table_view.setItemDelegate(
             GroupHeaderDelegate(self.table_view, theme=self.current_theme)
         )
-        self.table_view.setObjectName("HoldingsTable")
         self.table_view.setAlternatingRowColors(True)
         self.table_view.setSelectionBehavior(QTableView.SelectRows)
         self.table_view.setWordWrap(False)
         self.table_view.setSortingEnabled(True)
-        self.table_model = PandasModel(parent=self)
-        self.table_view.setModel(self.table_model)
         self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.table_view.horizontalHeader().setStretchLastSection(False)
         self.table_view.verticalHeader().setVisible(False)
         self.table_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        # --- CONTEXT MENU SETUP ---
-        # Make sure context menu policy is set for the TABLE VIEW itself
+
+        # Frozen table view for fixed columns
+        self.frozen_table_view = QTableView()
+        self.frozen_table_view.setObjectName("FrozenHoldingsTable")
+        self.frozen_table_view.setModel(self.table_model)
+        self.frozen_table_view.setItemDelegate(
+            GroupHeaderDelegate(self.frozen_table_view, theme=self.current_theme)
+        )
+        self.frozen_table_view.setAlternatingRowColors(True)
+        self.frozen_table_view.setSelectionBehavior(QTableView.SelectRows)
+        self.frozen_table_view.setWordWrap(False)
+        self.frozen_table_view.setSortingEnabled(True)
+        self.frozen_table_view.verticalHeader().setVisible(False)
+        self.frozen_table_view.setFocusPolicy(Qt.NoFocus)
+        self.frozen_table_view.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeToContents
+        )
+        self.frozen_table_view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.frozen_table_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        # --- ADDED: CONTEXT MENU SETUP for both tables ---
         self.table_view.setContextMenuPolicy(Qt.CustomContextMenu)
-        # Remove or ensure no connection for the HORIZONTAL HEADER's context menu
-        self.table_view.horizontalHeader().setContextMenuPolicy(
+        self.table_view.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
+        self.frozen_table_view.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.frozen_table_view.horizontalHeader().setContextMenuPolicy(
             Qt.CustomContextMenu
-        )  # Remove if exists
-        # --- END CONTEXT MENU SETUP ---
-        table_layout.addWidget(self.table_view, 1)
+        )
+        # --- END ADDED ---
+
+        # Layout for the two tables
+        table_container_layout = QHBoxLayout()
+        table_container_layout.setSpacing(0)
+        table_container_layout.setContentsMargins(0, 0, 0, 0)
+        table_container_layout.addWidget(self.frozen_table_view)
+        table_container_layout.addWidget(
+            self.table_view, 1
+        )  # scrollable part takes stretch
+
+        table_layout.addLayout(table_container_layout, 1)
         content_layout.addWidget(table_panel, 4)
+
+        # Synchronize vertical scrolling
+        self.frozen_table_view.verticalScrollBar().valueChanged.connect(
+            self.table_view.verticalScrollBar().setValue
+        )
+        self.table_view.verticalScrollBar().valueChanged.connect(
+            self.frozen_table_view.verticalScrollBar().setValue
+        )
+
+        # Synchronize selection
+        self.table_view.selectionModel().selectionChanged.connect(
+            self.frozen_table_view.selectionModel().select
+        )
+        self.frozen_table_view.selectionModel().selectionChanged.connect(
+            self.table_view.selectionModel().select
+        )
 
         self.view_ignored_button.clicked.connect(self.show_ignored_log)
 
@@ -8166,8 +8260,13 @@ The CSV file should contain the following columns (header names must match exact
     @Slot(QPoint)
     def show_table_context_menu(self, pos: QPoint):
         """Shows a context menu for the row right-clicked in the holdings table."""
+        # --- MODIFIED: Use sender() to determine which table was clicked ---
+        sender_view = self.sender()
+        if not isinstance(sender_view, QTableView):
+            return
+
         # Get the model index corresponding to the click position within the table view
-        index = self.table_view.indexAt(pos)
+        index = sender_view.indexAt(pos)
 
         if not index.isValid():
             logging.debug("Right-click outside valid table rows.")
@@ -8240,7 +8339,7 @@ The CSV file should contain the following columns (header names must match exact
 
         # --- Show Menu ---
         # Map the click position within the table's viewport to global screen coordinates
-        global_pos = self.table_view.viewport().mapToGlobal(pos)
+        global_pos = sender_view.viewport().mapToGlobal(pos)
 
         # --- ADD Fundamental Data Action to Context Menu ---
         if symbol != CASH_SYMBOL_CSV:  # Only for actual stocks/ETFs
@@ -8284,6 +8383,12 @@ The CSV file should contain the following columns (header names must match exact
         self.table_view.horizontalHeader().customContextMenuRequested.connect(
             self.show_header_context_menu
         )
+        # --- ADDED: Connect frozen table header context menu ---
+        if self.frozen_table_view:
+            self.frozen_table_view.horizontalHeader().customContextMenuRequested.connect(
+                self.show_header_context_menu
+            )
+        # --- END ADDED ---
 
         # Table Filter Connections
         # self.apply_table_filter_button.clicked.connect(self._apply_table_filter)
@@ -8355,9 +8460,19 @@ The CSV file should contain the following columns (header names must match exact
         self.table_view.customContextMenuRequested.connect(
             self.show_table_context_menu
         )  # Connect table's signal
+        # --- ADDED: Connect frozen table context menu ---
+        if self.frozen_table_view:
+            self.frozen_table_view.customContextMenuRequested.connect(
+                self.show_table_context_menu
+            )
+        # --- END ADDED ---
         self.table_view.clicked.connect(
             self.on_table_view_clicked
         )  # For collapse/expand
+        # --- ADDED: Connect frozen table click for expand/collapse ---
+        if self.frozen_table_view:
+            self.frozen_table_view.clicked.connect(self.on_table_view_clicked)
+        # --- END ADDED ---
 
         # Performance Graph Context Menus
         self.perf_return_canvas.customContextMenuRequested.connect(
@@ -11964,6 +12079,10 @@ The CSV file should contain the following columns (header names must match exact
         # --- ADDED: Apply row visibility for groups ---
         self._apply_row_visibility_for_grouping()
         # --- END ADDED ---
+        # --- MODIFIED: Resize columns for both tables ---
+        if not df_for_table.empty:
+            self.table_view.resizeColumnsToContents()
+            self.frozen_table_view.resizeColumnsToContents()
 
         if not df_for_table.empty:
             self.table_view.resizeColumnsToContents()
