@@ -9,6 +9,7 @@ Investa is a desktop application designed to help you track, analyze, and visual
 * **Database Integration:** Securely stores all transaction data in a local SQLite database (`investa_transactions.db`), ensuring data persistence and integrity.
 * **Portfolio Summary:** Get a clear overview of your investments, including current market values, cost basis, unrealized and realized gains/losses, total dividends received, and overall portfolio return.
 * **Detailed Holdings Table:** Dive into individual stock, ETF, and cash positions. Features sortable columns (e.g., by symbol, quantity, market value, gain/loss) and allows customization of visible columns to tailor the view to your needs.
+* **Reorderable Columns:** Drag and drop column headers in the scrollable section of the holdings table to customize your view. Your layout is saved and restored automatically.
 * **Transaction Management (Comprehensive):**
   * **Direct Database Operations:** Add, edit, and delete transactions directly within the application via a dedicated management dialog, with changes immediately reflected in the SQLite database.
   * **Transaction Log Tab:** View chronological logs of Stock/ETF transactions and $CASH transactions separately, with filtering capabilities based on the main account selection.

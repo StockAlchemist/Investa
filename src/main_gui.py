@@ -166,6 +166,7 @@ from PySide6.QtCore import (
     QPoint,
     QStringListModel,  # <-- ADDED for QCompleter
     QStandardPaths,
+    QByteArray,
     QTimer,
 )
 from PySide6.QtGui import QValidator, QIcon  # <-- ADDED Import QValidator
@@ -708,6 +709,7 @@ class PortfolioApp(QMainWindow):
             "stock_tx_columns": {},  # For column visibility in the stock transactions table
             "cash_tx_columns": {},  # For column visibility in the cash transactions table
             "rebalancing_targets": {},  # For remembering target percentages
+            "holdings_table_header_state": None,  # For column order and sizes
         }
         loaded_app_config = config_defaults.copy()  # Start with defaults
 
@@ -4330,6 +4332,14 @@ The CSV file should contain the following columns (header names must match exact
         if hasattr(self, "column_visibility"):  # Should always exist after __init__
             self.config["column_visibility"] = self.column_visibility
 
+        # --- ADDED: Save header state ---
+        if hasattr(self, "table_view"):
+            header_state = self.table_view.horizontalHeader().saveState()
+            self.config["holdings_table_header_state"] = (
+                header_state.toHex().data().decode()
+            )
+        # --- END ADDED ---
+
         # Ensure the current theme is saved
         if hasattr(self, "current_theme"):
             self.config["theme"] = self.current_theme
@@ -4420,6 +4430,21 @@ The CSV file should contain the following columns (header names must match exact
         self._update_account_button_text()
         self._update_benchmark_button_text()
         self._update_table_title()
+
+        # --- ADDED: Restore header state ---
+        if self.config.get("holdings_table_header_state"):
+            try:
+                # QByteArray.fromHex() expects bytes, so we encode the string.
+                header_state_hex = self.config["holdings_table_header_state"].encode()
+                self.table_view.horizontalHeader().restoreState(
+                    QByteArray.fromHex(header_state_hex)
+                )
+                logging.info(
+                    "Restored holdings table header state (column order/sizes)."
+                )
+            except Exception as e:
+                logging.warning(f"Could not restore holdings table header state: {e}")
+        # --- END ADDED ---
 
         # --- Style Tab Titles ---
         if hasattr(self, "main_tab_widget") and self.main_tab_widget:
@@ -5008,6 +5033,7 @@ The CSV file should contain the following columns (header names must match exact
         self.table_view.setSelectionBehavior(QTableView.SelectRows)
         self.table_view.setWordWrap(False)
         self.table_view.setSortingEnabled(True)
+        self.table_view.horizontalHeader().setSectionsMovable(True)
         self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.table_view.horizontalHeader().setStretchLastSection(False)
         self.table_view.verticalHeader().setVisible(False)

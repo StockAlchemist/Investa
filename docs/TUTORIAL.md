@@ -251,6 +251,8 @@ Once your data is loaded (from the database) and refreshed, the main dashboard c
     * `View Fundamentals for [Symbol]`: Opens the Fundamental Data Viewer for that symbol.
     * `Chart Price for [Symbol]`: (If charting feature for individual symbols is enabled) Plots the historical price of the selected symbol.
 
+* **Reordering Columns:** You can customize the layout of the scrollable part of the table. Simply click and drag a column header to a new position. Your custom column order and widths will be saved and restored the next time you open Investa.
+
 ## Part 4: Analyzing Your Performance with Charts
 
 Investa's charting capabilities are grouped into tabs, providing rich visualizations of your portfolio's performance and composition. Remember to click "Update Graphs" if you change date ranges, intervals, or benchmark selections on the "Performance & Summary" tab.
