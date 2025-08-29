@@ -7506,616 +7506,6 @@ The CSV file should contain the following columns (header names must match exact
             self._update_account_button_text()
             self._update_table_title()
 
-    def _store_worker_data(
-        self,
-        summary_metrics,
-        holdings_df,
-        account_metrics,
-        index_quotes,
-        full_historical_data_df,
-        hist_prices_adj,
-        hist_fx,
-        combined_ignored_indices,
-        combined_ignored_reasons,
-        dividend_history_df,
-        capital_gains_history_df,
-        correlation_matrix_df,
-        factor_analysis_results,
-        scenario_analysis_result,
-    ):
-        """Stores data received from the worker into self attributes and handles status.
-        Args:
-            summary_metrics (dict): Aggregated metrics for the overall portfolio/scope.
-            holdings_df (pd.DataFrame): Detailed holdings data for the scope, filtered by show_closed.
-            account_metrics (dict): Dictionary of metrics aggregated per account for the scope.
-            index_quotes (dict): Fetched data for header indices.
-            full_historical_data_df (pd.DataFrame): Full daily historical data with gains calculated.
-            hist_prices_adj (dict): Raw ADJUSTED historical prices used by worker.
-            hist_fx (dict): Raw historical FX rates used by worker.
-            combined_ignored_indices (set): Set of original indices ignored during load or processing.
-            combined_ignored_reasons (dict): Maps 'original_index' (internal DB ID) to a string describing the reason the row was ignored.
-            dividend_history_df (pd.DataFrame): Realized capital gains history.
-            capital_gains_history_df (pd.DataFrame): Realized capital gains history.
-            correlation_matrix_df (pd.DataFrame): DataFrame of correlation matrix.
-            factor_analysis_results (dict): Results from factor analysis.
-            scenario_analysis_result (dict): Results from scenario analysis.
-        """
-
-        # --- Handle Status Messages and TWR ---
-        portfolio_status = summary_metrics.pop("status_msg", "Status Unknown")
-        historical_status = summary_metrics.pop(
-            "historical_status_msg", "Status Unknown"
-        )
-        self.last_calc_status = f"{portfolio_status} | {historical_status}"
-        self.last_hist_twr_factor = np.nan  # Reset TWR factor
-
-        # REMOVED: TWR Factor parsing from status string. Will calculate later from filtered data.
-        if "|||TWR_FACTOR:" in historical_status:
-            # Log the received factor but don't store it globally yet
-            logging.debug(
-                f"Received TWR factor from backend status (ignored): {historical_status.split('|||TWR_FACTOR:')[1]}"
-            )
-
-        # --- Store Core Data ---
-        self.summary_metrics_data = summary_metrics if summary_metrics else {}
-        self.holdings_data = (
-            holdings_df if holdings_df is not None else pd.DataFrame()
-        )  # Store final holdings df
-        # --- ADDED: Store periodic returns data ---
-        self.periodic_returns_data: Dict[str, pd.DataFrame] = {}
-        self.account_metrics_data = account_metrics if account_metrics else {}
-        self.index_quote_data = index_quotes if index_quotes else {}
-        # self.historical_data = ... # Removed - will be created later by filtering full data
-        self.dividend_history_data = (  # <-- Store dividend history
-            dividend_history_df if dividend_history_df is not None else pd.DataFrame()
-        )
-
-        # --- NEW: Store capital gains history ---
-        self.capital_gains_history_data = (
-            capital_gains_history_df
-            if capital_gains_history_df is not None
-            else pd.DataFrame()
-        )
-        self.correlation_matrix_df = (
-            correlation_matrix_df
-            if correlation_matrix_df is not None
-            else pd.DataFrame()
-        )
-        self.factor_analysis_results = (
-            factor_analysis_results if factor_analysis_results is not None else {}
-        )
-        self.scenario_analysis_result = (
-            scenario_analysis_result if scenario_analysis_result is not None else {}
-        )
-        logging.debug(
-            f"  _store_worker_data assigned self.dividend_history_data (shape {self.dividend_history_data.shape if isinstance(self.dividend_history_data, pd.DataFrame) else 'Not a DF'}):"
-        )
-        if (
-            isinstance(self.dividend_history_data, pd.DataFrame)
-            and not self.dividend_history_data.empty
-        ):
-            logging.debug(f"    Head:\n{self.dividend_history_data.head().to_string()}")
-        logging.debug(
-            f"  _store_worker_data assigned self.capital_gains_history_data (shape {self.capital_gains_history_data.shape if isinstance(self.capital_gains_history_data, pd.DataFrame) else 'Not a DF'}):"
-        )
-        if (
-            isinstance(self.capital_gains_history_data, pd.DataFrame)
-            and not self.capital_gains_history_data.empty
-        ):
-            logging.debug(
-                f"    Head:\n{self.capital_gains_history_data.head().to_string()}"
-            )
-
-            logging.debug(
-                f"    'DividendAmountDisplayCurrency' NaNs in stored data: {self.dividend_history_data['DividendAmountDisplayCurrency'].isna().sum()} out of {len(self.dividend_history_data)}"
-            )
-
-        # --- ADDED: Store full historical data ---
-        self.full_historical_data = (
-            full_historical_data_df  # This is the full daily data now
-            if full_historical_data_df is not None
-            else pd.DataFrame()
-        )
-        # --- ADDED: Log full_historical_data details ---
-        logging.debug(
-            f"[Handle Results] Assigned self.full_historical_data (Type: {type(self.full_historical_data)})"
-        )
-        if isinstance(self.full_historical_data, pd.DataFrame):
-            logging.debug(f"  Shape: {self.full_historical_data.shape}")
-            if not self.full_historical_data.empty:
-                logging.debug(
-                    f"  Tail:\n{self.full_historical_data.tail().to_string()}"
-                )
-        # --- END ADDED ---
-
-        # --- Store Raw Historical Data ---
-        self.historical_prices_yf_adjusted = (
-            hist_prices_adj if hist_prices_adj is not None else {}
-        )
-        self.historical_fx_yf = hist_fx if hist_fx is not None else {}
-        logging.info(
-            f"[Handle Results] Stored {len(self.historical_prices_yf_adjusted)} adjusted price series."
-        )
-        logging.info(
-            f"[Handle Results] Stored {len(self.historical_fx_yf)} FX rate series."
-        )
-
-        # --- CONSTRUCT Ignored DataFrame from combined results ---
-        self.ignored_data = pd.DataFrame()  # Reset ignored data
-        # We need self.original_data which should have been loaded and stored during refresh_data
-        if (
-            # Indices are now the 8th arg (index 7)
-            combined_ignored_indices is not None
-            and len(combined_ignored_indices) > 0
-            and hasattr(self, "original_data")
-            and not self.original_data.empty
-        ):
-            logging.info(
-                f"Processing {len(combined_ignored_indices)} ignored row indices..."
-            )
-            try:
-                # Ensure original_index (internal DB ID) exists in the stored original data
-                if "original_index" in self.original_data.columns:
-                    # Filter the original DataFrame to get rows matching the ignored indices
-                    # Ensure indices are integers if needed, though set should handle mixed types okay
-                    indices_to_check = {  # Use the correct variable
-                        int(i) for i in combined_ignored_indices if pd.notna(i)
-                    }
-                    valid_indices_mask = self.original_data["original_index"].isin(
-                        indices_to_check
-                    )
-                    ignored_rows_df = self.original_data[valid_indices_mask].copy()
-
-                    if not ignored_rows_df.empty:
-                        # Add the reason using the combined reasons dictionary
-                        # Make sure keys in reasons dict match the type in original_index (internal DB ID, likely int)
-                        reasons_mapped = (
-                            ignored_rows_df["original_index"]
-                            .map(combined_ignored_reasons)
-                            .fillna("Unknown Reason")
-                        )
-                        ignored_rows_df["Reason Ignored"] = reasons_mapped
-                        self.ignored_data = ignored_rows_df.sort_values(
-                            by="original_index"
-                        )  # Sort for consistency
-                        logging.info(
-                            f"Constructed ignored_data DataFrame with {len(self.ignored_data)} rows."
-                        )
-                    else:
-                        logging.warning(
-                            "No matching rows found in original_data for the ignored indices received from worker."
-                        )
-                else:
-                    logging.warning(
-                        "Cannot build ignored_data: 'original_index' (internal DB ID) missing from stored original data."
-                    )
-
-            except Exception as e_ignored:
-                logging.error(f"Error constructing ignored_data DataFrame: {e_ignored}")
-                traceback.print_exc()  # Log traceback for debugging
-                self.ignored_data = pd.DataFrame()  # Ensure empty on error
-        elif combined_ignored_indices:
-            logging.warning(
-                "Ignored indices received, but original_data is missing or empty. Cannot display ignored rows."
-            )
-
-    def _process_historical_and_periodic_data(self):
-        """Processes full historical data to derive filtered historical data and periodic returns."""
-        logging.debug("Entering _process_historical_and_periodic_data...")
-
-        # --- Calculate Periodic Returns ---
-        # --- MODIFIED: Use full_historical_data for periodic returns ---
-        if (
-            isinstance(self.full_historical_data, pd.DataFrame)
-            and not self.full_historical_data.empty
-        ):  # Explicit type check
-            logging.info("Calculating periodic returns for bar charts...")
-
-            # Map selected display names to YF tickers for calculate_periodic_returns
-            selected_benchmark_tickers_for_periodic = [
-                BENCHMARK_MAPPING.get(name)
-                for name in self.selected_benchmarks
-                if BENCHMARK_MAPPING.get(name)
-            ]
-            logging.debug(
-                f"[Handle Results] Calling calculate_periodic_returns with self.full_historical_data and tickers: {selected_benchmark_tickers_for_periodic}"
-            )
-            if (
-                isinstance(self.full_historical_data, pd.DataFrame)
-                and not self.full_historical_data.empty
-            ):
-                logging.debug(
-                    f"  Type: {type(self.full_historical_data)}, Shape: {self.full_historical_data.shape}"
-                )
-                logging.debug(
-                    f"  Date Range: {self.full_historical_data.index.min()} to {self.full_historical_data.index.max()}"
-                )
-
-            try:
-                self.periodic_returns_data = calculate_periodic_returns(
-                    self.full_historical_data,
-                    selected_benchmark_tickers_for_periodic,  # Pass tickers
-                )  # The returned dict will have keys like "Y", "M", "W" and DFs with ticker-based column names
-                logging.info(
-                    f"Periodic returns calculated for intervals: {list(self.periodic_returns_data.keys())}"
-                )
-                # --- ADDED: Log details of periodic_returns_data ---
-                logging.debug("[Handle Results] Details of self.periodic_returns_data:")
-                for key, df_periodic in self.periodic_returns_data.items():
-                    if isinstance(df_periodic, pd.DataFrame):
-                        logging.debug(
-                            f"  Interval '{key}': Shape={df_periodic.shape}, IsEmpty={df_periodic.empty}"
-                        )
-                    else:
-                        logging.debug(f"  Interval '{key}': Type={type(df_periodic)}")
-                # --- ADDED: Log details of periodic_returns_data ---
-                current_interval = (
-                    self.graph_interval_combo.currentText()
-                )  # Get current interval for logging
-                if current_interval == "W":
-                    weekly_periodic_df = self.periodic_returns_data.get("W")
-                    if weekly_periodic_df is None:
-                        logging.warning(
-                            "Periodic returns data does NOT contain 'W' key."
-                        )
-                    elif weekly_periodic_df.empty:
-                        logging.warning("Periodic returns data for 'W' key is EMPTY.")
-                    else:
-                        logging.info(
-                            f"Periodic returns data for 'W' (shape {weekly_periodic_df.shape}):\n{weekly_periodic_df.tail()}"
-                        )  # Show tail for recent weeks
-                elif current_interval == "M":
-                    monthly_periodic_df = self.periodic_returns_data.get("M")
-                    if monthly_periodic_df is None:
-                        logging.warning(
-                            "Periodic returns data does NOT contain 'M' key."
-                        )
-                    elif monthly_periodic_df.empty:
-                        logging.warning("Periodic returns data for 'M' key is EMPTY.")
-                    else:
-                        logging.info(
-                            f"Periodic returns data for 'M' (shape {monthly_periodic_df.shape}):\n{monthly_periodic_df.tail()}"
-                        )  # Show tail for recent months
-            except Exception as e_periodic:
-                logging.error(f"ERROR calculating periodic returns: {e_periodic}")
-                traceback.print_exc()
-                self.periodic_returns_data = {}  # Ensure it's empty on error
-        else:
-            self.periodic_returns_data = {}  # Clear if no historical data
-            # Add more detail to the warning
-            if not isinstance(self.full_historical_data, pd.DataFrame):
-                logging.warning(
-                    f"Cannot calculate periodic returns: full_historical_data is not a DataFrame (Type: {type(self.full_historical_data)})."
-                )
-            else:  # It's a DataFrame but empty
-                logging.warning(
-                    "Cannot calculate periodic returns: full_historical_data is empty."
-                )
-
-        # --- Calculate Absolute Asset Changes for Portfolio ---
-        self.periodic_value_changes_data = {}
-        intervals_map_abs_val = {"Y": "YE", "M": "ME", "W": "W-FRI"}
-
-        if (
-            isinstance(self.full_historical_data, pd.DataFrame)
-            and not self.full_historical_data.empty
-            and "Portfolio Value" in self.full_historical_data.columns
-        ):
-            for interval_key, freq_code in intervals_map_abs_val.items():
-                try:
-                    period_end_values = (
-                        self.full_historical_data["Portfolio Value"]
-                        .resample(freq_code)
-                        .last()
-                    )
-                    period_start_values = period_end_values.shift(1)
-
-                    period_net_flows = pd.Series(dtype=float)
-                    if "net_flow" in self.full_historical_data.columns:
-                        period_net_flows = (
-                            self.full_historical_data["net_flow"]
-                            .resample(freq_code)
-                            .sum()
-                            .fillna(0.0)
-                        )
-                    else:
-                        period_net_flows = pd.Series(0.0, index=period_end_values.index)
-
-                    df_aligned = pd.DataFrame(
-                        {
-                            "end_value": period_end_values,
-                            "start_value": period_start_values,
-                        }
-                    )
-                    df_aligned["net_flow"] = period_net_flows.reindex(
-                        df_aligned.index
-                    ).fillna(0.0)
-
-                    value_change_series = (
-                        df_aligned["end_value"]
-                        - df_aligned["start_value"]
-                        - df_aligned["net_flow"]
-                    )
-
-                    self.periodic_value_changes_data[interval_key] = pd.DataFrame(
-                        {f"Portfolio Value Change": value_change_series}
-                    ).dropna(subset=[f"Portfolio Value Change"])
-
-                    logging.debug(
-                        f"Calculated absolute periodic VALUE CHANGES for interval '{interval_key}':"
-                    )
-                    if not self.periodic_value_changes_data[interval_key].empty:
-                        logging.debug(
-                            f"  Tail:\n{self.periodic_value_changes_data[interval_key].tail().to_string()}"
-                        )
-
-                except Exception as e_pvc_abs:
-                    logging.error(
-                        f"Error calculating absolute periodic value changes for interval {interval_key}: {e_pvc_abs}"
-                    )
-                    self.periodic_value_changes_data[interval_key] = pd.DataFrame()
-        else:
-            logging.warning(
-                "Cannot calculate absolute periodic value changes: full_historical_data is empty, invalid, or missing 'Portfolio Value'."
-            )
-
-        # --- ADDED: Process Daily Data ---
-        if (
-            isinstance(self.full_historical_data, pd.DataFrame)
-            and not self.full_historical_data.empty
-        ):
-            logging.debug("Processing DAILY value changes and returns...")
-            daily_df = self.full_historical_data.copy()
-
-            # 1. Value Changes
-            if "daily_gain" in daily_df.columns:
-                self.periodic_value_changes_data["D"] = pd.DataFrame(
-                    {"Portfolio Value Change": daily_df["daily_gain"]}
-                )
-                logging.debug(
-                    f"  Created daily value change data, shape: {self.periodic_value_changes_data['D'].shape}"
-                )
-            else:
-                self.periodic_value_changes_data["D"] = pd.DataFrame()
-
-            # 2. Percentage Returns
-            daily_returns_df = pd.DataFrame(index=daily_df.index)
-            if "daily_return" in daily_df.columns:
-                daily_returns_df["Portfolio D-Return"] = (
-                    daily_df["daily_return"] * 100.0
-                )
-
-            for yf_ticker in selected_benchmark_tickers_for_periodic:
-                price_col = f"{yf_ticker} Price"
-                if price_col in daily_df.columns:
-                    daily_returns_df[f"{yf_ticker} D-Return"] = (
-                        daily_df[price_col].pct_change() * 100.0
-                    )
-            self.periodic_returns_data["D"] = daily_returns_df
-
-        # --- ADDED: Filter full data to get data for line graphs ---
-        self.historical_data = pd.DataFrame()  # Initialize filtered data
-        if (
-            isinstance(self.full_historical_data, pd.DataFrame)
-            and not self.full_historical_data.empty
-        ):
-            plot_start_date = self.graph_start_date_edit.date().toPython()
-            plot_end_date = self.graph_end_date_edit.date().toPython()
-            try:
-                pd_start = pd.Timestamp(plot_start_date)
-                pd_end = pd.Timestamp(plot_end_date)
-                # Ensure index is DatetimeIndex and timezone-naive if needed
-                temp_df = self.full_historical_data
-                if not isinstance(temp_df.index, pd.DatetimeIndex):
-                    temp_df.index = pd.to_datetime(temp_df.index)
-                if temp_df.index.tz is not None:
-                    temp_df.index = temp_df.index.tz_localize(None)
-
-                # Filter by date range first
-                filtered_by_date_df = temp_df.loc[pd_start:pd_end].copy()
-
-                # Now, resample the date-filtered data based on the UI interval setting
-                interval = self.graph_interval_combo.currentText()
-                if interval in ["W", "M"]:
-                    # Resample the data, taking the last available value in each period
-                    self.historical_data = filtered_by_date_df.resample(interval).last()
-                    logging.debug(
-                        f"Resampled historical data to interval '{interval}'. Shape: {self.historical_data.shape}"
-                    )
-                else:  # For 'D' or any other case, use the daily data
-                    self.historical_data = filtered_by_date_df
-
-                logging.debug(
-                    f"Filtered self.historical_data for line graphs: {self.historical_data.shape} rows from {plot_start_date} to {plot_end_date}"
-                )
-            except Exception as e_filter_gui:
-                logging.error(
-                    f"Error filtering full historical data in GUI: {e_filter_gui}. Using full data for line graphs."
-                )
-                # Ensure self.historical_data is assigned even on error
-                if isinstance(self.full_historical_data, pd.DataFrame):
-                    self.historical_data = self.full_historical_data.copy()  # Fallback
-                else:
-                    self.historical_data = pd.DataFrame()  # Ensure it's an empty DF
-        else:
-            logging.warning(
-                "Full historical data is empty or invalid, cannot filter for line graphs."
-            )
-            self.historical_data = pd.DataFrame()  # Ensure empty DF
-
-        # --- ADDED: Normalize Accumulated Gain columns to start at 1 for the filtered period ---
-        if (
-            isinstance(self.historical_data, pd.DataFrame)
-            and not self.historical_data.empty
-        ):
-            logging.debug(
-                "Normalizing Accumulated Gain columns for the filtered period..."
-            )
-            gain_cols = [
-                col for col in self.historical_data.columns if "Accumulated Gain" in col
-            ]
-            for col in gain_cols:
-                try:
-                    # Find the first valid (non-NaN) value in the filtered series
-                    first_valid_value = self.historical_data[col].dropna().iloc[0]
-                    if pd.notna(first_valid_value) and first_valid_value != 0:
-                        logging.debug(
-                            f"  Normalizing '{col}' using start value: {first_valid_value:.4f}"
-                        )
-                        self.historical_data[col] = (
-                            self.historical_data[col] / first_valid_value
-                        )
-                        # Set the very first point (which might have been NaN originally) to 1.0 after normalization
-                        self.historical_data.loc[self.historical_data.index[0], col] = (
-                            1.0
-                        )
-                    else:
-                        logging.warning(
-                            f"  Cannot normalize '{col}', first valid value is zero or NaN."
-                        )
-                        self.historical_data[col] = (
-                            np.nan
-                        )  # Set to NaN if normalization fails
-                except IndexError:
-                    logging.warning(
-                        f"  Cannot normalize '{col}', no valid data points found in the filtered range."
-                    )
-                    self.historical_data[col] = np.nan  # Set to NaN if no data
-                except Exception as e_norm:
-                    logging.error(f"  Error normalizing column '{col}': {e_norm}")
-                    self.historical_data[col] = np.nan  # Set to NaN on error
-        else:  # Ensure historical_data is an empty DataFrame if it's not valid
-            self.historical_data = pd.DataFrame()
-
-        # --- ADDED: Calculate TWR Factor from the FILTERED self.historical_data ---
-        plot_start_date = self.graph_start_date_edit.date().toPython()  # For logging
-        plot_end_date = self.graph_end_date_edit.date().toPython()  # For logging
-        self.last_hist_twr_factor = np.nan  # Reset before calculation
-        if (  # This block was indented one level too far
-            isinstance(self.historical_data, pd.DataFrame)
-            and not self.historical_data.empty
-        ):
-            # Log the filtered data's value column for debugging the value graph
-            if "Portfolio Value" in self.historical_data.columns:
-                logging.debug(
-                    f"  Filtered 'Portfolio Value' head:\n{self.historical_data['Portfolio Value'].head().to_string()}"
-                )
-                logging.debug(
-                    f"  Filtered 'Portfolio Value' tail:\n{self.historical_data['Portfolio Value'].tail().to_string()}"
-                )
-                logging.debug(
-                    f"  Filtered 'Portfolio Value' NaN count: {self.historical_data['Portfolio Value'].isna().sum()}"
-                )
-            else:
-                logging.warning(
-                    "  'Portfolio Value' column missing in filtered self.historical_data."
-                )
-
-            # Calculate TWR from filtered accumulated gain
-            if "Portfolio Accumulated Gain" in self.historical_data.columns:
-                # --- FIX: Calculate PERIOD TWR Factor ---
-                accum_gain_series = self.historical_data[
-                    "Portfolio Accumulated Gain"
-                ].dropna()
-                if len(accum_gain_series) >= 2:  # Need at least two points for a period
-                    start_gain = accum_gain_series.iloc[0]
-                    end_gain = accum_gain_series.iloc[-1]
-                    if pd.notna(start_gain) and pd.notna(end_gain) and start_gain != 0:
-                        logging.debug(
-                            f"  Calculating Period TWR: End Gain={end_gain:.6f}, Start Gain={start_gain:.6f}"
-                        )  # ADDED LOG
-                        period_twr_factor = end_gain / start_gain
-                        self.last_hist_twr_factor = (
-                            period_twr_factor  # Store the period-specific factor
-                        )
-                        logging.info(
-                            f"Calculated PERIOD TWR Factor ({plot_start_date} to {plot_end_date}): {self.last_hist_twr_factor:.6f} (End: {end_gain:.4f} / Start: {start_gain:.4f})"
-                        )
-                    else:
-                        logging.warning(
-                            "Could not calculate period TWR factor due to invalid start/end gain values."
-                        )
-                        self.last_hist_twr_factor = np.nan  # Ensure NaN on failure
-                elif len(accum_gain_series) == 1:
-                    logging.warning(
-                        "Only one data point in filtered range, cannot calculate period TWR."
-                    )
-                    self.last_hist_twr_factor = (
-                        np.nan
-                    )  # Cannot calculate with one point
-                else:  # Series is empty after dropna
-                    logging.info(
-                        f"Calculated TWR Factor from filtered data ({plot_start_date} to {plot_end_date}): {self.last_hist_twr_factor:.6f}"
-                    )
-                    logging.warning("Could not find valid TWR factor in filtered data.")
-                # --- END FIX ---
-
-    def _update_available_accounts_and_selection(self):
-        """Updates the list of available accounts and validates the current selection."""
-        logging.debug("Entering _update_available_accounts_and_selection...")
-        # --- Update Available Accounts & Validate Selection --- # (Keep existing logic below)
-        # Get available accounts from the overall summary if possible, otherwise re-scan
-        available_accounts_from_backend = self.summary_metrics_data.get(
-            "_available_accounts", []  # Default to empty list
-        )
-
-        if available_accounts_from_backend and isinstance(
-            available_accounts_from_backend, list
-        ):
-            self.available_accounts = available_accounts_from_backend
-        else:
-            # Fallback: derive from the holdings data IF it's available
-            if not self.holdings_data.empty and "Account" in self.holdings_data.columns:
-                # Use unique accounts from the *returned* holdings data
-                self.available_accounts = sorted(
-                    self.holdings_data["Account"].unique().tolist()
-                )
-                logging.warning(
-                    "Used accounts from holdings_df as fallback for available_accounts."
-                )
-            elif (
-                hasattr(self, "original_data")
-                and not self.original_data.empty
-                and "Investment Account" in self.original_data.columns
-            ):
-                # Fallback further to original data if holdings are empty
-                self.available_accounts = sorted(
-                    self.original_data["Investment Account"].unique().tolist()
-                )
-                logging.warning(
-                    "Used accounts from original_data as fallback for available_accounts."
-                )
-            else:
-                self.available_accounts = []  # Cannot determine accounts
-                logging.error(
-                    "Could not determine available accounts from summary or data."
-                )
-
-        # Validate current selection against available accounts
-        if self.selected_accounts:
-            original_selection = self.selected_accounts.copy()
-            self.selected_accounts = [
-                acc for acc in self.selected_accounts if acc in self.available_accounts
-            ]
-            if len(self.selected_accounts) != len(original_selection):
-                logging.warning(
-                    f"Warn: Some previously selected accounts are no longer available. Updated selection: {self.selected_accounts}"
-                )
-            # Default back to all if validation resulted in empty selection
-            if not self.selected_accounts and self.available_accounts:
-                logging.warning(
-                    "Warn: Validation resulted in empty selection. Defaulting to all available accounts."
-                )
-                self.selected_accounts = []  # Empty list means "All"
-        # If selection was initially empty, ensure it reflects 'all available' now
-        elif not self.selected_accounts and self.available_accounts:
-            self.selected_accounts = (
-                []
-            )  # Keep it empty to signify "All" internally for filtering logic
-            logging.info("No accounts pre-selected, effectively showing 'All'.")
-
-        self._update_account_button_text()  # Update button text based on final state
-
     def _update_ui_components_after_calculation(self):
         """Updates all relevant UI components after data processing."""
         logging.debug("Entering _update_ui_components_after_calculation...")
@@ -12616,111 +12006,246 @@ The CSV file should contain the following columns (header names must match exact
         factor_analysis_results,
         scenario_analysis_result,
     ):
-        logging.info("HANDLE_RESULTS: Slot entered.")
         """
-        Slot to process results received from the PortfolioCalculatorWorker.
-        Orchestrates data storage, processing, and UI updates.
+        Slot to process results received from the worker.
+        This orchestrator method now contains the logic to store, process, and
+        prepare all data before triggering the final UI component updates.
         """
         logging.info(
             "HANDLE_RESULTS: Orchestrator entered."
         )  # Changed to INFO for visibility
-        logging.debug(
-            f"handle_results received holdings_df with shape: {holdings_df.shape}"
-        )
-        if not holdings_df.empty:
-            logging.debug(
-                f"handle_results received holdings_df columns: {holdings_df.columns}"
-            )
-            logging.debug(f"handle_results holdings_df head:\n{holdings_df.head()}")
-        logging.debug(
-            f"  Received full_historical_data_df shape: {full_historical_data_df.shape if isinstance(full_historical_data_df, pd.DataFrame) else 'Not DF'}"
-        )
-        logging.debug(
-            f"  Received dividend_history_df shape: {dividend_history_df.shape if isinstance(dividend_history_df, pd.DataFrame) else 'Not DF'}"
-        )
-        logging.debug(
-            f"  Received capital_gains_history_df shape: {capital_gains_history_df.shape if isinstance(capital_gains_history_df, pd.DataFrame) else 'Not DF'}"
-        )
 
         try:
-            logging.debug(
-                f"HANDLE_RESULTS (Inside Try): Summary Metrics Keys: {list(summary_metrics.keys()) if summary_metrics else 'Empty'}"
+            # --- Part 1: Store Worker Data ---
+            logging.info("HANDLE_RESULTS: Storing worker data...")
+            portfolio_status = summary_metrics.pop("status_msg", "Status Unknown")
+            historical_status = summary_metrics.pop(
+                "historical_status_msg", "Status Unknown"
             )
-            logging.debug(
-                f"HANDLE_RESULTS (Inside Try): Holdings DF Shape: {holdings_df.shape if isinstance(holdings_df, pd.DataFrame) else 'Not DF'}"
-            )
-            # Add more logs here for the received data
-            logging.debug(
-                f"  Received full_historical_data_df shape: {full_historical_data_df.shape if isinstance(full_historical_data_df, pd.DataFrame) else 'Not DF'}"
-            )
-            if (
-                isinstance(full_historical_data_df, pd.DataFrame)
-                and not full_historical_data_df.empty
-            ):
+            self.last_calc_status = f"{portfolio_status} | {historical_status}"
+            self.last_hist_twr_factor = np.nan
+            if "|||TWR_FACTOR:" in historical_status:
                 logging.debug(
-                    f"  Received full_historical_data_df head:\n{full_historical_data_df.head().to_string()}"
+                    f"Received TWR factor from backend status (ignored): {historical_status.split('|||TWR_FACTOR:')[1]}"
                 )
-
-            # ... (other debug logs for received data can be added here if needed)
-
-            logging.info("HANDLE_RESULTS: Calling _store_worker_data...")
-            self._store_worker_data(
-                summary_metrics,
-                holdings_df,
-                account_metrics,
-                index_quotes,
-                full_historical_data_df,
-                hist_prices_adj,
-                hist_fx,
-                combined_ignored_indices,
-                combined_ignored_reasons,
-                dividend_history_df,
-                capital_gains_history_df,
-                correlation_matrix_df,
-                factor_analysis_results,
-                scenario_analysis_result,
+            self.summary_metrics_data = summary_metrics if summary_metrics else {}
+            self.holdings_data = (
+                holdings_df if holdings_df is not None else pd.DataFrame()
             )
-            logging.info("HANDLE_RESULTS: Finished _store_worker_data.")
-            # Log after storing
-            logging.debug(
-                f"  After _store_worker_data, self.full_historical_data shape: {self.full_historical_data.shape if isinstance(self.full_historical_data, pd.DataFrame) else 'Not DF'}"
+            self.periodic_returns_data: Dict[str, pd.DataFrame] = {}
+            self.account_metrics_data = account_metrics if account_metrics else {}
+            self.index_quote_data = index_quotes if index_quotes else {}
+            self.dividend_history_data = (
+                dividend_history_df
+                if dividend_history_df is not None
+                else pd.DataFrame()
             )
+            self.capital_gains_history_data = (
+                capital_gains_history_df
+                if capital_gains_history_df is not None
+                else pd.DataFrame()
+            )
+            self.correlation_matrix_df = (
+                correlation_matrix_df
+                if correlation_matrix_df is not None
+                else pd.DataFrame()
+            )
+            self.factor_analysis_results = (
+                factor_analysis_results if factor_analysis_results is not None else {}
+            )
+            self.scenario_analysis_result = (
+                scenario_analysis_result if scenario_analysis_result is not None else {}
+            )
+            self.full_historical_data = (
+                full_historical_data_df
+                if full_historical_data_df is not None
+                else pd.DataFrame()
+            )
+            self.historical_prices_yf_adjusted = (
+                hist_prices_adj if hist_prices_adj is not None else {}
+            )
+            self.historical_fx_yf = hist_fx if hist_fx is not None else {}
+            self.ignored_data = pd.DataFrame()
+            if (
+                combined_ignored_indices
+                and hasattr(self, "original_data")
+                and not self.original_data.empty
+            ):
+                logging.info(
+                    f"Processing {len(combined_ignored_indices)} ignored row indices..."
+                )
+                try:
+                    if "original_index" in self.original_data.columns:
+                        indices_to_check = {
+                            int(i) for i in combined_ignored_indices if pd.notna(i)
+                        }
+                        valid_indices_mask = self.original_data["original_index"].isin(
+                            indices_to_check
+                        )
+                        ignored_rows_df = self.original_data[valid_indices_mask].copy()
+                        if not ignored_rows_df.empty:
+                            reasons_mapped = (
+                                ignored_rows_df["original_index"]
+                                .map(combined_ignored_reasons)
+                                .fillna("Unknown Reason")
+                            )
+                            ignored_rows_df["Reason Ignored"] = reasons_mapped
+                            self.ignored_data = ignored_rows_df.sort_values(
+                                by="original_index"
+                            )
+                except Exception as e_ignored:
+                    logging.error(
+                        f"Error constructing ignored_data DataFrame: {e_ignored}",
+                        exc_info=True,
+                    )
+                    self.ignored_data = pd.DataFrame()
+
+            # --- Part 2: Process Historical and Periodic Data ---
+            logging.info("HANDLE_RESULTS: Processing historical and periodic data...")
             if (
                 isinstance(self.full_historical_data, pd.DataFrame)
                 and not self.full_historical_data.empty
             ):
-                logging.debug(
-                    f"  self.full_historical_data head:\n{self.full_historical_data.head().to_string()}"
+                selected_benchmark_tickers_for_periodic = [
+                    BENCHMARK_MAPPING.get(name)
+                    for name in self.selected_benchmarks
+                    if BENCHMARK_MAPPING.get(name)
+                ]
+                self.periodic_returns_data = calculate_periodic_returns(
+                    self.full_historical_data, selected_benchmark_tickers_for_periodic
                 )
-
-            logging.info(
-                "HANDLE_RESULTS: Calling _process_historical_and_periodic_data..."
-            )
-            self._process_historical_and_periodic_data()
-            logging.info(
-                "HANDLE_RESULTS: Finished _process_historical_and_periodic_data."
-            )
-            # Log after processing
-            logging.debug(
-                f"  After _process_historical_and_periodic_data, self.periodic_returns_data keys: {list(self.periodic_returns_data.keys()) if self.periodic_returns_data else 'Empty'}"
-            )
-            if self.periodic_returns_data:
-                for k, v_df in self.periodic_returns_data.items():
-                    logging.debug(
-                        f"    Periodic data for '{k}' shape: {v_df.shape if isinstance(v_df, pd.DataFrame) else 'Not DF'}"
+                intervals_map_abs_val = {"Y": "YE", "M": "ME", "W": "W-FRI"}
+                self.periodic_value_changes_data = {}
+                if "Portfolio Value" in self.full_historical_data.columns:
+                    for interval_key, freq_code in intervals_map_abs_val.items():
+                        period_end_values = (
+                            self.full_historical_data["Portfolio Value"]
+                            .resample(freq_code)
+                            .last()
+                        )
+                        period_start_values = period_end_values.shift(1)
+                        period_net_flows = (
+                            self.full_historical_data["net_flow"]
+                            .resample(freq_code)
+                            .sum()
+                            .fillna(0.0)
+                            if "net_flow" in self.full_historical_data.columns
+                            else pd.Series(0.0, index=period_end_values.index)
+                        )
+                        df_aligned = pd.DataFrame(
+                            {
+                                "end_value": period_end_values,
+                                "start_value": period_start_values,
+                                "net_flow": period_net_flows,
+                            }
+                        )
+                        value_change_series = (
+                            df_aligned["end_value"]
+                            - df_aligned["start_value"]
+                            - df_aligned["net_flow"]
+                        )
+                        self.periodic_value_changes_data[interval_key] = pd.DataFrame(
+                            {"Portfolio Value Change": value_change_series}
+                        ).dropna(subset=["Portfolio Value Change"])
+                daily_df = self.full_historical_data.copy()
+                if "daily_gain" in daily_df.columns:
+                    self.periodic_value_changes_data["D"] = pd.DataFrame(
+                        {"Portfolio Value Change": daily_df["daily_gain"]}
                     )
-            logging.debug(
-                f"  self.historical_data shape: {self.historical_data.shape if isinstance(self.historical_data, pd.DataFrame) else 'Not DF'}"
-            )
+                daily_returns_df = pd.DataFrame(index=daily_df.index)
+                if "daily_return" in daily_df.columns:
+                    daily_returns_df["Portfolio D-Return"] = (
+                        daily_df["daily_return"] * 100.0
+                    )
+                for yf_ticker in selected_benchmark_tickers_for_periodic:
+                    price_col = f"{yf_ticker} Price"
+                    if price_col in daily_df.columns:
+                        daily_returns_df[f"{yf_ticker} D-Return"] = (
+                            daily_df[price_col].pct_change() * 100.0
+                        )
+                self.periodic_returns_data["D"] = daily_returns_df
 
-            logging.info(
-                "HANDLE_RESULTS: Calling _update_available_accounts_and_selection..."
-            )
-            self._update_available_accounts_and_selection()
-            logging.info(
-                "HANDLE_RESULTS: Finished _update_available_accounts_and_selection."
-            )
+            self.historical_data = pd.DataFrame()
+            if (
+                isinstance(self.full_historical_data, pd.DataFrame)
+                and not self.full_historical_data.empty
+            ):
+                plot_start_date = self.graph_start_date_edit.date().toPython()
+                plot_end_date = self.graph_end_date_edit.date().toPython()
+                pd_start = pd.Timestamp(plot_start_date)
+                pd_end = pd.Timestamp(plot_end_date)
+                temp_df = self.full_historical_data
+                if not isinstance(temp_df.index, pd.DatetimeIndex):
+                    temp_df.index = pd.to_datetime(temp_df.index)
+                if temp_df.index.tz is not None:
+                    temp_df.index = temp_df.index.tz_localize(None)
+                filtered_by_date_df = temp_df.loc[pd_start:pd_end].copy()
+                interval = self.graph_interval_combo.currentText()
+                if interval in ["W", "M"]:
+                    self.historical_data = filtered_by_date_df.resample(interval).last()
+                else:
+                    self.historical_data = filtered_by_date_df
 
+            if (
+                isinstance(self.historical_data, pd.DataFrame)
+                and not self.historical_data.empty
+            ):
+                gain_cols = [
+                    col
+                    for col in self.historical_data.columns
+                    if "Accumulated Gain" in col
+                ]
+                for col in gain_cols:
+                    first_valid_value = self.historical_data[col].dropna().iloc[0]
+                    if pd.notna(first_valid_value) and first_valid_value != 0:
+                        self.historical_data[col] = (
+                            self.historical_data[col] / first_valid_value
+                        )
+                        self.historical_data.loc[self.historical_data.index[0], col] = (
+                            1.0
+                        )
+                if "Portfolio Accumulated Gain" in self.historical_data.columns:
+                    accum_gain_series = self.historical_data[
+                        "Portfolio Accumulated Gain"
+                    ].dropna()
+                    if len(accum_gain_series) >= 2:
+                        start_gain = accum_gain_series.iloc[0]
+                        end_gain = accum_gain_series.iloc[-1]
+                        if (
+                            pd.notna(start_gain)
+                            and pd.notna(end_gain)
+                            and start_gain != 0
+                        ):
+                            self.last_hist_twr_factor = end_gain / start_gain
+
+            # --- Part 3: Update Available Accounts ---
+            logging.info("HANDLE_RESULTS: Updating available accounts...")
+            available_accounts_from_backend = self.summary_metrics_data.get(
+                "_available_accounts", []
+            )
+            if available_accounts_from_backend and isinstance(
+                available_accounts_from_backend, list
+            ):
+                self.available_accounts = available_accounts_from_backend
+            elif (
+                not self.holdings_data.empty and "Account" in self.holdings_data.columns
+            ):
+                self.available_accounts = sorted(
+                    self.holdings_data["Account"].unique().tolist()
+                )
+            else:
+                self.available_accounts = []
+            if self.selected_accounts:
+                self.selected_accounts = [
+                    acc
+                    for acc in self.selected_accounts
+                    if acc in self.available_accounts
+                ]
+                if not self.selected_accounts and self.available_accounts:
+                    self.selected_accounts = []
+            self._update_account_button_text()
+
+            # --- Part 4: Trigger UI Component Updates ---
             logging.info(
                 "HANDLE_RESULTS: Calling _update_ui_components_after_calculation..."
             )
@@ -12728,7 +12253,6 @@ The CSV file should contain the following columns (header names must match exact
             logging.info(
                 "HANDLE_RESULTS: Finished _update_ui_components_after_calculation."
             )
-
             logging.info("HANDLE_RESULTS: Successfully processed and updated UI.")
 
         except Exception as e:
