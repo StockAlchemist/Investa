@@ -80,6 +80,7 @@ class PortfolioCalculatorWorker(QRunnable):
         user_symbol_map: Dict[str, str],
         user_excluded_symbols: Set[str],
         market_data_provider: MarketDataProvider,  # ADDED
+        force_historical_refresh: bool = True,
         historical_fn_supports_exclude=False,
         market_provider_available=True,
         factor_model_name: str = "Fama-French 3-Factor",
@@ -120,6 +121,7 @@ class PortfolioCalculatorWorker(QRunnable):
         self.market_data_provider = market_data_provider
         self.factor_model_name = factor_model_name
         self.scenario_shocks = scenario_shocks  # <-- ADDED
+        self.force_historical_refresh = force_historical_refresh
         self.original_data = pd.DataFrame()
 
     @Slot()
@@ -292,6 +294,8 @@ class PortfolioCalculatorWorker(QRunnable):
                 full_hist_df, h_prices_adj, h_fx, hist_status = self.historical_fn(
                     transactions_df_for_hist,  # Pass positionally
                     *self.historical_args,
+                    use_raw_data_cache=not self.force_historical_refresh,
+                    use_daily_results_cache=not self.force_historical_refresh,
                     **current_historical_kwargs,
                 )
 

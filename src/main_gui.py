@@ -7091,8 +7091,8 @@ The CSV file should contain the following columns (header names must match exact
         self.exchange_rate_display_label.setVisible(False)
         self.status_bar.addPermanentWidget(self.exchange_rate_display_label)  # RESTORED
 
-    @Slot()
-    def refresh_data(self):
+    @Slot(bool)
+    def refresh_data(self, force_historical_refresh: bool = True):
         """
         Initiates the background calculation process via the worker thread.
         Loads data from the SQLite database.
@@ -7416,6 +7416,7 @@ The CSV file should contain the following columns (header names must match exact
             user_symbol_map=self.user_symbol_map_config,
             user_excluded_symbols=self.user_excluded_symbols_config,
             market_data_provider=self.market_data_provider,
+            force_historical_refresh=force_historical_refresh,
             historical_fn_supports_exclude=HISTORICAL_FN_SUPPORTS_EXCLUDE,
             market_provider_available=MARKET_PROVIDER_AVAILABLE,
             factor_model_name=self.factor_model_combo.currentText(),
@@ -7783,7 +7784,8 @@ The CSV file should contain the following columns (header names must match exact
     def _connect_signals(self):
         """Connects signals from UI widgets (buttons, combos, etc.) to their slots."""
         self.account_select_button.clicked.connect(self.show_account_selection_menu)
-        self.update_accounts_button.clicked.connect(self.refresh_data)
+        self.refresh_action.triggered.connect(lambda: self.refresh_data(force_historical_refresh=True))
+        self.update_accounts_button.clicked.connect(lambda: self.refresh_data(force_historical_refresh=False))
         self.currency_combo.currentTextChanged.connect(self.filter_changed_refresh)
         self.show_closed_check.stateChanged.connect(self.filter_changed_refresh)
         self.group_by_sector_check.stateChanged.connect(self.filter_changed_refresh)
@@ -7803,8 +7805,8 @@ The CSV file should contain the following columns (header names must match exact
             )
         )
         self.benchmark_select_button.clicked.connect(self.show_benchmark_selection_menu)
-        self.graph_update_button.clicked.connect(self.refresh_data)
-        self.refresh_button.clicked.connect(self.refresh_data)
+        self.graph_update_button.clicked.connect(lambda: self.refresh_data(force_historical_refresh=True))
+        self.refresh_button.clicked.connect(lambda: self.refresh_data(force_historical_refresh=True))
         self.table_view.horizontalHeader().customContextMenuRequested.connect(
             self.show_header_context_menu
         )
@@ -11457,7 +11459,7 @@ The CSV file should contain the following columns (header names must match exact
         elif sender == self.show_closed_check:
             changed_control = "'Show Closed' Checkbox"
         logging.info(f"Filter change ({changed_control}) requires full refresh...")
-        self.refresh_data()  # Trigger the main refresh function
+        self.refresh_data(force_historical_refresh=False)  # Trigger the main refresh function
 
     # --- UI Update Helpers ---
     def _update_table_view_with_filtered_columns(self, df_source_data):
