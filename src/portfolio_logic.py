@@ -617,6 +617,7 @@ def calculate_portfolio_summary(
         user_excluded_symbols=effective_user_excluded_symbols,
         user_symbol_map=effective_user_symbol_map,
         manual_prices_dict=manual_prices_for_build_rows,
+        include_accounts=include_accounts,
     )
     if err_build:
         has_errors = True

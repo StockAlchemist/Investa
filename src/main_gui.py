@@ -268,6 +268,8 @@ from utils import (
     QCOLOR_GAIN,
     QCOLOR_LOSS,
     GroupHeaderDelegate,
+    ChartStyler,
+    create_themed_action,
 )
 
 from dialogs import (
@@ -288,6 +290,7 @@ from utils import (
     resource_path,
     get_column_definitions,
 )
+from src.data_store import DataStore
 
 try:
     from portfolio_logic import (
@@ -999,14 +1002,14 @@ class PortfolioApp(QMainWindow):
         if not hasattr(self, "header_info_label") or not self.header_info_label:
             return  # Label not ready
 
-        if loading or not self.index_quote_data:
+        if loading or not self.data_store.get_index_quote_data():
             self.header_info_label.setText("<i>Loading indices...</i>")
             return
 
         header_parts = []
-        # logging.debug(f"DEBUG update_header_info: Data = {self.index_quote_data}") # Optional debug print
+        # logging.debug(f"DEBUG update_header_info: Data = {self.data_store.get_index_quote_data()}") # Optional debug print
         for index_symbol in INDICES_FOR_HEADER:
-            data = self.index_quote_data.get(index_symbol)
+            data = self.data_store.get_index_quote_data().get(index_symbol)
             if data and isinstance(data, dict):
                 price = data.get("price")
                 change = data.get("change")
@@ -1063,43 +1066,35 @@ class PortfolioApp(QMainWindow):
         file_menu = menu_bar.addMenu("&File")
 
         # Open Database File
-        self.select_db_action = QAction(
-            QIcon.fromTheme("document-open"), "Open &Database File...", self
+        self.select_db_action = create_themed_action(
+            self,
+            "Open &Database File...",
+            self.TOOLBAR_ICON_SPECS["select_db_action"],
+            self.select_database_file,
+            "Select the SQLite database file to load",
         )
-        self.select_db_action.setStatusTip("Select the SQLite database file to load")
-        self.select_db_action.triggered.connect(self.select_database_file)
         file_menu.addAction(self.select_db_action)
 
         # New Database File
-        self.new_database_file_action = QAction(
-            QIcon.fromTheme("document-new"), "&New Database File...", self
+        self.new_database_file_action = create_themed_action(
+            self,
+            "&New Database File...",
+            self.TOOLBAR_ICON_SPECS["new_database_file_action"],
+            self.create_new_database_file,
+            "Create a new, empty SQLite database file",
         )
-        self.new_database_file_action.setStatusTip(
-            "Create a new, empty SQLite database file"
-        )
-        self.new_database_file_action.triggered.connect(self.create_new_database_file)
         file_menu.addAction(self.new_database_file_action)
 
         file_menu.addSeparator()
 
         # Import Transactions from CSV
-        self.import_csv_action = QAction(
-            self.style().standardIcon(QStyle.SP_DialogOpenButton),
-            "&Import Transactions from CSV...",
+        self.import_csv_action = create_themed_action(
             self,
+            "&Import Transactions from CSV...",
+            self.TOOLBAR_ICON_SPECS["import_csv_action"],
+            self.import_transactions_from_csv,
+            "Import transactions from a CSV file into the current database",
         )
-        self.import_csv_action.setStatusTip(
-            "Import transactions from a CSV file into the current database"
-        )
-        if self.import_csv_action.icon().isNull():
-            logging.warning(
-                f"Menu Action Icon for '{self.import_csv_action.text()}' is NULL. Check icon theme for 'document-import'."
-            )
-        else:
-            logging.debug(
-                f"Menu Action Icon for '{self.import_csv_action.text()}' is VALID."
-            )
-        self.import_csv_action.triggered.connect(self.import_transactions_from_csv)
         file_menu.addAction(self.import_csv_action)
 
         # Export Transactions to CSV
@@ -1113,15 +1108,13 @@ class PortfolioApp(QMainWindow):
         file_menu.addAction(self.export_csv_action)
 
         # NEW: Export Holdings to Excel
-        self.export_excel_action = QAction(
-            QIcon.fromTheme("x-office-spreadsheet"),
-            "Export &Holdings to Excel...",
+        self.export_excel_action = create_themed_action(
             self,
+            "Export &Holdings to Excel...",
+            self.TOOLBAR_ICON_SPECS["export_excel_action"],
+            self.export_holdings_to_excel,
+            "Export the current holdings view to an Excel file",
         )
-        self.export_excel_action.setStatusTip(
-            "Export the current holdings view to an Excel file"
-        )
-        self.export_excel_action.triggered.connect(self.export_holdings_to_excel)
         file_menu.addAction(self.export_excel_action)
 
         file_menu.addSeparator()
@@ -1134,14 +1127,14 @@ class PortfolioApp(QMainWindow):
 
         # --- View Menu ---
         view_menu = menu_bar.addMenu("&View")
-        self.refresh_action = QAction(
-            QIcon.fromTheme("view-refresh"), "&Refresh Data", self
+        self.refresh_action = create_themed_action(
+            self,
+            "&Refresh Data",
+            self.TOOLBAR_ICON_SPECS["refresh_action"],
+            lambda: self.refresh_data(force_historical_refresh=True),
+            "Reload data from database and recalculate",
+            "F5",
         )
-        self.refresh_action.setStatusTip(
-            "Reload data from database and recalculate"
-        )  # MODIFIED Tip
-        self.refresh_action.setShortcut("F5")
-        self.refresh_action.triggered.connect(self.refresh_data)
         view_menu.addAction(self.refresh_action)
 
         # View Ignored Log (can also be a button)
@@ -1157,13 +1150,13 @@ class PortfolioApp(QMainWindow):
 
         # --- Transactions Menu ---
         tx_menu = menu_bar.addMenu("&Transactions")
-        self.add_transaction_action = QAction(
-            QIcon.fromTheme("list-add"), "&Add Transaction...", self
+        self.add_transaction_action = create_themed_action(
+            self,
+            "&Add Transaction...",
+            self.TOOLBAR_ICON_SPECS["add_transaction_action"],
+            self.open_add_transaction_dialog,
+            "Manually add a new transaction to the database",
         )
-        self.add_transaction_action.setStatusTip(
-            "Manually add a new transaction to the database"
-        )  # MODIFIED Tip
-        self.add_transaction_action.triggered.connect(self.open_add_transaction_dialog)
         tx_menu.addAction(self.add_transaction_action)
 
         # --- Settings Menu ---
@@ -1320,10 +1313,9 @@ The CSV file should contain the following columns (header names must match exact
         # Use ADJUSTED prices for single symbol history chart
         if (
             yf_symbol
-            and hasattr(self, "historical_prices_yf_adjusted")
-            and isinstance(self.historical_prices_yf_adjusted, dict)
+            and self.data_store.get_historical_prices_yf_adjusted() is not None
         ):
-            price_data_df = self.historical_prices_yf_adjusted.get(yf_symbol)
+            price_data_df = self.data_store.get_historical_prices_yf_adjusted().get(yf_symbol)
             if price_data_df is None:
                 logging.warning(
                     f"No adjusted historical price data found for YF symbol: {yf_symbol} (Internal: {symbol})"
@@ -1333,7 +1325,7 @@ The CSV file should contain the following columns (header names must match exact
                 logging.warning("No YF symbol determined.")  # Already logged above
             else:
                 logging.warning(
-                    "historical_prices_yf_adjusted attribute not found or invalid."
+                    "historical_prices_yf_adjusted attribute not found or invalid in DataStore."
                 )
 
         if price_data_df is None or price_data_df.empty:
@@ -1382,12 +1374,26 @@ The CSV file should contain the following columns (header names must match exact
 
         # --- Create and Show Dialog ---
         try:
+            themed_colors = {
+                "background": self.QCOLOR_BACKGROUND_THEMED,
+                "text_primary": self.QCOLOR_TEXT_PRIMARY_THEMED,
+                "text_secondary": self.QCOLOR_TEXT_SECONDARY_THEMED,
+                "accent": self.QCOLOR_ACCENT_THEMED,
+                "border": self.QCOLOR_BORDER_THEMED,
+                "gain": self.QCOLOR_GAIN_THEMED,
+                "loss": self.QCOLOR_LOSS_THEMED,
+            }
+            currency_symbol = self._get_currency_symbol(
+                currency_code=display_currency_code
+            )
             dialog = SymbolChartDialog(
-                symbol=symbol,  # Pass internal symbol for title
+                symbol=symbol,
                 start_date=start_date,
                 end_date=end_date,
-                price_data=price_data_df.copy(),  # Pass a copy of the data
-                display_currency=display_currency_code,  # Pass currency CODE
+                price_data=price_data_df.copy(),
+                currency_symbol=currency_symbol,
+                currency_code=display_currency_code,
+                themed_colors=themed_colors,
                 parent=self,
             )
             dialog.exec()  # Show modal
@@ -1423,12 +1429,12 @@ The CSV file should contain the following columns (header names must match exact
         # 2. Check Holdings Data (most reliable if data is loaded)
         # This requires holdings_data to have the 'Local Currency' column correctly populated.
         if (
-            hasattr(self, "holdings_data")
-            and not self.holdings_data.empty
-            and "Symbol" in self.holdings_data.columns
+            self.data_store.get_holdings_data() is not None
+            and not self.data_store.get_holdings_data().empty
+            and "Symbol" in self.data_store.get_holdings_data().columns
         ):
-            symbol_rows = self.holdings_data[
-                self.holdings_data["Symbol"] == symbol_to_find
+            symbol_rows = self.data_store.get_holdings_data()[
+                self.data_store.get_holdings_data()["Symbol"] == symbol_to_find
             ]
             if not symbol_rows.empty and "Local Currency" in symbol_rows.columns:
                 first_currency = symbol_rows["Local Currency"].iloc[0]
@@ -1442,13 +1448,13 @@ The CSV file should contain the following columns (header names must match exact
 
         # 3. Fallback: Check original transactions (less efficient but broader)
         # This requires original_data to have 'Investment Account' and 'Stock / ETF Symbol'
-        if hasattr(self, "original_data") and not self.original_data.empty:
+        if self.data_store.get_original_data() is not None and not self.data_store.get_original_data().empty:
             if (
-                "Stock / ETF Symbol" in self.original_data.columns
-                and "Investment Account" in self.original_data.columns
+                "Stock / ETF Symbol" in self.data_store.get_original_data().columns
+                and "Investment Account" in self.data_store.get_original_data().columns
             ):
-                symbol_rows_orig = self.original_data[
-                    self.original_data["Stock / ETF Symbol"] == symbol_to_find
+                symbol_rows_orig = self.data_store.get_original_data()[
+                    self.data_store.get_original_data()["Stock / ETF Symbol"] == symbol_to_find
                 ]
                 if not symbol_rows_orig.empty:
                     first_account = symbol_rows_orig["Investment Account"].iloc[0]
@@ -2078,29 +2084,13 @@ The CSV file should contain the following columns (header names must match exact
             config.DEFAULT_API_KEY if hasattr(config, "DEFAULT_API_KEY") else "",
         )
 
-        self.is_calculating = False
-        self.last_calc_status = ""
-        self.last_hist_twr_factor = np.nan
+        # self.is_calculating = False # Replaced by DataStore
+        # self.last_calc_status = "" # Replaced by DataStore
+        # self.last_hist_twr_factor = np.nan # Replaced by DataStore
         # --- ADDED: Attribute for frozen table view ---
         self.frozen_table_view = None
         # --- END ADDED ---
-        self.holdings_data = pd.DataFrame()  # Initialize as empty DataFrame
-        self.ignored_data = (
-            pd.DataFrame()
-            # This will store rows from DB load issues or processing issues
-        )  # This will store rows from DB load issues or processing issues
-        self.summary_metrics_data = {}
-        self.account_metrics_data = {}
-        self.historical_data = pd.DataFrame()
-        self.index_quote_data: Dict[str, Dict[str, Any]] = {}
-        self.full_historical_data = pd.DataFrame()
-        self.periodic_returns_data: Dict[str, pd.DataFrame] = {}
-        self.periodic_value_changes_data: Dict[str, pd.DataFrame] = (
-            {}
-        )  # ADDED for absolute value changes
-        self.dividend_history_data = pd.DataFrame()
-        self.historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}
-        self.historical_fx_yf: Dict[str, pd.DataFrame] = {}
+        self.data_store = DataStore() # No parent needed
 
         # Advanced Analysis Tab Attributes
         self.correlation_fig = None
@@ -2114,9 +2104,6 @@ The CSV file should contain the following columns (header names must match exact
         self.scenario_impact_label = None
 
         # Data attributes for Advanced Analysis
-        self.correlation_matrix_df = pd.DataFrame()
-        self.factor_analysis_results = None  # Store the regression summary object
-        self.scenario_analysis_result = {}
         self.available_accounts: List[str] = []
         self.selected_accounts: List[str] = self.config.get("selected_accounts", [])
         self.selected_benchmarks = self.config.get(
@@ -2141,19 +2128,15 @@ The CSV file should contain the following columns (header names must match exact
 
         # This will store the full, cleaned DataFrame loaded from the DB (or migrated CSV)
         # It's the primary source for portfolio_logic functions.
-        self.all_transactions_df_cleaned_for_logic = pd.DataFrame()
-        self.original_data = (
-            pd.DataFrame()
-        )  # Holds the most recently loaded full dataset
+        # self.all_transactions_df_cleaned_for_logic = pd.DataFrame() # Replaced by DataStore
+        # self.original_data = (pd.DataFrame()) # Replaced by DataStore
         # This stores the DataFrame representing the original source data, primarily for context
         # when displaying ignored rows if they originated from a CSV with different headers.
 
         self._create_status_bar()
         # If data is purely from DB, this might be similar/identical to all_transactions_df_cleaned_for_logic.
-        self.original_transactions_df_for_ignored_context = pd.DataFrame()
-        self.original_to_cleaned_header_map_from_csv: Dict[str, str] = (
-            {}
-        )  # Only relevant if CSV was imported
+        # self.original_transactions_df_for_ignored_context = pd.DataFrame() # Replaced by DataStore
+        # self.original_to_cleaned_header_map_from_csv: Dict[str, str] = ({}) # Replaced by DataStore
 
         logging.debug("--- PortfolioApp __init__: Before UI Structure/Widgets Init ---")
         self._init_ui_structure()
@@ -3198,14 +3181,14 @@ The CSV file should contain the following columns (header names must match exact
         if not hasattr(self, "header_info_label") or not self.header_info_label:
             return  # Label not ready
 
-        if loading or not self.index_quote_data:
+        if loading or not self.data_store.get_index_quote_data():
             self.header_info_label.setText("<i>Loading indices...</i>")
             return
 
         header_parts = []
-        # logging.debug(f"DEBUG update_header_info: Data = {self.index_quote_data}") # Optional debug print
+        # logging.debug(f"DEBUG update_header_info: Data = {self.data_store.get_index_quote_data()}") # Optional debug print
         for index_symbol in INDICES_FOR_HEADER:
-            data = self.index_quote_data.get(index_symbol)
+            data = self.data_store.get_index_quote_data().get(index_symbol)
             if data and isinstance(data, dict):
                 price = data.get("price")
                 change = data.get("change")
@@ -3690,12 +3673,12 @@ The CSV file should contain the following columns (header names must match exact
         # 2. Check Holdings Data (most reliable if data is loaded)
         # This requires holdings_data to have the 'Local Currency' column correctly populated.
         if (
-            hasattr(self, "holdings_data")
-            and not self.holdings_data.empty
-            and "Symbol" in self.holdings_data.columns
+            self.data_store.get_holdings_data() is not None
+            and not self.data_store.get_holdings_data().empty
+            and "Symbol" in self.data_store.get_holdings_data().columns
         ):
-            symbol_rows = self.holdings_data[
-                self.holdings_data["Symbol"] == symbol_to_find
+            symbol_rows = self.data_store.get_holdings_data()[
+                self.data_store.get_holdings_data()["Symbol"] == symbol_to_find
             ]
             if not symbol_rows.empty and "Local Currency" in symbol_rows.columns:
                 first_currency = symbol_rows["Local Currency"].iloc[0]
@@ -3709,13 +3692,13 @@ The CSV file should contain the following columns (header names must match exact
 
         # 3. Fallback: Check original transactions (less efficient but broader)
         # This requires original_data to have 'Investment Account' and 'Stock / ETF Symbol'
-        if hasattr(self, "original_data") and not self.original_data.empty:
+        if self.data_store.get_original_data() is not None and not self.data_store.get_original_data().empty:
             if (
-                "Stock / ETF Symbol" in self.original_data.columns
-                and "Investment Account" in self.original_data.columns
+                "Stock / ETF Symbol" in self.data_store.get_original_data().columns
+                and "Investment Account" in self.data_store.get_original_data().columns
             ):
-                symbol_rows_orig = self.original_data[
-                    self.original_data["Stock / ETF Symbol"] == symbol_to_find
+                symbol_rows_orig = self.data_store.get_original_data()[
+                    self.data_store.get_original_data()["Stock / ETF Symbol"] == symbol_to_find
                 ]
                 if not symbol_rows_orig.empty:
                     first_account = symbol_rows_orig["Investment Account"].iloc[0]
@@ -3779,8 +3762,8 @@ The CSV file should contain the following columns (header names must match exact
 
     # --- Need to implement these methods used in the menu ---
     def save_transactions_as(self):
-        # Placeholder - opens save dialog, writes self.original_data (or maybe filtered?) to new CSV
-        if not hasattr(self, "original_data") or self.original_data.empty:
+        # Placeholder - opens save dialog, writes self.data_store.get_original_data() (or maybe filtered?) to new CSV
+        if self.data_store.get_original_data() is None or self.data_store.get_original_data().empty:
             QMessageBox.warning(self, "No Data", "No transaction data loaded to save.")
             return
 
@@ -3822,7 +3805,7 @@ The CSV file should contain the following columns (header names must match exact
             self.transactions_file = fname  # Temporarily set filename for rewrite
             # Modify _rewrite_csv to optionally skip its internal backup call
             success = self._rewrite_csv(
-                self.original_data.drop(columns=["original_index"], errors="ignore"),
+                self.data_store.get_original_data().drop(columns=["original_index"], errors="ignore"),
                 skip_backup=True,  # Add flag to skip internal backup
             )
             self.transactions_file = temp_orig_file  # Restore original filename
@@ -6310,36 +6293,38 @@ The CSV file should contain the following columns (header names must match exact
         self._load_current_holdings_to_target_table()
 
     def _load_current_holdings_to_target_table(self):
+        holdings_data = self.data_store.get_holdings_data()
+        summary_metrics_data = self.data_store.get_summary_metrics_data()
         logging.debug(
-            f"Loading current holdings. Holdings data shape: {self.holdings_data.shape}"
+            f"Loading current holdings. Holdings data shape: {holdings_data.shape}"
         )
-        if not self.holdings_data.empty:
-            logging.debug(f"Holdings data columns: {self.holdings_data.columns}")
+        if not holdings_data.empty:
+            logging.debug(f"Holdings data columns: {holdings_data.columns}")
 
         self.target_allocation_table.setRowCount(0)
-        if self.holdings_data.empty:
+        if holdings_data.empty:
             return
 
         display_currency = self.currency_combo.currentText()
         mkt_val_col = f"Market Value ({display_currency})"
 
-        if mkt_val_col not in self.holdings_data.columns:
+        if mkt_val_col not in holdings_data.columns:
             logging.error(
                 f"Required column '{mkt_val_col}' not found in holdings_data."
             )
             return
 
-        total_portfolio_value = self.summary_metrics_data.get(
+        total_portfolio_value = summary_metrics_data.get(
             f"Total Portfolio Value ({display_currency})"
         )
         if not total_portfolio_value or total_portfolio_value == 0:
-            total_portfolio_value = self.holdings_data[mkt_val_col].sum()
+            total_portfolio_value = holdings_data[mkt_val_col].sum()
 
-        total_portfolio_value = self.summary_metrics_data.get(
+        total_portfolio_value = summary_metrics_data.get(
             f"Total Portfolio Value ({display_currency})"
         )
         if not total_portfolio_value or total_portfolio_value == 0:
-            total_portfolio_value = self.holdings_data[mkt_val_col].sum()
+            total_portfolio_value = holdings_data[mkt_val_col].sum()
 
         saved_targets = self.config.get("rebalancing_targets", {})
 
@@ -6347,7 +6332,7 @@ The CSV file should contain the following columns (header names must match exact
         table_data = []
         cash_row = None
 
-        for i, row in self.holdings_data.iterrows():
+        for i, row in holdings_data.iterrows():
             symbol = row["Symbol"]
             current_value = row[mkt_val_col]
             current_pct = (
@@ -6454,7 +6439,7 @@ The CSV file should contain the following columns (header names must match exact
         display_currency = self.currency_combo.currentText()
 
         trades_df, summary = calculate_rebalancing_trades(
-            self.holdings_data, target_alloc_pct, new_cash, display_currency
+            self.data_store.get_holdings_data(), target_alloc_pct, new_cash, display_currency
         )
 
         self.suggested_trades_table.setRowCount(trades_df.shape[0])
@@ -6530,7 +6515,7 @@ The CSV file should contain the following columns (header names must match exact
             new_cash_input = 0.0
 
         mkt_val_col = f"Market Value ({display_currency})"
-        current_total_market_value = self.holdings_data[mkt_val_col].sum()
+        current_total_market_value = self.data_store.get_holdings_data()[mkt_val_col].sum()
         total_portfolio_value_after_new_cash = (
             current_total_market_value + new_cash_input
         )
@@ -7102,7 +7087,7 @@ The CSV file should contain the following columns (header names must match exact
         `PortfolioCalculatorWorker`, and starts it in the thread pool. Disables
         UI controls during calculation.
         """
-        if self.is_calculating:
+        if self.data_store.get_is_calculating():
             logging.info("Calculation already in progress. Ignoring refresh request.")
             return
 
@@ -7116,7 +7101,7 @@ The CSV file should contain the following columns (header names must match exact
             self.calculation_finished()  # Ensure UI is re-enabled
             return
 
-        self.is_calculating = True
+        self.data_store.set_is_calculating(True)
         now_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
         self.status_label.setText(f"Refreshing data from database... ({now_str})")
         self.set_controls_enabled(False)
@@ -7159,36 +7144,34 @@ The CSV file should contain the following columns (header names must match exact
             QMessageBox.critical(
                 self, "Load Error", "Failed to load transactions from the database."
             )
-            self.all_transactions_df_cleaned_for_logic = (
-                pd.DataFrame()
-            )  # Ensure attribute is empty
-            self.original_transactions_df_for_ignored_context = pd.DataFrame()
+            self.data_store.set_all_transactions_df(pd.DataFrame())
+            self.data_store.set_original_transactions_df_for_ignored_context(pd.DataFrame())
             self.internal_to_yf_map = {}
             self.calculation_finished()  # Re-enable UI
             return
         elif df_all_transactions.empty:
             logging.info("Database contains no transactions. Nothing to refresh.")
-            self.all_transactions_df_cleaned_for_logic = pd.DataFrame()  # Store empty
-            self.original_transactions_df_for_ignored_context = pd.DataFrame()
+            self.data_store.set_all_transactions_df(pd.DataFrame())
+            self.data_store.set_original_transactions_df_for_ignored_context(pd.DataFrame())
             self.clear_results()  # Clear UI
             self.status_label.setText("Database is empty.")
             self.calculation_finished()  # Re-enable UI
             return
         else:
             # Store the loaded data for portfolio_logic functions
-            self.all_transactions_df_cleaned_for_logic = df_all_transactions.copy()
-            self.original_transactions_df_for_ignored_context = (
+            self.data_store.set_all_transactions_df(df_all_transactions.copy())
+            self.data_store.set_original_transactions_df_for_ignored_context(
                 df_original_for_ignored_context.copy()
             )
             # Ensure self.original_data is also updated with the latest from DB
-            self.original_data = df_all_transactions.copy()
+            self.data_store.set_original_data(df_all_transactions.copy())
             # `original_to_cleaned_header_map` is not relevant for DB source in this context
-            self.original_to_cleaned_header_map_from_csv = {}
+            self.data_store.set_original_to_cleaned_header_map_from_csv({})
 
         # --- Update available accounts and selection based on DB data ---
-        if "Account" in self.all_transactions_df_cleaned_for_logic.columns:
+        if "Account" in self.data_store.get_all_transactions_df().columns:
             self.available_accounts = sorted(
-                list(self.all_transactions_df_cleaned_for_logic["Account"].unique())
+                list(self.data_store.get_all_transactions_df()["Account"].unique())
             )
         else:
             self.available_accounts = []
@@ -7225,12 +7208,12 @@ The CSV file should contain the following columns (header names must match exact
 
         # --- Generate internal_to_yf_map based on the effectively filtered transactions ---
         # This needs to be done *after* account filtering for the current scope is considered.
-        # For now, let's generate it based on all_transactions_df_cleaned_for_logic,
+        # For now, let's generate it based on self.data_store.get_all_transactions_df(),
         # portfolio_logic will internally filter.
         try:
-            if not self.all_transactions_df_cleaned_for_logic.empty:
+            if not self.data_store.get_all_transactions_df().empty:
                 all_symbols_internal = list(
-                    set(self.all_transactions_df_cleaned_for_logic["Symbol"].unique())
+                    set(self.data_store.get_all_transactions_df()["Symbol"].unique())
                 )
                 temp_internal_to_yf_map = {}
                 for internal_sym in all_symbols_internal:
@@ -7280,17 +7263,17 @@ The CSV file should contain the following columns (header names must match exact
 
         # For historical calculation, use the full range of transactions.
         # The UI date pickers will be used later to filter the line graph display.
-        if not self.all_transactions_df_cleaned_for_logic.empty:
+        if not self.data_store.get_all_transactions_df().empty:
             # Ensure 'Date' is datetime to find min/max
             if not pd.api.types.is_datetime64_any_dtype(
-                self.all_transactions_df_cleaned_for_logic["Date"]
+                self.data_store.get_all_transactions_df()["Date"]
             ):
-                self.all_transactions_df_cleaned_for_logic["Date"] = pd.to_datetime(
-                    self.all_transactions_df_cleaned_for_logic["Date"]
+                self.data_store.get_all_transactions_df()["Date"] = pd.to_datetime(
+                    self.data_store.get_all_transactions_df()["Date"]
                 )
 
             start_date_hist_calc = (
-                self.all_transactions_df_cleaned_for_logic["Date"].min().date()
+                self.data_store.get_all_transactions_df()["Date"].min().date()
             )
             end_date_hist_calc = date.today()  # Always calculate up to today
         else:
@@ -7330,8 +7313,8 @@ The CSV file should contain the following columns (header names must match exact
 
         # --- Worker Setup ---
         portfolio_kwargs = {
-            "all_transactions_df_cleaned": self.all_transactions_df_cleaned_for_logic.copy(),
-            "original_transactions_df_for_ignored": self.original_transactions_df_for_ignored_context.copy(),
+            "all_transactions_df_cleaned": self.data_store.get_all_transactions_df().copy(),
+            "original_transactions_df_for_ignored": self.data_store.get_original_transactions_df_for_ignored_context().copy(),
             "ignored_indices_from_load": ignored_indices_load_db,  # From DB load (likely empty)
             "ignored_reasons_from_load": ignored_reasons_load_db,  # From DB load (likely empty)
             "display_currency": display_currency,
@@ -7343,7 +7326,7 @@ The CSV file should contain the following columns (header names must match exact
             "manual_overrides_dict": self.manual_overrides_dict,
             "user_symbol_map": self.user_symbol_map_config,
             "user_excluded_symbols": self.user_excluded_symbols_config,
-            "all_transactions_df_for_worker": self.all_transactions_df_cleaned_for_logic.copy(),  # Pass for correlation
+            "all_transactions_df_for_worker": self.data_store.get_all_transactions_df().copy(),  # Pass for correlation
         }
         current_cache_dir_base = QStandardPaths.writableLocation(
             QStandardPaths.CacheLocation
@@ -7358,8 +7341,8 @@ The CSV file should contain the following columns (header names must match exact
             portfolio_kwargs["cache_file_path"] = "portfolio_cache_yf.json"
 
         historical_kwargs = {
-            "all_transactions_df_cleaned": self.all_transactions_df_cleaned_for_logic.copy(),
-            "original_transactions_df_for_ignored": self.original_transactions_df_for_ignored_context.copy(),
+            "all_transactions_df_cleaned": self.data_store.get_all_transactions_df().copy(),
+            "original_transactions_df_for_ignored": self.data_store.get_original_transactions_df_for_ignored_context().copy(),
             "ignored_indices_from_load": ignored_indices_load_db,
             "ignored_reasons_from_load": ignored_reasons_load_db,
             "start_date": start_date_hist_calc,
@@ -7401,7 +7384,7 @@ The CSV file should contain the following columns (header names must match exact
             f"Graph Params: Start={start_date_hist_calc}, End={end_date_hist_calc}, Interval={interval_hist_calc}, Benchmarks (Tickers)={selected_benchmark_tickers}{exclude_log_msg}"
         )
         logging.debug(
-            f"DEBUG: all_transactions_df_cleaned_for_logic shape before worker init: {self.all_transactions_df_cleaned_for_logic.shape}"
+            f"DEBUG: all_transactions_df_cleaned_for_logic shape before worker init: {self.data_store.get_all_transactions_df().shape}"
         )
 
         worker = PortfolioCalculatorWorker(
@@ -7471,52 +7454,16 @@ The CSV file should contain the following columns (header names must match exact
             self.status_label.setText("Database not connected. Cannot load data.")
             self.clear_results()
 
-    def _perform_initial_load(self):
-        """Performs the initial data load on startup if configured."""
-        if self.config.get("load_on_startup", True):
-            if self.transactions_file and os.path.exists(self.transactions_file):
-                logging.info("Triggering initial data refresh on startup...")
-
-                QTimer.singleShot(150, self.refresh_data)
-            elif not self.transactions_file or not os.path.exists(
-                self.transactions_file
-            ):
-                logging.info(
-                    f"Startup TX file invalid or not found: '{self.transactions_file}'. Prompting user."
-                )
-                self.status_label.setText(
-                    "Info: Please select your transactions CSV file."
-                )
-                self._initial_file_selection = True
-
-                QTimer.singleShot(100, self.select_file)
-            else:
-                startup_file_msg = f"Warn: Startup TX file invalid or not found: '{self.transactions_file}'. Load skipped."
-                self.status_label.setText(startup_file_msg)
-                logging.info(startup_file_msg)
-                self._update_table_view_with_filtered_columns(pd.DataFrame())
-                self.apply_column_visibility()
-                self.update_performance_graphs(initial=True)
-                self._update_account_button_text()
-                self._update_table_title()
-        else:
-            self.status_label.setText("Ready. Select CSV file and click Refresh.")
-            self._update_table_view_with_filtered_columns(pd.DataFrame())
-            self.apply_column_visibility()
-            self.update_performance_graphs(initial=True)
-            self._update_account_button_text()
-            self._update_table_title()
-
     def _update_ui_components_after_calculation(self):
         """Updates all relevant UI components after data processing."""
         logging.debug("Entering _update_ui_components_after_calculation...")
         logging.debug("Updating UI elements after receiving results...")
         try:
             logging.debug(
-                f"  Ignored data shape: {self.ignored_data.shape if isinstance(self.ignored_data, pd.DataFrame) else 'Not a DF'}"
+            f"  Ignored data shape: {self.data_store.get_ignored_data().shape if isinstance(self.data_store.get_ignored_data(), pd.DataFrame) else 'Not a DF'}"
             )
             if hasattr(self, "view_ignored_button"):
-                self.view_ignored_button.setEnabled(not self.ignored_data.empty)
+            self.view_ignored_button.setEnabled(not self.data_store.get_ignored_data().empty)
 
             # --- REFACTOR: Call _get_filtered_data once per required configuration ---
             logging.debug(
@@ -7572,22 +7519,22 @@ The CSV file should contain the following columns (header names must match exact
             # --- MODIFY Visibility Check ---
             # --- ADDED: Log state right before check ---
             logging.debug(
-                f"[Handle Results] PRE-CHECK: self.periodic_returns_data is type {type(self.periodic_returns_data)}"
+                f"[Handle Results] PRE-CHECK: self.data_store.get_periodic_returns_data() is type {type(self.data_store.get_periodic_returns_data())}"
             )
             logging.debug(
-                f"[Handle Results] PRE-CHECK: bool(self.periodic_returns_data) = {bool(self.periodic_returns_data)}"
+                f"[Handle Results] PRE-CHECK: bool(self.data_store.get_periodic_returns_data()) = {bool(self.data_store.get_periodic_returns_data())}"
             )
-            if isinstance(self.periodic_returns_data, dict):
+            if isinstance(self.data_store.get_periodic_returns_data(), dict):
                 logging.debug(
-                    f"[Handle Results] PRE-CHECK: periodic_returns_data keys: {list(self.periodic_returns_data.keys())}"
+                    f"[Handle Results] PRE-CHECK: periodic_returns_data keys: {list(self.data_store.get_periodic_returns_data().keys())}"
                 )
                 logging.debug(
-                    f"[Handle Results] PRE-CHECK: any(not df.empty...) = {any(not df.empty for df in self.periodic_returns_data.values() if isinstance(df, pd.DataFrame))}"
+                    f"[Handle Results] PRE-CHECK: any(not df.empty...) = {any(not df.empty for df in self.data_store.get_periodic_returns_data().values() if isinstance(df, pd.DataFrame))}"
                 )
             # Check if the dictionary itself is non-empty AND if it contains data for *any* interval
-            bar_charts_have_data = bool(self.periodic_returns_data) and any(
+            bar_charts_have_data = bool(self.data_store.get_periodic_returns_data()) and any(
                 not df.empty
-                for df in self.periodic_returns_data.values()
+                for df in self.data_store.get_periodic_returns_data().values()
                 if isinstance(df, pd.DataFrame)
             )
             logging.debug(
@@ -7635,7 +7582,7 @@ The CSV file should contain the following columns (header names must match exact
         """Placeholder/Handler for 'View Transactions' context menu action."""
         logging.info(f"Action triggered: View Transactions for {symbol} in {account}")
 
-        if not hasattr(self, "original_data") or self.original_data.empty:
+        if self.data_store.get_original_data() is None or self.data_store.get_original_data().empty:
             QMessageBox.warning(
                 self, "No Data", "Original transaction data not loaded."
             )
@@ -7649,11 +7596,11 @@ The CSV file should contain the following columns (header names must match exact
                 else symbol
             )
 
-            filtered_df = self.original_data[
+            filtered_df = self.data_store.get_original_data()[
                 (
-                    self.original_data["Symbol"] == symbol_to_filter
+                    self.data_store.get_original_data()["Symbol"] == symbol_to_filter
                 )  # Use cleaned column name
-                & (self.original_data["Account"] == account)  # Use cleaned column name
+                & (self.data_store.get_original_data()["Account"] == account)  # Use cleaned column name
             ].copy()
 
             if filtered_df.empty:
@@ -7741,7 +7688,7 @@ The CSV file should contain the following columns (header names must match exact
         view_tx_action = QAction(f"View Transactions for {symbol}/{account}", self)
         # Disable if original data isn't available
         view_tx_action.setEnabled(
-            hasattr(self, "original_data") and not self.original_data.empty
+            self.data_store.get_original_data() is not None and not self.data_store.get_original_data().empty
         )
         # Use lambda to pass current symbol/account to the slot
         view_tx_action.triggered.connect(
@@ -8166,11 +8113,11 @@ The CSV file should contain the following columns (header names must match exact
     @Slot()
     def show_ignored_log(self):
         """Shows the dialog displaying ignored transactions."""
-        if hasattr(self, "ignored_data") and isinstance(
-            self.ignored_data, pd.DataFrame
+        if self.data_store.get_ignored_data() is not None and isinstance(
+            self.data_store.get_ignored_data(), pd.DataFrame
         ):
             # Make sure the Reason Ignored column exists if possible
-            df_to_show = self.ignored_data.copy()
+            df_to_show = self.data_store.get_ignored_data().copy()
             if "Reason Ignored" not in df_to_show.columns:
                 # If the main ignored_data doesn't have it (e.g., from older logic), add a placeholder
                 if not df_to_show.empty:
@@ -8187,1043 +8134,133 @@ The CSV file should contain the following columns (header names must match exact
             )
 
     def update_account_pie_chart(self, df_account_data=None):
-        """Updates the 'Value by Account' pie chart.
-
-        Uses the provided DataFrame (filtered for selected accounts) or falls back
-        to `self.holdings_data`. Groups data by account and plots market values.
-
-        Args:
-            df_account_data (pd.DataFrame, optional): The DataFrame containing data
-                filtered for the accounts to be displayed in this pie chart. If None,
-                uses `self.holdings_data` filtered by `self.selected_accounts`.
-                Defaults to None.
-        """
-        self.account_ax.clear()
-        self.account_ax.axis("off")  # Turn off by default
-
-        # Explicitly set background colors based on current theme
-        fig = self.account_fig
-        if fig:
-            fig.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
-        self.account_ax.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
-
-        # Use passed data if available, otherwise fallback to self.holdings_data
+        """Updates the 'Value by Account' pie chart using ChartStyler."""
         df_to_use = (
             df_account_data
             if isinstance(df_account_data, pd.DataFrame)
-            else self.holdings_data
+            else self.data_store.get_holdings_data()
         )
 
-        # Check if data is valid BEFORE accessing columns
-        if not isinstance(df_to_use, pd.DataFrame) or df_to_use.empty:
-            self.account_canvas.draw()
-            return
-
-        # Proceed with column checks and plotting logic...
         display_currency = self.currency_combo.currentText()
         col_defs = get_column_definitions(display_currency)
-        value_col_ui = "Mkt Val"
-        value_col_actual = col_defs.get(value_col_ui)
+        value_col_actual = col_defs.get("Mkt Val")
 
+        account_values = pd.Series(dtype=float)
         if (
-            not value_col_actual
-            or value_col_actual not in df_to_use.columns
-            or "Account" not in df_to_use.columns
+            isinstance(df_to_use, pd.DataFrame)
+            and not df_to_use.empty
+            and value_col_actual
+            and value_col_actual in df_to_use.columns
+            and "Account" in df_to_use.columns
         ):
-            self.account_canvas.draw()
-            return
+            account_values = df_to_use.groupby("Account")[value_col_actual].sum()
 
-        account_values = df_to_use.groupby("Account")[value_col_actual].sum()
-        # --- FIX: Filter for positive values for pie chart ---
-        account_values = account_values[account_values > 1e-3]
-
-        if account_values.empty:
-            self.account_canvas.draw()
-            return
-        else:
-            # --- Turn axis back on only if we have data to plot ---
-            self.account_ax.axis("on")  # Turn axis back on for plotting
-            # self.account_ax.axis("equal")  # REMOVED - Pie chart handles aspect ratio
-
-            account_values = account_values.sort_values(ascending=False)
-            labels = account_values.index.tolist()
-            values = account_values.values
-
-            if len(values) > CHART_MAX_SLICES:
-                top_v = values[: CHART_MAX_SLICES - 1]
-                top_l = labels[: CHART_MAX_SLICES - 1]
-                other_v = values[CHART_MAX_SLICES - 1 :].sum()
-                values = np.append(top_v, other_v)
-                labels = top_l + ["Other"]
-
-            cmap = plt.get_cmap("Spectral")
-            colors = cmap(np.linspace(0, 1, len(values)))
-            pie_radius = 0.9
-            label_offset_multiplier = 1.1
-            VERTICAL_THRESHOLD = 0.15  # Adjust as needed
-
-            wedges, _ = self.account_ax.pie(
-                values,
-                labels=None,
-                autopct=None,
-                startangle=90,
-                counterclock=False,
-                colors=colors,
-                radius=pie_radius,
-                wedgeprops={"edgecolor": "white", "linewidth": 0.5},
-            )
-
-            label_positions = []
-            total_value = np.sum(values)
-            for i, p in enumerate(wedges):
-                ang = (p.theta2 - p.theta1) / 2.0 + p.theta1
-                y_edge = pie_radius * np.sin(np.deg2rad(ang))
-                x_edge = pie_radius * np.cos(np.deg2rad(ang))
-                y_text = label_offset_multiplier * np.sin(np.deg2rad(ang))
-                x_text = label_offset_multiplier * np.cos(np.deg2rad(ang))
-                original_side = "right" if x_text >= 0 else "left"
-                percent = (values[i] / total_value) * 100 if total_value > 1e-9 else 0
-                label_text = f"{labels[i]} ({percent:.0f}%)"
-                label_positions.append(
-                    {
-                        "x": x_text,
-                        "y": y_text,
-                        "label": label_text,
-                        "index": i,
-                        "original_side": original_side,
-                        "ang": ang,
-                        "x_edge": x_edge,
-                        "y_edge": y_edge,
-                    }
-                )
-
-            label_positions = self._adjust_pie_labels(
-                label_positions, VERTICAL_THRESHOLD
-            )
-
-            arrowprops = dict(
-                arrowstyle="-",
-                color=COLOR_TEXT_SECONDARY,
-                shrinkA=0,
-                shrinkB=0,
-                relpos=(0.5, 0.5),
-            )
-            kw = dict(arrowprops=arrowprops, zorder=0, va="center")
-
-            for pos in label_positions:
-                x_t = pos["final_x"]
-                y_t = pos["final_y"] + pos.get("y_nudge", 0.0)
-                x_e, y_e = pos["x_edge"], pos["y_edge"]
-                lbl = pos["label"]
-                ang = pos["ang"]
-                horizontalalignment = {-1: "right", 1: "left"}[int(np.sign(x_t))]
-                connectionstyle = f"arc,angleA={180 if x_t<0 else 0},angleB={ang},armA=0,armB=40,rad=0"
-                kw["arrowprops"].update({"connectionstyle": connectionstyle})
-                self.account_ax.annotate(
-                    lbl,
-                    xy=(x_e, y_e),
-                    xytext=(x_t, y_t),
-                    horizontalalignment=horizontalalignment,
-                    **kw,
-                    fontsize=8,
-                    color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
-                )
-
-        # Adjust subplot parameters to make space for labels
-        # Increase left/right margins, decrease top/bottom slightly if needed
-        self.account_fig.subplots_adjust(left=0.15, right=0.85, top=0.92, bottom=0.05)
-        # Remove tight_layout as it can interfere with subplots_adjust and annotations
-        # self.account_fig.tight_layout(pad=0.1)
-        self.account_canvas.draw()
+        ChartStyler.style_pie_chart(
+            ax=self.account_ax,
+            canvas=self.account_canvas,
+            data_series=account_values,
+            theme_colors={
+                "background": self.QCOLOR_BACKGROUND_THEMED.name(),
+                "text": self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
+                "secondary_text": self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
+            },
+            max_slices=CHART_MAX_SLICES,
+        )
 
     def update_holdings_pie_chart(self, df_display):
-        """Updates the 'Value by Holding' pie chart.
-
-        Uses the provided DataFrame (already filtered by account and 'Show Closed').
-        Groups data by symbol and plots market values. Handles grouping small slices
-        into 'Other'.
-
-        Args:
-            df_display (pd.DataFrame): The DataFrame containing the holdings data
-                                       currently displayed in the main table.
-        """
-        self.holdings_ax.clear()
-        # --- Turn axis off by default, only turn on if plotting ---
-        # Explicitly set background colors based on current theme
-        fig = self.holdings_fig
-        if fig:
-            fig.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
-        self.holdings_ax.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
-
-        self.holdings_ax.axis("off")
-
-        if not isinstance(df_display, pd.DataFrame) or df_display.empty:
-            # self.holdings_ax.text(0.5, 0.5, 'No Holdings Data', ha='center', va='center', transform=self.holdings_ax.transAxes, fontsize=9, color=COLOR_TEXT_SECONDARY)
-            self.holdings_canvas.draw()
-            return
-
+        """Updates the 'Value by Holding' pie chart using ChartStyler."""
         display_currency = self.currency_combo.currentText()
         col_defs = get_column_definitions(display_currency)
-        value_col_ui = "Mkt Val"
-        value_col_actual = col_defs.get(value_col_ui)
+        value_col_actual = col_defs.get("Mkt Val")
 
+        holdings_values = pd.Series(dtype=float)
         if (
-            not value_col_actual
-            or value_col_actual not in df_display.columns
-            or "Symbol" not in df_display.columns
+            isinstance(df_display, pd.DataFrame)
+            and not df_display.empty
+            and value_col_actual
+            and value_col_actual in df_display.columns
+            and "Symbol" in df_display.columns
         ):
-            # self.holdings_ax.text(0.5, 0.5, 'Missing Value/Symbol', ha='center', va='center', transform=self.holdings_ax.transAxes, fontsize=9, color=COLOR_TEXT_SECONDARY)
-            self.holdings_canvas.draw()
-            return
-
-        holdings_values = df_display.groupby("Symbol")[value_col_actual].sum()
-        # Filter out the "TOTALS" summary row if it exists, as it's not a holding
-        if "is_summary_row" in df_display.columns:
-            df_display = df_display[df_display["is_summary_row"] != True].copy()
-            # Recalculate holdings_values after filtering out the summary row
+            # Filter out the "TOTALS" summary row if it exists
+            if "is_summary_row" in df_display.columns:
+                df_display = df_display[df_display["is_summary_row"] != True].copy()
             holdings_values = df_display.groupby("Symbol")[value_col_actual].sum()
-        # --- FIX: Filter for positive values for pie chart ---
-        holdings_values = holdings_values[holdings_values > 1e-3]
 
-        if holdings_values.empty:
-            # self.holdings_ax.text(0.5, 0.5, 'No Holdings > 0', ha='center', va='center', transform=self.holdings_ax.transAxes, fontsize=9, color=COLOR_TEXT_SECONDARY)
-            self.holdings_canvas.draw()
-            return
-        else:
-            # --- Turn axis back on only if we have data to plot ---
-            self.holdings_ax.axis("on")  # Turn axis back on for plotting
-            # self.holdings_ax.axis("equal")  # REMOVED - Pie chart handles aspect ratio
+        # Create a mapping for display labels (e.g., for cash)
+        label_map = {CASH_SYMBOL_CSV: f"Cash ({display_currency})"}
 
-            holdings_values = holdings_values.sort_values(ascending=False)
-            labels_internal = holdings_values.index.tolist()
-            values = holdings_values.values
-            labels_display = [
-                (
-                    f"Cash ({display_currency})"
-                    if symbol == CASH_SYMBOL_CSV
-                    else str(symbol)
-                )
-                for symbol in labels_internal
-            ]
-
-            if len(values) > CHART_MAX_SLICES:
-                top_v = values[: CHART_MAX_SLICES - 1]
-                top_l = labels_display[: CHART_MAX_SLICES - 1]
-                other_v = values[CHART_MAX_SLICES - 1 :].sum()
-                values = np.append(top_v, other_v)
-                labels = top_l + ["Other"]
-            else:
-                labels = labels_display
-
-            cmap = plt.get_cmap("Spectral")
-            colors = cmap(np.linspace(0.1, 0.9, len(values)))
-            pie_radius = 0.9
-            label_offset_multiplier = 1.1
-            VERTICAL_THRESHOLD = 0.15  # Adjust as needed
-
-            wedges, _ = self.holdings_ax.pie(
-                values,
-                labels=None,
-                autopct=None,
-                startangle=90,
-                counterclock=False,
-                colors=colors,
-                radius=pie_radius,
-                wedgeprops={"edgecolor": "white", "linewidth": 0.5},
-            )
-
-            label_positions = []
-            total_value = np.sum(values)
-            for i, p in enumerate(wedges):
-                current_label = labels[i]
-                ang = (p.theta2 - p.theta1) / 2.0 + p.theta1
-                y_edge = pie_radius * np.sin(np.deg2rad(ang))
-                x_edge = pie_radius * np.cos(np.deg2rad(ang))
-                y_text = label_offset_multiplier * np.sin(np.deg2rad(ang))
-                x_text = label_offset_multiplier * np.cos(np.deg2rad(ang))
-                original_side = "right" if x_text >= 0 else "left"
-                percent = (values[i] / total_value) * 100 if total_value > 1e-9 else 0
-                label_text = f"{current_label} ({percent:.0f}%)"
-                label_positions.append(
-                    {
-                        "x": x_text,
-                        "y": y_text,
-                        "label": label_text,
-                        "index": i,
-                        "original_side": original_side,
-                        "ang": ang,
-                        "x_edge": x_edge,
-                        "y_edge": y_edge,
-                    }
-                )
-
-            label_positions = self._adjust_pie_labels(
-                label_positions, VERTICAL_THRESHOLD
-            )
-
-            arrowprops = dict(
-                arrowstyle="-",
-                color=COLOR_TEXT_SECONDARY,
-                shrinkA=0,
-                shrinkB=0,
-                relpos=(0.5, 0.5),
-            )
-            kw = dict(arrowprops=arrowprops, zorder=0, va="center")
-
-            for pos in label_positions:
-                x_t = pos["final_x"]
-                y_t = pos["final_y"] + pos.get("y_nudge", 0.0)
-                x_e, y_e = pos["x_edge"], pos["y_edge"]
-                lbl = pos["label"]
-                ang = pos["ang"]
-                horizontalalignment = {-1: "right", 1: "left"}[int(np.sign(x_t))]
-                connectionstyle = f"arc,angleA={180 if x_t<0 else 0},angleB={ang},armA=0,armB=40,rad=0"
-                kw["arrowprops"].update({"connectionstyle": connectionstyle})
-                self.holdings_ax.annotate(
-                    lbl,
-                    xy=(x_e, y_e),
-                    xytext=(x_t, y_t),
-                    horizontalalignment=horizontalalignment,
-                    **kw,
-                    fontsize=8,
-                    color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
-                )
-
-        # Adjust subplot parameters to make space for labels
-        # Increase left/right margins, decrease top/bottom slightly if needed
-        self.holdings_fig.subplots_adjust(left=0.15, right=0.85, top=0.95, bottom=0.05)
-        # Remove tight_layout as it can interfere with subplots_adjust and annotations
-        # self.holdings_fig.tight_layout(pad=0.1)
-        self.holdings_canvas.draw()
+        ChartStyler.style_pie_chart(
+            ax=self.holdings_ax,
+            canvas=self.holdings_canvas,
+            data_series=holdings_values,
+            theme_colors={
+                "background": self.QCOLOR_BACKGROUND_THEMED.name(),
+                "text": self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
+                "secondary_text": self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
+            },
+            max_slices=CHART_MAX_SLICES,
+            label_map=label_map,
+        )
 
     def update_performance_graphs(self, initial=False):
         """
         Updates the historical performance line graphs (Accumulated Gain and Value).
-
-        Uses data stored in `self.historical_data`. Filters data based on the selected
-        date range from the UI. Plots portfolio performance and selected benchmarks.
-        Adds annotations like the total TWR factor.
-
-        Args:
-            initial (bool, optional): If True, draws empty graphs with titles, typically
-                                      used during initialization before data is loaded.
-                                      Defaults to False.
         """
-        # --- Determine Titles & Scope ---
-        num_available = len(self.available_accounts)
-        num_selected = len(self.selected_accounts)
-        scope_label = "Overall Portfolio"
-        if (
-            self.available_accounts
-            and num_selected > 0
-            and num_selected != num_available
-        ):
-            if num_selected == 1:
-                scope_label = f"Account: {self.selected_accounts[0]}"
-            else:
-                scope_label = f"Selected Accounts ({num_selected}/{num_available})"
-        elif not self.available_accounts:
-            scope_label = "No Accounts Available"
-
-        logging.info(
-            f"Updating performance graphs for scope: {scope_label}... Initial: {initial}, Benchmarks: {self.selected_benchmarks}"
-        )
-        self.perf_return_ax.clear()
-        self.abs_value_ax.clear()
-
-        # Explicitly set backgrounds for performance line graphs
-        # These graphs are in PerfGraphsContainer, which has its own QSS background.
-        # Both figure and axes should match the main dashboard background.
-        perf_fig_bg = self.QCOLOR_BACKGROUND_THEMED.name()
-        perf_ax_bg = self.QCOLOR_BACKGROUND_THEMED.name()
-
-        if self.perf_return_fig:
-            self.perf_return_fig.patch.set_facecolor(perf_fig_bg)
-        if self.perf_return_ax:
-            self.perf_return_ax.patch.set_facecolor(perf_ax_bg)
-        if self.abs_value_fig:
-            self.abs_value_fig.patch.set_facecolor(perf_fig_bg)
-        if self.abs_value_ax:
-            self.abs_value_ax.patch.set_facecolor(perf_ax_bg)
-
-        # --- Clear existing mplcursors if they exist ---
-        # Disconnect signals to prevent errors if objects persist unexpectedly
-        if hasattr(self, "return_cursor") and self.return_cursor:
-            try:
-                self.return_cursor.disconnect_all()
-            except Exception:
-                pass  # Ignore errors during disconnect
-            self.return_cursor = None
-        if hasattr(self, "value_cursor") and self.value_cursor:
-            try:
-                self.value_cursor.disconnect_all()
-            except Exception:
-                pass
-            self.value_cursor = None
-        # --- End Clear cursors ---
-
-        # --- Base Styling & Aspect ---
-        for ax in [self.perf_return_ax, self.abs_value_ax]:
-            ax.spines["top"].set_visible(False)
-            ax.spines["right"].set_visible(False)
-            ax.spines["bottom"].set_color(self.QCOLOR_BORDER_THEMED.name())
-            ax.spines["left"].set_color(self.QCOLOR_BORDER_THEMED.name())
-            ax.tick_params(
-                axis="x", colors=self.QCOLOR_TEXT_SECONDARY_THEMED.name(), labelsize=8
-            )
-            ax.tick_params(
-                axis="y", colors=self.QCOLOR_TEXT_SECONDARY_THEMED.name(), labelsize=8
-            )
-            ax.xaxis.label.set_color(self.QCOLOR_TEXT_PRIMARY_THEMED.name())
-            ax.yaxis.label.set_color(self.QCOLOR_TEXT_PRIMARY_THEMED.name())
-            ax.title.set_color(self.QCOLOR_TEXT_PRIMARY_THEMED.name())
-            ax.grid(
-                True,
-                which="major",
-                linestyle="--",
-                linewidth=0.5,
-                color=self.QCOLOR_BORDER_THEMED.name(),  # Use themed border for grid
-            )
-            ax.set_aspect("auto")  # Ensure aspect is auto after clearing
-
-        # --- Dynamic Titles and Currency ---
-        benchmark_display_name = (
-            ", ".join(self.selected_benchmarks)
-            if self.selected_benchmarks
-            else "None"  # self.selected_benchmarks are display names
-        )
+        scope_label = self._get_scope_label_for_charts()
         display_currency = self._get_currency_symbol(get_name=True)
         currency_symbol = self._get_currency_symbol()
-        return_graph_title = f"{scope_label} - Accumulated Gain (TWR)"
-        value_graph_title = f"{scope_label} - Value ({display_currency})"
 
-        # --- Get Selected Date Range for Limits ---
-        plot_start_date = None
-        plot_end_date = None
-        try:
-            plot_start_date = self.graph_start_date_edit.date().toPython()
-            plot_end_date = self.graph_end_date_edit.date().toPython()
-        except Exception as e:
-            logging.error(f"Error getting plot dates: {e}")
+        # Prepare theme colors for the styler
+        theme_colors = {
+            "background": self.QCOLOR_BACKGROUND_THEMED.name(),
+            "text": self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
+            "secondary_text": self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
+            "border": self.QCOLOR_BORDER_THEMED.name(),
+            "gain": self.QCOLOR_GAIN_THEMED.name(),
+            "loss": self.QCOLOR_LOSS_THEMED.name(),
+        }
 
-        # --- Handle Initial State or Missing Data ---
-        if (
-            initial
-            or not isinstance(self.historical_data, pd.DataFrame)
-            or self.historical_data.empty
-        ):
-            self.perf_return_ax.text(
-                0.5,
-                0.5,
-                "No Performance Data",
-                ha="center",
-                va="center",
-                transform=self.perf_return_ax.transAxes,
-                fontsize=10,
-                color=self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
-            )
-            self.abs_value_ax.text(
-                0.5,
-                0.5,
-                "No Value Data",
-                ha="center",
-                va="center",
-                transform=self.abs_value_ax.transAxes,
-                fontsize=10,
-                color=self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
-            )
-
-            if plot_start_date and plot_end_date:
-                try:
-                    self.perf_return_ax.set_xlim(plot_start_date, plot_end_date)
-                    self.abs_value_ax.set_xlim(plot_start_date, plot_end_date)
-                    self.perf_return_ax.set_ylim(-10, 10)  # Default Y range
-                    self.abs_value_ax.set_ylim(0, 100)  # Default Y range
-                except Exception as e:
-                    logging.warning(f"Warn setting initial graph limits: {e}")
-            self.perf_return_canvas.draw()
-            self.abs_value_canvas.draw()
-            return
-
-        # --- Data Prep (Use Full Data stored in self.historical_data) ---
-        results_df = self.historical_data.copy()
-        if not isinstance(results_df.index, pd.DatetimeIndex):
-            try:
-                results_df.index = pd.to_datetime(results_df.index)
-            except Exception as e:
-                logging.error(
-                    f"ERROR converting historical index to DatetimeIndex: {e}"
-                )
-                # Attempt to draw empty graphs if index fails
-                self.update_performance_graphs(initial=True)
-                return
-        results_df.sort_index(inplace=True)
-
-        # --- Filter data to the selected date range for Y limit calculation ONLY ---
-        results_visible_df = results_df.copy()  # Default to full data for range calc
-        if plot_start_date and plot_end_date:
-            try:
-                pd_start = pd.Timestamp(plot_start_date)
-                pd_end = pd.Timestamp(plot_end_date)
-                # Ensure index is timezone-naive before comparison if needed
-                if results_visible_df.index.tz is not None:
-                    results_visible_df.index = results_visible_df.index.tz_localize(
-                        None
-                    )
-
-                results_visible_df = results_df.loc[pd_start:pd_end]  # Use .loc slicing
-                logging.debug(
-                    f"[Graph Update] Using date range {plot_start_date} to {plot_end_date} for Y-limit calculation ({len(results_visible_df)} rows)"
-                )
-            except Exception as e_filter:
-                logging.warning(
-                    f"Error filtering DataFrame by date for Y limits: {e_filter}. Using full range."
-                )
-                results_visible_df = results_df  # Fallback to full range
-        else:
-            logging.warning(
-                "[Graph Update] No valid date range from UI for Y-limit filtering. Using full range."
-            )
-            results_visible_field = results_df
-
-        # --- Calculate Y Ranges from VISIBLE Data ---
-        min_y_ret, max_y_ret = np.inf, -np.inf
-        min_y_val, max_y_val = np.inf, -np.inf
-        port_plotted_visible, bench_plotted_visible_count, val_data_plotted_visible = (
-            False,
-            0,
-            False,
-        )
-        port_col = "Portfolio Accumulated Gain"
-        if port_col in results_visible_df.columns:
-            vg_vis = results_visible_df[port_col].dropna()
-            if not vg_vis.empty:
-                pct_vis = (vg_vis - 1) * 100
-                min_y_ret = min(min_y_ret, pct_vis.min())
-                max_y_ret = max(max_y_ret, pct_vis.max())
-                port_plotted_visible = True
-
-        for b in self.selected_benchmarks:
-            bc = f"{b} Accumulated Gain"
-            if bc in results_visible_df.columns:
-                vgb_vis = results_visible_df[bc].dropna()
-                if not vgb_vis.empty:
-                    pctb_vis = (vgb_vis - 1) * 100
-                    min_y_ret = min(min_y_ret, pctb_vis.min())
-                    max_y_ret = max(max_y_ret, pctb_vis.max())
-                    bench_plotted_visible_count += 1
-
-        val_col = "Portfolio Value"
-        vv_vis = (
-            results_visible_df[val_col].dropna()
-            if val_col in results_visible_df.columns
-            else pd.Series(dtype=float)
-        )
-        val_data_plotted_visible = not vv_vis.empty
-        # FIX: Check for finite values before calculating min/max
-        vv_vis_finite = vv_vis[np.isfinite(vv_vis)]
-        if not vv_vis_finite.empty:
-            min_y_val = min(min_y_val, vv_vis_finite.min())
-            max_y_val = max(max_y_val, vv_vis_finite.max())
-            val_data_plotted_visible = True  # Mark as plotted if finite values exist
-
-        logging.debug(
-            f"[Graph Update] Visible RETURN Y Range (data): Min={min_y_ret}, Max={max_y_ret}"
-        )
-        logging.debug(
-            f"[Graph Update] Visible VALUE Y Range (data): Min={min_y_val}, Max={max_y_val}"
+        # Style the TWR (Return) Graph
+        ChartStyler.style_performance_line_chart(
+            ax=self.perf_return_ax,
+            canvas=self.perf_return_canvas,
+            results_df=self.data_store.get_historical_data(),
+            plot_column_base="Accumulated Gain",
+            y_label="Accumulated Gain (%)",
+            title=f"{scope_label} - Accumulated Gain (TWR)",
+            scope_label=scope_label,
+            selected_benchmarks=self.selected_benchmarks,
+            benchmark_mapping=BENCHMARK_MAPPING,
+            theme_colors=theme_colors,
+            is_percent_chart=True,
+            annotation_value=self.data_store.get_last_hist_twr_factor(),
+            annotation_label="Total TWR",
+            initial=initial,
+            mplcursors_available=MPLCURSORS_AVAILABLE,
+            tooltip_formatter=self._format_tooltip_annotation,
         )
 
-        # --- Plotting Setup ---
-        # Use the first color for the portfolio, the rest for benchmarks
-        all_colors = [
-            "red",
-            "blue",
-            "green",
-            "orange",
-            "purple",
-            "brown",
-            "magenta",
-            "cyan",
-        ]
-        portfolio_color = all_colors[0]
-        return_lines_plotted = []  # Store plotted lines for the return graph
-        value_lines_plotted = []  # Store plotted lines for the value graph
-
-        # --- Plot 1: Accumulated Gain (TWR %) ---
-        port_plotted_full = False  # Track if portfolio line was plotted from full data
-        if port_col in results_df.columns:
-            vg_full = results_df[port_col].dropna()  # Plot FULL data
-            if not vg_full.empty:
-                pct_full = (vg_full - 1) * 100
-                lbl = f"{scope_label}"
-                (line,) = self.perf_return_ax.plot(
-                    pct_full.index,
-                    pct_full,
-                    label=lbl,
-                    linewidth=2.0,
-                    color=portfolio_color,  # Use defined portfolio color
-                    zorder=10,
-                )
-                return_lines_plotted.append(line)
-                port_plotted_full = True
-
-        bench_plotted_count_full = 0
-        for i, display_name in enumerate(
-            self.selected_benchmarks
-        ):  # Iterate display names
-            yf_ticker = BENCHMARK_MAPPING.get(display_name)
-            if yf_ticker:
-                benchmark_col_name = f"{yf_ticker} Accumulated Gain"  # Column name in results_df uses ticker
-                if benchmark_col_name in results_df.columns:
-                    vgb_full = results_df[benchmark_col_name].dropna()
-                    if not vgb_full.empty:
-                        pctb_full = (vgb_full - 1) * 100
-                        bcol = all_colors[(i + 1) % len(all_colors)]
-                        (line,) = self.perf_return_ax.plot(
-                            pctb_full.index,
-                            pctb_full,
-                            label=f"{display_name}",  # Use display_name for the label
-                            linewidth=1.5,
-                            color=bcol,
-                            alpha=0.8,
-                        )
-                        return_lines_plotted.append(line)
-                        bench_plotted_count_full += 1
-
-        # Add TWR Annotation
-        if hasattr(self, "last_hist_twr_factor") and pd.notna(
-            self.last_hist_twr_factor
-        ):
-            try:
-                logging.debug(
-                    f"[Graph Update] Using self.last_hist_twr_factor for annotation: {self.last_hist_twr_factor}"
-                )  # ADDED LOG
-                tfv = float(self.last_hist_twr_factor)
-                tpg = (tfv - 1) * 100.0
-                tt = f"Total TWR: {tpg:+.2f}%"
-                tc_color = QCOLOR_GAIN if tpg >= -1e-9 else QCOLOR_LOSS
-                self.perf_return_ax.text(
-                    0.98,  # X-coordinate (near right edge)
-                    0.05,  # Y-coordinate (near bottom edge)
-                    tt,
-                    transform=self.perf_return_ax.transAxes,
-                    fontsize=9,
-                    fontweight="bold",
-                    color=tc_color.name(),  # tc_color is already a QColor, .name() gets hex
-                    va="bottom",  # Vertical alignment
-                    ha="right",  # Horizontal alignment
-                    bbox=dict(
-                        boxstyle="round,pad=0.3",
-                        fc=self.QCOLOR_BACKGROUND_THEMED.name(),
-                        alpha=0.7,
-                        ec="none",
-                    ),
-                )
-            except Exception as e:
-                logging.warning(f"Warn adding TWR annotation: {e}")
-
-        # Format Return Plot
-        if port_plotted_full or bench_plotted_count_full > 0:
-            self.perf_return_ax.yaxis.set_major_formatter(mtick.PercentFormatter())
-            nl = bench_plotted_count_full + (1 if port_plotted_full else 0)
-            if nl > 0:
-                self.perf_return_ax.legend(
-                    fontsize=8,
-                    ncol=min(3, nl),
-                    loc="upper left",
-                    bbox_to_anchor=(0, 0.95),
-                    facecolor=self.QCOLOR_BACKGROUND_THEMED.name(),
-                    edgecolor=self.QCOLOR_BORDER_THEMED.name(),
-                )  # Adjusted legend position
-
-            self.perf_return_ax.set_ylabel(
-                "Accumulated Gain (%)",
-                fontsize=9,
-                color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
-            )
-            self.perf_return_ax.grid(
-                True,
-                which="major",
-                linestyle="--",
-                linewidth=0.5,
-                color=self.QCOLOR_BORDER_THEMED.name(),
-            )
-
-            # SET RETURN Y LIMITS (using VISIBLE range min/max)
-            try:
-                if (
-                    np.isfinite(min_y_ret)
-                    and np.isfinite(max_y_ret)
-                    and max_y_ret >= min_y_ret
-                ):
-                    yr = max_y_ret - min_y_ret
-                    pad = max(yr * 0.05, 1.0)  # Add at least 1% padding
-                    fmin = min_y_ret - pad
-                    fmax = max_y_ret + pad
-                    # Ensure range is not zero
-                    if abs(fmax - fmin) < 1e-6:
-                        fmax = fmin + 1
-                    logging.debug(
-                        f"[Graph Update] Setting RETURN ylim based on visible range: {fmin:.2f} to {fmax:.2f}"
-                    )
-                    self.perf_return_ax.set_ylim(fmin, fmax)
-                elif (
-                    port_plotted_visible or bench_plotted_visible_count > 0
-                ):  # Fallback if range calc failed but visible data existed
-                    logging.debug(
-                        "[Graph Update] RETURN visible ylim invalid, using autoscale."
-                    )
-                    self.perf_return_ax.autoscale(enable=True, axis="y", tight=False)
-                else:  # Nothing plotted in visible range
-                    self.perf_return_ax.set_ylim(-10, 10)
-            except Exception as e:
-                logging.warning(f"Warn setting RETURN ylim: {e}")
-                self.perf_return_ax.autoscale(
-                    enable=True, axis="y", tight=False
-                )  # Final fallback
-
-        else:  # Nothing plotted from full data
-            self.perf_return_ax.text(
-                0.5,
-                0.5,
-                "No Return Data",
-                ha="center",
-                va="center",
-                transform=self.perf_return_ax.transAxes,
-                fontsize=10,
-                color=self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
-            )
-
-            self.perf_return_ax.set_ylim(-10, 10)  # Default Y range if no data
-
-        # --- Plot 2: Absolute Value ---
-        value_data_plotted_full = (
-            False  # Track if value line was plotted from full data
+        # Style the Absolute Value Graph
+        ChartStyler.style_performance_line_chart(
+            ax=self.abs_value_ax,
+            canvas=self.abs_value_canvas,
+            results_df=self.data_store.get_historical_data(),
+            plot_column_base="Value",
+            y_label=f"Value ({currency_symbol})",
+            title=f"{scope_label} - Value ({display_currency})",
+            scope_label=scope_label,
+            selected_benchmarks=[],  # No benchmarks on the value chart
+            benchmark_mapping={},
+            theme_colors=theme_colors,
+            is_percent_chart=False,
+            is_area_chart=True,  # Enable area fill
+            annotation_value=None,  # Or calculate period change if desired
+            annotation_label="Period Change",
+            initial=initial,
+            mplcursors_available=MPLCURSORS_AVAILABLE,
+            tooltip_formatter=self._format_tooltip_annotation,
+            currency_symbol=currency_symbol,
         )
-        if val_col in results_df.columns:
-            vv_full = results_df[val_col].dropna()  # Plot FULL data
-            if not vv_full.empty:
-                # Plot the area under the curve first
-                self.abs_value_ax.fill_between(
-                    vv_full.index,
-                    vv_full.values,  # Use .values for y1
-                    0,  # Fill down to the x-axis
-                    color=portfolio_color,
-                    alpha=0.3,  # Adjust transparency as needed
-                    label="_nolegend_",  # Avoid duplicate legend entry if line has label
-                )
-                # Then plot the line on top
-                (line,) = self.abs_value_ax.plot(
-                    vv_full.index,
-                    vv_full,
-                    label=f"{scope_label} Value ({currency_symbol})",
-                    color=portfolio_color,  # Use portfolio color for value line too
-                    linewidth=1.5,
-                )
-                value_lines_plotted.append(line)
-                value_data_plotted_full = True
-
-                # --- ADDED: Add annotation for value change ---
-                if len(vv_full) >= 2:
-                    start_value = vv_full.iloc[0]
-                    end_value = vv_full.iloc[-1]
-                    abs_change = end_value - start_value
-                    pct_change = (
-                        (abs_change / start_value) * 100.0
-                        if abs(start_value) > 1e-9
-                        else np.nan
-                    )
-
-                    change_text = f"Period Change: {currency_symbol}{abs_change:,.0f}"
-                    if pd.notna(pct_change):
-                        change_text += f" ({pct_change:+.2f}%)"
-
-                    change_color = (
-                        self.QCOLOR_GAIN_THEMED
-                        if abs_change >= -1e-9
-                        else self.QCOLOR_LOSS_THEMED
-                    )
-
-                    self.abs_value_ax.text(
-                        0.98,
-                        0.05,
-                        change_text,
-                        transform=self.abs_value_ax.transAxes,
-                        fontsize=9,
-                        fontweight="bold",
-                        color=change_color.name(),
-                        va="bottom",
-                        ha="right",
-                        bbox=dict(
-                            boxstyle="round,pad=0.3",
-                            fc=self.QCOLOR_BACKGROUND_THEMED.name(),
-                            alpha=0.7,
-                            ec="none",
-                        ),
-                    )
-                # --- END ADDED ---
-
-                # --- Define currency formatter ---
-                def currency_formatter(x, pos):
-                    local_currency_symbol = self._get_currency_symbol()
-                    if pd.isna(x):
-                        return "N/A"
-                    try:
-                        if abs(x) >= 1e6:
-                            return f"{local_currency_symbol}{x/1e6:,.1f}M"
-                        if abs(x) >= 1e3:
-                            return f"{local_currency_symbol}{x/1e3:,.0f}K"
-                        return f"{local_currency_symbol}{x:,.0f}"
-                    except TypeError:
-                        return "Err"
-
-                formatter = mtick.FuncFormatter(currency_formatter)
-                self.abs_value_ax.yaxis.set_major_formatter(formatter)
-                # --- End currency formatter ---
-
-                # self.abs_value_ax.set_title(
-                #     value_graph_title,
-                #     fontsize=10,
-                #     weight="bold",
-                #     color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
-                # )
-                self.abs_value_ax.set_ylabel(
-                    f"Value ({currency_symbol})",
-                    fontsize=9,
-                    color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
-                )
-                self.abs_value_ax.grid(
-                    True,
-                    which="major",
-                    linestyle="--",
-                    linewidth=0.5,
-                    color=self.QCOLOR_BORDER_THEMED.name(),
-                )
-
-                # --- SET VALUE Y LIMITS (using VISIBLE range min/max) ---
-                try:
-                    if (
-                        val_data_plotted_visible  # Check if any valid data was found
-                        and np.isfinite(min_y_val)
-                        and np.isfinite(max_y_val)
-                        and max_y_val >= min_y_val
-                    ):
-                        yrv = max_y_val - min_y_val
-                        padv = max(yrv * 0.05, 10.0)  # Add reasonable padding
-                        fminv = min_y_val - padv
-                        fminv = max(0, fminv)  # Value likely shouldn't go below zero
-                        fmaxv = max_y_val + padv
-                        if abs(fmaxv - fminv) < 1e-6:
-                            fmaxv = fminv + 10  # Ensure some range
-                        logging.debug(
-                            f"[Graph Update] Setting VALUE ylim based on visible range: {fminv:.2f} to {fmaxv:.2f}"
-                        )
-                        self.abs_value_ax.set_ylim(fminv, fmaxv)
-                    elif (
-                        val_data_plotted_visible
-                    ):  # Fallback if range calc failed but visible data existed
-                        logging.debug(
-                            "[Graph Update] VALUE visible ylim invalid, using autoscale."
-                        )
-                        self.abs_value_ax.autoscale(enable=True, axis="y", tight=False)
-                    else:  # Nothing plotted in visible range
-                        self.abs_value_ax.set_ylim(0, 100)  # Default Y range
-                except Exception as e:
-                    logging.warning(f"Warn setting VALUE ylim: {e}")
-                    self.abs_value_ax.autoscale(
-                        enable=True, axis="y", tight=False
-                    )  # Final fallback
-            else:  # No valid value data in full range
-                self.abs_value_ax.text(
-                    0.5,
-                    0.5,
-                    "No Value Data",
-                    ha="center",
-                    va="center",
-                    transform=self.abs_value_ax.transAxes,
-                    fontsize=10,
-                    color=self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
-                )
-                # self.abs_value_ax.set_title(
-                #     value_graph_title,
-                #     fontsize=10,
-                #     weight="bold",
-                #     color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
-                # )
-                self.abs_value_ax.set_ylim(0, 100)  # Default Y range
-
-        else:  # Value column doesn't even exist in full data
-            self.abs_value_ax.text(
-                0.5,
-                0.5,
-                "No Value Data",
-                ha="center",
-                va="center",
-                transform=self.abs_value_ax.transAxes,
-                fontsize=10,
-                color=self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
-            )
-
-            self.abs_value_ax.set_ylim(0, 100)
-
-        # --- Apply Final Layout Adjustments and X Limits ---
-        for fig, ax in [
-            (self.perf_return_fig, self.perf_return_ax),
-            (self.abs_value_fig, self.abs_value_ax),
-        ]:
-            try:
-                # Option 1: Increase padding for tight_layout
-                # fig.tight_layout(
-                #     pad=0.5, h_pad=0.7
-                # )  # Increased pad and added h_pad for height
-
-                # Option 2: Or, more explicitly, adjust subplot parameters
-                # You might need to experiment with the 'top' value (0.0 to 1.0)
-                fig.subplots_adjust(
-                    top=1.0, bottom=0.0, left=0.17, right=1.0
-                )  # Maximize plotting area by removing all margins
-
-                fig.autofmt_xdate(rotation=15)
-                # --- MODIFIED: Adjust x-axis start limit ---
-                if (
-                    plot_start_date
-                    and plot_end_date
-                    and isinstance(self.historical_data, pd.DataFrame)
-                    and not self.historical_data.empty
-                ):
-                    try:
-                        first_data_date = (
-                            self.historical_data.index.min().date()
-                        )  # Get first date from filtered data
-                        effective_start_date = max(
-                            plot_start_date, first_data_date
-                        )  # Use the later date
-                        logging.debug(
-                            f"Setting xlim: Effective Start={effective_start_date}, UI End={plot_end_date}"
-                        )
-                        ax.set_xlim(effective_start_date, plot_end_date)
-                    except Exception as e_xlim_calc:
-                        logging.warning(
-                            f"Could not determine effective start date for xlim: {e_xlim_calc}. Using UI dates."
-                        )
-                        ax.set_xlim(
-                            plot_start_date, plot_end_date
-                        )  # Fallback to UI dates
-                elif plot_start_date and plot_end_date:  # If no data, just use UI dates
-                    ax.set_xlim(plot_start_date, plot_end_date)
-            except Exception as e:
-                logging.warning(f"Warn setting layout/xlim: {e}")
-
-        # --- Activate mplcursors AFTER plotting and formatting ---
-        if MPLCURSORS_AVAILABLE:
-            try:
-                # Clear previous cursors explicitly again just before creating new ones
-                if hasattr(self, "return_cursor") and self.return_cursor:
-                    self.return_cursor.disconnect_all()
-                if hasattr(self, "value_cursor") and self.value_cursor:
-                    self.value_cursor.disconnect_all()
-
-                if return_lines_plotted:
-                    self.return_cursor = mplcursors.cursor(
-                        return_lines_plotted, hover=mplcursors.HoverMode.Transient
-                    )  # Use Transient for hover
-                    self.return_cursor.connect("add", self._format_tooltip_annotation)
-                    logging.debug("mplcursors activated for Return graph.")
-                else:
-                    self.return_cursor = None
-
-                if value_lines_plotted:
-                    self.value_cursor = mplcursors.cursor(
-                        value_lines_plotted, hover=mplcursors.HoverMode.Transient
-                    )  # Use Transient for hover
-                    self.value_cursor.connect("add", self._format_tooltip_annotation)
-                    logging.debug("mplcursors activated for Value graph.")
-                else:
-                    self.value_cursor = None
-
-            except Exception as e_cursor:
-                logging.error(f"Error activating mplcursors: {e_cursor}")
-                self.return_cursor = None  # Ensure cursors are None on error
-                self.value_cursor = None
-        # --- End mplcursors Activation ---
-
-        # --- Draw Canvases ---
-        try:
-            self.perf_return_canvas.draw_idle()  # Use draw_idle for potentially smoother updates
-            self.abs_value_canvas.draw_idle()
-        except Exception as e_draw:
-            logging.error(f"Error drawing graph canvas: {e_draw}")
-
-        # --- Re-apply Backgrounds based on theme ---
-        try:
-            # Pie charts container and content frame background are handled by QSS.
-            # Figure and Axes patch colors for Matplotlib plots:
-            fig_face_color = self.QCOLOR_BACKGROUND_THEMED.name()
-            # Use input background for axes of pie charts for consistency if desired,
-            # or main background if they should blend more with the figure.
-            # For pies, usually figure and axes are same.
-            ax_pie_face_color = self.QCOLOR_BACKGROUND_THEMED.name()
-
-            # Performance graphs are in a QWidget#PerfGraphsContainer which has its own BG from QSS.
-            # So, make Matplotlib figure/axes transparent for these if QSS is to show through.
-            # Or, explicitly set their BG to match the PerfGraphsContainer's QSS BG.
-            # For now, let's try to match the QSS intent for PerfGraphsContainer.
-            # If QSS sets PerfGraphsContainer to DARK_COLOR_BG_HEADER, then use that.
-            perf_graph_bg_color_to_match_qss = (
-                self.QCOLOR_HEADER_BACKGROUND_THEMED.name()
-            )
-
-            for fig, ax in [
-                (self.account_fig, self.account_ax),
-                (self.holdings_fig, self.holdings_ax),
-                (
-                    self.asset_type_pie_fig,
-                    self.asset_type_pie_ax,
-                ),  # Asset Allocation Tab
-                (self.sector_pie_fig, self.sector_pie_ax),  # Asset Allocation Tab
-                (self.geo_pie_fig, self.geo_pie_ax),  # Asset Allocation Tab
-                (self.industry_pie_fig, self.industry_pie_ax),  # Asset Allocation Tab
-            ]:
-                if fig:
-                    fig.patch.set_facecolor(fig_face_color)
-                if ax:
-                    ax.patch.set_facecolor(
-                        ax_pie_face_color
-                    )  # Use specific pie axes color
-
-            # For performance line graphs, axes are often different from figure
-            ax_line_graph_face_color = self.QCOLOR_BACKGROUND_THEMED.name()
-            for fig, ax in [
-                (self.perf_return_fig, self.perf_return_ax),
-                (self.abs_value_fig, self.abs_value_ax),
-            ]:
-                if fig:
-                    fig.patch.set_facecolor(perf_graph_bg_color_to_match_qss)
-                if ax:
-                    ax.patch.set_facecolor(
-                        ax_line_graph_face_color
-                    )  # Use input-like background for axes
-
-            # Bar charts (Periodic, Dividend, Capital Gains)
-            # Figure background matches main, axes background matches input style
-            bar_fig_bg_color = self.QCOLOR_BACKGROUND_THEMED.name()
-            bar_ax_bg_color = self.QCOLOR_BACKGROUND_THEMED.name()
-
-            for fig, ax in [
-                (self.annual_bar_fig, self.annual_bar_ax),
-                (self.monthly_bar_fig, self.monthly_bar_ax),
-                (self.weekly_bar_fig, self.weekly_bar_ax),
-                (self.dividend_bar_fig, self.dividend_bar_ax),
-                (self.cg_bar_fig, self.cg_bar_ax),
-            ]:
-                if fig:
-                    fig.patch.set_facecolor(bar_fig_bg_color)
-                if ax:
-                    ax.patch.set_facecolor(bar_ax_bg_color)
-
-        except Exception as e_bg:
-            logging.warning(f"Warn setting graph background: {e_bg}")
 
     # --- Data Handling and UI Update Methods ---
 
@@ -9286,18 +8323,18 @@ The CSV file should contain the following columns (header names must match exact
         )
 
         # Data source is always the overall summary metrics, which now reflect the selected scope
-        data_source_current = self.summary_metrics_data
+        data_source_current = self.data_store.get_summary_metrics_data()
 
         # Update common summary items using data_source_current
         if data_source_current:
             # --- Cash calculation needs to use the filtered holdings_data ---
             overall_cash_value = None
             if (
-                isinstance(self.holdings_data, pd.DataFrame)
-                and not self.holdings_data.empty
+                isinstance(self.data_store.get_holdings_data(), pd.DataFrame)
+                and not self.data_store.get_holdings_data().empty
                 and cash_val_col_actual
-                and "Symbol" in self.holdings_data.columns
-                and cash_val_col_actual in self.holdings_data.columns
+                and "Symbol" in self.data_store.get_holdings_data().columns
+                and cash_val_col_actual in self.data_store.get_holdings_data().columns
             ):
                 try:
                     # Filter holdings_data based on selected accounts before summing cash
@@ -9449,20 +8486,20 @@ The CSV file should contain the following columns (header names must match exact
 
         # Slot 2: Annualized TWR %
         twr_factor = (
-            self.last_hist_twr_factor
+            self.data_store.get_last_hist_twr_factor()
         )  # This factor now reflects the selected scope
 
         # --- FIX: Use the actual date range from the filtered historical data for TWR annualization ---
         start_date_val = None
         end_date_val = None
         if (
-            hasattr(self, "historical_data")
-            and isinstance(self.historical_data, pd.DataFrame)
-            and not self.historical_data.empty
-            and isinstance(self.historical_data.index, pd.DatetimeIndex)
+            self.data_store.get_historical_data() is not None
+            and isinstance(self.data_store.get_historical_data(), pd.DataFrame)
+            and not self.data_store.get_historical_data().empty
+            and isinstance(self.data_store.get_historical_data().index, pd.DatetimeIndex)
         ):
-            start_date_val = self.historical_data.index.min().date()
-            end_date_val = self.historical_data.index.max().date()
+            start_date_val = self.data_store.get_historical_data().index.min().date()
+            end_date_val = self.data_store.get_historical_data().index.max().date()
             logging.debug(
                 f"Using historical_data date range for TWR annualization: {start_date_val} to {end_date_val}"
             )
@@ -10015,7 +9052,7 @@ The CSV file should contain the following columns (header names must match exact
         Triggers a data refresh via ManageTransactionsDialog's data_changed signal if successful.
         """
         """Finds a transaction by original_index (internal DB ID), updates it, and rewrites the CSV."""
-        if not hasattr(self, "original_data") or self.original_data.empty:
+        if self.data_store.get_original_data() is None or self.data_store.get_original_data().empty:
             QMessageBox.critical(
                 self,
                 "Data Error",
@@ -10027,7 +9064,7 @@ The CSV file should contain the following columns (header names must match exact
             f"Attempting to edit transaction with original_index (internal DB ID): {original_index_to_edit}"
         )
         # Work on a copy
-        df_modified = self.original_data.copy()
+        df_modified = self.data_store.get_original_data().copy()
 
         # Find the row index in the DataFrame corresponding to the original_index (internal DB ID)
         row_mask = df_modified["original_index"] == original_index_to_edit
@@ -10118,7 +9155,7 @@ The CSV file should contain the following columns (header names must match exact
 
         if rewrite_successful:
             # Update the main app's original_data immediately
-            self.original_data = df_modified.copy()
+            self.data_store.set_original_data(df_modified.copy())
             QMessageBox.information(
                 self, "Success", "Transaction updated successfully."
             )
@@ -10162,7 +9199,7 @@ The CSV file should contain the following columns (header names must match exact
         self, original_indices_to_delete: List[int]
     ) -> bool:
         """Removes transactions by original_index (internal DB ID) and rewrites the CSV."""
-        if not hasattr(self, "original_data") or self.original_data.empty:
+        if self.data_store.get_original_data() is None or self.data_store.get_original_data().empty:
             QMessageBox.critical(
                 self,
                 "Data Error",
@@ -10173,7 +9210,7 @@ The CSV file should contain the following columns (header names must match exact
             return True  # Nothing to delete
 
         # Work on a copy
-        df_original = self.original_data.copy()
+        df_original = self.data_store.get_original_data().copy()
 
         # Filter OUT the rows to delete
         rows_to_keep_mask = ~df_original["original_index"].isin(
@@ -10613,18 +9650,8 @@ The CSV file should contain the following columns (header names must match exact
         """Clears all displayed data, resets UI elements, and clears internal state."""
         # (Keep implementation as before, but also clear account lists)
         logging.info("Clearing results display...")
-        self.holdings_data = pd.DataFrame()
-        self.ignored_data = pd.DataFrame()
-        self.summary_metrics_data = {}
-        self.account_metrics_data = {}
-        self.index_quote_data = {}
-        self.last_calc_status = ""
-        self.historical_data = pd.DataFrame()
-        self.last_hist_twr_factor = np.nan
+        self.data_store.clear_all_data()
         self.available_accounts = []  # Clear available accounts
-        self.capital_gains_history_data = pd.DataFrame()  # Already present from Phase 2
-
-        self.dividend_history_data = pd.DataFrame()  # Clear dividend data
         # Keep selected_accounts as loaded from config, validation happens on load
         self._update_table_view_with_filtered_columns(pd.DataFrame())
         # Clear PVC tab
@@ -10671,13 +9698,12 @@ The CSV file should contain the following columns (header names must match exact
         self._update_transaction_log_tables_content()
 
     def _update_transaction_log_tables_content(self):
-        """Populates the stock and cash transaction log tables using self.original_data."""
+        """Populates the stock and cash transaction log tables using self.data_store.get_original_data()."""
         logging.debug("Updating transaction log tables...")
 
         if (
-            not hasattr(self, "original_data")
-            or self.original_data is None
-            or self.original_data.empty
+            self.data_store.get_original_data() is None
+            or self.data_store.get_original_data().empty
         ):
             logging.info(
                 "Original data not available, clearing transaction log tables."
@@ -10687,8 +9713,8 @@ The CSV file should contain the following columns (header names must match exact
             return
 
         # Ensure required columns exist in original_data
-        # self.original_data is all_transactions_df_cleaned_for_logic, which has cleaned names.
-        df_for_logs = self.original_data.copy()
+        # self.data_store.get_original_data() is all_transactions_df_cleaned_for_logic, which has cleaned names.
+        df_for_logs = self.data_store.get_original_data().copy()
 
         # Filter by selected accounts
         # self.selected_accounts contains the list of accounts to show. If empty, show all.
@@ -10833,7 +9859,8 @@ The CSV file should contain the following columns (header names must match exact
             self.industry_pie_canvas.draw()
 
     def _update_asset_allocation_charts(self):  # Method name was already correct
-        """Populates the asset allocation charts using self.holdings_data."""
+        """Populates the asset allocation charts using self.data_store.get_holdings_data()."""
+        holdings_data = self.data_store.get_holdings_data()
         logging.debug(
             "Updating asset allocation charts (Asset Type, Sector, Geography)..."
         )
@@ -10853,7 +9880,7 @@ The CSV file should contain the following columns (header names must match exact
                     ax.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
         self._clear_asset_allocation_charts()  # Clear existing charts first
 
-        if not hasattr(self, "holdings_data") or self.holdings_data.empty:
+        if holdings_data is None or holdings_data.empty:
             logging.info(
                 "Holdings data not available, cannot update asset allocation charts."
             )
@@ -10907,7 +9934,7 @@ The CSV file should contain the following columns (header names must match exact
                 self.industry_pie_canvas.draw()
             return
 
-        df_alloc = self.holdings_data.copy()
+        df_alloc = holdings_data.copy()
         display_currency = self.currency_combo.currentText()
         col_defs = get_column_definitions(display_currency)
         value_col_actual = col_defs.get("Mkt Val")
@@ -10918,14 +9945,14 @@ The CSV file should contain the following columns (header names must match exact
         )
 
         # Filter df_alloc by selected accounts.
-        # self.holdings_data should already be filtered by the worker.
+        # self.data_store.get_holdings_data() should already be filtered by the worker.
         # However, to be robust or if that assumption is wrong, explicit filtering here is safer.
         df_alloc_filtered = df_alloc.copy()  # Start with potentially scoped data
         if self.selected_accounts and "Account" in df_alloc_filtered.columns:
             # If specific accounts are selected, ensure we only use data from those accounts.
-            # The _AGGREGATE_CASH_ACCOUNT_NAME_ row in self.holdings_data is special;
+            # The _AGGREGATE_CASH_ACCOUNT_NAME_ row in self.data_store.get_holdings_data() is special;
             # it represents the cash sum for the *selected scope*. So, if it's present
-            # in self.holdings_data (which is already supposed to be scoped), it should be included.
+            # in self.data_store.get_holdings_data() (which is already supposed to be scoped), it should be included.
             account_filter_mask = df_alloc_filtered["Account"].isin(
                 self.selected_accounts
             )
@@ -11656,11 +10683,11 @@ The CSV file should contain the following columns (header names must match exact
         Returns:
             pd.DataFrame: The fully processed DataFrame ready for display.
         """
-        if not isinstance(self.holdings_data, pd.DataFrame) or self.holdings_data.empty:
+        if self.data_store.get_holdings_data() is None or self.data_store.get_holdings_data().empty:
             return pd.DataFrame()
 
         # Start the pipeline
-        df_processed = self._apply_base_filters(self.holdings_data)
+        df_processed = self._apply_base_filters(self.data_store.get_holdings_data())
         df_processed = self._apply_text_filters(df_processed)
 
         if group_by_sector:
@@ -11695,10 +10722,10 @@ The CSV file should contain the following columns (header names must match exact
         if display_currency != base_currency:
             rate = None
             # The summary metrics should contain the rate relative to the default currency
-            if self.summary_metrics_data and isinstance(
-                self.summary_metrics_data, dict
+            if self.data_store.get_summary_metrics_data() and isinstance(
+                self.data_store.get_summary_metrics_data(), dict
             ):
-                rate = self.summary_metrics_data.get(
+                rate = self.data_store.get_summary_metrics_data().get(
                     "exchange_rate_to_display"
                 )  # This key holds BASE->DISPLAY rate
 
@@ -12011,67 +11038,67 @@ The CSV file should contain the following columns (header names must match exact
             historical_status = summary_metrics.pop(
                 "historical_status_msg", "Status Unknown"
             )
-            self.last_calc_status = f"{portfolio_status} | {historical_status}"
-            self.last_hist_twr_factor = np.nan
+            self.data_store.set_last_calc_status(f"{portfolio_status} | {historical_status}")
+            self.data_store.set_last_hist_twr_factor(np.nan)
             if "|||TWR_FACTOR:" in historical_status:
                 logging.debug(
                     f"Received TWR factor from backend status (ignored): {historical_status.split('|||TWR_FACTOR:')[1]}"
                 )
-            self.summary_metrics_data = summary_metrics if summary_metrics else {}
-            self.holdings_data = (
+            self.data_store.set_summary_metrics_data(summary_metrics if summary_metrics else {})
+            self.data_store.set_holdings_data(
                 holdings_df if holdings_df is not None else pd.DataFrame()
             )
-            self.periodic_returns_data: Dict[str, pd.DataFrame] = {}
-            self.account_metrics_data = account_metrics if account_metrics else {}
-            self.index_quote_data = index_quotes if index_quotes else {}
-            self.dividend_history_data = (
+            self.data_store.set_periodic_returns_data({})
+            self.data_store.set_account_metrics_data(account_metrics if account_metrics else {})
+            self.data_store.set_index_quote_data(index_quotes if index_quotes else {})
+            self.data_store.set_dividend_history_data(
                 dividend_history_df
                 if dividend_history_df is not None
                 else pd.DataFrame()
             )
-            self.capital_gains_history_data = (
+            self.data_store.set_capital_gains_history_data(
                 capital_gains_history_df
                 if capital_gains_history_df is not None
                 else pd.DataFrame()
             )
-            self.correlation_matrix_df = (
+            self.data_store.set_correlation_matrix_df(
                 correlation_matrix_df
                 if correlation_matrix_df is not None
                 else pd.DataFrame()
             )
-            self.factor_analysis_results = (
+            self.data_store.set_factor_analysis_results(
                 factor_analysis_results if factor_analysis_results is not None else {}
             )
-            self.scenario_analysis_result = (
+            self.data_store.set_scenario_analysis_result(
                 scenario_analysis_result if scenario_analysis_result is not None else {}
             )
-            self.full_historical_data = (
+            self.data_store.set_full_historical_data(
                 full_historical_data_df
                 if full_historical_data_df is not None
                 else pd.DataFrame()
             )
-            self.historical_prices_yf_adjusted = (
+            self.data_store.set_historical_prices_yf_adjusted(
                 hist_prices_adj if hist_prices_adj is not None else {}
             )
-            self.historical_fx_yf = hist_fx if hist_fx is not None else {}
-            self.ignored_data = pd.DataFrame()
+            self.data_store.set_historical_fx_yf(hist_fx if hist_fx is not None else {})
+            self.data_store.set_ignored_data(pd.DataFrame())
             if (
                 combined_ignored_indices
-                and hasattr(self, "original_data")
-                and not self.original_data.empty
+                and self.data_store.get_original_data() is not None
+                and not self.data_store.get_original_data().empty
             ):
                 logging.info(
                     f"Processing {len(combined_ignored_indices)} ignored row indices..."
                 )
                 try:
-                    if "original_index" in self.original_data.columns:
+                    if "original_index" in self.data_store.get_original_data().columns:
                         indices_to_check = {
                             int(i) for i in combined_ignored_indices if pd.notna(i)
                         }
-                        valid_indices_mask = self.original_data["original_index"].isin(
+                        valid_indices_mask = self.data_store.get_original_data()["original_index"].isin(
                             indices_to_check
                         )
-                        ignored_rows_df = self.original_data[valid_indices_mask].copy()
+                        ignored_rows_df = self.data_store.get_original_data()[valid_indices_mask].copy()
                         if not ignored_rows_df.empty:
                             reasons_mapped = (
                                 ignored_rows_df["original_index"]
@@ -12079,46 +11106,46 @@ The CSV file should contain the following columns (header names must match exact
                                 .fillna("Unknown Reason")
                             )
                             ignored_rows_df["Reason Ignored"] = reasons_mapped
-                            self.ignored_data = ignored_rows_df.sort_values(
+                            self.data_store.set_ignored_data(ignored_rows_df.sort_values(
                                 by="original_index"
-                            )
+                            ))
                 except Exception as e_ignored:
                     logging.error(
                         f"Error constructing ignored_data DataFrame: {e_ignored}",
                         exc_info=True,
                     )
-                    self.ignored_data = pd.DataFrame()
+                    self.data_store.set_ignored_data(pd.DataFrame())
 
             # --- Part 2: Process Historical and Periodic Data ---
             logging.info("HANDLE_RESULTS: Processing historical and periodic data...")
             if (
-                isinstance(self.full_historical_data, pd.DataFrame)
-                and not self.full_historical_data.empty
+                isinstance(self.data_store.get_full_historical_data(), pd.DataFrame)
+                and not self.data_store.get_full_historical_data().empty
             ):
                 selected_benchmark_tickers_for_periodic = [
                     BENCHMARK_MAPPING.get(name)
                     for name in self.selected_benchmarks
                     if BENCHMARK_MAPPING.get(name)
                 ]
-                self.periodic_returns_data = calculate_periodic_returns(
-                    self.full_historical_data, selected_benchmark_tickers_for_periodic
-                )
+                self.data_store.set_periodic_returns_data(calculate_periodic_returns(
+                    self.data_store.get_full_historical_data(), selected_benchmark_tickers_for_periodic
+                ))
                 intervals_map_abs_val = {"Y": "YE", "M": "ME", "W": "W-FRI"}
-                self.periodic_value_changes_data = {}
-                if "Portfolio Value" in self.full_historical_data.columns:
+                self.data_store.set_periodic_value_changes_data({})
+                if "Portfolio Value" in self.data_store.get_full_historical_data().columns:
                     for interval_key, freq_code in intervals_map_abs_val.items():
                         period_end_values = (
-                            self.full_historical_data["Portfolio Value"]
+                            self.data_store.get_full_historical_data()["Portfolio Value"]
                             .resample(freq_code)
                             .last()
                         )
                         period_start_values = period_end_values.shift(1)
                         period_net_flows = (
-                            self.full_historical_data["net_flow"]
+                            self.data_store.get_full_historical_data()["net_flow"]
                             .resample(freq_code)
                             .sum()
                             .fillna(0.0)
-                            if "net_flow" in self.full_historical_data.columns
+                            if "net_flow" in self.data_store.get_full_historical_data().columns
                             else pd.Series(0.0, index=period_end_values.index)
                         )
                         df_aligned = pd.DataFrame(
@@ -12133,12 +11160,12 @@ The CSV file should contain the following columns (header names must match exact
                             - df_aligned["start_value"]
                             - df_aligned["net_flow"]
                         )
-                        self.periodic_value_changes_data[interval_key] = pd.DataFrame(
+                        self.data_store.get_periodic_value_changes_data()[interval_key] = pd.DataFrame(
                             {"Portfolio Value Change": value_change_series}
                         ).dropna(subset=["Portfolio Value Change"])
-                daily_df = self.full_historical_data.copy()
+                daily_df = self.data_store.get_full_historical_data().copy()
                 if "daily_gain" in daily_df.columns:
-                    self.periodic_value_changes_data["D"] = pd.DataFrame(
+                    self.data_store.get_periodic_value_changes_data()["D"] = pd.DataFrame(
                         {"Portfolio Value Change": daily_df["daily_gain"]}
                     )
                 daily_returns_df = pd.DataFrame(index=daily_df.index)
@@ -12152,18 +11179,18 @@ The CSV file should contain the following columns (header names must match exact
                         daily_returns_df[f"{yf_ticker} D-Return"] = (
                             daily_df[price_col].pct_change() * 100.0
                         )
-                self.periodic_returns_data["D"] = daily_returns_df
+                self.data_store.get_periodic_returns_data()["D"] = daily_returns_df
 
-            self.historical_data = pd.DataFrame()
+            self.data_store.set_historical_data(pd.DataFrame())
             if (
-                isinstance(self.full_historical_data, pd.DataFrame)
-                and not self.full_historical_data.empty
+                isinstance(self.data_store.get_full_historical_data(), pd.DataFrame)
+                and not self.data_store.get_full_historical_data().empty
             ):
                 plot_start_date = self.graph_start_date_edit.date().toPython()
                 plot_end_date = self.graph_end_date_edit.date().toPython()
                 pd_start = pd.Timestamp(plot_start_date)
                 pd_end = pd.Timestamp(plot_end_date)
-                temp_df = self.full_historical_data
+                temp_df = self.data_store.get_full_historical_data()
                 if not isinstance(temp_df.index, pd.DatetimeIndex):
                     temp_df.index = pd.to_datetime(temp_df.index)
                 if temp_df.index.tz is not None:
@@ -12171,30 +11198,30 @@ The CSV file should contain the following columns (header names must match exact
                 filtered_by_date_df = temp_df.loc[pd_start:pd_end].copy()
                 interval = self.graph_interval_combo.currentText()
                 if interval in ["W", "M"]:
-                    self.historical_data = filtered_by_date_df.resample(interval).last()
+                    self.data_store.set_historical_data(filtered_by_date_df.resample(interval).last())
                 else:
-                    self.historical_data = filtered_by_date_df
+                    self.data_store.set_historical_data(filtered_by_date_df)
 
             if (
-                isinstance(self.historical_data, pd.DataFrame)
-                and not self.historical_data.empty
+                isinstance(self.data_store.get_historical_data(), pd.DataFrame)
+                and not self.data_store.get_historical_data().empty
             ):
                 gain_cols = [
                     col
-                    for col in self.historical_data.columns
+                    for col in self.data_store.get_historical_data().columns
                     if "Accumulated Gain" in col
                 ]
                 for col in gain_cols:
-                    first_valid_value = self.historical_data[col].dropna().iloc[0]
+                    first_valid_value = self.data_store.get_historical_data()[col].dropna().iloc[0]
                     if pd.notna(first_valid_value) and first_valid_value != 0:
-                        self.historical_data[col] = (
-                            self.historical_data[col] / first_valid_value
+                        self.data_store.get_historical_data()[col] = (
+                            self.data_store.get_historical_data()[col] / first_valid_value
                         )
-                        self.historical_data.loc[self.historical_data.index[0], col] = (
+                        self.data_store.get_historical_data().loc[self.data_store.get_historical_data().index[0], col] = (
                             1.0
                         )
-                if "Portfolio Accumulated Gain" in self.historical_data.columns:
-                    accum_gain_series = self.historical_data[
+                if "Portfolio Accumulated Gain" in self.data_store.get_historical_data().columns:
+                    accum_gain_series = self.data_store.get_historical_data()[
                         "Portfolio Accumulated Gain"
                     ].dropna()
                     if len(accum_gain_series) >= 2:
@@ -12205,11 +11232,11 @@ The CSV file should contain the following columns (header names must match exact
                             and pd.notna(end_gain)
                             and start_gain != 0
                         ):
-                            self.last_hist_twr_factor = end_gain / start_gain
+                            self.data_store.set_last_hist_twr_factor(end_gain / start_gain)
 
             # --- Part 3: Update Available Accounts ---
             logging.info("HANDLE_RESULTS: Updating available accounts...")
-            available_accounts_from_backend = self.summary_metrics_data.get(
+            available_accounts_from_backend = self.data_store.get_summary_metrics_data().get(
                 "_available_accounts", []
             )
             if available_accounts_from_backend and isinstance(
@@ -12217,10 +11244,10 @@ The CSV file should contain the following columns (header names must match exact
             ):
                 self.available_accounts = available_accounts_from_backend
             elif (
-                not self.holdings_data.empty and "Account" in self.holdings_data.columns
+                not self.data_store.get_holdings_data().empty and "Account" in self.data_store.get_holdings_data().columns
             ):
                 self.available_accounts = sorted(
-                    self.holdings_data["Account"].unique().tolist()
+                    self.data_store.get_holdings_data()["Account"].unique().tolist()
                 )
             else:
                 self.available_accounts = []
@@ -12269,7 +11296,7 @@ The CSV file should contain the following columns (header names must match exact
         """
         logging.info(f"HANDLE_ERROR: Slot entered with message: {error_message}")
         try:
-            self.is_calculating = False  # Ensure this is reset
+            self.data_store.set_is_calculating(False)  # Ensure this is reset
             logging.error(  # Changed to error for more visibility
                 f"--- Calculation/Fetch Error Reported by Worker ---\n{error_message}\n--- End Error Report ---"
             )
@@ -12308,7 +11335,7 @@ The CSV file should contain the following columns (header names must match exact
         Re-enables UI controls and updates the status bar with the final status message.
         """
         try:
-            self.is_calculating = False
+        self.data_store.set_is_calculating(False)
             logging.info(
                 f"Worker thread finished. Error message received by calculation_finished: {error_message}"
             )
@@ -12324,11 +11351,11 @@ The CSV file should contain the following columns (header names must match exact
                 or "Failed to perform, curl" in error_message
             ):
                 network_fetch_error_detected = True
-            elif self.last_calc_status and (
-                "DNSError" in self.last_calc_status
-                or "Could not resolve host" in self.last_calc_status
-                or "Fetch Error" in self.last_calc_status
-                or "Failed to perform, curl" in self.last_calc_status
+        elif self.data_store.get_last_calc_status() and (
+            "DNSError" in self.data_store.get_last_calc_status()
+            or "Could not resolve host" in self.data_store.get_last_calc_status()
+            or "Fetch Error" in self.data_store.get_last_calc_status()
+            or "Failed to perform, curl" in self.data_store.get_last_calc_status()
             ):
                 network_fetch_error_detected = True
 
@@ -12341,8 +11368,8 @@ The CSV file should contain the following columns (header names must match exact
                     "Please check your internet connection, DNS settings, or firewall.\n"
                     "Market data will be incomplete or unavailable.",
                 )
-            elif self.last_calc_status:
-                cleaned_status = self.last_calc_status.split("|||TWR_FACTOR:")[
+        elif self.data_store.get_last_calc_status():
+            cleaned_status = self.data_store.get_last_calc_status().split("|||TWR_FACTOR:")[
                     0
                 ].strip()
                 if "Error" in cleaned_status or "Crit" in cleaned_status:
@@ -12405,481 +11432,79 @@ The CSV file should contain the following columns (header names must match exact
         self.status_label.setText(f"Calculating historical data... {percent}%")
 
     def _update_periodic_bar_charts(self):
-        """Updates the weekly, monthly, and annual return bar charts."""
-        logging.debug(
-            "--- Entering _update_periodic_bar_charts ---"
-        )  # Changed to DEBUG
+        """Updates the weekly, monthly, and annual return bar charts using ChartStyler."""
+        logging.debug("--- Entering _update_periodic_bar_charts ---")
 
         intervals_config = {
-            "Y": {
-                "data_key": "Y",
-                "ax": self.annual_bar_ax,
-                "canvas": self.annual_bar_canvas,
-                "title": "Annual Returns",  # Title used for logging/errors
-                "spinbox": self.annual_periods_spinbox,  # Reference to the spinbox
-                "date_format": "%Y",
-            },
-            "M": {
-                "data_key": "M",
-                "ax": self.monthly_bar_ax,
-                "canvas": self.monthly_bar_canvas,
-                "title": "Monthly Returns",
-                "spinbox": self.monthly_periods_spinbox,
-                "date_format": "%Y-%m",
-            },
-            "W": {
-                "data_key": "W",
-                "ax": self.weekly_bar_ax,
-                "canvas": self.weekly_bar_canvas,
-                "title": "Weekly Returns",
-                "spinbox": self.weekly_periods_spinbox,
-                "date_format": "%Y-%m-%d",
-            },
+            "Y": {"ax": self.annual_bar_ax, "canvas": self.annual_bar_canvas, "spinbox": self.annual_periods_spinbox, "date_format": "%Y"},
+            "M": {"ax": self.monthly_bar_ax, "canvas": self.monthly_bar_canvas, "spinbox": self.monthly_periods_spinbox, "date_format": "%Y-%m"},
+            "W": {"ax": self.weekly_bar_ax, "canvas": self.weekly_bar_canvas, "spinbox": self.weekly_periods_spinbox, "date_format": "%Y-%m-%d"},
         }
 
-        # Get portfolio and benchmark column names based on current selection
-        portfolio_return_base = "Portfolio"  # Base name used in calculate_periodic_returns renaming  # This should be fine as portfolio_logic.py likely standardizes this.
+        theme_colors = {
+            "background": self.QCOLOR_BACKGROUND_THEMED.name(),
+            "text": self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
+            "secondary_text": self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
+            "border": self.QCOLOR_BORDER_THEMED.name(),
+            "gain": self.QCOLOR_GAIN_THEMED.name(),
+            "loss": self.QCOLOR_LOSS_THEMED.name(),
+        }
 
-        # For benchmarks, we need their YF tickers to match columns from calculate_periodic_returns
-        benchmark_yf_tickers_for_cols = [
-            BENCHMARK_MAPPING.get(name)
-            for name in self.selected_benchmarks
-            if BENCHMARK_MAPPING.get(name)
-        ]
+        benchmark_yf_tickers = [BENCHMARK_MAPPING.get(name) for name in self.selected_benchmarks if BENCHMARK_MAPPING.get(name)]
 
-        for config in intervals_config.values():
-            ax = config["ax"]
-            canvas = config["canvas"]
-            interval_key = config["data_key"]
-            ax.clear()  # Clear previous plot
+        for interval_key, config in intervals_config.items():
+            returns_df = self.data_store.get_periodic_returns_data().get(interval_key)
+            num_periods = config["spinbox"].value()
 
-            # Explicitly set background colors based on current theme
-            # Bar charts are in BarChartsFrame, which should match main background
-            fig = ax.get_figure()
-            if fig:
-                fig.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
-            # Use the input-specific background for the axes plotting area
-            ax.patch.set_facecolor(
-                self.QCOLOR_BACKGROUND_THEMED.name()  # Match dashboard background)
+            ChartStyler.style_bar_chart(
+                ax=config["ax"],
+                canvas=config["canvas"],
+                data_df=returns_df,
+                num_periods=num_periods,
+                theme_colors=theme_colors,
+                date_format=config["date_format"],
+                portfolio_col_name=f"Portfolio {interval_key}-Return",
+                benchmark_tickers=benchmark_yf_tickers,
+                benchmark_mapping=BENCHMARK_MAPPING,
+                interval_key=interval_key,
+                mplcursors_available=MPLCURSORS_AVAILABLE,
+                is_percent=True
             )
-
-            returns_df = self.periodic_returns_data.get(interval_key)
-
-            # --- ADDED: Log the DataFrame being used ---
-            logging.debug(f"Plotting interval '{interval_key}':")
-            if isinstance(returns_df, pd.DataFrame):
-                logging.debug(
-                    f"  DataFrame shape: {returns_df.shape}, IsEmpty: {returns_df.empty}"
-                )
-            else:
-                logging.debug(f"  Data is not a DataFrame (Type: {type(returns_df)})")
-            # --- END ADDED ---
-
-            if returns_df is None or returns_df.empty:
-                ax.text(
-                    0.5,
-                    0.5,
-                    "No Data",
-                    ha="center",
-                    va="center",
-                    transform=ax.transAxes,
-                    color=COLOR_TEXT_SECONDARY,
-                )
-                ax.set_title(config["title"], fontsize=9, weight="bold")
-                canvas.draw()
-                continue
-
-            # Select relevant columns and limit bars
-            portfolio_col_name = f"{portfolio_return_base} {interval_key}-Return"
-            # Construct column names using YF tickers for data access
-            benchmark_col_names = [
-                f"{yf_ticker} {interval_key}-Return"
-                for yf_ticker in benchmark_yf_tickers_for_cols
-            ]
-            cols_to_plot = [
-                portfolio_col_name
-            ] + benchmark_col_names  # These are ticker-based names
-            valid_cols = [col for col in cols_to_plot if col in returns_df.columns]
-
-            if not valid_cols:
-                ax.text(
-                    0.5,
-                    0.5,
-                    "No Data",
-                    ha="center",
-                    va="center",
-                    transform=ax.transAxes,
-                    color=COLOR_TEXT_SECONDARY,
-                )
-                ax.set_title(config["title"], fontsize=9, weight="bold")
-                canvas.draw()
-                continue
-
-            # --- Get number of periods from spinbox ---
-            try:
-                num_periods = config["spinbox"].value()
-            except Exception:
-                num_periods = 10  # Fallback default
-            logging.debug(f"  Using num_periods = {num_periods} from spinbox.")
-            plot_data = (
-                returns_df[valid_cols].tail(num_periods).copy()
-            )  # Use value from spinbox
-
-            # Plotting
-            n_series = len(plot_data.columns)
-            bar_width = 0.9 / n_series  # Adjust width based on number of series
-            index = np.arange(len(plot_data))
-
-            # --- Store x-axis labels before clearing ticks ---
-            x_tick_labels = plot_data.index.strftime(config["date_format"])
-            # --- End Store x-axis labels ---
-
-            # Define colors for bars
-            # Use the first color for the portfolio, the rest for benchmarks
-            all_colors = [
-                "red",  # Portfolio
-                "blue",  # 1st Benchmark
-                "green",  # 2nd Benchmark
-                "orange",
-                "purple",
-                "brown",
-                "magenta",
-                "cyan",
-            ]
-            portfolio_color = all_colors[0]
-            color_map = {portfolio_col_name: portfolio_color}
-            for i, bm_col in enumerate(benchmark_col_names):
-                if bm_col in plot_data.columns:
-                    # Map the YF ticker based column name to its display name for legend and color assignment
-                    # Find which display_name corresponds to this bm_col (which uses yf_ticker)
-                    display_name_for_bm = ""
-                    for dn, yft in BENCHMARK_MAPPING.items():
-                        if f"{yft} {interval_key}-Return" == bm_col:
-                            display_name_for_bm = dn
-                            break
-
-                    color_map[bm_col] = all_colors[(i + 1) % len(all_colors)]
-
-            for i, col in enumerate(plot_data.columns):
-                offset = (i - (n_series - 1) / 2) * bar_width
-                current_bar_data = plot_data[col].fillna(0.0)
-                # If the interval is Annual ('Y'), assume the data might be a factor (e.g., 0.15 for 15%)
-                # and multiply by 100 to convert to percentage points (e.g., 15.0).
-                # This is a common discrepancy if other intervals already provide percentages.
-                if interval_key == "Y":
-                    # current_bar_data = current_bar_data * 100
-                    current_bar_data = current_bar_data
-                bars = ax.bar(
-                    index + offset,
-                    current_bar_data,  # Use potentially scaled data
-                    bar_width,
-                    # For label, if it's a benchmark, find its display name. If portfolio, use "Portfolio".
-                    label=(
-                        next(
-                            (
-                                dn
-                                for dn, yft in BENCHMARK_MAPPING.items()
-                                if f"{yft} {interval_key}-Return" == col
-                            ),
-                            col.replace(f" {interval_key}-Return", ""),
-                        )
-                        if col != portfolio_col_name
-                        else portfolio_return_base  # Use "Portfolio" for the portfolio bar
-                    ),
-                    # label=col.replace(
-                    #     f" {interval_key}-Return", ""
-                    # ),  # Clean label for legend
-                    color=color_map.get(
-                        col, "gray"
-                    ),  # Use mapped color, fallback to gray
-                )
-                # Add value labels on top/bottom of bars (optional, can get crowded)
-                # ax.bar_label(bars, fmt='%.1f%%', padding=2, fontsize=6, rotation=90)
-
-            # Formatting
-            # ax.set_ylabel("Return (%)", fontsize=8)
-            # ax.set_title(config["title"], fontsize=9, weight="bold") # <-- REMOVED Title from plot axes
-            ax.set_xticks([])
-            ax.set_yticks([])
-            ax.yaxis.set_major_formatter(
-                mtick.PercentFormatter(xmax=100.0)
-            )  # Format Y axis as %
-            # --- ADDED: Explicitly set xlim based on the number of data points ---
-            if not plot_data.empty:
-                ax.set_xlim(-0.5, len(plot_data) - 0.5)
-            else:
-                # Default for an empty plot, though "No Data" text should be shown
-                ax.set_xlim(-0.5, 0.5)
-            # --- END ADDED ---
-            ax.grid(
-                True, axis="y", linestyle="--", linewidth=0.5, color=COLOR_BORDER_LIGHT
-            )
-            ax.axhline(0, color=COLOR_BORDER_DARK, linewidth=0.6)  # Zero line
-
-            # Legend
-            if (
-                n_series > 1
-                and interval_key == "Y"  # Use interval_key which is 'Y', 'M', 'W'
-            ):  # Only show legend for Annual chart
-                ax.legend(
-                    fontsize=7,
-                    loc="upper left",  # Change location to bottom left
-                    bbox_to_anchor=(0, 1.25),  # Anchor at the bottom left corner
-                    ncol=n_series,
-                )
-
-            # --- Add mplcursors Tooltip ---
-            if MPLCURSORS_AVAILABLE:
-                try:
-                    # Use lambda to capture the correct x_tick_labels for this specific axis
-                    cursor = mplcursors.cursor(
-                        ax.containers, hover=mplcursors.HoverMode.Transient
-                    )  # Use Transient hover
-
-                    @cursor.connect("add")
-                    def on_add_bar(sel, labels=x_tick_labels):  # Capture labels
-                        bar_index = int(sel.index)
-                        series_label = sel.artist.get_label()
-                        if bar_index < len(labels):
-                            period_label = labels[bar_index]
-                        else:
-                            period_label = "Unknown Period"  # Fallback
-
-                        # FIX: Get height from sel.target[1] (y-coordinate) for bars
-                        return_value = sel.target[1]
-                        annotation_text = f"{period_label}\n{series_label}\nReturn: {return_value:+.2f}%"
-
-                        sel.annotation.set_text(annotation_text)
-                        sel.annotation.get_bbox_patch().set(
-                            facecolor="lightyellow", alpha=0.9, edgecolor="gray"
-                        )
-                        sel.annotation.set_fontsize(8)
-
-                except Exception as e_cursor_bar:
-                    logging.error(
-                        f"Error activating mplcursors for {config['title']} bar chart: {e_cursor_bar}"
-                    )
-            # --- End mplcursors ---
-
-            # Style tweaks - Hide all spines (axes lines)
-            ax.spines["top"].set_visible(False)
-            ax.spines["right"].set_visible(False)
-            ax.spines["bottom"].set_visible(False)
-            ax.spines["left"].set_visible(False)
-            # ax.tick_params(axis="x", colors=COLOR_TEXT_SECONDARY, labelsize=7)
-            # ax.tick_params(axis="y", colors=COLOR_TEXT_SECONDARY, labelsize=7)
-
-            fig = config["ax"].get_figure()
-            fig.tight_layout(pad=0.2)
-            canvas.draw()
 
     def _update_dividend_bar_chart(self):
-        """Updates the dividend history bar chart based on selected period and count."""
-        logging.debug("Updating dividend bar chart...")
-        ax = self.dividend_bar_ax
-        canvas = self.dividend_bar_canvas
-        ax.clear()
+        """Updates the dividend history bar chart using ChartStyler."""
+        logging.debug("Updating dividend bar chart using ChartStyler...")
 
-        # Explicitly set background colors based on current theme
-        fig = ax.get_figure()
-        if fig:
-            fig.patch.set_facecolor(
-                self.QCOLOR_BACKGROUND_THEMED.name()
-            )  # Main background for figure
-        ax.patch.set_facecolor(
-            self.QCOLOR_BACKGROUND_THEMED.name()  # Match dashboard background
-        )  # Input-like background for axes
-
-        if (
-            not hasattr(self, "dividend_history_data")
-            or self.dividend_history_data.empty
-            or not hasattr(
-                self, "dividend_summary_table_model"
-            )  # Check if summary table model exists
-        ):
-            logging.debug(
-                "  _update_dividend_bar_chart: No dividend_history_data or empty."
-            )
-            ax.text(
-                0.5,
-                0.5,
-                "No Dividend Data",
-                ha="center",
-                va="center",
-                transform=ax.transAxes,
-                color=COLOR_TEXT_SECONDARY,
-            )
-            ax.set_title("Dividend History", fontsize=9, weight="bold")
-            canvas.draw()
-            self._update_dividend_summary_table(
-                pd.Series(dtype=float)
-            )  # Clear summary table
-            return
-        logging.debug(
-            f"  _update_dividend_bar_chart: self.dividend_history_data (shape {self.dividend_history_data.shape}):"
-        )
-        if not self.dividend_history_data.empty:
-            logging.debug(f"    Head:\n{self.dividend_history_data.head().to_string()}")
-
-        if (
-            not hasattr(self, "dividend_history_data")
-            or self.dividend_history_data.empty
-        ):
-
-            # This case is handled above, but defensive check
-            return
-
-        df_dividends = self.dividend_history_data.copy()
-        if (
-            "Date" not in df_dividends.columns
-            or "DividendAmountDisplayCurrency" not in df_dividends.columns
-        ):
-            logging.error("Dividend data missing required Date or Amount columns.")
-            ax.text(
-                0.5,
-                0.5,
-                "Invalid Dividend Data",
-                ha="center",
-                va="center",
-                transform=ax.transAxes,
-                color=COLOR_TEXT_SECONDARY,
-            )
-            ax.set_title("Dividend History", fontsize=9, weight="bold")
-            canvas.draw()
-            self._update_dividend_summary_table(
-                pd.Series(dtype=float)
-            )  # Clear summary table
-            return
-
-        df_dividends["Date"] = pd.to_datetime(df_dividends["Date"])
-        df_dividends.set_index("Date", inplace=True)
-
+        df_dividends = self.data_store.get_dividend_history_data()
         period_type = self.dividend_period_combo.currentText()
-        num_periods_to_show = self.dividend_periods_spinbox.value()
-        display_currency_symbol = self._get_currency_symbol()
+        num_periods = self.dividend_periods_spinbox.value()
+        display_currency = self.currency_combo.currentText()
 
-        resample_freq = "YE"  # Annual
-        date_format_str = "%Y"
-        if period_type == "Quarterly":
-            resample_freq = "QE"
-            date_format_str = "%Y-Q%q"
-        elif period_type == "Monthly":
-            resample_freq = "ME"
-            date_format_str = "%Y-%m"
+        # Prepare theme colors
+        theme_colors = {
+            "background": self.QCOLOR_BACKGROUND_THEMED.name(),
+            "text": self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
+            "secondary_text": self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
+            "border": self.QCOLOR_BORDER_THEMED.name(),
+            "gain": self.QCOLOR_GAIN_THEMED.name(),  # Or a specific accent color
+            "loss": self.QCOLOR_LOSS_THEMED.name(),
+            "accent": self.QCOLOR_ACCENT_THEMED.name(),
+        }
 
-        try:
-            # Resample and sum dividends
-            aggregated_dividends = (
-                df_dividends["DividendAmountDisplayCurrency"]
-                .resample(resample_freq)
-                .sum()
-                .dropna()
-            )
-            logging.debug(
-                f"    Aggregated dividends before positive filter (summed & dropna):\n{aggregated_dividends.to_string()}"
-            )
-            aggregated_dividends = aggregated_dividends[
-                aggregated_dividends > 1e-9
-            ]  # Keep only positive sums
-            # logging.debug(
-            #     f"    Aggregated dividends after positive filter (>1e-9):\n{aggregated_dividends.to_string()}"
-            # )
-
-            if aggregated_dividends.empty:
-                ax.text(
-                    0.5,
-                    0.5,
-                    f"No Dividends for {period_type} Periods",
-                    ha="center",
-                    va="center",
-                    transform=ax.transAxes,
-                    color=COLOR_TEXT_SECONDARY,
-                )
-                plot_data_for_table = pd.Series(dtype=float)  # Empty series for table
-            else:
-                plot_data = aggregated_dividends.tail(num_periods_to_show)
-                if plot_data.empty:
-                    ax.text(
-                        0.5,
-                        0.5,
-                        f"No Dividends for Last {num_periods_to_show} {period_type} Periods",
-                        ha="center",
-                        va="center",
-                        transform=ax.transAxes,
-                        color=COLOR_TEXT_SECONDARY,
-                    )
-                    plot_data_for_table = pd.Series(
-                        dtype=float
-                    )  # Empty series for table
-                else:
-                    # Ensure plot_data_for_table is initialized before potentially being used
-                    plot_data_for_table = pd.Series(dtype=float)
-                    # --- MODIFIED: Generate x_labels for quarterly directly ---
-                    if period_type == "Quarterly":
-                        x_labels = [
-                            f"{dt.year}-Q{dt.quarter}" for dt in plot_data.index  # type: ignore
-                        ]
-                    else:
-                        x_labels = plot_data.index.strftime(date_format_str)
-                    # --- END MODIFICATION ---
-                    bars = ax.bar(
-                        x_labels, plot_data.values, color=COLOR_ACCENT_TEAL, width=0.6
-                    )
-
-                    # Add value labels on top of bars
-                    for bar in bars:
-                        yval = bar.get_height()
-                        if (
-                            pd.notna(yval) and abs(yval) > 1e-9
-                        ):  # Only label non-zero bars
-                            ax.text(
-                                bar.get_x() + bar.get_width() / 2.0,
-                                yval + (plot_data.max() * 0.01),  # Slight offset
-                                f"{display_currency_symbol}{yval:,.0f}",
-                                ha="center",
-                                va="bottom",
-                                fontsize=7,
-                                color=self.QCOLOR_TEXT_PRIMARY_THEMED.name(),
-                            )
-
-                    ax.yaxis.set_major_formatter(
-                        mtick.FuncFormatter(
-                            lambda x, p: f"{display_currency_symbol}{x:,.0f}"
-                        )
-                    )
-                    ax.tick_params(axis="x", labelrotation=45, labelsize=7)
-                    ax.tick_params(axis="y", labelsize=7)
-                    plot_data_for_table = plot_data  # Data for summary table
-
-        except Exception as e:
-            logging.error(f"Error generating dividend bar chart: {e}")
-            traceback.print_exc()  # Add traceback
-            ax.text(
-                0.5,
-                0.5,
-                "Error Plotting Dividends",
-                ha="center",
-                va="center",
-                transform=ax.transAxes,
-                color=COLOR_LOSS,
-            )
-
-        self._update_capital_gains_summary_table(plot_data_for_table)
-        scope_display_label = self._get_scope_label_for_charts()
-        ax.set_title(
-            f"{scope_display_label} - {period_type} Dividend Totals ({display_currency_symbol})",
-            fontsize=9,
-            weight="bold",
+        # Use ChartStyler to create the bar chart
+        plot_data_for_table = ChartStyler.style_dividend_bar_chart(
+            ax=self.dividend_bar_ax,
+            canvas=self.dividend_bar_canvas,
+            dividend_history_df=df_dividends,
+            period_type=period_type,
+            num_periods=num_periods,
+            display_currency_symbol=self._get_currency_symbol(get_name=False),
+            theme_colors=theme_colors,
+            scope_label=self._get_scope_label_for_charts(),
+            mplcursors_available=MPLCURSORS_AVAILABLE,
         )
-        ax.set_xlabel("")  # Clear x-axis label as dates are on ticks
-        ax.set_ylabel(f"Total Dividends ({display_currency_symbol})", fontsize=8)
-        ax.grid(True, axis="y", linestyle="--", linewidth=0.5, color=COLOR_BORDER_LIGHT)
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-        self.dividend_bar_fig.tight_layout(pad=0.5)
-        canvas.draw()
 
-        # Update the summary table with the plotted data
+        # Update the summary table with the data that was actually plotted
         self._update_dividend_summary_table(plot_data_for_table)
 
     def _plot_pvc_graph(self, ax, canvas, interval_key, num_periods):
@@ -12890,7 +11515,7 @@ The CSV file should contain the following columns (header names must match exact
             fig.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
         ax.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
 
-        returns_df = self.periodic_returns_data.get(interval_key)
+        returns_df = self.data_store.get_periodic_returns_data().get(interval_key)
         # --- ADDED: Clear previous mplcursors if they exist for this axis ---
         if (
             interval_key == "Y"
@@ -12911,7 +11536,7 @@ The CSV file should contain the following columns (header names must match exact
         ):
             self.pvc_weekly_cursor.remove()
         # --- END ADDED ---
-        value_change_df = self.periodic_value_changes_data.get(interval_key)
+        value_change_df = self.data_store.get_periodic_value_changes_data().get(interval_key)
 
         if value_change_df is None or value_change_df.empty:
             ax.text(
@@ -13063,8 +11688,8 @@ The CSV file should contain the following columns (header names must match exact
     ):
         """Helper to update a single table in the Asset Change tab."""
         original_index_name = None  # Initialize to None
-        percent_returns_df_full = self.periodic_returns_data.get(interval_key)
-        value_changes_df_full = self.periodic_value_changes_data.get(interval_key)
+        percent_returns_df_full = self.data_store.get_periodic_returns_data().get(interval_key)
+        value_changes_df_full = self.data_store.get_periodic_value_changes_data().get(interval_key)
 
         if (percent_returns_df_full is None or percent_returns_df_full.empty) and (
             value_changes_df_full is None or value_changes_df_full.empty
@@ -13434,8 +12059,8 @@ The CSV file should contain the following columns (header names must match exact
         """Updates the dividend history table view."""
         logging.debug("Updating dividend table...")
         if (
-            not hasattr(self, "dividend_history_data")
-            or self.dividend_history_data.empty
+            self.data_store.get_dividend_history_data() is None
+            or self.data_store.get_dividend_history_data().empty
         ):
             logging.debug(
                 "  _update_dividend_table: No dividend_history_data or empty."
@@ -13444,17 +12069,17 @@ The CSV file should contain the following columns (header names must match exact
             return
 
         logging.debug(
-            f"  _update_dividend_table: self.dividend_history_data (shape {self.dividend_history_data.shape}):"
+            f"  _update_dividend_table: self.data_store.get_dividend_history_data() (shape {self.data_store.get_dividend_history_data().shape}):"
         )
-        if not self.dividend_history_data.empty:
-            logging.debug(f"    Head:\n{self.dividend_history_data.head().to_string()}")
+        if not self.data_store.get_dividend_history_data().empty:
+            logging.debug(f"    Head:\n{self.data_store.get_dividend_history_data().head().to_string()}")
 
-        # self.dividend_history_data should already be filtered by account scope from the worker.
+        # self.data_store.get_dividend_history_data() should already be filtered by account scope from the worker.
         # If it's not, the bug is in portfolio_analyzer.extract_dividend_history.
-        # For the table display, we use self.dividend_history_data as is.
+        # For the table display, we use self.data_store.get_dividend_history_data() as is.
         # The title of the group box will be updated to reflect the scope.
 
-        df_display = self.dividend_history_data.copy()
+        df_display = self.data_store.get_dividend_history_data().copy()
 
         # Format columns for display if needed (e.g., date, currency)
         if "Date" in df_display.columns:
@@ -13528,7 +12153,7 @@ The CSV file should contain the following columns (header names must match exact
         ax.patch.set_facecolor(bg_color)
         ax.tick_params(colors=text_color, which="both")
 
-        if self.correlation_matrix_df.empty:
+        if self.data_store.get_correlation_matrix_df() is None or self.data_store.get_correlation_matrix_df().empty:
             ax.text(
                 0.5,
                 0.5,
@@ -13543,7 +12168,7 @@ The CSV file should contain the following columns (header names must match exact
             import seaborn as sns
 
             # Sort the index and columns alphabetically for consistent display
-            sorted_corr_matrix = self.correlation_matrix_df.sort_index(
+            sorted_corr_matrix = self.data_store.get_correlation_matrix_df().sort_index(
                 axis=0
             ).sort_index(axis=1)
             sns.heatmap(
@@ -13561,12 +12186,13 @@ The CSV file should contain the following columns (header names must match exact
     def _update_factor_analysis_display(self):
         """Updates the Factor Analysis display."""
         logging.debug("Updating Factor Analysis display...")
-        if self.factor_analysis_results:
-            params = self.factor_analysis_results.get("params", {})
-            pvalues = self.factor_analysis_results.get("pvalues", {})
-            rsquared = self.factor_analysis_results.get("rsquared", None)
+        factor_analysis_results = self.data_store.get_factor_analysis_results()
+        if factor_analysis_results:
+            params = factor_analysis_results.get("params", {})
+            pvalues = factor_analysis_results.get("pvalues", {})
+            rsquared = factor_analysis_results.get("rsquared", None)
 
-            model_name = self.factor_analysis_results.get(
+            model_name = factor_analysis_results.get(
                 "model_name", "Unknown Factor Model"
             )
 
@@ -13604,11 +12230,12 @@ The CSV file should contain the following columns (header names must match exact
     def _update_scenario_analysis_display(self):
         """Updates the Scenario Analysis display."""
         logging.debug("Updating Scenario Analysis display...")
-        if self.scenario_analysis_result:
-            estimated_return = self.scenario_analysis_result.get(
+        scenario_analysis_result = self.data_store.get_scenario_analysis_result()
+        if scenario_analysis_result:
+            estimated_return = scenario_analysis_result.get(
                 "estimated_portfolio_return", np.nan
             )
-            estimated_impact = self.scenario_analysis_result.get(
+            estimated_impact = scenario_analysis_result.get(
                 "estimated_portfolio_impact", np.nan
             )
             display_currency_symbol = self._get_currency_symbol()
@@ -13711,8 +12338,8 @@ The CSV file should contain the following columns (header names must match exact
         )  # Input-like background for axes
 
         if (
-            not hasattr(self, "capital_gains_history_data")
-            or self.capital_gains_history_data.empty
+            self.data_store.get_capital_gains_history_data() is None
+            or self.data_store.get_capital_gains_history_data().empty
         ):
             logging.debug("  _update_capital_gains_bar_chart: No data or empty.")
             ax.text(
@@ -13731,7 +12358,7 @@ The CSV file should contain the following columns (header names must match exact
             )  # Clear summary table
             return
 
-        df_cg = self.capital_gains_history_data.copy()
+        df_cg = self.data_store.get_capital_gains_history_data().copy()
         if (
             "Date" not in df_cg.columns
             or "Realized Gain (Display)" not in df_cg.columns
@@ -13948,14 +12575,14 @@ The CSV file should contain the following columns (header names must match exact
             return
 
         if (
-            not hasattr(self, "capital_gains_history_data")
-            or self.capital_gains_history_data.empty
+            self.data_store.get_capital_gains_history_data() is None
+            or self.data_store.get_capital_gains_history_data().empty
         ):
             logging.debug("  _update_capital_gains_table: No data or empty.")
             self.cg_table_model.updateData(pd.DataFrame())
             return
 
-        df_display = self.capital_gains_history_data.copy()
+        df_display = self.data_store.get_capital_gains_history_data().copy()
 
         display_currency_symbol = self._get_currency_symbol()
 
@@ -14130,12 +12757,12 @@ The CSV file should contain the following columns (header names must match exact
         # --- Get portfolio symbols for autocompletion ---
         portfolio_symbols_for_dialog = []
         if (
-            hasattr(self, "all_transactions_df_cleaned_for_logic")
-            and not self.all_transactions_df_cleaned_for_logic.empty
-            and "Symbol" in self.all_transactions_df_cleaned_for_logic.columns
+            self.data_store.get_all_transactions_df() is not None
+            and not self.data_store.get_all_transactions_df().empty
+            and "Symbol" in self.data_store.get_all_transactions_df().columns
         ):
             portfolio_symbols_for_dialog = list(
-                self.all_transactions_df_cleaned_for_logic["Symbol"].unique()
+                self.data_store.get_all_transactions_df()["Symbol"].unique()
             )
             # <-- MODIFIED: Removed $CASH exclusion block
         # --- End Get portfolio symbols ---
@@ -14589,7 +13216,28 @@ The CSV file should contain the following columns (header names must match exact
             )
             return
 
-        dialog = FundamentalDataDialog(display_symbol, data, self)
+        themed_colors = {
+            "background": self.QCOLOR_BACKGROUND_THEMED,
+            "text_primary": self.QCOLOR_TEXT_PRIMARY_THEMED,
+            "text_secondary": self.QCOLOR_TEXT_SECONDARY_THEMED,
+            "accent": self.QCOLOR_ACCENT_THEMED,
+            "border": self.QCOLOR_BORDER_THEMED,
+            "gain": self.QCOLOR_GAIN_THEMED,
+            "loss": self.QCOLOR_LOSS_THEMED,
+        }
+
+        local_curr_code = self._get_currency_for_symbol(display_symbol)
+        currency_symbol = self._get_currency_symbol(currency_code=local_curr_code)
+
+        dialog = FundamentalDataDialog(
+            display_symbol,
+            data,
+            themed_colors,
+            currency_symbol,
+            self,
+        )
+        dialog.setFont(self.font())
+        dialog.setStyleSheet(self.styleSheet())
         dialog.exec()
 
     @Slot(str)

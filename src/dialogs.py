@@ -93,20 +93,20 @@ class FundamentalDataDialog(QDialog):
     """Dialog to display fundamental stock data."""
 
     def __init__(
-        self, display_symbol: str, fundamental_data_dict: Dict[str, Any], parent=None
+        self,
+        display_symbol: str,
+        fundamental_data_dict: Dict[str, Any],
+        themed_colors: Dict[str, QColor],
+        currency_symbol: str,
+        parent=None,
     ):
         super().__init__(parent)
         self.setWindowTitle(f"Fundamental Data: {display_symbol}")
-        self.setMinimumSize(700, 750)  # Increased size for tabs
-        self.setFont(
-            parent.font()
-            if parent and hasattr(parent, "font")
-            else QFont("Arial", 10)  # Added hasattr check
-        )  # Inherit font from parent app
-        self._parent_app = parent  # Store parent reference to access methods
-        self.display_symbol_for_title = (
-            display_symbol  # Store for use in _dialog_format_value
-        )
+        self.setMinimumSize(700, 750)
+        self._themed_colors = themed_colors
+        self._currency_symbol = currency_symbol
+        self.display_symbol_for_title = display_symbol
+
         main_layout = QVBoxLayout(self)
 
         # --- Tab Widget ---
@@ -115,10 +115,8 @@ class FundamentalDataDialog(QDialog):
 
         # --- Tab 1: Overview (Existing Content) ---
         overview_tab = QWidget()
-        overview_tab.setObjectName("OverviewTab")  # Add object name
-        self._populate_overview_tab(
-            overview_tab, fundamental_data_dict
-        )  # display_symbol removed from call
+        overview_tab.setObjectName("OverviewTab")
+        self._populate_overview_tab(overview_tab, fundamental_data_dict)
         self.tab_widget.addTab(overview_tab, "Overview")
 
         # --- Tab 2: Income Statement (New) ---
@@ -154,9 +152,7 @@ class FundamentalDataDialog(QDialog):
         self.tab_widget.addTab(cash_flow_tab, "Cash Flow")
 
         # --- Tab 5: Key Ratios ---
-        self.key_ratios_tab = (
-            QWidget()
-        )  # Ensure this attribute exists if referenced elsewhere
+        self.key_ratios_tab = QWidget()
         self.key_ratios_tab.setObjectName("KeyRatiosTab")
         self._setup_key_ratios_tab(
             self.key_ratios_tab, fundamental_data_dict.get("key_ratios_timeseries")
@@ -168,23 +164,9 @@ class FundamentalDataDialog(QDialog):
         button_box.accepted.connect(self.accept)
         main_layout.addWidget(button_box)
 
-        if parent and hasattr(parent, "styleSheet"):
-            self.setStyleSheet(parent.styleSheet())
-
     def _get_dialog_currency_symbol(self):
-        """Helper to get currency symbol based on the dialog's main symbol."""
-        currency_symbol = "$"  # Default
-        if self._parent_app and hasattr(self._parent_app, "_get_currency_symbol"):
-            local_curr_code = self._parent_app._get_currency_for_symbol(
-                self.display_symbol_for_title
-            )
-            if local_curr_code:
-                currency_symbol = self._parent_app._get_currency_symbol(
-                    currency_code=local_curr_code
-                )
-            else:  # Fallback to app's default display currency
-                currency_symbol = self._parent_app._get_currency_symbol()
-        return currency_symbol
+        """Helper to get currency symbol for the dialog."""
+        return self._currency_symbol
 
     def _dialog_format_value(self, key, value) -> Tuple[str, Optional[QColor]]:
         if value is None or pd.isna(value):
@@ -307,17 +289,9 @@ class FundamentalDataDialog(QDialog):
             # --- Start Color Logic ---
             if key in COLOR_CODED_KEYS:
                 if value > 0:
-                    color = (
-                        self._parent_app.QCOLOR_GAIN_THEMED
-                        if self._parent_app
-                        else FALLBACK_QCOLOR_GAIN
-                    )
+                    color = self._themed_colors.get("gain", FALLBACK_QCOLOR_GAIN)
                 elif value < 0:
-                    color = (
-                        self._parent_app.QCOLOR_LOSS_THEMED
-                        if self._parent_app
-                        else FALLBACK_QCOLOR_LOSS
-                    )
+                    color = self._themed_colors.get("loss", FALLBACK_QCOLOR_LOSS)
             # --- End Color Logic ---
 
             if key in LARGE_CURRENCY_KEYS:
@@ -468,11 +442,12 @@ class FundamentalDataDialog(QDialog):
         # Pass the financial statement flag and currency override to the model
         model = PandasModel(
             display_df_for_model,
-            parent=self._parent_app,
+            parent=self,  # parent is still needed for some fallback styling
             log_mode=True,
             is_financial_statement_model=True,
             currency_symbol_override=self._get_dialog_currency_symbol(),
-        )  # Use _parent_app
+            themed_colors=self._themed_colors,
+        )
         table_view.setModel(model)
 
         if not (initial_df_to_display is None or initial_df_to_display.empty):
@@ -880,10 +855,11 @@ class FundamentalDataDialog(QDialog):
         # For Key Ratios, we don't want the "millions" formatting.
         model = PandasModel(
             display_df_for_model,
-            parent=self._parent_app,  # parent should be PortfolioApp for themes
+            parent=self,
             log_mode=True,
             is_financial_statement_model=False,  # Key Ratios are not large currency values
-        )  # log_mode for direct display
+            themed_colors=self._themed_colors,
+        )
         table_view.setModel(model)
 
         if not (ratios_df is None or ratios_df.empty):
@@ -1144,38 +1120,15 @@ class SymbolChartDialog(QDialog):
         start_date: date,
         end_date: date,
         price_data: pd.DataFrame,
-        display_currency: str,  # display_currency is the CODE (e.g., "USD") passed in
+        currency_symbol: str,
+        currency_code: str,
+        themed_colors: Dict[str, QColor],
         parent=None,
     ):
-        """
-        Initializes the dialog and plots the historical data.
-
-        Args:
-            symbol (str): The symbol whose data is being plotted.
-            start_date (date): The start date for the x-axis limit.
-            end_date (date): The end date for the x-axis limit.
-            price_data (pd.DataFrame): DataFrame indexed by date, with a 'price' column
-                                        containing historical prices (should be adjusted).
-            display_currency (str): The currency the prices *should* represent (used for axis label).
-                                    Note: This dialog doesn't perform FX conversion itself;
-                                    it assumes the input price_data is already effectively
-                                    in the desired display context if needed, although typically
-                                    stock charts show local price. Let's label with local for now.
-            parent (QWidget, optional): Parent widget. Defaults to None.
-        """
         super().__init__(parent)
         self._symbol = symbol
-        # Determine the likely local currency for labelling - requires parent access or passing it in.
-        # For now, let's assume the parent (PortfolioApp) can provide it.
-        self._local_currency_symbol = "$"  # Default
-        if parent and hasattr(parent, "_get_currency_for_symbol"):
-            local_curr_code = parent._get_currency_for_symbol(
-                symbol
-            )  # Need to implement this helper in PortfolioApp
-            if local_curr_code and hasattr(parent, "_get_currency_symbol"):
-                self._local_currency_symbol = parent._get_currency_symbol(
-                    currency_code=local_curr_code
-                )
+        self._local_currency_symbol = currency_symbol
+        self._themed_colors = themed_colors
 
         self.setWindowTitle(f"Historical Price Chart: {symbol}")
         self.setMinimumSize(700, 500)  # Good default size
@@ -1257,17 +1210,25 @@ class SymbolChartDialog(QDialog):
         ax = self.ax
         ax.clear()
 
-        # Explicitly set background colors based on current theme
-        # Both figure and axes should match the main dashboard background
-        bg_color = (
-            self.parent().QCOLOR_BACKGROUND_THEMED.name()
-            if self.parent()
-            else FALLBACK_QCOLOR_BG_DARK.name()
-        )
-        fig_bg_color = bg_color
-        ax_bg_color = bg_color
+        # Use themed colors for chart elements
+        bg_color = self._themed_colors.get(
+            "background", FALLBACK_QCOLOR_BG_DARK
+        ).name()
+        text_primary_color = self._themed_colors.get(
+            "text_primary", FALLBACK_QCOLOR_TEXT_DARK
+        ).name()
+        text_secondary_color = self._themed_colors.get(
+            "text_secondary", FALLBACK_QCOLOR_TEXT_SECONDARY
+        ).name()
+        accent_color = self._themed_colors.get(
+            "accent", FALLBACK_QCOLOR_ACCENT_TEAL
+        ).name()
+        border_color = self._themed_colors.get(
+            "border", FALLBACK_QCOLOR_BORDER_LIGHT
+        ).name()
+        loss_color = self._themed_colors.get("loss", FALLBACK_QCOLOR_LOSS).name()
 
-        self.figure.patch.set_facecolor(fig_bg_color)
+        self.figure.patch.set_facecolor(bg_color)
         ax.patch.set_facecolor(ax_bg_color)
 
         if price_data is None or price_data.empty or "price" not in price_data.columns:
@@ -1279,23 +1240,13 @@ class SymbolChartDialog(QDialog):
                 va="center",
                 transform=ax.transAxes,
                 fontsize=12,
-                color=(
-                    self.parent().QCOLOR_TEXT_SECONDARY_THEMED.name()
-                    if self.parent()
-                    and hasattr(self.parent(), "QCOLOR_TEXT_SECONDARY_THEMED")
-                    else FALLBACK_QCOLOR_TEXT_SECONDARY.name()
-                ),
+                color=text_secondary_color,
             )
             ax.set_title(
                 f"Price Chart: {symbol}",
                 fontsize=10,
                 weight="bold",
-                color=(
-                    self.parent().QCOLOR_TEXT_PRIMARY_THEMED.name()
-                    if self.parent()
-                    and hasattr(self.parent(), "QCOLOR_TEXT_PRIMARY_THEMED")
-                    else FALLBACK_QCOLOR_TEXT_DARK.name()
-                ),
+                color=text_primary_color,
             )
             self.canvas.draw()
             return
@@ -1315,11 +1266,7 @@ class SymbolChartDialog(QDialog):
                 va="center",
                 transform=ax.transAxes,
                 fontsize=12,
-                color=(
-                    self.parent().QCOLOR_LOSS_THEMED.name()
-                    if self.parent() and hasattr(self.parent(), "QCOLOR_LOSS_THEMED")
-                    else FALLBACK_QCOLOR_LOSS.name()
-                ),
+                color=loss_color,
             )
             self.canvas.draw()
             return
@@ -1329,58 +1276,26 @@ class SymbolChartDialog(QDialog):
             price_data.index,
             price_data["price"],
             label=f"{symbol} Price ({currency_symbol_display})",
-            color=(
-                self.parent().QCOLOR_ACCENT_THEMED.name()
-                if self.parent() and hasattr(self.parent(), "QCOLOR_ACCENT_THEMED")
-                else FALLBACK_QCOLOR_ACCENT_TEAL.name()
-            ),
+            color=accent_color,
         )
 
         # Formatting
-        title_color_name = (
-            self.parent().QCOLOR_TEXT_PRIMARY_THEMED.name()
-            if self.parent() and hasattr(self.parent(), "QCOLOR_TEXT_PRIMARY_THEMED")
-            else FALLBACK_QCOLOR_TEXT_DARK.name()
-        )
-        label_color_name = (
-            self.parent().QCOLOR_TEXT_PRIMARY_THEMED.name()
-            if self.parent() and hasattr(self.parent(), "QCOLOR_TEXT_PRIMARY_THEMED")
-            else FALLBACK_QCOLOR_TEXT_DARK.name()
-        )
-        tick_color_name = (
-            self.parent().QCOLOR_TEXT_SECONDARY_THEMED.name()
-            if self.parent() and hasattr(self.parent(), "QCOLOR_TEXT_SECONDARY_THEMED")
-            else FALLBACK_QCOLOR_TEXT_SECONDARY.name()
-        )
-        grid_color_name = (
-            self.parent().QCOLOR_BORDER_THEMED.name()
-            if self.parent() and hasattr(self.parent(), "QCOLOR_BORDER_THEMED")
-            else FALLBACK_QCOLOR_BORDER_LIGHT.name()
-        )
-        spine_color_name = (
-            self.parent().QCOLOR_BORDER_THEMED.name()
-            if self.parent() and hasattr(self.parent(), "QCOLOR_BORDER_THEMED")
-            else FALLBACK_QCOLOR_BORDER_DARK.name()
-        )
-
         ax.set_title(
             f"Historical Price: {symbol}",
             fontsize=10,
             weight="bold",
-            color=title_color_name,
+            color=text_primary_color,
         )
         ax.set_ylabel(
-            f"Price ({currency_symbol_display})", fontsize=9, color=label_color_name
+            f"Price ({currency_symbol_display})", fontsize=9, color=text_primary_color
         )
-        ax.grid(
-            True, which="major", linestyle="--", linewidth=0.5, color=grid_color_name
-        )
+        ax.grid(True, which="major", linestyle="--", linewidth=0.5, color=border_color)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
-        ax.spines["bottom"].set_color(spine_color_name)
-        ax.spines["left"].set_color(spine_color_name)
-        ax.tick_params(axis="x", colors=tick_color_name, labelsize=8)
-        ax.tick_params(axis="y", colors=tick_color_name, labelsize=8)
+        ax.spines["bottom"].set_color(border_color)
+        ax.spines["left"].set_color(border_color)
+        ax.tick_params(axis="x", colors=text_secondary_color, labelsize=8)
+        ax.tick_params(axis="y", colors=text_secondary_color, labelsize=8)
 
         # Y-axis formatting (simplified currency)
         formatter = mtick.FormatStrFormatter(f"{currency_symbol_display}%.2f")

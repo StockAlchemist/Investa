@@ -4,6 +4,11 @@ import sys
 from typing import Dict, Any, Optional
 from datetime import date, timedelta
 import config
+import pandas as pd
+import numpy as np
+import matplotlib.ticker as mtick
+import logging
+import traceback
 
 from config import (
     DEBOUNCE_INTERVAL_MS,
@@ -161,6 +166,194 @@ def get_column_definitions(display_currency="USD"):
     }
 
 
+import matplotlib.pyplot as plt
+from config import (
+    COLOR_TEXT_DARK,
+    COLOR_TEXT_SECONDARY,
+    COLOR_BORDER_LIGHT,
+    COLOR_BORDER_DARK,
+    DARK_COLOR_TEXT_LIGHT,
+    DARK_COLOR_BORDER,
+    DARK_COLOR_BG_DARK,
+)
+
+class ChartStyler:
+    """A class to centralize chart styling."""
+
+    def __init__(self, theme='light'):
+        self.theme = theme
+        self.primary_text_color = COLOR_TEXT_DARK if theme == 'light' else DARK_COLOR_TEXT_LIGHT
+        self.secondary_text_color = COLOR_TEXT_SECONDARY if theme == 'light' else DARK_COLOR_TEXT_LIGHT
+        self.border_color = COLOR_BORDER_LIGHT if theme == 'light' else DARK_COLOR_BORDER
+        self.grid_color = COLOR_BORDER_DARK if theme == 'light' else DARK_COLOR_BORDER
+        self.bg_color = 'white' if theme == 'light' else DARK_COLOR_BG_DARK
+
+    def style_figure(self, fig):
+        """Styles the figure background."""
+        fig.patch.set_facecolor(self.bg_color)
+
+    def style_axes(self, ax):
+        """Styles the axes of a chart."""
+        ax.patch.set_facecolor(self.bg_color)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['bottom'].set_color(self.border_color)
+        ax.spines['left'].set_color(self.border_color)
+        ax.tick_params(axis='x', colors=self.secondary_text_color, labelsize=8)
+        ax.tick_params(axis='y', colors=self.secondary_text_color, labelsize=8)
+        ax.xaxis.label.set_color(self.primary_text_color)
+        ax.yaxis.label.set_color(self.primary_text_color)
+        ax.title.set_color(self.primary_text_color)
+        ax.grid(True, which='major', linestyle='--', linewidth=0.5, color=self.grid_color)
+
+    def style_pie_chart(self, ax):
+        """Specific styling for pie charts."""
+        ax.axis('equal')
+
+    def style_bar_chart(self, ax):
+        """Specific styling for bar charts."""
+        ax.axhline(0, color=self.border_color, linewidth=0.6)
+
+    @staticmethod
+    def style_dividend_bar_chart(
+        ax,
+        canvas,
+        dividend_history_df,
+        period_type,
+        num_periods,
+        display_currency_symbol,
+        theme_colors,
+        scope_label,
+        mplcursors_available,
+    ):
+        """
+        Styles a bar chart for displaying historical dividends.
+
+        Args:
+            ax (matplotlib.axes.Axes): The axes object to plot on.
+            canvas (FigureCanvasQTAgg): The canvas to redraw.
+            dividend_history_df (pd.DataFrame): DataFrame with dividend history.
+            period_type (str): Aggregation period ('Annual', 'Quarterly', 'Monthly').
+            num_periods (int): Number of periods to display.
+            display_currency_symbol (str): The currency symbol for labels.
+            theme_colors (dict): A dictionary of theme colors.
+            scope_label (str): The scope label for the chart title.
+            mplcursors_available (bool): Flag indicating if mplcursors is available.
+
+        Returns:
+            pd.Series: The data that was plotted on the chart.
+        """
+        logging.debug("Styling dividend bar chart...")
+        ax.clear()
+        fig = ax.get_figure()
+        if fig:
+            fig.patch.set_facecolor(theme_colors.get("background", "#FFFFFF"))
+        ax.patch.set_facecolor(theme_colors.get("background", "#FFFFFF"))
+
+        if dividend_history_df is None or dividend_history_df.empty:
+            ax.text(
+                0.5, 0.5, "No Dividend Data", ha="center", va="center", transform=ax.transAxes,
+                color=theme_colors.get("secondary_text", "#555555")
+            )
+            ax.set_title("Dividend History", fontsize=9, weight="bold", color=theme_colors.get("text", "#000000"))
+            canvas.draw()
+            return pd.Series(dtype=float)
+
+        df_dividends = dividend_history_df.copy()
+        if "Date" not in df_dividends.columns or "DividendAmountDisplayCurrency" not in df_dividends.columns:
+            logging.error("Dividend data missing required Date or Amount columns.")
+            ax.text(
+                0.5, 0.5, "Invalid Dividend Data", ha="center", va="center", transform=ax.transAxes,
+                color=theme_colors.get("secondary_text", "#555555")
+            )
+            ax.set_title("Dividend History", fontsize=9, weight="bold", color=theme_colors.get("text", "#000000"))
+            canvas.draw()
+            return pd.Series(dtype=float)
+
+        df_dividends["Date"] = pd.to_datetime(df_dividends["Date"])
+        df_dividends.set_index("Date", inplace=True)
+
+        resample_freq = "YE"
+        date_format_str = "%Y"
+        if period_type == "Quarterly":
+            resample_freq = "QE"
+            date_format_str = "%Y-Q%q"
+        elif period_type == "Monthly":
+            resample_freq = "ME"
+            date_format_str = "%Y-%m"
+
+        plot_data_for_table = pd.Series(dtype=float)
+        try:
+            aggregated_dividends = (
+                df_dividends["DividendAmountDisplayCurrency"]
+                .resample(resample_freq)
+                .sum()
+                .dropna()
+            )
+            aggregated_dividends = aggregated_dividends[aggregated_dividends > 1e-9]
+
+            if aggregated_dividends.empty:
+                ax.text(
+                    0.5, 0.5, f"No Dividends for {period_type} Periods", ha="center", va="center", transform=ax.transAxes,
+                    color=theme_colors.get("secondary_text", "#555555")
+                )
+            else:
+                plot_data = aggregated_dividends.tail(num_periods)
+                if plot_data.empty:
+                    ax.text(
+                        0.5, 0.5, f"No Dividends for Last {num_periods} {period_type} Periods", ha="center", va="center", transform=ax.transAxes,
+                        color=theme_colors.get("secondary_text", "#555555")
+                    )
+                else:
+                    plot_data_for_table = plot_data
+                    if period_type == "Quarterly":
+                        x_labels = [f"{dt.year}-Q{dt.quarter}" for dt in plot_data.index]
+                    else:
+                        x_labels = plot_data.index.strftime(date_format_str)
+
+                    bars = ax.bar(x_labels, plot_data.values, color=theme_colors.get("accent", "#17A2B8"), width=0.6)
+
+                    for bar in bars:
+                        yval = bar.get_height()
+                        if pd.notna(yval) and abs(yval) > 1e-9:
+                            ax.text(
+                                bar.get_x() + bar.get_width() / 2.0,
+                                yval + (plot_data.max() * 0.01),
+                                f"{display_currency_symbol}{yval:,.0f}",
+                                ha="center", va="bottom", fontsize=7, color=theme_colors.get("text", "#000000")
+                            )
+
+                    ax.yaxis.set_major_formatter(
+                        mtick.FuncFormatter(lambda x, p: f"{display_currency_symbol}{x:,.0f}")
+                    )
+                    ax.tick_params(axis="x", labelrotation=45, labelsize=7, colors=theme_colors.get("secondary_text", "#555555"))
+                    ax.tick_params(axis="y", labelsize=7, colors=theme_colors.get("secondary_text", "#555555"))
+
+        except Exception as e:
+            logging.error(f"Error generating dividend bar chart: {e}")
+            traceback.print_exc()
+            ax.text(
+                0.5, 0.5, "Error Plotting Dividends", ha="center", va="center", transform=ax.transAxes,
+                color=theme_colors.get("loss", "#DC3545")
+            )
+
+        ax.set_title(
+            f"{scope_label} - {period_type} Dividend Totals ({display_currency_symbol})",
+            fontsize=9, weight="bold", color=theme_colors.get("text", "#000000")
+        )
+        ax.set_xlabel("")
+        ax.set_ylabel(f"Total Dividends ({display_currency_symbol})", fontsize=8, color=theme_colors.get("text", "#000000"))
+        ax.grid(True, axis="y", linestyle="--", linewidth=0.5, color=theme_colors.get("border", "#CCCCCC"))
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["bottom"].set_color(theme_colors.get("border", "#CCCCCC"))
+        ax.spines["left"].set_color(theme_colors.get("border", "#CCCCCC"))
+
+        fig.tight_layout(pad=0.5)
+        canvas.draw()
+
+        return plot_data_for_table
+
 # --- Helper Classes for Background Processing ---
 
 from PySide6.QtWidgets import QStyledItemDelegate, QStyle
@@ -174,3 +367,54 @@ class GroupHeaderDelegate(QStyledItemDelegate):
 
     def paint(self, painter, option, index):
         super().paint(painter, option, index)
+
+
+from PySide6.QtGui import QAction, QIcon
+from PySide6.QtWidgets import QStyle
+
+def create_themed_action(
+    parent,
+    text: str,
+    icon_spec: Dict[str, Any],
+    slot,
+    status_tip: str,
+    shortcut: Optional[str] = None,
+) -> QAction:
+    """
+    Creates a QAction with themed icons.
+
+    Args:
+        parent: The parent widget.
+        text (str): The text for the action.
+        icon_spec (Dict[str, Any]): A dictionary specifying the icons for light and dark themes.
+        slot: The slot to connect to the action's `triggered` signal.
+        status_tip (str): The status tip for the action.
+        shortcut (Optional[str], optional): The shortcut for the action. Defaults to None.
+
+    Returns:
+        QAction: The created QAction.
+    """
+    action = QAction(text, parent)
+    action.setStatusTip(status_tip)
+    if shortcut:
+        action.setShortcut(shortcut)
+    action.triggered.connect(slot)
+
+    # Set icon based on current theme (this will be updated when theme changes)
+    theme = parent.current_theme if hasattr(parent, "current_theme") else "light"
+    spec = icon_spec.get(theme, icon_spec["light"])
+    icon_type, primary_spec, *fallback_spec_tuple = spec
+    fallback_spec = fallback_spec_tuple[0] if fallback_spec_tuple else None
+
+    icon = QIcon()
+    if icon_type == "theme":
+        icon = QIcon.fromTheme(primary_spec)
+        if icon.isNull() and fallback_spec:
+            icon = parent.style().standardIcon(fallback_spec)
+    elif icon_type == "sp":
+        icon = parent.style().standardIcon(primary_spec)
+        if icon.isNull() and fallback_spec:
+            icon = parent.style().standardIcon(fallback_spec)
+
+    action.setIcon(icon)
+    return action

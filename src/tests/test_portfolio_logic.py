@@ -286,3 +286,182 @@ def test_calculate_historical_performance_basic(
 # - Test different intervals
 # - Test edge cases (e.g., no transactions in range)
 # - Test specific transaction types if logic is complex (though unit tests are better for that)
+
+
+def test_calculate_portfolio_summary_thb_display(
+    sample_csv_filepath, default_account_map, default_base_currency, mocker
+):
+    """
+    Tests calculate_portfolio_summary with THB as the display currency.
+    """
+    mocker.patch(
+        "portfolio_logic.MarketDataProvider.get_current_quotes",
+        return_value=(
+            {
+                "AAPL": {"price": 190.0, "change": 1.0, "changesPercentage": 0.5},
+                "MSFT": {"price": 350.0, "change": 2.0, "changesPercentage": 0.6},
+            },
+            {"THB": 35.0},
+            False,
+            False,
+        ),
+    )
+    display_currency = "THB"
+    show_closed = False
+    include_accounts = None
+    manual_overrides = {
+        "DELTA.BK": {"price": 80.00}
+    }
+
+    # Load transactions
+    (
+        loaded_tx_df,
+        loaded_orig_df,
+        loaded_ignored_indices,
+        loaded_ignored_reasons,
+        _,
+        _,
+        _,
+    ) = load_and_clean_transactions(
+        sample_csv_filepath, default_account_map, default_base_currency
+    )
+    assert loaded_tx_df is not None, "Test setup: Failed to load sample transactions"
+
+    # Call the function under test
+    summary_metrics, holdings_df, _, _, _, status = (
+        calculate_portfolio_summary(
+            all_transactions_df_cleaned=loaded_tx_df,
+            original_transactions_df_for_ignored=loaded_orig_df,
+            ignored_indices_from_load=loaded_ignored_indices,
+            ignored_reasons_from_load=loaded_ignored_reasons,
+            display_currency=display_currency,
+            show_closed_positions=show_closed,
+            include_accounts=include_accounts,
+            manual_overrides_dict=manual_overrides,
+            user_symbol_map={},
+            user_excluded_symbols=set(),
+        )
+    )
+
+    # Assertions
+    assert "Error" not in status, f"Status indicates error: {status}"
+    assert isinstance(summary_metrics, dict)
+    assert "market_value" in summary_metrics
+    # Approximate expected value in THB
+    assert summary_metrics["market_value"] == pytest.approx(92940, abs=1000)
+
+    # Check DELTA.BK market value in THB
+    delta_set = holdings_df[
+        (holdings_df["Symbol"] == "DELTA.BK") & (holdings_df["Account"] == "SET")
+    ]
+    assert not delta_set.empty
+    assert delta_set.iloc[0][f"Market Value ({display_currency})"] == pytest.approx(
+        8000.0, abs=100
+    )
+
+
+def test_calculate_portfolio_summary_show_closed(
+    sample_csv_filepath, default_account_map, default_base_currency
+):
+    """
+    Tests that 'show_closed_positions=True' includes holdings with zero quantity.
+    """
+    display_currency = "USD"
+    show_closed = True  # Key parameter for this test
+    include_accounts = None
+    manual_overrides = {
+        "DELTA.BK": {"price": 80.00}
+    }
+
+    # Load transactions
+    (
+        loaded_tx_df,
+        loaded_orig_df,
+        loaded_ignored_indices,
+        loaded_ignored_reasons,
+        _,
+        _,
+        _,
+    ) = load_and_clean_transactions(
+        sample_csv_filepath, default_account_map, default_base_currency
+    )
+    assert loaded_tx_df is not None, "Test setup: Failed to load sample transactions"
+
+    # Call the function under test
+    _, holdings_df, _, _, _, status = calculate_portfolio_summary(
+        all_transactions_df_cleaned=loaded_tx_df,
+        original_transactions_df_for_ignored=loaded_orig_df,
+        ignored_indices_from_load=loaded_ignored_indices,
+        ignored_reasons_from_load=loaded_ignored_reasons,
+        display_currency=display_currency,
+        show_closed_positions=show_closed,
+        include_accounts=include_accounts,
+        manual_overrides_dict=manual_overrides,
+        user_symbol_map={},
+        user_excluded_symbols=set(),
+    )
+
+    # Assertions
+    assert "Error" not in status, f"Status indicates error: {status}"
+    assert not holdings_df.empty
+
+    # In sample_transactions.csv, 'MSFT' is bought and then fully sold.
+    # It should appear in the holdings_df when show_closed is True.
+    msft_holding = holdings_df[
+        (holdings_df["Symbol"] == "MSFT") & (holdings_df["Account"] == "IBKR")
+    ]
+    assert not msft_holding.empty, "Closed position 'MSFT' should be present"
+    assert msft_holding.iloc[0]["Quantity"] == pytest.approx(0.0)
+
+
+def test_calculate_portfolio_summary_single_account(
+    sample_csv_filepath, default_account_map, default_base_currency
+):
+    """
+    Tests that filtering by a single account works correctly.
+    """
+    display_currency = "USD"
+    show_closed = False
+    include_accounts = ["IBKR"]  # Key parameter for this test
+    manual_overrides = {
+        "DELTA.BK": {"price": 80.00}
+    }
+
+    # Load transactions
+    (
+        loaded_tx_df,
+        loaded_orig_df,
+        loaded_ignored_indices,
+        loaded_ignored_reasons,
+        _,
+        _,
+        _,
+    ) = load_and_clean_transactions(
+        sample_csv_filepath, default_account_map, default_base_currency
+    )
+    assert loaded_tx_df is not None, "Test setup: Failed to load sample transactions"
+
+    # Call the function under test
+    summary_metrics, holdings_df, account_metrics, _, _, status = (
+        calculate_portfolio_summary(
+            all_transactions_df_cleaned=loaded_tx_df,
+            original_transactions_df_for_ignored=loaded_orig_df,
+            ignored_indices_from_load=loaded_ignored_indices,
+            ignored_reasons_from_load=loaded_ignored_reasons,
+            display_currency=display_currency,
+            show_closed_positions=show_closed,
+            include_accounts=include_accounts,
+            manual_overrides_dict=manual_overrides,
+            user_symbol_map={},
+            user_excluded_symbols=set(),
+        )
+    )
+
+    # Assertions
+    assert "Error" not in status, f"Status indicates error: {status}"
+    assert "SET" not in account_metrics  # SET account should be excluded
+    assert "IBKR" in account_metrics
+    assert len(account_metrics) == 1
+
+    # Check that holdings_df only contains IBKR account
+    assert holdings_df["Account"].unique().tolist() == ["IBKR"]

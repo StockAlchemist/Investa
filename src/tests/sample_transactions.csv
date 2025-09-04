@@ -8,3 +8,4 @@ Jun 15, 2023,Withdrawal,$CASH,10000,,,50.00,SET,,Withdraw THB
 Jan 01, 2024,Split,AAPL,,,,,IBKR,2.0,AAPL 2:1 Split
 Aug 10, 2023,Fees,$CASH,,,,2.00,IBKR,,Account Fee IBKR
 Sep 01, 2023,Buy,DELTA.BK,100,75.00,,15.00,SET,,Buy DELTA in THB
+Oct 15, 2023,Sell,MSFT,5,300.00,,5.00,IBKR,,Sell MSFT

@@ -741,16 +741,26 @@ def _calculate_cash_balances(
         if not cash_transactions.empty:
 
             def get_signed_quantity_cash(row):
-                type_lower = str(row.get("Type", "")).lower()
-                qty = pd.to_numeric(row.get("Quantity"), errors="coerce")
-                return (
+                """Calculates cash flow including commission impact."""  # <-- Corrected Indentation
+                type_lower = str(row.get("Type", "")).lower()  # <-- Corrected Indentation
+                qty = pd.to_numeric(
+                    row.get("Quantity"), errors="coerce"
+                )  # <-- Corrected Indentation
+                commission_raw = pd.to_numeric(row.get("Commission"), errors="coerce")
+                commission = 0.0 if pd.isna(commission_raw) else float(commission_raw)
+
+                return (  # <-- Corrected Indentation
                     0.0
                     if pd.isna(qty)
                     else (
-                        abs(qty)
-                        if type_lower in ["buy", "deposit"]
+                        # Deposit: Increase cash by quantity MINUS commission
+                        abs(qty) - commission
+                        if type_lower == "deposit"
+                        # Withdrawal: Decrease cash by quantity PLUS commission
                         else (
-                            -abs(qty) if type_lower in ["sell", "withdrawal"] else 0.0
+                            -(abs(qty) + commission)
+                            if type_lower == "withdrawal"
+                            else 0.0
                         )
                     )
                 )
@@ -858,6 +868,7 @@ def _build_summary_rows(
     manual_prices_dict: Dict[
         str, float
     ],  # This is just the price part of manual_overrides
+    include_accounts: Optional[List[str]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, float], Dict[str, str], bool, bool]:
     """
     Builds the detailed list of portfolio summary rows, converting values to the display currency.
@@ -1397,8 +1408,8 @@ def _build_summary_rows(
                 ] += commissions_display_for_acc_cash
 
     # --- Add a single aggregated cash row if there's any cash ---
-    # Or always add it, even if zero, for consistency. Let's always add it.
-    if True:  # Always add the aggregated cash line
+    # Only add the aggregated cash row if all accounts are included in the scope.
+    if not include_accounts:  # None or empty list implies all accounts
         total_cash_mv_display = aggregated_cash_details["market_value_display"]
         total_cash_div_display = aggregated_cash_details["dividends_display"]
         total_cash_comm_display = aggregated_cash_details["commissions_display"]
@@ -1559,6 +1570,8 @@ def _calculate_aggregate_metrics(
 
     unique_accounts_in_summary = full_summary_df["Account"].unique()
     for account in unique_accounts_in_summary:
+        if account == _AGGREGATE_CASH_ACCOUNT_NAME_:
+            continue
         try:
             account_full_df = full_summary_df[full_summary_df["Account"] == account]
             metrics_entry = account_level_metrics[account]

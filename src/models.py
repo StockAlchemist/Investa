@@ -62,7 +62,13 @@ class PandasModel(QAbstractTableModel):
         self._currency_symbol_override = kwargs.get("currency_symbol_override", None)
         # --- END ADDED ---
         # In PandasModel, access themed colors via the parent (PortfolioApp instance)
-        if (
+        themed_colors = kwargs.get("themed_colors")
+        if themed_colors:
+            self._default_text_color = themed_colors.get("text_primary", QColor(config.COLOR_TEXT_DARK))
+            self._gain_color = themed_colors.get("gain", QColor(config.COLOR_GAIN))
+            self._loss_color = themed_colors.get("loss", QColor(config.COLOR_LOSS))
+            logging.debug("PandasModel initialized with themed_colors dict.")
+        elif (
             parent
             and hasattr(parent, "QCOLOR_TEXT_PRIMARY_THEMED")
             and hasattr(parent, "QCOLOR_GAIN_THEMED")
@@ -73,9 +79,7 @@ class PandasModel(QAbstractTableModel):
             self._loss_color = parent.QCOLOR_LOSS_THEMED
             logging.debug("PandasModel initialized with themed colors from parent.")
         else:  # Fallback if parent or themed colors are not available
-            self._default_text_color = QColor(
-                config.COLOR_TEXT_DARK
-            )  # Fallback to default config
+            self._default_text_color = QColor(config.COLOR_TEXT_DARK)
             self._gain_color = QColor(config.COLOR_GAIN)
             self._loss_color = QColor(config.COLOR_LOSS)
             logging.warning("PandasModel initialized with fallback colors.")
@@ -563,27 +567,19 @@ class PandasModel(QAbstractTableModel):
                 # --- Formatting based on value type and column name ---
                 if isinstance(original_value, (int, float, np.number)):
                     value_float = float(original_value)
-                    display_value_float = abs(
-                        value_float
-                    )  # This variable is unused and can be removed
-                    if abs(value_float) < 1e-9:
-                        display_value_float = (
-                            0.0  # This variable is unused and can be removed
-                        )
 
                     if "Quantity" in col_name:
-                        return f"{value_float:,.4f}"
+                        return format_float_with_commas(value_float, decimals=4)
 
                     elif "%" in col_name:
                         if np.isinf(value_float):
                             return "Inf %"
-                        return f"{value_float:,.2f}%"
+                        return format_percentage_value(value_float)
 
                     elif col_name == "FX G/L":
-                        current_currency_symbol = self._get_currency_symbol_safe()
-                        return f"{current_currency_symbol}{value_float:,.2f}"
+                        return format_currency_value(value_float, self._get_currency_symbol_safe())
                     elif col_name == "FX G/L %":
-                        return f"{value_float:,.2f}%"
+                        return format_percentage_value(value_float)
 
                     # --- MODIFIED: Restructure the currency check ---
                     # Check for currency, but don't let it block the fallback
@@ -619,13 +615,13 @@ class PandasModel(QAbstractTableModel):
                             is_currency_col = True
 
                         if is_currency_col:
-                            return f"{current_display_currency_symbol_for_check}{value_float:,.2f}"
+                            return format_currency_value(value_float, current_display_currency_symbol_for_check)
                     # --- END MODIFICATION ---
 
                     # --- CORRECTED FALLBACK ---
                     # This is now the guaranteed fallback for any numeric type that wasn't
                     # a Quantity, Percentage, or specific Currency column.
-                    return f"{value_float:,.2f}"
+                    return format_float_with_commas(value_float, decimals=2)
 
                 # General fallback for non-numeric types
                 return str(original_value)
