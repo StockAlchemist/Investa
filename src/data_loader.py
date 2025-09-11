@@ -25,12 +25,11 @@ from datetime import datetime
 
 # --- Import Configuration ---
 try:
-    from config import CASH_SYMBOL_CSV, DEFAULT_CURRENCY
+    from config import DEFAULT_CURRENCY
 except ImportError:
     logging.critical(
         "CRITICAL ERROR: Could not import from config.py in data_loader.py."
     )
-    CASH_SYMBOL_CSV = "$CASH"
     DEFAULT_CURRENCY = "USD"
 
 # --- ADDED: Import DB Utilities ---

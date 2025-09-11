@@ -41,7 +41,7 @@ HISTORICAL_DEBUG_DATE_VALUE = date(2025, 4, 29)  # Specific for historical calcs
 HISTORICAL_DEBUG_SYMBOL = None
 
 # --- Core Symbols ---
-CASH_SYMBOL_CSV = "$CASH"  # Standardized cash symbol
+CASH_SYMBOL_PREFIX = "$"  # Standardized cash symbol prefix
 
 # --- Define a constant for the aggregated cash account name ---
 _AGGREGATE_CASH_ACCOUNT_NAME_ = "Cash"

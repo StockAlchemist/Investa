@@ -86,7 +86,8 @@ FALLBACK_QCOLOR_BORDER_DARK = QColor("#555")
 FALLBACK_QCOLOR_LOSS = QColor("#e74c3c")
 FALLBACK_QCOLOR_GAIN = QColor("#2ecc71")
 
-from config import CASH_SYMBOL_CSV, CSV_DATE_FORMAT
+from config import CSV_DATE_FORMAT
+from utils import is_cash_symbol
 
 
 class FundamentalDataDialog(QDialog):
@@ -2202,7 +2203,7 @@ class AddTransactionDialog(QDialog):
 
         # --- Symbol ---
         self.symbol_edit = QLineEdit()
-        self.symbol_edit.setPlaceholderText("e.g., AAPL, GOOG, $CASH")
+        self.symbol_edit.setPlaceholderText("e.g., AAPL, GOOG, $USD")
         self.symbol_edit.setMinimumWidth(input_min_width)
         form_layout.addRow("Symbol:", self.symbol_edit)
 
@@ -2339,10 +2340,7 @@ class AddTransactionDialog(QDialog):
         symbol_upper = (symbol or self.symbol_edit.text()).upper().strip()
 
         # or passed in if it's dynamic. For now, assuming it's an attribute.
-        cash_symbol_to_use = getattr(
-            self, "cash_symbol_csv", CASH_SYMBOL_CSV
-        )  # Fallback to global
-        is_cash_symbol = symbol_upper == cash_symbol_to_use
+        is_cash_symbol_flag = is_cash_symbol(symbol_upper)
 
         # Default states
         qty_enabled, price_enabled, total_enabled, commission_enabled, split_enabled = (
@@ -2355,7 +2353,7 @@ class AddTransactionDialog(QDialog):
         price_readonly, total_readonly = False, False
         price_text_override = None
 
-        if is_cash_symbol:
+        if is_cash_symbol_flag:
             if tx_type_lower in [
                 "deposit",
                 "withdrawal",
@@ -2540,9 +2538,9 @@ class AddTransactionDialog(QDialog):
         # Type-specific validation logic
         is_stock_trade = (
             tx_type_lower in ["buy", "sell", "short sell", "buy to cover"]
-            and symbol != CASH_SYMBOL_CSV
+            and not is_cash_symbol(symbol)
         )
-        is_cash_op = symbol == CASH_SYMBOL_CSV and tx_type_lower in [
+        is_cash_op = is_cash_symbol(symbol) and tx_type_lower in [
             "deposit",
             "withdrawal",
             "buy",
@@ -2780,7 +2778,7 @@ class AddTransactionDialog(QDialog):
                 # else price remains None (or its initial value)
 
             # Special handling for $CASH dividend (interest)
-            if symbol == CASH_SYMBOL_CSV and total is not None:
+            if is_cash_symbol(symbol) and total is not None:
                 # If total is given for $CASH dividend, qty can be total and price 1.
                 if qty is None:
                     qty = total  # If qty wasn't provided, set it to total
@@ -2948,11 +2946,9 @@ class AddTransactionDialog(QDialog):
             )
             return
 
-        # Determine if price field should be used or if it's $CASH
+        # Determine if price field should be used or if it's a cash symbol
         current_symbol = self.symbol_edit.text().strip().upper()
-        is_cash_tx = (
-            current_symbol == CASH_SYMBOL_CSV
-        )  # CASH_SYMBOL_CSV is imported from config
+        is_cash_tx = is_cash_symbol(current_symbol)
 
         logging.debug(
             f"_auto_calculate_total: Called. Lock: {self.total_amount_locked_by_user}, Symbol: '{current_symbol}', Qty: '{self.quantity_edit.text()}', Price: '{self.price_edit.text()}'"
@@ -3153,8 +3149,7 @@ class AddTransactionDialog(QDialog):
         # to prevent auto-calculation from overwriting it during the initial _update_field_states call.
         current_tx_type_lower = self.type_combo.currentText().lower()
         current_symbol_upper = self.symbol_edit.text().upper().strip()  # Get symbol
-        cash_symbol_to_use_edit = getattr(self, "cash_symbol_csv", CASH_SYMBOL_CSV)
-        is_cash_symbol_edit = current_symbol_upper == cash_symbol_to_use_edit
+        is_cash_symbol_edit = is_cash_symbol(current_symbol_upper)
 
         self.total_amount_locked_by_user = False  # Default to not locked
 

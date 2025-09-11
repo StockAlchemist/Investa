@@ -17,7 +17,8 @@ from finutils import (
     format_float_with_commas,
 )
 
-from config import CASH_SYMBOL_CSV, CSV_DATE_FORMAT, _AGGREGATE_CASH_ACCOUNT_NAME_
+from config import CSV_DATE_FORMAT, _AGGREGATE_CASH_ACCOUNT_NAME_
+from utils import is_cash_symbol
 from datetime import datetime, date
 
 
@@ -527,7 +528,7 @@ class PandasModel(QAbstractTableModel):
                     symbol_col_idx = self._data.columns.get_loc("Symbol")
                     symbol_value = self._data.iloc[row, symbol_col_idx]
 
-                    if col_name == "Symbol" and symbol_value == CASH_SYMBOL_CSV:
+                    if col_name == "Symbol" and is_cash_symbol(symbol_value):
                         # Check if this is the aggregated cash row
                         account_val_idx = self._data.columns.get_loc("Account")
                         account_val = self._data.iloc[row, account_val_idx]
@@ -537,7 +538,7 @@ class PandasModel(QAbstractTableModel):
                         # else:
                         #     display_currency_name = self._parent._get_currency_symbol(get_name=True) if self._parent else "CUR"
                         #     return f"Cash ({display_currency_name})"
-                    elif symbol_value == CASH_SYMBOL_CSV and col_name in [
+                    elif is_cash_symbol(symbol_value) and col_name in [
                         "Total Ret %",
                         "IRR (%)",
                         "Yield (Cost) %",
@@ -932,10 +933,10 @@ class PandasModel(QAbstractTableModel):
 
                 if actual_symbol_col:
                     try:
-                        base_cash_symbol = CASH_SYMBOL_CSV
                         cash_mask = (
-                            self._data[actual_symbol_col].astype(str)
-                            == base_cash_symbol  # This should be main_data
+                            main_data[actual_symbol_col]
+                            .astype(str)
+                            .apply(is_cash_symbol)
                         )
                         if (
                             actual_symbol_col == symbol_col_name_internal

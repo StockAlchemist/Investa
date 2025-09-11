@@ -16,7 +16,7 @@ if src_dir not in sys.path:
 # --- Import constants from the NEW config module ---
 try:
     from config import (
-        CASH_SYMBOL_CSV,
+        CASH_SYMBOL_PREFIX,
         DEFAULT_CURRENT_CACHE_FILE_PATH,
         HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
         DAILY_RESULTS_CACHE_PATH_PREFIX,
@@ -59,7 +59,7 @@ except ImportError as e:
 
 def test_import_and_types():
     """Tests if key constants can be imported and have expected types."""
-    assert isinstance(CASH_SYMBOL_CSV, str)
+    assert isinstance(CASH_SYMBOL_PREFIX, str)
     assert isinstance(DEFAULT_CURRENT_CACHE_FILE_PATH, str)
     assert isinstance(HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX, str)
     assert isinstance(DAILY_RESULTS_CACHE_PATH_PREFIX, str)
@@ -97,7 +97,7 @@ def test_import_and_types():
     assert isinstance(COLOR_LOSS, str)
 
     # Basic content checks
-    assert CASH_SYMBOL_CSV == "$CASH"
+    assert CASH_SYMBOL_PREFIX == "$"
     assert DEFAULT_CURRENCY == "USD"
     assert DEFAULT_CSV == "my_transactions.csv"
     assert ".DJI" in YFINANCE_INDEX_TICKER_MAP

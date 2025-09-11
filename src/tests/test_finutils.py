@@ -496,6 +496,12 @@ def test_get_historical_rate_bridge_invalid_input():
     )
 
 
+def test_get_conversion_rate_thb_usd():
+    fx_rates = {"THB": 35.0, "USD": 1.0}
+    rate = get_conversion_rate("THB", "USD", fx_rates)
+    assert np.isclose(rate, 1.0 / 35.0)
+
+
 # --- Tests for get_cash_flows_for_mwr ---
 # These are lower priority but follow a similar pattern to IRR tests,
 # requiring mocking of get_conversion_rate.
@@ -508,7 +514,7 @@ def sample_transactions_mwr_df():
         "Date": pd.to_datetime(
             ["2023-01-15", "2023-02-10", "2023-03-05", "2023-04-20"]
         ),
-        "Symbol": ["MSFT", "$CASH", "VTI", "$CASH"],
+        "Symbol": ["MSFT", "$THB", "VTI", "$THB"],
         "Account": ["IBKR", "SET", "IBKR", "SET"],
         "Type": ["buy", "deposit", "sell", "withdrawal"],
         "Quantity": [10.0, 50000.0, 5.0, 10000.0],
@@ -573,8 +579,7 @@ def test_get_cash_flows_mwr_basic(mock_conv_rate, sample_transactions_mwr_df):
     assert flows == pytest.approx(expected_flows)
 
 
-@patch("finutils.get_conversion_rate", side_effect=mock_get_conversion_rate)
-def test_get_cash_flows_mwr_conversion(mock_conv_rate, sample_transactions_mwr_df):
+def test_get_cash_flows_mwr_conversion(sample_transactions_mwr_df):
     account = "SET"
     target_currency = "USD"
     final_mv_target = 40000.0 / 35.0  # Assume 40k THB left, convert to USD @ 35 THB/USD

@@ -268,6 +268,8 @@ from utils import (
     QCOLOR_GAIN,
     QCOLOR_LOSS,
     GroupHeaderDelegate,
+    is_cash_symbol,
+    get_currency_from_cash_symbol,
 )
 
 from dialogs import (
@@ -284,15 +286,11 @@ from workers import (
     FundamentalDataWorker,
 )
 from models import PandasModel
-from utils import (
-    resource_path,
-    get_column_definitions,
-)
+
 
 try:
     from portfolio_logic import (
         calculate_portfolio_summary,
-        CASH_SYMBOL_CSV,
         calculate_historical_performance,
     )
 
@@ -352,7 +350,6 @@ except ImportError as import_err:
     LOGIC_AVAILABLE = False
     MARKET_PROVIDER_AVAILABLE = False  # Mark as unavailable on import error
     HISTORICAL_FN_SUPPORTS_EXCLUDE = False  # Assume false if import fails
-    CASH_SYMBOL_CSV = "__CASH__"
 
     # --- Dummy functions remain the same, but add a dummy provider ---
     def calculate_portfolio_summary(*args, **kwargs):
@@ -393,7 +390,6 @@ except Exception as import_err:
     LOGIC_AVAILABLE = False
     MARKET_PROVIDER_AVAILABLE = False  # Mark as unavailable on import error
     HISTORICAL_FN_SUPPORTS_EXCLUDE = False  # Assume false on error
-    CASH_SYMBOL_CSV = "__CASH__"
 
     def calculate_portfolio_summary(*args, **kwargs):
         return {}, pd.DataFrame(), pd.DataFrame(), {}, "Error: Logic import failed"
@@ -1247,7 +1243,7 @@ The CSV file should contain the following columns (header names must match exact
 <ol>
     <li><b>"Date (MMM DD, YYYY)"</b>: Transaction date (e.g., <i>Jan 01, 2023</i>, <i>Dec 31, 2024</i>)</li>
     <li><b>Transaction Type</b>: Type of transaction (e.g., <i>Buy, Sell, Dividend, Split, Deposit, Withdrawal, Fees</i>)</li>
-    <li><b>Stock / ETF Symbol</b>: Ticker symbol (e.g., <i>AAPL, GOOG</i>). Use <i>$CASH</i> for cash deposits/withdrawals.</li>
+    <li><b>Stock / ETF Symbol</b>: Ticker symbol (e.g., <i>AAPL, GOOG</i>). Use <i>$USD, $EUR, etc.</i> for cash deposits/withdrawals.</li>
     <li><b>Quantity of Units</b>: Number of shares/units (positive). Required for most types.</li>
     <li><b>Amount per unit</b>: Price per share/unit (positive). Required for Buy/Sell.</li>
     <li><b>Total Amount</b>: Total value of the transaction (optional, can be calculated for Buy/Sell). Required for some Dividends.</li>
@@ -1262,7 +1258,7 @@ The CSV file should contain the following columns (header names must match exact
 "Date (MMM DD, YYYY)",Transaction Type,Stock / ETF Symbol,Quantity of Units,Amount per unit,Total Amount,Fees,Investment Account,Split Ratio (new shares per old share),Note
 "Jan 15, 2023",Buy,AAPL,10,150.25,1502.50,5.95,Brokerage A,,Bought Apple shares
 "Feb 01, 2023",Dividend,MSFT,,,50.00,,Brokerage A,,Microsoft dividend received
-"Mar 10, 2023",Deposit,$CASH,1000,,1000.00,,IRA,,Initial IRA contribution
+"Mar 10, 2023",Deposit,$USD,1000,,1000.00,,IRA,,Initial IRA contribution
 </pre>
 """
         QMessageBox.information(self, "CSV Format Help", help_text)
@@ -1274,7 +1270,7 @@ The CSV file should contain the following columns (header names must match exact
         """Handles 'Chart History' context menu action by showing a price chart dialog."""
         logging.info(f"Action triggered: Chart History for {symbol}")
 
-        if symbol == CASH_SYMBOL_CSV:
+        if is_cash_symbol(symbol):
             QMessageBox.information(self, "Info", "Cannot chart history for Cash.")
             return
 
@@ -1415,7 +1411,7 @@ The CSV file should contain the following columns (header names must match exact
                            Returns default currency as fallback.
         """
         # 1. Check Cash Symbol
-        if symbol_to_find == CASH_SYMBOL_CSV:
+        if is_cash_symbol(symbol_to_find):
             # Cash usually takes the display currency context, but might be linked
             # to specific accounts. Let's return the app's default for simplicity.
             return self.config.get("default_currency", "USD")
@@ -5427,7 +5423,7 @@ The CSV file should contain the following columns (header names must match exact
         splitter.addWidget(stock_tx_group)
 
         # Group for $CASH Transactions
-        cash_tx_group = QGroupBox(f"{CASH_SYMBOL_CSV} Transactions")
+        cash_tx_group = QGroupBox(f"Cash Transactions")
         cash_tx_layout = QVBoxLayout(cash_tx_group)
         self.cash_transactions_table_view = QTableView()  # Ensure object name is set
         self.cash_transactions_table_view.setObjectName(
@@ -6356,7 +6352,7 @@ The CSV file should contain the following columns (header names must match exact
                 else 0.0
             )
 
-            if symbol == CASH_SYMBOL_CSV:
+            if is_cash_symbol(symbol):
                 cash_row = {
                     "Symbol": symbol,
                     "Asset Class": "Cash",
@@ -7630,9 +7626,9 @@ The CSV file should contain the following columns (header names must match exact
 
     @Slot(
         str, str
-    )  # Ensure Slot decorator is imported: from PySide6.QtCore import Slot
+    @Slot(str, str)
     def _view_transactions_for_holding(self, symbol: str, account: str):
-        """Placeholder/Handler for 'View Transactions' context menu action."""
+        """Shows a dialog with all transactions for a specific holding (symbol/account)."""
         logging.info(f"Action triggered: View Transactions for {symbol} in {account}")
 
         if not hasattr(self, "original_data") or self.original_data.empty:
@@ -7642,18 +7638,12 @@ The CSV file should contain the following columns (header names must match exact
             return
 
         try:
-            # Filter original data (using original CSV headers)
-            symbol_to_filter = (
-                CASH_SYMBOL_CSV
-                if symbol == CASH_SYMBOL_CSV or symbol.startswith("Cash (")
-                else symbol
-            )
-
+            # This logic now correctly handles both cash and non-cash symbols,
+            # as the `symbol` from the table view (e.g., '$USD' or 'AAPL') should
+            # directly match the 'Symbol' column in the underlying `original_data` DataFrame.
             filtered_df = self.original_data[
-                (
-                    self.original_data["Symbol"] == symbol_to_filter
-                )  # Use cleaned column name
-                & (self.original_data["Account"] == account)  # Use cleaned column name
+                (self.original_data["Symbol"] == symbol)
+                & (self.original_data["Account"] == account)
             ].copy()
 
             if filtered_df.empty:
@@ -7663,7 +7653,7 @@ The CSV file should contain the following columns (header names must match exact
                     f"No transactions found for {symbol} in account {account}.",
                 )
             else:
-                # Reuse LogViewerDialog
+                # Reuse LogViewerDialog for display
                 dialog = LogViewerDialog(filtered_df, self)
                 dialog.setWindowTitle(f"Transactions for: {symbol} / {account}")
                 dialog.exec()
@@ -7717,10 +7707,6 @@ The CSV file should contain the following columns (header names must match exact
             symbol = self.table_model.data(symbol_model_idx, Qt.DisplayRole)
             account = self.table_model.data(account_model_idx, Qt.DisplayRole)
 
-            # Handle potential "Cash (CUR)" display name
-            if isinstance(symbol, str) and symbol.startswith("Cash ("):
-                symbol = CASH_SYMBOL_CSV  # Use internal symbol
-
         except (KeyError, IndexError, AttributeError) as e:
             logging.error(
                 f"Error retrieving symbol/account from table model for context menu: {e}"
@@ -7757,7 +7743,7 @@ The CSV file should contain the following columns (header names must match exact
         # Action 2: Chart History (Placeholder)
         # Disable for Cash symbol
         chart_action = QAction(f"Chart History for {symbol}", self)
-        chart_action.setEnabled(symbol != CASH_SYMBOL_CSV)  # Disable for cash
+        chart_action.setEnabled(not is_cash_symbol(symbol))  # Disable for cash
         chart_action.triggered.connect(
             lambda checked=False, s=symbol: self._chart_holding_history(s)
         )
@@ -7768,7 +7754,7 @@ The CSV file should contain the following columns (header names must match exact
         global_pos = sender_view.viewport().mapToGlobal(pos)
 
         # --- ADD Fundamental Data Action to Context Menu ---
-        if symbol != CASH_SYMBOL_CSV:  # Only for actual stocks/ETFs
+        if not is_cash_symbol(symbol):  # Only for actual stocks/ETFs
             menu.addSeparator()
             fundamentals_action = QAction(f"View Fundamentals for {symbol}", self)
             fundamentals_action.triggered.connect(
@@ -8398,11 +8384,7 @@ The CSV file should contain the following columns (header names must match exact
             labels_internal = holdings_values.index.tolist()
             values = holdings_values.values
             labels_display = [
-                (
-                    f"Cash ({display_currency})"
-                    if symbol == CASH_SYMBOL_CSV
-                    else str(symbol)
-                )
+                (f"Cash ({symbol[1:]})" if is_cash_symbol(symbol) else str(symbol))
                 for symbol in labels_internal
             ]
 
@@ -9304,7 +9286,7 @@ The CSV file should contain the following columns (header names must match exact
                     df_filtered_for_cash = self._get_filtered_data(
                         group_by_sector=False
                     )  # Use existing filter logic
-                    cash_mask = df_filtered_for_cash["Symbol"] == CASH_SYMBOL_CSV
+                    cash_mask = df_filtered_for_cash["Symbol"].apply(is_cash_symbol)
                     cash_mask &= (
                         df_filtered_for_cash["Account"] == _AGGREGATE_CASH_ACCOUNT_NAME_
                     )
@@ -10732,11 +10714,11 @@ The CSV file should contain the following columns (header names must match exact
 
         # Filter for stock transactions (anything not $CASH)
         stock_tx_df = df_for_logs[
-            df_for_logs[symbol_col_name_to_use] != CASH_SYMBOL_CSV
+            ~df_for_logs[symbol_col_name_to_use].apply(is_cash_symbol)
         ].copy()
         # Filter for cash transactions
         cash_tx_df = df_for_logs[
-            df_for_logs[symbol_col_name_to_use] == CASH_SYMBOL_CSV
+            df_for_logs[symbol_col_name_to_use].apply(is_cash_symbol)
         ].copy()
 
         # Ensure Date column is formatted as string "YYYY-MM-DD" for display
@@ -11003,7 +10985,7 @@ The CSV file should contain the following columns (header names must match exact
         # --- Simple Asset Type Classification ---
         def classify_asset(symbol):
             # Assumes df_alloc has a 'quoteType' column from portfolio_logic
-            if symbol == CASH_SYMBOL_CSV or symbol.startswith("Cash ("):
+            if is_cash_symbol(symbol) or symbol.startswith("Cash ("):
                 return "Cash"
 
             quote_type_series = df_alloc.loc[df_alloc["Symbol"] == symbol, "quoteType"]
@@ -11865,13 +11847,9 @@ The CSV file should contain the following columns (header names must match exact
                 numeric_quantity = pd.to_numeric(
                     df_filtered["Quantity"], errors="coerce"
                 ).fillna(0)
-                cash_display_symbol = (
-                    f"Cash ({self._get_currency_symbol(get_name=True)})"
-                )
-                keep_mask = (
-                    (numeric_quantity.abs() > 1e-9)
-                    | (df_filtered["Symbol"] == CASH_SYMBOL_CSV)
-                    | (df_filtered["Symbol"] == cash_display_symbol)
+                # The keep_mask now solely relies on is_cash_symbol for identifying cash positions.
+                keep_mask = (numeric_quantity.abs() > 1e-9) | (
+                    df_filtered["Symbol"].apply(is_cash_symbol)
                 )
                 df_filtered = df_filtered[keep_mask]
             except Exception as e:
@@ -11908,7 +11886,7 @@ The CSV file should contain the following columns (header names must match exact
                         df_filtered["Symbol"]
                         .astype(str)
                         .str.contains(cash_display_symbol, case=False, na=False)
-                    )
+                    ) | df_filtered["Symbol"].apply(is_cash_symbol)
                 df_filtered = df_filtered[symbol_mask]
             except Exception as e_sym_filt:
                 logging.warning(

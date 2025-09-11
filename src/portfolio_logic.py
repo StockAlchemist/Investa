@@ -60,7 +60,7 @@ except ImportError:
 try:
     from config import (
         LOGGING_LEVEL,
-        CASH_SYMBOL_CSV,
+    CASH_SYMBOL_PREFIX,
         DEFAULT_CURRENT_CACHE_FILE_PATH,  # Still used by MarketDataProvider default
         HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
         DAILY_RESULTS_CACHE_PATH_PREFIX,
@@ -95,8 +95,9 @@ try:
         map_to_yf_symbol,
         safe_sum,
     )
+    from utils import is_cash_symbol
 except ImportError:
-    logging.critical("CRITICAL ERROR: Could not import from finutils.py. Exiting.")
+    logging.critical("CRITICAL ERROR: Could not import from finutils.py or utils.py. Exiting.")
     raise
 
 try:
@@ -669,7 +670,7 @@ def calculate_portfolio_summary(
                 manual_geography = symbol_overrides.get("geography", "").strip()
                 manual_industry = symbol_overrides.get("industry", "").strip()
 
-                if internal_symbol == CASH_SYMBOL_CSV or internal_symbol.startswith(
+                if is_cash_symbol(internal_symbol) or internal_symbol.startswith(
                     "Cash ("
                 ):
                     sector_map[internal_symbol] = "Cash"
@@ -855,7 +856,7 @@ def calculate_portfolio_summary(
         price_source_warnings = False
         if "Price Source" in full_summary_df.columns:
             non_cash_holdings_agg = full_summary_df[
-                full_summary_df["Symbol"] != CASH_SYMBOL_CSV
+                    ~full_summary_df["Symbol"].apply(is_cash_symbol)
             ]
             if not non_cash_holdings_agg.empty:
                 if (
@@ -885,7 +886,7 @@ def calculate_portfolio_summary(
                     summary_df_unfiltered["Quantity"].abs()
                     >= STOCK_QUANTITY_CLOSE_TOLERANCE
                 )
-                | (summary_df_unfiltered["Symbol"] == CASH_SYMBOL_CSV)
+                    | (summary_df_unfiltered["Symbol"].apply(is_cash_symbol))
                 | (summary_df_unfiltered["Symbol"].str.startswith("Cash (", na=False))
             )
             summary_df_final = summary_df_unfiltered[held_mask].copy()
@@ -1203,7 +1204,7 @@ def _calculate_daily_net_cash_flow(
 
     external_flow_types = ["deposit", "withdrawal"]
     cash_flow_tx = daily_tx[
-        (daily_tx["Symbol"] == CASH_SYMBOL_CSV)
+        (daily_tx["Symbol"].apply(is_cash_symbol))
         & (daily_tx["Type"].isin(external_flow_types))
     ].copy()
     if cash_flow_tx.empty:
@@ -1333,14 +1334,14 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
         tx_type = str(row.get("Type", "UNKNOWN_TYPE")).lower().strip()
         tx_date_row = row["Date"].date()
 
-        if symbol != CASH_SYMBOL_CSV and holding_key_from_row not in holdings:
+        if not is_cash_symbol(symbol) and holding_key_from_row not in holdings:
             holdings[holding_key_from_row] = {
                 "qty": 0.0,
                 "local_currency": local_currency_from_row,
                 "is_stock": True,
             }
         elif (
-            symbol != CASH_SYMBOL_CSV
+            not is_cash_symbol(symbol)
             and holdings[holding_key_from_row]["local_currency"]
             != local_currency_from_row
         ):
@@ -1350,7 +1351,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
                     f"  WARN (Value Calc): Currency overwritten for {holding_key_from_row} to {local_currency_from_row}"
                 )
 
-        if symbol == CASH_SYMBOL_CSV:
+        if is_cash_symbol(symbol):
             continue
 
         try:
@@ -1418,7 +1419,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
     # --- Apply STOCK_QUANTITY_CLOSE_TOLERANCE to stock holdings before valuation ---
     for holding_key_iter, data_iter in holdings.items():
         sym_iter, _ = holding_key_iter
-        if sym_iter != CASH_SYMBOL_CSV:  # Only for stocks
+        if not is_cash_symbol(sym_iter):  # Only for stocks
             qty_iter = data_iter.get("qty", 0.0)
             if 0 < abs(qty_iter) < STOCK_QUANTITY_CLOSE_TOLERANCE:
                 if IS_DEBUG_DATE:
@@ -1428,7 +1429,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
                 data_iter["qty"] = 0.0
                 # Cost basis is not explicitly tracked here for daily valuation, qty is primary
     cash_transactions = transactions_til_date[
-        transactions_til_date["Symbol"] == CASH_SYMBOL_CSV
+        transactions_til_date["Symbol"].apply(is_cash_symbol)
     ].copy()
     if not cash_transactions.empty:
 
@@ -1472,10 +1473,12 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
                 "is_stock": False,
             }
 
-    all_positions: Dict[Tuple[str, str], Dict] = {
-        **holdings,
-        **{(CASH_SYMBOL_CSV, acc): data for acc, data in cash_summary.items()},
-    }
+    all_positions: Dict[Tuple[str, str], Dict] = {**holdings}
+    for acc, data in cash_summary.items():
+        # Construct cash symbol from currency, e.g., $USD
+        cash_symbol = f"{CASH_SYMBOL_PREFIX}{data['local_currency']}"
+        all_positions[(cash_symbol, acc)] = data
+
     total_market_value_display_curr_agg = 0.0
     any_lookup_nan_on_date = False
     if IS_DEBUG_DATE:
@@ -1486,7 +1489,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
     for (internal_symbol, account), data in all_positions.items():
         current_qty = data.get("qty", 0.0)
         local_currency = data.get("local_currency", default_currency)
-        is_stock = data.get("is_stock", internal_symbol != CASH_SYMBOL_CSV)
+        is_stock = data.get("is_stock", not is_cash_symbol(internal_symbol))
         DO_DETAILED_LOG = IS_DEBUG_DATE
         if DO_DETAILED_LOG:
             logging.debug(
@@ -1650,7 +1653,8 @@ def _calculate_holdings_numba(
     short_sell_type_id,  # int
     buy_to_cover_type_id,  # int
     fees_type_id,  # int
-    cash_symbol_id,  # int
+    tx_is_cash_np,  # bool array
+    is_cash_symbol_by_id_np,  # bool array
     stock_qty_close_tolerance,  # float: new tolerance
     shortable_symbol_ids,  # int64 array
 ):
@@ -1690,7 +1694,7 @@ def _calculate_holdings_numba(
         currency_id = tx_local_currencies_np[i]
 
         # --- Handle CASH transactions ---
-        if symbol_id == cash_symbol_id:
+        if tx_is_cash_np[i]:
             # Initialize currency if first time seeing this cash account
             if cash_currency_np[account_id] == -1:
                 cash_currency_np[account_id] = currency_id
@@ -1860,7 +1864,7 @@ def _calculate_holdings_numba(
 
     # Apply stock quantity close tolerance
     for s_id in range(num_symbols):
-        if s_id == cash_symbol_id:
+        if is_cash_symbol_by_id_np[s_id]:
             continue
         for a_id in range(num_accounts):
             current_qty = holdings_qty_np[s_id, a_id]
@@ -1970,7 +1974,14 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         short_sell_type_id = type_to_id.get("short sell", -1)
         buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
         fees_type_id = type_to_id.get("fees", -1)
-        cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
+
+        # Create a boolean array for cash symbols
+        tx_is_cash_np = transactions_til_date["Symbol"].apply(is_cash_symbol).values.astype(np.bool_)
+
+        is_cash_symbol_by_id_np = np.array(
+            [is_cash_symbol(id_to_symbol[i]) for i in range(len(id_to_symbol))],
+            dtype=np.bool_,
+        )
 
         # Map shortable symbols to IDs
         shortable_symbol_ids = np.array(
@@ -2018,7 +2029,8 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             short_sell_type_id,
             buy_to_cover_type_id,
             fees_type_id,
-            cash_symbol_id,
+            tx_is_cash_np,  # Pass the boolean array
+            is_cash_symbol_by_id_np,
             STOCK_QUANTITY_CLOSE_TOLERANCE,  # Pass the tolerance
             shortable_symbol_ids,
         )
@@ -2625,7 +2637,7 @@ def _prepare_historical_inputs(
     symbols_to_fetch_yf_portfolio = []
     internal_to_yf_map: Dict[str, str] = {}  # Ensure type
     for internal_sym in all_symbols_internal_effective:
-        if internal_sym == CASH_SYMBOL_CSV:
+        if is_cash_symbol(internal_sym):
             continue
         yf_sym = map_to_yf_symbol(
             internal_sym, effective_user_symbol_map, effective_user_excluded_symbols
@@ -3825,10 +3837,6 @@ def calculate_historical_performance(
             currency_to_id = {curr: i for i, curr in enumerate(all_currencies_eff)}
             id_to_currency = {i: curr for curr, i in currency_to_id.items()}
 
-            if CASH_SYMBOL_CSV not in symbol_to_id:
-                cash_id_val = len(symbol_to_id)
-                symbol_to_id[CASH_SYMBOL_CSV] = cash_id_val
-                id_to_symbol[cash_id_val] = CASH_SYMBOL_CSV
             logging.info("Created string-to-ID mappings for Numba.")
         else:
             logging.warning(
@@ -3989,11 +3997,6 @@ def generate_mappings(transactions_df_effective):
     all_currencies = transactions_df_effective["Local Currency"].unique()
     currency_to_id = {curr: i for i, curr in enumerate(all_currencies)}
     id_to_currency = {i: curr for curr, i in currency_to_id.items()}
-    # Ensure CASH symbol is included if not present
-    if CASH_SYMBOL_CSV not in symbol_to_id:
-        cash_id = len(symbol_to_id)
-        symbol_to_id[CASH_SYMBOL_CSV] = cash_id
-        id_to_symbol[cash_id] = CASH_SYMBOL_CSV
     return (
         symbol_to_id,
         id_to_symbol,

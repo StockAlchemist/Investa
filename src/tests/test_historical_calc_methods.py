@@ -22,7 +22,6 @@ try:
     from portfolio_logic import (
         _calculate_portfolio_value_at_date_unadjusted_python,
         _calculate_portfolio_value_at_date_unadjusted_numba,
-        CASH_SYMBOL_CSV,
         SHORTABLE_SYMBOLS,  # Keep if needed by logic
         _prepare_historical_inputs,  # To get symbols, currencies, splits, etc.
         _unadjust_prices,  # To derive unadjusted prices
@@ -59,11 +58,6 @@ def generate_mappings(transactions_df_effective):
     all_currencies = transactions_df_effective["Local Currency"].unique()
     currency_to_id = {curr: i for i, curr in enumerate(all_currencies)}
     id_to_currency = {i: curr for curr, i in currency_to_id.items()}
-    # Ensure CASH symbol is included if not present
-    if CASH_SYMBOL_CSV not in symbol_to_id:
-        cash_id = len(symbol_to_id)
-        symbol_to_id[CASH_SYMBOL_CSV] = cash_id
-        id_to_symbol[cash_id] = CASH_SYMBOL_CSV
     return (
         symbol_to_id,
         id_to_symbol,

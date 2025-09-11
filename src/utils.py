@@ -165,7 +165,30 @@ def get_column_definitions(display_currency="USD"):
 
 from PySide6.QtWidgets import QStyledItemDelegate, QStyle
 from PySide6.QtGui import QColor
+from config import CASH_SYMBOL_PREFIX
 
+def is_cash_symbol(symbol: str) -> bool:
+    """
+    Checks if a symbol is a valid cash symbol (e.g., '$USD', '$EUR').
+    A cash symbol must start with '$' and be followed by a 3-letter currency code.
+    """
+    if not isinstance(symbol, str) or not symbol.startswith(CASH_SYMBOL_PREFIX):
+        return False
+
+    currency_code = symbol[len(CASH_SYMBOL_PREFIX):]
+    # For now, any 3-letter code after '$' is considered a cash symbol.
+    # A more robust check could validate against a list of known currencies.
+    return len(currency_code) == 3 and currency_code.isalpha()
+
+def get_currency_from_cash_symbol(symbol: str) -> Optional[str]:
+    """
+    Extracts the currency code from a cash symbol.
+    Returns the 3-letter currency code if the symbol is a valid cash symbol,
+    otherwise returns None.
+    """
+    if is_cash_symbol(symbol):
+        return symbol[len(CASH_SYMBOL_PREFIX):]
+    return None
 
 class GroupHeaderDelegate(QStyledItemDelegate):
     def __init__(self, parent=None, theme="light"):

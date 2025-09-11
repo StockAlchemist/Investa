@@ -29,14 +29,16 @@ from collections import defaultdict
 # Assuming config.py is in the same directory or accessible via PYTHONPATH
 try:
     from config import (
-        CASH_SYMBOL_CSV,
         SHORTABLE_SYMBOLS,
     )  # YFINANCE_EXCLUDED_SYMBOLS, SYMBOL_MAP_TO_YFINANCE removed
+    from utils import is_cash_symbol
 except ImportError:
     # Fallback values if config import fails (should not happen in normal execution)
     logging.error("CRITICAL: Could not import constants from config.py in finutils.py")
     CASH_SYMBOL_CSV = "$CASH"
     SHORTABLE_SYMBOLS = {"AAPL", "RIMM"}
+    def is_cash_symbol(symbol):
+        return symbol == CASH_SYMBOL_CSV
 
 
 # --- Constants for _get_file_hash ---
@@ -526,7 +528,7 @@ def get_cash_flows_for_mwr(
         cash_flow_local = 0.0
         qty_abs = abs(qty) if pd.notna(qty) else 0.0
 
-        if symbol != CASH_SYMBOL_CSV:
+        if not is_cash_symbol(symbol):
             if tx_type == "buy":
                 if pd.notna(qty) and qty > 0 and pd.notna(price_local):
                     cash_flow_local = -(
@@ -563,7 +565,7 @@ def get_cash_flows_for_mwr(
                 cash_flow_local = 0.0
                 if pd.notna(commission_local) and commission_local != 0:
                     cash_flow_local = -abs(commission_local)  # OUT (-)
-        elif symbol == CASH_SYMBOL_CSV:
+        else: # The symbol is a cash symbol
             if tx_type == "deposit" or tx_type == "buy":
                 if pd.notna(qty):
                     cash_flow_local = abs(qty)  # IN (+)
@@ -903,7 +905,7 @@ def map_to_yf_symbol(
 
     # --- 1. Check Excluded and Cash Symbols FIRST ---
     if (
-        normalized_symbol == CASH_SYMBOL_CSV
+        is_cash_symbol(normalized_symbol)
         or normalized_symbol
         in user_excluded_symbols  # CORRECTLY Use user-defined exclusions
     ):

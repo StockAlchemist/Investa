@@ -58,7 +58,6 @@ try:
         DEFAULT_INDEX_QUERY_SYMBOLS,  # Still needed for get_index_quotes
         FUNDAMENTALS_CACHE_DURATION_HOURS,  # <-- ADDED
         YFINANCE_EXCLUDED_SYMBOLS,
-        CASH_SYMBOL_CSV,  # DEFAULT_CURRENT_CACHE_FILE_PATH is used by main_gui now
         HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
     )
 except ImportError:
@@ -73,7 +72,6 @@ except ImportError:
     DEFAULT_INDEX_QUERY_SYMBOLS = []
     FUNDAMENTALS_CACHE_DURATION_HOURS = 24
     YFINANCE_EXCLUDED_SYMBOLS = set()
-    CASH_SYMBOL_CSV = "$CASH"
     HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = (
         "yf_portfolio_hist_raw_adjusted"  # Keep as prefix for basename construction
     )
@@ -82,6 +80,7 @@ except ImportError:
 try:
     # map_to_yf_symbol is used within get_current_quotes
     from finutils import map_to_yf_symbol
+    from utils import is_cash_symbol
 except ImportError:
     logging.error(
         "CRITICAL: Could not import map_to_yf_symbol from finutils.py in market_data.py"
@@ -280,7 +279,7 @@ class MarketDataProvider:
         yf_symbols_to_fetch = set()
         internal_to_yf_map_local = {}
         for internal_symbol in internal_stock_symbols:
-            if internal_symbol == CASH_SYMBOL_CSV:
+            if is_cash_symbol(internal_symbol):
                 continue
             yf_symbol = map_to_yf_symbol(
                 internal_symbol, user_symbol_map, user_excluded_symbols

@@ -41,11 +41,11 @@ from collections import defaultdict
 # --- Import Configuration ---
 try:
     from config import (
-        CASH_SYMBOL_CSV,
         SHORTABLE_SYMBOLS,  # Used by _process_transactions...
         STOCK_QUANTITY_CLOSE_TOLERANCE,  # New tolerance
         # Add any other config constants used by these specific functions if needed
     )
+    from utils import is_cash_symbol
 except ImportError:
     logging.critical(
         "CRITICAL ERROR: Could not import from config.py in portfolio_analyzer.py."
@@ -54,6 +54,8 @@ except ImportError:
     CASH_SYMBOL_CSV = "$CASH"
     SHORTABLE_SYMBOLS = set()
     STOCK_QUANTITY_CLOSE_TOLERANCE = 1e-9  # Fallback if config fails
+    def is_cash_symbol(symbol):
+        return symbol == CASH_SYMBOL_CSV
 
 # --- Import Utilities ---
 try:
@@ -145,7 +147,7 @@ def _process_transactions_to_holdings(
         return ({}, {}, {}, {}, ignored_row_indices_local, ignored_reasons_local, True)
 
     for index, row in transactions_df.iterrows():
-        if row["Symbol"] == CASH_SYMBOL_CSV:
+        if is_cash_symbol(row["Symbol"]):
             continue
 
         try:
@@ -353,7 +355,7 @@ def _process_transactions_to_holdings(
             ]:
                 if pd.isna(qty):
                     raise ValueError(f"Missing Quantity for {tx_type}")
-                if pd.isna(price_local) and symbol != CASH_SYMBOL_CSV:
+                if pd.isna(price_local) and not is_cash_symbol(symbol):
                     raise ValueError(f"Missing Price/Share for {tx_type} {symbol}")
             elif tx_type == "dividend":
                 if pd.isna(total_amount_local) and pd.isna(price_local):
@@ -689,7 +691,7 @@ def _process_transactions_to_holdings(
         holdings.items()
     ):  # Use list() for safe iteration if modifying
         symbol, account = holding_key
-        if symbol == CASH_SYMBOL_CSV:
+        if is_cash_symbol(symbol):
             continue  # Skip cash
 
         current_qty = data.get("qty", 0.0)
@@ -725,18 +727,15 @@ def _calculate_cash_balances(
     transactions_df: pd.DataFrame, default_currency: str
 ) -> Tuple[Dict[str, Dict], bool, bool]:
     """
-    Calculates the final cash balance, dividends, and commissions for each account's $CASH position.
-    (Implementation remains the same as provided previously - relies only on input df and helpers)
+    Calculates the final cash balance, dividends, and commissions for each account's cash positions.
     """
-    # ... (Function body remains unchanged) ...
     cash_summary: Dict[str, Dict] = {}
-    cash_symbol = CASH_SYMBOL_CSV
     has_errors = False
     has_warnings = False
 
     try:
         cash_transactions = transactions_df[
-            transactions_df["Symbol"] == cash_symbol
+            transactions_df["Symbol"].apply(is_cash_symbol)
         ].copy()
         if not cash_transactions.empty:
 
@@ -759,7 +758,7 @@ def _calculate_cash_balances(
                 get_signed_quantity_cash, axis=1
             )
 
-            grouped_cash = cash_transactions.groupby("Account")
+            grouped_cash = cash_transactions.groupby(["Account", "Symbol"])
             cash_qty_agg = grouped_cash["SignedQuantity"].sum()
             cash_comm_agg = grouped_cash["Commission"].sum(min_count=1).fillna(0.0)
             cash_currency_map = grouped_cash["Local Currency"].first()
@@ -792,39 +791,41 @@ def _calculate_cash_balances(
                     cash_dividends_tx["DividendAmount"]
                     - cash_dividends_tx["Commission"]
                 )
-                cash_div_agg = cash_dividends_tx.groupby("Account")["NetDividend"].sum()
+                cash_div_agg = cash_dividends_tx.groupby(["Account", "Symbol"])["NetDividend"].sum()
 
             all_cash_accounts = cash_currency_map.index.union(cash_qty_agg.index).union(
                 cash_div_agg.index
             )
 
-            for acc in all_cash_accounts:
-                acc_currency = cash_currency_map.get(acc, default_currency)
+            for group_key in all_cash_accounts:
+                acc, symbol = group_key
+                acc_currency = cash_currency_map.get(group_key, default_currency)
                 acc_balance = (
-                    cash_qty_agg.get(acc, 0.0)
+                    cash_qty_agg.get(group_key, 0.0)
                     if isinstance(cash_qty_agg, pd.Series)
                     else (float(cash_qty_agg) if pd.notna(cash_qty_agg) else 0.0)
                 )
                 acc_commissions = (
-                    cash_comm_agg.get(acc, 0.0)
+                    cash_comm_agg.get(group_key, 0.0)
                     if isinstance(cash_comm_agg, pd.Series)
                     else (float(cash_comm_agg) if pd.notna(cash_comm_agg) else 0.0)
                 )
                 acc_dividends_only = (
-                    cash_div_agg.get(acc, 0.0)
+                    cash_div_agg.get(group_key, 0.0)
                     if isinstance(cash_div_agg, pd.Series)
                     else 0.0
                 )
-                cash_summary[acc] = {
+                cash_summary[group_key] = {
                     "qty": acc_balance,
                     "realized": 0.0,
                     "dividends": acc_dividends_only,
                     "commissions": acc_commissions,
                     "currency": acc_currency,
+                    "symbol": symbol
                 }
         else:
             logging.info(
-                "Info in _calculate_cash_balances: No $CASH transactions found."
+                "Info in _calculate_cash_balances: No cash transactions found."
             )
     except (TypeError, ValueError) as e:
         logging.error(f"Data type/value error calculating cash balances: {e}")
@@ -1259,7 +1260,7 @@ def _build_summary_rows(
             fx_gain_loss_display_holding = 0.0
             fx_gain_loss_pct_holding = 0.0  # If no FX G/L, percentage is 0%
         elif (  # Original conditions, but now as elif
-            symbol != CASH_SYMBOL_CSV  # Not cash
+            not is_cash_symbol(symbol)  # Not cash
             and abs(current_total_cost_local) > 1e-9  # Has a local cost basis
             and pd.notna(cost_basis_display)  # Cost basis in display currency is valid
             and abs(cost_basis_display)
@@ -1343,17 +1344,16 @@ def _build_summary_rows(
         )
     # --- End Stock/ETF Loop ---
 
-    # --- Loop 2: Aggregate CASH Balances (No longer adds individual rows here) ---
+    # --- Loop 2: Process CASH Balances (No longer aggregates) ---
     if cash_summary:
-        for account, cash_data in cash_summary.items():
-            symbol = CASH_SYMBOL_CSV
+        for group_key, cash_data in cash_summary.items():
+            account, symbol = group_key
             current_qty = cash_data.get("qty", 0.0)
             local_currency = cash_data.get("currency", default_currency)
             realized_gain_local = cash_data.get("realized", 0.0)
             dividends_local = cash_data.get("dividends", 0.0)
             commissions_local = cash_data.get("commissions", 0.0)
 
-            # Ensure account's local currency is mapped
             if account not in account_local_currency_map:
                 account_local_currency_map[account] = local_currency
 
@@ -1371,109 +1371,46 @@ def _build_summary_rows(
             if pd.notna(market_value_local):
                 account_market_values_local[account] = (
                     account_market_values_local.get(account, 0.0) + market_value_local
-                )  # Add to existing or initialize
+                )
 
-            # Aggregate into display currency
-            market_value_display = (
-                market_value_local * fx_rate if pd.notna(fx_rate) else np.nan
+            market_value_display = market_value_local * fx_rate if pd.notna(fx_rate) else np.nan
+            dividends_display = dividends_local * fx_rate if pd.notna(fx_rate) else np.nan
+            commissions_display = commissions_local * fx_rate if pd.notna(fx_rate) else np.nan
+
+            total_gain_display = (dividends_display - commissions_display) if pd.notna(dividends_display) and pd.notna(commissions_display) else np.nan
+            cost_basis_display = market_value_display
+
+            portfolio_summary_rows.append(
+                {
+                    "Account": account,
+                    "Symbol": symbol,
+                    "Quantity": current_qty,
+                    f"Avg Cost ({display_currency})": 1.0 if pd.notna(current_qty) and abs(current_qty) > 1e-9 else np.nan,
+                    f"Price ({display_currency})": 1.0 * fx_rate if pd.notna(fx_rate) else np.nan,
+                    f"Cost Basis ({display_currency})": cost_basis_display,
+                    f"Market Value ({display_currency})": market_value_display,
+                    f"Day Change ({display_currency})": 0.0,
+                    "Day Change %": 0.0,
+                    f"Unreal. Gain ({display_currency})": 0.0,
+                    "Unreal. Gain %": 0.0,
+                    f"Realized Gain ({display_currency})": 0.0,
+                    f"Dividends ({display_currency})": dividends_display,
+                    f"Commissions ({display_currency})": commissions_display,
+                    f"Total Gain ({display_currency})": total_gain_display,
+                    f"Total Cost Invested ({display_currency})": market_value_display,
+                    "Total Return %": ((total_gain_display / market_value_display) * 100.0) if pd.notna(total_gain_display) and pd.notna(market_value_display) and abs(market_value_display) > 1e-9 else 0.0,
+                    f"Cumulative Investment ({display_currency})": market_value_display,
+                    f"Total Buy Cost ({display_currency})": 0.0,
+                    "IRR (%)": np.nan,
+                    "Local Currency": local_currency,
+                    "Price Source": "N/A (Cash)",
+                    f"Div. Yield (Cost) %": np.nan,
+                    f"Div. Yield (Current) %": np.nan,
+                    f"Est. Ann. Income ({display_currency})": np.nan,
+                    f"FX Gain/Loss ({display_currency})": 0.0,
+                    "FX Gain/Loss %": np.nan,
+                }
             )
-            realized_gain_display = (
-                realized_gain_local * fx_rate if pd.notna(fx_rate) else np.nan
-            )
-            dividends_display = (
-                dividends_local * fx_rate if pd.notna(fx_rate) else np.nan
-            )
-            commissions_display_for_acc_cash = (  # Renamed to avoid conflict
-                commissions_local * fx_rate if pd.notna(fx_rate) else np.nan
-            )
-
-            if pd.notna(market_value_display):
-                aggregated_cash_details["market_value_display"] += market_value_display
-            if pd.notna(dividends_display):
-                aggregated_cash_details["dividends_display"] += dividends_display
-            if pd.notna(commissions_display_for_acc_cash):
-                aggregated_cash_details[
-                    "commissions_display"
-                ] += commissions_display_for_acc_cash
-
-    # --- Add a single aggregated cash row if there's any cash ---
-    # Or always add it, even if zero, for consistency. Let's always add it.
-    if True:  # Always add the aggregated cash line
-        total_cash_mv_display = aggregated_cash_details["market_value_display"]
-        total_cash_div_display = aggregated_cash_details["dividends_display"]
-        total_cash_comm_display = aggregated_cash_details["commissions_display"]
-
-        # For cash, total gain is typically dividends minus commissions associated with cash accounts
-        total_cash_gain_display = total_cash_div_display - total_cash_comm_display
-
-        # Cost basis, total cost invested, and cumulative investment for cash is its market value,
-        # as it represents the net cash position. Total Buy Cost for cash is zero.
-        cash_basis_and_investment = total_cash_mv_display
-
-        # Total return for cash itself is usually not calculated this way, or is 0% if based on its own value.
-        # If total_cash_gain_display is non-zero and cash_basis_and_investment is non-zero, can calculate.
-        total_return_pct_cash = np.nan
-        if (
-            pd.notna(total_cash_gain_display)
-            and pd.notna(cash_basis_and_investment)
-            and abs(cash_basis_and_investment) > 1e-9
-        ):
-            total_return_pct_cash = (
-                total_cash_gain_display / cash_basis_and_investment
-            ) * 100.0
-        elif (
-            pd.notna(total_cash_gain_display) and abs(total_cash_gain_display) < 1e-9
-        ):  # Zero gain
-            total_return_pct_cash = 0.0
-
-        # Add the aggregated cash row
-        # Using a special account name defined at the top of the file
-        # Using CASH_SYMBOL_CSV for the symbol for internal consistency
-        # The display name will be handled by the GUI's PandasModel
-
-        # For cash, price is 1 in its currency. Quantity is the value.
-        # Since we are in display_currency, price is 1.0.
-        # Quantity is total_cash_mv_display.
-
-        # Avg Cost and Price for aggregated cash in display currency is 1.0
-        # if we consider the "Quantity" to be the market value itself.
-
-        portfolio_summary_rows.append(
-            {
-                "Account": _AGGREGATE_CASH_ACCOUNT_NAME_,
-                "Symbol": CASH_SYMBOL_CSV,
-                "Quantity": total_cash_mv_display,  # Value is quantity, price is 1
-                f"Avg Cost ({display_currency})": (
-                    1.0
-                    if pd.notna(total_cash_mv_display)
-                    and abs(total_cash_mv_display) > 1e-9
-                    else np.nan
-                ),
-                f"Price ({display_currency})": 1.0,  # Price of cash in its currency is 1
-                f"Cost Basis ({display_currency})": cash_basis_and_investment,
-                f"Market Value ({display_currency})": total_cash_mv_display,
-                f"Day Change ({display_currency})": 0.0,  # Cash doesn't change day-to-day by itself
-                "Day Change %": 0.0,
-                f"Unreal. Gain ({display_currency})": 0.0,  # No unrealized gain on cash
-                "Unreal. Gain %": 0.0,
-                f"Realized Gain ({display_currency})": 0.0,  # Realized gain is for assets
-                f"Dividends ({display_currency})": total_cash_div_display,
-                f"Commissions ({display_currency})": total_cash_comm_display,
-                f"Total Gain ({display_currency})": total_cash_gain_display,
-                f"Total Cost Invested ({display_currency})": cash_basis_and_investment,
-                "Total Return %": total_return_pct_cash,
-                f"Cumulative Investment ({display_currency})": cash_basis_and_investment,
-                f"Total Buy Cost ({display_currency})": 0.0,  # Cash itself has no "buy cost" for portfolio return calculation
-                "IRR (%)": np.nan,  # IRR not applicable for cash aggregate this way
-                "Local Currency": display_currency,  # Aggregated cash is in display currency
-                "Price Source": "N/A (Cash)",
-                f"Div. Yield (Cost) %": np.nan,  # Not applicable for cash
-                f"Div. Yield (Current) %": np.nan,  # Not applicable for cash
-                f"Est. Ann. Income ({display_currency})": np.nan,  # Not applicable for cash
-                f"FX Gain/Loss ({display_currency})": 0.0,  # FX G/L for cash is 0
-                "FX Gain/Loss %": np.nan,  # Not applicable for cash
-            }
-        )
 
     return (
         portfolio_summary_rows,
@@ -1602,7 +1539,7 @@ def _calculate_aggregate_metrics(
                 account_full_df, f"Total Gain ({display_currency})"
             )
             cash_mask = (
-                account_full_df["Symbol"] == CASH_SYMBOL_CSV
+                account_full_df["Symbol"].apply(is_cash_symbol)
                 if "Symbol" in account_full_df.columns
                 else pd.Series(False, index=account_full_df.index)
             )
@@ -1710,7 +1647,7 @@ def _calculate_aggregate_metrics(
     held_mask = pd.Series(False, index=full_summary_df.index)
     if "Quantity" in full_summary_df.columns and "Symbol" in full_summary_df.columns:
         held_mask = (full_summary_df["Quantity"].abs() > 1e-9) | (
-            full_summary_df["Symbol"] == CASH_SYMBOL_CSV
+            full_summary_df["Symbol"].apply(is_cash_symbol)
         )
     overall_cost_basis_display = (
         safe_sum(full_summary_df.loc[held_mask], cost_basis_col)
@@ -2294,7 +2231,7 @@ def extract_realized_capital_gains_history(
 
         holding_key = (symbol, account)
 
-        if symbol == CASH_SYMBOL_CSV or tx_type in [
+        if is_cash_symbol(symbol) or tx_type in [
             "deposit",
             "withdrawal",
             "fees",  # Fees on their own don't realize CG on assets
@@ -2536,7 +2473,7 @@ def calculate_rebalancing_trades(
     price_col = f"Price ({display_currency})"
 
     # Get current cash holding
-    current_cash_row = holdings_df[holdings_df["Symbol"] == CASH_SYMBOL_CSV]
+    current_cash_row = holdings_df[holdings_df["Symbol"].apply(is_cash_symbol)]
     current_cash_value = (
         current_cash_row[mkt_val_col].iloc[0] if not current_cash_row.empty else 0.0
     )
@@ -2544,7 +2481,7 @@ def calculate_rebalancing_trades(
     # Calculate total portfolio value including new cash injection/withdrawal
     # This is the total value we are rebalancing towards
     current_total_market_value_excluding_cash = holdings_df[
-        holdings_df["Symbol"] != CASH_SYMBOL_CSV
+        holdings_df["Symbol"].apply(lambda x: not is_cash_symbol(x))
     ][mkt_val_col].sum()
     total_rebalance_value = (
         current_total_market_value_excluding_cash + current_cash_value + new_cash
@@ -2580,7 +2517,7 @@ def calculate_rebalancing_trades(
     for symbol, target_pct in target_alloc_pct.items():
         target_dollar_value = total_rebalance_value * (target_pct / 100.0)
 
-        if symbol == CASH_SYMBOL_CSV:
+        if is_cash_symbol(symbol):
             # For CASH, calculate the required cash movement
             cash_movement_needed = target_dollar_value - current_cash_value
             summary["Net Cash Change"] = (
