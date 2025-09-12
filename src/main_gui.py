@@ -9048,6 +9048,19 @@ The CSV file should contain the following columns (header names must match exact
                             fx_ax.spines["right"].set_color("#9b59b6")
                             # Add the FX line to the list for tooltips
                             value_lines_plotted.append(fx_line)
+                            # --- ADDED: Create combined legend for both axes ---
+                            lines, labels = (
+                                self.abs_value_ax.get_legend_handles_labels()
+                            )
+                            lines2, labels2 = fx_ax.get_legend_handles_labels()
+                            self.abs_value_ax.legend(
+                                lines + lines2,
+                                labels + labels2,
+                                loc="upper left",
+                                fontsize=8,
+                                facecolor=self.QCOLOR_BACKGROUND_THEMED.name(),
+                                edgecolor=self.QCOLOR_BORDER_THEMED.name(),
+                            )
 
                 # self.abs_value_ax.set_title(
                 #     value_graph_title,
