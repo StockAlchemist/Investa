@@ -8556,6 +8556,14 @@ The CSV file should contain the following columns (header names must match exact
         self.perf_return_ax.clear()
         self.abs_value_ax.clear()
 
+        # --- ADDED: Remove any previously created secondary y-axis (twinx) ---
+        # This prevents stacking multiple FX rate axes when switching currencies.
+        if hasattr(self, "abs_value_fig"):
+            for ax in self.abs_value_fig.get_axes():
+                if ax is not self.abs_value_ax:
+                    ax.remove()
+        # --- END ADDED ---
+
         # Explicitly set backgrounds for performance line graphs
         # These graphs are in PerfGraphsContainer, which has its own QSS background.
         # Both figure and axes should match the main dashboard background.
@@ -9006,6 +9014,40 @@ The CSV file should contain the following columns (header names must match exact
                 formatter = mtick.FuncFormatter(currency_formatter)
                 self.abs_value_ax.yaxis.set_major_formatter(formatter)
                 # --- End currency formatter ---
+
+                # --- ADDED: Secondary Y-Axis for Historical FX Rate ---
+                if display_currency != "USD":
+                    fx_ax = self.abs_value_ax.twinx()
+                    fx_ticker = f"{display_currency}=X"
+
+                    if (
+                        hasattr(self, "historical_fx_yf")
+                        and fx_ticker in self.historical_fx_yf
+                    ):
+                        fx_data = self.historical_fx_yf[fx_ticker]
+                        if not fx_data.empty:
+                            # Plot historical FX rate
+                            (fx_line,) = fx_ax.plot(
+                                fx_data.index,
+                                fx_data["price"],
+                                color="#9b59b6",  # A distinct purple color
+                                linestyle="--",
+                                linewidth=1.2,
+                                label=f"USD/{display_currency} Rate",
+                                alpha=0.8,
+                            )
+                            # Style the secondary axis
+                            fx_ax.set_ylabel(
+                                f"USD/{display_currency} Rate",
+                                color="#9b59b6",
+                                fontsize=8,
+                            )
+                            fx_ax.tick_params(
+                                axis="y", labelcolor="#9b59b6", labelsize=7
+                            )
+                            fx_ax.spines["right"].set_color("#9b59b6")
+                            # Add the FX line to the list for tooltips
+                            value_lines_plotted.append(fx_line)
 
                 # self.abs_value_ax.set_title(
                 #     value_graph_title,
