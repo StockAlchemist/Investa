@@ -638,6 +638,24 @@ def load_and_clean_transactions(
             has_warnings = True
     df["Local Currency"] = df["Local Currency"].str.upper()  # Standardize to uppercase
 
+    # --- Convert legacy $CASH symbol to currency-specific cash symbols ---
+    legacy_cash_mask = df["Symbol"] == CASH_SYMBOL_CSV
+    if legacy_cash_mask.any():
+        logging.info(
+            f"Found {legacy_cash_mask.sum()} legacy '$CASH' transactions. Converting to currency-specific symbols (e.g., '$CASH_USD')."
+        )
+        # Use the already-determined 'Local Currency' for each row to create the new symbol
+        df.loc[legacy_cash_mask, "Symbol"] = df.loc[
+            legacy_cash_mask, "Local Currency"
+        ].apply(
+            lambda curr: (
+                f"{CASH_SYMBOL_CSV}_{curr}"
+                if curr
+                else f"{CASH_SYMBOL_CSV}_{default_currency}"
+            )
+        )
+        has_warnings = True  # It's a fix, so let's call it a warning.
+
     # Ensure `original_transactions_df` for context of ignored rows.
     # If loaded from DB, `raw_df_for_ignored_context` is already set.
     # If from CSV, `raw_df_for_ignored_context` holds the raw CSV read.

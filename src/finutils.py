@@ -30,12 +30,14 @@ from collections import defaultdict
 try:
     from config import (
         CASH_SYMBOL_CSV,
+        DEFAULT_CURRENCY,
         SHORTABLE_SYMBOLS,
     )  # YFINANCE_EXCLUDED_SYMBOLS, SYMBOL_MAP_TO_YFINANCE removed
 except ImportError:
     # Fallback values if config import fails (should not happen in normal execution)
     logging.error("CRITICAL: Could not import constants from config.py in finutils.py")
     CASH_SYMBOL_CSV = "$CASH"
+    DEFAULT_CURRENCY = "USD"
     SHORTABLE_SYMBOLS = {"AAPL", "RIMM"}
 
 
@@ -78,6 +80,26 @@ def _get_file_hash(filepath: str) -> str:
     except Exception as e:
         logging.exception(f"Unexpected error hashing file {filepath}")
         return HASH_ERROR_UNEXPECTED
+
+
+# --- Cash Symbol Helpers ---
+def is_cash_symbol(symbol: str) -> bool:
+    """Checks if a symbol is a cash symbol (e.g., '$CASH_USD', '$CASH')."""
+    if not isinstance(symbol, str):
+        return False
+    return symbol.startswith(CASH_SYMBOL_CSV)
+
+
+def get_currency_from_cash_symbol(symbol: str, default: str = DEFAULT_CURRENCY) -> str:
+    """Extracts currency from a cash symbol, e.g., '$CASH_USD' -> 'USD'."""
+    if not is_cash_symbol(symbol):
+        return default
+    parts = symbol.split("_")
+    # Check if there is a currency code part and it's a 3-letter alphabetic code
+    if len(parts) > 1 and len(parts[1]) == 3 and parts[1].isalpha():
+        return parts[1]
+    # If it's just '$CASH' or format is wrong, return the default
+    return default
 
 
 # --- IRR/MWR Calculation Functions ---

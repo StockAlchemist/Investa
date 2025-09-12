@@ -325,12 +325,15 @@ try:
     from finutils import (
         format_currency_value,
         format_percentage_value,
+        is_cash_symbol,
         format_large_number_display,
         format_integer_with_commas,
         format_float_with_commas,
         calculate_irr,
         get_historical_rate_via_usd_bridge,
     )
+
+    from finutils import get_currency_from_cash_symbol
 
     # --- End Import ---
     import inspect
@@ -1375,10 +1378,14 @@ The CSV file should contain the following columns (header names must match exact
 
         # 3. Get Local Currency Code for Labeling
         display_currency_code = self._get_currency_for_symbol(symbol)
-        if (
-            not display_currency_code
-        ):  # Should return default, but handle None just in case
+        if not display_currency_code and not is_cash_symbol(
+            symbol
+        ):  # If not cash and still no currency, use default
             display_currency_code = self.config.get("default_currency", "USD")
+        elif is_cash_symbol(symbol):
+            display_currency_code = get_currency_from_cash_symbol(
+                symbol, self.config.get("default_currency", "USD")
+            )
 
         # --- Create and Show Dialog ---
         try:
@@ -2518,7 +2525,9 @@ The CSV file should contain the following columns (header names must match exact
         self.update_holdings_pie_chart(df_display_filtered_for_pies)
         self._update_asset_allocation_charts()
 
-        self.update_dashboard_summary()  # Re-apply palette colors to summary labels
+        self.update_dashboard_summary(
+            df_display_filtered_for_pies
+        )  # Re-apply palette colors to summary labels
         self.update_header_info()  # Re-color header text
 
         self._update_periodic_value_change_display()  # Update new tab
@@ -3681,11 +3690,11 @@ The CSV file should contain the following columns (header names must match exact
             Optional[str]: The 3-letter currency code (e.g., 'USD', 'THB') or None if lookup fails badly.
                            Returns default currency as fallback.
         """
-        # 1. Check Cash Symbol
-        if symbol_to_find == CASH_SYMBOL_CSV:
-            # Cash usually takes the display currency context, but might be linked
-            # to specific accounts. Let's return the app's default for simplicity.
-            return self.config.get("default_currency", "USD")
+        # 1. Check if it's a cash symbol and extract currency directly
+        if is_cash_symbol(symbol_to_find):
+            return get_currency_from_cash_symbol(
+                symbol_to_find, self.config.get("default_currency", "USD")
+            )
 
         # 2. Check Holdings Data (most reliable if data is loaded)
         # This requires holdings_data to have the 'Local Currency' column correctly populated.
@@ -7541,8 +7550,12 @@ The CSV file should contain the following columns (header names must match exact
             # Update UI components
             logging.debug("  Calling _update_table_title...")
             self._update_table_title(df_for_table)  # Pass the generated DataFrame
-            logging.debug("  Calling update_dashboard_summary...")
-            self.update_dashboard_summary()  # Uses self.summary_metrics_data and filtered data for cash
+            logging.debug(
+                "  Calling update_dashboard_summary..."
+            )  # MODIFIED: Pass df_for_pies
+            self.update_dashboard_summary(
+                df_for_pies
+            )  # Pass filtered data for cash calculation
             # Account pie needs data grouped by account *within the selected scope*
             # We can derive this from the df_for_pies
             logging.debug("  Calling update_account_pie_chart...")
@@ -7784,8 +7797,12 @@ The CSV file should contain the following columns (header names must match exact
     def _connect_signals(self):
         """Connects signals from UI widgets (buttons, combos, etc.) to their slots."""
         self.account_select_button.clicked.connect(self.show_account_selection_menu)
-        self.refresh_action.triggered.connect(lambda: self.refresh_data(force_historical_refresh=True))
-        self.update_accounts_button.clicked.connect(lambda: self.refresh_data(force_historical_refresh=False))
+        self.refresh_action.triggered.connect(
+            lambda: self.refresh_data(force_historical_refresh=True)
+        )
+        self.update_accounts_button.clicked.connect(
+            lambda: self.refresh_data(force_historical_refresh=False)
+        )
         self.currency_combo.currentTextChanged.connect(self.filter_changed_refresh)
         self.show_closed_check.stateChanged.connect(self.filter_changed_refresh)
         self.group_by_sector_check.stateChanged.connect(self.filter_changed_refresh)
@@ -7805,8 +7822,12 @@ The CSV file should contain the following columns (header names must match exact
             )
         )
         self.benchmark_select_button.clicked.connect(self.show_benchmark_selection_menu)
-        self.graph_update_button.clicked.connect(lambda: self.refresh_data(force_historical_refresh=True))
-        self.refresh_button.clicked.connect(lambda: self.refresh_data(force_historical_refresh=True))
+        self.graph_update_button.clicked.connect(
+            lambda: self.refresh_data(force_historical_refresh=True)
+        )
+        self.refresh_button.clicked.connect(
+            lambda: self.refresh_data(force_historical_refresh=True)
+        )
         self.table_view.horizontalHeader().customContextMenuRequested.connect(
             self.show_header_context_menu
         )
@@ -8378,10 +8399,12 @@ The CSV file should contain the following columns (header names must match exact
 
         holdings_values = df_display.groupby("Symbol")[value_col_actual].sum()
         # Filter out the "TOTALS" summary row if it exists, as it's not a holding
-        if "is_summary_row" in df_display.columns:
-            df_display = df_display[df_display["is_summary_row"] != True].copy()
-            # Recalculate holdings_values after filtering out the summary row
-            holdings_values = df_display.groupby("Symbol")[value_col_actual].sum()
+        if "is_summary_row" in df_display.columns and not df_display.empty:
+            df_for_pie = df_display[df_display["is_summary_row"] != True].copy()
+        else:
+            df_for_pie = df_display.copy()
+
+        holdings_values = df_for_pie.groupby("Symbol")[value_col_actual].sum()
         # --- FIX: Filter for positive values for pie chart ---
         holdings_values = holdings_values[holdings_values > 1e-3]
 
@@ -8395,25 +8418,27 @@ The CSV file should contain the following columns (header names must match exact
             # self.holdings_ax.axis("equal")  # REMOVED - Pie chart handles aspect ratio
 
             holdings_values = holdings_values.sort_values(ascending=False)
-            labels_internal = holdings_values.index.tolist()
-            values = holdings_values.values
-            labels_display = [
-                (
-                    f"Cash ({display_currency})"
-                    if symbol == CASH_SYMBOL_CSV
-                    else str(symbol)
-                )
-                for symbol in labels_internal
+            # --- MODIFIED: Group all cash symbols into one "Cash" slice ---
+            cash_value = holdings_values[
+                holdings_values.index.map(is_cash_symbol)
+            ].sum()
+            non_cash_values = holdings_values[
+                ~holdings_values.index.map(is_cash_symbol)
             ]
+
+            if cash_value > 1e-3:
+                non_cash_values.loc["Cash"] = cash_value
+
+            holdings_values = non_cash_values.sort_values(ascending=False)
+            labels = holdings_values.index.tolist()
+            values = holdings_values.values
 
             if len(values) > CHART_MAX_SLICES:
                 top_v = values[: CHART_MAX_SLICES - 1]
-                top_l = labels_display[: CHART_MAX_SLICES - 1]
+                top_l = labels[: CHART_MAX_SLICES - 1]
                 other_v = values[CHART_MAX_SLICES - 1 :].sum()
                 values = np.append(top_v, other_v)
                 labels = top_l + ["Other"]
-            else:
-                labels = labels_display
 
             cmap = plt.get_cmap("Spectral")
             colors = cmap(np.linspace(0.1, 0.9, len(values)))
@@ -9227,13 +9252,14 @@ The CSV file should contain the following columns (header names must match exact
 
     # --- Data Handling and UI Update Methods ---
 
-    def update_dashboard_summary(self):
+    def update_dashboard_summary(self, df_filtered_for_cash: pd.DataFrame):
         """
         Updates the summary grid labels with aggregated portfolio metrics.
 
         Uses data from `self.summary_metrics_data` (which reflects the selected
-        account scope) and `self.holdings_data` (for cash balance). Formats values
-        with currency symbols and applies gain/loss coloring. Calculates and displays
+        account scope) and the passed `df_filtered_for_cash` DataFrame to determine
+        the cash balance. Formats values with currency symbols and applies gain/loss
+        coloring. Calculates and displays
         Total Return % and Annualized TWR %.
         """
         # --- Determine Scope ---
@@ -9293,21 +9319,15 @@ The CSV file should contain the following columns (header names must match exact
             # --- Cash calculation needs to use the filtered holdings_data ---
             overall_cash_value = None
             if (
-                isinstance(self.holdings_data, pd.DataFrame)
-                and not self.holdings_data.empty
+                isinstance(df_filtered_for_cash, pd.DataFrame)
+                and not df_filtered_for_cash.empty
                 and cash_val_col_actual
-                and "Symbol" in self.holdings_data.columns
-                and cash_val_col_actual in self.holdings_data.columns
+                and "Symbol" in df_filtered_for_cash.columns
+                and cash_val_col_actual in df_filtered_for_cash.columns
             ):
                 try:
-                    # Filter holdings_data based on selected accounts before summing cash
-                    df_filtered_for_cash = self._get_filtered_data(
-                        group_by_sector=False
-                    )  # Use existing filter logic
-                    cash_mask = df_filtered_for_cash["Symbol"] == CASH_SYMBOL_CSV
-                    cash_mask &= (
-                        df_filtered_for_cash["Account"] == _AGGREGATE_CASH_ACCOUNT_NAME_
-                    )
+                    # Sum up all cash symbols
+                    cash_mask = df_filtered_for_cash["Symbol"].apply(is_cash_symbol)
 
                     overall_cash_value = (
                         pd.to_numeric(  # Ensure it's numeric before summing
@@ -9749,6 +9769,28 @@ The CSV file should contain the following columns (header names must match exact
                 data_for_db_update["Local Currency"] = app_config_account_map.get(
                     str(acc_name_for_currency_update), app_config_default_curr
                 )
+
+                # If symbol is the generic '$CASH', convert it to a currency-specific one
+                symbol_from_dialog = data_for_db_update.get("Symbol")
+                if symbol_from_dialog == CASH_SYMBOL_CSV:
+                    currency_for_cash = app_config_account_map.get(
+                        str(acc_name_for_currency_update), app_config_default_curr
+                    )
+                    new_cash_symbol = f"{CASH_SYMBOL_CSV}_{currency_for_cash}"
+                    data_for_db_update["Symbol"] = new_cash_symbol
+                    logging.info(
+                        f"Converted generic '$CASH' symbol to '{new_cash_symbol}' during edit."
+                    )
+                elif is_cash_symbol(symbol_from_dialog):
+                    # It's already a currency-specific cash symbol, ensure currency matches
+                    symbol_currency = get_currency_from_cash_symbol(
+                        symbol_from_dialog, app_config_default_curr
+                    )
+                    data_for_db_update["Local Currency"] = symbol_currency
+                    logging.info(
+                        f"Cash symbol '{symbol_from_dialog}' provided in edit. Setting Local Currency to '{symbol_currency}'."
+                    )
+
             else:  # Should be caught by dialog if Account is mandatory
                 data_for_db_update["Local Currency"] = self.config.get(
                     "default_currency",
@@ -10639,7 +10681,7 @@ The CSV file should contain the following columns (header names must match exact
             self.pvc_monthly_table_model.updateData(pd.DataFrame())
             self.pvc_weekly_table_model.updateData(pd.DataFrame())
         self.apply_column_visibility()
-        self.update_dashboard_summary()
+        self.update_dashboard_summary(pd.DataFrame())  # Pass empty DF on clear
         self.update_account_pie_chart()
         self.update_holdings_pie_chart(pd.DataFrame())
         self.update_performance_graphs(initial=True)
@@ -11459,7 +11501,9 @@ The CSV file should contain the following columns (header names must match exact
         elif sender == self.show_closed_check:
             changed_control = "'Show Closed' Checkbox"
         logging.info(f"Filter change ({changed_control}) requires full refresh...")
-        self.refresh_data(force_historical_refresh=False)  # Trigger the main refresh function
+        self.refresh_data(
+            force_historical_refresh=False
+        )  # Trigger the main refresh function
 
     # --- UI Update Helpers ---
     def _update_table_view_with_filtered_columns(self, df_source_data):
@@ -14130,13 +14174,12 @@ The CSV file should contain the following columns (header names must match exact
         # --- Get portfolio symbols for autocompletion ---
         portfolio_symbols_for_dialog = []
         if (
-            hasattr(self, "all_transactions_df_cleaned_for_logic")
-            and not self.all_transactions_df_cleaned_for_logic.empty
-            and "Symbol" in self.all_transactions_df_cleaned_for_logic.columns
+            hasattr(self, "original_data")
+            and not self.original_data.empty
+            and "Symbol" in self.original_data.columns
         ):
-            portfolio_symbols_for_dialog = list(
-                self.all_transactions_df_cleaned_for_logic["Symbol"].unique()
-            )
+            # Use original_data to include all symbols ever used, not just current holdings
+            portfolio_symbols_for_dialog = list(self.original_data["Symbol"].unique())
             # <-- MODIFIED: Removed $CASH exclusion block
         # --- End Get portfolio symbols ---
 
@@ -14261,6 +14304,27 @@ The CSV file should contain the following columns (header names must match exact
                         acc_name_for_currency
                     ),  # Ensure acc_name is string for map lookup
                     app_config_default_curr,
+                )
+
+            # If symbol is the generic '$CASH', convert it to a currency-specific one
+            symbol_from_dialog = data_for_db.get("Symbol")
+            if symbol_from_dialog == CASH_SYMBOL_CSV:
+                currency_for_cash = app_config_account_map.get(
+                    str(acc_name_for_currency), app_config_default_curr
+                )
+                new_cash_symbol = f"{CASH_SYMBOL_CSV}_{currency_for_cash}"
+                data_for_db["Symbol"] = new_cash_symbol
+                logging.info(
+                    f"Converted generic '$CASH' symbol to '{new_cash_symbol}' based on account currency."
+                )
+            elif is_cash_symbol(symbol_from_dialog):
+                # It's already a currency-specific cash symbol, ensure currency matches
+                symbol_currency = get_currency_from_cash_symbol(
+                    symbol_from_dialog, app_config_default_curr
+                )
+                data_for_db["Local Currency"] = symbol_currency
+                logging.info(
+                    f"Cash symbol '{symbol_from_dialog}' provided. Setting Local Currency to '{symbol_currency}'."
                 )
             else:  # Fallback, though account should be mandatory from dialog
                 data_for_db["Local Currency"] = self.config.get(

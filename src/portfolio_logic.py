@@ -132,7 +132,6 @@ except ImportError:
 try:
     from portfolio_analyzer import (
         _process_transactions_to_holdings,
-        _calculate_cash_balances,
         _build_summary_rows,
         _calculate_aggregate_metrics,
     )
@@ -486,17 +485,9 @@ def calculate_portfolio_summary(
     if ignored_reasons_proc:
         status_parts.append(f"Processing Issues: {len(ignored_reasons_proc)}")
 
-    # --- 4. Calculate $CASH Balances ---
-    cash_summary, err_cash, warn_cash = _calculate_cash_balances(
-        transactions_df=transactions_df_filtered,  # Pass filtered DataFrame
-        default_currency=default_currency,
-    )
-    if err_cash:
-        has_errors = True
-        status_parts.append("Cash Calc Error")
-    if warn_cash:
-        has_warnings = True  # Added
-
+    # --- 4. (Obsolete) Cash Balance Calculation ---
+    # Cash is now processed as a regular holding in _process_transactions_to_holdings.
+    # The cash_summary dict is no longer needed.
     if has_errors:  # Critical error during cash balance calculation
         msg = "Error: Failed critically during cash balance calculation."
         logging.error(msg)
@@ -523,8 +514,6 @@ def calculate_portfolio_summary(
     required_currencies: Set[str] = set([display_currency, default_currency])
     for data in holdings.values():
         required_currencies.add(data.get("local_currency", default_currency))
-    for data in cash_summary.values():
-        required_currencies.add(data.get("currency", default_currency))
     required_currencies.discard(None)  # type: ignore
     # --- ADDED: More robust cleaning for required_currencies ---
     cleaned_required_currencies = {
@@ -541,7 +530,7 @@ def calculate_portfolio_summary(
     current_stock_data_internal, current_fx_rates_vs_usd, err_fetch, warn_fetch = (
         market_provider.get_current_quotes(
             internal_stock_symbols=all_stock_symbols_internal,
-            required_currencies=list(required_currencies),  # Pass as list
+            required_currencies=required_currencies,  # Pass as set
             user_symbol_map=effective_user_symbol_map,
             user_excluded_symbols=effective_user_excluded_symbols,
         )
@@ -594,13 +583,11 @@ def calculate_portfolio_summary(
 
     (
         portfolio_summary_rows,
-        account_market_values_local,
         account_local_currency_map,
         err_build,
         warn_build,
     ) = _build_summary_rows(
         holdings=holdings,
-        cash_summary=cash_summary,
         current_stock_data=(
             current_stock_data_internal
             if current_stock_data_internal is not None
@@ -644,9 +631,7 @@ def calculate_portfolio_summary(
             combined_ignored_reasons,
             final_status,
         )
-    elif not portfolio_summary_rows and (
-        holdings or cash_summary
-    ):  # Generated no rows but had input
+    elif not portfolio_summary_rows and (holdings):  # Generated no rows but had input
         msg = "Warning: Failed to generate any summary rows (FX or other issue during build)."
         logging.warning(msg)
         has_warnings = True

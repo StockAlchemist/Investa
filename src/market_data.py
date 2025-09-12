@@ -81,7 +81,11 @@ except ImportError:
 # --- Import helpers from finutils.py ---
 try:
     # map_to_yf_symbol is used within get_current_quotes
-    from finutils import map_to_yf_symbol
+    from finutils import (
+        map_to_yf_symbol,
+        is_cash_symbol,
+        get_currency_from_cash_symbol,
+    )
 except ImportError:
     logging.error(
         "CRITICAL: Could not import map_to_yf_symbol from finutils.py in market_data.py"
@@ -90,6 +94,12 @@ except ImportError:
     # Define a dummy function if needed
     def map_to_yf_symbol(s):
         return None
+
+    def is_cash_symbol(s):
+        return False
+
+    def get_currency_from_cash_symbol(s, default="USD"):
+        return default
 
 
 # Add a basic module docstring
@@ -278,9 +288,11 @@ class MarketDataProvider:
 
         # --- 1. Map internal symbols to YF tickers ---
         yf_symbols_to_fetch = set()
+        cash_symbols_internal = []
         internal_to_yf_map_local = {}
         for internal_symbol in internal_stock_symbols:
-            if internal_symbol == CASH_SYMBOL_CSV:
+            if is_cash_symbol(internal_symbol):
+                cash_symbols_internal.append(internal_symbol)
                 continue
             yf_symbol = map_to_yf_symbol(
                 internal_symbol, user_symbol_map, user_excluded_symbols
@@ -293,6 +305,31 @@ class MarketDataProvider:
                     f"Symbol '{internal_symbol}' excluded or unmappable to YF ticker. Skipping fetch."  # More accurate message
                 )
                 has_warnings = True
+
+        # --- Pre-process cash symbols ---
+        for cash_symbol in cash_symbols_internal:
+            currency = get_currency_from_cash_symbol(
+                cash_symbol,
+                default=(
+                    required_currencies.pop()
+                    if len(required_currencies) == 1
+                    else "USD"
+                ),
+            )
+            results[cash_symbol] = {
+                "price": 1.0,
+                "change": 0.0,
+                "changesPercentage": 0.0,
+                "currency": currency,
+                "name": f"Cash ({currency})",
+                "source": "Internal (Cash)",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "trailingAnnualDividendRate": 0.0,
+                "dividendYield": 0.0,
+            }
+            required_currencies.add(
+                currency
+            )  # Ensure its currency is in the list for FX fetching
 
         if not yf_symbols_to_fetch:
             logging.info("No valid stock symbols provided for current quotes.")

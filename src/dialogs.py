@@ -49,6 +49,8 @@ from finutils import (
     format_large_number_display,
     format_integer_with_commas,
     format_float_with_commas,
+    is_cash_symbol,
+    get_currency_from_cash_symbol,
 )
 
 from config import (
@@ -2202,7 +2204,7 @@ class AddTransactionDialog(QDialog):
 
         # --- Symbol ---
         self.symbol_edit = QLineEdit()
-        self.symbol_edit.setPlaceholderText("e.g., AAPL, GOOG, $CASH")
+        self.symbol_edit.setPlaceholderText("e.g., AAPL, GOOG, $CASH_USD")
         self.symbol_edit.setMinimumWidth(input_min_width)
         form_layout.addRow("Symbol:", self.symbol_edit)
 
@@ -2338,11 +2340,8 @@ class AddTransactionDialog(QDialog):
         tx_type_lower = (tx_type or self.type_combo.currentText()).lower()
         symbol_upper = (symbol or self.symbol_edit.text()).upper().strip()
 
-        # or passed in if it's dynamic. For now, assuming it's an attribute.
-        cash_symbol_to_use = getattr(
-            self, "cash_symbol_csv", CASH_SYMBOL_CSV
-        )  # Fallback to global
-        is_cash_symbol = symbol_upper == cash_symbol_to_use
+        # Use the helper function to check if the symbol is a cash symbol
+        is_cash_symbol_flag = is_cash_symbol(symbol_upper)
 
         # Default states
         qty_enabled, price_enabled, total_enabled, commission_enabled, split_enabled = (
@@ -2355,7 +2354,7 @@ class AddTransactionDialog(QDialog):
         price_readonly, total_readonly = False, False
         price_text_override = None
 
-        if is_cash_symbol:
+        if is_cash_symbol_flag:
             if tx_type_lower in [
                 "deposit",
                 "withdrawal",
@@ -2538,12 +2537,15 @@ class AddTransactionDialog(QDialog):
         # If comm_str is empty, comm remains 0.0
 
         # Type-specific validation logic
-        is_stock_trade = (
-            tx_type_lower in ["buy", "sell", "short sell", "buy to cover"]
-            and symbol != CASH_SYMBOL_CSV
-        )
-        is_cash_op = symbol == CASH_SYMBOL_CSV and tx_type_lower in [
+        is_stock_trade = tx_type_lower in [
+            "buy",
+            "sell",
+            "short sell",
+            "buy to cover",
+        ] and not is_cash_symbol(symbol)
+        is_cash_op = is_cash_symbol(symbol) and tx_type_lower in [
             "deposit",
+            "buy",
             "withdrawal",
             "buy",
             "sell",
@@ -2780,7 +2782,7 @@ class AddTransactionDialog(QDialog):
                 # else price remains None (or its initial value)
 
             # Special handling for $CASH dividend (interest)
-            if symbol == CASH_SYMBOL_CSV and total is not None:
+            if is_cash_symbol(symbol) and total is not None:
                 # If total is given for $CASH dividend, qty can be total and price 1.
                 if qty is None:
                     qty = total  # If qty wasn't provided, set it to total
@@ -2950,9 +2952,7 @@ class AddTransactionDialog(QDialog):
 
         # Determine if price field should be used or if it's $CASH
         current_symbol = self.symbol_edit.text().strip().upper()
-        is_cash_tx = (
-            current_symbol == CASH_SYMBOL_CSV
-        )  # CASH_SYMBOL_CSV is imported from config
+        is_cash_tx = is_cash_symbol(current_symbol)
 
         logging.debug(
             f"_auto_calculate_total: Called. Lock: {self.total_amount_locked_by_user}, Symbol: '{current_symbol}', Qty: '{self.quantity_edit.text()}', Price: '{self.price_edit.text()}'"
@@ -3153,9 +3153,7 @@ class AddTransactionDialog(QDialog):
         # to prevent auto-calculation from overwriting it during the initial _update_field_states call.
         current_tx_type_lower = self.type_combo.currentText().lower()
         current_symbol_upper = self.symbol_edit.text().upper().strip()  # Get symbol
-        cash_symbol_to_use_edit = getattr(self, "cash_symbol_csv", CASH_SYMBOL_CSV)
-        is_cash_symbol_edit = current_symbol_upper == cash_symbol_to_use_edit
-
+        is_cash_symbol_edit = is_cash_symbol(current_symbol_upper)
         self.total_amount_locked_by_user = False  # Default to not locked
 
         if self.total_amount_edit.text():  # If there's pre-filled total amount

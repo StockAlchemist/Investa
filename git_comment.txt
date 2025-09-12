@@ -1,0 +1,7 @@
+feat: Add selective refresh for historical data
+
+This commit introduces a mechanism to selectively refresh historical data, improving performance for UI-only updates.
+
+The `refresh_data` method now accepts a `force_historical_refresh` parameter. When this is `False`, the application will use cached historical data and only update the summary panel and holdings table. This is used for actions like changing accounts or filtering, which do not affect historical data.
+
+A full refresh, including historical data, is still performed for actions like changing the date range, importing new data, or when explicitly requested by the user through the "Refresh All" button.

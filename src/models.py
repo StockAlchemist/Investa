@@ -15,6 +15,8 @@ from finutils import (
     format_large_number_display,
     format_integer_with_commas,
     format_float_with_commas,
+    is_cash_symbol,
+    get_currency_from_cash_symbol,
 )
 
 from config import CASH_SYMBOL_CSV, CSV_DATE_FORMAT, _AGGREGATE_CASH_ACCOUNT_NAME_
@@ -527,25 +529,16 @@ class PandasModel(QAbstractTableModel):
                     symbol_col_idx = self._data.columns.get_loc("Symbol")
                     symbol_value = self._data.iloc[row, symbol_col_idx]
 
-                    if col_name == "Symbol" and symbol_value == CASH_SYMBOL_CSV:
-                        # Check if this is the aggregated cash row
-                        account_val_idx = self._data.columns.get_loc("Account")
-                        account_val = self._data.iloc[row, account_val_idx]
-                        if account_val == _AGGREGATE_CASH_ACCOUNT_NAME_:
-                            return f"Cash ({self._parent._get_currency_symbol(get_name=True)})"
-                        # Fallback for any other cash symbol (should not happen with new logic but safe)
-                        # else:
-                        #     display_currency_name = self._parent._get_currency_symbol(get_name=True) if self._parent else "CUR"
-                        #     return f"Cash ({display_currency_name})"
-                    elif symbol_value == CASH_SYMBOL_CSV and col_name in [
-                        "Total Ret %",
-                        "IRR (%)",
-                        "Yield (Cost) %",
-                        "Yield (Mkt) %",
-                        f"Est. Income",
-                    ]:
-                        # For the aggregated cash row, these are typically not applicable or zero
-                        return "-"
+                    if is_cash_symbol(symbol_value):
+                        # For any cash symbol, certain columns are not applicable
+                        if col_name in [
+                            "Total Ret %",
+                            "IRR (%)",
+                            "Yield (Cost) %",
+                            "Yield (Mkt) %",
+                            f"Est. Income",
+                        ]:
+                            return "-"
                 except (KeyError, IndexError):
                     pass
 
