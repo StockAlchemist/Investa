@@ -1865,6 +1865,114 @@ def _calculate_holdings_numba(
 # --- END NUMBA HELPER FUNCTION ---
 
 
+# --- START NEW CHRONOLOGICAL NUMBA HELPER ---
+@profile
+@numba.jit(nopython=True, fastmath=True)
+def _calculate_daily_holdings_chronological_numba(
+    date_ordinals_np,
+    tx_dates_ordinal_np,
+    tx_symbols_np,
+    tx_accounts_np,
+    tx_types_np,
+    tx_quantities_np,
+    tx_commissions_np,
+    tx_split_ratios_np,
+    num_symbols,
+    num_accounts,
+    split_type_id,
+    stock_split_type_id,
+    buy_type_id,
+    deposit_type_id,
+    sell_type_id,
+    withdrawal_type_id,
+    short_sell_type_id,
+    buy_to_cover_type_id,
+    cash_symbol_id,
+    stock_qty_close_tolerance,
+    shortable_symbol_ids,
+):
+    """
+    Calculates daily holding quantities and cash balances chronologically.
+    This is much more efficient than recalculating from scratch each day.
+    """
+    num_days = len(date_ordinals_np)
+    daily_holdings_qty_np = np.zeros(
+        (num_days, num_symbols, num_accounts), dtype=np.float64
+    )
+    daily_cash_balances_np = np.zeros((num_days, num_accounts), dtype=np.float64)
+
+    current_holdings_qty = np.zeros((num_symbols, num_accounts), dtype=np.float64)
+    current_cash_balances = np.zeros(num_accounts, dtype=np.float64)
+
+    tx_idx = 0
+    num_transactions = len(tx_dates_ordinal_np)
+
+    for day_idx in range(num_days):
+        current_date_ordinal = date_ordinals_np[day_idx]
+
+        while (
+            tx_idx < num_transactions
+            and tx_dates_ordinal_np[tx_idx] == current_date_ordinal
+        ):
+            symbol_id = tx_symbols_np[tx_idx]
+            account_id = tx_accounts_np[tx_idx]
+            type_id = tx_types_np[tx_idx]
+            qty = tx_quantities_np[tx_idx]
+            commission = tx_commissions_np[tx_idx]
+            split_ratio = tx_split_ratios_np[tx_idx]
+
+            if symbol_id == cash_symbol_id:
+                if type_id == buy_type_id or type_id == deposit_type_id:
+                    current_cash_balances[account_id] += abs(qty) - commission
+                elif type_id == sell_type_id or type_id == withdrawal_type_id:
+                    current_cash_balances[account_id] -= abs(qty) + commission
+            else:
+                if type_id == split_type_id or type_id == stock_split_type_id:
+                    if split_ratio > 1e-9:
+                        for acc_idx in range(num_accounts):
+                            if abs(current_holdings_qty[symbol_id, acc_idx]) > 1e-9:
+                                current_holdings_qty[symbol_id, acc_idx] *= split_ratio
+                elif type_id == buy_type_id or type_id == deposit_type_id:
+                    if qty > 1e-9:
+                        current_holdings_qty[symbol_id, account_id] += qty
+                elif type_id == sell_type_id or type_id == withdrawal_type_id:
+                    if qty > 1e-9:
+                        held_qty = current_holdings_qty[symbol_id, account_id]
+                        qty_sold = min(qty, held_qty) if held_qty > 1e-9 else 0.0
+                        current_holdings_qty[symbol_id, account_id] -= qty_sold
+                else:
+                    is_shortable = False
+                    for short_id in shortable_symbol_ids:
+                        if symbol_id == short_id:
+                            is_shortable = True
+                            break
+                    if is_shortable:
+                        if type_id == short_sell_type_id:
+                            current_holdings_qty[symbol_id, account_id] -= abs(qty)
+                        elif type_id == buy_to_cover_type_id:
+                            qty_currently_short = (
+                                abs(current_holdings_qty[symbol_id, account_id])
+                                if current_holdings_qty[symbol_id, account_id] < -1e-9
+                                else 0.0
+                            )
+                            qty_covered = min(abs(qty), qty_currently_short)
+                            current_holdings_qty[symbol_id, account_id] += qty_covered
+            tx_idx += 1
+
+        for s_id in range(num_symbols):
+            if s_id == cash_symbol_id:
+                continue
+            for a_id in range(num_accounts):
+                qty_val = current_holdings_qty[s_id, a_id]
+                if 0 < abs(qty_val) < stock_qty_close_tolerance:
+                    current_holdings_qty[s_id, a_id] = 0.0
+
+        daily_holdings_qty_np[day_idx] = current_holdings_qty
+        daily_cash_balances_np[day_idx] = current_cash_balances
+
+    return daily_holdings_qty_np, daily_cash_balances_np
+
+
 @profile  # <-- ADD THIS DECORATOR FOR LINE_PROFILER
 def _calculate_portfolio_value_at_date_unadjusted_numba(
     target_date: date,
@@ -2167,7 +2275,7 @@ def _calculate_portfolio_value_at_date_unadjusted(
     type_to_id: Dict[str, int],
     currency_to_id: Dict[str, int],
     id_to_currency: Dict[int, str],
-    method: str = "numba",  # Default to numba # type: ignore
+    method: str = HISTORICAL_CALC_METHOD,
 ) -> Tuple[float, bool]:
     """
     Dispatcher function to calculate portfolio value using either Python or Numba method.
@@ -2243,7 +2351,7 @@ def _calculate_daily_metrics_worker(
     id_to_account: Dict[int, str],
     type_to_id: Dict[str, int],
     currency_to_id: Dict[str, int],
-    id_to_currency: Dict[int, str],
+    id_to_currency: Dict[int, str],  # type: ignore
     calc_method: str = HISTORICAL_CALC_METHOD,  # Use config default
 ) -> Optional[Dict]:
     """
@@ -2780,6 +2888,7 @@ def _load_or_calculate_daily_results(
     num_processes: Optional[int] = None,
     current_hist_version: str = "v10",
     filter_desc: str = "All Accounts",
+    calc_method: str = HISTORICAL_CALC_METHOD,
 ) -> Tuple[pd.DataFrame, bool, str]:  # type: ignore
     """
     Loads calculated daily results from cache or calculates them using parallel processing.
@@ -2813,6 +2922,7 @@ def _load_or_calculate_daily_results(
         num_processes (Optional[int]): Number of parallel processes to use. Defaults to CPU count - 1.
         current_hist_version (str): Version string used in cache key generation.
         filter_desc (str): Description of the account scope for logging.
+        calc_method (str): The calculation method to use ('python', 'numba', 'numba_chrono').
         symbol_to_id (Dict): Map internal symbol string to int ID.
         account_to_id (Dict): Map account string to int ID.
         type_to_id (Dict): Map transaction type string to int ID.
@@ -2831,6 +2941,227 @@ def _load_or_calculate_daily_results(
     daily_df = pd.DataFrame()
     cache_valid_daily_results = False
     status_update = ""
+    dummy_warnings_set = set()
+
+    # --- Chronological Calculation (numba_chrono) ---
+    if calc_method == "numba_chrono":
+        logging.info(
+            f"Hist Daily (Scope: {filter_desc}): Calculating daily holdings chronologically (numba_chrono)..."
+        )
+        status_update = " Calculating daily values (chrono)..."
+
+        # 1. Prepare inputs for chronological Numba function
+        first_tx_date = (
+            transactions_df_effective["Date"].min().date()
+            if not transactions_df_effective.empty
+            else start_date
+        )
+        calc_start_date = max(start_date, first_tx_date)
+        calc_end_date = end_date
+
+        date_range_for_calc = pd.date_range(
+            start=calc_start_date, end=calc_end_date, freq="D"
+        )
+        date_ordinals_np = np.array(
+            [d.toordinal() for d in date_range_for_calc], dtype=np.int64
+        )
+
+        tx_dates_ordinal_np = np.array(
+            [d.toordinal() for d in transactions_df_effective["Date"].dt.date.values],
+            dtype=np.int64,
+        )
+        tx_symbols_np = (
+            transactions_df_effective["Symbol"]
+            .map(symbol_to_id)
+            .values.astype(np.int64)
+        )
+        tx_accounts_np = (
+            transactions_df_effective["Account"]
+            .map(account_to_id)
+            .values.astype(np.int64)
+        )
+        tx_types_np = (
+            transactions_df_effective["Type"]
+            .str.lower()
+            .str.strip()
+            .map(type_to_id)
+            .fillna(-1)
+            .values.astype(np.int64)
+        )
+        tx_quantities_np = (
+            transactions_df_effective["Quantity"].fillna(0.0).values.astype(np.float64)
+        )
+        tx_commissions_np = (
+            transactions_df_effective["Commission"]
+            .fillna(0.0)
+            .values.astype(np.float64)
+        )
+        tx_split_ratios_np = (
+            transactions_df_effective["Split Ratio"]
+            .fillna(0.0)
+            .values.astype(np.float64)
+        )
+
+        split_type_id = type_to_id.get("split", -1)
+        stock_split_type_id = type_to_id.get("stock split", -1)
+        buy_type_id = type_to_id.get("buy", -1)
+        deposit_type_id = type_to_id.get("deposit", -1)
+        sell_type_id = type_to_id.get("sell", -1)
+        withdrawal_type_id = type_to_id.get("withdrawal", -1)
+        short_sell_type_id = type_to_id.get("short sell", -1)
+        buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
+        cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
+        shortable_symbol_ids = np.array(
+            [symbol_to_id[s] for s in SHORTABLE_SYMBOLS if s in symbol_to_id],
+            dtype=np.int64,
+        )
+        num_symbols = len(symbol_to_id)
+        num_accounts = len(account_to_id)
+
+        # 2. Call Numba function to get daily holdings
+        daily_holdings_qty, daily_cash_balances = (
+            _calculate_daily_holdings_chronological_numba(
+                date_ordinals_np,
+                tx_dates_ordinal_np,
+                tx_symbols_np,
+                tx_accounts_np,
+                tx_types_np,
+                tx_quantities_np,
+                tx_commissions_np,
+                tx_split_ratios_np,
+                num_symbols,
+                num_accounts,
+                split_type_id,
+                stock_split_type_id,
+                buy_type_id,
+                deposit_type_id,
+                sell_type_id,
+                withdrawal_type_id,
+                short_sell_type_id,
+                buy_to_cover_type_id,
+                cash_symbol_id,
+                config.STOCK_QUANTITY_CLOSE_TOLERANCE,
+                shortable_symbol_ids,
+            )
+        )
+
+        # 3. Python valuation loop
+        @profile
+        def _value_daily_holdings_in_python():
+            daily_results_list = []
+            any_lookup_failed_overall = False
+            for day_idx, eval_date in enumerate(date_range_for_calc.date):
+                total_market_value_day = 0.0
+                day_lookup_failed = False
+
+                # Value stocks
+                stock_indices = np.argwhere(np.abs(daily_holdings_qty[day_idx]) > 1e-9)
+                for sym_id, acc_id in stock_indices:
+                    internal_symbol = id_to_symbol.get(sym_id)
+                    if internal_symbol is None or internal_symbol == CASH_SYMBOL_CSV:
+                        continue
+
+                    qty = daily_holdings_qty[day_idx, sym_id, acc_id]
+                    local_currency = account_currency_map.get(
+                        id_to_account.get(acc_id), default_currency
+                    )
+                    yf_symbol = internal_to_yf_map.get(internal_symbol)
+
+                    price_local = np.nan
+                    if yf_symbol:
+                        price_val = get_historical_price(
+                            yf_symbol, eval_date, historical_prices_yf_unadjusted
+                        )
+                        if price_val is not None and pd.notna(price_val):
+                            price_local = float(price_val)
+
+                    if pd.isna(price_local):
+                        day_lookup_failed = True
+                        break
+
+                    fx_rate = get_historical_rate_via_usd_bridge(
+                        local_currency, display_currency, eval_date, historical_fx_yf
+                    )
+                    if pd.isna(fx_rate):
+                        day_lookup_failed = True
+                        break
+
+                    total_market_value_day += qty * price_local * fx_rate
+
+                if day_lookup_failed:
+                    any_lookup_failed_overall = True
+                    total_market_value_day = np.nan
+
+                # Value cash
+                if not day_lookup_failed:
+                    for acc_id, cash_balance in enumerate(daily_cash_balances[day_idx]):
+                        if abs(cash_balance) > 1e-9:
+                            local_currency = account_currency_map.get(
+                                id_to_account.get(acc_id), default_currency
+                            )
+                            fx_rate = get_historical_rate_via_usd_bridge(
+                                local_currency,
+                                display_currency,
+                                eval_date,
+                                historical_fx_yf,
+                            )
+                            if pd.isna(fx_rate):
+                                day_lookup_failed = True
+                                any_lookup_failed_overall = True
+                                total_market_value_day = np.nan
+                                break
+                            total_market_value_day += cash_balance * fx_rate
+
+                # Get net flow and benchmarks
+                net_cash_flow, flow_lookup_failed = _calculate_daily_net_cash_flow(
+                    eval_date,
+                    transactions_df_effective,
+                    display_currency,
+                    historical_fx_yf,
+                    account_currency_map,
+                    default_currency,
+                    dummy_warnings_set,
+                )
+
+                benchmark_prices = {}
+                bench_lookup_failed = False
+                for bm_symbol in clean_benchmark_symbols_yf:
+                    price = get_historical_price(
+                        bm_symbol, eval_date, historical_prices_yf_adjusted
+                    )
+                    bench_price = float(price) if pd.notna(price) else np.nan
+                    benchmark_prices[f"{bm_symbol} Price"] = bench_price
+                    if pd.isna(bench_price):
+                        bench_lookup_failed = True
+
+                result_row = {
+                    "Date": eval_date,
+                    "value": total_market_value_day,
+                    "net_flow": net_cash_flow,
+                    "value_lookup_failed": day_lookup_failed,
+                    "flow_lookup_failed": flow_lookup_failed,
+                    "bench_lookup_failed": bench_lookup_failed,
+                }
+                result_row.update(benchmark_prices)
+                daily_results_list.append(result_row)
+
+            return daily_results_list, any_lookup_failed_overall
+
+        daily_results_list, any_lookup_failed = _value_daily_holdings_in_python()
+
+        if any_lookup_failed:
+            status_update += " (some lookups failed)."
+
+    # --- END of new chronological calculation block ---
+    else:  # Original parallel calculation
+        # ... (existing code with multiprocessing.Pool) ...
+        # The following is the original block, now under an `else`
+        status_update = " Calculating daily values..."
+        first_tx_date = (
+            transactions_df_effective["Date"].min().date()
+            if not transactions_df_effective.empty
+            else start_date
+        )
 
     # --- ADDED: Log input date range ---
     logging.debug(
@@ -3863,6 +4194,7 @@ def calculate_historical_performance(
             num_processes=num_processes,
             current_hist_version=CURRENT_HIST_VERSION,
             filter_desc=filter_desc,
+            calc_method=HISTORICAL_CALC_METHOD,
         )
     )
     if status_update_daily:
