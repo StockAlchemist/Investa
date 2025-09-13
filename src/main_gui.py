@@ -8825,16 +8825,22 @@ The CSV file should contain the following columns (header names must match exact
                         bench_plotted_count_full += 1
 
         # Add TWR Annotation
-        if hasattr(self, "last_hist_twr_factor") and pd.notna(
-            self.last_hist_twr_factor
-        ):
+        # --- MODIFIED: Calculate TWR for the visible period ---
+        period_twr_factor = np.nan
+        if port_col in results_df.columns:
+            # The 'Portfolio Accumulated Gain' in results_df is already re-normalized for the period
+            series_for_period_twr = results_df[port_col].dropna()
+            if not series_for_period_twr.empty:
+                period_twr_factor = series_for_period_twr.iloc[-1]
+
+        if pd.notna(period_twr_factor):
             try:
                 logging.debug(
-                    f"[Graph Update] Using self.last_hist_twr_factor for annotation: {self.last_hist_twr_factor}"
-                )  # ADDED LOG
-                tfv = float(self.last_hist_twr_factor)
+                    f"[Graph Update] Using period_twr_factor for annotation: {period_twr_factor}"
+                )
+                tfv = float(period_twr_factor)
                 tpg = (tfv - 1) * 100.0
-                tt = f"Total TWR: {tpg:+.2f}%"
+                tt = f"Period TWR: {tpg:+.2f}%"  # Changed label to "Period TWR"
                 tc_color = QCOLOR_GAIN if tpg >= -1e-9 else QCOLOR_LOSS
                 self.perf_return_ax.text(
                     0.98,  # X-coordinate (near right edge)
@@ -8843,7 +8849,7 @@ The CSV file should contain the following columns (header names must match exact
                     transform=self.perf_return_ax.transAxes,
                     fontsize=9,
                     fontweight="bold",
-                    color=tc_color.name(),  # tc_color is already a QColor, .name() gets hex
+                    color=tc_color.name(),
                     va="bottom",  # Vertical alignment
                     ha="right",  # Horizontal alignment
                     bbox=dict(
@@ -8855,6 +8861,7 @@ The CSV file should contain the following columns (header names must match exact
                 )
             except Exception as e:
                 logging.warning(f"Warn adding TWR annotation: {e}")
+        # --- END MODIFICATION ---
 
         # Format Return Plot
         if port_plotted_full or bench_plotted_count_full > 0:
