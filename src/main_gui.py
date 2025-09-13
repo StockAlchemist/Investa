@@ -2142,6 +2142,12 @@ The CSV file should contain the following columns (header names must match exact
             "column_visibility", {}
         )
         self.group_expansion_states: Dict[str, bool] = {}
+        # --- ADDED: Track account scope to reset grouping state ---
+        # This is crucial to fix the bug where groups remain collapsed after changing accounts.
+        self.last_selected_accounts_for_grouping: List[str] = (
+            self.selected_accounts.copy()
+        )
+        # --- END ADDED ---
         self._ensure_all_columns_in_visibility()
         self.threadpool = QThreadPool()
         logging.info(f"Max threads: {self.threadpool.maxThreadCount()}")
@@ -7111,6 +7117,16 @@ The CSV file should contain the following columns (header names must match exact
         `PortfolioCalculatorWorker`, and starts it in the thread pool. Disables
         UI controls during calculation.
         """
+        # --- ADDED: Reset group expansion state if account scope changes ---
+        # This is the definitive fix for the bug where groups remain collapsed after
+        # changing the account selection. It compares the current account scope with
+        # the last one used for grouping and clears the state if they differ.
+        if set(self.selected_accounts) != set(self.last_selected_accounts_for_grouping):
+            logging.info("Account scope changed, clearing group expansion states.")
+            self.group_expansion_states.clear()
+            self.last_selected_accounts_for_grouping = self.selected_accounts.copy()
+        # --- END ADDED ---
+
         if self.is_calculating:
             logging.info("Calculation already in progress. Ignoring refresh request.")
             return
@@ -7805,7 +7821,12 @@ The CSV file should contain the following columns (header names must match exact
         )
         self.currency_combo.currentTextChanged.connect(self.filter_changed_refresh)
         self.show_closed_check.stateChanged.connect(self.filter_changed_refresh)
-        self.group_by_sector_check.stateChanged.connect(self.filter_changed_refresh)
+        # --- MODIFIED: Decouple grouping from full refresh ---
+        # Grouping by sector is a UI-only view change and should not trigger a full
+        # data recalculation. It should only re-process the currently loaded holdings data
+        # for display in the table. This fixes a bug where the historical graph would
+        # change when grouping was toggled.
+        self.group_by_sector_check.stateChanged.connect(self._update_table_display)
         self.graph_start_date_edit.dateChanged.connect(
             lambda: self.status_label.setText(
                 "Graph dates changed. Click 'Update Graphs'."
@@ -8017,10 +8038,14 @@ The CSV file should contain the following columns (header names must match exact
         self._update_table_view_with_filtered_columns(df_display_filtered)
         self.apply_column_visibility()  # Re-apply visibility
 
-        # 3. Update the holdings pie chart based on this filtered data.
-        #    The account pie chart is not updated here as it reflects the broader
-        #    account scope, not the live text filter.
-        self.update_holdings_pie_chart(df_display_filtered)
+        # 3. Update the holdings pie chart.
+        #    It should always be based on ungrouped data.
+        #    If the data for the table was grouped, filter out the group headers.
+        df_for_pie = df_display_filtered
+        if "is_group_header" in df_for_pie.columns:
+            df_for_pie = df_for_pie[df_for_pie["is_group_header"] != True].copy()
+
+        self.update_holdings_pie_chart(df_for_pie)
 
         # 4. Update the table title to reflect the number of items *shown*.
         self._update_table_title(df_display_filtered)
@@ -9521,11 +9546,8 @@ The CSV file should contain the following columns (header names must match exact
             True,
             "total_return_pct",
         )
-        # Update Label Text
-        if is_all_accounts_selected:
-            self.summary_total_return_pct[0].setText("Total Ret %:")
-        else:
-            self.summary_total_return_pct[0].setText(f"Sel. Ret %:")
+        # Set label text (now static)
+        self.summary_total_return_pct[0].setText("Total Ret %:")
         self.summary_total_return_pct[0].setVisible(True)
         self.summary_total_return_pct[1].setVisible(True)
 
@@ -9577,11 +9599,8 @@ The CSV file should contain the following columns (header names must match exact
             True,
             "annualized_twr",
         )
-        # Update Label Text
-        if is_all_accounts_selected:
-            self.summary_annualized_twr[0].setText("Ann. TWR %:")
-        else:
-            self.summary_annualized_twr[0].setText(f"Sel. TWR %:")
+        # Set label text (now static)
+        self.summary_annualized_twr[0].setText("Ann. TWR %:")
         self.summary_annualized_twr[0].setVisible(True)
         self.summary_annualized_twr[1].setVisible(True)
 
@@ -11635,7 +11654,22 @@ The CSV file should contain the following columns (header names must match exact
             return df
 
         df_grouped = df.copy()
-        df_grouped["Sector"] = df_grouped["Sector"].fillna("Unknown")
+        # --- MODIFIED: More robust cleaning of the 'Sector' column ---
+        # This ensures that any non-string, NaN, None, or empty string values
+        # are consistently handled and grouped under "Unknown", preventing
+        # holdings from being missed by the groupby operation.
+        if "Sector" not in df_grouped.columns:
+            # This should not happen if data comes from portfolio_logic, but as a safeguard:
+            df_grouped["Sector"] = "Unknown"
+
+        # Coerce to string, then fill any resulting 'nan' or empty strings.
+        df_grouped["Sector"] = df_grouped["Sector"].astype(str).fillna("Unknown")
+        df_grouped.loc[df_grouped["Sector"].str.strip() == "", "Sector"] = "Unknown"
+        df_grouped.loc[
+            df_grouped["Sector"].str.upper().isin(["NAN", "NONE", "<NA>"]), "Sector"
+        ] = "Unknown"
+        # --- END MODIFICATION ---
+
         grouped_data = []
 
         currency = self._get_currency_symbol(get_name=True)
@@ -11949,17 +11983,11 @@ The CSV file should contain the following columns (header names must match exact
 
         df_filtered = df.copy()
 
-        # Filter by selected accounts
-        all_selected_or_empty = not self.selected_accounts or (
-            set(self.selected_accounts) == set(self.available_accounts)
-            if self.available_accounts
-            else True
-        )
-        if not all_selected_or_empty and "Account" in df_filtered.columns:
-            account_filter_mask = (
-                df_filtered["Account"].isin(self.selected_accounts)
-            ) | (df_filtered["Account"] == _AGGREGATE_CASH_ACCOUNT_NAME_)
-            df_filtered = df_filtered[account_filter_mask].copy()
+        # Account filtering is now handled by the worker that generates self.holdings_data.
+        # Applying the filter again here is redundant and can cause state issues
+        # when the UI's account selection state is momentarily out of sync with the
+        # just-received data. The worker's output is the source of truth for the scope.
+        # Therefore, this redundant filtering block has been removed.
 
         # Filter by 'Show Closed'
         show_closed = self.show_closed_check.isChecked()
