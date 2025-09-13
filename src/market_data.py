@@ -1032,93 +1032,110 @@ class MarketDataProvider:
         )
         yf_end_date = max(start_date, end_date) + timedelta(days=1)
         yf_start_date = min(start_date, end_date)
-        fetch_batch_size = 50
-        symbols_processed = 0
+        fetch_batch_size = 50  # Process symbols in batches to be friendlier to the API
+
+        # --- ADDED: Retry logic parameters for increased network robustness ---
+        retries = 3
+        timeout_seconds = 30
+        # --- END ADDED ---
 
         for i in range(0, len(symbols_yf), fetch_batch_size):
             batch_symbols = symbols_yf[i : i + fetch_batch_size]
-            try:
-                data = yf.download(
-                    tickers=batch_symbols,
-                    start=yf_start_date,
-                    end=yf_end_date,
-                    progress=False,
-                    group_by="ticker",
-                    auto_adjust=True,  # Get adjusted prices
-                    actions=False,
-                )
-                if data.empty:
-                    logging.warning(
-                        f"  Hist Fetch Helper WARN: No data returned for batch: {', '.join(batch_symbols)}"
+            data = pd.DataFrame()  # Initialize empty DataFrame for the batch
+            for attempt in range(retries):
+                try:
+                    data = yf.download(
+                        tickers=batch_symbols,
+                        start=yf_start_date,
+                        end=yf_end_date,
+                        progress=False,
+                        group_by="ticker",
+                        auto_adjust=True,
+                        actions=False,
+                        timeout=timeout_seconds,
                     )
-                    continue
-
-                for symbol in batch_symbols:
-                    df_symbol = None
-                    try:
-                        if len(batch_symbols) == 1 and not data.columns.nlevels > 1:
-                            df_symbol = data if not data.empty else None
-                        elif symbol in data.columns.levels[0]:
-                            df_symbol = data[symbol]
-                        elif len(batch_symbols) > 1 and not data.columns.nlevels > 1:
-                            logging.warning(
-                                f"  Hist Fetch Helper WARN: Unexpected flat DataFrame structure for multi-ticker batch. Symbol {symbol} might be missing."
-                            )
-                            continue
-                        else:  # Handle other potential structures (less common with group_by='ticker')
-                            if isinstance(data, pd.Series) and data.name == symbol:
-                                df_symbol = pd.DataFrame(data)
-                            elif (
-                                isinstance(data, pd.DataFrame)
-                                and symbol in data.columns
-                            ):
-                                df_symbol = data[[symbol]].rename(
-                                    columns={symbol: "Close"}
-                                )
-                            else:
-                                logging.warning(
-                                    f"  Hist Fetch Helper WARN: Symbol {symbol} not found in download results for this batch."
-                                )
-                                continue
-
-                        if df_symbol is None or df_symbol.empty:
-                            continue
-
-                        price_col = "Close"  # Adjusted close price
-                        if price_col not in df_symbol.columns:
-                            logging.warning(
-                                f"  Hist Fetch Helper WARN: Expected 'Close' column not found for {symbol}. Columns: {df_symbol.columns}"
-                            )
-                            continue
-
-                        df_filtered = df_symbol[[price_col]].copy()
-                        df_filtered.rename(columns={price_col: "price"}, inplace=True)
-                        df_filtered.index = pd.to_datetime(
-                            df_filtered.index
-                        ).date  # Use date objects
-                        df_filtered["price"] = pd.to_numeric(
-                            df_filtered["price"], errors="coerce"
-                        )
-                        df_filtered = df_filtered.dropna(subset=["price"])
-                        df_filtered = df_filtered[
-                            df_filtered["price"] > 1e-6
-                        ]  # Remove zero/neg prices
-
-                        if not df_filtered.empty:
-                            historical_data[symbol] = df_filtered.sort_index()
-
-                    except Exception as e_sym:
+                    # yfinance prints its own errors for failed tickers. If the whole batch fails,
+                    # it might return an empty DataFrame. We check for this to trigger a retry.
+                    if data.empty and len(batch_symbols) > 0:
                         logging.warning(
-                            f"  Hist Fetch Helper ERROR processing symbol {symbol} within batch: {e_sym}"
+                            f"  Hist Fetch Helper WARN (Attempt {attempt + 1}/{retries}): yf.download returned empty DataFrame for batch: {', '.join(batch_symbols)}"
                         )
+                        # Raise an exception to trigger the retry logic.
+                        raise ValueError("Empty DataFrame returned by yfinance")
 
-            except Exception as e_batch:
-                logging.warning(
-                    f"  Hist Fetch Helper ERROR during yf.download for batch starting with {batch_symbols[0]}: {e_batch}"
-                )
+                    # If we get here, the download was successful for at least some symbols.
+                    logging.info(
+                        f"  Hist Fetch Helper: Successfully fetched batch starting with {batch_symbols[0]} on attempt {attempt + 1}."
+                    )
+                    break  # Exit retry loop on success
+                except Exception as e_batch:
+                    logging.warning(
+                        f"  Hist Fetch Helper WARN (Attempt {attempt + 1}/{retries}) during yf.download for batch starting with {batch_symbols[0]}: {e_batch}"
+                    )
+                    if attempt < retries - 1:
+                        time.sleep(2)  # Wait 2 seconds before retrying
+                    else:
+                        logging.error(
+                            f"  Hist Fetch Helper ERROR: All {retries} attempts failed for batch starting with {batch_symbols[0]}."
+                        )
+                        # data will remain an empty DataFrame if all retries fail
 
-            symbols_processed += len(batch_symbols)
-            # time.sleep(0.2)  # Small delay between batches
+            if data.empty:
+                continue
+
+            for symbol in batch_symbols:
+                df_symbol = None
+                try:
+                    if len(batch_symbols) == 1 and not data.columns.nlevels > 1:
+                        df_symbol = data if not data.empty else None
+                    elif symbol in data.columns.levels[0]:
+                        df_symbol = data[symbol]
+                    elif len(batch_symbols) > 1 and not data.columns.nlevels > 1:
+                        logging.warning(
+                            f"  Hist Fetch Helper WARN: Unexpected flat DataFrame structure for multi-ticker batch. Symbol {symbol} might be missing."
+                        )
+                        continue
+                    else:  # Handle other potential structures (less common with group_by='ticker')
+                        if isinstance(data, pd.Series) and data.name == symbol:
+                            df_symbol = pd.DataFrame(data)
+                        elif isinstance(data, pd.DataFrame) and symbol in data.columns:
+                            df_symbol = data[[symbol]].rename(columns={symbol: "Close"})
+                        else:
+                            logging.warning(
+                                f"  Hist Fetch Helper WARN: Symbol {symbol} not found in download results for this batch."
+                            )
+                            continue
+
+                    if df_symbol is None or df_symbol.empty:
+                        continue
+
+                    price_col = "Close"  # Adjusted close price
+                    if price_col not in df_symbol.columns:
+                        logging.warning(
+                            f"  Hist Fetch Helper WARN: Expected 'Close' column not found for {symbol}. Columns: {df_symbol.columns}"
+                        )
+                        continue
+
+                    df_filtered = df_symbol[[price_col]].copy()
+                    df_filtered.rename(columns={price_col: "price"}, inplace=True)
+                    df_filtered.index = pd.to_datetime(
+                        df_filtered.index
+                    ).date  # Use date objects
+                    df_filtered["price"] = pd.to_numeric(
+                        df_filtered["price"], errors="coerce"
+                    )
+                    df_filtered = df_filtered.dropna(subset=["price"])
+                    df_filtered = df_filtered[
+                        df_filtered["price"] > 1e-6
+                    ]  # Remove zero/neg prices
+
+                    if not df_filtered.empty:
+                        historical_data[symbol] = df_filtered.sort_index()
+
+                except Exception as e_sym:
+                    logging.warning(
+                        f"  Hist Fetch Helper ERROR processing symbol {symbol} within batch: {e_sym}"
+                    )
 
         logging.info(
             f"Hist Fetch Helper: Finished fetching ({len(historical_data)} symbols successful)."

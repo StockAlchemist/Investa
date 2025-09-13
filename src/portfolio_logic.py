@@ -2884,6 +2884,10 @@ def _load_or_calculate_daily_results(
     type_to_id: Dict[str, int],
     currency_to_id: Dict[str, int],
     id_to_currency: Dict[int, str],
+    # --- NEW: Add pre-calculated holdings and account filter list ---
+    all_holdings_qty: Optional[np.ndarray],
+    all_cash_balances: Optional[np.ndarray],
+    included_accounts_list: List[str],
     # --- Parameters with defaults follow ---
     num_processes: Optional[int] = None,
     current_hist_version: str = "v10",
@@ -2944,13 +2948,9 @@ def _load_or_calculate_daily_results(
     dummy_warnings_set = set()
 
     # --- Chronological Calculation (numba_chrono) ---
+    # --- MODIFIED: Use L1 cache if available, otherwise calculate from scratch ---
     if calc_method == "numba_chrono":
-        logging.info(
-            f"Hist Daily (Scope: {filter_desc}): Calculating daily holdings chronologically (numba_chrono)..."
-        )
-        status_update = " Calculating daily values (chrono)..."
-
-        # 1. Prepare inputs for chronological Numba function
+        # This date range is needed for both cached and non-cached paths for valuation loop
         first_tx_date = (
             transactions_df_effective["Date"].min().date()
             if not transactions_df_effective.empty
@@ -2958,92 +2958,117 @@ def _load_or_calculate_daily_results(
         )
         calc_start_date = max(start_date, first_tx_date)
         calc_end_date = end_date
-
         date_range_for_calc = pd.date_range(
             start=calc_start_date, end=calc_end_date, freq="D"
         )
-        date_ordinals_np = np.array(
-            [d.toordinal() for d in date_range_for_calc], dtype=np.int64
-        )
 
-        tx_dates_ordinal_np = np.array(
-            [d.toordinal() for d in transactions_df_effective["Date"].dt.date.values],
-            dtype=np.int64,
-        )
-        tx_symbols_np = (
-            transactions_df_effective["Symbol"]
-            .map(symbol_to_id)
-            .values.astype(np.int64)
-        )
-        tx_accounts_np = (
-            transactions_df_effective["Account"]
-            .map(account_to_id)
-            .values.astype(np.int64)
-        )
-        tx_types_np = (
-            transactions_df_effective["Type"]
-            .str.lower()
-            .str.strip()
-            .map(type_to_id)
-            .fillna(-1)
-            .values.astype(np.int64)
-        )
-        tx_quantities_np = (
-            transactions_df_effective["Quantity"].fillna(0.0).values.astype(np.float64)
-        )
-        tx_commissions_np = (
-            transactions_df_effective["Commission"]
-            .fillna(0.0)
-            .values.astype(np.float64)
-        )
-        tx_split_ratios_np = (
-            transactions_df_effective["Split Ratio"]
-            .fillna(0.0)
-            .values.astype(np.float64)
-        )
-
-        split_type_id = type_to_id.get("split", -1)
-        stock_split_type_id = type_to_id.get("stock split", -1)
-        buy_type_id = type_to_id.get("buy", -1)
-        deposit_type_id = type_to_id.get("deposit", -1)
-        sell_type_id = type_to_id.get("sell", -1)
-        withdrawal_type_id = type_to_id.get("withdrawal", -1)
-        short_sell_type_id = type_to_id.get("short sell", -1)
-        buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
-        cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
-        shortable_symbol_ids = np.array(
-            [symbol_to_id[s] for s in SHORTABLE_SYMBOLS if s in symbol_to_id],
-            dtype=np.int64,
-        )
-        num_symbols = len(symbol_to_id)
-        num_accounts = len(account_to_id)
-
-        # 2. Call Numba function to get daily holdings
-        daily_holdings_qty, daily_cash_balances = (
-            _calculate_daily_holdings_chronological_numba(
-                date_ordinals_np,
-                tx_dates_ordinal_np,
-                tx_symbols_np,
-                tx_accounts_np,
-                tx_types_np,
-                tx_quantities_np,
-                tx_commissions_np,
-                tx_split_ratios_np,
-                num_symbols,
-                num_accounts,
-                split_type_id,
-                stock_split_type_id,
-                buy_type_id,
-                deposit_type_id,
-                sell_type_id,
-                withdrawal_type_id,
-                short_sell_type_id,
-                buy_to_cover_type_id,
-                cash_symbol_id,
-                STOCK_QUANTITY_CLOSE_TOLERANCE,
-                shortable_symbol_ids,
+        # Determine which set of holdings to use (L1 cached or calculate now)
+        if all_holdings_qty is not None and all_cash_balances is not None:
+            logging.info(
+                f"Hist Daily (Scope: {filter_desc}): Using L1 cached holdings..."
             )
-        )
+            status_update = " Using pre-calculated daily values..."
+            daily_holdings_qty_source = all_holdings_qty
+            daily_cash_balances_source = all_cash_balances
+        else:
+            logging.info(
+                f"Hist Daily (Scope: {filter_desc}): L1 cache miss. Calculating daily holdings chronologically (numba_chrono)..."
+            )
+            status_update = " Calculating daily values (chrono)..."
+            # Prepare inputs for chronological Numba function
+            date_ordinals_np = np.array(
+                [d.toordinal() for d in date_range_for_calc], dtype=np.int64
+            )
+            tx_dates_ordinal_np = np.array(
+                [
+                    d.toordinal()
+                    for d in transactions_df_effective["Date"].dt.date.values
+                ],
+                dtype=np.int64,
+            )
+            tx_symbols_np = (
+                transactions_df_effective["Symbol"]
+                .map(symbol_to_id)
+                .values.astype(np.int64)
+            )
+            tx_accounts_np = (
+                transactions_df_effective["Account"]
+                .map(account_to_id)
+                .values.astype(np.int64)
+            )
+            tx_types_np = (
+                transactions_df_effective["Type"]
+                .str.lower()
+                .str.strip()
+                .map(type_to_id)
+                .fillna(-1)
+                .values.astype(np.int64)
+            )
+            tx_quantities_np = (
+                transactions_df_effective["Quantity"]
+                .fillna(0.0)
+                .values.astype(np.float64)
+            )
+            tx_commissions_np = (
+                transactions_df_effective["Commission"]
+                .fillna(0.0)
+                .values.astype(np.float64)
+            )
+            tx_split_ratios_np = (
+                transactions_df_effective["Split Ratio"]
+                .fillna(0.0)
+                .values.astype(np.float64)
+            )
+            split_type_id = type_to_id.get("split", -1)
+            stock_split_type_id = type_to_id.get("stock split", -1)
+            buy_type_id = type_to_id.get("buy", -1)
+            deposit_type_id = type_to_id.get("deposit", -1)
+            sell_type_id = type_to_id.get("sell", -1)
+            withdrawal_type_id = type_to_id.get("withdrawal", -1)
+            short_sell_type_id = type_to_id.get("short sell", -1)
+            buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
+            cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
+            shortable_symbol_ids = np.array(
+                [symbol_to_id[s] for s in SHORTABLE_SYMBOLS if s in symbol_to_id],
+                dtype=np.int64,
+            )
+            num_symbols = len(symbol_to_id)
+            num_accounts = len(account_to_id)
+
+            # Call Numba function to get daily holdings
+            daily_holdings_qty_source, daily_cash_balances_source = (
+                _calculate_daily_holdings_chronological_numba(
+                    date_ordinals_np,
+                    tx_dates_ordinal_np,
+                    tx_symbols_np,
+                    tx_accounts_np,
+                    tx_types_np,
+                    tx_quantities_np,
+                    tx_commissions_np,
+                    tx_split_ratios_np,
+                    num_symbols,
+                    num_accounts,
+                    split_type_id,
+                    stock_split_type_id,
+                    buy_type_id,
+                    deposit_type_id,
+                    sell_type_id,
+                    withdrawal_type_id,
+                    short_sell_type_id,
+                    buy_to_cover_type_id,
+                    cash_symbol_id,
+                    STOCK_QUANTITY_CLOSE_TOLERANCE,
+                    shortable_symbol_ids,
+                )
+            )
+
+        # Get the set of account IDs to include in the valuation
+        account_ids_to_include_set = {
+            account_to_id.get(acc) for acc in included_accounts_list
+        }
+        account_ids_to_include_set.discard(
+            None
+        )  # Remove None if an account wasn't in the map
 
         # 3. Python valuation loop
         @profile
@@ -3055,13 +3080,19 @@ def _load_or_calculate_daily_results(
                 day_lookup_failed = False
 
                 # Value stocks
-                stock_indices = np.argwhere(np.abs(daily_holdings_qty[day_idx]) > 1e-9)
+                stock_indices = np.argwhere(
+                    np.abs(daily_holdings_qty_source[day_idx]) > 1e-9
+                )
                 for sym_id, acc_id in stock_indices:
+                    # --- NEW: Filter by selected accounts ---
+                    if acc_id not in account_ids_to_include_set:
+                        continue
+                    # --- END NEW ---
                     internal_symbol = id_to_symbol.get(sym_id)
                     if internal_symbol is None or internal_symbol == CASH_SYMBOL_CSV:
                         continue
 
-                    qty = daily_holdings_qty[day_idx, sym_id, acc_id]
+                    qty = daily_holdings_qty_source[day_idx, sym_id, acc_id]
                     local_currency = account_currency_map.get(
                         id_to_account.get(acc_id), default_currency
                     )
@@ -3094,8 +3125,13 @@ def _load_or_calculate_daily_results(
 
                 # Value cash
                 if not day_lookup_failed:
-                    for acc_id, cash_balance in enumerate(daily_cash_balances[day_idx]):
+                    for acc_id, cash_balance in enumerate(
+                        daily_cash_balances_source[day_idx]
+                    ):
                         if abs(cash_balance) > 1e-9:
+                            # --- NEW: Filter by selected accounts ---
+                            if acc_id not in account_ids_to_include_set:
+                                continue
                             local_currency = account_currency_map.get(
                                 id_to_account.get(acc_id), default_currency
                             )
@@ -3149,7 +3185,9 @@ def _load_or_calculate_daily_results(
 
         daily_results_list, any_lookup_failed = _value_daily_holdings_in_python()
 
-        if any_lookup_failed:
+        if (
+            any_lookup_failed
+        ):  # This part seems to be missing from the original file, but it's good to have.
             status_update += " (some lookups failed)."
 
     # --- END of new chronological calculation block ---
@@ -3622,6 +3660,152 @@ def _load_or_calculate_daily_results(
     return daily_df, cache_valid_daily_results, status_update
 
 
+@profile
+def _get_or_calculate_all_daily_holdings(
+    all_transactions_df: pd.DataFrame,
+    start_date: date,
+    end_date: date,
+    symbol_to_id: Dict,
+    account_to_id: Dict,
+    type_to_id: Dict,
+):
+    """
+    Layer 1 Cache: Calculates or loads from cache the daily holdings for ALL transactions.
+    This is the most expensive part of the historical calculation. The result is independent
+    of account selection or display currency.
+    """
+    # 1. Generate Cache Key from transaction data
+    # Using a hash of the dataframe content ensures the cache invalidates if transactions change.
+    tx_hash = hashlib.sha256(
+        pd.util.hash_pandas_object(all_transactions_df, index=True).values
+    ).hexdigest()
+    cache_key = (
+        f"ALL_HOLDINGS_v1.1_{tx_hash}_{start_date.isoformat()}_{end_date.isoformat()}"
+    )
+
+    # 2. Define Cache File Paths
+    cache_dir_base = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
+    if not cache_dir_base:
+        logging.warning(
+            "Could not find cache directory. Layer 1 caching will be disabled."
+        )
+        return None, None  # Cannot cache
+
+    holdings_cache_dir = os.path.join(cache_dir_base, "all_holdings_cache")
+    os.makedirs(holdings_cache_dir, exist_ok=True)
+
+    key_file = os.path.join(holdings_cache_dir, f"{cache_key}.key")
+    qty_file = os.path.join(holdings_cache_dir, f"{cache_key}_qty.npy")
+    cash_file = os.path.join(holdings_cache_dir, f"{cache_key}_cash.npy")
+
+    # 3. Check Cache
+    if (
+        os.path.exists(key_file)
+        and os.path.exists(qty_file)
+        and os.path.exists(cash_file)
+    ):
+        logging.info(
+            "L1 Cache HIT: Loading pre-calculated daily holdings for all accounts."
+        )
+        try:
+            daily_holdings_qty = np.load(qty_file)
+            daily_cash_balances = np.load(cash_file)
+            return daily_holdings_qty, daily_cash_balances
+        except Exception as e:
+            logging.warning(f"L1 Cache Load Error: Failed to load numpy arrays: {e}")
+            # Proceed to recalculate if load fails
+
+    # 4. Cache MISS: Perform Calculation
+    logging.info("L1 Cache MISS: Calculating daily holdings for all accounts...")
+
+    # Prepare inputs for Numba function (similar to the block in _load_or_calculate_daily_results)
+    date_range_for_calc = pd.date_range(start=start_date, end=end_date, freq="D")
+    date_ordinals_np = np.array(
+        [d.toordinal() for d in date_range_for_calc], dtype=np.int64
+    )
+    tx_dates_ordinal_np = np.array(
+        [d.toordinal() for d in all_transactions_df["Date"].dt.date.values],
+        dtype=np.int64,
+    )
+    tx_symbols_np = (
+        all_transactions_df["Symbol"].map(symbol_to_id).values.astype(np.int64)
+    )
+    tx_accounts_np = (
+        all_transactions_df["Account"].map(account_to_id).values.astype(np.int64)
+    )
+    tx_types_np = (
+        all_transactions_df["Type"]
+        .str.lower()
+        .str.strip()
+        .map(type_to_id)
+        .fillna(-1)
+        .values.astype(np.int64)
+    )
+    tx_quantities_np = (
+        all_transactions_df["Quantity"].fillna(0.0).values.astype(np.float64)
+    )
+    tx_commissions_np = (
+        all_transactions_df["Commission"].fillna(0.0).values.astype(np.float64)
+    )
+    tx_split_ratios_np = (
+        all_transactions_df["Split Ratio"].fillna(0.0).values.astype(np.float64)
+    )
+    split_type_id = type_to_id.get("split", -1)
+    stock_split_type_id = type_to_id.get("stock split", -1)
+    buy_type_id = type_to_id.get("buy", -1)
+    deposit_type_id = type_to_id.get("deposit", -1)
+    sell_type_id = type_to_id.get("sell", -1)
+    withdrawal_type_id = type_to_id.get("withdrawal", -1)
+    short_sell_type_id = type_to_id.get("short sell", -1)
+    buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
+    cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
+    shortable_symbol_ids = np.array(
+        [symbol_to_id[s] for s in SHORTABLE_SYMBOLS if s in symbol_to_id],
+        dtype=np.int64,
+    )
+    num_symbols = len(symbol_to_id)
+    num_accounts = len(account_to_id)
+
+    # Call the Numba JIT function
+    daily_holdings_qty, daily_cash_balances = (
+        _calculate_daily_holdings_chronological_numba(
+            date_ordinals_np,
+            tx_dates_ordinal_np,
+            tx_symbols_np,
+            tx_accounts_np,
+            tx_types_np,
+            tx_quantities_np,
+            tx_commissions_np,
+            tx_split_ratios_np,
+            num_symbols,
+            num_accounts,
+            split_type_id,
+            stock_split_type_id,
+            buy_type_id,
+            deposit_type_id,
+            sell_type_id,
+            withdrawal_type_id,
+            short_sell_type_id,
+            buy_to_cover_type_id,
+            cash_symbol_id,
+            STOCK_QUANTITY_CLOSE_TOLERANCE,
+            shortable_symbol_ids,
+        )
+    )
+
+    # 5. Save to Cache
+    try:
+        np.save(qty_file, daily_holdings_qty)
+        np.save(cash_file, daily_cash_balances)
+        with open(key_file, "w") as f:
+            f.write("valid")
+        logging.info("L1 Cache SAVE: Saved calculated daily holdings to cache.")
+    except Exception as e:
+        logging.error(f"L1 Cache SAVE Error: Failed to save numpy arrays: {e}")
+
+    return daily_holdings_qty, daily_cash_balances
+
+
 # --- Accumulated Gain and Resampling (Keep as is) ---
 def _calculate_accumulated_gains_and_resample(
     daily_df: pd.DataFrame,
@@ -3935,6 +4119,39 @@ def calculate_historical_performance(
     has_warnings = False
     status_parts = []
     processed_warnings = set()
+
+    # --- NEW: Generate Mappings for ALL transactions at the start ---
+    (
+        symbol_to_id,
+        id_to_symbol,
+        account_to_id,
+        id_to_account,
+        type_to_id,
+        currency_to_id,
+        id_to_currency,
+    ) = ({}, {}, {}, {}, {}, {}, {})
+    try:
+        if (
+            all_transactions_df_cleaned is not None
+            and not all_transactions_df_cleaned.empty
+        ):
+            (
+                symbol_to_id,
+                id_to_symbol,
+                account_to_id,
+                id_to_account,
+                type_to_id,
+                currency_to_id,
+                id_to_currency,
+            ) = generate_mappings(all_transactions_df_cleaned)
+            logging.info(
+                "Generated full string-to-ID mappings for historical calculation."
+            )
+    except Exception as e_map:
+        logging.error(f"CRITICAL ERROR creating full string-to-ID mappings: {e_map}")
+        return pd.DataFrame(), {}, {}, f"Error: Mapping creation failed: {e_map}"
+    # --- END NEW ---
+
     final_twr_factor = np.nan
     daily_df = pd.DataFrame()
     historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}  # Ensure type
@@ -4054,6 +4271,21 @@ def calculate_historical_performance(
     )
 
     # --- 3. Load or Fetch ADJUSTED Historical Raw Data ---
+    # --- NEW: Load/Calculate ALL daily holdings (Layer 1 Cache) ---
+    logging.info("Checking Layer 1 cache for all daily holdings...")
+    all_holdings_qty, all_cash_balances = _get_or_calculate_all_daily_holdings(
+        all_transactions_df=all_transactions_df_cleaned,
+        start_date=full_start_date,
+        end_date=fetch_end_date,
+        symbol_to_id=symbol_to_id,
+        account_to_id=account_to_id,
+        type_to_id=type_to_id,
+    )
+    if all_holdings_qty is None:
+        status_parts.append("L1 Cache Error")
+        has_errors = True  # This is a critical failure
+    # --- END NEW ---
+
     logging.info("Fetching/Loading adjusted historical prices...")
     fetched_prices_adj, fetch_failed_prices = market_provider.get_historical_data(
         symbols_yf=symbols_for_stocks_and_benchmarks_yf,
@@ -4113,52 +4345,6 @@ def calculate_historical_performance(
         has_warnings = True  # If _unadjust_prices logged warnings
 
     # --- Create String-to-ID Mappings (for Numba) ---
-    (
-        symbol_to_id,
-        id_to_symbol,
-        account_to_id,
-        id_to_account,
-        type_to_id,
-        currency_to_id,
-        id_to_currency,
-    ) = ({}, {}, {}, {}, {}, {}, {})
-    try:
-        if not transactions_df_effective.empty:
-            all_symbols_eff = transactions_df_effective["Symbol"].unique()
-            symbol_to_id = {symbol: i for i, symbol in enumerate(all_symbols_eff)}
-            id_to_symbol = {i: symbol for symbol, i in symbol_to_id.items()}
-
-            all_accounts_eff = transactions_df_effective["Account"].unique()
-            account_to_id = {account: i for i, account in enumerate(all_accounts_eff)}
-            id_to_account = {i: account for account, i in account_to_id.items()}
-
-            all_types_eff = transactions_df_effective["Type"].unique()
-            type_to_id = {
-                tx_type.lower().strip(): i for i, tx_type in enumerate(all_types_eff)
-            }  # Normalize keys
-
-            all_currencies_eff = transactions_df_effective["Local Currency"].unique()
-            currency_to_id = {curr: i for i, curr in enumerate(all_currencies_eff)}
-            id_to_currency = {i: curr for curr, i in currency_to_id.items()}
-
-            if CASH_SYMBOL_CSV not in symbol_to_id:
-                cash_id_val = len(symbol_to_id)
-                symbol_to_id[CASH_SYMBOL_CSV] = cash_id_val
-                id_to_symbol[cash_id_val] = CASH_SYMBOL_CSV
-            logging.info("Created string-to-ID mappings for Numba.")
-        else:
-            logging.warning(
-                "Transactions_df_effective is empty, cannot create Numba mappings robustly."
-            )
-            # Initialize with CASH_SYMBOL_CSV to prevent Numba helper from crashing if it expects it
-            symbol_to_id[CASH_SYMBOL_CSV] = 0
-            id_to_symbol[0] = CASH_SYMBOL_CSV
-
-    except Exception as e_map:
-        logging.error(f"CRITICAL ERROR creating string-to-ID mappings: {e_map}")
-        has_errors = True
-        status_parts.append("Mapping Error")
-        # Further error handling if needed
 
     # --- 5 & 6. Load or Calculate Daily Results ---
     # Pass original_csv_file_path to _load_or_calculate_daily_results for cache validation.
@@ -4191,6 +4377,10 @@ def calculate_historical_performance(
             type_to_id=type_to_id,
             currency_to_id=currency_to_id,
             id_to_currency=id_to_currency,
+            # --- NEW: Pass pre-calculated holdings and account filter list ---
+            all_holdings_qty=all_holdings_qty,
+            all_cash_balances=all_cash_balances,
+            included_accounts_list=included_accounts_list_sorted,
             num_processes=num_processes,
             current_hist_version=CURRENT_HIST_VERSION,
             filter_desc=filter_desc,
@@ -4286,6 +4476,38 @@ def calculate_historical_performance(
         logging.debug("Renamed 'value' column to 'Portfolio Value' in daily_df.")
 
     return daily_df, historical_prices_yf_adjusted, historical_fx_yf, final_status_str
+
+
+def generate_mappings(transactions_df_effective):
+    """Generates string-to-ID mappings based on the effective transaction data."""
+    symbol_to_id, id_to_symbol = {}, {}
+    account_to_id, id_to_account = {}, {}
+    type_to_id = {}
+    currency_to_id, id_to_currency = {}, {}
+    all_symbols = transactions_df_effective["Symbol"].unique()
+    symbol_to_id = {symbol: i for i, symbol in enumerate(all_symbols)}
+    id_to_symbol = {i: symbol for symbol, i in symbol_to_id.items()}
+    all_accounts = transactions_df_effective["Account"].unique()
+    account_to_id = {account: i for i, account in enumerate(all_accounts)}
+    id_to_account = {i: account for account, i in account_to_id.items()}
+    all_types = transactions_df_effective["Type"].unique()
+    type_to_id = {tx_type.lower().strip(): i for i, tx_type in enumerate(all_types)}
+    all_currencies = transactions_df_effective["Local Currency"].unique()
+    currency_to_id = {curr: i for i, curr in enumerate(all_currencies)}
+    id_to_currency = {i: curr for curr, i in currency_to_id.items()}
+    if CASH_SYMBOL_CSV not in symbol_to_id:
+        cash_id = len(symbol_to_id)
+        symbol_to_id[CASH_SYMBOL_CSV] = cash_id
+        id_to_symbol[cash_id] = CASH_SYMBOL_CSV
+    return (
+        symbol_to_id,
+        id_to_symbol,
+        account_to_id,
+        id_to_account,
+        type_to_id,
+        currency_to_id,
+        id_to_currency,
+    )
 
 
 # --- Helper to generate mappings (Needed for standalone profiling) ---
