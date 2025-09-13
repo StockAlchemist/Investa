@@ -1684,7 +1684,7 @@ def _calculate_aggregate_metrics(
             overall_day_change_percent = 0.0
 
     overall_total_return_pct = np.nan
-    overall_denominator = overall_total_buy_cost_display
+    overall_denominator = overall_cost_basis_display  # Use cost basis of held assets + cash as the denominator
     if pd.notna(overall_total_gain_display) and pd.notna(overall_denominator):
         if abs(overall_denominator) > 1e-9:
             overall_total_return_pct = (

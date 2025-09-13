@@ -11907,8 +11907,9 @@ The CSV file should contain the following columns (header names must match exact
         if is_cash_sector:
             percentages["Total Return %"] = np.nan
         else:
+            # Use cost basis of held assets + cash as the denominator for a more intuitive return on capital.
             percentages["Total Return %"] = safe_division_pct(
-                sum_total_gain, sum_total_buy_cost
+                sum_total_gain, sum_cost_basis
             )
 
         # Yield (Cost) % & Yield (Mkt) %
