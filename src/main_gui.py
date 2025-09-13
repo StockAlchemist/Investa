@@ -9527,19 +9527,19 @@ The CSV file should contain the following columns (header names must match exact
             self.last_hist_twr_factor
         )  # This factor now reflects the selected scope
 
-        # --- FIX: Use the actual date range from the filtered historical data for TWR annualization ---
+        # --- FIX: Use the actual date range from the FULL historical data for TWR annualization ---
         start_date_val = None
         end_date_val = None
         if (
-            hasattr(self, "historical_data")
-            and isinstance(self.historical_data, pd.DataFrame)
-            and not self.historical_data.empty
-            and isinstance(self.historical_data.index, pd.DatetimeIndex)
+            hasattr(self, "full_historical_data")
+            and isinstance(self.full_historical_data, pd.DataFrame)
+            and not self.full_historical_data.empty
+            and isinstance(self.full_historical_data.index, pd.DatetimeIndex)
         ):
-            start_date_val = self.historical_data.index.min().date()
-            end_date_val = self.historical_data.index.max().date()
+            start_date_val = self.full_historical_data.index.min().date()
+            end_date_val = self.full_historical_data.index.max().date()
             logging.debug(
-                f"Using historical_data date range for TWR annualization: {start_date_val} to {end_date_val}"
+                f"Using full_historical_data date range for TWR annualization: {start_date_val} to {end_date_val}"
             )
         else:  # Fallback to UI controls if historical_data is not ready
             start_date_val = (
@@ -12113,10 +12113,18 @@ The CSV file should contain the following columns (header names must match exact
             )
             self.last_calc_status = f"{portfolio_status} | {historical_status}"
             self.last_hist_twr_factor = np.nan
-            if "|||TWR_FACTOR:" in historical_status:
-                logging.debug(
-                    f"Received TWR factor from backend status (ignored): {historical_status.split('|||TWR_FACTOR:')[1]}"
-                )
+            if "|||TWR_FACTOR:" in historical_status:  # Parse total TWR from worker
+                try:
+                    twr_factor_str = historical_status.split("|||TWR_FACTOR:")[1]
+                    self.last_hist_twr_factor = float(twr_factor_str)
+                    logging.info(
+                        f"Parsed total TWR factor from worker: {self.last_hist_twr_factor}"
+                    )
+                except (ValueError, IndexError) as e:
+                    logging.warning(
+                        f"Could not parse TWR factor from status string: {e}"
+                    )
+                    self.last_hist_twr_factor = np.nan
             self.summary_metrics_data = summary_metrics if summary_metrics else {}
             self.holdings_data = (
                 holdings_df if holdings_df is not None else pd.DataFrame()
@@ -12269,43 +12277,122 @@ The CSV file should contain the following columns (header names must match exact
                 if temp_df.index.tz is not None:
                     temp_df.index = temp_df.index.tz_localize(None)
                 filtered_by_date_df = temp_df.loc[pd_start:pd_end].copy()
+
+                logging.debug(
+                    f"Filtered historical data to {len(filtered_by_date_df)} rows for date range."
+                )
+
+                # --- Re-normalize all accumulated gain columns to start at 1.0 for the selected period ---
+                if not filtered_by_date_df.empty:
+                    gain_cols = [
+                        col
+                        for col in filtered_by_date_df.columns
+                        if "Accumulated Gain" in col
+                    ]
+                    logging.debug(
+                        f"Re-normalizing accumulated gain columns: {gain_cols}"
+                    )
+                    for col in gain_cols:
+                        # Find the first valid (non-NaN) value in the series to use as the base factor
+                        series_for_norm = filtered_by_date_df[col].dropna()
+                        if not series_for_norm.empty:
+                            start_factor = series_for_norm.iloc[0]
+                            if pd.notna(start_factor) and abs(start_factor) > 1e-9:
+                                # Divide the whole column by the start_factor to re-base it to 1.0
+                                filtered_by_date_df[col] = (
+                                    filtered_by_date_df[col] / start_factor
+                                )
+                                logging.debug(
+                                    f"  Normalized '{col}' using start factor: {start_factor:.4f}"
+                                )
+                            else:
+                                # If start_factor is 0 or NaN, the series is invalid for this period.
+                                filtered_by_date_df[col] = np.nan
+                                logging.warning(
+                                    f"  Could not normalize '{col}', start factor was zero or NaN."
+                                )
+                        else:
+                            # If there are no valid values in the filtered range, the column is all NaN.
+                            logging.debug(
+                                f"  No data to normalize for '{col}' in the selected range."
+                            )
+                # --- End Re-normalization ---
+
+                # Resample based on interval
                 interval = self.graph_interval_combo.currentText()
                 if interval in ["W", "M"]:
-                    self.historical_data = filtered_by_date_df.resample(interval).last()
+                    logging.info(f"Resampling historical data to interval: {interval}")
+                    resample_freq = "W-FRI" if interval == "W" else "ME"
+
+                    # Define what to aggregate. We need 'Portfolio Value' and benchmark prices.
+                    agg_dict = {}
+                    if "Portfolio Value" in filtered_by_date_df.columns:
+                        agg_dict["Portfolio Value"] = "last"
+
+                    selected_benchmark_tickers = [
+                        BENCHMARK_MAPPING.get(name)
+                        for name in self.selected_benchmarks
+                        if BENCHMARK_MAPPING.get(name)
+                    ]
+                    for ticker in selected_benchmark_tickers:
+                        price_col = f"{ticker} Price"
+                        if price_col in filtered_by_date_df.columns:
+                            agg_dict[price_col] = "last"
+
+                    if not agg_dict:
+                        logging.warning(
+                            "No columns to aggregate for resampling. Using simple .last()."
+                        )
+                        resampled_df = filtered_by_date_df.resample(
+                            resample_freq
+                        ).last()
+                    else:
+                        resampled_df = filtered_by_date_df.resample(resample_freq).agg(
+                            agg_dict
+                        )
+                        resampled_df.dropna(how="all", inplace=True)
+
+                        # Recalculate 'Portfolio Accumulated Gain'
+                        if (
+                            "Portfolio Value" in resampled_df.columns
+                            and not resampled_df["Portfolio Value"].dropna().empty
+                        ):
+                            portfolio_returns = resampled_df[
+                                "Portfolio Value"
+                            ].pct_change()
+                            portfolio_gain_factors = 1 + portfolio_returns.fillna(0.0)
+                            resampled_df["Portfolio Accumulated Gain"] = (
+                                portfolio_gain_factors.cumprod()
+                            )
+                            if not resampled_df.empty:
+                                resampled_df.iloc[
+                                    0,
+                                    resampled_df.columns.get_loc(
+                                        "Portfolio Accumulated Gain"
+                                    ),
+                                ] = np.nan
+
+                        # Recalculate benchmark accumulated gains
+                        for ticker in selected_benchmark_tickers:
+                            price_col = f"{ticker} Price"
+                            accum_col = f"{ticker} Accumulated Gain"
+                            if (
+                                price_col in resampled_df.columns
+                                and not resampled_df[price_col].dropna().empty
+                            ):
+                                bench_returns = resampled_df[price_col].pct_change()
+                                bench_gain_factors = 1 + bench_returns.fillna(0.0)
+                                resampled_df[accum_col] = bench_gain_factors.cumprod()
+                                if not resampled_df.empty:
+                                    resampled_df.iloc[
+                                        0, resampled_df.columns.get_loc(accum_col)
+                                    ] = np.nan
+                            else:
+                                resampled_df[accum_col] = np.nan  # Ensure column exists
+
+                    self.historical_data = resampled_df
                 else:
                     self.historical_data = filtered_by_date_df
-
-            if (
-                isinstance(self.historical_data, pd.DataFrame)
-                and not self.historical_data.empty
-            ):
-                gain_cols = [
-                    col
-                    for col in self.historical_data.columns
-                    if "Accumulated Gain" in col
-                ]
-                for col in gain_cols:
-                    first_valid_value = self.historical_data[col].dropna().iloc[0]
-                    if pd.notna(first_valid_value) and first_valid_value != 0:
-                        self.historical_data[col] = (
-                            self.historical_data[col] / first_valid_value
-                        )
-                        self.historical_data.loc[self.historical_data.index[0], col] = (
-                            1.0
-                        )
-                if "Portfolio Accumulated Gain" in self.historical_data.columns:
-                    accum_gain_series = self.historical_data[
-                        "Portfolio Accumulated Gain"
-                    ].dropna()
-                    if len(accum_gain_series) >= 2:
-                        start_gain = accum_gain_series.iloc[0]
-                        end_gain = accum_gain_series.iloc[-1]
-                        if (
-                            pd.notna(start_gain)
-                            and pd.notna(end_gain)
-                            and start_gain != 0
-                        ):
-                            self.last_hist_twr_factor = end_gain / start_gain
 
             # --- Part 3: Update Available Accounts ---
             logging.info("HANDLE_RESULTS: Updating available accounts...")

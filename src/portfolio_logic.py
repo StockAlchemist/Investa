@@ -4011,6 +4011,8 @@ def _calculate_accumulated_gains_and_resample(
                         final_df_resampled.rename(
                             columns={accum_col_daily: accum_col_final}, inplace=True
                         )
+                else:
+                    final_df_resampled[accum_col] = np.nan
         else:
             final_df_resampled = results_df
             final_df_resampled.rename(
