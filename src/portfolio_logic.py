@@ -3040,7 +3040,7 @@ def _load_or_calculate_daily_results(
                 short_sell_type_id,
                 buy_to_cover_type_id,
                 cash_symbol_id,
-                config.STOCK_QUANTITY_CLOSE_TOLERANCE,
+                STOCK_QUANTITY_CLOSE_TOLERANCE,
                 shortable_symbol_ids,
             )
         )
