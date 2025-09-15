@@ -502,88 +502,89 @@ class PortfolioCalculatorWorker(QRunnable):
                     f"WORKER: YF symbols for correlation after mapping: {yf_symbols_for_corr}"
                 )
 
-                if not yf_symbols_for_corr:
-                    logging.info(
-                        "WORKER: No valid YF symbols for correlation matrix after mapping/exclusion."
-                    )
-                    raise ValueError("No valid YF symbols")
+                if yf_symbols_for_corr:
+                    # Determine date range for historical data
+                    start_date_corr = all_transactions_df["Date"].min()
+                    end_date_corr = all_transactions_df["Date"].max()
+                    if not pd.isna(start_date_corr) and not pd.isna(end_date_corr):
+                        start_date_corr = start_date_corr.date()
+                        end_date_corr = end_date_corr.date()
+                    else:
+                        logging.warning(
+                            "WORKER: Invalid date range for historical data for correlation. Using default."
+                        )
+                        start_date_corr = datetime.now().date() - timedelta(
+                            days=365 * 2
+                        )  # Last 2 years
+                        end_date_corr = datetime.now().date()
 
-                # Determine date range for historical data
-                start_date_corr = all_transactions_df["Date"].min()
-                end_date_corr = all_transactions_df["Date"].max()
-                if not pd.isna(start_date_corr) and not pd.isna(end_date_corr):
-                    start_date_corr = start_date_corr.date()
-                    end_date_corr = end_date_corr.date()
+                    # Fetch historical prices for individual stocks
+                    historical_prices_for_corr, fetch_failed_corr = (
+                        self.market_data_provider.get_historical_data(
+                            symbols_yf=yf_symbols_for_corr,
+                            start_date=start_date_corr,
+                            end_date=end_date_corr,
+                            use_cache=True,
+                            cache_key=f"CORR_HIST::{start_date_corr}::{end_date_corr}::{hash(frozenset(yf_symbols_for_corr))}",
+                        )
+                    )
+                    logging.debug(
+                        f"WORKER: Historical prices fetched for correlation: {list(historical_prices_for_corr.keys())}. Fetch failed status: {fetch_failed_corr}"
+                    )
+
+                    if fetch_failed_corr or not historical_prices_for_corr:
+                        logging.warning(
+                            "WORKER: Failed to fetch historical prices for correlation matrix."
+                        )
+                        raise ValueError("Historical price fetch failed")
+
+                    # Calculate daily returns for each stock
+                    returns_for_corr = pd.DataFrame()
+                    for yf_sym, price_df in historical_prices_for_corr.items():
+                        if not price_df.empty and "price" in price_df.columns:
+                            internal_sym = internal_to_yf_map_for_corr.get(
+                                yf_sym, yf_sym
+                            )  # Use internal symbol as column name
+                            returns_for_corr[internal_sym] = price_df[
+                                "price"
+                            ].pct_change()
+                    logging.debug(
+                        f"WORKER: Returns DataFrame before dropna (shape: {returns_for_corr.shape}):\n{returns_for_corr.head().to_string()}"
+                    )
+
+                    if returns_for_corr.empty:
+                        logging.warning(
+                            "WORKER: No valid returns calculated for correlation matrix."
+                        )
+                        raise ValueError("No valid returns")
+
+                    # Drop rows with NaNs (e.g., first row after pct_change)
+                    returns_for_corr.dropna(inplace=True)
+                    logging.debug(
+                        f"WORKER: Returns DataFrame after dropna (shape: {returns_for_corr.shape}):\n{returns_for_corr.head().to_string()}"
+                    )
+
+                    # Calculate correlation matrix
+                    if (
+                        returns_for_corr.shape[1] > 1
+                    ):  # Need at least 2 columns for correlation
+                        correlation_matrix_df = calculate_correlation_matrix(
+                            returns_for_corr
+                        )
+                        logging.info(
+                            f"WORKER: Correlation matrix calculated (shape: {correlation_matrix_df.shape})."
+                        )
+                    else:
+                        logging.info(
+                            "WORKER: Not enough stock symbols with valid returns to calculate correlation matrix (>1 needed)."
+                        )
+                        correlation_matrix_df = (
+                            pd.DataFrame()
+                        )  # Ensure it's empty if not enough data
                 else:
-                    logging.warning(
-                        "WORKER: Invalid date range for historical data for correlation. Using default."
-                    )
-                    start_date_corr = datetime.now().date() - timedelta(
-                        days=365 * 2
-                    )  # Last 2 years
-                    end_date_corr = datetime.now().date()
-
-                # Fetch historical prices for individual stocks
-                historical_prices_for_corr, fetch_failed_corr = (
-                    self.market_data_provider.get_historical_data(
-                        symbols_yf=yf_symbols_for_corr,
-                        start_date=start_date_corr,
-                        end_date=end_date_corr,
-                        use_cache=True,
-                        cache_key=f"CORR_HIST::{start_date_corr}::{end_date_corr}::{hash(frozenset(yf_symbols_for_corr))}",
-                    )
-                )
-                logging.debug(
-                    f"WORKER: Historical prices fetched for correlation: {list(historical_prices_for_corr.keys())}. Fetch failed status: {fetch_failed_corr}"
-                )
-
-                if fetch_failed_corr or not historical_prices_for_corr:
-                    logging.warning(
-                        "WORKER: Failed to fetch historical prices for correlation matrix."
-                    )
-                    raise ValueError("Historical price fetch failed")
-
-                # Calculate daily returns for each stock
-                returns_for_corr = pd.DataFrame()
-                for yf_sym, price_df in historical_prices_for_corr.items():
-                    if not price_df.empty and "price" in price_df.columns:
-                        internal_sym = internal_to_yf_map_for_corr.get(
-                            yf_sym, yf_sym
-                        )  # Use internal symbol as column name
-                        returns_for_corr[internal_sym] = price_df["price"].pct_change()
-                logging.debug(
-                    f"WORKER: Returns DataFrame before dropna (shape: {returns_for_corr.shape}):\n{returns_for_corr.head().to_string()}"
-                )
-
-                if returns_for_corr.empty:
-                    logging.warning(
-                        "WORKER: No valid returns calculated for correlation matrix."
-                    )
-                    raise ValueError("No valid returns")
-
-                # Drop rows with NaNs (e.g., first row after pct_change)
-                returns_for_corr.dropna(inplace=True)
-                logging.debug(
-                    f"WORKER: Returns DataFrame after dropna (shape: {returns_for_corr.shape}):\n{returns_for_corr.head().to_string()}"
-                )
-
-                # Calculate correlation matrix
-                if (
-                    returns_for_corr.shape[1] > 1
-                ):  # Need at least 2 columns for correlation
-                    correlation_matrix_df = calculate_correlation_matrix(
-                        returns_for_corr
-                    )
                     logging.info(
-                        f"WORKER: Correlation matrix calculated (shape: {correlation_matrix_df.shape})."
+                        "WORKER: No valid YF symbols for correlation matrix after mapping/exclusion. Skipping calculation."
                     )
-                else:
-                    logging.info(
-                        "WORKER: Not enough stock symbols with valid returns to calculate correlation matrix (>1 needed)."
-                    )
-                    correlation_matrix_df = (
-                        pd.DataFrame()
-                    )  # Ensure it's empty if not enough data
 
             except Exception as corr_e:
                 logging.error(
