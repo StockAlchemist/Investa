@@ -7119,14 +7119,6 @@ The CSV file should contain the following columns (header names must match exact
         """
         # --- ADDED: Reset group expansion state if account scope changes ---
         # This is the definitive fix for the bug where groups remain collapsed after
-        # changing the account selection. It compares the current account scope with
-        # the last one used for grouping and clears the state if they differ.
-        if set(self.selected_accounts) != set(self.last_selected_accounts_for_grouping):
-            logging.info("Account scope changed, clearing group expansion states.")
-            self.group_expansion_states.clear()
-            self.last_selected_accounts_for_grouping = self.selected_accounts.copy()
-        # --- END ADDED ---
-
         if self.is_calculating:
             logging.info("Calculation already in progress. Ignoring refresh request.")
             return
@@ -7247,6 +7239,20 @@ The CSV file should contain the following columns (header names must match exact
         ):  # If it was already empty (meaning "All")
             self.selected_accounts = []  # Keep it as "All"
         # If self.available_accounts is empty, self.selected_accounts will also be empty or become empty.
+
+        # --- MODIFIED: Reset group expansion state if account scope changes ---
+        # This logic now correctly handles the "All Accounts" case by comparing the
+        # effective list of accounts, not just the selection list.
+        current_scope_effective = self.selected_accounts or self.available_accounts
+
+        if set(current_scope_effective) != set(
+            self.last_selected_accounts_for_grouping
+        ):
+            logging.info("Account scope changed. Clearing group expansion states.")
+            self.group_expansion_states.clear()
+            # Store the new *effective* scope for the next comparison
+            self.last_selected_accounts_for_grouping = current_scope_effective.copy()
+        # --- END MODIFIED ---
 
         # --- Generate internal_to_yf_map based on the effectively filtered transactions ---
         # This needs to be done *after* account filtering for the current scope is considered.
@@ -11869,9 +11875,27 @@ The CSV file should contain the following columns (header names must match exact
 
         num_available = len(self.available_accounts)
         num_selected = len(self.selected_accounts)
-        num_rows_displayed = len(df_display_filtered)
+        # --- MODIFIED: Count only stock rows, excluding cash, group headers, and summary rows. ---
+        num_rows_displayed = 0
+        if not df_display_filtered.empty:
+            # Create a boolean mask for rows that are NOT special rows
+            stock_rows_mask = pd.Series(True, index=df_display_filtered.index)
 
-        title_right_text = f"Holdings Detail ({num_rows_displayed} items shown)"
+            if "is_group_header" in df_display_filtered.columns:
+                stock_rows_mask &= df_display_filtered["is_group_header"] != True
+
+            if "is_summary_row" in df_display_filtered.columns:
+                stock_rows_mask &= df_display_filtered["is_summary_row"] != True
+
+            if "Symbol" in df_display_filtered.columns:
+                # is_cash_symbol is imported from finutils
+                stock_rows_mask &= ~df_display_filtered["Symbol"].apply(
+                    lambda x: is_cash_symbol(str(x))
+                )
+
+            num_rows_displayed = int(stock_rows_mask.sum())
+
+        title_right_text = f"Holdings Detail ({num_rows_displayed} stocks shown)"
         scope_text = ""
 
         if not self.available_accounts:
