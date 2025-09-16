@@ -1250,6 +1250,15 @@ def _build_summary_rows(
 
         # Aggregate values from all accounts for this cash currency
         agg_qty = sum(h.get("qty", 0.0) for h in holding_list)
+
+        # --- ADDED: Skip cash rows with zero quantity ---
+        if abs(agg_qty) < STOCK_QUANTITY_CLOSE_TOLERANCE:
+            logging.debug(
+                f"Skipping cash summary for currency '{currency}' as aggregated quantity is near zero ({agg_qty:.8f})."
+            )
+            continue
+        # --- END ADDED ---
+
         agg_realized_gain_local = sum(
             h.get("realized_gain_local", 0.0) for h in holding_list
         )
