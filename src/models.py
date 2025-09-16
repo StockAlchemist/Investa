@@ -16,7 +16,6 @@ from finutils import (
     format_integer_with_commas,
     format_float_with_commas,
     is_cash_symbol,
-    get_currency_from_cash_symbol,
 )
 
 from config import CASH_SYMBOL_CSV, CSV_DATE_FORMAT, _AGGREGATE_CASH_ACCOUNT_NAME_

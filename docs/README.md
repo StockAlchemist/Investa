@@ -148,18 +148,18 @@ A utility is provided within the application (`File > Import Transactions from C
 The application can also attempt to automatically migrate data from a CSV file specified in the configuration if the database is empty on first startup.
 **Key Considerations for CSV Import:**
 
-* **`$CASH` Symbol:** This is a special reserved symbol used to manage cash balances within accounts.
-  * **Cash Symbols:** Use currency-specific symbols for cash (e.g., **`$CASH_USD`**, **`$CASH_EUR`**). The price for these symbols is always `1.0` in their respective currency.
-  * **Deposits:** Record a "Deposit" transaction with the appropriate cash symbol (e.g., `$CASH_USD`), a positive quantity, and a price of 1. The "Total Amount" should be the deposit amount.
-  * **Withdrawals:** Record a "Withdrawal" transaction with the cash symbol, a positive quantity, and a negative "Total Amount".
-  * **Internal Cash Movements & TWR:** For accurate Time-Weighted Return (TWR) calculations, it's vital to log all external cash inflows and outflows. Use `Deposit` and `Withdrawal` types for this. Internal movements, like receiving cash from a stock sale, should be recorded as a `Buy` of the corresponding cash symbol.
+* **`$CASH` Symbol:** This is a special reserved symbol used to manage cash balances within accounts. The currency of the cash is determined by the currency assigned to the transaction's account (see **Settings > Account Currencies...**).
+  * **Symbol:** Use the single symbol **`$CASH`** for all cash-related transactions (deposits, withdrawals, etc.). The price for `$CASH` is always `1.0` in its account's local currency.
+  * **Deposits:** Record a "Deposit" transaction with the `$CASH` symbol, a positive quantity, and a price of 1. The "Total Amount" should be the deposit amount.
+  * **Withdrawals:** Record a "Withdrawal" transaction with the `$CASH` symbol, a positive quantity, and a negative "Total Amount".
+  * **Internal Cash Movements & TWR:** For accurate Time-Weighted Return (TWR) calculations, it's vital to log all external cash inflows and outflows. Use `Deposit` and `Withdrawal` types for this. Internal movements, like receiving cash from a stock sale, should be recorded as a `Buy` of `$CASH`.
   * For more detailed examples of `$CASH` usage, please refer to the **Investa User Tutorial**.
 
 **Preferred (Cleaned) CSV Headers for Import (Target format after standardization):**
 
 1. `Date` (e.g., *Jan 01, 2023* or other common date formats)
 2. `Type` (e.g., *Buy, Sell, Dividend, Split, Deposit, Withdrawal, Fees*)
-3. `Symbol` (e.g., *AAPL, GOOG*. Use **`$CASH_USD`**, **`$CASH_EUR`** for cash.)
+3. `Symbol` (e.g., *AAPL, GOOG*. Use **`$CASH`** for cash.)
 4. `Quantity` (Number of units)
 5. `Price/Share`
 6. `Total Amount` (Optional for Buy/Sell if Quantity and Price/Share are provided)

@@ -45,7 +45,7 @@ Before you can start crunching numbers, there are a couple of preliminary steps:
     **Preferred (Cleaned) CSV Headers for Import:**
     1. `Date`: e.g., *Jan 01, 2023* (common date formats are supported)
     2. `Type`: *Buy, Sell, Dividend, Split, Deposit, Withdrawal, Fees*
-    3. `Symbol`: e.g., *AAPL, VTI*. Use currency-specific symbols for cash like **`$CASH_USD`**, **`$CASH_EUR`**.
+    3. `Symbol`: e.g., *AAPL, VTI*. Use the special symbol **`$CASH`** for all cash transactions.
     4. `Quantity`
     5. `Price/Share`
     6. `Total Amount`: (Optional for Buy/Sell if Quantity and Price/Share are provided). For dividends, this is the total dividend amount.
@@ -66,15 +66,15 @@ Before you can start crunching numbers, there are a couple of preliminary steps:
 
 ### Understanding and Using `$CASH` Transactions
 
-The special cash symbols (e.g., **`$CASH_USD`**, **`$CASH_EUR`**) are crucial for accurately tracking your portfolio's value, cash flows, and performance, especially the Time-Weighted Return (TWR).
+The special cash symbol **`$CASH`** is crucial for accurately tracking your portfolio's value, cash flows, and performance, especially the Time-Weighted Return (TWR).
 
-* **What it Represents:** A symbol like `$CASH_USD` signifies the US Dollar cash component within an investment account. Its price is always `1.00` in its respective currency (e.g., `$CASH_USD` has a price of 1.00 USD).
+* **What it Represents:** The `$CASH` symbol signifies the cash component within an investment account. Its currency is determined by the currency assigned to that account (see **Settings > Account Currencies...**). Its price is always `1.00` in its respective currency.
 * **When and How to Use Cash Symbols (Examples for CSV Import or Manual Entry):**
 
   * **Deposits (External Inflow):** Adding funds to your brokerage account.
     * `Date`: 2023-01-15
     * `Type`: Deposit
-    * `Symbol`: $CASH_USD
+    * `Symbol`: $CASH
     * `Quantity`: 1000
     * `Price/Share`: 1
     * `Total Amount`: 1000
@@ -84,7 +84,7 @@ The special cash symbols (e.g., **`$CASH_USD`**, **`$CASH_EUR`**) are crucial fo
   * **Withdrawals (External Outflow):** Taking funds out of your brokerage account.
     * `Date`: 2023-02-20
     * `Type`: Withdrawal
-    * `Symbol`: $CASH_USD
+    * `Symbol`: $CASH
     * `Quantity`: 500 (or -500, `Total Amount` will be negative)
     * `Price/Share`: 1
     * `Total Amount`: -500 (or 500 if Quantity is negative)
@@ -96,7 +96,7 @@ The special cash symbols (e.g., **`$CASH_USD`**, **`$CASH_EUR`**) are crucial fo
             1. **(Optional Explicit Cash Reduction)** A `$CASH` `Sell` or `Withdrawal` (less common for this specific purpose).
                 *`Date`: 2023-03-01
                 * `Type`: Sell (or Withdrawal, conceptually)
-                *`Symbol`: $CASH_USD
+                *`Symbol`: $CASH
                 * `Quantity`: 1000 (amount used for stock purchase)
                 *`Price/Share`: 1
                 * `Total Amount`: -1000
@@ -124,7 +124,7 @@ The special cash symbols (e.g., **`$CASH_USD`**, **`$CASH_EUR`**) are crucial fo
             2. **(Optional Explicit Cash Increase)** A `$CASH` `Buy` or `Deposit`.
                 * `Date`: 2023-04-10
                 *`Type`: Buy (or Deposit, conceptually)
-                * `Symbol`: $CASH_USD
+                * `Symbol`: $CASH
                 *`Quantity`: 600 (proceeds from sale)
                 * `Price/Share`: 1
                 *`Total Amount`: 600
@@ -144,7 +144,7 @@ The special cash symbols (e.g., **`$CASH_USD`**, **`$CASH_EUR`**) are crucial fo
     **Step 2: Record the cash increase in your account.** This reflects the cash landing in your brokerage account.
     * `Date`: 2023-05-15
     * `Type`: Buy
-    * `Symbol`: $CASH_USD
+    * `Symbol`: $CASH
     * `Quantity`: 50
     * `Price/Share`: 1
     * `Account`: Brokerage A
@@ -156,14 +156,14 @@ The special cash symbols (e.g., **`$CASH_USD`**, **`$CASH_EUR`**) are crucial fo
   * **Fees Paid From Cash:** For general account fees not tied to a specific trade.
     * `Date`: 2023-06-01
     * `Type`: Fees
-    * `Symbol`: $CASH_USD
+    * `Symbol`: $CASH
     * `Quantity`: 10
     * `Price/Share`: 1
     * `Total Amount`: -10 (or 10 if Quantity is negative)
     * `Account`: Brokerage A
     * **TWR Impact:** Fees paid from cash are like withdrawals for TWR purposes if they are external to the core investment activity (e.g. advisory fees). If they are transaction fees, they are part of the cost of the transaction. The `Fees` type with `$CASH` implies an expense that reduces the account's cash and is typically treated as a negative return or an outflow.
 
-* **Key for TWR:** Accurately logging `Deposit` and `Withdrawal` transactions for your cash symbols (e.g., `$CASH_USD`) is paramount for correct TWR calculation, as these define the external cash flows against which investment performance is measured. Internal conversions (buying/selling assets) do not count as external flows.
+* **Key for TWR:** Accurately logging `Deposit` and `Withdrawal` transactions for `$CASH` is paramount for correct TWR calculation, as these define the external cash flows against which investment performance is measured. Internal conversions (buying/selling assets) do not count as external flows.
 
 * **Tip:** For detailed examples and specific requirements for each transaction type, once the app is running, check out the **Help > CSV Format Help...** menu. This is especially useful before importing a CSV.
 

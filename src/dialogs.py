@@ -50,7 +50,6 @@ from finutils import (
     format_integer_with_commas,
     format_float_with_commas,
     is_cash_symbol,
-    get_currency_from_cash_symbol,
 )
 
 from config import (
@@ -2204,7 +2203,7 @@ class AddTransactionDialog(QDialog):
 
         # --- Symbol ---
         self.symbol_edit = QLineEdit()
-        self.symbol_edit.setPlaceholderText("e.g., AAPL, GOOG, $CASH_USD")
+        self.symbol_edit.setPlaceholderText("e.g., AAPL, GOOG, $CASH")
         self.symbol_edit.setMinimumWidth(input_min_width)
         form_layout.addRow("Symbol:", self.symbol_edit)
 

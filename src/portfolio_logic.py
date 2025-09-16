@@ -93,6 +93,7 @@ try:
         get_historical_price,
         get_historical_rate_via_usd_bridge,
         map_to_yf_symbol,
+        is_cash_symbol,  # ADDED
         safe_sum,
     )
 except ImportError:
@@ -476,6 +477,7 @@ def calculate_portfolio_summary(
             shortable_symbols=SHORTABLE_SYMBOLS,
             historical_fx_lookup=historical_fx_for_processing,  # NEW ARG
             display_currency_for_hist_fx=display_currency,  # NEW ARG
+            report_date=report_date,
         )
     )
     combined_ignored_indices.update(ignored_indices_proc)
@@ -2718,7 +2720,9 @@ def _prepare_historical_inputs(
     symbols_to_fetch_yf_portfolio = []
     internal_to_yf_map: Dict[str, str] = {}  # Ensure type
     for internal_sym in all_symbols_internal_effective:
-        if internal_sym == CASH_SYMBOL_CSV:
+        if is_cash_symbol(
+            internal_sym
+        ):  # MODIFIED: Use helper to catch all cash symbols
             continue
         yf_sym = map_to_yf_symbol(
             internal_sym, effective_user_symbol_map, effective_user_excluded_symbols

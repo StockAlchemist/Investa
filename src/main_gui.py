@@ -333,8 +333,6 @@ try:
         get_historical_rate_via_usd_bridge,
     )
 
-    from finutils import get_currency_from_cash_symbol
-
     # --- End Import ---
     import inspect
 
@@ -1378,14 +1376,8 @@ The CSV file should contain the following columns (header names must match exact
 
         # 3. Get Local Currency Code for Labeling
         display_currency_code = self._get_currency_for_symbol(symbol)
-        if not display_currency_code and not is_cash_symbol(
-            symbol
-        ):  # If not cash and still no currency, use default
+        if not display_currency_code:
             display_currency_code = self.config.get("default_currency", "USD")
-        elif is_cash_symbol(symbol):
-            display_currency_code = get_currency_from_cash_symbol(
-                symbol, self.config.get("default_currency", "USD")
-            )
 
         # --- Create and Show Dialog ---
         try:
@@ -1420,11 +1412,10 @@ The CSV file should contain the following columns (header names must match exact
         Returns:
             Optional[str]: The 3-letter currency code (e.g., 'USD', 'THB') or None if lookup fails badly.
                            Returns default currency as fallback.
-        """
-        # 1. Check Cash Symbol
-        if symbol_to_find == CASH_SYMBOL_CSV:
-            # Cash usually takes the display currency context, but might be linked
-            # to specific accounts. Let's return the app's default for simplicity.
+        """  # 1. Check if it's a cash symbol
+        if is_cash_symbol(symbol_to_find):
+            # For a generic $CASH symbol, we can't determine currency from symbol alone.
+            # The calling context should handle this. As a fallback, return app's default.
             return self.config.get("default_currency", "USD")
 
         # 2. Check Holdings Data (most reliable if data is loaded)
@@ -3495,8 +3486,7 @@ The CSV file should contain the following columns (header names must match exact
     def _chart_holding_history(self, symbol: str):
         """Handles 'Chart History' context menu action by showing a price chart dialog."""
         logging.info(f"Action triggered: Chart History for {symbol}")
-
-        if symbol == CASH_SYMBOL_CSV:
+        if is_cash_symbol(symbol):
             QMessageBox.information(self, "Info", "Cannot chart history for Cash.")
             return
 
@@ -3695,15 +3685,12 @@ The CSV file should contain the following columns (header names must match exact
         Returns:
             Optional[str]: The 3-letter currency code (e.g., 'USD', 'THB') or None if lookup fails badly.
                            Returns default currency as fallback.
-        """
-        # 1. Check if it's a cash symbol and extract currency directly
+        """  # 1. Check if it's a cash symbol
         if is_cash_symbol(symbol_to_find):
-            return get_currency_from_cash_symbol(
-                symbol_to_find, self.config.get("default_currency", "USD")
-            )
-
-        # 2. Check Holdings Data (most reliable if data is loaded)
-        # This requires holdings_data to have the 'Local Currency' column correctly populated.
+            # For a generic $CASH symbol, we can't determine currency from symbol alone.
+            # The calling context should handle this. As a fallback, return app's default.
+            return self.config.get("default_currency", "USD")
+        # 2. Check Holdings Data (most reliable if data is loaded) # This requires holdings_data to have the 'Local Currency' column correctly populated.
         if (
             hasattr(self, "holdings_data")
             and not self.holdings_data.empty
@@ -7678,11 +7665,7 @@ The CSV file should contain the following columns (header names must match exact
 
         try:
             # Filter original data (using original CSV headers)
-            symbol_to_filter = (
-                CASH_SYMBOL_CSV
-                if symbol == CASH_SYMBOL_CSV or symbol.startswith("Cash (")
-                else symbol
-            )
+            symbol_to_filter = CASH_SYMBOL_CSV if is_cash_symbol(symbol) else symbol
 
             filtered_df = self.original_data[
                 (
@@ -7792,7 +7775,7 @@ The CSV file should contain the following columns (header names must match exact
         # Action 2: Chart History (Placeholder)
         # Disable for Cash symbol
         chart_action = QAction(f"Chart History for {symbol}", self)
-        chart_action.setEnabled(symbol != CASH_SYMBOL_CSV)  # Disable for cash
+        chart_action.setEnabled(not is_cash_symbol(symbol))  # Disable for cash
         chart_action.triggered.connect(
             lambda checked=False, s=symbol: self._chart_holding_history(s)
         )
@@ -7803,7 +7786,7 @@ The CSV file should contain the following columns (header names must match exact
         global_pos = sender_view.viewport().mapToGlobal(pos)
 
         # --- ADD Fundamental Data Action to Context Menu ---
-        if symbol != CASH_SYMBOL_CSV:  # Only for actual stocks/ETFs
+        if not is_cash_symbol(symbol):  # Only for actual stocks/ETFs
             menu.addSeparator()
             fundamentals_action = QAction(f"View Fundamentals for {symbol}", self)
             fundamentals_action.triggered.connect(
@@ -9856,27 +9839,6 @@ The CSV file should contain the following columns (header names must match exact
                 data_for_db_update["Local Currency"] = app_config_account_map.get(
                     str(acc_name_for_currency_update), app_config_default_curr
                 )
-
-                # If symbol is the generic '$CASH', convert it to a currency-specific one
-                symbol_from_dialog = data_for_db_update.get("Symbol")
-                if symbol_from_dialog == CASH_SYMBOL_CSV:
-                    currency_for_cash = app_config_account_map.get(
-                        str(acc_name_for_currency_update), app_config_default_curr
-                    )
-                    new_cash_symbol = f"{CASH_SYMBOL_CSV}_{currency_for_cash}"
-                    data_for_db_update["Symbol"] = new_cash_symbol
-                    logging.info(
-                        f"Converted generic '$CASH' symbol to '{new_cash_symbol}' during edit."
-                    )
-                elif is_cash_symbol(symbol_from_dialog):
-                    # It's already a currency-specific cash symbol, ensure currency matches
-                    symbol_currency = get_currency_from_cash_symbol(
-                        symbol_from_dialog, app_config_default_curr
-                    )
-                    data_for_db_update["Local Currency"] = symbol_currency
-                    logging.info(
-                        f"Cash symbol '{symbol_from_dialog}' provided in edit. Setting Local Currency to '{symbol_currency}'."
-                    )
 
             else:  # Should be caught by dialog if Account is mandatory
                 data_for_db_update["Local Currency"] = self.config.get(
@@ -12024,13 +11986,8 @@ The CSV file should contain the following columns (header names must match exact
                 numeric_quantity = pd.to_numeric(
                     df_filtered["Quantity"], errors="coerce"
                 ).fillna(0)
-                cash_display_symbol = (
-                    f"Cash ({self._get_currency_symbol(get_name=True)})"
-                )
-                keep_mask = (
-                    (numeric_quantity.abs() > 1e-9)
-                    | (df_filtered["Symbol"] == CASH_SYMBOL_CSV)
-                    | (df_filtered["Symbol"] == cash_display_symbol)
+                keep_mask = (numeric_quantity.abs() > 1e-9) | (
+                    df_filtered["Symbol"].apply(is_cash_symbol)
                 )
                 df_filtered = df_filtered[keep_mask]
             except Exception as e:
@@ -14508,26 +14465,6 @@ The CSV file should contain the following columns (header names must match exact
                     app_config_default_curr,
                 )
 
-            # If symbol is the generic '$CASH', convert it to a currency-specific one
-            symbol_from_dialog = data_for_db.get("Symbol")
-            if symbol_from_dialog == CASH_SYMBOL_CSV:
-                currency_for_cash = app_config_account_map.get(
-                    str(acc_name_for_currency), app_config_default_curr
-                )
-                new_cash_symbol = f"{CASH_SYMBOL_CSV}_{currency_for_cash}"
-                data_for_db["Symbol"] = new_cash_symbol
-                logging.info(
-                    f"Converted generic '$CASH' symbol to '{new_cash_symbol}' based on account currency."
-                )
-            elif is_cash_symbol(symbol_from_dialog):
-                # It's already a currency-specific cash symbol, ensure currency matches
-                symbol_currency = get_currency_from_cash_symbol(
-                    symbol_from_dialog, app_config_default_curr
-                )
-                data_for_db["Local Currency"] = symbol_currency
-                logging.info(
-                    f"Cash symbol '{symbol_from_dialog}' provided. Setting Local Currency to '{symbol_currency}'."
-                )
             else:  # Fallback, though account should be mandatory from dialog
                 data_for_db["Local Currency"] = self.config.get(
                     "default_currency",

@@ -90,18 +90,6 @@ def is_cash_symbol(symbol: str) -> bool:
     return symbol.startswith(CASH_SYMBOL_CSV)
 
 
-def get_currency_from_cash_symbol(symbol: str, default: str = DEFAULT_CURRENCY) -> str:
-    """Extracts currency from a cash symbol, e.g., '$CASH_USD' -> 'USD'."""
-    if not is_cash_symbol(symbol):
-        return default
-    parts = symbol.split("_")
-    # Check if there is a currency code part and it's a 3-letter alphabetic code
-    if len(parts) > 1 and len(parts[1]) == 3 and parts[1].isalpha():
-        return parts[1]
-    # If it's just '$CASH' or format is wrong, return the default
-    return default
-
-
 # --- IRR/MWR Calculation Functions ---
 def calculate_npv(rate: float, dates: List[date], cash_flows: List[float]) -> float:
     """

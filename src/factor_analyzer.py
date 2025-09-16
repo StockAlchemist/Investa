@@ -22,51 +22,66 @@ from typing import Dict, List, Optional, Tuple
 
 from market_data import MarketDataProvider
 
-def _fetch_factor_data(model_name: str, start_date: pd.Timestamp, end_date: pd.Timestamp, benchmark_data: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+
+def _fetch_factor_data(
+    model_name: str,
+    start_date: pd.Timestamp,
+    end_date: pd.Timestamp,
+    benchmark_data: Optional[pd.DataFrame] = None,
+) -> pd.DataFrame:
     """
     Fetches historical factor data.
     This implementation uses SPY returns as a proxy for Mkt-RF.
     """
-    logging.info(f"Fetching {model_name} factor data from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+    logging.info(
+        f"Fetching {model_name} factor data from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+    )
 
     spy_returns = None
 
     if benchmark_data is not None and not benchmark_data.empty:
         # benchmark_data is expected to have a column with benchmark prices
-        spy_col_name = benchmark_data.columns[0] # Assume the first column is the benchmark
+        spy_col_name = benchmark_data.columns[
+            0
+        ]  # Assume the first column is the benchmark
         spy_returns = benchmark_data[spy_col_name].pct_change().dropna()
-        spy_returns.name = 'Mkt-RF'
-        logging.info(f"Using pre-loaded benchmark data for SPY from column '{spy_col_name}'.")
+        spy_returns.name = "Mkt-RF"
+        logging.info(
+            f"Using pre-loaded benchmark data for SPY from column '{spy_col_name}'."
+        )
 
     if spy_returns is None:
-        logging.info("Pre-loaded benchmark data for SPY not found or invalid. Fetching from yfinance.")
+        logging.info(
+            "Pre-loaded benchmark data for SPY not found or invalid. Fetching from yfinance."
+        )
         market_provider = MarketDataProvider()
-        spy_data, _ = market_provider.get_historical_data(['SPY'], start_date, end_date)
+        spy_data, _ = market_provider.get_historical_data(["SPY"], start_date, end_date)
 
-        if 'SPY' not in spy_data or spy_data['SPY'].empty:
+        if "SPY" not in spy_data or spy_data["SPY"].empty:
             logging.error("Could not fetch SPY data for market factor.")
             return pd.DataFrame()
 
-        spy_returns = spy_data['SPY']['price'].pct_change().dropna()
-        spy_returns.name = 'Mkt-RF'
+        spy_returns = spy_data["SPY"]["price"].pct_change().dropna()
+        spy_returns.name = "Mkt-RF"
 
     # Create a dataframe with the same index as spy_returns
     factor_df = pd.DataFrame(index=spy_returns.index)
-    factor_df['Mkt-RF'] = spy_returns
+    factor_df["Mkt-RF"] = spy_returns
     # Use random data for other factors to avoid multicollinearity
-    factor_df['SMB'] = np.random.normal(0.001, 0.01, len(spy_returns.index))
-    factor_df['HML'] = np.random.normal(0.001, 0.01, len(spy_returns.index))
-    factor_df['RF'] = 0.0
+    factor_df["SMB"] = np.random.normal(0.001, 0.01, len(spy_returns.index))
+    factor_df["HML"] = np.random.normal(0.001, 0.01, len(spy_returns.index))
+    factor_df["RF"] = 0.0
 
     if model_name == "Carhart 4-Factor":
-        factor_df['UMD'] = np.random.normal(0.001, 0.01, len(spy_returns.index))
-    
+        factor_df["UMD"] = np.random.normal(0.001, 0.01, len(spy_returns.index))
+
     return factor_df
+
 
 def run_factor_regression(
     portfolio_returns: pd.Series,
     model_name: str = "Fama-French 3-Factor",
-    benchmark_data: Optional[pd.DataFrame] = None
+    benchmark_data: Optional[pd.DataFrame] = None,
 ) -> Optional[sm.regression.linear_model.RegressionResultsWrapper]:
     """
     Performs factor regression (e.g., Fama-French 3-Factor or Carhart 4-Factor)
@@ -85,9 +100,11 @@ def run_factor_regression(
     logging.info(f"Running {model_name} regression.")
 
     if portfolio_returns.empty:
-        logging.warning("Portfolio returns series is empty. Cannot run factor regression.")
+        logging.warning(
+            "Portfolio returns series is empty. Cannot run factor regression."
+        )
         return None
-    
+
     if not isinstance(portfolio_returns.index, pd.DatetimeIndex):
         logging.error("Portfolio returns index must be a DatetimeIndex.")
         return None
@@ -99,36 +116,46 @@ def run_factor_regression(
     end_date = portfolio_returns.index.max()
 
     # Fetch factor data
-    factor_data = _fetch_factor_data(model_name, start_date, end_date, benchmark_data=benchmark_data)
+    factor_data = _fetch_factor_data(
+        model_name, start_date, end_date, benchmark_data=benchmark_data
+    )
     if factor_data.empty:
         logging.error("Failed to fetch factor data. Cannot run regression.")
         return None
 
     # Resample portfolio returns to match factor data frequency (e.g., monthly)
-    portfolio_returns_monthly = portfolio_returns.resample('ME').apply(lambda x: (1 + x).prod() - 1)
-    factor_data_monthly = factor_data.resample('ME').apply(lambda x: (1 + x).prod() - 1)
+    portfolio_returns_monthly = portfolio_returns.resample("ME").apply(
+        lambda x: (1 + x).prod() - 1
+    )
+    factor_data_monthly = factor_data.resample("ME").apply(lambda x: (1 + x).prod() - 1)
 
     # Align indices and drop NaNs
-    aligned_data = pd.concat([portfolio_returns_monthly, factor_data_monthly], axis=1).dropna()
-    
-    if 'RF' not in aligned_data.columns:
-        logging.error("Risk-Free Rate (RF) not found in factor data. Cannot calculate excess returns.")
+    aligned_data = pd.concat(
+        [portfolio_returns_monthly, factor_data_monthly], axis=1
+    ).dropna()
+
+    if "RF" not in aligned_data.columns:
+        logging.error(
+            "Risk-Free Rate (RF) not found in factor data. Cannot calculate excess returns."
+        )
         return None
 
     # Calculate portfolio excess returns
-    aligned_data['Portfolio_Excess_Return'] = aligned_data[portfolio_returns.name] - aligned_data['RF']
+    aligned_data["Portfolio_Excess_Return"] = (
+        aligned_data[portfolio_returns.name] - aligned_data["RF"]
+    )
 
     # Define independent variables (factors)
     if model_name == "Fama-French 3-Factor":
-        factors = ['Mkt-RF', 'SMB', 'HML']
+        factors = ["Mkt-RF", "SMB", "HML"]
     elif model_name == "Carhart 4-Factor":
-        factors = ['Mkt-RF', 'SMB', 'HML', 'UMD']
+        factors = ["Mkt-RF", "SMB", "HML", "UMD"]
     else:
         logging.error(f"Unsupported factor model: {model_name}")
         return None
 
     X = aligned_data[factors]
-    y = aligned_data['Portfolio_Excess_Return']
+    y = aligned_data["Portfolio_Excess_Return"]
 
     # Add a constant to the independent variables for the intercept (alpha)
     X = sm.add_constant(X)
@@ -142,16 +169,23 @@ def run_factor_regression(
         logging.error(f"Error during OLS regression for {model_name}: {e}")
         return None
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     # Example Usage
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
 
     # Generate dummy daily portfolio returns
-    dates = pd.date_range(start='2020-01-01', end='2024-12-31', freq='D')
-    dummy_returns = pd.Series(np.random.normal(0.0005, 0.005, len(dates)), index=dates, name='Portfolio_Returns')
+    dates = pd.date_range(start="2020-01-01", end="2024-12-31", freq="D")
+    dummy_returns = pd.Series(
+        np.random.normal(0.0005, 0.005, len(dates)),
+        index=dates,
+        name="Portfolio_Returns",
+    )
 
     # Resample to monthly for factor analysis (common practice)
-    monthly_returns = dummy_returns.resample('M').apply(lambda x: (1 + x).prod() - 1)
+    monthly_returns = dummy_returns.resample("M").apply(lambda x: (1 + x).prod() - 1)
 
     print("\n--- Fama-French 3-Factor Analysis ---")
     ff3_results = run_factor_regression(monthly_returns, "Fama-French 3-Factor")

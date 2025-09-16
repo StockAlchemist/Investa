@@ -66,7 +66,6 @@ try:
         get_cash_flows_for_symbol_account,  # Used by _build_summary_rows
         safe_sum,  # Used by _calculate_aggregate_metrics
         get_historical_rate_via_usd_bridge,  # Added for dividend history
-        get_currency_from_cash_symbol,
         # Add any other finutils functions used by the moved functions
     )
 except ImportError:
@@ -87,9 +86,6 @@ except ImportError:
     def safe_sum(*args):
         return 0.0
 
-    def get_currency_from_cash_symbol(s, d):
-        return d
-
 
 # --- REVISED: _process_transactions_to_holdings (Split applied to all accounts) ---
 @profile
@@ -99,6 +95,7 @@ def _process_transactions_to_holdings(
     shortable_symbols: Set[str],
     historical_fx_lookup: Dict[Tuple[date, str], float],  # NEW: For historical FX rates
     display_currency_for_hist_fx: str,  # NEW: Target currency for rates in historical_fx_lookup
+    report_date: date,
 ) -> Tuple[
     Dict[Tuple[str, str], Dict],
     Dict[str, float],
@@ -354,7 +351,7 @@ def _process_transactions_to_holdings(
             ]:
                 if pd.isna(qty):
                     raise ValueError(f"Missing Quantity for {tx_type}")
-                if pd.isna(price_local) and symbol != CASH_SYMBOL_CSV:
+                if pd.isna(price_local) and not is_cash_symbol(symbol):
                     raise ValueError(f"Missing Price/Share for {tx_type} {symbol}")
             elif tx_type == "dividend":
                 if pd.isna(total_amount_local) and pd.isna(price_local):
@@ -379,9 +376,11 @@ def _process_transactions_to_holdings(
                         (tx_date, local_currency_from_row), np.nan
                     )
                     if pd.isna(fx_rate_hist_short):
-                        logging.warning(
-                            f"FX G/L (Short Sell): Missing historical FX for {local_currency_from_row} on {tx_date} for {symbol}. FX G/L on this tx may be inaccurate."
-                        )
+                        # Only warn if the transaction is not in the future
+                        if tx_date <= report_date:
+                            logging.warning(
+                                f"FX G/L (Short Sell): Missing historical FX for {local_currency_from_row} on {tx_date} for {symbol}. FX G/L on this tx may be inaccurate."
+                            )
                         # Fallback: use current rate for this transaction's display currency cost component if historical is missing
                         # This is not ideal but prevents NaN propagation if one rate is missing.
                         # Better: ensure all rates are pre-fetched or handle missing rates by making the whole FX G/L NaN.
@@ -416,9 +415,11 @@ def _process_transactions_to_holdings(
                         (tx_date, local_currency_from_row), np.nan
                     )
                     if pd.isna(fx_rate_hist_cover):
-                        logging.warning(
-                            f"FX G/L (Buy to Cover): Missing historical FX for {local_currency_from_row} on {tx_date} for {symbol}. FX G/L on this tx may be inaccurate."
-                        )
+                        # Only warn if the transaction is not in the future
+                        if tx_date <= report_date:
+                            logging.warning(
+                                f"FX G/L (Buy to Cover): Missing historical FX for {local_currency_from_row} on {tx_date} for {symbol}. FX G/L on this tx may be inaccurate."
+                            )
                         fx_rate_hist_cover = (
                             1.0
                             if local_currency_from_row == display_currency_for_hist_fx
@@ -474,9 +475,11 @@ def _process_transactions_to_holdings(
                     (tx_date, local_currency_from_row), np.nan
                 )
                 if pd.isna(fx_rate_hist_buy):
-                    logging.warning(
-                        f"FX G/L (Buy): Missing historical FX for {local_currency_from_row} on {tx_date} for {symbol}. FX G/L on this tx may be inaccurate."
-                    )
+                    # Only warn if the transaction is not in the future
+                    if tx_date <= report_date:
+                        logging.warning(
+                            f"FX G/L (Buy): Missing historical FX for {local_currency_from_row} on {tx_date} for {symbol}. FX G/L on this tx may be inaccurate."
+                        )
                     fx_rate_hist_buy = (
                         1.0
                         if local_currency_from_row == display_currency_for_hist_fx
@@ -590,9 +593,11 @@ def _process_transactions_to_holdings(
                     (tx_date, local_currency_from_row), np.nan
                 )
                 if pd.isna(fx_rate_hist_div):
-                    logging.warning(
-                        f"FX G/L (Dividend): Missing historical FX for {local_currency_from_row} on {tx_date} for {symbol}. FX G/L on this tx may be inaccurate."
-                    )
+                    # Only warn if the transaction is not in the future
+                    if tx_date <= report_date:
+                        logging.warning(
+                            f"FX G/L (Dividend): Missing historical FX for {local_currency_from_row} on {tx_date} for {symbol}. FX G/L on this tx may be inaccurate."
+                        )
                     fx_rate_hist_div = (
                         1.0
                         if local_currency_from_row == display_currency_for_hist_fx
@@ -612,6 +617,11 @@ def _process_transactions_to_holdings(
                     (tx_date, local_currency_from_row), np.nan
                 )
                 if pd.isna(fx_rate_hist_fee):
+                    # Only warn if the transaction is not in the future
+                    if tx_date <= report_date:
+                        logging.warning(
+                            f"FX G/L (Fees): Missing historical FX for {local_currency_from_row} on {tx_date} for {symbol}. FX G/L on this tx may be inaccurate."
+                        )
                     fx_rate_hist_fee = (
                         1.0
                         if local_currency_from_row == display_currency_for_hist_fx
@@ -690,7 +700,7 @@ def _process_transactions_to_holdings(
         holdings.items()
     ):  # Use list() for safe iteration if modifying
         symbol, account = holding_key
-        if symbol == CASH_SYMBOL_CSV:
+        if is_cash_symbol(symbol):  # MODIFIED: Use helper to catch all cash symbols
             continue  # Skip cash
 
         current_qty = data.get("qty", 0.0)
@@ -749,14 +759,15 @@ def _build_summary_rows(
     logging.info(f"Calculating final portfolio summary rows in {display_currency}...")
 
     # --- NEW: Separate cash from stock holdings ---
-    cash_holdings_by_symbol: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    cash_holdings_by_currency: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     stock_holdings: Dict[Tuple[str, str], Dict] = {}
 
     for holding_key, data in holdings.items():
         symbol, account = holding_key
         if is_cash_symbol(symbol):
-            # Append the data along with the original account name for reference if needed
-            cash_holdings_by_symbol[symbol].append({"account": account, **data})
+            # Group cash holdings by their local currency for aggregation
+            currency = data.get("local_currency", default_currency)
+            cash_holdings_by_currency[currency].append({"account": account, **data})
         else:
             stock_holdings[holding_key] = data
     # --- END NEW ---
@@ -1147,7 +1158,7 @@ def _build_summary_rows(
             fx_gain_loss_display_holding = 0.0
             fx_gain_loss_pct_holding = 0.0  # If no FX G/L, percentage is 0%
         elif (  # Original conditions, but now as elif
-            symbol != CASH_SYMBOL_CSV  # Not cash
+            not is_cash_symbol(symbol)  # Not cash
             and abs(current_total_cost_local) > 1e-9  # Has a local cost basis
             and pd.notna(cost_basis_display)  # Cost basis in display currency is valid
             and abs(cost_basis_display)
@@ -1232,7 +1243,7 @@ def _build_summary_rows(
     # --- End Stock/ETF Loop ---
 
     # --- Loop 2: Process and Aggregate Cash Holdings ---
-    for symbol, holding_list in cash_holdings_by_symbol.items():
+    for currency, holding_list in cash_holdings_by_currency.items():
         if not holding_list:
             continue
 
@@ -1259,8 +1270,8 @@ def _build_summary_rows(
             [h.get("total_cost_display_historical_fx", np.nan) for h in holding_list]
         )
 
-        # For cash, local currency is determined by the symbol itself
-        local_currency = get_currency_from_cash_symbol(symbol, default_currency)
+        # For cash, local currency is the currency we grouped by
+        local_currency = currency
         account = (
             _AGGREGATE_CASH_ACCOUNT_NAME_  # Use the special aggregate account name
         )
@@ -1288,7 +1299,7 @@ def _build_summary_rows(
         )
         if pd.isna(fx_rate):
             logging.error(
-                f"CRITICAL ERROR: Failed FX rate {local_currency}->{display_currency} for {symbol}/{account}."
+                f"CRITICAL ERROR: Failed FX rate {local_currency}->{display_currency} for aggregated cash."
             )
             has_errors = True
             fx_rate = np.nan
@@ -1379,13 +1390,13 @@ def _build_summary_rows(
                     fx_gain_loss_pct_holding = 0.0
             except Exception as e_fx_gl_cash:
                 logging.error(
-                    f"Error calculating FX G/L for cash symbol {symbol}: {e_fx_gl_cash}"
+                    f"Error calculating FX G/L for cash symbol {CASH_SYMBOL_CSV} ({local_currency}): {e_fx_gl_cash}"
                 )
 
         portfolio_summary_rows.append(
             {
                 "Account": account,
-                "Symbol": symbol,
+                "Symbol": CASH_SYMBOL_CSV,
                 "Quantity": current_qty,
                 f"Avg Cost ({display_currency})": avg_cost_price_display,
                 f"Price ({display_currency})": current_price_display,

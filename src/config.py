@@ -43,7 +43,7 @@ HISTORICAL_DEBUG_SYMBOL = None
 # --- Core Symbols ---
 CASH_SYMBOL_CSV = "$CASH"  # Standardized cash symbol
 
-# --- Define a constant for the aggregated cash account name ---
+# --- Define a constant for the aggregated cash account name in the holdings view ---
 _AGGREGATE_CASH_ACCOUNT_NAME_ = "Cash"
 
 # --- Caching Configuration ---
