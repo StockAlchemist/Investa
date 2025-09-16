@@ -251,6 +251,7 @@ from config import (
     COLOR_BORDER_DARK,
     COLOR_GAIN,
     COLOR_LOSS,
+    CURRENCY_SYMBOLS,
     DEFAULT_CSV,
     SHORTABLE_SYMBOLS,
     BAR_CHART_MAX_PERIODS_ANNUAL,
@@ -575,21 +576,7 @@ class PortfolioApp(QMainWindow):
         if get_name:
             return target_currency_code  # Return the 3-letter code
 
-        # Map code to symbol
-        symbol_map = {
-            "USD": "$",
-            "THB": "฿",
-            "EUR": "€",
-            "GBP": "£",
-            "JPY": "¥",
-            "CAD": "$",
-            "AUD": "$",
-            "CHF": "Fr",
-            "CNY": "¥",
-            "HKD": "$",
-            "SGD": "$",
-        }  # Added more common ones
-        return symbol_map.get(
+        return CURRENCY_SYMBOLS.get(
             target_currency_code, target_currency_code
         )  # Return code itself if no symbol mapped
 

@@ -65,6 +65,7 @@ try:
         calculate_irr,  # Used by _build_summary_rows
         get_cash_flows_for_symbol_account,  # Used by _build_summary_rows
         safe_sum,  # Used by _calculate_aggregate_metrics
+        get_currency_symbol_from_code,
         get_historical_rate_via_usd_bridge,  # Added for dividend history
         # Add any other finutils functions used by the moved functions
     )
@@ -1276,6 +1277,11 @@ def _build_summary_rows(
             _AGGREGATE_CASH_ACCOUNT_NAME_  # Use the special aggregate account name
         )
 
+        # --- NEW: Format cash symbol ---
+        currency_symbol_for_display = get_currency_symbol_from_code(local_currency)
+        cash_display_symbol = f"Cash ({currency_symbol_for_display})"
+        # --- END NEW ---
+
         # --- Now, apply the same logic as for stocks, but with aggregated values ---
         current_qty = agg_qty
         realized_gain_local = agg_realized_gain_local
@@ -1396,7 +1402,7 @@ def _build_summary_rows(
         portfolio_summary_rows.append(
             {
                 "Account": account,
-                "Symbol": CASH_SYMBOL_CSV,
+                "Symbol": cash_display_symbol,
                 "Quantity": current_qty,
                 f"Avg Cost ({display_currency})": avg_cost_price_display,
                 f"Price ({display_currency})": current_price_display,

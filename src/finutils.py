@@ -32,6 +32,7 @@ try:
         CASH_SYMBOL_CSV,
         DEFAULT_CURRENCY,
         SHORTABLE_SYMBOLS,
+        CURRENCY_SYMBOLS,
     )  # YFINANCE_EXCLUDED_SYMBOLS, SYMBOL_MAP_TO_YFINANCE removed
 except ImportError:
     # Fallback values if config import fails (should not happen in normal execution)
@@ -39,6 +40,7 @@ except ImportError:
     CASH_SYMBOL_CSV = "$CASH"
     DEFAULT_CURRENCY = "USD"
     SHORTABLE_SYMBOLS = {"AAPL", "RIMM"}
+    CURRENCY_SYMBOLS = {"USD": "$"}
 
 
 # --- Constants for _get_file_hash ---
@@ -82,12 +84,29 @@ def _get_file_hash(filepath: str) -> str:
         return HASH_ERROR_UNEXPECTED
 
 
+# --- ADDED: Currency Symbol Helper ---
+def get_currency_symbol_from_code(currency_code: str) -> str:
+    """
+    Returns the currency symbol for a given currency code.
+    Falls back to the code itself if no symbol is mapped.
+    """
+    if not currency_code or not isinstance(currency_code, str):
+        return ""
+    return CURRENCY_SYMBOLS.get(currency_code.upper(), currency_code.upper())
+
+
+# --- END ADDED ---
+
+
 # --- Cash Symbol Helpers ---
 def is_cash_symbol(symbol: str) -> bool:
-    """Checks if a symbol is a cash symbol (e.g., '$CASH_USD', '$CASH')."""
+    """Checks if a symbol is a cash symbol (e.g., '$CASH', 'Cash ($)')."""
     if not isinstance(symbol, str):
         return False
-    return symbol.startswith(CASH_SYMBOL_CSV)
+    symbol_lower = symbol.lower()
+    return symbol_lower.startswith(CASH_SYMBOL_CSV.lower()) or symbol_lower.startswith(
+        "cash ("
+    )
 
 
 # --- IRR/MWR Calculation Functions ---

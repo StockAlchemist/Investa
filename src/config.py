@@ -409,6 +409,22 @@ COMMON_CURRENCIES = [  # List of commonly used currency codes
     "THB",
 ]
 
+# --- ADDED: Currency Symbol Mapping ---
+CURRENCY_SYMBOLS = {
+    "USD": "$",
+    "THB": "฿",
+    "EUR": "€",
+    "GBP": "£",
+    "JPY": "¥",
+    "CAD": "$",
+    "AUD": "$",
+    "CHF": "Fr",
+    "CNY": "¥",
+    "HKD": "$",
+    "SGD": "$",
+}
+# --- END ADDED ---
+
 # --- Graph Defaults ---
 DEFAULT_GRAPH_DAYS_AGO = 365 * 2  # Default start for graphs, days relative to today
 DEFAULT_GRAPH_INTERVAL = "D"  # Default graph interval (D, W, M)
