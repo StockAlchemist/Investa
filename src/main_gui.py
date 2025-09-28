@@ -131,12 +131,15 @@ from PySide6.QtWidgets import (
     QToolBar,  # <-- ADDED QToolBar
     QHeaderView,
     QScrollArea,
+    QButtonGroup,
     QSpinBox,  # <-- Import QSpinBox
     QCompleter,  # <-- ADDED for symbol autocompletion
     QListWidgetItem,
     QInputDialog,  # <-- ADDED for rebalancing tab
     QSpacerItem,  # <-- ADDED for layout spacing
 )
+from functools import partial
+import contextlib
 
 from PySide6.QtWidgets import QProgressBar  # <-- ADDED for progress bar
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QWidget, QLabel
@@ -1495,6 +1498,87 @@ The CSV file should contain the following columns (header names must match exact
             else:
                 logging.info("Account currency settings unchanged.")
 
+    @contextlib.contextmanager
+    def _programmatic_date_change(self):
+        """Context manager to temporarily disable date change signals."""
+        self._is_setting_dates_programmatically = True
+        yield
+        self._is_setting_dates_programmatically = False
+
+    @Slot(str)
+    def _set_graph_date_range(self, period: str):
+        """Sets the graph start and end dates based on a preset period string."""
+        end_date = date.today()
+        start_date = None
+
+        if period == "1W":
+            start_date = end_date - timedelta(weeks=1)
+        elif period == "MTD":
+            start_date = end_date.replace(day=1)
+        elif period == "1M":
+            start_date = end_date - timedelta(days=30)
+        elif period == "6M":
+            start_date = end_date - timedelta(days=182)
+        elif period == "YTD":
+            start_date = end_date.replace(month=1, day=1)
+        elif period == "1Y":
+            start_date = end_date - timedelta(days=365)
+        elif period == "3Y":
+            start_date = end_date - timedelta(days=3 * 365)
+        elif period == "5Y":
+            start_date = end_date - timedelta(days=5 * 365)
+        elif period == "10Y":
+            start_date = end_date - timedelta(days=10 * 365)
+        elif period == "All":
+            if (
+                hasattr(self, "full_historical_data")
+                and not self.full_historical_data.empty
+            ):
+                start_date = self.full_historical_data.index.min().date()
+            else:
+                # Fallback if no data is loaded yet
+                start_date = self.config.get(
+                    "graph_start_date", DEFAULT_GRAPH_START_DATE
+                )
+                if isinstance(start_date, str):
+                    start_date = date.fromisoformat(start_date)
+
+        if start_date:
+            with self._programmatic_date_change():
+                self.graph_start_date_edit.setDate(QDate(start_date))
+                self.graph_end_date_edit.setDate(QDate(end_date))
+                logging.info(
+                    f"Graph date range set to '{period}': {start_date} to {end_date}"
+                )
+                # Automatically trigger graph update when a preset is clicked
+                self.graph_update_button.click()
+        else:
+            logging.warning(f"Could not determine start date for period '{period}'.")
+
+    @Slot(str)
+    def _on_preset_selected(self, text: str):
+        """Handles selection from the preset dropdown."""
+        if text == "Presets...":
+            return  # Do nothing for the placeholder
+
+        # Block signals to prevent the change from being immediately cleared
+        self.date_preset_combo.blockSignals(True)
+        self._set_graph_date_range(text)
+        self.date_preset_combo.setCurrentText(text)
+        self.date_preset_combo.blockSignals(False)
+
+    @Slot()
+    def _clear_preset_button_selection(self):
+        """Clears the selection of any preset date range button."""
+        if self._is_setting_dates_programmatically:
+            return
+
+        # Reset the preset dropdown to the placeholder
+        if self.date_preset_combo.currentIndex() != 0:
+            self.date_preset_combo.blockSignals(True)
+            self.date_preset_combo.setCurrentIndex(0)
+            self.date_preset_combo.blockSignals(False)
+
     @Slot()
     def export_transactions_to_csv(self):
         """
@@ -2066,6 +2150,7 @@ The CSV file should contain the following columns (header names must match exact
         self.is_calculating = False
         self.last_calc_status = ""
         self.last_hist_twr_factor = np.nan
+        self._is_setting_dates_programmatically = False
         # --- ADDED: Attribute for frozen table view ---
         self.frozen_table_view = None
         # --- END ADDED ---
@@ -4591,8 +4676,8 @@ The CSV file should contain the following columns (header names must match exact
         if not hasattr(self, "controls_frame"):
             return
         controls_layout = QHBoxLayout(self.controls_frame)  # Use self.controls_frame
-        controls_layout.setContentsMargins(10, 8, 10, 8)
-        controls_layout.setSpacing(8)
+        controls_layout.setContentsMargins(5, 2, 5, 2)
+        controls_layout.setSpacing(4)
 
         # Helper function to create a vertical separator
         def create_separator():
@@ -4630,7 +4715,7 @@ The CSV file should contain the following columns (header names must match exact
 
         self.account_select_button = QPushButton("Accounts")
         self.account_select_button.setObjectName("AccountSelectButton")
-        self.account_select_button.setMinimumWidth(130)
+        self.account_select_button.setMinimumWidth(120)
         controls_layout.addWidget(self.account_select_button)
         self.update_accounts_button = QPushButton("Update Accounts")
         self.update_accounts_button.setObjectName("UpdateAccountsButton")
@@ -4674,8 +4759,16 @@ The CSV file should contain the following columns (header names must match exact
         # --- Separator 3 (Between Account/Display and Graph Controls) ---
         controls_layout.addWidget(create_separator())
 
-        # Graph Controls
-        controls_layout.addWidget(QLabel("Graphs:"))
+        # --- Graph Controls Group ---
+        graph_controls_group = QGroupBox("")
+        graph_controls_group.setObjectName("GraphControlsGroup")
+        graph_v_layout = QVBoxLayout(graph_controls_group)
+        graph_v_layout.setContentsMargins(2, 2, 2, 2)
+        graph_v_layout.setSpacing(4)
+
+        # Row 1: Date editors, interval, benchmarks, update button
+        graph_controls_row1_layout = QHBoxLayout()
+        graph_controls_row1_layout.addWidget(QLabel("Range:"))
         self.graph_start_date_edit = QDateEdit()
         self.graph_start_date_edit.setObjectName("GraphDateEdit")
         self.graph_start_date_edit.setCalendarPopup(True)
@@ -4683,8 +4776,8 @@ The CSV file should contain the following columns (header names must match exact
         self.graph_start_date_edit.setDate(
             QDate.fromString(self.config.get("graph_start_date"), "yyyy-MM-dd")
         )
-        controls_layout.addWidget(self.graph_start_date_edit)
-        controls_layout.addWidget(QLabel("to"))
+        graph_controls_row1_layout.addWidget(self.graph_start_date_edit)
+        graph_controls_row1_layout.addWidget(QLabel("to"))
         self.graph_end_date_edit = QDateEdit()
         self.graph_end_date_edit.setObjectName("GraphDateEdit")
         self.graph_end_date_edit.setCalendarPopup(True)
@@ -4692,19 +4785,35 @@ The CSV file should contain the following columns (header names must match exact
         self.graph_end_date_edit.setDate(
             QDate.fromString(self.config.get("graph_end_date"), "yyyy-MM-dd")
         )
-        controls_layout.addWidget(self.graph_end_date_edit)
-        self.graph_interval_combo = QComboBox()
-        self.graph_interval_combo.setObjectName("GraphIntervalCombo")
-        self.graph_interval_combo.addItems(["D", "W", "M"])
-        self.graph_interval_combo.setCurrentText(
-            self.config.get("graph_interval", DEFAULT_GRAPH_INTERVAL)
+        graph_controls_row1_layout.addWidget(self.graph_end_date_edit)
+        # --- MOVED: Preset dropdown is now on the main row ---
+        self.date_preset_combo = QComboBox()
+        self.date_preset_combo.setObjectName("DatePresetCombo")
+        self.date_preset_combo.addItems(
+            [
+                "Presets...",
+                "1W",
+                "MTD",
+                "1M",
+                "6M",
+                "YTD",
+                "1Y",
+                "3Y",
+                "5Y",
+                "10Y",
+                "All",
+            ]
         )
-        self.graph_interval_combo.setMinimumWidth(60)
-        controls_layout.addWidget(self.graph_interval_combo)
+        self.date_preset_combo.setToolTip("Select a preset date range")
+        self.date_preset_combo.setMinimumWidth(90)
+        self.date_preset_combo.textActivated.connect(self._on_preset_selected)
+        graph_controls_row1_layout.addWidget(self.date_preset_combo)
+        # --- END MOVED ---
+
         self.benchmark_select_button = QPushButton()
         self.benchmark_select_button.setObjectName("BenchmarkSelectButton")
         self.benchmark_select_button.setMinimumWidth(100)
-        controls_layout.addWidget(self.benchmark_select_button)  # Text set later
+        graph_controls_row1_layout.addWidget(self.benchmark_select_button)
         self.graph_update_button = QPushButton("Update Graphs")
         self.graph_update_button.setObjectName("GraphUpdateButton")
         self.graph_update_button.setIcon(
@@ -4713,7 +4822,20 @@ The CSV file should contain the following columns (header names must match exact
         self.graph_update_button.setToolTip(
             "Recalculate and redraw performance graphs."
         )
-        controls_layout.addWidget(self.graph_update_button)
+        # Connect date edits to clear preset selection (MOVED HERE)
+        self.graph_start_date_edit.dateChanged.connect(
+            self._clear_preset_button_selection
+        )
+        self.graph_end_date_edit.dateChanged.connect(
+            self._clear_preset_button_selection
+        )
+
+        graph_controls_row1_layout.addWidget(self.graph_update_button)
+        graph_v_layout.addLayout(graph_controls_row1_layout)
+
+        # The preset dropdown has been moved to the row above. This layout is no longer needed.
+
+        controls_layout.addWidget(graph_controls_group)
 
         # --- Separator 4 ---
         controls_layout.addWidget(create_separator())
@@ -7811,11 +7933,6 @@ The CSV file should contain the following columns (header names must match exact
         self.graph_end_date_edit.dateChanged.connect(
             lambda: self.status_label.setText(
                 "Graph dates changed. Click 'Update Graphs'."
-            )
-        )
-        self.graph_interval_combo.currentTextChanged.connect(
-            lambda: self.status_label.setText(
-                "Graph interval changed. Click 'Update Graphs'."
             )
         )
         self.benchmark_select_button.clicked.connect(self.show_benchmark_selection_menu)
@@ -12049,7 +12166,6 @@ The CSV file should contain the following columns (header names must match exact
             self.show_closed_check,
             self.graph_start_date_edit,
             self.graph_end_date_edit,
-            self.graph_interval_combo,
             self.benchmark_select_button,
             self.graph_update_button,
             self.refresh_button,
@@ -12322,8 +12438,8 @@ The CSV file should contain the following columns (header names must match exact
                 # --- End Re-normalization ---
 
                 # Resample based on interval
-                interval = self.graph_interval_combo.currentText()
-                if interval in ["W", "M"]:
+                interval = "D"  # Interval is now hardcoded to Daily
+                if interval in ["W", "M"]:  # This block will now be skipped
                     logging.info(f"Resampling historical data to interval: {interval}")
                     resample_freq = "W-FRI" if interval == "W" else "ME"
 

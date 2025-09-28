@@ -236,6 +236,7 @@ Once your data is loaded (from the database) and refreshed, the main dashboard c
   * `Accounts`: Button to open a dialog where you can select which specific investment accounts (defined in your transactions) to include in the dashboard view. Click "Update Accounts" (or "Refresh All") after changing.
   * `Refresh All (F5)`: The main button to reload all data from the database, fetch fresh market prices, and recalculate everything.
   * `Update Accounts`: A quicker refresh if you've only changed the account filter.
+  * A dedicated section for graph controls with date range selectors, a benchmark selection button, and an "Update Graphs" button. A "Presets..." dropdown menu is available to quickly set common time ranges (`1W`, `MTD`, `YTD`, `1Y`, `All`, etc.).
   * `Update Graphs`: A quicker refresh if you've only changed graph parameters (like date ranges or benchmarks).
 
 * **Holdings Table (Main Area):**
