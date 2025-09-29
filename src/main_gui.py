@@ -4664,11 +4664,22 @@ The CSV file should contain the following columns (header names must match exact
         self.main_title_label.setObjectName("MainTitleLabel")
         self.main_title_label.setTextFormat(Qt.RichText)
         self.header_info_label = QLabel("<i>Initializing...</i>")
+        # --- ADDED: FX Rate Label in Header ---
+        self.exchange_rate_display_label = QLabel("")
+        self.exchange_rate_display_label.setObjectName("HeaderInfoLabel")
+        self.exchange_rate_display_label.setVisible(False)
+        self.exchange_rate_display_label.setTextFormat(Qt.RichText)
+        self.exchange_rate_display_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        # --- END ADDED ---
+
         self.header_info_label.setObjectName("HeaderInfoLabel")
         self.header_info_label.setTextFormat(Qt.RichText)
         self.header_info_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         header_layout.addWidget(self.main_title_label)
         header_layout.addStretch(1)
+        header_layout.addWidget(self.exchange_rate_display_label)
+        # Add a small separator/spacer
+        header_layout.addSpacing(15)
         header_layout.addWidget(self.header_info_label)
 
     def _init_controls_frame_widgets(self):
@@ -7196,11 +7207,6 @@ The CSV file should contain the following columns (header names must match exact
         self.progress_bar.setObjectName("StatusBarProgressBar")
         self.progress_bar.setVisible(False)  # Initially hidden
         self.status_bar.addPermanentWidget(self.progress_bar)  # RESTORED
-
-        self.exchange_rate_display_label = QLabel("")
-        self.exchange_rate_display_label.setObjectName("ExchangeRateLabel")
-        self.exchange_rate_display_label.setVisible(False)
-        self.status_bar.addPermanentWidget(self.exchange_rate_display_label)  # RESTORED
 
     @Slot(bool)
     def refresh_data(self, force_historical_refresh: bool = True):
@@ -11918,13 +11924,13 @@ The CSV file should contain the following columns (header names must match exact
                 try:
                     rate_float = float(rate)
                     # Display the rate: 1 BASE = X DISPLAY
-                    rate_text = f"FX: 1 {base_currency} = {display_currency} {abs(rate_float):,.4f}"
+                    rate_text = f"<b>FX:</b> 1 {base_currency} = {display_currency} {abs(rate_float):,.4f}"
                     show_rate = True
                 except (ValueError, TypeError):
-                    rate_text = f"FX: Invalid Rate"
+                    rate_text = f"<b>FX:</b> Invalid Rate"
                     show_rate = True
             else:
-                rate_text = f"FX: ({base_currency}->{display_currency}) Unavailable"  # Indicate which rate is missing
+                rate_text = f"<b>FX:</b> ({base_currency}->{display_currency}) Unavailable"  # Indicate which rate is missing
                 show_rate = True
 
         self.exchange_rate_display_label.setText(rate_text)
