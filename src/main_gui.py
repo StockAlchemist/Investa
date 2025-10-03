@@ -6192,8 +6192,10 @@ The CSV file should contain the following columns (header names must match exact
             if new_data_dict_pytypes:
                 # Call PortfolioApp's method to handle the DB update
                 if self._edit_transaction_in_db(db_id, new_data_dict_pytypes):
-                    self.refresh_data()  # Trigger a full app refresh
+                    self._mark_data_as_stale()  # Mark data as stale
+                    self._refresh_transactions_view()  # Refresh the management table view
                 else:
+                    # Error message is shown by _edit_transaction_in_db
                     QMessageBox.critical(
                         self,
                         "Update Error",
@@ -6244,8 +6246,10 @@ The CSV file should contain the following columns (header names must match exact
         if reply == QMessageBox.Yes:
             # Call PortfolioApp's method to handle the DB delete
             if self._delete_transaction_in_db(db_id):
-                self.refresh_data()  # Trigger a full app refresh
+                self._mark_data_as_stale()  # Mark data as stale
+                self._refresh_transactions_view()  # Refresh the management table view
             else:
+                # Error message is shown by _delete_transaction_in_db
                 QMessageBox.critical(
                     self,
                     "Delete Error",
@@ -7242,6 +7246,9 @@ The CSV file should contain the following columns (header names must match exact
         if hasattr(self, "progress_bar"):  # Check if progress_bar exists
             self.progress_bar.setValue(0)
             self.progress_bar.setVisible(True)
+
+        # Mark data as fresh since we are starting a refresh
+        self._mark_data_as_fresh()
 
         # --- Load data from DB ---
         # df_all_transactions will be the cleaned DataFrame from the DB
@@ -12155,6 +12162,24 @@ The CSV file should contain the following columns (header names must match exact
 
         return df_filtered
 
+    def _mark_data_as_stale(self):
+        """Updates the UI to indicate that a manual refresh is required."""
+        if hasattr(self, "stale_data_indicator_label"):
+            self.stale_data_indicator_label.setVisible(True)
+        if hasattr(self, "status_label"):
+            self.status_label.setText(
+                "Data changed. Click 'Refresh All' to update portfolio calculations."
+            )
+        logging.info("UI marked as stale, refresh required.")
+
+    def _mark_data_as_fresh(self):
+        """Resets the UI state after a refresh, hiding the 'stale data' indicator."""
+        if hasattr(self, "stale_data_indicator_label"):
+            self.stale_data_indicator_label.setVisible(False)
+        # The status label will be updated by the refresh process itself,
+        # so we don't need to reset it here.
+        logging.info("UI marked as fresh after data refresh.")
+
     # --- End New Helper ---
 
     # --- Control Enabling/Disabling ---
@@ -14630,13 +14655,12 @@ The CSV file should contain the following columns (header names must match exact
                 self._add_new_account_if_needed(
                     str(new_account_name_added)
                 )  # Update available accounts list in GUI
-
+            self._mark_data_as_stale()  # Mark data as stale
             QMessageBox.information(
                 self,
                 "Success",
                 "Transaction added successfully to database.\nRefreshing data...",
             )
-            self.refresh_data()  # Refresh data to show the new transaction
         else:
             QMessageBox.critical(
                 self,
@@ -14747,22 +14771,29 @@ The CSV file should contain the following columns (header names must match exact
             self.toolbar.addAction(self.manage_transactions_action)
 
         # Spacer to push subsequent items to the right
-        spacer = QWidget()
-        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.toolbar.addWidget(spacer)
+        spacer_right = QWidget()
+        spacer_right.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.toolbar.addWidget(spacer_right)
 
         # Fundamental lookup widgets (remain on the right)
         self.lookup_symbol_edit = QLineEdit(self)
         self.lookup_symbol_edit.setPlaceholderText(
             "Symbol for Fundamentals (e.g. AAPL)"
         )
-        self.lookup_symbol_edit.setMinimumWidth(150)  # Consistent width
-        self.lookup_symbol_edit.setMaximumWidth(150)  # Consistent width
+        self.lookup_symbol_edit.setMinimumWidth(150)
+        self.lookup_symbol_edit.setMaximumWidth(200)
         self.toolbar.addWidget(self.lookup_symbol_edit)
 
-        self.lookup_button = QPushButton("Get Fundamentals")
-        self.lookup_button.setIcon(QIcon.fromTheme("help-about"))  # Example icon
+        self.lookup_button = QPushButton("Get Fundamentals")  # This was here before
         self.toolbar.addWidget(self.lookup_button)
+
+        self.stale_data_indicator_label = QLabel(" <b>Refresh Required</b>")
+        self.stale_data_indicator_label.setObjectName("StaleDataIndicator")
+        self.stale_data_indicator_label.setToolTip(
+            "Transaction data has changed. Click 'Refresh All' to update calculations."
+        )
+        self.stale_data_indicator_label.setVisible(False)  # Initially hidden
+        self.toolbar.addWidget(self.stale_data_indicator_label)
 
     # --- Show Window and Run Event Loop ---
     # main_window.show() # This should be in __main__
