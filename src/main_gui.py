@@ -292,6 +292,7 @@ from utils import (
     resource_path,
     get_column_definitions,
 )
+from io_handlers import write_dataframe_to_csv, write_dataframe_to_excel
 
 try:
     from portfolio_logic import (
@@ -464,7 +465,10 @@ except ImportError:
 FROZEN_COLUMNS_UI = ["Account", "Symbol"]
 
 
-class PortfolioApp(QMainWindow):
+from ui_helpers import UiHelpersMixin
+
+
+class PortfolioApp(QMainWindow, UiHelpersMixin):
     """Main application window for the Investa Portfolio Dashboard."""
 
     # Define icon specifications for toolbar actions for light and dark themes
@@ -518,6 +522,10 @@ class PortfolioApp(QMainWindow):
         "light": ("theme", "help-about"),
         "dark": ("sp", QStyle.SP_MessageBoxInformation),
     }
+
+    # Menu helper implementations moved to UiHelpersMixin (ui_helpers.py)
+
+    # Centralized status and message helpers are provided by UiHelpersMixin
 
     # --- Helper Methods (Define BEFORE they are called in __init__) ---
     def _ensure_all_columns_in_visibility(self):
@@ -1587,7 +1595,9 @@ The CSV file should contain the following columns (header names must match exact
         or the cleaned headers.
         """
         if not self.db_conn:
-            QMessageBox.warning(self, "No Database", "No database open to export from.")
+            self.show_warning(
+                "No database open to export from.", popup=True, title="No Database"
+            )
             return
 
         # Load all transactions from the database.
@@ -1604,15 +1614,17 @@ The CSV file should contain the following columns (header names must match exact
         )
 
         if not success or df_to_export is None:
-            QMessageBox.critical(
-                self,
-                "Load Error",
+            self.show_error(
                 "Failed to load transactions from the database for export.",
+                popup=True,
+                title="Load Error",
             )
             return
         if df_to_export.empty:
-            QMessageBox.information(
-                self, "No Data", "No transactions in the database to export."
+            self.show_info(
+                "No transactions in the database to export.",
+                popup=True,
+                title="No Data",
             )
             return
 
@@ -1642,9 +1654,7 @@ The CSV file should contain the following columns (header names must match exact
             self.save_config()
 
             logging.info(f"Attempting to export transactions to CSV: {fname}")
-            self.status_label.setText(
-                f"Exporting transactions to {os.path.basename(fname)}..."
-            )
+            self.set_status(f"Exporting transactions to {os.path.basename(fname)}...")
             QApplication.processEvents()
 
             try:
@@ -1731,33 +1741,35 @@ The CSV file should contain the following columns (header names must match exact
                     except:  # If parsing fails, leave as is
                         pass
 
-                # Write to CSV
-                df_export_final.to_csv(
-                    fname, index=False, encoding="utf-8", quoting=csv.QUOTE_MINIMAL
-                )  # QUOTE_MINIMAL is often preferred
-                QMessageBox.information(
-                    self,
-                    "Export Successful",
+                # Write to CSV via helper
+                write_dataframe_to_csv(df_export_final, fname)
+                self.show_info(
                     f"All transactions exported successfully to:\n{fname}",
+                    popup=True,
+                    title="Export Successful",
                 )
-                self.status_label.setText(f"Exported to {os.path.basename(fname)}")
+                self.set_status(f"Exported to {os.path.basename(fname)}")
             except Exception as e:
-                QMessageBox.critical(
-                    self, "Export Error", f"Could not export transactions to CSV:\n{e}"
+                self.show_error(
+                    f"Could not export transactions to CSV:\n{e}",
+                    popup=True,
+                    title="Export Error",
                 )
                 logging.error(
                     f"Error exporting transactions to CSV: {e}", exc_info=True
                 )
-                self.status_label.setText("Export failed.")
+                self.set_status("Export failed.")
         else:
             logging.info("CSV export cancelled by user.")
-            self.status_label.setText("Export cancelled.")
+            self.set_status("Export cancelled.")
 
     @Slot()
     def export_holdings_to_excel(self):
         """Exports the current main holdings table view to an Excel (.xlsx) file."""
         if not hasattr(self, "table_model") or self.table_model.rowCount() == 0:
-            QMessageBox.warning(self, "No Data", "There is no holdings data to export.")
+            self.show_warning(
+                "There is no holdings data to export.", popup=True, title="No Data"
+            )
             return
 
         # Suggest starting directory and filename
@@ -1790,9 +1802,7 @@ The CSV file should contain the following columns (header names must match exact
             self.save_config()
 
             logging.info(f"Attempting to export holdings to Excel: {file_path}")
-            self.status_label.setText(
-                f"Exporting holdings to {os.path.basename(file_path)}..."
-            )
+            self.set_status(f"Exporting holdings to {os.path.basename(file_path)}...")
             QApplication.processEvents()
 
             try:
@@ -1808,31 +1818,32 @@ The CSV file should contain the following columns (header names must match exact
                 if cols_to_drop:
                     df_to_export.drop(columns=cols_to_drop, inplace=True)
 
-                # Write to Excel file
-                df_to_export.to_excel(file_path, index=False, engine="openpyxl")
+                # Write to Excel via helper
+                write_dataframe_to_excel(df_to_export, file_path)
 
-                QMessageBox.information(
-                    self,
-                    "Export Successful",
+                self.show_info(
                     f"Holdings table exported successfully to:\n{file_path}",
+                    popup=True,
+                    title="Export Successful",
                 )
-                self.status_label.setText(f"Exported to {os.path.basename(file_path)}")
+                self.set_status(f"Exported to {os.path.basename(file_path)}")
 
             except ImportError:
                 logging.error("Export to Excel failed: 'openpyxl' library not found.")
-                QMessageBox.critical(
-                    self,
-                    "Dependency Missing",
-                    "Could not export to Excel because the 'openpyxl' library is not installed.\n\n"
-                    "Please install it by running:\n<b>pip install openpyxl</b>",
+                self.show_error(
+                    "Could not export to Excel because the 'openpyxl' library is not installed.\n\nPlease install it by running:\n<b>pip install openpyxl</b>",
+                    popup=True,
+                    title="Dependency Missing",
                 )
-                self.status_label.setText("Export failed: openpyxl missing.")
+                self.set_status("Export failed: openpyxl missing.")
             except Exception as e:
                 logging.error(f"Error exporting holdings to Excel: {e}", exc_info=True)
-                QMessageBox.critical(
-                    self, "Export Error", f"Could not export holdings to Excel:\n{e}"
+                self.show_error(
+                    f"Could not export holdings to Excel:\n{e}",
+                    popup=True,
+                    title="Export Error",
                 )
-                self.status_label.setText("Export failed.")
+                self.set_status("Export failed.")
 
     def show_about_dialog(self):
         # Placeholder - shows a simple message box with app info
@@ -1856,7 +1867,9 @@ The CSV file should contain the following columns (header names must match exact
             or not hasattr(self, "user_excluded_symbols_config")
         ):
             logging.error("Symbol settings dictionaries not initialized.")
-            QMessageBox.critical(self, "Error", "Manual override data is not loaded.")
+            self.show_error(
+                "Manual override data is not loaded.", popup=True, title="Error"
+            )
             return
 
         # Call the renamed static method
@@ -2290,7 +2303,7 @@ The CSV file should contain the following columns (header names must match exact
                         csv_for_potential_migration
                     )  # This will also call refresh_data
                 else:
-                    self.status_label.setText(
+                    self.set_status(
                         "Ready. Add transactions or import from CSV via File menu."
                     )
                     self._perform_initial_load_from_db_only()  # Attempt to load from (now confirmed empty) DB
@@ -2300,11 +2313,9 @@ The CSV file should contain the following columns (header names must match exact
                 )
                 self._perform_initial_load_from_db_only()
         elif not self.db_conn:
-            self.status_label.setText("Error: Database connection failed. Check logs.")
+            self.set_status("Error: Database connection failed. Check logs.")
         else:  # Not loading on startup
-            self.status_label.setText(
-                "Ready. Click Refresh or Import CSV via File menu."
-            )
+            self.set_status("Ready. Click Refresh or Import CSV via File menu.")
             self._update_table_view_with_filtered_columns(pd.DataFrame())
             self.apply_column_visibility()
             self.update_performance_graphs(initial=True)
@@ -2669,9 +2680,7 @@ The CSV file should contain the following columns (header names must match exact
             logging.warning("Warn: Could not sort benchmarks based on options.")
         self._update_benchmark_button_text()
         # Inform user to click Update Graphs
-        self.status_label.setText(
-            "Benchmark selection changed. Click 'Update Graphs' to apply."
-        )
+        self.set_status("Benchmark selection changed. Click 'Update Graphs' to apply.")
 
     @Slot()  # Add Slot decorator if used with signals/slots consistently
     def show_benchmark_selection_menu(self):
@@ -2680,27 +2689,12 @@ The CSV file should contain the following columns (header names must match exact
         menu.setStyleSheet(self.styleSheet())  # Apply style
 
         # Create a checkable action for each available benchmark option
-        for display_name in BENCHMARK_OPTIONS_DISPLAY:  # Iterate over display names
-            action = QAction(display_name, self)
-            action.setCheckable(True)  # benchmark_symbol here is a display name
-            # Check the action if the symbol is currently in our selected list
-            action.setChecked(display_name in self.selected_benchmarks)
-            # Connect the action's triggered signal to the toggle function
-            # Use a lambda to pass the specific benchmark symbol being toggled
-            action.triggered.connect(
-                lambda checked, name=display_name: self.toggle_benchmark_selection(  # Pass display name
-                    name, checked
-                )
-            )
-            menu.addAction(action)
+        self._build_benchmark_menu_actions(menu)
 
         # Display the menu just below the benchmark selection button
         # Ensure benchmark_select_button exists before mapping position
         if hasattr(self, "benchmark_select_button") and self.benchmark_select_button:
-            button_pos = self.benchmark_select_button.mapToGlobal(
-                QPoint(0, self.benchmark_select_button.height())
-            )
-            menu.exec(button_pos)
+            self._exec_menu_below_widget(self.benchmark_select_button, menu)
         else:
             logging.warning("Warn: Benchmark button not ready for menu.")
 
@@ -2781,51 +2775,28 @@ The CSV file should contain the following columns (header names must match exact
         self._update_account_button_text()
 
         # Inform user to click Update
-        self.status_label.setText(
-            "Account selection changed. Click 'Update Accounts' to apply."
-        )
+        self.set_status("Account selection changed. Click 'Update Accounts' to apply.")
 
     @Slot()
     def show_account_selection_menu(self):
         """Displays a context menu with checkable actions for account selection."""
         if not self.available_accounts:
-            QMessageBox.information(
-                self,
-                "No Accounts",
+            self.show_info(
                 "Load transaction data first to see available accounts.",
+                popup=True,
+                title="No Accounts",
             )
             return
 
         menu = QMenu(self)
         menu.setStyleSheet(self.styleSheet())
 
-        # Action to select/deselect all
-        action_all = QAction("Select/Deselect All", self)
-        is_all_selected = len(self.selected_accounts) == len(self.available_accounts)
-        action_all.triggered.connect(
-            lambda: self._toggle_all_accounts(not is_all_selected)
-        )
-        menu.addAction(action_all)
-        menu.addSeparator()
-
-        # Create checkable actions for each available account
-        for (
-            account_name
-        ) in self.available_accounts:  # Use the stored available accounts
-            action = QAction(account_name, self)
-            action.setCheckable(True)
-            action.setChecked(account_name in self.selected_accounts)
-            action.triggered.connect(
-                lambda checked, name=account_name: self.toggle_account_selection(
-                    name, checked
-                )
-            )
-            menu.addAction(action)
+        # Populate menu actions via helper
+        self._build_account_menu_actions(menu)
 
         button = getattr(self, "account_select_button", None)
         if button:
-            button_pos = button.mapToGlobal(QPoint(0, button.height()))
-            menu.exec(button_pos)
+            self._exec_menu_below_widget(button, menu)
         else:
             logging.warning("Warn: Account button not ready for menu.")
 
@@ -2851,9 +2822,7 @@ The CSV file should contain the following columns (header names must match exact
         self._update_account_button_text()
 
         # Inform user to click Update
-        self.status_label.setText(
-            "Account selection changed. Click 'Update Accounts' to apply."
-        )
+        self.set_status("Account selection changed. Click 'Update Accounts' to apply.")
 
     # --- End Account Selection Methods ---
 
@@ -7230,18 +7199,18 @@ The CSV file should contain the following columns (header names must match exact
             return
 
         if not self.db_conn:  # Check DB connection first
-            QMessageBox.critical(
-                self,
-                "Database Error",
+            self.show_error(
                 "No active database connection. Cannot refresh data.",
+                popup=True,
+                title="Database Error",
             )
-            self.status_label.setText("Error: Database not connected.")
+            self.set_status("Error: Database not connected.")
             self.calculation_finished()  # Ensure UI is re-enabled
             return
 
         self.is_calculating = True
         now_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-        self.status_label.setText(f"Refreshing data from database... ({now_str})")
+        self.set_status(f"Refreshing data from database... ({now_str})")
         self.set_controls_enabled(False)
         if hasattr(self, "progress_bar"):  # Check if progress_bar exists
             self.progress_bar.setValue(0)
@@ -7282,8 +7251,10 @@ The CSV file should contain the following columns (header names must match exact
         ignored_reasons_load_db = {}  # or later processing.
 
         if not load_success or df_all_transactions is None:
-            QMessageBox.critical(
-                self, "Load Error", "Failed to load transactions from the database."
+            self.show_error(
+                "Failed to load transactions from the database.",
+                popup=True,
+                title="Load Error",
             )
             self.all_transactions_df_cleaned_for_logic = (
                 pd.DataFrame()
@@ -7297,7 +7268,7 @@ The CSV file should contain the following columns (header names must match exact
             self.all_transactions_df_cleaned_for_logic = pd.DataFrame()  # Store empty
             self.original_transactions_df_for_ignored_context = pd.DataFrame()
             self.clear_results()  # Clear UI
-            self.status_label.setText("Database is empty.")
+            self.set_status("Database is empty.")
             self.calculation_finished()  # Re-enable UI
             return
         else:
@@ -7583,7 +7554,7 @@ The CSV file should contain the following columns (header names must match exact
                     self.refresh_data()  # Call directly if this path is taken
                 else:
                     logging.info("DB is empty. No initial data refresh from DB.")
-                    self.status_label.setText(
+                    self.set_status(
                         "Database is empty. Add transactions or import from CSV via File menu."
                     )
                     # Clear UI elements as no data will be loaded
@@ -7593,7 +7564,7 @@ The CSV file should contain the following columns (header names must match exact
                 QMessageBox.warning(
                     self, "Database Error", f"Could not check database content: {e}"
                 )
-                self.status_label.setText("Error accessing database. Check logs.")
+                self.set_status("Error accessing database. Check logs.")
                 self.clear_results()
             except Exception as e_unknown:  # Catch any other unexpected error
                 logging.error(
@@ -7605,10 +7576,10 @@ The CSV file should contain the following columns (header names must match exact
                     "Unexpected Error",
                     f"An unexpected error occurred: {e_unknown}",
                 )
-                self.status_label.setText("Unexpected error. Check logs.")
+                self.set_status("Unexpected error. Check logs.")
                 self.clear_results()
         else:
-            self.status_label.setText("Database not connected. Cannot load data.")
+            self.set_status("Database not connected. Cannot load data.")
             self.clear_results()
 
     def _perform_initial_load(self):
@@ -7624,15 +7595,13 @@ The CSV file should contain the following columns (header names must match exact
                 logging.info(
                     f"Startup TX file invalid or not found: '{self.transactions_file}'. Prompting user."
                 )
-                self.status_label.setText(
-                    "Info: Please select your transactions CSV file."
-                )
+                self.set_status("Info: Please select your transactions CSV file.")
                 self._initial_file_selection = True
 
                 QTimer.singleShot(100, self.select_file)
             else:
                 startup_file_msg = f"Warn: Startup TX file invalid or not found: '{self.transactions_file}'. Load skipped."
-                self.status_label.setText(startup_file_msg)
+                self.set_status(startup_file_msg)
                 logging.info(startup_file_msg)
                 self._update_table_view_with_filtered_columns(pd.DataFrame())
                 self.apply_column_visibility()
@@ -7640,7 +7609,7 @@ The CSV file should contain the following columns (header names must match exact
                 self._update_account_button_text()
                 self._update_table_title()
         else:
-            self.status_label.setText("Ready. Select CSV file and click Refresh.")
+            self.set_status("Ready. Select CSV file and click Refresh.")
             self._update_table_view_with_filtered_columns(pd.DataFrame())
             self.apply_column_visibility()
             self.update_performance_graphs(initial=True)
@@ -7939,14 +7908,10 @@ The CSV file should contain the following columns (header names must match exact
         # change when grouping was toggled.
         self.group_by_sector_check.stateChanged.connect(self._update_table_display)
         self.graph_start_date_edit.dateChanged.connect(
-            lambda: self.status_label.setText(
-                "Graph dates changed. Click 'Update Graphs'."
-            )
+            lambda: self.set_status("Graph dates changed. Click 'Update Graphs'.")
         )
         self.graph_end_date_edit.dateChanged.connect(
-            lambda: self.status_label.setText(
-                "Graph dates changed. Click 'Update Graphs'."
-            )
+            lambda: self.set_status("Graph dates changed. Click 'Update Graphs'.")
         )
         self.benchmark_select_button.clicked.connect(self.show_benchmark_selection_menu)
         self.graph_update_button.clicked.connect(
@@ -10450,19 +10415,17 @@ The CSV file should contain the following columns (header names must match exact
                 # initialize_database will create tables if the DB is new/empty.
                 new_conn = initialize_database(fname)
                 if not new_conn:
-                    QMessageBox.critical(
-                        self,
-                        "Database Error",
+                    self.show_error(
                         f"Could not open or initialize selected database:\n{fname}",
+                        popup=True,
+                        title="Database Error",
                     )
                     # Optionally, try to revert to the previous valid DB path if one existed
                     # For now, we won't auto-revert here, user can re-select.
                     self.DB_FILE_PATH = None  # Mark as no valid DB
                     self.setWindowTitle(f"{self.base_window_title} - (No Database)")
                     self.clear_results()  # Clear UI
-                    self.status_label.setText(
-                        "Error: Failed to open selected database."
-                    )
+                    self.set_status("Error: Failed to open selected database.")
                     return
 
                 self.db_conn = new_conn
@@ -10481,7 +10444,7 @@ The CSV file should contain the following columns (header names must match exact
                 self.setWindowTitle(
                     f"{self.base_window_title} - {os.path.basename(self.DB_FILE_PATH)}"
                 )
-                self.status_label.setText(
+                self.set_status(
                     f"Opened database: {os.path.basename(self.DB_FILE_PATH)}. Refreshing..."
                 )
                 self.refresh_data()  # Refresh data from the newly opened/initialized database
@@ -10535,10 +10498,10 @@ The CSV file should contain the following columns (header names must match exact
                         os.remove(fname)
                         logging.info(f"Existing file '{fname}' removed for overwrite.")
                     except Exception as e_del:
-                        QMessageBox.critical(
-                            self,
-                            "Error",
+                        self.show_error(
                             f"Could not remove existing file '{fname}':\n{e_del}",
+                            popup=True,
+                            title="Error",
                         )
                         return
 
@@ -10573,21 +10536,21 @@ The CSV file should contain the following columns (header names must match exact
                 self.setWindowTitle(
                     f"{self.base_window_title} - {os.path.basename(self.DB_FILE_PATH)}"
                 )
-                self.status_label.setText(
+                self.set_status(
                     f"New database created: {os.path.basename(fname)}. Ready to add transactions or import."
                 )
-                QMessageBox.information(
-                    self,
-                    "Database Created",
+                self.show_info(
                     f"New database file created successfully:\n{fname}",
+                    popup=True,
+                    title="Database Created",
                 )
                 # Do not automatically refresh_data as the DB is empty.
                 # User can now add transactions or import.
             else:
-                QMessageBox.critical(
-                    self,
-                    "Database Creation Error",
+                self.show_error(
                     f"Could not create or initialize new database at:\n{fname}",
+                    popup=True,
+                    title="Database Creation Error",
                 )
                 # Attempt to revert to a previously known valid DB path from config if possible
                 previous_db_path = self.config.get("transactions_file")
@@ -10620,10 +10583,10 @@ The CSV file should contain the following columns (header names must match exact
         into the currently open SQLite database.
         """
         if not self.db_conn:
-            QMessageBox.warning(
-                self,
-                "No Database Open",
+            self.show_warning(
                 "Please open or create a database file first before importing from CSV.",
+                popup=True,
+                title="No Database Open",
             )
             return
 
@@ -10669,7 +10632,7 @@ The CSV file should contain the following columns (header names must match exact
                 logging.info("CSV import cancelled by user.")
                 return
 
-            self.status_label.setText(
+            self.set_status(
                 f"Importing transactions from {os.path.basename(csv_fname)}..."
             )
             self.set_controls_enabled(False)  # Disable UI during import
@@ -10693,17 +10656,16 @@ The CSV file should contain the following columns (header names must match exact
             self.set_controls_enabled(True)  # Re-enable UI
 
             if err_count > 0:
-                QMessageBox.warning(
-                    self,
-                    "Import Issues",
-                    f"Imported {mig_count} transaction(s) with {err_count} error(s).\n"
-                    "Please check the application logs for details.",
+                self.show_warning(
+                    f"Imported {mig_count} transaction(s) with {err_count} error(s).\nPlease check the application logs for details.",
+                    popup=True,
+                    title="Import Issues",
                 )
             else:
-                QMessageBox.information(
-                    self,
-                    "Import Successful",
+                self.show_info(
                     f"Successfully imported {mig_count} transaction(s) from '{os.path.basename(csv_fname)}'.",
+                    popup=True,
+                    title="Import Successful",
                 )
 
             final_status_msg = f"Import from '{os.path.basename(csv_fname)}' complete. Migrated: {mig_count}, Errors: {err_count}."
@@ -10711,7 +10673,7 @@ The CSV file should contain the following columns (header names must match exact
                 mig_count > 0 or err_count > 0
             ):  # Refresh if anything changed or tried to change
                 final_status_msg += " Refreshing data..."
-            self.status_label.setText(final_status_msg)
+            self.set_status(final_status_msg)
             logging.info(final_status_msg)
 
             if mig_count > 0:  # Only refresh if actual transactions were migrated
@@ -10719,11 +10681,11 @@ The CSV file should contain the following columns (header names must match exact
             elif (
                 err_count > 0
             ):  # If only errors, still might be good to ensure UI is in a clean state
-                self.status_label.setText(
+                self.set_status(
                     f"Import from '{os.path.basename(csv_fname)}' had {err_count} errors. No data changed."
                 )
             else:  # No rows migrated and no errors (e.g. empty CSV)
-                self.status_label.setText(
+                self.set_status(
                     f"No transactions imported from '{os.path.basename(csv_fname)}'."
                 )
 
@@ -10736,29 +10698,29 @@ The CSV file should contain the following columns (header names must match exact
         This is typically called on first startup if an empty DB and a fallback CSV are found.
         """
         if not self.db_conn:
-            QMessageBox.critical(
-                self,
-                "Migration Error",
+            self.show_error(
                 "Database connection not available for migration.",
+                popup=True,
+                title="Migration Error",
             )
             logging.error("Migration Error: DB connection not available.")
-            self.status_label.setText("Error: DB connection lost before migration.")
+            self.set_status("Error: DB connection lost before migration.")
             return
 
         if not os.path.exists(csv_path_to_migrate):
-            QMessageBox.critical(
-                self,
-                "Migration Error",
+            self.show_error(
                 f"CSV file for migration not found:\n{csv_path_to_migrate}",
+                popup=True,
+                title="Migration Error",
             )
             logging.error(
                 f"Migration Error: CSV file '{csv_path_to_migrate}' not found."
             )
-            self.status_label.setText(f"Error: Migration CSV not found.")
+            self.set_status(f"Error: Migration CSV not found.")
             return
 
         logging.info(f"Starting automatic CSV migration from: {csv_path_to_migrate}")
-        self.status_label.setText(
+        self.set_status(
             f"Migrating data from {os.path.basename(csv_path_to_migrate)} to database..."
         )
         self.set_controls_enabled(False)
@@ -10779,17 +10741,16 @@ The CSV file should contain the following columns (header names must match exact
         self.set_controls_enabled(True)
 
         if err_count > 0:
-            QMessageBox.warning(
-                self,
-                "Migration Issues",
-                f"Migrated {mig_count} transaction(s) with {err_count} error(s) from '{os.path.basename(csv_path_to_migrate)}'.\n"
-                "Please check the application logs for details.",
+            self.show_warning(
+                f"Migrated {mig_count} transaction(s) with {err_count} error(s) from '{os.path.basename(csv_path_to_migrate)}'.\nPlease check the application logs for details.",
+                popup=True,
+                title="Migration Issues",
             )
         else:
-            QMessageBox.information(
-                self,
-                "Migration Successful",
+            self.show_info(
                 f"Successfully migrated {mig_count} transaction(s) from '{os.path.basename(csv_path_to_migrate)}' to the database.",
+                popup=True,
+                title="Migration Successful",
             )
 
         # Update config: clear the csv_fallback path as migration has been attempted/completed.
@@ -10803,17 +10764,17 @@ The CSV file should contain the following columns (header names must match exact
         final_status_msg = f"Migration from '{os.path.basename(csv_path_to_migrate)}' complete. Migrated: {mig_count}, Errors: {err_count}."
         if mig_count > 0 or err_count > 0:
             final_status_msg += " Refreshing data..."
-        self.status_label.setText(final_status_msg)
+        self.set_status(final_status_msg)
         logging.info(final_status_msg)
 
         if mig_count > 0:  # Refresh data to show newly migrated transactions
             self.refresh_data()
         elif err_count > 0:
-            self.status_label.setText(
+            self.set_status(
                 f"Migration from '{os.path.basename(csv_path_to_migrate)}' had {err_count} errors. No data changed."
             )
         else:  # No rows migrated and no errors (e.g. empty CSV)
-            self.status_label.setText(
+            self.set_status(
                 f"No transactions migrated from '{os.path.basename(csv_path_to_migrate)}'."
             )
 
@@ -10851,7 +10812,7 @@ The CSV file should contain the following columns (header names must match exact
         self.update_account_pie_chart()
         self.update_holdings_pie_chart(pd.DataFrame())
         self.update_performance_graphs(initial=True)
-        self.status_label.setText("Ready")
+        self.set_status("Ready")
         self._update_table_title(pd.DataFrame())  # Update table title
         self._update_account_button_text()  # Update button text
         self.stock_transactions_table_model.updateData(
@@ -12167,7 +12128,7 @@ The CSV file should contain the following columns (header names must match exact
         if hasattr(self, "stale_data_indicator_label"):
             self.stale_data_indicator_label.setVisible(True)
         if hasattr(self, "status_label"):
-            self.status_label.setText(
+            self.set_status(
                 "Data changed. Click 'Refresh All' to update portfolio calculations."
             )
         logging.info("UI marked as stale, refresh required.")
@@ -12586,7 +12547,7 @@ The CSV file should contain the following columns (header names must match exact
             # Try to set error status even if other UI updates failed
             try:
                 self._update_rebalancing_tab()
-                self.status_label.setText(f"Error processing results: {e}")
+                self.show_error(f"Error processing results: {e}")
             except Exception as e_status:
                 logging.error(
                     f"Failed to set status_label in handle_results error handler: {e_status}"
@@ -12610,9 +12571,14 @@ The CSV file should contain the following columns (header names must match exact
             logging.error(  # Changed to error for more visibility
                 f"--- Calculation/Fetch Error Reported by Worker ---\n{error_message}\n--- End Error Report ---"
             )
-            # Ensure status_label exists before trying to set text
+            # Ensure status update even if label missing
+            base_msg = (
+                error_message.split("|||")[0]
+                if isinstance(error_message, str)
+                else str(error_message)
+            )
             if hasattr(self, "status_label") and self.status_label:
-                self.status_label.setText(f"Error: {error_message.split('|||')[0]}")
+                self.set_status(f"Error: {base_msg}")
             else:
                 logging.warning("status_label not available in handle_error")
             # calculation_finished will be called by the 'finished' signal separately.
@@ -12624,7 +12590,7 @@ The CSV file should contain the following columns (header names must match exact
             )
             # Fallback UI updates if possible
             if hasattr(self, "status_label") and self.status_label:
-                self.status_label.setText("Critical error handling worker error.")
+                self.set_status("Critical error handling worker error.")
             if hasattr(self, "set_controls_enabled"):
                 self.set_controls_enabled(True)  # Try to re-enable controls
 
@@ -12691,7 +12657,7 @@ The CSV file should contain the following columns (header names must match exact
                 final_status_text = "Finished (with errors)"
 
             if hasattr(self, "status_label") and self.status_label:
-                self.status_label.setText(final_status_text)
+                self.set_status(final_status_text)
             logging.info(f"CALC_FINISHED: Status label set to: '{final_status_text}'")
 
             if error_message and (
@@ -12720,7 +12686,7 @@ The CSV file should contain the following columns (header names must match exact
             try:
                 self.set_controls_enabled(True)
                 if hasattr(self, "status_label") and self.status_label:
-                    self.status_label.setText(f"Critical error in finish step: {e}")
+                    self.set_status(f"Critical error in finish step: {e}")
                 if hasattr(self, "progress_bar"):
                     self.progress_bar.setVisible(False)
             except Exception as e_reset:
@@ -12739,7 +12705,7 @@ The CSV file should contain the following columns (header names must match exact
 
         self.progress_bar.setValue(percent)
         # Optionally update status label too
-        self.status_label.setText(f"Calculating historical data... {percent}%")
+        self.set_status(f"Calculating historical data... {percent}%")
 
     def _update_periodic_bar_charts(self):
         """Updates the weekly, monthly, and annual return bar charts."""
@@ -14824,7 +14790,7 @@ The CSV file should contain the following columns (header names must match exact
         logging.info(
             f"Direct fundamental lookup requested for: {input_symbol} (YF: {yf_symbol})"
         )
-        self.status_label.setText(f"Fetching fundamentals for {input_symbol}...")
+        self.set_status(f"Fetching fundamentals for {input_symbol}...")
         self.lookup_symbol_edit.setEnabled(False)
         self.lookup_button.setEnabled(False)
 
@@ -14920,7 +14886,7 @@ The CSV file should contain the following columns (header names must match exact
         """Shows the FundamentalDataDialog with data received from the worker."""
         self.lookup_symbol_edit.setEnabled(True)
         self.lookup_button.setEnabled(True)
-        self.status_label.setText("Ready")  # Reset status
+        self.set_status("Ready")  # Reset status
 
         if (
             not data
@@ -14964,7 +14930,7 @@ The CSV file should contain the following columns (header names must match exact
         logging.info(
             f"Context menu fundamental lookup for: {internal_symbol} (YF: {yf_symbol})"
         )
-        self.status_label.setText(f"Fetching fundamentals for {internal_symbol}...")
+        self.set_status(f"Fetching fundamentals for {internal_symbol}...")
         self.lookup_symbol_edit.setEnabled(
             False
         )  # Disable direct lookup while context menu lookup is active
