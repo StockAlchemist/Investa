@@ -4645,7 +4645,7 @@ The CSV file should contain the following columns (header names must match exact
         self.header_info_label = QLabel("<i>Initializing...</i>")
         # --- ADDED: FX Rate Label in Header ---
         self.exchange_rate_display_label = QLabel("")
-        self.exchange_rate_display_label.setObjectName("HeaderInfoLabel")
+        self.exchange_rate_display_label.setObjectName("ExchangeRateLabel")
         self.exchange_rate_display_label.setVisible(False)
         self.exchange_rate_display_label.setTextFormat(Qt.RichText)
         self.exchange_rate_display_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -4655,10 +4655,9 @@ The CSV file should contain the following columns (header names must match exact
         self.header_info_label.setTextFormat(Qt.RichText)
         self.header_info_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         header_layout.addWidget(self.main_title_label)
-        header_layout.addStretch(1)
+        header_layout.addSpacing(15)  # Add a small spacer
         header_layout.addWidget(self.date_label)
-        # Add a small separator/spacer
-        header_layout.addSpacing(15)
+        header_layout.addStretch(1)  # Move stretch to after the date
         header_layout.addWidget(self.exchange_rate_display_label)
         # Add a small separator/spacer
         header_layout.addSpacing(15)
