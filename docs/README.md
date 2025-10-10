@@ -158,7 +158,7 @@ The application can also attempt to automatically migrate data from a CSV file s
 **Preferred (Cleaned) CSV Headers for Import (Target format after standardization):**
 
 1. `Date` (e.g., *Jan 01, 2023* or other common date formats)
-2. `Type` (e.g., *Buy, Sell, Dividend, Split, Deposit, Withdrawal, Fees*)
+2. `Type` (e.g., *Buy, Sell, Dividend, Split, Deposit, Withdrawal, Fees, Transfer*)
 3. `Symbol` (e.g., *AAPL, GOOG*. Use **`$CASH`** for cash.)
 4. `Quantity` (Number of units)
 5. `Price/Share`

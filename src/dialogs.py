@@ -38,6 +38,7 @@ import json
 import os
 import logging
 import traceback
+import re
 from datetime import date, datetime
 import sqlite3
 
@@ -2175,6 +2176,7 @@ class AddTransactionDialog(QDialog):
             "Deposit",
             "Withdrawal",
             "Fees",
+            "Transfer",  # <-- ADDED
             "Short Sell",
             "Buy to Cover",
         ]
@@ -2223,6 +2225,7 @@ class AddTransactionDialog(QDialog):
             self.symbol_edit.setCompleter(self.symbol_completer)
 
         # --- Account ---
+        self.account_label = QLabel("Account:")  # <-- ADDED: Create label explicitly
         self.account_combo = QComboBox()
         self.account_combo.addItems(
             sorted(list(set(existing_accounts)))
@@ -2230,7 +2233,20 @@ class AddTransactionDialog(QDialog):
         self.account_combo.setEditable(True)
         self.account_combo.setInsertPolicy(QComboBox.NoInsert)
         self.account_combo.setMinimumWidth(input_min_width)
-        form_layout.addRow("Account:", self.account_combo)
+        form_layout.addRow(
+            self.account_label, self.account_combo
+        )  # <-- MODIFIED: Use the label instance
+
+        # --- ADDED: From/To Account for Transfers ---
+        self.from_account_label = QLabel("From Account:")
+        self.from_account_combo = QComboBox()
+        self.from_account_combo.addItems(sorted(list(set(existing_accounts))))
+        self.from_account_combo.setEditable(True)
+        form_layout.addRow(self.from_account_label, self.from_account_combo)
+
+        self.to_account_label = QLabel("To Account:")
+        self.to_account_edit = QLineEdit()
+        form_layout.addRow(self.to_account_label, self.to_account_edit)
 
         # --- Quantity ---
         self.quantity_edit = QLineEdit()
@@ -2340,15 +2356,33 @@ class AddTransactionDialog(QDialog):
         tx_type_lower = (tx_type or self.type_combo.currentText()).lower()
         symbol_upper = (symbol or self.symbol_edit.text()).upper().strip()
 
+        is_transfer = tx_type_lower == "transfer"
+
         # Use the helper function to check if the symbol is a cash symbol
         is_cash_symbol_flag = is_cash_symbol(symbol_upper)
+
+        # --- ADDED: Handle visibility of From/To vs single Account field ---
+        self.from_account_label.setVisible(is_transfer)
+        self.from_account_combo.setVisible(is_transfer)
+        self.to_account_label.setVisible(is_transfer)
+        self.to_account_edit.setVisible(is_transfer)
+
+        # Hide the generic "Account" field during a transfer
+        self.account_label.setVisible(
+            not is_transfer
+        )  # <-- MODIFIED: Use the direct label reference
+        self.account_combo.setVisible(
+            not is_transfer
+        )  # <-- MODIFIED: Use the direct label reference
+        # --- END ADDED ---
 
         # Default states
         qty_enabled, price_enabled, total_enabled, commission_enabled, split_enabled = (
             False,
             False,
             False,
-            True,
+            # --- MODIFIED: Disable commission for transfers ---
+            not is_transfer,
             False,
         )
         price_readonly, total_readonly = False, False
@@ -2383,6 +2417,13 @@ class AddTransactionDialog(QDialog):
             price_enabled = True
             total_enabled = True
             total_readonly = True  # Auto-calculated from Qty * Price
+        elif (
+            tx_type_lower == "transfer"
+        ):  # Asset/Cash Transfer (Price/Total not needed)
+            qty_enabled = True
+            price_enabled = False
+            total_enabled = False
+            total_readonly = False
         elif tx_type_lower == "dividend":  # Stock/ETF dividend
             qty_enabled = True  # Optional, if per-share dividend
             price_enabled = True  # Dividend per share
@@ -2498,9 +2539,20 @@ class AddTransactionDialog(QDialog):
             QMessageBox.warning(self, "Input Error", "Symbol cannot be empty.")
             self.symbol_edit.setFocus()
             return None
-        if not account:
+
+        # For non-transfer types, the generic account field is mandatory.
+        if tx_type_lower != "transfer" and not account:
             QMessageBox.warning(self, "Input Error", "Account cannot be empty.")
             self.account_combo.setFocus()
+            return None
+
+        # For transfers, the 'from' and 'to' accounts are mandatory.
+        from_account = self.from_account_combo.currentText().strip()
+        to_account = self.to_account_edit.text().strip()
+        if tx_type_lower == "transfer" and (not from_account or not to_account):
+            QMessageBox.warning(
+                self, "Input Error", "From and To accounts are required for a Transfer."
+            )
             return None
 
         # Get raw string values, strip and remove commas for numeric conversion
@@ -2548,6 +2600,7 @@ class AddTransactionDialog(QDialog):
             "buy",
             "withdrawal",
             "buy",
+            "transfer",
             "sell",
         ]
 
@@ -2604,28 +2657,33 @@ class AddTransactionDialog(QDialog):
             # Total amount for these types is typically calculated Qty * Price.
             # If total_amount_edit was locked (user entered or pre-filled), respect that value.
             # Otherwise, calculate it.
-            if self.total_amount_locked_by_user and total_str_from_field:
-                try:
-                    total = float(total_str_from_field)
-                    # Basic sanity check: calculated total vs provided total.
-                    # This could be more sophisticated (e.g. tolerance).
-                    # For now, if user locked it, we trust it unless it's clearly invalid (negative).
-                    if total < 0:
-                        QMessageBox.warning(
-                            self, "Input Error", "Total Amount cannot be negative."
-                        )
-                        self.total_amount_edit.setFocus()
-                        return None
-                except ValueError:
+        elif tx_type_lower == "transfer":
+            if not qty_str:
+                QMessageBox.warning(
+                    self, "Input Error", "Quantity is required for a Transfer."
+                )
+                self.quantity_edit.setFocus()
+                return None
+            try:
+                qty = float(qty_str)
+                if qty <= 1e-8:
                     QMessageBox.warning(
-                        self,
-                        "Input Error",
-                        "Manually entered Total Amount is not a valid number.",
+                        self, "Input Error", "Quantity must be positive for a Transfer."
                     )
-                    self.total_amount_edit.setFocus()
+                    self.quantity_edit.setFocus()
                     return None
-            else:  # Calculate total
-                total = qty * price
+            except ValueError:
+                QMessageBox.warning(
+                    self, "Input Error", "Quantity must be a valid number."
+                )
+                self.quantity_edit.setFocus()
+                return None
+            # For transfers, price, total, and commission are not applicable.
+            price, total, comm = (
+                None,
+                None,
+                0.0,
+            )  # Commission is 0, not None, for transfers.
 
         elif is_cash_op:  # $CASH Deposit/Withdrawal (or Buy/Sell aliased)
             if not self.quantity_edit.isEnabled() or not qty_str:
@@ -2845,12 +2903,16 @@ class AddTransactionDialog(QDialog):
             "Quantity of Units": qty,  # float or None
             "Amount per unit": price,  # float or None
             "Total Amount": total,  # float or None
-            "Fees": (
-                comm if comm_str else None
-            ),  # float or None (if comm_str was empty, comm is 0.0, make it None for CSV)
-            "Investment Account": account,
+            "Fees": (comm if comm_str else None),
+            "Investment Account": (
+                from_account if tx_type_lower == "transfer" else account
+            ),
+            "Note": (
+                f"To: {to_account}"
+                if tx_type_lower == "transfer"
+                else (note_str if note_str else None)
+            ),
             "Split Ratio (new shares per old share)": split,  # float or None
-            "Note": note_str if note_str else None,  # string or None
             # "Local Currency" is determined by PortfolioApp based on account
         }
         logging.debug(f"Validated transaction data from dialog: {data_for_processing}")
@@ -3117,11 +3179,32 @@ class AddTransactionDialog(QDialog):
         self.symbol_edit.setText(str(data.get("Stock / ETF Symbol", "")))
         logging.debug(f"  Set Symbol to: {self.symbol_edit.text()}")
 
-        # --- Account ---
-        # AddTransactionDialog's account_combo is pre-filled with existing accounts.
-        # setCurrentText will select it if it exists, or set the editable text if it's new.
-        self.account_combo.setCurrentText(str(data.get("Investment Account", "")))
-        logging.debug(f"  Set Account to: {self.account_combo.currentText()}")
+        # --- Account Fields (Handle Transfer case) ---
+        note_val = str(data.get("Note", ""))
+        is_edit_transfer = str(data.get("Transaction Type", "")).lower() == "transfer"
+
+        if is_edit_transfer:
+            # For transfers, 'Investment Account' is the 'From' account.
+            from_account_val = str(data.get("Investment Account", ""))
+            self.from_account_combo.setCurrentText(from_account_val)
+
+            # The 'To' account is parsed from the note.
+            to_account_match = re.search(r"To:\s*([\w\s-]+)", note_val, re.IGNORECASE)
+            to_account_val = ""
+            if to_account_match:
+                to_account_val = to_account_match.group(1).strip()
+            self.to_account_edit.setText(to_account_val)
+
+            # The generic account field should be empty for transfers.
+            self.account_combo.setCurrentText("")
+            logging.debug(f"  Set From Account to: {from_account_val}")
+            logging.debug(f"  Set To Account to: {to_account_val}")
+        else:
+            # For all other types, use the generic account field.
+            self.account_combo.setCurrentText(str(data.get("Investment Account", "")))
+            self.from_account_combo.setCurrentText("")
+            self.to_account_edit.clear()
+            logging.debug(f"  Set Account to: {self.account_combo.currentText()}")
 
         # --- Numeric Fields & Note ---
         # These keys match what get_transaction_data() would return and what CSVs store
@@ -3140,7 +3223,10 @@ class AddTransactionDialog(QDialog):
         self.split_ratio_edit.setText(
             formatter_func(data.get("Split Ratio (new shares per old share)"), 8)
         )
-        self.note_edit.setText(str(data.get("Note", "")))
+        # For transfers, the note is used for the "To Account", so don't show it in the note field.
+        # For other types, show the note.
+        display_note = "" if is_edit_transfer else note_val
+        self.note_edit.setText(display_note)
 
         logging.debug(f"  Set Quantity to: {self.quantity_edit.text()}")
         logging.debug(f"  Set Price/Unit to: {self.price_edit.text()}")

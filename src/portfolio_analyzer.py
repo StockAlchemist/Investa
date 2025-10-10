@@ -20,6 +20,7 @@ SPDX-License-Identifier: MIT
 import pandas as pd
 import numpy as np
 import logging
+import re
 from datetime import (
     date,
     datetime,
@@ -136,6 +137,7 @@ def _process_transactions_to_holdings(
         "Commission",
         "Split Ratio",
         "Local Currency",
+        "Note",  # <-- ADDED for transfer
         "Date",
         "original_index",
     ]
@@ -173,6 +175,7 @@ def _process_transactions_to_holdings(
                 0.0 if pd.isna(commission_local_raw) else float(commission_local_raw)
             )
             split_ratio = pd.to_numeric(row.get("Split Ratio"), errors="coerce")
+            note = str(row.get("Note", "")).strip()
 
             if (
                 not symbol
@@ -465,6 +468,138 @@ def _process_transactions_to_holdings(
                         commission_for_overall
                     )
                 continue  # Skip standard processing
+
+            # --- ADDED: Transfer Handling ---
+            if tx_type == "transfer":
+                try:
+                    if pd.isna(qty) or qty <= 1e-9:
+                        raise ValueError("Transfer quantity must be positive.")
+
+                    # The 'Account' column holds the 'From' account for transfers.
+                    from_account = account
+                    # The 'To' account is parsed from the 'Note' field.
+                    to_account_match = re.search(
+                        r"To:\s*([\w\s-]+)", note, re.IGNORECASE
+                    )
+                    if not to_account_match:
+                        raise ValueError(
+                            "'To Account' not found in Note for Transfer (e.g., 'To: Account B')."
+                        )
+                    to_account = to_account_match.group(1).strip()
+
+                    if from_account == to_account:
+                        raise ValueError(
+                            "From and To accounts cannot be the same for a Transfer."
+                        )
+
+                    from_holding_key = (symbol, from_account)
+                    to_holding_key = (symbol, to_account)
+
+                    # 1. Validate 'From' holding
+                    if from_holding_key not in holdings:
+                        raise ValueError(
+                            f"Cannot transfer from '{from_account}': No holdings of {symbol} found."
+                        )
+
+                    from_holding = holdings[from_holding_key]
+                    if from_holding["qty"] < qty:
+                        raise ValueError(
+                            f"Cannot transfer {qty} of {symbol}: Only {from_holding['qty']} held in '{from_account}'."
+                        )
+
+                    # 2. Ensure 'To' holding exists
+                    if to_holding_key not in holdings:
+                        holdings[to_holding_key] = {
+                            "qty": 0.0,
+                            "total_cost_local": 0.0,
+                            "realized_gain_local": 0.0,
+                            "dividends_local": 0.0,
+                            "commissions_local": 0.0,
+                            "local_currency": from_holding[
+                                "local_currency"
+                            ],  # Inherit currency
+                            "short_proceeds_local": 0.0,
+                            "short_original_qty": 0.0,
+                            "total_cost_invested_local": 0.0,
+                            "cumulative_investment_local": 0.0,
+                            "total_buy_cost_local": 0.0,
+                            "total_cost_display_historical_fx": 0.0,
+                        }
+                        symbol_to_accounts_map[symbol].add(to_account)
+
+                    to_holding = holdings[to_holding_key]
+                    if to_holding["local_currency"] != from_holding["local_currency"]:
+                        raise ValueError(
+                            f"Currency mismatch between accounts for {symbol}: {from_holding['local_currency']} vs {to_holding['local_currency']}."
+                        )
+
+                    # 3. Calculate cost basis to transfer
+                    cost_to_transfer_local = 0.0
+                    cost_to_transfer_display_hist_fx = 0.0
+                    if from_holding["qty"] > 1e-9:
+                        proportion = qty / from_holding["qty"]
+                        cost_to_transfer_local = (
+                            from_holding["total_cost_local"] * proportion
+                        )
+                        if pd.notna(
+                            from_holding.get("total_cost_display_historical_fx")
+                        ):
+                            cost_to_transfer_display_hist_fx = (
+                                from_holding["total_cost_display_historical_fx"]
+                                * proportion
+                            )
+
+                    # 4. Update 'From' Account
+                    from_holding["qty"] -= qty
+                    from_holding["total_cost_local"] -= cost_to_transfer_local
+                    if pd.notna(cost_to_transfer_display_hist_fx):
+                        from_holding[
+                            "total_cost_display_historical_fx"
+                        ] -= cost_to_transfer_display_hist_fx
+
+                    # Clean up 'From' holding if quantity is now zero
+                    if abs(from_holding["qty"]) < STOCK_QUANTITY_CLOSE_TOLERANCE:
+                        from_holding["qty"] = 0.0
+                        from_holding["total_cost_local"] = 0.0
+                        from_holding["total_cost_display_historical_fx"] = 0.0
+
+                    # 5. Update 'To' Account
+                    to_holding["qty"] += qty
+                    to_holding["total_cost_local"] += cost_to_transfer_local
+                    if pd.notna(cost_to_transfer_display_hist_fx):
+                        to_holding[
+                            "total_cost_display_historical_fx"
+                        ] += cost_to_transfer_display_hist_fx
+
+                    # Transfers are internal movements and do not affect cumulative investment or invested cost
+                    # They also do not generate gains/losses or commissions.
+
+                    logging.debug(
+                        f"Processed TRANSFER of {qty} {symbol} from '{from_account}' to '{to_account}'. "
+                        f"Cost transferred: {cost_to_transfer_local:.2f}"
+                    )
+                    continue  # Skip to next transaction
+
+                except (ValueError, KeyError, ZeroDivisionError) as e_transfer:
+                    error_msg = f"Transfer Processing Error ({type(e_transfer).__name__}): {e_transfer}"
+                    logging.warning(
+                        f"WARN in _process_transactions TRANSFER row {original_index} ({symbol}): {error_msg}. Skipping row."
+                    )
+                    ignored_reasons_local[original_index] = error_msg
+                    ignored_row_indices_local.add(original_index)
+                    has_warnings = True
+                    continue
+                except Exception as e_transfer_unexp:
+                    logging.exception(
+                        f"Unexpected error processing TRANSFER row {original_index} ({symbol})"
+                    )
+                    ignored_reasons_local[original_index] = (
+                        "Unexpected Transfer Processing Error"
+                    )
+                    ignored_row_indices_local.add(original_index)
+                    has_warnings = True
+                    continue
+            # --- END Transfer Handling ---
 
             # --- Standard Buy/Sell/Dividend/Fee ---
             if tx_type == "buy" or tx_type == "deposit":

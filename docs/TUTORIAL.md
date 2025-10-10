@@ -45,6 +45,7 @@ Before you can start crunching numbers, there are a couple of preliminary steps:
     **Preferred (Cleaned) CSV Headers for Import:**
     1. `Date`: e.g., *Jan 01, 2023* (common date formats are supported)
     2. `Type`: *Buy, Sell, Dividend, Split, Deposit, Withdrawal, Fees*
+    3. `Type`: *Buy, Sell, Dividend, Split, Deposit, Withdrawal, Fees, Transfer*
     3. `Symbol`: e.g., *AAPL, VTI*. Use the special symbol **`$CASH`** for all cash transactions.
     4. `Quantity`
     5. `Price/Share`
@@ -152,6 +153,21 @@ The special cash symbol **`$CASH`** is crucial for accurately tracking your port
     * **Why two steps?**
       * The `Dividend` transaction on `MSFT` ensures that the $50 is correctly included in MSFT's "Total Gain" and "Total Return %".
       * The `Buy` transaction on `$CASH` increases your cash balance. Using `Buy` (instead of `Deposit`) correctly tells the system this is an *internal* cash movement (a return from an existing asset), not new external capital. This is crucial for accurate Time-Weighted Return (TWR) calculation.
+
+  * **Transferring Assets Between Accounts (ACATS):**
+    * Use the `Transfer` type to move assets (stocks, ETFs, or cash) from one of your accounts to another. This is an internal movement that preserves the cost basis of the asset.
+
+    **Example: Transferring 10 shares of VTI from Brokerage A to Roth IRA.**
+    * `Date`: 2023-07-01
+    * `Type`: Transfer
+    * `Symbol`: VTI
+    * `Quantity`: 10
+    * `Account`: Brokerage A  *(This is the 'From' account)*
+    * `Note`: To: Roth IRA  *(The 'To' account must be specified in the note like this)*
+
+    * **How it works:** Investa will decrease the holding of VTI in "Brokerage A" and increase it in "Roth IRA", transferring the proportional cost basis along with the shares.
+    * **TWR Impact:** This is an **internal asset conversion** between accounts. It is not an external cash flow and does not impact the TWR of the overall portfolio.
+    * **Important:** For CSV imports, the "To" account must be specified in the `Note` column with the format `To: <Account Name>`. When adding manually in the app, dedicated "From" and "To" fields will appear.
 
   * **Fees Paid From Cash:** For general account fees not tied to a specific trade.
     * `Date`: 2023-06-01
@@ -342,7 +358,7 @@ All modifications to your transaction history are done via the **Transactions** 
 1. **Adding a New Transaction:**
     * Go to **Transactions > Add Transaction...** (or click the "Add Tx" button on the toolbar).
     * A dialog window will appear, allowing you to enter all the details for a new transaction:
-        * `Date`, `Type` (Buy, Sell, Dividend, Deposit, etc.), `Symbol`, `Quantity`, `Price/Share`, `Total Amount`, `Commission`, `Account`, `Split Ratio` (if applicable), and `Note`.
+        * `Date`, `Type` (Buy, Sell, Dividend, Transfer, etc.), `Symbol`, `Quantity`, `Price/Share`, `Total Amount`, `Commission`, `Account` (or From/To Accounts for transfers), `Split Ratio` (if applicable), and `Note`.
     * Click "Save Transaction" to add this new record directly to your SQLite database.
 
 2. **Managing Existing Transactions (Edit/Delete):**
