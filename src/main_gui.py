@@ -4506,6 +4506,8 @@ The CSV file should contain the following columns (header names must match exact
     def _apply_initial_styles_and_updates(self):
         """Applies styles and initial UI states after widgets are created."""
         # self.apply_styles() # Styles will be applied by apply_theme called from __init__
+        # --- ADDED: Set initial date ---
+        self.date_label.setText(f"<b>{datetime.now().strftime('%A, %B %d, %Y')}</b>")
         self.update_header_info(loading=True)
         self.update_performance_graphs(initial=True)
         self._update_account_button_text()
@@ -4632,6 +4634,14 @@ The CSV file should contain the following columns (header names must match exact
         self.main_title_label = QLabel("📈 <b>Investa Portfolio Dashboard</b> ✨")
         self.main_title_label.setObjectName("MainTitleLabel")
         self.main_title_label.setTextFormat(Qt.RichText)
+
+        # --- ADDED: Date Label ---
+        self.date_label = QLabel("")
+        self.date_label.setObjectName("DateLabel")
+        self.date_label.setTextFormat(Qt.RichText)
+        self.date_label.setStyleSheet("font-size: 14pt;")
+        self.date_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
         self.header_info_label = QLabel("<i>Initializing...</i>")
         # --- ADDED: FX Rate Label in Header ---
         self.exchange_rate_display_label = QLabel("")
@@ -4646,6 +4656,9 @@ The CSV file should contain the following columns (header names must match exact
         self.header_info_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         header_layout.addWidget(self.main_title_label)
         header_layout.addStretch(1)
+        header_layout.addWidget(self.date_label)
+        # Add a small separator/spacer
+        header_layout.addSpacing(15)
         header_layout.addWidget(self.exchange_rate_display_label)
         # Add a small separator/spacer
         header_layout.addSpacing(15)
