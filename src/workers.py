@@ -84,7 +84,8 @@ class PortfolioCalculatorWorker(QRunnable):
         historical_fn_supports_exclude=False,
         market_provider_available=True,
         factor_model_name: str = "Fama-French 3-Factor",
-        scenario_shocks: Optional[Dict[str, float]] = None,  # <-- ADDED
+        scenario_shocks: Optional[Dict[str, float]] = None,
+        interval: str = "1d",
     ):
         """
         Initializes the worker with calculation functions and arguments.
@@ -117,10 +118,11 @@ class PortfolioCalculatorWorker(QRunnable):
         self.manual_overrides_dict = manual_overrides_dict
         self.user_symbol_map = user_symbol_map
         self.user_excluded_symbols = user_excluded_symbols
-        self.signals = worker_signals  # <-- USE PASSED SIGNALS
+        self.signals = worker_signals
         self.market_data_provider = market_data_provider
         self.factor_model_name = factor_model_name
-        self.scenario_shocks = scenario_shocks  # <-- ADDED
+        self.scenario_shocks = scenario_shocks
+        self.interval = interval
         self.force_historical_refresh = force_historical_refresh
         self.original_data = pd.DataFrame()
 
@@ -284,6 +286,7 @@ class PortfolioCalculatorWorker(QRunnable):
                 current_historical_kwargs["manual_overrides_dict"] = (
                     self.manual_overrides_dict
                 )
+                current_historical_kwargs["interval"] = self.interval
                 # --- ADD DEBUG LOG ---
                 logging.debug(
                     f"WORKER: Passing to historical_fn, manual_overrides_dict: {self.manual_overrides_dict}"

@@ -989,7 +989,11 @@ class MarketDataProvider:
 
     @profile
     def _fetch_yf_historical_data(
-        self, symbols_yf: List[str], start_date: date, end_date: date
+        self,
+        symbols_yf: List[str],
+        start_date: date,
+        end_date: date,
+        interval: str = "1d",
     ) -> Dict[str, pd.DataFrame]:
         """
         Internal helper to fetch historical 'Close' data (adjusted) using yfinance.download.
@@ -1029,6 +1033,7 @@ class MarketDataProvider:
                         auto_adjust=True,
                         actions=False,
                         timeout=timeout_seconds,
+                        interval=interval,
                     )
                     # yfinance prints its own errors for failed tickers. If the whole batch fails,
                     # it might return an empty DataFrame. We check for this to trigger a retry.
@@ -1431,6 +1436,7 @@ class MarketDataProvider:
         symbols_yf: List[str],
         start_date: date,
         end_date: date,
+        interval: str = "1d",
         use_cache: bool = True,
         cache_key: Optional[str] = None,  # Key for validation (used for manifest)
         cache_file: Optional[
@@ -1503,7 +1509,7 @@ class MarketDataProvider:
                     f"Hist Prices: Fetching {len(symbols_needing_fetch)} stock/benchmark symbols..."
                 )
                 fetched_stock_data = self._fetch_yf_historical_data(
-                    symbols_needing_fetch, start_date, end_date
+                    symbols_needing_fetch, start_date, end_date, interval=interval
                 )
                 historical_prices_yf_adjusted.update(fetched_stock_data)
                 logging.info(

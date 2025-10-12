@@ -1520,7 +1520,7 @@ The CSV file should contain the following columns (header names must match exact
         start_date = None
 
         if period == "1W":
-            start_date = end_date - timedelta(weeks=1)
+            start_date = end_date - timedelta(days=7)
         elif period == "MTD":
             start_date = end_date.replace(day=1)
         elif period == "1M":
@@ -1552,6 +1552,12 @@ The CSV file should contain the following columns (header names must match exact
                     start_date = date.fromisoformat(start_date)
 
         if start_date:
+            # Show/hide interval combo based on date range
+            if (end_date - start_date).days <= 7:
+                self.graph_interval_combo.setVisible(True)
+            else:
+                self.graph_interval_combo.setVisible(False)
+
             with self._programmatic_date_change():
                 self.graph_start_date_edit.setDate(QDate(start_date))
                 self.graph_end_date_edit.setDate(QDate(end_date))
@@ -1580,6 +1586,14 @@ The CSV file should contain the following columns (header names must match exact
         """Clears the selection of any preset date range button."""
         if self._is_setting_dates_programmatically:
             return
+
+        # Show/hide interval combo based on date range
+        start_date = self.graph_start_date_edit.date().toPython()
+        end_date = self.graph_end_date_edit.date().toPython()
+        if (end_date - start_date).days <= 7:
+            self.graph_interval_combo.setVisible(True)
+        else:
+            self.graph_interval_combo.setVisible(False)
 
         # Reset the preset dropdown to the placeholder
         if self.date_preset_combo.currentIndex() != 0:
@@ -4802,6 +4816,17 @@ The CSV file should contain the following columns (header names must match exact
         graph_controls_row1_layout.addWidget(self.date_preset_combo)
         # --- END MOVED ---
 
+        self.graph_interval_combo = QComboBox()
+        self.graph_interval_combo.setObjectName("GraphIntervalCombo")
+        self.graph_interval_combo.addItems(
+            ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]
+        )
+        self.graph_interval_combo.setCurrentText(
+            self.config.get("graph_interval", DEFAULT_GRAPH_INTERVAL)
+        )
+        self.graph_interval_combo.setVisible(False)
+        graph_controls_row1_layout.addWidget(self.graph_interval_combo)
+
         self.benchmark_select_button = QPushButton()
         self.benchmark_select_button.setObjectName("BenchmarkSelectButton")
         self.benchmark_select_button.setMinimumWidth(100)
@@ -7423,8 +7448,11 @@ The CSV file should contain the following columns (header names must match exact
 
         # The interval for the underlying historical data calculation should always be daily
         # to provide the most granular data for all other calculations (like periodic returns).
-        # The UI interval combo will be used to resample this data for display.
-        interval_hist_calc = "D"
+        # The interval for the historical data calculation is set to daily ('1d') by default,
+        # but will be replaced by the selected intraday interval if the combo box is visible.
+        interval_hist_calc = "1d"
+        if self.graph_interval_combo.isVisible():
+            interval_hist_calc = self.graph_interval_combo.currentText()
 
         selected_benchmark_tickers = [
             BENCHMARK_MAPPING.get(name)
@@ -7924,6 +7952,9 @@ The CSV file should contain the following columns (header names must match exact
         )
         self.graph_end_date_edit.dateChanged.connect(
             lambda: self.set_status("Graph dates changed. Click 'Update Graphs'.")
+        )
+        self.graph_interval_combo.currentTextChanged.connect(
+            self.filter_changed_refresh
         )
         self.benchmark_select_button.clicked.connect(self.show_benchmark_selection_menu)
         self.graph_update_button.clicked.connect(
