@@ -1525,6 +1525,8 @@ The CSV file should contain the following columns (header names must match exact
             start_date = end_date.replace(day=1)
         elif period == "1M":
             start_date = end_date - timedelta(days=30)
+        elif period == "3M":
+            start_date = end_date - timedelta(days=91)  # Approx 3 months
         elif period == "6M":
             start_date = end_date - timedelta(days=182)
         elif period == "YTD":
@@ -4787,6 +4789,7 @@ The CSV file should contain the following columns (header names must match exact
                 "1W",
                 "MTD",
                 "1M",
+                "3M",  # <-- ADDED
                 "6M",
                 "YTD",
                 "1Y",
