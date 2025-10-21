@@ -5712,13 +5712,15 @@ The CSV file should contain the following columns (header names must match exact
         controls_layout.addWidget(QLabel("Period:"))
         self.intraday_period_combo = QComboBox()
         # Valid periods for intraday data are limited
-        self.intraday_period_combo.addItems(["1d", "5d", "1mo", "3mo", "6mo", "ytd"])
+        self.intraday_period_combo.addItems(["1d", "5d", "1mo", "3mo", "6mo", "YTD"])
+        self.intraday_period_combo.setMinimumWidth(75)
         self.intraday_period_combo.setCurrentText("5d")
         controls_layout.addWidget(self.intraday_period_combo)
 
         controls_layout.addWidget(QLabel("Interval:"))
         self.intraday_interval_combo = QComboBox()
         # Valid intervals depend on the period fetched
+        self.intraday_interval_combo.setMinimumWidth(75)
         self.intraday_interval_combo.addItems(["1m", "2m", "5m", "15m", "30m", "1h"])
         self.intraday_interval_combo.setCurrentText("5m")
         controls_layout.addWidget(self.intraday_interval_combo)
@@ -5726,11 +5728,7 @@ The CSV file should contain the following columns (header names must match exact
         self.intraday_update_button = QPushButton("Update Chart")
         self.intraday_update_button.setIcon(QIcon.fromTheme("view-refresh"))
         controls_layout.addWidget(self.intraday_update_button)
-        controls_layout.addStretch()
-
-        self.intraday_market_hours_check = QCheckBox("Market Hours Only")
-        self.intraday_market_hours_check.setChecked(True)
-        controls_layout.addWidget(self.intraday_market_hours_check)
+        controls_layout.addStretch()  # Keep stretch to align controls to the left
 
         main_layout.addLayout(controls_layout)
 
@@ -5740,11 +5738,6 @@ The CSV file should contain the following columns (header names must match exact
         self.intraday_canvas = FigureCanvas(self.intraday_fig)
         self.intraday_canvas.setObjectName("IntradayChartCanvas")
         main_layout.addWidget(self.intraday_canvas, 1)
-
-        # --- ADDED: Toolbar for intraday chart ---
-        self.intraday_toolbar = NavigationToolbar(self.intraday_canvas, self)
-        self.intraday_toolbar.setObjectName("IntradayChartToolbar")
-        main_layout.addWidget(self.intraday_toolbar)
 
     @Slot(str)
     def _update_intraday_interval_options(self, period: str):
@@ -5784,7 +5777,7 @@ The CSV file should contain the following columns (header names must match exact
         internal_symbol = self.intraday_symbol_combo.currentText()
         period = self.intraday_period_combo.currentText()
         interval = self.intraday_interval_combo.currentText()
-        market_hours_only = self.intraday_market_hours_check.isChecked()
+        market_hours_only = True  # Default to market hours only
 
         if not internal_symbol:
             self.show_warning("Please select a symbol.", popup=True)
