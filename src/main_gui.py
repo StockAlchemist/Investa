@@ -57,7 +57,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 # --- End Path Addition ---
 
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, time
 
 # --- ADDED: Import line_profiler if available, otherwise create dummy decorator ---
 try:
@@ -69,6 +69,7 @@ except ImportError:
 
 
 # --- END ADDED ---
+from zoneinfo import ZoneInfo
 
 from typing import Dict, Any, Optional, List, Tuple, Set  # Added Set
 import logging
@@ -145,6 +146,9 @@ from PySide6.QtWidgets import QProgressBar  # <-- ADDED for progress bar
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QWidget, QLabel
 from PySide6.QtCore import Qt
 from matplotlib.figure import Figure
+from matplotlib.backends.backend_qtagg import (
+    NavigationToolbar2QT as NavigationToolbar,
+)
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas  # type: ignore
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -244,6 +248,7 @@ from config import (
     DEFAULT_GRAPH_BENCHMARKS,
     BENCHMARK_MAPPING,
     BENCHMARK_OPTIONS_DISPLAY,
+    EXCHANGE_TRADING_HOURS,
     COLOR_BG_DARK,
     COLOR_BG_HEADER_LIGHT,
     COLOR_BG_HEADER_ORIGINAL,
@@ -4601,6 +4606,7 @@ The CSV file should contain the following columns (header names must match exact
         self.capital_gains_tab.setObjectName(
             "capital_gains_tab"
         )  # Ensure object name is set for styling
+        self.intraday_chart_tab = QWidget()
         self.rebalancing_tab = QWidget()
         self.advanced_analysis_tab = QWidget()
         self.advanced_analysis_tab.setObjectName("advanced_analysis_tab")
@@ -5492,6 +5498,8 @@ The CSV file should contain the following columns (header names must match exact
         # --- End Dividend History Tab ---
 
         # --- Tab 2: Transactions Log ---
+        # --- Tab: Intraday Chart ---
+        self._init_intraday_chart_tab_widgets()
         logging.debug("--- _init_ui_widgets: Entering Transactions Log Tab setup ---")
         self.transactions_log_tab = QWidget()
         transactions_log_main_layout = QVBoxLayout(self.transactions_log_tab)
@@ -5672,6 +5680,7 @@ The CSV file should contain the following columns (header names must match exact
             (self.performance_summary_tab, "Performance"),
             (self.transactions_log_tab, "Transactions"),
             (self.asset_allocation_tab, "Asset Allocation"),
+            (self.intraday_chart_tab, "Intraday Chart"),
             (self.periodic_value_change_tab, "Asset Change"),
             (self.capital_gains_tab, "Capital Gains"),
             (self.dividend_history_tab, "Dividend"),
@@ -5684,6 +5693,301 @@ The CSV file should contain the following columns (header names must match exact
             self.main_tab_widget.addTab(tab_widget, tab_name)
             logging.debug(f"Added tab: {tab_name}")
         logging.debug("--- _add_main_tabs: END ---")
+
+    def _init_intraday_chart_tab_widgets(self):
+        """Initializes widgets for the Intraday Chart tab."""
+        self.intraday_chart_tab.setObjectName("IntradayChartTab")
+        main_layout = QVBoxLayout(self.intraday_chart_tab)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(8)
+
+        # --- Controls Row ---
+        controls_layout = QHBoxLayout()
+        controls_layout.addWidget(QLabel("Symbol:"))
+        self.intraday_symbol_combo = QComboBox()
+        self.intraday_symbol_combo.setEditable(True)
+        self.intraday_symbol_combo.setMinimumWidth(150)
+        controls_layout.addWidget(self.intraday_symbol_combo)
+
+        controls_layout.addWidget(QLabel("Period:"))
+        self.intraday_period_combo = QComboBox()
+        # Valid periods for intraday data are limited
+        self.intraday_period_combo.addItems(["1d", "5d", "1mo", "3mo", "6mo", "ytd"])
+        self.intraday_period_combo.setCurrentText("5d")
+        controls_layout.addWidget(self.intraday_period_combo)
+
+        controls_layout.addWidget(QLabel("Interval:"))
+        self.intraday_interval_combo = QComboBox()
+        # Valid intervals depend on the period fetched
+        self.intraday_interval_combo.addItems(["1m", "2m", "5m", "15m", "30m", "1h"])
+        self.intraday_interval_combo.setCurrentText("5m")
+        controls_layout.addWidget(self.intraday_interval_combo)
+
+        self.intraday_update_button = QPushButton("Update Chart")
+        self.intraday_update_button.setIcon(QIcon.fromTheme("view-refresh"))
+        controls_layout.addWidget(self.intraday_update_button)
+        controls_layout.addStretch()
+
+        self.intraday_market_hours_check = QCheckBox("Market Hours Only")
+        self.intraday_market_hours_check.setChecked(True)
+        controls_layout.addWidget(self.intraday_market_hours_check)
+
+        main_layout.addLayout(controls_layout)
+
+        # --- Chart Area ---
+        self.intraday_fig = Figure(figsize=(8, 5), dpi=CHART_DPI)
+        self.intraday_ax = self.intraday_fig.add_subplot(111)
+        self.intraday_canvas = FigureCanvas(self.intraday_fig)
+        self.intraday_canvas.setObjectName("IntradayChartCanvas")
+        main_layout.addWidget(self.intraday_canvas, 1)
+
+        # --- ADDED: Toolbar for intraday chart ---
+        self.intraday_toolbar = NavigationToolbar(self.intraday_canvas, self)
+        self.intraday_toolbar.setObjectName("IntradayChartToolbar")
+        main_layout.addWidget(self.intraday_toolbar)
+
+    @Slot(str)
+    def _update_intraday_interval_options(self, period: str):
+        """
+        Dynamically updates the available intervals based on the selected period
+        to prevent invalid yfinance API requests.
+        """
+        self.intraday_interval_combo.blockSignals(True)
+        current_interval = self.intraday_interval_combo.currentText()
+        self.intraday_interval_combo.clear()
+
+        valid_intervals = []
+        # yfinance intraday data limitations:
+        # 1m data is only available for the last 7 days.
+        # Data for intervals < 1h is only available for the last 60 days.
+        if period in ["1d", "5d"]:
+            valid_intervals = ["1m", "2m", "5m", "15m", "30m", "1h"]
+        elif period in ["1mo"]:  # "1mo" is within the 60-day limit for <1h data
+            valid_intervals = ["2m", "5m", "15m", "30m", "1h"]
+        else:  # "3mo", "6mo", "ytd" are outside the 60-day limit for most fine-grained data
+            valid_intervals = ["1h"]
+
+        self.intraday_interval_combo.addItems(valid_intervals)
+
+        # Try to restore the previous selection if it's still valid
+        if current_interval in valid_intervals:
+            self.intraday_interval_combo.setCurrentText(current_interval)
+        elif valid_intervals:
+            self.intraday_interval_combo.setCurrentIndex(
+                0
+            )  # Default to the first valid option
+        self.intraday_interval_combo.blockSignals(False)
+
+    @Slot()
+    def _update_intraday_chart(self):
+        """Fetches and plots intraday data for the selected symbol."""
+        internal_symbol = self.intraday_symbol_combo.currentText()
+        period = self.intraday_period_combo.currentText()
+        interval = self.intraday_interval_combo.currentText()
+        market_hours_only = self.intraday_market_hours_check.isChecked()
+
+        if not internal_symbol:
+            self.show_warning("Please select a symbol.", popup=True)
+            return
+
+        yf_symbol = self.internal_to_yf_map.get(internal_symbol, internal_symbol)
+
+        self.set_status(f"Fetching {interval} intraday data for {internal_symbol}...")
+        QApplication.processEvents()
+
+        intraday_df = self.market_data_provider.get_intraday_data(
+            yf_symbol, period=period, interval=interval
+        )
+
+        ax = self.intraday_ax
+        ax.clear()
+        # --- ADDED: Clear secondary axes if they exist from previous plots ---
+        for other_ax in self.intraday_fig.get_axes():
+            if other_ax is not ax:
+                other_ax.remove()
+
+        if intraday_df is None or intraday_df.empty:
+            ax.text(
+                0.5,
+                0.5,
+                f"No intraday data available for\n'{internal_symbol}' with selected period/interval.",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                color=COLOR_TEXT_SECONDARY,
+            )
+            self.set_status(f"Failed to fetch intraday data for {internal_symbol}.")
+        else:
+            # Filter for market hours if checked
+            if market_hours_only:
+                try:
+                    # --- MODIFIED: Dynamic Market Hours ---
+                    exchange = self.market_data_provider.get_exchange_for_symbol(
+                        yf_symbol
+                    )
+
+                    # Default to standard US hours if exchange not found in our map
+                    open_time_str, close_time_str = EXCHANGE_TRADING_HOURS.get(
+                        exchange, ("09:30", "16:00")
+                    )
+
+                    logging.info(
+                        f"Applying market hours for exchange '{exchange}': {open_time_str} - {close_time_str}"
+                    )
+
+                    # The index from yfinance is timezone-aware. between_time works on the local time of the index.
+                    asset_timezone = intraday_df.index.tz
+                    if asset_timezone:
+                        # Create naive time objects. Pandas' between_time correctly handles
+                        # filtering on a timezone-aware index using naive wall times.
+                        market_open = time.fromisoformat(open_time_str)
+                        market_close = time.fromisoformat(close_time_str)
+
+                        intraday_df = intraday_df.between_time(
+                            market_open, market_close
+                        )
+                        logging.info(
+                            f"Filtered intraday data for {internal_symbol} to market hours in timezone: {asset_timezone}"
+                        )
+                        if intraday_df.empty:
+                            logging.warning(
+                                f"Intraday data for {internal_symbol} became empty after applying market hours filter."
+                            )
+                    else:
+                        logging.warning(
+                            f"Could not determine timezone for {internal_symbol} from intraday data. "
+                            "Market hours filter may be inaccurate."
+                        )
+                    # --- END MODIFIED ---
+                except Exception as e_filter:
+                    logging.warning(
+                        f"Could not filter intraday data by time: {e_filter}"
+                    )
+
+            if intraday_df.empty:
+                ax.text(
+                    0.5,
+                    0.5,
+                    "No data available for the selected market hours.",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                    color=COLOR_TEXT_SECONDARY,
+                )
+                self.set_status(f"No market hours data for {internal_symbol}.")
+                self.intraday_canvas.draw()
+                return
+
+            try:
+                # Using mplfinance is a good option here, but for simplicity, let's do a simple line plot.
+                # For a proper candlestick, you'd use a library like mplfinance.
+                # --- MODIFIED: Plot against a numerical index if market_hours_only ---
+                x_axis_data = (
+                    np.arange(len(intraday_df.index))
+                    if market_hours_only
+                    else intraday_df.index
+                )
+
+                # Plot Close price
+                (close_line,) = ax.plot(
+                    x_axis_data, intraday_df["Close"], label=f"{internal_symbol} Close"
+                )
+
+                # Plot Volume on a secondary y-axis
+                if "Volume" in intraday_df.columns:
+                    ax2 = ax.twinx()
+                    ax2.bar(
+                        x_axis_data,
+                        intraday_df["Volume"],
+                        color="grey",
+                        alpha=0.3,
+                        width=1.0,
+                        label="Volume",
+                    )
+                    ax2.set_ylabel("Volume", fontsize=8)
+                    ax2.tick_params(axis="y", labelsize=7)
+                    ax2.spines["right"].set_position(("outward", 0))
+                    ax2.spines["right"].set_visible(True)
+                    ax2.yaxis.set_major_formatter(
+                        mtick.FuncFormatter(
+                            lambda x, p: (
+                                f"{x/1e6:.1f}M" if x >= 1e6 else f"{x/1e3:.0f}K"
+                            )
+                        )
+                    )
+
+                ax.set_title(
+                    f"Intraday Chart: {internal_symbol} ({period}, {interval})"
+                )
+                ax.set_ylabel(
+                    f"Price ({self._get_currency_for_symbol(internal_symbol)})"
+                )
+
+                # --- MODIFIED: Handle legend for multiple axes ---
+                lines, labels = ax.get_legend_handles_labels()
+                if "ax2" in locals():  # Check if secondary axis was created
+                    lines2, labels2 = ax2.get_legend_handles_labels()
+                    ax.legend(lines + lines2, labels + labels2, loc="upper left")
+                else:
+                    ax.legend(loc="upper left")
+
+                ax.grid(True, linestyle="--", alpha=0.6)
+
+                # --- MODIFIED: Custom tick formatting for market_hours_only ---
+                if market_hours_only:
+                    # Set custom tick labels to show timestamps without gaps
+                    tick_indices = np.linspace(
+                        0, len(intraday_df) - 1, num=6, dtype=int
+                    )
+                    # --- MODIFIED: Force display timezone to US Eastern Time ---
+                    display_timezone = ZoneInfo("America/New_York")
+                    tz_name = display_timezone.tzname(datetime.now()) or "EST/EDT"
+                    ax.set_xlabel(f"Time ({tz_name})", fontsize=8)
+
+                    # --- MODIFIED: Convert timestamp to the asset's timezone before formatting ---
+                    tick_labels = [
+                        intraday_df.index[i]
+                        .tz_convert(display_timezone)
+                        .strftime("%H:%M\n%b-%d")
+                        for i in tick_indices
+                    ]
+                    ax.set_xticks(tick_indices)
+                    ax.set_xticklabels(tick_labels)
+                else:
+                    ax.set_xlabel("Time", fontsize=8)
+                    self.intraday_fig.autofmt_xdate()
+
+                self.set_status(f"Intraday chart for {internal_symbol} updated.")
+            except Exception as e:
+                logging.error(
+                    f"Error plotting intraday data for {internal_symbol}: {e}",
+                    exc_info=True,
+                )
+                ax.text(
+                    0.5,
+                    0.5,
+                    "Error plotting data.",
+                    ha="center",
+                    va="center",
+                    color=COLOR_LOSS,
+                )
+                self.set_status(f"Error plotting intraday data for {internal_symbol}.")
+
+        self.intraday_canvas.draw()
+
+    def _populate_intraday_symbol_combo(self):
+        """Populates the symbol combobox in the Intraday Chart tab."""
+        if hasattr(self, "holdings_data") and not self.holdings_data.empty:
+            # Get non-cash symbols from the current holdings
+            symbols = sorted(
+                [
+                    s
+                    for s in self.holdings_data["Symbol"].unique()
+                    if not is_cash_symbol(s)
+                ]
+            )
+            self.intraday_symbol_combo.clear()
+            self.intraday_symbol_combo.addItems(symbols)
 
     def _init_periodic_value_change_tab_widgets_content(self):
         """Initializes the content for the Asset Change tab."""
@@ -8065,6 +8369,12 @@ The CSV file should contain the following columns (header names must match exact
         self.cg_period_combo.currentTextChanged.connect(
             self._update_capital_gains_display
         )
+        # Intraday Chart Connections
+        self.intraday_update_button.clicked.connect(self._update_intraday_chart)
+        self.intraday_period_combo.currentTextChanged.connect(
+            self._update_intraday_interval_options
+        )
+
         self.cg_periods_spinbox.valueChanged.connect(self._update_capital_gains_display)
 
         # Advanced Analysis Tab Connections

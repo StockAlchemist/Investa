@@ -487,3 +487,26 @@ DARK_COLOR_TABLE_ALT_ROW = "#252525"  # Background color for alternating rows in
 DARK_COLOR_INPUT_BG = "#2a2a2a"  # Background for input fields
 DARK_COLOR_INPUT_TEXT = "#e0e0e0"  # Text color for input fields
 DARK_COLOR_INPUT_BORDER = "#555555"  # Border color for input fields
+
+# Trading hours for various exchanges (in local time of the exchange)
+# Used by the intraday chart to filter for market hours.
+# The key is the exchange short name provided by yfinance (ticker.info['exchange']).
+# The value is a tuple of (open_time, close_time) in "HH:MM" format.
+EXCHANGE_TRADING_HOURS = {
+    # --- US Exchanges ---
+    "NMS": ("09:30", "16:00"),  # NASDAQ
+    "NYQ": ("09:30", "16:00"),  # NYSE
+    "PCX": ("09:30", "16:00"),  # NYSE Arca
+    "ASE": ("09:30", "16:00"),  # NYSE American
+    # --- Asian Exchanges ---
+    "SET": (
+        "10:00",
+        "16:30",
+    ),  # Stock Exchange of Thailand (Note: Ignores lunch break for a continuous filter)
+    "HKG": ("09:30", "16:00"),  # Hong Kong Stock Exchange
+    "JPX": ("09:00", "15:00"),  # Japan Exchange Group (Tokyo)
+    # --- European Exchanges ---
+    "LSE": ("08:00", "16:30"),  # London Stock Exchange
+    "FRA": ("08:00", "20:00"),  # Frankfurt Stock Exchange (XETRA) - Note: long hours
+    "PAR": ("09:00", "17:30"),  # Euronext Paris
+}

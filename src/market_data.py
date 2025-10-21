@@ -1973,5 +1973,118 @@ class MarketDataProvider:
         """Fetches Cash Flow Statement data for a symbol."""
         return self._fetch_statement_data(yf_symbol, "cashflow", period_type)
 
+    def get_exchange_for_symbol(self, yf_symbol: str) -> Optional[str]:
+        """
+        Fetches the exchange short name for a given symbol using cached fundamental data.
+
+        Args:
+            yf_symbol (str): The Yahoo Finance ticker symbol.
+
+        Returns:
+            Optional[str]: The exchange short name (e.g., "NMS", "SET") or None.
+        """
+        # This leverages the existing caching of get_fundamental_data (ticker.info)
+        fundamental_data = self.get_fundamental_data(yf_symbol)
+        if fundamental_data and isinstance(fundamental_data, dict):
+            exchange_name = fundamental_data.get("exchange")
+            logging.debug(
+                f"Found exchange '{exchange_name}' for symbol '{yf_symbol}' from fundamental data."
+            )
+            return exchange_name
+        logging.warning(f"Could not determine exchange for symbol '{yf_symbol}'.")
+        return None
+
+    def get_intraday_data(
+        self, yf_symbol: str, period: str = "5d", interval: str = "1m"
+    ) -> Optional[pd.DataFrame]:
+        """
+        Fetches intraday historical data for a given Yahoo Finance symbol.
+
+        Note: Intraday data has limitations. e.g., 1-minute data is only available for
+        the last 7 days. Data for intervals < 1h is only available for the last 60 days.
+        `auto_adjust` is automatically set to False for intraday data.
+
+        Args:
+            yf_symbol (str): The Yahoo Finance ticker symbol (e.g., "AAPL").
+            period (str): The period to fetch data for (e.g., "1d", "5d", "1mo").
+                          See yfinance documentation for valid periods.
+            interval (str): The data interval (e.g., "1m", "5m", "15m", "1h").
+                            See yfinance documentation for valid intervals.
+
+        Returns:
+            Optional[pd.DataFrame]: A DataFrame containing the intraday data,
+                                      or None if fetching fails.
+        """
+        if not YFINANCE_AVAILABLE:
+            logging.error("yfinance not available. Cannot fetch intraday data.")
+            return None
+        if not yf_symbol or not isinstance(yf_symbol, str) or not yf_symbol.strip():
+            logging.warning(
+                f"Invalid yf_symbol provided for intraday data: {yf_symbol}"
+            )
+            return None
+
+        logging.info(
+            f"Fetching intraday data for {yf_symbol} (period: {period}, interval: {interval})"
+        )
+
+        try:
+            # For intraday data, auto_adjust must be False.
+            # yfinance handles this automatically for intervals less than 1d.
+            # If '1d' is requested, fetch '2d' to ensure the full current day's data is available,
+            # as yfinance can be inconsistent with timezones. We'll trim it later.
+            fetch_period = "2d" if period == "1d" else period
+            data = yf.download(
+                tickers=yf_symbol,
+                period=fetch_period,
+                interval=interval,
+                progress=False,
+                auto_adjust=True,  # Suppress FutureWarning and use recommended setting
+            )
+
+            if data.empty:
+                logging.warning(
+                    f"No intraday data returned by yfinance for {yf_symbol} with period='{period}' and interval='{interval}'."
+                )
+                return None
+
+            # --- ADDED: Flatten multi-level columns if they exist ---
+            # yfinance can return multi-level columns even for a single ticker.
+            # This simplifies the column structure (e.g., from ('Close', 'AAPL') to 'Close').
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = data.columns.droplevel(1)
+
+            # --- ADDED: Trim 1d data to the most recent trading day ---
+            # This fixes a timezone issue where yfinance might not return the full
+            # current day's data when '1d' is requested from a different timezone.
+            # By fetching '2d' and trimming, we ensure the full session is present.
+            # The period is adjusted to '2d' if '1d' is requested.
+            if (
+                period == "1d"
+                and not data.empty
+                and isinstance(data.index, pd.DatetimeIndex)
+            ):
+                # --- MODIFIED: More robust way to get the last trading day ---
+                # .last('1D') can be unreliable across timezones. Instead, we find
+                # the date with the most data points, which is the most recent
+                # complete trading session.
+                if not data.index.tz:
+                    logging.warning(
+                        "Intraday data is not timezone-aware. Cannot reliably determine last trading day."
+                    )
+                else:
+                    # Group by calendar date and find the date with the most rows
+                    day_counts = data.groupby(data.index.date).size()
+                    if not day_counts.empty:
+                        last_trading_day = day_counts.idxmax()
+                        data = data[data.index.date == last_trading_day]
+
+            return data
+
+        except Exception as e_fetch:
+            logging.error(f"Error fetching intraday data for {yf_symbol}: {e_fetch}")
+            traceback.print_exc()
+            return None
+
 
 # --- END OF FILE market_data.py ---
