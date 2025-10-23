@@ -469,20 +469,28 @@ class PortfolioCalculatorWorker(QRunnable):
                         if sym in currently_held_symbols
                     ]
                     logging.debug(
-                        f"WORKER: Unique stock symbols (currently held only): {unique_stock_symbols}"
+                        f"WORKER: Unique stock symbols filtered by current holdings: {unique_stock_symbols}"
                     )
                 else:
                     logging.warning(
                         "WORKER: Holdings DataFrame is empty or missing 'Symbol' column. Cannot filter for currently held stocks."
                     )
+                # After filtering by holdings, if no stock symbols remain, we should not raise an error,
+                # but rather skip the correlation calculation for this run.
+                # The original code raised an error here, which is what we are fixing.
 
                 if not unique_stock_symbols:
                     logging.info(
                         "WORKER: No stock/ETF symbols found in transactions for correlation matrix."
                     )
-                    raise ValueError("No stock symbols")
+                    # Do not raise an error. If there are no symbols, the subsequent
+                    # 'if yf_symbols_for_corr:' block will be skipped, and the worker
+                    # will proceed gracefully without calculating a correlation matrix.
+                    pass
 
-                # Map internal symbols to YF symbols
+                # If we have stock symbols, proceed with mapping and fetching.
+                # If unique_stock_symbols is empty, the 'if yf_symbols_for_corr:'
+                # block below will be skipped, and the function will proceed gracefully.
                 yf_symbols_for_corr = []
                 internal_to_yf_map_for_corr = {}
                 for internal_sym in unique_stock_symbols:
