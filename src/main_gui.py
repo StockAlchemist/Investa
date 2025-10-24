@@ -2026,6 +2026,68 @@ The CSV file should contain the following columns (header names must match exact
             except Exception:
                 pass  # Ignore error during error reporting
 
+    def _format_intraday_tooltip_annotation(self, selection):
+        """Callback function to format mplcursors annotations for the intraday chart."""
+        try:
+            # The artist can be a Line2D (price) or a Rectangle (volume bar)
+            artist = selection.artist
+
+            # The x,y coordinates of the selected data point
+            x_val_num = selection.target[0]
+            y_val = selection.target[1]
+
+            # Retrieve the necessary data stored in the artist's GID
+            plot_info = artist.get_gid()
+            intraday_df = plot_info["df"]
+            is_pct_change = plot_info["is_pct_change"]
+            is_fx = plot_info["is_fx"]
+            x_axis_type = plot_info["x_axis_type"]  # 'numeric' or 'datetime'
+            symbol = plot_info["symbol"]
+            is_volume_bar = plot_info.get("is_volume", False)  # Check our custom flag
+
+            # Determine the timestamp based on how the x-axis was plotted
+            if isinstance(intraday_df.index, pd.DatetimeIndex):
+                if len(artist.get_xdata()) == len(intraday_df.index):
+                    # The x-data is likely a numerical index [0, 1, 2, ...]
+                    # Find the closest integer index
+                    idx = int(np.round(x_val_num))
+                    if x_axis_type == "numeric" and 0 <= idx < len(intraday_df.index):
+                        dt_obj = intraday_df.index[idx]
+                    else:  # Fallback for out of bounds or if x-axis is actual datetime numbers
+                        dt_obj = mdates.num2date(x_val_num)
+                elif isinstance(
+                    intraday_df.index, pd.DatetimeIndex
+                ):  # Fallback if x_axis_type is not set
+                    dt_obj = mdates.num2date(x_val_num)
+            else:  # Fallback if index is not datetime
+                dt_obj = mdates.num2date(x_val_num)
+
+            date_str = (
+                dt_obj.strftime("%Y-%m-%d %H:%M")
+                if isinstance(dt_obj, (datetime, pd.Timestamp))
+                else "Invalid Date"
+            )
+
+            # Format the Y-value based on the plot type
+            if is_volume_bar:  # If it's a volume bar
+                formatted_y = f"Volume: {y_val:,.0f}"
+            elif is_pct_change:
+                formatted_y = f"{y_val:+.2f}%"
+            else:
+                currency_symbol = (
+                    "Rate"
+                    if is_fx
+                    else self._get_currency_symbol(
+                        currency_code=self._get_currency_for_symbol(symbol)
+                    )
+                )
+                formatted_y = f"{currency_symbol} {y_val:,.2f}"
+
+            selection.annotation.set_text(f"{date_str}\n{formatted_y}")
+
+        except Exception as e:
+            logging.debug(f"Error formatting intraday tooltip: {e}")
+
     # --- Initialization Method ---
     def __init__(self):
         """Initializes the main application window, loads config, and sets up UI."""
@@ -5742,6 +5804,13 @@ The CSV file should contain the following columns (header names must match exact
         self.intraday_interval_combo.setCurrentText("5m")
         controls_layout.addWidget(self.intraday_interval_combo)
 
+        self.intraday_pct_change_check = QCheckBox("Show % Change")
+        self.intraday_pct_change_check.setObjectName("IntradayPctChangeCheck")
+        self.intraday_pct_change_check.setToolTip(
+            "Show price change as a percentage from the start of the period"
+        )
+        controls_layout.addWidget(self.intraday_pct_change_check)
+
         self.intraday_update_button = QPushButton("Update Chart")
         self.intraday_update_button.setIcon(QIcon.fromTheme("view-refresh"))
         controls_layout.addWidget(self.intraday_update_button)
@@ -5794,6 +5863,7 @@ The CSV file should contain the following columns (header names must match exact
         internal_symbol = self.intraday_symbol_combo.currentText()
         period = self.intraday_period_combo.currentText()
         interval = self.intraday_interval_combo.currentText()
+        show_pct_change = self.intraday_pct_change_check.isChecked()
         market_hours_only = True  # Default to market hours only
 
         if not internal_symbol:
@@ -5847,6 +5917,14 @@ The CSV file should contain the following columns (header names must match exact
         ax = self.intraday_ax
         ax.clear()
         # --- ADDED: Clear secondary axes if they exist from previous plots ---
+        # --- ADDED: Clear previous mplcursors if they exist ---
+        if hasattr(self, "intraday_cursor") and self.intraday_cursor:
+            try:
+                self.intraday_cursor.disconnect_all()
+            except Exception:
+                pass
+            self.intraday_cursor = None
+        # --- END ADDED ---
         for other_ax in self.intraday_fig.get_axes():
             if other_ax is not ax:
                 try:
@@ -5951,10 +6029,58 @@ The CSV file should contain the following columns (header names must match exact
                     else intraday_df.index
                 )
 
-                # Plot Close price
-                (close_line,) = ax.plot(
-                    x_axis_data, intraday_df["Close"], label=f"{internal_symbol} Close"
-                )
+                # --- MODIFIED: Plot either absolute price or percentage change ---
+                if show_pct_change:
+                    first_price = intraday_df["Close"].iloc[0]
+                    if first_price > 0:
+                        pct_change_data = (
+                            (intraday_df["Close"] / first_price) - 1
+                        ) * 100.0
+                        (close_line,) = ax.plot(
+                            x_axis_data,
+                            pct_change_data,
+                            label=f"{internal_symbol} % Change",
+                        )
+                        # Store data for tooltip formatter
+                        close_line.set_gid(
+                            {
+                                "df": intraday_df,
+                                "is_pct_change": True,
+                                "is_fx": is_fx_pair,
+                                "x_axis_type": (
+                                    "numeric" if market_hours_only else "datetime"
+                                ),
+                                "symbol": internal_symbol,
+                            }
+                        )
+                        ax.yaxis.set_major_formatter(mtick.PercentFormatter())
+                    else:
+                        # Cannot calculate % change if starting price is zero
+                        (close_line,) = ax.plot(
+                            x_axis_data,
+                            intraday_df["Close"],
+                            label=f"{internal_symbol} Close",
+                        )
+                else:
+                    # Plot absolute Close price
+                    (close_line,) = ax.plot(
+                        x_axis_data,
+                        intraday_df["Close"],
+                        label=f"{internal_symbol} Close",
+                    )
+                    # Store data for tooltip formatter
+                    close_line.set_gid(
+                        {
+                            "df": intraday_df,
+                            "is_pct_change": False,
+                            "is_fx": is_fx_pair,
+                            "x_axis_type": (
+                                "numeric" if market_hours_only else "datetime"
+                            ),
+                            "symbol": internal_symbol,
+                        }
+                    )
+                # --- END MODIFIED ---
 
                 # Plot Volume on a secondary y-axis
                 if "Volume" in intraday_df.columns:
@@ -5987,17 +6113,41 @@ The CSV file should contain the following columns (header names must match exact
                 ax.set_title(
                     f"Intraday Chart: {internal_symbol} ({period}, {interval})"
                 )
-                # --- MODIFIED: Change Y-axis label for FX vs. Stocks ---
-                ax.set_ylabel(
-                    "Rate"
-                    if is_fx_pair
-                    else f"Price ({self._get_currency_for_symbol(internal_symbol)})"
-                )
+                # --- MODIFIED: Change Y-axis label based on view type ---
+                if show_pct_change:
+                    ax.set_ylabel("Change (%)")
+                else:
+                    ax.set_ylabel(
+                        "Rate"
+                        if is_fx_pair
+                        else f"Price ({self._get_currency_for_symbol(internal_symbol)})"
+                    )
                 # --- END MODIFIED ---
 
                 # --- MODIFIED: Handle legend for multiple axes ---
                 lines, labels = ax.get_legend_handles_labels()
                 if "ax2" in locals():  # Check if secondary axis was created
+                    # --- ADDED: Store data for volume bar tooltips ---
+                    gid_data = {
+                        "df": intraday_df,
+                        "is_pct_change": False,  # Volume is not pct change
+                        "is_fx": is_fx_pair,
+                        "x_axis_type": "numeric" if market_hours_only else "datetime",
+                        "symbol": internal_symbol,
+                        "is_volume": True,  # Add a flag to identify volume bars
+                    }
+                    for (
+                        container
+                    ) in (
+                        ax2.containers
+                    ):  # ax2.containers is a list of BarContainer objects
+                        for (
+                            bar_patch
+                        ) in (
+                            container.patches
+                        ):  # Iterate through the actual bars (patches)
+                            bar_patch.set_gid(gid_data)
+                    # --- END ADDED ---
                     lines2, labels2 = ax2.get_legend_handles_labels()
                     ax.legend(lines + lines2, labels + labels2, loc="upper left")
                 else:
@@ -6027,6 +6177,30 @@ The CSV file should contain the following columns (header names must match exact
                     ax.set_xticklabels(tick_labels)
                 else:
                     ax.set_xlabel("Time", fontsize=8)
+                    # --- ADDED: mplcursors for intraday chart ---
+                    if MPLCURSORS_AVAILABLE:
+                        try:
+                            # --- MODIFIED: Create a single cursor targeting all axes in the figure ---
+                            # This is the most robust way to handle multiple axes (primary for price, secondary for volume).
+                            # mplcursors will automatically find all artists (lines, bars) on all axes.
+                            self.intraday_cursor = mplcursors.cursor(
+                                self.intraday_fig.get_axes(), hover=True
+                            )
+                            # --- END MODIFIED ---
+
+                            # The 'add' signal will be emitted when the cursor is shown on any artist.
+                            # Our formatter will then use the artist's GID to get the correct data.
+                            self.intraday_cursor.connect(
+                                "add", self._format_intraday_tooltip_annotation
+                            )
+                            logging.debug("mplcursors activated for Intraday chart.")
+                        except Exception as e_cursor_intra:
+                            logging.error(
+                                f"Error activating mplcursors for intraday chart: {e_cursor_intra}"
+                            )
+                            self.intraday_cursor = None
+                    # --- END ADDED ---
+
                     self.intraday_fig.autofmt_xdate()
 
                 self.set_status(f"Intraday chart for {internal_symbol} updated.")
@@ -8446,6 +8620,7 @@ The CSV file should contain the following columns (header names must match exact
         self.intraday_period_combo.currentTextChanged.connect(
             self._update_intraday_interval_options
         )
+        self.intraday_pct_change_check.stateChanged.connect(self._update_intraday_chart)
 
         self.cg_periods_spinbox.valueChanged.connect(self._update_capital_gains_display)
 
