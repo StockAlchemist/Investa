@@ -45,6 +45,7 @@ import csv
 import re
 import sqlite3  # Added import for sqlite3
 import shutil
+from io import StringIO  # <-- ADDED: For in-memory log stream
 import logging
 
 # Ensure this is defined before any use
@@ -2031,6 +2032,22 @@ The CSV file should contain the following columns (header names must match exact
         # --- IMPORTANT: Call super().__init__() for QMainWindow ---
         super().__init__()
         logging.debug("--- PortfolioApp __init__: START ---")
+
+        # --- ADDED: Setup in-memory log stream for error detection ---
+        # This stream captures log messages so they can be inspected programmatically,
+        # for example, to detect specific errors from yfinance.
+        self.log_stream = StringIO()
+        # Get the root logger, which is the ultimate destination for all log messages.
+        root_logger = logging.getLogger()
+        # Create a handler that will write log records to our StringIO object.
+        string_io_handler = logging.StreamHandler(self.log_stream)
+        # Optional: You can set a specific format for this handler if needed.
+        # formatter = logging.Formatter('%(asctime)s [%(levelname)-8s] - %(message)s')
+        # string_io_handler.setFormatter(formatter)
+        # Add the new handler to the root logger.
+        root_logger.addHandler(string_io_handler)
+        logging.info("In-memory log stream configured.")
+        # --- END ADDED ---
 
         # --- Early Initialization of Themed QColor Attributes with Light Theme Defaults ---
         # These will be updated by _create_status_bar and apply_theme later.
@@ -5783,13 +5800,48 @@ The CSV file should contain the following columns (header names must match exact
             self.show_warning("Please select a symbol.", popup=True)
             return
 
-        yf_symbol = self.internal_to_yf_map.get(internal_symbol, internal_symbol)
+        # --- MODIFIED: Detect if input is a stock symbol or an FX pair ---
+        yf_symbol = ""
+        is_fx_pair = False
+        # Case 1: User enters a yfinance-style FX pair like "EURUSD=X"
+        if internal_symbol.upper().endswith("=X"):
+            # Validate that the base is 6 characters before the =X
+            if len(internal_symbol) == 8:
+                yf_symbol = internal_symbol.upper()
+                is_fx_pair = True
+            else:
+                self.show_warning(
+                    f"Invalid FX pair format: '{internal_symbol}'. Expected 6 currency characters, e.g., 'EURUSD=X'.",
+                    popup=True,
+                )
+                self.set_status("Error: Invalid FX pair format.")
+                return
+        # Case 2: User enters a common format like "USD/EUR" or "USD.EUR"
+        elif "/" in internal_symbol or "." in internal_symbol:
+            parts = re.split(r"[/.]", internal_symbol)
+            if len(parts) == 2 and len(parts[0]) == 3 and len(parts[1]) == 3:
+                yf_symbol = f"{parts[0].upper()}{parts[1].upper()}=X"
+                is_fx_pair = True
+            else:  # It looks like an FX pair but is malformed (e.g., USD.EURt)
+                self.show_warning(
+                    f"Invalid FX pair format: '{internal_symbol}'. Expected format like 'USD/EUR' or 'USD.EUR'.",
+                    popup=True,
+                )
+                self.set_status("Error: Invalid FX pair format.")
+                return
+
+        # Case 3: If not detected as an FX pair, treat as a stock symbol
+        if not yf_symbol:
+            yf_symbol = self.internal_to_yf_map.get(internal_symbol, internal_symbol)
+        # --- END MODIFIED ---
 
         self.set_status(f"Fetching {interval} intraday data for {internal_symbol}...")
         QApplication.processEvents()
 
         intraday_df = self.market_data_provider.get_intraday_data(
-            yf_symbol, period=period, interval=interval
+            yf_symbol,
+            period=period,
+            interval=interval,  # yf_symbol is now either stock or FX pair
         )
 
         ax = self.intraday_ax
@@ -5797,13 +5849,28 @@ The CSV file should contain the following columns (header names must match exact
         # --- ADDED: Clear secondary axes if they exist from previous plots ---
         for other_ax in self.intraday_fig.get_axes():
             if other_ax is not ax:
-                other_ax.remove()
+                try:
+                    other_ax.remove()
+                except Exception:
+                    pass  # Ignore if it fails
 
         if intraday_df is None or intraday_df.empty:
+            # --- MODIFIED: Check for delisted/invalid symbol error ---
+            # Check the log buffer for a specific yfinance error for this symbol
+            log_contents = self.log_stream.getvalue()
+            delisted_pattern = re.compile(
+                rf"'{re.escape(yf_symbol)}'.*YFPricesMissingError.*no price data found",
+                re.IGNORECASE,
+            )
+            if delisted_pattern.search(log_contents):
+                error_message = f"No data found for '{internal_symbol}'.\nThe symbol may be invalid or delisted."
+            else:
+                error_message = f"No intraday data available for\n'{internal_symbol}' with selected period/interval."
+
             ax.text(
                 0.5,
                 0.5,
-                f"No intraday data available for\n'{internal_symbol}' with selected period/interval.",
+                error_message,
                 ha="center",
                 va="center",
                 transform=ax.transAxes,
@@ -5811,7 +5878,7 @@ The CSV file should contain the following columns (header names must match exact
             )
             self.set_status(f"Failed to fetch intraday data for {internal_symbol}.")
         else:
-            # Filter for market hours if checked
+            # Filter for market hours if checked (only for stocks, not FX)
             if market_hours_only:
                 try:
                     # --- MODIFIED: Dynamic Market Hours ---
@@ -5819,37 +5886,40 @@ The CSV file should contain the following columns (header names must match exact
                         yf_symbol
                     )
 
-                    # Default to standard US hours if exchange not found in our map
-                    open_time_str, close_time_str = EXCHANGE_TRADING_HOURS.get(
-                        exchange, ("09:30", "16:00")
-                    )
+                    # Only apply market hours filter if the exchange is in our map (i.e., it's a stock exchange)
+                    if exchange in EXCHANGE_TRADING_HOURS:
+                        open_time_str, close_time_str = EXCHANGE_TRADING_HOURS[exchange]
 
-                    logging.info(
-                        f"Applying market hours for exchange '{exchange}': {open_time_str} - {close_time_str}"
-                    )
-
-                    # The index from yfinance is timezone-aware. between_time works on the local time of the index.
-                    asset_timezone = intraday_df.index.tz
-                    if asset_timezone:
-                        # Create naive time objects. Pandas' between_time correctly handles
-                        # filtering on a timezone-aware index using naive wall times.
-                        market_open = time.fromisoformat(open_time_str)
-                        market_close = time.fromisoformat(close_time_str)
-
-                        intraday_df = intraday_df.between_time(
-                            market_open, market_close
-                        )
                         logging.info(
-                            f"Filtered intraday data for {internal_symbol} to market hours in timezone: {asset_timezone}"
+                            f"Applying market hours for exchange '{exchange}': {open_time_str} - {close_time_str}"
                         )
-                        if intraday_df.empty:
+
+                        # The index from yfinance is timezone-aware. between_time works on the local time of the index.
+                        asset_timezone = intraday_df.index.tz
+                        if asset_timezone:
+                            # Create naive time objects. Pandas' between_time correctly handles
+                            # filtering on a timezone-aware index using naive wall times.
+                            market_open = time.fromisoformat(open_time_str)
+                            market_close = time.fromisoformat(close_time_str)
+
+                            intraday_df = intraday_df.between_time(
+                                market_open, market_close
+                            )
+                            logging.info(
+                                f"Filtered intraday data for {internal_symbol} to market hours in timezone: {asset_timezone}"
+                            )
+                            if intraday_df.empty:
+                                logging.warning(
+                                    f"Intraday data for {internal_symbol} became empty after applying market hours filter."
+                                )
+                        else:
                             logging.warning(
-                                f"Intraday data for {internal_symbol} became empty after applying market hours filter."
+                                f"Could not determine timezone for {internal_symbol} from intraday data. "
+                                "Market hours filter may be inaccurate."
                             )
                     else:
-                        logging.warning(
-                            f"Could not determine timezone for {internal_symbol} from intraday data. "
-                            "Market hours filter may be inaccurate."
+                        logging.info(
+                            f"'{exchange}' not in EXCHANGE_TRADING_HOURS map. Skipping market hours filter for '{internal_symbol}'."
                         )
                     # --- END MODIFIED ---
                 except Exception as e_filter:
@@ -5900,11 +5970,16 @@ The CSV file should contain the following columns (header names must match exact
                     ax2.set_ylabel("Volume", fontsize=8)
                     ax2.tick_params(axis="y", labelsize=7)
                     ax2.spines["right"].set_position(("outward", 0))
-                    ax2.spines["right"].set_visible(True)
+                    # --- MODIFIED: Hide volume axis for FX pairs ---
+                    ax2.spines["right"].set_visible(not is_fx_pair)
+                    ax2.get_yaxis().set_visible(not is_fx_pair)
+                    # --- END MODIFIED ---
                     ax2.yaxis.set_major_formatter(
                         mtick.FuncFormatter(
                             lambda x, p: (
-                                f"{x/1e6:.1f}M" if x >= 1e6 else f"{x/1e3:.0f}K"
+                                ""
+                                if is_fx_pair  # Don't show labels for FX volume
+                                else f"{x/1e6:.1f}M" if x >= 1e6 else f"{x/1e3:.0f}K"
                             )
                         )
                     )
@@ -5912,9 +5987,13 @@ The CSV file should contain the following columns (header names must match exact
                 ax.set_title(
                     f"Intraday Chart: {internal_symbol} ({period}, {interval})"
                 )
+                # --- MODIFIED: Change Y-axis label for FX vs. Stocks ---
                 ax.set_ylabel(
-                    f"Price ({self._get_currency_for_symbol(internal_symbol)})"
+                    "Rate"
+                    if is_fx_pair
+                    else f"Price ({self._get_currency_for_symbol(internal_symbol)})"
                 )
+                # --- END MODIFIED ---
 
                 # --- MODIFIED: Handle legend for multiple axes ---
                 lines, labels = ax.get_legend_handles_labels()
