@@ -19,7 +19,7 @@ from financial_ratios import (
     calculate_current_valuation_ratios,
 )
 import config
-from finutils import map_to_yf_symbol
+from finutils import map_to_yf_symbol, is_cash_symbol
 
 
 class WorkerSignals(QObject):
@@ -363,8 +363,16 @@ class PortfolioCalculatorWorker(QRunnable):
                         "Dividend history will rely on same-currency or default FX handling."
                     )
                 dividend_history_df = extract_dividend_history(
-                    all_transactions_df=self.portfolio_kwargs.get(
-                        "all_transactions_df_cleaned"
+                    # FIX: The previous fix used p_holdings.attrs, which can be None if there are no holdings.
+                    # A more robust source for the filtered transactions is the 'transactions_df_filtered'
+                    # attribute that was attached to the p_holdings DataFrame inside calculate_portfolio_summary.
+                    # Even if p_holdings is empty, this attribute should still contain the correctly
+                    # filtered (and potentially empty) transactions DataFrame for the selected scope.
+                    # A more reliable source is the original filtered transactions DataFrame from the portfolio summary step.
+                    all_transactions_df=(
+                        p_holdings.attrs.get("transactions_df_filtered")
+                        if p_holdings.attrs.get("transactions_df_filtered") is not None
+                        else self.portfolio_kwargs.get("all_transactions_df_for_worker")
                     ),
                     display_currency=self.portfolio_kwargs.get("display_currency"),
                     historical_fx_yf=hist_fx,  # Pass potentially empty hist_fx
@@ -605,68 +613,85 @@ class PortfolioCalculatorWorker(QRunnable):
             # --- 7. Run Factor Analysis ---
             factor_analysis_results = {}
             logging.info("WORKER: Running factor analysis...")
-            try:
-                # For factor analysis, we need portfolio returns.
-                portfolio_returns_series = pd.Series()
-                if "Portfolio Value" in full_historical_data_df.columns:
-                    df_for_analysis = full_historical_data_df.copy()
-                    if "Date" in df_for_analysis.columns and not isinstance(
-                        df_for_analysis.index, pd.DatetimeIndex
-                    ):
-                        df_for_analysis["Date"] = pd.to_datetime(
-                            df_for_analysis["Date"]
-                        )
-                        df_for_analysis.set_index("Date", inplace=True)
 
-                    # Convert portfolio value to periodic returns
-                    portfolio_returns_series = (
-                        df_for_analysis["Portfolio Value"].pct_change().dropna()
-                    )
-                    portfolio_returns_series.name = "Portfolio_Returns"
-
-                if not portfolio_returns_series.empty:
-                    # Use the first selected benchmark as the market factor
-                    benchmark_data_for_factor_analysis = None
-                    if self.historical_kwargs.get("benchmark_symbols_yf"):
-                        first_benchmark_ticker = self.historical_kwargs[
-                            "benchmark_symbols_yf"
-                        ][0]
-                        benchmark_col_name = f"{first_benchmark_ticker} Price"
-                        if benchmark_col_name in df_for_analysis.columns:
-                            benchmark_data_for_factor_analysis = df_for_analysis[
-                                [benchmark_col_name]
-                            ]
-
-                    ff3_results = run_factor_regression(
-                        portfolio_returns_series,
-                        self.factor_model_name,
-                        benchmark_data=benchmark_data_for_factor_analysis,
-                    )
-                    if ff3_results:
-                        # Store relevant parts of the summary, e.g., params, pvalues, rsquared
-                        factor_analysis_results = {
-                            "params": ff3_results.params.to_dict(),
-                            "pvalues": ff3_results.pvalues.to_dict(),
-                            "rsquared": ff3_results.rsquared,
-                            "summary_text": str(
-                                ff3_results.summary()
-                            ),  # Store full summary for display
-                            "model_name": self.factor_model_name,  # NEW: Store the model name
-                        }
-                        logging.info("WORKER: Factor analysis completed successfully.")
-                    else:
-                        logging.warning("WORKER: Factor analysis returned no results.")
-                else:
-                    logging.warning(
-                        "WORKER: No portfolio returns data for factor analysis."
-                    )
-            except Exception as fa_e:
-                logging.error(
-                    f"WORKER: --- Error during factor analysis: {fa_e} ---",
-                    exc_info=True,
+            # Check if there are any non-cash holdings. Factor analysis is not meaningful for a cash-only portfolio.
+            # This check prevents the "No portfolio returns data" warning in valid cash-only scenarios.
+            if holdings_df.empty or holdings_df["Symbol"].apply(is_cash_symbol).all():
+                logging.info(
+                    "WORKER: Skipping factor analysis: Portfolio contains no stock holdings."
                 )
-                traceback.print_exc()
+                # Ensure factor_analysis_results remains an empty dict
                 factor_analysis_results = {}
+                # Jump to the next section (scenario analysis)
+                # This is a logical jump, the code will naturally proceed.
+            else:
+                # This block will only run if there are stock holdings.
+                try:
+                    # For factor analysis, we need portfolio returns.
+                    portfolio_returns_series = pd.Series()
+                    if "Portfolio Value" in full_historical_data_df.columns:
+                        df_for_analysis = full_historical_data_df.copy()
+                        if "Date" in df_for_analysis.columns and not isinstance(
+                            df_for_analysis.index, pd.DatetimeIndex
+                        ):
+                            df_for_analysis["Date"] = pd.to_datetime(
+                                df_for_analysis["Date"]
+                            )
+                            df_for_analysis.set_index("Date", inplace=True)
+
+                        # Convert portfolio value to periodic returns
+                        portfolio_returns_series = (
+                            df_for_analysis["Portfolio Value"].pct_change().dropna()
+                        )
+                        portfolio_returns_series.name = "Portfolio_Returns"
+
+                    if not portfolio_returns_series.empty:
+                        # Use the first selected benchmark as the market factor
+                        benchmark_data_for_factor_analysis = None
+                        if self.historical_kwargs.get("benchmark_symbols_yf"):
+                            first_benchmark_ticker = self.historical_kwargs[
+                                "benchmark_symbols_yf"
+                            ][0]
+                            benchmark_col_name = f"{first_benchmark_ticker} Price"
+                            if benchmark_col_name in df_for_analysis.columns:
+                                benchmark_data_for_factor_analysis = df_for_analysis[
+                                    [benchmark_col_name]
+                                ]
+
+                        ff3_results = run_factor_regression(
+                            portfolio_returns_series,
+                            self.factor_model_name,
+                            benchmark_data=benchmark_data_for_factor_analysis,
+                        )
+                        if ff3_results:
+                            # Store relevant parts of the summary, e.g., params, pvalues, rsquared
+                            factor_analysis_results = {
+                                "params": ff3_results.params.to_dict(),
+                                "pvalues": ff3_results.pvalues.to_dict(),
+                                "rsquared": ff3_results.rsquared,
+                                "summary_text": str(
+                                    ff3_results.summary()
+                                ),  # Store full summary for display
+                                "model_name": self.factor_model_name,  # NEW: Store the model name
+                            }
+                            logging.info(
+                                "WORKER: Factor analysis completed successfully."
+                            )
+                        else:
+                            logging.warning(
+                                "WORKER: Factor analysis returned no results."
+                            )
+                    else:
+                        logging.warning(
+                            "WORKER: No portfolio returns data for factor analysis."
+                        )
+                except Exception as fa_e:
+                    logging.error(
+                        f"WORKER: --- Error during factor analysis: {fa_e} ---",
+                        exc_info=True,
+                    )
+                    traceback.print_exc()
+                    factor_analysis_results = {}
 
             # --- 8. Run Scenario Analysis (Placeholder - requires UI input) ---
             scenario_analysis_result = {}
