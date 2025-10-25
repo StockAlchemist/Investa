@@ -13108,6 +13108,8 @@ The CSV file should contain the following columns (header names must match exact
             logging.info(
                 "HANDLE_RESULTS: Calling _update_ui_components_after_calculation..."
             )
+            # --- ADDED: Populate intraday symbol combo ---
+            self._populate_intraday_symbol_combo()
             self._update_ui_components_after_calculation()
             logging.info(
                 "HANDLE_RESULTS: Finished _update_ui_components_after_calculation."
