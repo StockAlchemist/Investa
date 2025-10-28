@@ -4671,9 +4671,6 @@ The CSV file should contain the following columns (header names must match exact
         )
         # --- MODIFIED ORDER: Bar charts now above content_frame ---
         perf_summary_layout.addWidget(
-            self.bar_charts_frame, 1
-        )  # Periodic return bar charts
-        perf_summary_layout.addWidget(
             self.content_frame, 3  # Pie charts and holdings table
         )
         # --- END MODIFIED ORDER ---
@@ -4695,9 +4692,126 @@ The CSV file should contain the following columns (header names must match exact
         # The "Holdings Overview" tab is now removed.
         logging.debug("--- _init_ui_structure: END ---")
 
-    def _init_periodic_value_change_tab_widgets(self):
-        """Initializes widgets for the Asset Change tab."""
-        pass  # To be implemented in _init_ui_widgets
+    def _init_asset_change_tab_widgets(self):
+        """Initializes the content for the Asset Change tab."""
+        self.periodic_value_change_tab = QWidget()
+        self.periodic_value_change_tab.setObjectName("AssetChangeTab")
+        main_layout = QVBoxLayout(self.periodic_value_change_tab)
+        main_layout.setContentsMargins(5, 5, 5, 5)
+
+        # --- Period Settings --
+        controls_layout = QHBoxLayout()
+        controls_layout.addWidget(QLabel("Annual Periods:"))
+        self.pvc_annual_spinbox = QSpinBox()
+        self.pvc_annual_spinbox.setMinimum(1)
+        self.pvc_annual_spinbox.setMaximum(BAR_CHART_MAX_PERIODS_ANNUAL)
+        self.pvc_annual_spinbox.setFixedWidth(40)
+        self.pvc_annual_spinbox.setValue(self.config.get("pvc_annual_periods", 10))
+        controls_layout.addWidget(self.pvc_annual_spinbox)
+
+        controls_layout.addWidget(QLabel("Monthly Periods:"))
+        self.pvc_monthly_spinbox = QSpinBox()
+        self.pvc_monthly_spinbox.setMinimum(1)
+        self.pvc_monthly_spinbox.setMaximum(BAR_CHART_MAX_PERIODS_MONTHLY)
+        self.pvc_monthly_spinbox.setFixedWidth(40)
+        self.pvc_monthly_spinbox.setValue(self.config.get("pvc_monthly_periods", 12))
+        controls_layout.addWidget(self.pvc_monthly_spinbox)
+
+        controls_layout.addWidget(QLabel("Weekly Periods:"))
+        self.pvc_weekly_spinbox = QSpinBox()
+        self.pvc_weekly_spinbox.setMinimum(1)
+        self.pvc_weekly_spinbox.setMaximum(BAR_CHART_MAX_PERIODS_WEEKLY)
+        self.pvc_weekly_spinbox.setFixedWidth(40)
+        self.pvc_weekly_spinbox.setValue(self.config.get("pvc_weekly_periods", 12))
+        controls_layout.addWidget(self.pvc_weekly_spinbox)
+
+        controls_layout.addWidget(QLabel("Daily Periods:"))
+        self.pvc_daily_spinbox = QSpinBox()
+        self.pvc_daily_spinbox.setMinimum(1)
+        self.pvc_daily_spinbox.setMaximum(BAR_CHART_MAX_PERIODS_DAILY)
+        self.pvc_daily_spinbox.setFixedWidth(40)
+        self.pvc_daily_spinbox.setValue(self.config.get("pvc_daily_periods", 30))
+        controls_layout.addWidget(self.pvc_daily_spinbox)
+
+        main_layout.addLayout(controls_layout)
+
+        splitter = QSplitter(Qt.Vertical)
+        main_layout.addWidget(splitter)
+
+        # --- Top Pane: Value Change Graphs ---
+        top_pane_widget = QWidget()
+        top_pane_layout = QHBoxLayout(top_pane_widget)
+        splitter.addWidget(top_pane_widget)
+
+        graph_configs = [
+            ("Annual", "pvc_annual_graph", ""),
+            ("Monthly", "pvc_monthly_graph", ""),
+            ("Weekly", "pvc_weekly_graph", ""),
+            ("Daily", "pvc_daily_graph", ""),
+        ]
+
+        # graph_configs = [
+        #     ("Annual", "pvc_annual_graph", "Annual Value Change Graph"),
+        #     ("Monthly", "pvc_monthly_graph", "Monthly Value Change Graph"),
+        #     ("Weekly", "pvc_weekly_graph", "Weekly Value Change Graph"),
+        #     ("Daily", "pvc_daily_graph", "Daily Value Change Graph"),
+        # ]
+
+        for period_name, attr_prefix, group_title in graph_configs:
+            group_box = QGroupBox(group_title)
+            group_layout = QVBoxLayout(group_box)
+            fig = Figure(figsize=(4.5, 2.5), dpi=CHART_DPI)
+            ax = fig.add_subplot(111)
+            canvas = FigureCanvas(fig)
+            canvas_pixel_height = int(fig.get_figheight() * fig.dpi)
+            canvas.setFixedHeight(canvas_pixel_height)
+            canvas.setObjectName(f"{attr_prefix}_canvas")
+            setattr(self, f"{attr_prefix}_fig", fig)
+            setattr(self, f"{attr_prefix}_ax", ax)
+            setattr(self, f"{attr_prefix}_canvas", canvas)
+            group_layout.addWidget(canvas)
+            top_pane_layout.addWidget(group_box)
+
+        # --- Middle Pane: Performance Bar Graphs ---
+        self.bar_charts_frame = QFrame()
+        self.bar_charts_frame.setObjectName("BarChartsFrame")
+        splitter.addWidget(self.bar_charts_frame)
+        self._init_bar_charts_frame_widgets()
+
+        # --- Bottom Pane: Tables ---
+        bottom_pane_widget = QWidget()
+        bottom_pane_layout = QHBoxLayout(bottom_pane_widget)
+        splitter.addWidget(bottom_pane_widget)
+
+        table_configs = [
+            ("Annual", "pvc_annual_table", "Annual Value Change Table"),
+            ("Monthly", "pvc_monthly_table", "Monthly Value Change Table"),
+            ("Weekly", "pvc_weekly_table", "Weekly Value Change Table"),
+            ("Daily", "pvc_daily_table", "Daily Value Change Table"),
+        ]
+
+        for period_name, attr_prefix, group_title in table_configs:
+            group_box = QGroupBox(group_title)
+            group_layout = QVBoxLayout(group_box)
+            table_view = QTableView()
+            table_view.setObjectName(f"{attr_prefix}_view")
+            table_view.setAlternatingRowColors(True)
+            table_view.setSelectionBehavior(QTableView.SelectRows)
+            table_view.setWordWrap(False)
+            table_view.setSortingEnabled(True)
+            table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+            table_view.verticalHeader().setVisible(False)
+            model = PandasModel(parent=self, log_mode=True)
+            table_view.setModel(model)
+            setattr(self, f"{attr_prefix}_view", table_view)
+            setattr(self, f"{attr_prefix}_model", model)
+            group_layout.addWidget(table_view)
+            bottom_pane_layout.addWidget(group_box)
+
+        # Set initial relative sizes for the splitter panes (Top, Middle, Bottom)
+        splitter.setSizes([300, 200, 500])
+
+        self.main_tab_widget.addTab(self.periodic_value_change_tab, "Asset Change")
 
     def _init_transactions_log_tab_widgets(self):
         """Initializes widgets for the Transactions Log tab."""
@@ -5059,9 +5173,6 @@ The CSV file should contain the following columns (header names must match exact
             canvas_attr_name,
             fig_attr_name,
             ax_attr_name,
-            spinbox_attr_name,
-            default_periods,
-            max_periods,
         ):
             widget = QWidget()
             layout = QVBoxLayout(widget)
@@ -5077,19 +5188,6 @@ The CSV file should contain the following columns (header names must match exact
             title_label.setObjectName("BarChartTitleLabel")
             title_input_layout.addWidget(title_label)
             title_input_layout.addStretch()  # Push input to the right
-
-            title_input_layout.addWidget(QLabel("Periods:"))
-            spinbox = QSpinBox()
-            spinbox.setObjectName(f"{spinbox_attr_name}")  # e.g., annualPeriodsSpinBox
-            spinbox.setMinimum(1)
-            spinbox.setMaximum(max_periods)  # Adjust max as needed
-            spinbox.setValue(default_periods)
-            spinbox.setToolTip(f"Number of {title.split()[0].lower()} to display")
-            spinbox.setFixedWidth(50)  # Keep it compact
-            setattr(
-                self, spinbox_attr_name, spinbox
-            )  # Store reference, e.g., self.annual_periods_spinbox
-            title_input_layout.addWidget(spinbox)
 
             layout.addLayout(title_input_layout)  # Add the title/input row
 
@@ -5112,33 +5210,31 @@ The CSV file should contain the following columns (header names must match exact
             "annual_bar_canvas",
             "annual_bar_fig",
             "annual_bar_ax",
-            "annual_periods_spinbox",
-            self.config.get("bar_periods_annual", 10),
-            BAR_CHART_MAX_PERIODS_ANNUAL,
         )
         self.monthly_bar_widget = create_bar_chart_widget(
             "Monthly Returns",
             "monthly_bar_canvas",
             "monthly_bar_fig",
             "monthly_bar_ax",
-            "monthly_periods_spinbox",
-            self.config.get("bar_periods_monthly", 12),
-            BAR_CHART_MAX_PERIODS_MONTHLY,
         )
         self.weekly_bar_widget = create_bar_chart_widget(
             "Weekly Returns",
             "weekly_bar_canvas",
             "weekly_bar_fig",
             "weekly_bar_ax",
-            "weekly_periods_spinbox",
-            self.config.get("bar_periods_weekly", 12),
-            BAR_CHART_MAX_PERIODS_WEEKLY,
+        )
+        self.daily_bar_widget = create_bar_chart_widget(
+            "Daily Returns",
+            "daily_bar_canvas",
+            "daily_bar_fig",
+            "daily_bar_ax",
         )
 
         # Add widgets to the layout
         bar_charts_main_layout.addWidget(self.annual_bar_widget, 1)
         bar_charts_main_layout.addWidget(self.monthly_bar_widget, 1)
         bar_charts_main_layout.addWidget(self.weekly_bar_widget, 1)
+        bar_charts_main_layout.addWidget(self.daily_bar_widget, 1)
         # --- End Bar Charts Frame Setup ---
 
     def _init_pie_chart_widgets(self, content_layout: QHBoxLayout):
@@ -5362,7 +5458,7 @@ The CSV file should contain the following columns (header names must match exact
         logging.debug("--- _init_ui_widgets: After _init_table_panel_widgets ---")
 
         # --- Tab: Asset Change ---
-        self._init_periodic_value_change_tab_widgets_content()
+        self._init_asset_change_tab_widgets()
 
         # --- Tab 4: Dividend History ---
         # (This will become Tab 4 after we add Transactions Log and Asset Allocation)
@@ -6234,153 +6330,6 @@ The CSV file should contain the following columns (header names must match exact
             )
             self.intraday_symbol_combo.clear()
             self.intraday_symbol_combo.addItems(symbols)
-
-    def _init_periodic_value_change_tab_widgets_content(self):
-        """Initializes the content for the Asset Change tab."""
-        self.periodic_value_change_tab = QWidget()
-        self.periodic_value_change_tab.setObjectName("AssetChangeTab")
-        main_layout = QVBoxLayout(self.periodic_value_change_tab)
-        main_layout.setContentsMargins(5, 5, 5, 5)
-
-        splitter = QSplitter(Qt.Vertical)
-        main_layout.addWidget(splitter)
-
-        # --- Top Pane: Graphs ---
-        top_pane_widget = QWidget()
-        top_pane_layout = QHBoxLayout(top_pane_widget)
-
-        graph_configs = [
-            (
-                "Annual",
-                "pvc_annual_graph",
-                "Annual Value Change Graph",
-                "pvc_annual_graph_spinbox",
-                10,
-            ),
-            (
-                "Monthly",
-                "pvc_monthly_graph",
-                "Monthly Value Change Graph",
-                "pvc_monthly_graph_spinbox",
-                12,
-            ),
-            (
-                "Weekly",
-                "pvc_weekly_graph",
-                "Weekly Value Change Graph",
-                "pvc_weekly_graph_spinbox",
-                12,
-            ),
-            (
-                "Daily",
-                "pvc_daily_graph",
-                "Daily Value Change Graph",
-                "pvc_daily_graph_spinbox",
-                30,  # Default to 30 days
-            ),
-        ]
-
-        for (
-            period_name,
-            attr_prefix,
-            group_title,
-            spinbox_attr,
-            default_periods,
-        ) in graph_configs:
-            group_box = QGroupBox(group_title)
-            group_layout = QVBoxLayout(group_box)
-
-            controls_layout = QHBoxLayout()
-            controls_layout.addWidget(QLabel("Periods:"))
-            spinbox = QSpinBox()
-            spinbox.setMinimum(1)
-            spinbox.setMaximum(eval(f"BAR_CHART_MAX_PERIODS_{period_name.upper()}"))
-            spinbox.setValue(
-                self.config.get(f"pvc_{period_name.lower()}_periods", default_periods)
-            )
-            spinbox.setObjectName(spinbox_attr)
-            setattr(self, spinbox_attr, spinbox)
-            controls_layout.addWidget(spinbox)
-            controls_layout.addStretch()
-            group_layout.addLayout(controls_layout)
-
-            fig = Figure(
-                figsize=(4.5, 2.5), dpi=CHART_DPI
-            )  # Slightly taller for better bar display
-            ax = fig.add_subplot(111)
-            canvas = FigureCanvas(fig)
-            # --- ADDED: Set fixed height for the canvas based on figure's intended pixel height ---
-            canvas_pixel_height = int(fig.get_figheight() * fig.dpi)
-            canvas.setFixedHeight(canvas_pixel_height)
-            canvas.setObjectName(f"{attr_prefix}_canvas")
-            setattr(self, f"{attr_prefix}_fig", fig)
-            setattr(self, f"{attr_prefix}_ax", ax)
-            setattr(self, f"{attr_prefix}_canvas", canvas)
-            group_layout.addWidget(canvas)
-            top_pane_layout.addWidget(group_box)
-
-        splitter.addWidget(top_pane_widget)
-
-        # --- Bottom Pane: Tables ---
-        bottom_pane_widget = QWidget()
-        bottom_pane_layout = QHBoxLayout(bottom_pane_widget)
-
-        table_configs = [
-            ("Annual", "pvc_annual_table", "Annual Value Change Table"),
-            ("Monthly", "pvc_monthly_table", "Monthly Value Change Table"),
-            ("Weekly", "pvc_weekly_table", "Weekly Value Change Table"),
-            ("Daily", "pvc_daily_table", "Daily Value Change Table"),
-        ]
-
-        for period_name, attr_prefix, group_title in table_configs:
-            group_box = QGroupBox(group_title)
-            group_layout = QVBoxLayout(group_box)
-
-            table_view = QTableView()
-            table_view.setObjectName(f"{attr_prefix}_view")
-            table_view.setAlternatingRowColors(True)
-            table_view.setSelectionBehavior(QTableView.SelectRows)
-            table_view.setWordWrap(False)
-            table_view.setSortingEnabled(True)
-            table_view.horizontalHeader().setSectionResizeMode(
-                QHeaderView.Interactive
-            )  # Allow column resizing
-            table_view.verticalHeader().setVisible(False)
-
-            model = PandasModel(
-                parent=self, log_mode=True
-            )  # log_mode for direct display
-            table_view.setModel(model)
-
-            setattr(self, f"{attr_prefix}_view", table_view)
-            setattr(self, f"{attr_prefix}_model", model)
-
-            group_layout.addWidget(table_view)
-            bottom_pane_layout.addWidget(group_box)
-
-        splitter.addWidget(bottom_pane_widget)
-
-        # Set stretch factors: top panel should not stretch, bottom panel should.
-        splitter.setStretchFactor(0, 0)  # Index 0 is top_pane_widget
-        splitter.setStretchFactor(1, 1)  # Index 1 is bottom_pane_widget
-
-        # Set initial sizes. With stretch factor 0 for the top, it should respect its sizeHint.
-        # The top panel's height is driven by the fixed-height canvases (2.5 inches * 95 DPI = 237.5px)
-        # plus controls and GroupBox chrome (estimate ~70-80px).
-        estimated_top_panel_height = (
-            310  # Approx. 238px for canvas + 72px for controls/padding
-        )
-
-        # The total_height for setSizes refers to the splitter's current height.
-        # If the window isn't shown yet, this might be small.
-        # However, the stretch factors should ensure the top panel adheres to its content size.
-        total_height = self.height() if self.height() > 0 else 800  # Fallback height
-        bottom_panel_height = max(
-            100, total_height - estimated_top_panel_height
-        )  # Ensure bottom has some space
-        splitter.setSizes([estimated_top_panel_height, bottom_panel_height])
-
-        self.main_tab_widget.addTab(self.periodic_value_change_tab, "Asset Change")
 
     def _init_transactions_management_widgets(self, parent_layout: QVBoxLayout):
         """Initializes widgets for managing transactions within the Transactions Log tab."""
@@ -8592,61 +8541,22 @@ The CSV file should contain the following columns (header names must match exact
         )
 
         # Bar Chart Period Spinbox Connections
-        self.annual_periods_spinbox.valueChanged.connect(
-            self._update_periodic_bar_charts
+        self.pvc_annual_spinbox.valueChanged.connect(self._update_periodic_bar_charts)
+        self.pvc_annual_spinbox.valueChanged.connect(
+            self._update_periodic_value_change_display
         )
-        self.monthly_periods_spinbox.valueChanged.connect(
-            self._update_periodic_bar_charts
+        self.pvc_monthly_spinbox.valueChanged.connect(self._update_periodic_bar_charts)
+        self.pvc_monthly_spinbox.valueChanged.connect(
+            self._update_periodic_value_change_display
         )
-        self.weekly_periods_spinbox.valueChanged.connect(
-            self._update_periodic_bar_charts
+        self.pvc_weekly_spinbox.valueChanged.connect(self._update_periodic_bar_charts)
+        self.pvc_weekly_spinbox.valueChanged.connect(
+            self._update_periodic_value_change_display
         )
-        # Dividend Chart Controls
-        self.dividend_period_combo.currentTextChanged.connect(
-            self._update_dividend_spinbox_default
+        self.pvc_daily_spinbox.valueChanged.connect(self._update_periodic_bar_charts)
+        self.pvc_daily_spinbox.valueChanged.connect(
+            self._update_periodic_value_change_display
         )
-        self.dividend_period_combo.currentTextChanged.connect(
-            self._update_dividend_bar_chart
-        )
-        self.dividend_periods_spinbox.valueChanged.connect(
-            self._update_dividend_bar_chart
-        )
-        # Capital Gains Tab Connections
-        self.cg_period_combo.currentTextChanged.connect(
-            self._update_capital_gains_display
-        )
-        # Intraday Chart Connections
-        self.intraday_update_button.clicked.connect(self._update_intraday_chart)
-        self.intraday_period_combo.currentTextChanged.connect(
-            self._update_intraday_interval_options
-        )
-        self.intraday_pct_change_check.stateChanged.connect(self._update_intraday_chart)
-
-        self.cg_periods_spinbox.valueChanged.connect(self._update_capital_gains_display)
-
-        # Advanced Analysis Tab Connections
-        if hasattr(self, "run_factor_analysis_button"):
-            self.run_factor_analysis_button.clicked.connect(self._run_factor_analysis)
-        if hasattr(self, "run_scenario_button"):
-            self.run_scenario_button.clicked.connect(self._run_scenario_analysis)
-
-        # Asset Change Tab Spinboxes
-        if hasattr(
-            self, "pvc_annual_graph_spinbox"
-        ):  # Check if tab widgets are initialized
-            self.pvc_annual_graph_spinbox.valueChanged.connect(
-                self._update_periodic_value_change_display
-            )
-            self.pvc_monthly_graph_spinbox.valueChanged.connect(
-                self._update_periodic_value_change_display
-            )
-            self.pvc_weekly_graph_spinbox.valueChanged.connect(
-                self._update_periodic_value_change_display
-            )
-        if hasattr(self, "pvc_daily_graph_spinbox"):
-            self.pvc_daily_graph_spinbox.valueChanged.connect(
-                self._update_periodic_value_change_display
-            )
 
         # --- ADDED: Connect tab change signal for PVC tab default sort ---
         if hasattr(self, "main_tab_widget") and self.main_tab_widget:
@@ -13293,7 +13203,7 @@ The CSV file should contain the following columns (header names must match exact
                 "ax": self.annual_bar_ax,
                 "canvas": self.annual_bar_canvas,
                 "title": "Annual Returns",  # Title used for logging/errors
-                "spinbox": self.annual_periods_spinbox,  # Reference to the spinbox
+                "spinbox": self.pvc_annual_spinbox,  # Reference to the spinbox
                 "date_format": "%Y",
             },
             "M": {
@@ -13301,7 +13211,7 @@ The CSV file should contain the following columns (header names must match exact
                 "ax": self.monthly_bar_ax,
                 "canvas": self.monthly_bar_canvas,
                 "title": "Monthly Returns",
-                "spinbox": self.monthly_periods_spinbox,
+                "spinbox": self.pvc_monthly_spinbox,
                 "date_format": "%Y-%m",
             },
             "W": {
@@ -13309,7 +13219,15 @@ The CSV file should contain the following columns (header names must match exact
                 "ax": self.weekly_bar_ax,
                 "canvas": self.weekly_bar_canvas,
                 "title": "Weekly Returns",
-                "spinbox": self.weekly_periods_spinbox,
+                "spinbox": self.pvc_weekly_spinbox,
+                "date_format": "%Y-%m-%d",
+            },
+            "D": {
+                "data_key": "D",
+                "ax": self.daily_bar_ax,
+                "canvas": self.daily_bar_canvas,
+                "title": "Daily Returns",
+                "spinbox": self.pvc_daily_spinbox,
                 "date_format": "%Y-%m-%d",
             },
         }
@@ -14209,37 +14127,37 @@ The CSV file should contain the following columns (header names must match exact
             self.pvc_annual_graph_ax,
             self.pvc_annual_graph_canvas,
             "Y",
-            self.pvc_annual_graph_spinbox.value(),
+            self.pvc_annual_spinbox.value(),
         )
         self._update_pvc_table(
-            self.pvc_annual_table_model, "Y", self.pvc_annual_graph_spinbox.value()
+            self.pvc_annual_table_model, "Y", self.pvc_annual_spinbox.value()
         )
         self._plot_pvc_graph(
             self.pvc_monthly_graph_ax,
             self.pvc_monthly_graph_canvas,
             "M",
-            self.pvc_monthly_graph_spinbox.value(),
+            self.pvc_monthly_spinbox.value(),
         )
         self._update_pvc_table(
-            self.pvc_monthly_table_model, "M", self.pvc_monthly_graph_spinbox.value()
+            self.pvc_monthly_table_model, "M", self.pvc_monthly_spinbox.value()
         )
         self._plot_pvc_graph(
             self.pvc_weekly_graph_ax,
             self.pvc_weekly_graph_canvas,
             "W",
-            self.pvc_weekly_graph_spinbox.value(),
+            self.pvc_weekly_spinbox.value(),
         )
         self._update_pvc_table(
-            self.pvc_weekly_table_model, "W", self.pvc_weekly_graph_spinbox.value()
+            self.pvc_weekly_table_model, "W", self.pvc_weekly_spinbox.value()
         )
         self._plot_pvc_graph(
             self.pvc_daily_graph_ax,
             self.pvc_daily_graph_canvas,
             "D",
-            self.pvc_daily_graph_spinbox.value(),
+            self.pvc_daily_spinbox.value(),
         )
         self._update_pvc_table(
-            self.pvc_daily_table_model, "D", self.pvc_daily_graph_spinbox.value()
+            self.pvc_daily_table_model, "D", self.pvc_daily_spinbox.value()
         )
 
     def _update_dividend_summary_table(self, plot_data: pd.Series):
