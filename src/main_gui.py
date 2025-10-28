@@ -7696,15 +7696,20 @@ The CSV file should contain the following columns (header names must match exact
         self.status_bar.addPermanentWidget(self.progress_bar)  # RESTORED
 
     @Slot(bool)
-    def refresh_data(self, force_historical_refresh: bool = True):
+    def refresh_data(self, force_historical_refresh: Optional[bool] = None):
         """
         Initiates the background calculation process via the worker thread.
         Loads data from the SQLite database.
 
         Gathers current UI settings (display currency, filters, graph parameters),
         prepares arguments for the portfolio logic functions, creates a
-        `PortfolioCalculatorWorker`, and starts it in the thread pool. Disables
-        UI controls during calculation.
+        `PortfolioCalculatorWorker`, and starts it in the thread pool. Disables UI
+        controls during calculation.
+
+        Args:
+            force_historical_refresh (Optional[bool]): If True, forces a full re-fetch of historical data.
+                                                        If False, uses cache for historical. If None (default),
+                                                        the worker decides based on data staleness.
         """
         # --- ADDED: Reset group expansion state if account scope changes ---
         # This is the definitive fix for the bug where groups remain collapsed after
@@ -8041,7 +8046,7 @@ The CSV file should contain the following columns (header names must match exact
             user_symbol_map=self.user_symbol_map_config,
             user_excluded_symbols=self.user_excluded_symbols_config,
             market_data_provider=self.market_data_provider,
-            force_historical_refresh=force_historical_refresh,
+            force_historical_refresh=force_historical_refresh,  # Pass the tri-state value
             historical_fn_supports_exclude=HISTORICAL_FN_SUPPORTS_EXCLUDE,
             market_provider_available=MARKET_PROVIDER_AVAILABLE,
             factor_model_name=self.factor_model_combo.currentText(),
@@ -8428,9 +8433,9 @@ The CSV file should contain the following columns (header names must match exact
             lambda: self.set_status("Graph dates changed. Click 'Update Graphs'.")
         )
         self.benchmark_select_button.clicked.connect(self.show_benchmark_selection_menu)
-        self.graph_update_button.clicked.connect(
-            lambda: self.refresh_data(force_historical_refresh=True)
-        )
+        # MODIFIED: "Update Graphs" no longer forces a historical refresh. It lets the worker decide.
+        # The main "Refresh" action (F5/toolbar) is now the primary way to force a full re-fetch.
+        self.graph_update_button.clicked.connect(lambda: self.refresh_data())
         self.refresh_button.clicked.connect(
             lambda: self.refresh_data(force_historical_refresh=True)
         )
@@ -12116,9 +12121,7 @@ The CSV file should contain the following columns (header names must match exact
         elif sender == self.show_closed_check:
             changed_control = "'Show Closed' Checkbox"
         logging.info(f"Filter change ({changed_control}) requires full refresh...")
-        self.refresh_data(
-            force_historical_refresh=False
-        )  # Trigger the main refresh function
+        self.refresh_data()  # Trigger the main refresh function, let worker decide on historical
 
     # --- UI Update Helpers ---
     def _update_table_view_with_filtered_columns(self, df_source_data):
