@@ -5855,10 +5855,10 @@ The CSV file should contain the following columns (header names must match exact
             (self.performance_summary_tab, "Performance"),
             (self.transactions_log_tab, "Transactions"),
             (self.asset_allocation_tab, "Asset Allocation"),
-            (self.intraday_chart_tab, "Intraday Chart"),
             (self.periodic_value_change_tab, "Asset Change"),
             (self.capital_gains_tab, "Capital Gains"),
             (self.dividend_history_tab, "Dividend"),
+            (self.intraday_chart_tab, "Intraday Chart"),
             (self.rebalancing_tab, "Rebalancing"),
             (self.advanced_analysis_tab, "Advanced Analysis"),
         ]
@@ -8577,6 +8577,12 @@ The CSV file should contain the following columns (header names must match exact
         )
         self.cash_to_add_line_edit.textChanged.connect(
             lambda: self._update_target_total_label()
+        )
+
+        # Intraday Chart Connections
+        self.intraday_update_button.clicked.connect(self._update_intraday_chart)
+        self.intraday_period_combo.currentTextChanged.connect(
+            self._update_intraday_interval_options
         )
 
     def _update_table_display(self):
