@@ -1546,13 +1546,24 @@ The CSV file should contain the following columns (header names must match exact
         elif period == "10Y":
             start_date = end_date - timedelta(days=10 * 365)
         elif period == "All":
+            # Use the full transaction history to find the true earliest date,
+            # as self.full_historical_data only reflects the last calculated range.
             if (
-                hasattr(self, "full_historical_data")
-                and not self.full_historical_data.empty
+                hasattr(self, "all_transactions_df_cleaned_for_logic")
+                and not self.all_transactions_df_cleaned_for_logic.empty
             ):
-                start_date = self.full_historical_data.index.min().date()
-            else:
-                # Fallback if no data is loaded yet
+                try:
+                    start_date = (
+                        self.all_transactions_df_cleaned_for_logic["Date"].min().date()
+                    )
+                except Exception as e:
+                    logging.warning(
+                        f"Could not determine 'All' start date from transaction data: {e}"
+                    )
+                    start_date = None  # Fallback
+
+            # Fallback if no transaction data is loaded yet
+            if start_date is None:
                 start_date = self.config.get(
                     "graph_start_date", DEFAULT_GRAPH_START_DATE
                 )
