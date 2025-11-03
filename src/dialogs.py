@@ -2656,6 +2656,13 @@ class AddTransactionDialog(QDialog):
 
             # Total amount for these types is typically calculated Qty * Price.
             # If total_amount_edit was locked (user entered or pre-filled), respect that value.
+            # --- FIX: If total is not provided, calculate it from qty and price ---
+            if total is None and qty is not None and price is not None:
+                total = qty * price
+                logging.debug(
+                    f"Calculated Total Amount for '{tx_type_display_case}': {total}"
+                )
+            # --- END FIX ---
             # Otherwise, calculate it.
         elif tx_type_lower == "transfer":
             if not qty_str:
