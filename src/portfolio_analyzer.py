@@ -137,7 +137,7 @@ def _process_transactions_to_holdings(
         "Commission",
         "Split Ratio",
         "Local Currency",
-        "Note",  # <-- ADDED for transfer
+        "To Account",
         "Date",
         "original_index",
     ]
@@ -175,7 +175,6 @@ def _process_transactions_to_holdings(
                 0.0 if pd.isna(commission_local_raw) else float(commission_local_raw)
             )
             split_ratio = pd.to_numeric(row.get("Split Ratio"), errors="coerce")
-            note = str(row.get("Note", "")).strip()
 
             if (
                 not symbol
@@ -233,6 +232,42 @@ def _process_transactions_to_holdings(
             ignored_row_indices_local.add(original_index)
             has_warnings = True
             continue
+
+        # --- MODIFIED: Centralized Holding Creation for ALL relevant accounts in the row ---
+        accounts_in_row = {account}
+        if tx_type == "transfer":
+            to_account_from_row = str(row.get("To Account", "")).strip()
+            if to_account_from_row:
+                accounts_in_row.add(to_account_from_row)
+
+        for acc_name in accounts_in_row:
+            holding_key = (symbol, acc_name)
+            if holding_key not in holdings:
+                holdings[holding_key] = {
+                    "qty": 0.0,
+                    "total_cost_local": 0.0,
+                    "realized_gain_local": 0.0,
+                    "dividends_local": 0.0,
+                    "commissions_local": 0.0,
+                    "local_currency": local_currency_from_row,
+                    "short_proceeds_local": 0.0,
+                    "short_original_qty": 0.0,
+                    "total_cost_invested_local": 0.0,
+                    "cumulative_investment_local": 0.0,
+                    "total_buy_cost_local": 0.0,
+                    "total_cost_display_historical_fx": 0.0,
+                }
+                symbol_to_accounts_map[symbol].add(acc_name)
+            elif holdings[holding_key]["local_currency"] != local_currency_from_row:
+                msg = f"Currency mismatch for {symbol}/{acc_name}"
+                logging.warning(
+                    f"CRITICAL WARN in _process_transactions: {msg} row {original_index}. Holding exists with diff ccy. Skip."
+                )
+                ignored_reasons_local[original_index] = msg
+                ignored_row_indices_local.add(original_index)
+                has_warnings = True
+                continue  # Skip this entire transaction row if there's a currency mismatch
+        # --- END MODIFICATION ---
 
         # --- SPLIT HANDLING ---
         if tx_type in ["split", "stock split"]:
@@ -323,28 +358,96 @@ def _process_transactions_to_holdings(
                 continue
         # --- END SPLIT HANDLING ---
 
-        holding = holdings.get(holding_key_from_row)
-        if not holding:
-            logging.error(
-                f"CRITICAL LOGIC ERROR: Holding not found for {holding_key_from_row} after initialization. Skipping row {original_index}."
-            )
-            ignored_reasons_local[original_index] = (
-                "Internal Logic Error: Holding not found"
-            )
-            ignored_row_indices_local.add(original_index)
-            # Mark as error? This shouldn't happen. Let's mark warning for now.
-            has_warnings = True
-            continue
-
         commission_for_overall = commission_local_for_this_tx
-        # --- REMOVED DEBUG FLAG USAGE ---
-        # prev_cum_inv = (
-        #     holding.get("cumulative_investment_local", 0.0) if log_this_row else 0
-        # )
-        # --- END REMOVED DEBUG FLAG USAGE ---
 
         try:
-            # --- Validate Numeric Inputs Specific to Transaction Type ---
+            # --- MODIFIED: Handle 'transfer' as the very first case ---
+            if tx_type == "transfer":
+                if pd.isna(qty) or qty <= 1e-9:
+                    raise ValueError("Transfer quantity must be positive.")
+
+                from_account = account
+                to_account = str(row.get("To Account", "")).strip()
+                if not to_account:
+                    raise ValueError(
+                        "The 'To Account' is missing for this Transfer transaction."
+                    )
+
+                if from_account == to_account:
+                    raise ValueError(
+                        "From and To accounts cannot be the same for a Transfer."
+                    )
+
+                # The 'from' holding is guaranteed to exist from the centralized block above.
+                from_holding = holdings[(symbol, from_account)]
+                if from_holding["qty"] < qty:
+                    raise ValueError(
+                        f"Cannot transfer {qty} of {symbol}: Only {from_holding['qty']} held in '{from_account}'."
+                    )
+
+                # Get or create the 'to' holding
+                if (symbol, to_account) not in holdings:
+                    holdings[(symbol, to_account)] = {
+                        "qty": 0.0,
+                        "total_cost_local": 0.0,
+                        "realized_gain_local": 0.0,
+                        "dividends_local": 0.0,
+                        "commissions_local": 0.0,
+                        "local_currency": from_holding["local_currency"],
+                        "short_proceeds_local": 0.0,
+                        "short_original_qty": 0.0,
+                        "total_cost_invested_local": 0.0,
+                        "cumulative_investment_local": 0.0,
+                        "total_buy_cost_local": 0.0,
+                        "total_cost_display_historical_fx": 0.0,
+                    }
+                    symbol_to_accounts_map[symbol].add(to_account)
+
+                to_holding = holdings[(symbol, to_account)]
+
+                if to_holding["local_currency"] != from_holding["local_currency"]:
+                    raise ValueError(
+                        f"Currency mismatch between accounts for {symbol}: {from_holding['local_currency']} vs {to_holding['local_currency']}."
+                    )
+
+                cost_to_transfer_local = 0.0
+                cost_to_transfer_display_hist_fx = 0.0
+                if from_holding["qty"] > 1e-9:
+                    proportion = qty / from_holding["qty"]
+                    cost_to_transfer_local = (
+                        from_holding["total_cost_local"] * proportion
+                    )
+                    if pd.notna(from_holding.get("total_cost_display_historical_fx")):
+                        cost_to_transfer_display_hist_fx = (
+                            from_holding["total_cost_display_historical_fx"]
+                            * proportion
+                        )
+
+                from_holding["qty"] -= qty
+                from_holding["total_cost_local"] -= cost_to_transfer_local
+                if pd.notna(cost_to_transfer_display_hist_fx):
+                    from_holding[
+                        "total_cost_display_historical_fx"
+                    ] -= cost_to_transfer_display_hist_fx
+
+                if abs(from_holding["qty"]) < STOCK_QUANTITY_CLOSE_TOLERANCE:
+                    from_holding["qty"] = 0.0
+                    from_holding["total_cost_local"] = 0.0
+                    from_holding["total_cost_display_historical_fx"] = 0.0
+
+                to_holding["qty"] += qty
+                to_holding["total_cost_local"] += cost_to_transfer_local
+                if pd.notna(cost_to_transfer_display_hist_fx):
+                    to_holding[
+                        "total_cost_display_historical_fx"
+                    ] += cost_to_transfer_display_hist_fx
+
+                logging.debug(
+                    f"Processed TRANSFER of {qty} {symbol} from '{from_account}' to '{to_account}'. Cost transferred: {cost_to_transfer_local:.2f}"
+                )
+                continue  # CRITICAL: Skip all other logic for this row
+
+            # --- Validate Numeric Inputs (for non-transfer types) ---
             if tx_type in [
                 "buy",
                 "sell",
@@ -365,6 +468,9 @@ def _process_transactions_to_holdings(
             elif tx_type == "fees":
                 if pd.isna(commission_local_raw):
                     raise ValueError("Missing Commission for fees transaction")
+
+            # The holding is guaranteed to exist from the centralized block at the top.
+            holding = holdings[holding_key_from_row]
 
             # --- Shorting Logic ---
             if symbol in shortable_symbols and tx_type in [
@@ -468,138 +574,6 @@ def _process_transactions_to_holdings(
                         commission_for_overall
                     )
                 continue  # Skip standard processing
-
-            # --- ADDED: Transfer Handling ---
-            if tx_type == "transfer":
-                try:
-                    if pd.isna(qty) or qty <= 1e-9:
-                        raise ValueError("Transfer quantity must be positive.")
-
-                    # The 'Account' column holds the 'From' account for transfers.
-                    from_account = account
-                    # The 'To' account is parsed from the 'Note' field.
-                    to_account_match = re.search(
-                        r"To:\s*([\w\s-]+)", note, re.IGNORECASE
-                    )
-                    if not to_account_match:
-                        raise ValueError(
-                            "'To Account' not found in Note for Transfer (e.g., 'To: Account B')."
-                        )
-                    to_account = to_account_match.group(1).strip()
-
-                    if from_account == to_account:
-                        raise ValueError(
-                            "From and To accounts cannot be the same for a Transfer."
-                        )
-
-                    from_holding_key = (symbol, from_account)
-                    to_holding_key = (symbol, to_account)
-
-                    # 1. Validate 'From' holding
-                    if from_holding_key not in holdings:
-                        raise ValueError(
-                            f"Cannot transfer from '{from_account}': No holdings of {symbol} found."
-                        )
-
-                    from_holding = holdings[from_holding_key]
-                    if from_holding["qty"] < qty:
-                        raise ValueError(
-                            f"Cannot transfer {qty} of {symbol}: Only {from_holding['qty']} held in '{from_account}'."
-                        )
-
-                    # 2. Ensure 'To' holding exists
-                    if to_holding_key not in holdings:
-                        holdings[to_holding_key] = {
-                            "qty": 0.0,
-                            "total_cost_local": 0.0,
-                            "realized_gain_local": 0.0,
-                            "dividends_local": 0.0,
-                            "commissions_local": 0.0,
-                            "local_currency": from_holding[
-                                "local_currency"
-                            ],  # Inherit currency
-                            "short_proceeds_local": 0.0,
-                            "short_original_qty": 0.0,
-                            "total_cost_invested_local": 0.0,
-                            "cumulative_investment_local": 0.0,
-                            "total_buy_cost_local": 0.0,
-                            "total_cost_display_historical_fx": 0.0,
-                        }
-                        symbol_to_accounts_map[symbol].add(to_account)
-
-                    to_holding = holdings[to_holding_key]
-                    if to_holding["local_currency"] != from_holding["local_currency"]:
-                        raise ValueError(
-                            f"Currency mismatch between accounts for {symbol}: {from_holding['local_currency']} vs {to_holding['local_currency']}."
-                        )
-
-                    # 3. Calculate cost basis to transfer
-                    cost_to_transfer_local = 0.0
-                    cost_to_transfer_display_hist_fx = 0.0
-                    if from_holding["qty"] > 1e-9:
-                        proportion = qty / from_holding["qty"]
-                        cost_to_transfer_local = (
-                            from_holding["total_cost_local"] * proportion
-                        )
-                        if pd.notna(
-                            from_holding.get("total_cost_display_historical_fx")
-                        ):
-                            cost_to_transfer_display_hist_fx = (
-                                from_holding["total_cost_display_historical_fx"]
-                                * proportion
-                            )
-
-                    # 4. Update 'From' Account
-                    from_holding["qty"] -= qty
-                    from_holding["total_cost_local"] -= cost_to_transfer_local
-                    if pd.notna(cost_to_transfer_display_hist_fx):
-                        from_holding[
-                            "total_cost_display_historical_fx"
-                        ] -= cost_to_transfer_display_hist_fx
-
-                    # Clean up 'From' holding if quantity is now zero
-                    if abs(from_holding["qty"]) < STOCK_QUANTITY_CLOSE_TOLERANCE:
-                        from_holding["qty"] = 0.0
-                        from_holding["total_cost_local"] = 0.0
-                        from_holding["total_cost_display_historical_fx"] = 0.0
-
-                    # 5. Update 'To' Account
-                    to_holding["qty"] += qty
-                    to_holding["total_cost_local"] += cost_to_transfer_local
-                    if pd.notna(cost_to_transfer_display_hist_fx):
-                        to_holding[
-                            "total_cost_display_historical_fx"
-                        ] += cost_to_transfer_display_hist_fx
-
-                    # Transfers are internal movements and do not affect cumulative investment or invested cost
-                    # They also do not generate gains/losses or commissions.
-
-                    logging.debug(
-                        f"Processed TRANSFER of {qty} {symbol} from '{from_account}' to '{to_account}'. "
-                        f"Cost transferred: {cost_to_transfer_local:.2f}"
-                    )
-                    continue  # Skip to next transaction
-
-                except (ValueError, KeyError, ZeroDivisionError) as e_transfer:
-                    error_msg = f"Transfer Processing Error ({type(e_transfer).__name__}): {e_transfer}"
-                    logging.warning(
-                        f"WARN in _process_transactions TRANSFER row {original_index} ({symbol}): {error_msg}. Skipping row."
-                    )
-                    ignored_reasons_local[original_index] = error_msg
-                    ignored_row_indices_local.add(original_index)
-                    has_warnings = True
-                    continue
-                except Exception as e_transfer_unexp:
-                    logging.exception(
-                        f"Unexpected error processing TRANSFER row {original_index} ({symbol})"
-                    )
-                    ignored_reasons_local[original_index] = (
-                        "Unexpected Transfer Processing Error"
-                    )
-                    ignored_row_indices_local.add(original_index)
-                    has_warnings = True
-                    continue
-            # --- END Transfer Handling ---
 
             # --- Standard Buy/Sell/Dividend/Fee ---
             if tx_type == "buy" or tx_type == "deposit":
@@ -779,11 +753,6 @@ def _process_transactions_to_holdings(
                 commission_for_overall = 0.0
                 continue
 
-            # --- REMOVED DEBUG FLAG USAGE ---
-            # if log_this_row:
-            #     ... (logging code removed) ...
-            # --- END REMOVED DEBUG FLAG USAGE ---
-
             if commission_for_overall != 0:
                 overall_commissions_local[holding["local_currency"]] += abs(
                     commission_for_overall
@@ -797,10 +766,6 @@ def _process_transactions_to_holdings(
             ignored_reasons_local[original_index] = error_msg
             ignored_row_indices_local.add(original_index)
             has_warnings = True
-            # --- REMOVED DEBUG FLAG USAGE ---
-            # if log_this_row:
-            #     logging.error(f"ERROR during TRACE E*TRADE ({symbol}, {tx_type}): {e}. PrevCumInv: {prev_cum_inv:.2f}")
-            # --- END REMOVED DEBUG FLAG USAGE ---
             continue
         except KeyError as e:
             error_msg = f"Internal Holding Data Error: {e}"
@@ -810,10 +775,6 @@ def _process_transactions_to_holdings(
             ignored_reasons_local[original_index] = error_msg
             ignored_row_indices_local.add(original_index)
             has_warnings = True
-            # --- REMOVED DEBUG FLAG USAGE ---
-            # if log_this_row:
-            #     logging.error(f"ERROR during TRACE E*TRADE ({symbol}, {tx_type}): {e}. PrevCumInv: {prev_cum_inv:.2f}")
-            # --- END REMOVED DEBUG FLAG USAGE ---
             continue
         except Exception as e:
             logging.exception(
@@ -822,10 +783,6 @@ def _process_transactions_to_holdings(
             ignored_reasons_local[original_index] = "Unexpected Processing Error"
             ignored_row_indices_local.add(original_index)
             has_warnings = True
-            # --- REMOVED DEBUG FLAG USAGE ---
-            # if log_this_row:
-            #     logging.error(f"ERROR during TRACE E*TRADE ({symbol}, {tx_type}): {e}. PrevCumInv: {prev_cum_inv:.2f}")
-            # --- END REMOVED DEBUG FLAG USAGE ---
             continue
 
     # --- Apply STOCK_QUANTITY_CLOSE_TOLERANCE to final holdings ---
@@ -1589,8 +1546,9 @@ def _build_summary_rows(
 def _calculate_aggregate_metrics(
     full_summary_df: pd.DataFrame,
     display_currency: str,
-    # transactions_df: pd.DataFrame, # Parameter removed as unused
     report_date: date,
+    include_accounts: Optional[List[str]] = None,  # <-- New param
+    all_available_accounts: Optional[List[str]] = None,  # <-- New param
 ) -> Tuple[Dict[str, Any], Dict[str, Dict[str, float]], bool, bool]:
     """
     Calculates account-level and overall portfolio summary metrics.
@@ -1765,6 +1723,42 @@ def _calculate_aggregate_metrics(
             logging.exception(f"Error aggregating metrics for account '{account}'")
             has_warnings = True
 
+    # --- START FIX: Filter for Overall Summary ---
+    df_for_overall_summary = full_summary_df
+
+    # Determine if the filter is for "All Accounts"
+    is_all_accounts_selected = False
+    if not include_accounts:  # None or empty list
+        is_all_accounts_selected = True
+    elif all_available_accounts and set(include_accounts) == set(
+        all_available_accounts
+    ):
+        is_all_accounts_selected = True
+
+    if not is_all_accounts_selected:
+        # Filter the DataFrame to *only* the accounts the user selected
+        logging.debug(
+            f"Aggregating overall metrics for selected accounts: {include_accounts}"
+        )
+        if "Account" in df_for_overall_summary.columns:
+            # Keep rows that match the selected accounts
+            account_mask = full_summary_df["Account"].isin(include_accounts)
+
+            # --- ADD THIS LINE ---
+            # Also keep the special aggregate cash row
+            cash_mask = full_summary_df["Account"] == _AGGREGATE_CASH_ACCOUNT_NAME_
+            # --- END ADD ---
+
+            df_for_overall_summary = full_summary_df[account_mask | cash_mask].copy()
+        else:
+            logging.warning("Cannot filter overall metrics: 'Account' column missing.")
+    # --- END FIX ---
+
+    # Note: The original code had a second part to the filter for the "All Accounts" case.
+    # That logic is now correctly handled by the `show_closed_positions` filter in the main summary function,
+    # which removes zero-quantity transfer source rows before they even get here.
+    # Therefore, only the explicit account filter is needed for the overall summary calculation.
+
     mkt_val_col = f"Market Value ({display_currency})"
     total_gain_col = f"Total Gain ({display_currency})"
     total_buy_cost_col = f"Total Buy Cost ({display_currency})"
@@ -1792,39 +1786,47 @@ def _calculate_aggregate_metrics(
         fx_gain_loss_col,
     ]
     for col in cols_to_check:
-        if col not in full_summary_df.columns:
+        if col not in df_for_overall_summary.columns:
             logging.warning(f"Warning: Column '{col}' missing for overall aggregation.")
             has_warnings = True
 
-    overall_market_value_display = safe_sum(full_summary_df, mkt_val_col)
-    held_mask = pd.Series(False, index=full_summary_df.index)
+    overall_market_value_display = safe_sum(df_for_overall_summary, mkt_val_col)
+    held_mask = pd.Series(False, index=df_for_overall_summary.index)
     if (
-        "Quantity" in full_summary_df.columns
+        "Quantity" in df_for_overall_summary.columns
     ):  # Symbol check is implicit as cash is now a holding
-        held_mask = full_summary_df["Quantity"].abs() > 1e-9
+        held_mask = df_for_overall_summary["Quantity"].abs() > 1e-9
     overall_cost_basis_display = (
-        safe_sum(full_summary_df.loc[held_mask], cost_basis_col)
+        safe_sum(df_for_overall_summary.loc[held_mask], cost_basis_col)
         if held_mask.any()
         else 0.0
     )
-    overall_unrealized_gain_display = safe_sum(full_summary_df, unreal_gain_col)
-    overall_realized_gain_display_agg = safe_sum(full_summary_df, real_gain_col)
-    overall_dividends_display_agg = safe_sum(full_summary_df, divs_col)
-    overall_commissions_display_agg = safe_sum(full_summary_df, comm_col)
-    overall_total_gain_display = safe_sum(full_summary_df, total_gain_col)
-    overall_total_cost_invested_display = safe_sum(full_summary_df, cost_invest_col)
-    overall_cumulative_investment_display = safe_sum(full_summary_df, cum_invest_col)
-    overall_total_buy_cost_display = safe_sum(full_summary_df, total_buy_cost_col)
-    overall_day_change_display = safe_sum(full_summary_df, day_change_col)
+    overall_unrealized_gain_display = safe_sum(df_for_overall_summary, unreal_gain_col)
+    overall_realized_gain_display_agg = safe_sum(df_for_overall_summary, real_gain_col)
+    overall_dividends_display_agg = safe_sum(df_for_overall_summary, divs_col)
+    overall_commissions_display_agg = safe_sum(df_for_overall_summary, comm_col)
+    overall_total_gain_display = safe_sum(df_for_overall_summary, total_gain_col)
+    overall_total_cost_invested_display = safe_sum(
+        df_for_overall_summary, cost_invest_col
+    )
+    overall_cumulative_investment_display = safe_sum(
+        df_for_overall_summary, cum_invest_col
+    )
+    overall_total_buy_cost_display = safe_sum(
+        df_for_overall_summary, total_buy_cost_col
+    )
+    overall_day_change_display = safe_sum(df_for_overall_summary, day_change_col)
     overall_prev_close_mv_display = np.nan
 
     # --- ADDED: Overall FX Gain/Loss ---
-    overall_fx_gain_loss_display = safe_sum(full_summary_df, fx_gain_loss_col)
+    overall_fx_gain_loss_display = safe_sum(df_for_overall_summary, fx_gain_loss_col)
     # --- END ADDED ---
 
     # --- ADDED: Overall Estimated Annual Income ---
     est_ann_income_col = f"Est. Ann. Income ({display_currency})"
-    overall_est_annual_income_display = safe_sum(full_summary_df, est_ann_income_col)
+    overall_est_annual_income_display = safe_sum(
+        df_for_overall_summary, est_ann_income_col
+    )
     # --- END ADDED ---
 
     if pd.notna(overall_market_value_display) and pd.notna(overall_day_change_display):

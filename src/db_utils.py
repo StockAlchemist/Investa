@@ -38,7 +38,7 @@ except ImportError:
     PYSIDE_AVAILABLE = False
 
 DB_FILENAME = "investa_transactions.db"
-DB_SCHEMA_VERSION = 1
+DB_SCHEMA_VERSION = 2
 
 
 def get_database_path(db_filename: str = DB_FILENAME) -> str:
@@ -132,7 +132,8 @@ def create_transactions_table(conn: sqlite3.Connection):
         Account TEXT NOT NULL,
         "Split Ratio" REAL,
         Note TEXT,
-        "Local Currency" TEXT NOT NULL
+        "Local Currency" TEXT NOT NULL,
+        "To Account" TEXT
     );
     """
     create_version_table_sql = """
@@ -152,21 +153,42 @@ def create_transactions_table(conn: sqlite3.Connection):
         current_db_version_row = cursor.fetchone()
         current_db_version = current_db_version_row[0] if current_db_version_row else 0
 
-        if current_db_version < DB_SCHEMA_VERSION:
-            logging.info(
-                f"Database schema version is {current_db_version}, target is {DB_SCHEMA_VERSION}. Applying migrations if any."
-            )
+        if current_db_version < 1:
+            # This is a new DB or pre-versioning, set version to current.
             cursor.execute(
                 "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
                 (DB_SCHEMA_VERSION, datetime.now().isoformat()),
             )
-            logging.info(f"Database schema updated to version {DB_SCHEMA_VERSION}.")
-        elif current_db_version == 0:
+            logging.info(f"Initialized database schema to version {DB_SCHEMA_VERSION}.")
+
+        if current_db_version < 2:
+            logging.info(
+                "Schema version is less than 2. Applying 'To Account' column migration."
+            )
+            # Migration for version 2: Add "To Account" column and populate it
+            try:
+                cursor.execute('ALTER TABLE transactions ADD COLUMN "To Account" TEXT;')
+                logging.info("Added 'To Account' column to transactions table.")
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" in str(e):
+                    logging.info("'To Account' column already exists.")
+                else:
+                    raise  # Re-raise other operational errors
+
+            # Populate the new column from existing notes
+            # This is a best-effort migration. The regex looks for "To: Account Name"
             cursor.execute(
-                "INSERT INTO schema_version (version, applied_on) VALUES (?, ?)",
+                "UPDATE transactions SET \"To Account\" = SUBSTR(Note, INSTR(Note, ':') + 2) WHERE Type = 'Transfer' AND Note LIKE 'To:%' AND \"To Account\" IS NULL;"
+            )
+            logging.info(
+                f"Migrated {cursor.rowcount} existing transfer transactions to use the 'To Account' column."
+            )
+
+            # Update schema version after successful migration
+            cursor.execute(
+                "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
                 (DB_SCHEMA_VERSION, datetime.now().isoformat()),
             )
-            logging.info(f"Initialized database schema to version {DB_SCHEMA_VERSION}.")
 
         conn.commit()
         logging.info(
@@ -265,7 +287,7 @@ def migrate_csv_to_db(
             "Account",
             "Split Ratio",
             "Note",
-            "Local Currency",
+            "Local Currency",  # "To Account" is not in the CSV standard
         ]
         df_for_insert = transactions_df.reindex(columns=db_columns)
         placeholders = ", ".join(["?"] * len(db_columns))
@@ -318,7 +340,7 @@ def load_all_transactions_from_db(
     try:
         query = """
         SELECT id as original_index, Date, Type, Symbol, Quantity, "Price/Share",
-               "Total Amount", Commission, Account, "Split Ratio", Note, "Local Currency"
+               "Total Amount", Commission, Account, "Split Ratio", Note, "Local Currency", "To Account"
         FROM transactions
         ORDER BY Date, original_index;
         """
@@ -377,6 +399,7 @@ def add_transaction_to_db(
         "Split Ratio",
         "Note",
         "Local Currency",
+        "To Account",
     ]
     quoted_db_columns = [
         f'"{col}"' if "/" in col or " " in col else col for col in db_column_order

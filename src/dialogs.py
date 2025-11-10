@@ -2244,9 +2244,13 @@ class AddTransactionDialog(QDialog):
         self.from_account_combo.setEditable(True)
         form_layout.addRow(self.from_account_label, self.from_account_combo)
 
-        self.to_account_label = QLabel("To Account:")
-        self.to_account_edit = QLineEdit()
-        form_layout.addRow(self.to_account_label, self.to_account_edit)
+        self.to_account_label = QLabel("To Account:")  # <-- ADDED
+        self.to_account_combo = QComboBox()  # <-- ADDED
+        self.to_account_combo.addItems(
+            sorted(list(set(existing_accounts)))
+        )  # <-- ADDED
+        self.to_account_combo.setEditable(True)  # <-- ADDED
+        form_layout.addRow(self.to_account_label, self.to_account_combo)  # <-- ADDED
 
         # --- Quantity ---
         self.quantity_edit = QLineEdit()
@@ -2365,7 +2369,7 @@ class AddTransactionDialog(QDialog):
         self.from_account_label.setVisible(is_transfer)
         self.from_account_combo.setVisible(is_transfer)
         self.to_account_label.setVisible(is_transfer)
-        self.to_account_edit.setVisible(is_transfer)
+        self.to_account_combo.setVisible(is_transfer)
 
         # Hide the generic "Account" field during a transfer
         self.account_label.setVisible(
@@ -2548,8 +2552,10 @@ class AddTransactionDialog(QDialog):
 
         # For transfers, the 'from' and 'to' accounts are mandatory.
         from_account = self.from_account_combo.currentText().strip()
-        to_account = self.to_account_edit.text().strip()
-        if tx_type_lower == "transfer" and (not from_account or not to_account):
+        to_account = self.to_account_combo.currentText().strip()  # <-- ADDED
+        if tx_type_lower == "transfer" and (
+            not from_account or not to_account
+        ):  # <-- FIX
             QMessageBox.warning(
                 self, "Input Error", "From and To accounts are required for a Transfer."
             )
@@ -2914,14 +2920,13 @@ class AddTransactionDialog(QDialog):
             "Investment Account": (
                 from_account if tx_type_lower == "transfer" else account
             ),
-            "Note": (
-                f"To: {to_account}"
-                if tx_type_lower == "transfer"
-                else (note_str if note_str else None)
-            ),
+            "Note": (note_str if note_str else None),
             "Split Ratio (new shares per old share)": split,  # float or None
             # "Local Currency" is determined by PortfolioApp based on account
         }
+        if tx_type_lower == "transfer":
+            data_for_processing["To Account"] = to_account
+
         logging.debug(f"Validated transaction data from dialog: {data_for_processing}")
         return data_for_processing
 
@@ -3195,12 +3200,9 @@ class AddTransactionDialog(QDialog):
             from_account_val = str(data.get("Investment Account", ""))
             self.from_account_combo.setCurrentText(from_account_val)
 
-            # The 'To' account is parsed from the note.
-            to_account_match = re.search(r"To:\s*([\w\s-]+)", note_val, re.IGNORECASE)
-            to_account_val = ""
-            if to_account_match:
-                to_account_val = to_account_match.group(1).strip()
-            self.to_account_edit.setText(to_account_val)
+            # The 'To' account now comes from its own field.
+            to_account_val = str(data.get("To Account", ""))
+            self.to_account_combo.setCurrentText(to_account_val)
 
             # The generic account field should be empty for transfers.
             self.account_combo.setCurrentText("")
@@ -3209,8 +3211,8 @@ class AddTransactionDialog(QDialog):
         else:
             # For all other types, use the generic account field.
             self.account_combo.setCurrentText(str(data.get("Investment Account", "")))
-            self.from_account_combo.setCurrentText("")
-            self.to_account_edit.clear()
+            self.from_account_combo.setCurrentText("")  # type: ignore
+            self.to_account_combo.setCurrentText("")
             logging.debug(f"  Set Account to: {self.account_combo.currentText()}")
 
         # --- Numeric Fields & Note ---

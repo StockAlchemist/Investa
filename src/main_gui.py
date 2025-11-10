@@ -6664,6 +6664,7 @@ The CSV file should contain the following columns (header names must match exact
                 else ""
             ),
             "Note": transaction_row_series.get("Note", ""),
+            "To Account": transaction_row_series.get("To Account", ""),  # <-- ADDED
             # Local Currency is not directly part of AddTransactionDialog fields, it's derived by PortfolioApp
         }
 
@@ -10410,6 +10411,12 @@ The CSV file should contain the following columns (header names must match exact
             )
             data_for_db_update["Note"] = new_data_dict_from_dialog_pytypes.get("Note")
 
+            # --- ADDED: Handle "To Account" for transfers ---
+            if data_for_db_update.get("Type", "").lower() == "transfer":
+                data_for_db_update["To Account"] = (
+                    new_data_dict_from_dialog_pytypes.get("To Account")
+                )
+
             # Determine Local Currency based on account
             acc_name_for_currency_update = data_for_db_update.get("Account")
             if acc_name_for_currency_update:
@@ -12549,11 +12556,37 @@ The CSV file should contain the following columns (header names must match exact
 
         df_filtered = df.copy()
 
-        # Account filtering is now handled by the worker that generates self.holdings_data.
-        # Applying the filter again here is redundant and can cause state issues
-        # when the UI's account selection state is momentarily out of sync with the
-        # just-received data. The worker's output is the source of truth for the scope.
-        # Therefore, this redundant filtering block has been removed.
+        # --- FIX: Re-enable UI-level account filtering ---
+        # The worker filters the data, but self.holdings_data holds the result of that
+        # worker run. If the user changes the account selection in the UI *without*
+        # clicking "Update Accounts", this filter ensures that subsequent UI-only
+        # actions (like text filtering or grouping) still respect the *current* UI selection.
+        if (
+            hasattr(self, "selected_accounts")
+            and self.selected_accounts
+            and hasattr(self, "available_accounts")
+            and len(self.selected_accounts) != len(self.available_accounts)
+            and "Account" in df_filtered.columns
+        ):
+            account_filter_mask = df_filtered["Account"].isin(self.selected_accounts)
+
+            # --- ADD THIS LINE ---
+            # Always include the special aggregated cash row
+            cash_mask = df_filtered["Account"] == _AGGREGATE_CASH_ACCOUNT_NAME_
+            # --- END ADD ---
+
+            # Keep special rows (group headers, totals)
+            special_rows_mask = pd.Series(False, index=df_filtered.index)
+            if "is_group_header" in df_filtered.columns:
+                special_rows_mask |= df_filtered["is_group_header"] == True
+            if "is_summary_row" in df_filtered.columns:
+                special_rows_mask |= df_filtered["is_summary_row"] == True
+
+            # Keep rows that match the account filter OR are special rows OR are the cash row
+            df_filtered = df_filtered[
+                account_filter_mask | special_rows_mask | cash_mask
+            ].copy()  # <-- MODIFIED
+        # --- END FIX ---
 
         # Filter by 'Show Closed'
         show_closed = self.show_closed_check.isChecked()
@@ -15053,6 +15086,10 @@ The CSV file should contain the following columns (header names must match exact
 
             data_for_db["Account"] = transaction_data_pytypes.get("Investment Account")
             data_for_db["Note"] = transaction_data_pytypes.get("Note")
+
+            # --- ADDED: Handle "To Account" for transfers ---
+            if data_for_db.get("Type", "").lower() == "transfer":
+                data_for_db["To Account"] = transaction_data_pytypes.get("To Account")
 
             # Determine Local Currency based on account
             acc_name_for_currency = data_for_db.get("Account")

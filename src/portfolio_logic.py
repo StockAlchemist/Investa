@@ -209,6 +209,7 @@ def calculate_portfolio_summary(
         manual_overrides_dict (Optional[Dict[str, Dict[str, Any]]], optional): Manual overrides. Defaults to None.
         user_symbol_map (Optional[Dict[str, str]], optional): User-defined symbol map. Defaults to None.
         user_excluded_symbols (Optional[Set[str]], optional): User-defined excluded symbols. Defaults to None.
+        market_provider (MarketDataProvider): An instance of the market data provider.
         default_currency (str, optional): Default currency. Defaults to DEFAULT_CURRENCY.
         account_currency_map (Optional[Dict[str, str]], optional): Account to currency map. Defaults to None (uses default).
 
@@ -364,12 +365,73 @@ def calculate_portfolio_summary(
             )
 
         available_accounts_in_df = set(all_transactions_df_cleaned["Account"].unique())
+        # --- ADDED: Also consider accounts in the "To Account" column for filtering ---
+        if "To Account" in all_transactions_df_cleaned.columns:
+            available_accounts_in_df.update(
+                all_transactions_df_cleaned["To Account"].dropna().unique()
+            )
+
         valid_include = [
             acc for acc in include_accounts if acc in available_accounts_in_df
         ]
         if valid_include:
+            # --- MODIFIED: Robust filtering for transfers ---
+
+            # 1. Get all transactions where the *primary* account matches
+            from_account_mask = all_transactions_df_cleaned["Account"].isin(
+                valid_include
+            )
+
+            # 2. Get all transactions where the *destination* account matches (transfers-in)
+            to_account_mask = pd.Series(False, index=all_transactions_df_cleaned.index)
+            if "To Account" in all_transactions_df_cleaned.columns:
+                to_account_mask = (
+                    all_transactions_df_cleaned["To Account"]
+                    .isin(valid_include)
+                    .fillna(False)
+                )
+
+            # 3. Find the preceding transactions for these transfers-in
+            preceding_tx_mask = pd.Series(
+                False, index=all_transactions_df_cleaned.index
+            )
+            transfers_in_df = all_transactions_df_cleaned[to_account_mask]
+
+            if not transfers_in_df.empty:
+                # Get unique (Symbol, From_Account, Date) tuples from the transfers-in
+                transfer_events = transfers_in_df[
+                    ["Symbol", "Account", "Date"]
+                ].drop_duplicates()
+
+                # Create a list of masks to combine
+                masks_to_combine = []
+
+                for _, event_row in transfer_events.iterrows():
+                    transfer_symbol = event_row["Symbol"]
+                    transfer_from_account = event_row["Account"]
+                    transfer_date = event_row["Date"]
+
+                    # Create a mask for all preceding/concurrent tx for this specific asset
+                    mask = (
+                        (all_transactions_df_cleaned["Symbol"] == transfer_symbol)
+                        & (
+                            all_transactions_df_cleaned["Account"]
+                            == transfer_from_account
+                        )
+                        & (all_transactions_df_cleaned["Date"] <= transfer_date)
+                    )
+                    masks_to_combine.append(mask)
+
+                if masks_to_combine:
+                    preceding_tx_mask = pd.concat(masks_to_combine, axis=1).any(axis=1)
+
+            # 4. Final filter is the union of all three masks
+            final_combined_mask = (
+                from_account_mask | to_account_mask | preceding_tx_mask
+            )
+
             transactions_df_filtered = all_transactions_df_cleaned[
-                all_transactions_df_cleaned["Account"].isin(valid_include)
+                final_combined_mask
             ].copy()
             filter_desc = f"Accounts: {', '.join(sorted(valid_include))}"
         else:
@@ -607,6 +669,7 @@ def calculate_portfolio_summary(
         user_symbol_map=effective_user_symbol_map,
         manual_prices_dict=manual_prices_for_build_rows,
     )
+
     if err_build:
         has_errors = True
     if warn_build:
@@ -641,6 +704,7 @@ def calculate_portfolio_summary(
         # Don't return early, let it try to create empty aggregates.
 
     # --- Add Sector/Geo information ---
+    logging.info("Categorizing transactions by symbol...")
     if portfolio_summary_rows:
         summary_df_unfiltered_temp = pd.DataFrame(portfolio_summary_rows)
         if "Symbol" in summary_df_unfiltered_temp.columns:
@@ -819,6 +883,8 @@ def calculate_portfolio_summary(
                 full_summary_df=full_summary_df,
                 display_currency=display_currency,
                 report_date=report_date,
+                include_accounts=include_accounts,  # <-- Pass the filter list
+                all_available_accounts=available_accounts_for_errors,  # <-- Pass all accounts for context
             )
         )
         # Ensure types before assignment
