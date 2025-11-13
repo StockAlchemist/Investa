@@ -43,6 +43,7 @@ import json
 import traceback
 import csv
 import re
+import warnings
 import sqlite3  # Added import for sqlite3
 import shutil
 from io import StringIO  # <-- ADDED: For in-memory log stream
@@ -623,6 +624,18 @@ class PortfolioApp(QMainWindow, UiHelpersMixin):
             return (annualized_twr_factor - 1) * 100.0
         except (TypeError, ValueError, OverflowError):
             return np.nan
+
+    def _safe_calculate_irr(self, cashflows):
+        """Calculates IRR with overflow protection."""
+        with warnings.catch_warnings():
+            # Ignore the specific RuntimeWarning that occurs during IRR calculation
+            warnings.filterwarnings(
+                "ignore", message="overflow encountered in scalar divide"
+            )
+            try:
+                return calculate_irr(cashflows)
+            except (OverflowError, ValueError):
+                return np.nan  # Or some other appropriate value
 
     def load_config(self):
         """

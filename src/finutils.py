@@ -22,6 +22,7 @@ import hashlib
 import os
 import logging
 from scipy import optimize
+import warnings
 from typing import List, Tuple, Dict, Optional, Any, Set
 from collections import defaultdict
 
@@ -288,55 +289,65 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
         return np.nan
 
     # 3. Solver Logic
-    irr_result = np.nan
-    # First, try the Newton-Raphson method. It's fast but needs a good guess and can fail to converge.
-    try:
-        irr_result = optimize.newton(
-            calculate_npv, x0=0.1, args=(dates, cash_flows), tol=1e-6, maxiter=100
+    with warnings.catch_warnings():
+        # Ignore common numerical warnings from scipy's root-finding algorithms.
+        # These often occur with unusual cash flows but may still produce a valid result.
+        warnings.filterwarnings(
+            "ignore",
+            message="overflow encountered in scalar divide",
+            category=RuntimeWarning,
         )
-        if (
-            not np.isfinite(irr_result) or irr_result <= -1.0 or irr_result > 100.0
-        ):  # Check range
-            raise RuntimeError("Newton result out of reasonable range")
-        npv_check = calculate_npv(irr_result, dates, cash_flows)
-        if not np.isclose(
-            npv_check, 0.0, atol=1e-4
-        ):  # Check if it finds the root accurately
-            raise RuntimeError(
-                f"Newton result did not produce zero NPV (NPV={npv_check:.4f})"
-            )
-    except (RuntimeError, OverflowError):
-        # If Newton fails, fall back to the more robust Brent's method (brentq).
-        # This method requires a bracket [a, b] where the NPV at a and b have opposite signs.
+        warnings.filterwarnings(
+            "ignore",
+            message="invalid value encountered in scalar divide",
+            category=RuntimeWarning,
+        )
+
+        irr_result = np.nan
+        # First, try the Newton-Raphson method. It's fast but can fail to converge.
         try:
-            lower_bound, upper_bound = -0.9999, 50.0
-            npv_low = calculate_npv(lower_bound, dates, cash_flows)
-            npv_high = calculate_npv(upper_bound, dates, cash_flows)
-            # --- ADDED: More explicit logging for brentq failure ---
-            logging.debug(
-                f"DEBUG IRR: Newton failed. Brentq bounds NPV: Low={npv_low}, High={npv_high}"
+            irr_result = optimize.newton(
+                calculate_npv, x0=0.1, args=(dates, cash_flows), tol=1e-6, maxiter=100
             )
             if (
-                pd.notna(npv_low) and pd.notna(npv_high) and npv_low * npv_high < 0
-            ):  # Check sign change
-                irr_result = optimize.brentq(
-                    calculate_npv,
-                    a=lower_bound,
-                    b=upper_bound,
-                    args=(dates, cash_flows),
-                    xtol=1e-6,
-                    rtol=1e-6,
-                    maxiter=100,
+                not np.isfinite(irr_result) or irr_result <= -1.0 or irr_result > 100.0
+            ):  # Check range
+                raise RuntimeError("Newton result out of reasonable range")
+            npv_check = calculate_npv(irr_result, dates, cash_flows)
+            if not np.isclose(
+                npv_check, 0.0, atol=1e-4
+            ):  # Check if it finds the root accurately
+                raise RuntimeError(
+                    f"Newton result did not produce zero NPV (NPV={npv_check:.4f})"
                 )
-                if not np.isfinite(irr_result) or irr_result <= -1.0:
-                    irr_result = np.nan
-            else:
-                irr_result = np.nan
+        except (RuntimeError, OverflowError):
+            # If Newton fails, fall back to the more robust Brent's method (brentq).
+            # This method requires a bracket [a, b] where the NPV at a and b have opposite signs.
+            try:
+                lower_bound, upper_bound = -0.9999, 50.0
+                npv_low = calculate_npv(lower_bound, dates, cash_flows)
+                npv_high = calculate_npv(upper_bound, dates, cash_flows)
                 logging.debug(
-                    "DEBUG IRR: Brentq skipped - NPV at bounds do not have opposite signs."
+                    f"DEBUG IRR: Newton failed. Brentq bounds NPV: Low={npv_low}, High={npv_high}"
                 )
-        except (ValueError, RuntimeError, OverflowError, Exception):
-            irr_result = np.nan
+                if (
+                    pd.notna(npv_low) and pd.notna(npv_high) and npv_low * npv_high < 0
+                ):  # Check sign change
+                    irr_result = optimize.brentq(
+                        calculate_npv,
+                        a=lower_bound,
+                        b=upper_bound,
+                        args=(dates, cash_flows),
+                        xtol=1e-6,
+                        rtol=1e-6,
+                        maxiter=100,
+                    )
+                    if not np.isfinite(irr_result) or irr_result <= -1.0:
+                        irr_result = np.nan
+                else:
+                    irr_result = np.nan
+            except (ValueError, RuntimeError, OverflowError, Exception):
+                irr_result = np.nan
 
     # 4. Final Validation and Return
     if not (
