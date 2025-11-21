@@ -1679,59 +1679,53 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
 
 
 # --- START NUMBA HELPER FUNCTION ---
-@numba.jit(nopython=True, fastmath=True)  # <-- PUT nopython=True BACK
+@numba.jit(nopython=True, fastmath=True)
 def _calculate_holdings_numba(
-    target_date_ordinal,  # int: date.toordinal()
-    tx_dates_ordinal_np,  # int64 array: date.toordinal()
-    tx_symbols_np,  # int64 array
-    tx_accounts_np,  # int64 array
-    tx_types_np,  # int64 array
-    tx_quantities_np,  # float64 array
-    tx_prices_np,  # float64 array
-    tx_commissions_np,  # float64 array
-    tx_split_ratios_np,  # float64 array
-    tx_local_currencies_np,  # int64 array
-    num_symbols,  # int
-    num_accounts,  # int
-    num_currencies,  # int
-    split_type_id,  # int
-    stock_split_type_id,  # int
-    buy_type_id,  # int
-    deposit_type_id,  # int
-    sell_type_id,  # int
-    withdrawal_type_id,  # int
-    short_sell_type_id,  # int
-    buy_to_cover_type_id,  # int
-    fees_type_id,  # int
-    cash_symbol_id,  # int
-    stock_qty_close_tolerance,  # float: new tolerance
-    shortable_symbol_ids,  # int64 array
+    target_date_ordinal,
+    tx_dates_ordinal_np,
+    tx_symbols_np,
+    tx_accounts_np,
+    tx_to_accounts_np,  # NEW argument
+    tx_types_np,
+    tx_quantities_np,
+    tx_prices_np,
+    tx_commissions_np,
+    tx_split_ratios_np,
+    tx_local_currencies_np,
+    num_symbols,
+    num_accounts,
+    num_currencies,
+    split_type_id,
+    stock_split_type_id,
+    buy_type_id,
+    deposit_type_id,
+    sell_type_id,
+    withdrawal_type_id,
+    short_sell_type_id,
+    buy_to_cover_type_id,
+    transfer_type_id,  # NEW argument
+    fees_type_id,
+    cash_symbol_id,
+    stock_qty_close_tolerance,
+    shortable_symbol_ids,
 ):
-    # Initialize state arrays (size based on num_symbols, num_accounts)
-    # Using a 2D array: index (symbol_id, account_id)
+    # Initialize state arrays
     holdings_qty_np = np.zeros((num_symbols, num_accounts), dtype=np.float64)
     holdings_cost_np = np.zeros((num_symbols, num_accounts), dtype=np.float64)
-    # Store currency ID per holding (symbol, account) - initialize carefully
-    holdings_currency_np = np.full(
-        (num_symbols, num_accounts), -1, dtype=np.int64
-    )  # -1 indicates not set
+    holdings_currency_np = np.full((num_symbols, num_accounts), -1, dtype=np.int64)
 
-    # Add arrays for shorting if needed
     holdings_short_proceeds_np = np.zeros((num_symbols, num_accounts), dtype=np.float64)
     holdings_short_orig_qty_np = np.zeros((num_symbols, num_accounts), dtype=np.float64)
 
-    # Cash balances (1D array indexed by account_id)
     cash_balances_np = np.zeros(num_accounts, dtype=np.float64)
-    # Store currency ID per cash account
-    cash_currency_np = np.full(num_accounts, -1, dtype=np.int64)  # -1 indicates not set
+    cash_currency_np = np.full(num_accounts, -1, dtype=np.int64)
 
     num_transactions = len(tx_dates_ordinal_np)
 
     for i in range(num_transactions):
         tx_date = tx_dates_ordinal_np[i]
-        # Numba compares dates correctly
         if tx_date > target_date_ordinal:
-            continue  # Skip transactions after the target date
+            continue
 
         symbol_id = tx_symbols_np[i]
         account_id = tx_accounts_np[i]
@@ -1744,67 +1738,90 @@ def _calculate_holdings_numba(
 
         # --- Handle CASH transactions ---
         if symbol_id == cash_symbol_id:
-            # Initialize currency if first time seeing this cash account
             if cash_currency_np[account_id] == -1:
                 cash_currency_np[account_id] = currency_id
 
             if type_id == buy_type_id or type_id == deposit_type_id:
-                cash_balances_np[account_id] += (
-                    qty - commission
-                )  # Assuming qty is positive amount
+                cash_balances_np[account_id] += qty - commission
             elif type_id == sell_type_id or type_id == withdrawal_type_id:
-                cash_balances_np[account_id] -= (
-                    qty + commission
-                )  # Assuming qty is positive amount
-            # Ignore dividends/fees for cash balance here, handled by stock side? Or add logic if needed.
-            continue  # Move to next transaction
+                cash_balances_np[account_id] -= qty + commission
+            elif type_id == transfer_type_id:
+                dest_account_id = tx_to_accounts_np[i]
+                if dest_account_id != -1:
+                    # Initialize Dest Currency if needed
+                    if cash_currency_np[dest_account_id] == -1:
+                        cash_currency_np[dest_account_id] = currency_id
+
+                    # Move Cash: Deduct from Source (plus commission?), Add to Dest
+                    # Assuming commission is paid by source
+                    cash_balances_np[account_id] -= qty + commission
+                    cash_balances_np[dest_account_id] += qty
+            continue
 
         # --- Handle STOCK transactions ---
-
-        # Initialize currency if first time seeing this stock/account combo
         if holdings_currency_np[symbol_id, account_id] == -1:
             holdings_currency_np[symbol_id, account_id] = currency_id
-        # Optional: Check for currency mismatch if already set (more complex in Numba)
 
-        # --- TEMPORARILY COMMENTED OUT SPLIT LOGIC ---
+        # --- TRANSFER LOGIC ---
+        if type_id == transfer_type_id:
+            if qty > 1e-9:
+                source_qty = holdings_qty_np[symbol_id, account_id]
+                source_cost = holdings_cost_np[symbol_id, account_id]
+
+                cost_transferred = 0.0
+
+                # Calculate proportional cost to transfer
+                if abs(source_qty) > 1e-9:
+                    pct_transferred = qty / source_qty
+                    if pct_transferred > 1.0:
+                        pct_transferred = 1.0
+                    cost_transferred = source_cost * pct_transferred
+
+                    # 1. Deduct from Source
+                    holdings_qty_np[symbol_id, account_id] -= qty
+                    holdings_cost_np[symbol_id, account_id] -= cost_transferred
+
+                    # Zero out Source if negligible (Transfer is full)
+                    if (
+                        abs(holdings_qty_np[symbol_id, account_id])
+                        < stock_qty_close_tolerance
+                    ):
+                        holdings_qty_np[symbol_id, account_id] = 0.0
+                        holdings_cost_np[symbol_id, account_id] = 0.0
+
+                # 2. Add to Destination
+                dest_account_id = tx_to_accounts_np[i]
+                if dest_account_id != -1:
+                    if holdings_currency_np[symbol_id, dest_account_id] == -1:
+                        holdings_currency_np[symbol_id, dest_account_id] = currency_id
+
+                    holdings_qty_np[symbol_id, dest_account_id] += qty
+                    holdings_cost_np[symbol_id, dest_account_id] += cost_transferred
+            continue
+
+        # --- Existing Split Logic ---
         if type_id == split_type_id or type_id == stock_split_type_id:
             if split_ratio > 1e-9:
-                # Apply split to ALL accounts holding this symbol_id
                 for acc_idx in range(num_accounts):
-                    current_qty_split = holdings_qty_np[symbol_id, acc_idx]
-                    if abs(current_qty_split) > 1e-9:
+                    if abs(holdings_qty_np[symbol_id, acc_idx]) > 1e-9:
                         holdings_qty_np[symbol_id, acc_idx] *= split_ratio
-                        # Adjust cost basis? The original code didn't, stick to that for now.
-                        # Adjust short original qty if shorting
+
+                        # Handle Shorts
                         is_shortable = False
                         for short_id in shortable_symbol_ids:
                             if symbol_id == short_id:
                                 is_shortable = True
                                 break
-                        if current_qty_split < -1e-9 and is_shortable:
+                        if holdings_qty_np[symbol_id, acc_idx] < -1e-9 and is_shortable:
                             holdings_short_orig_qty_np[
                                 symbol_id, acc_idx
                             ] *= split_ratio
-                            if (
-                                abs(holdings_short_orig_qty_np[symbol_id, acc_idx])
-                                < 1e-9
-                            ):
-                                holdings_short_orig_qty_np[symbol_id, acc_idx] = 0.0
 
-                        # Zero out if qty becomes tiny
-                        if abs(holdings_qty_np[symbol_id, acc_idx]) < 1e-9:
-                            holdings_qty_np[symbol_id, acc_idx] = 0.0
-            # Apply commission if any (rare for splits, but handle)
             if abs(commission) > 1e-9:
-                # Add commission to cost basis? Original logic added to 'commissions_local' which isn't tracked here directly for simplicity.
-                # For now, let's add it to the cost basis array for the specific account.
-                holdings_cost_np[
-                    symbol_id, account_id
-                ] += commission  # Or handle separately if needed
-            continue  # Move to next transaction
-        # --- END TEMP COMMENT ---
+                holdings_cost_np[symbol_id, account_id] += commission
+            continue
 
-        # --- TEMPORARILY COMMENTED OUT SHORTING LOGIC ---
+        # --- Existing Shorting Logic ---
         is_shortable_flag = False
         for short_id in shortable_symbol_ids:
             if symbol_id == short_id:
@@ -1815,62 +1832,37 @@ def _calculate_holdings_numba(
             type_id == short_sell_type_id or type_id == buy_to_cover_type_id
         ):
             qty_abs = abs(qty)
-            if qty_abs <= 1e-9:
-                continue  # Skip zero qty
-
-            if type_id == short_sell_type_id:
-                proceeds = (qty_abs * price) - commission
-                holdings_qty_np[symbol_id, account_id] -= qty_abs
-                holdings_short_proceeds_np[symbol_id, account_id] += proceeds
-                holdings_short_orig_qty_np[symbol_id, account_id] += qty_abs
-                # Accumulate commission in cost basis?
-                holdings_cost_np[
-                    symbol_id, account_id
-                ] += commission  # Add commission cost
-            elif type_id == buy_to_cover_type_id:
-                qty_currently_short = (
-                    abs(holdings_qty_np[symbol_id, account_id])
-                    if holdings_qty_np[symbol_id, account_id] < -1e-9
-                    else 0.0
-                )
-                if qty_currently_short < 1e-9:
-                    continue  # Cannot cover if not short
-
-                qty_covered = min(qty_abs, qty_currently_short)
-                cost_to_cover = (qty_covered * price) + commission
-
-                # Realized Gain calculation needs avg proceeds - complex here
-                # For simplicity in Numba, let's just update qty and cost basis impact
-                holdings_qty_np[symbol_id, account_id] += qty_covered
-                # Cost basis impact: covering reduces liability, effectively adds cost
-                holdings_cost_np[symbol_id, account_id] += cost_to_cover
-
-                # Adjust short tracking arrays (approximate gain/loss is embedded in cost basis change)
-                short_orig_qty_held = holdings_short_orig_qty_np[symbol_id, account_id]
-                if short_orig_qty_held > 1e-9:
-                    proceeds_ratio = qty_covered / short_orig_qty_held
-                    holdings_short_proceeds_np[symbol_id, account_id] *= (
-                        1.0 - proceeds_ratio
+            if qty_abs > 1e-9:
+                if type_id == short_sell_type_id:
+                    proceeds = (qty_abs * price) - commission
+                    holdings_qty_np[symbol_id, account_id] -= qty_abs
+                    holdings_short_proceeds_np[symbol_id, account_id] += proceeds
+                    holdings_short_orig_qty_np[symbol_id, account_id] += qty_abs
+                    holdings_cost_np[symbol_id, account_id] += commission
+                elif type_id == buy_to_cover_type_id:
+                    qty_currently_short = (
+                        abs(holdings_qty_np[symbol_id, account_id])
+                        if holdings_qty_np[symbol_id, account_id] < -1e-9
+                        else 0.0
                     )
-                    holdings_short_orig_qty_np[symbol_id, account_id] -= qty_covered
-                else:  # Should not happen if qty_currently_short > 0, but safety check
-                    holdings_short_proceeds_np[symbol_id, account_id] = 0.0
-                    holdings_short_orig_qty_np[symbol_id, account_id] = 0.0
+                    if qty_currently_short > 1e-9:
+                        qty_covered = min(qty_abs, qty_currently_short)
+                        cost_to_cover = (qty_covered * price) + commission
+                        holdings_qty_np[symbol_id, account_id] += qty_covered
+                        holdings_cost_np[symbol_id, account_id] += cost_to_cover
 
-                # Zero out if needed
-                if abs(holdings_short_orig_qty_np[symbol_id, account_id]) < 1e-9:
-                    holdings_short_proceeds_np[symbol_id, account_id] = 0.0
-                    holdings_short_orig_qty_np[symbol_id, account_id] = 0.0
-                if abs(holdings_qty_np[symbol_id, account_id]) < 1e-9:
-                    holdings_qty_np[symbol_id, account_id] = 0.0
-                    holdings_cost_np[symbol_id, account_id] = (
-                        0.0  # Reset cost if position closed
-                    )
+                        short_orig = holdings_short_orig_qty_np[symbol_id, account_id]
+                        if short_orig > 1e-9:
+                            ratio = qty_covered / short_orig
+                            holdings_short_proceeds_np[symbol_id, account_id] *= (
+                                1.0 - ratio
+                            )
+                            holdings_short_orig_qty_np[
+                                symbol_id, account_id
+                            ] -= qty_covered
+            continue
 
-            continue  # Skip standard buy/sell
-        # --- END TEMP COMMENT ---
-
-        # --- Standard Buy/Sell/Deposit/Withdrawal ---
+        # --- Standard Buy/Sell ---
         if type_id == buy_type_id or type_id == deposit_type_id:
             if qty > 1e-9:
                 cost = (qty * price) + commission
@@ -1879,48 +1871,31 @@ def _calculate_holdings_numba(
         elif type_id == sell_type_id or type_id == withdrawal_type_id:
             if qty > 1e-9:
                 held_qty = holdings_qty_np[symbol_id, account_id]
-                if held_qty > 1e-9:  # Only sell if holding positive qty
+                if held_qty > 1e-9:
                     qty_sold = min(qty, held_qty)
                     cost_basis_held = holdings_cost_np[symbol_id, account_id]
-                    cost_sold = 0.0
-                    if (
-                        abs(held_qty) > 1e-9
-                    ):  # Avoid division by zero if held_qty is zero
-                        cost_sold = qty_sold * (cost_basis_held / held_qty)
+                    cost_sold = qty_sold * (cost_basis_held / held_qty)
 
                     holdings_qty_np[symbol_id, account_id] -= qty_sold
                     holdings_cost_np[symbol_id, account_id] -= cost_sold
-                    # Add commission cost for sell
                     holdings_cost_np[symbol_id, account_id] += commission
 
-                    # Zero out if position closed
                     if abs(holdings_qty_np[symbol_id, account_id]) < 1e-9:
                         holdings_qty_np[symbol_id, account_id] = 0.0
                         holdings_cost_np[symbol_id, account_id] = 0.0
-
-        # --- Dividend/Fees ---
-        # Original code adds these to separate accumulators.
-        # To keep Numba simple, we might ignore these inside the Numba loop
-        # OR add them to the cost basis (e.g., fees increase cost, dividends decrease cost).
-        # Let's add fees to cost basis for now. Dividends are harder as they don't affect basis.
-        # We might need separate arrays for realized gain, dividends, commissions if exact match is needed.
-        # For now, focus on qty and cost basis.
         elif type_id == fees_type_id:
             if abs(commission) > 1e-9:
                 holdings_cost_np[symbol_id, account_id] += commission
 
-        # Ignore other types like dividend for now inside Numba
-
-    # Apply stock quantity close tolerance
+    # Apply Final Tolerance
     for s_id in range(num_symbols):
         if s_id == cash_symbol_id:
             continue
         for a_id in range(num_accounts):
-            current_qty = holdings_qty_np[s_id, a_id]
-            if 0 < abs(current_qty) < stock_qty_close_tolerance:
+            if 0 < abs(holdings_qty_np[s_id, a_id]) < stock_qty_close_tolerance:
                 holdings_qty_np[s_id, a_id] = 0.0
-                holdings_cost_np[s_id, a_id] = 0.0  # Also zero out cost basis
-    # Return the state arrays
+                holdings_cost_np[s_id, a_id] = 0.0
+
     return (
         holdings_qty_np,
         holdings_cost_np,
@@ -1940,6 +1915,7 @@ def _calculate_daily_holdings_chronological_numba(
     date_ordinals_np,
     tx_dates_ordinal_np,
     tx_symbols_np,
+    tx_to_accounts_np,  # NEW
     tx_accounts_np,
     tx_types_np,
     tx_quantities_np,
@@ -1955,6 +1931,7 @@ def _calculate_daily_holdings_chronological_numba(
     withdrawal_type_id,
     short_sell_type_id,
     buy_to_cover_type_id,
+    transfer_type_id,  # NEW
     cash_symbol_id,
     stock_qty_close_tolerance,
     shortable_symbol_ids,
@@ -1994,6 +1971,14 @@ def _calculate_daily_holdings_chronological_numba(
                     current_cash_balances[account_id] += abs(qty) - commission
                 elif type_id == sell_type_id or type_id == withdrawal_type_id:
                     current_cash_balances[account_id] -= abs(qty) + commission
+                elif type_id == transfer_type_id:
+                    dest_account_id = tx_to_accounts_np[tx_idx]
+                    if dest_account_id != -1:
+                        # Move Cash: Deduct from Source (plus commission?), Add to Dest
+                        # Assuming commission is paid by source
+                        current_cash_balances[account_id] -= abs(qty) + commission
+                        current_cash_balances[dest_account_id] += abs(qty)
+
             else:
                 if type_id == split_type_id or type_id == stock_split_type_id:
                     if split_ratio > 1e-9:
@@ -2008,6 +1993,21 @@ def _calculate_daily_holdings_chronological_numba(
                         held_qty = current_holdings_qty[symbol_id, account_id]
                         qty_sold = min(qty, held_qty) if held_qty > 1e-9 else 0.0
                         current_holdings_qty[symbol_id, account_id] -= qty_sold
+                elif type_id == transfer_type_id:
+                    if qty > 1e-9:
+                        # 1. Deduct from Source
+                        current_holdings_qty[symbol_id, account_id] -= qty
+                        # Zero out Source if negligible
+                        if (
+                            abs(current_holdings_qty[symbol_id, account_id])
+                            < stock_qty_close_tolerance
+                        ):
+                            current_holdings_qty[symbol_id, account_id] = 0.0
+
+                        # 2. Add to Destination
+                        dest_account_id = tx_to_accounts_np[tx_idx]
+                        if dest_account_id != -1:
+                            current_holdings_qty[symbol_id, dest_account_id] += qty
                 else:
                     is_shortable = False
                     for short_id in shortable_symbol_ids:
@@ -2041,7 +2041,7 @@ def _calculate_daily_holdings_chronological_numba(
     return daily_holdings_qty_np, daily_cash_balances_np
 
 
-@profile  # <-- ADD THIS DECORATOR FOR LINE_PROFILER
+@profile
 def _calculate_portfolio_value_at_date_unadjusted_numba(
     target_date: date,
     transactions_df: pd.DataFrame,
@@ -2051,9 +2051,8 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     internal_to_yf_map: Dict[str, str],
     account_currency_map: Dict[str, str],
     default_currency: str,
-    manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]],  # ADDED
+    manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]],
     processed_warnings: set,
-    # --- ADD MAPPINGS ---
     symbol_to_id: Dict[str, int],
     id_to_symbol: Dict[int, str],
     account_to_id: Dict[str, int],
@@ -2061,45 +2060,45 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     type_to_id: Dict[str, int],
     currency_to_id: Dict[str, int],
     id_to_currency: Dict[int, str],
-) -> Tuple[float, bool]:  # type: ignore
+) -> Tuple[float, bool]:
     """
     Calculates the total portfolio market value for a specific date using UNADJUSTED historical prices (Numba version).
-
-    Prepares NumPy arrays from transactions, calls the Numba-compiled helper function
-    `_calculate_holdings_numba` to determine holdings, and then performs valuation
-    using the results.
-    Manual price overrides are applied in the Python valuation loop.
     """
     IS_DEBUG_DATE = (
         target_date == HISTORICAL_DEBUG_DATE_VALUE
         if "HISTORICAL_DEBUG_DATE_VALUE" in globals()
         else False
     )
-    if IS_DEBUG_DATE:
-        logging.debug(f"--- DEBUG VALUE CALC (Numba) for {target_date} ---")
 
     transactions_til_date = transactions_df[
         transactions_df["Date"].dt.date <= target_date
     ].copy()
     if transactions_til_date.empty:
-        if IS_DEBUG_DATE:
-            logging.debug(f"  No transactions found up to {target_date}.")
         return 0.0, False
 
-    # --- Prepare NumPy Inputs ---
+    # --- Prepare NumPy Inputs (Step 4: Update Data Prep) ---
     try:
-        # Convert dates to ordinal integers for Numba
         target_date_ordinal = target_date.toordinal()
         tx_dates_ordinal_np = np.array(
             [d.toordinal() for d in transactions_til_date["Date"].dt.date.values],
             dtype=np.int64,
         )
-        # Keep as date objects
         tx_symbols_series = transactions_til_date["Symbol"].map(symbol_to_id)
         tx_symbols_np = tx_symbols_series.values.astype(np.int64)
 
         tx_accounts_series = transactions_til_date["Account"].map(account_to_id)
         tx_accounts_np = tx_accounts_series.values.astype(np.int64)
+
+        # --- NEW: Map To Account ---
+        if "To Account" in transactions_til_date.columns:
+            # Map 'To Account' to IDs, filling NaN with -1
+            tx_to_accounts_series = (
+                transactions_til_date["To Account"].map(account_to_id).fillna(-1)
+            )
+        else:
+            tx_to_accounts_series = pd.Series(-1, index=transactions_til_date.index)
+        tx_to_accounts_np = tx_to_accounts_series.values.astype(np.int64)
+        # --- END NEW ---
 
         tx_types_series = transactions_til_date["Type"].map(type_to_id).fillna(-1)
         tx_types_np = tx_types_series.values.astype(np.int64)
@@ -2112,16 +2111,13 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         )
         tx_commissions_series = transactions_til_date["Commission"].fillna(0.0)
         tx_commissions_np = tx_commissions_series.values.astype(np.float64)
-
         tx_split_ratios_series = transactions_til_date["Split Ratio"].fillna(0.0)
         tx_split_ratios_np = tx_split_ratios_series.values.astype(np.float64)
-
         tx_local_currencies_series = (
             transactions_til_date["Local Currency"].map(currency_to_id).fillna(-1)
         )
         tx_local_currencies_np = tx_local_currencies_series.values.astype(np.int64)
 
-        # Get IDs for specific types/symbols needed inside Numba
         split_type_id = type_to_id.get("split", -1)
         stock_split_type_id = type_to_id.get("stock split", -1)
         buy_type_id = type_to_id.get("buy", -1)
@@ -2130,23 +2126,21 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         withdrawal_type_id = type_to_id.get("withdrawal", -1)
         short_sell_type_id = type_to_id.get("short sell", -1)
         buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
+        transfer_type_id = type_to_id.get("transfer", -1)  # NEW
         fees_type_id = type_to_id.get("fees", -1)
         cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
 
-        # Map shortable symbols to IDs
         shortable_symbol_ids = np.array(
             [symbol_to_id[s] for s in SHORTABLE_SYMBOLS if s in symbol_to_id],
             dtype=np.int64,
         )
-
-        # Determine number of unique symbols/accounts/currencies for array sizing
         num_symbols = len(symbol_to_id)
         num_accounts = len(account_to_id)
         num_currencies = len(currency_to_id)
 
     except Exception as e_np_prep:
         logging.error(f"Numba Prep Error for {target_date}: {e_np_prep}")
-        return np.nan, True  # Indicate failure
+        return np.nan, True
 
     # --- Call Numba Helper ---
     try:
@@ -2156,11 +2150,12 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             holdings_currency_np,
             cash_balances_np,
             cash_currency_np,
-        ) = _calculate_holdings_numba(  # type: ignore
-            target_date_ordinal,  # <-- Pass ordinal date
-            tx_dates_ordinal_np,  # <-- Pass ordinal dates array
+        ) = _calculate_holdings_numba(
+            target_date_ordinal,
+            tx_dates_ordinal_np,
             tx_symbols_np,
             tx_accounts_np,
+            tx_to_accounts_np,  # NEW
             tx_types_np,
             tx_quantities_np,
             tx_prices_np,
@@ -2178,16 +2173,18 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             withdrawal_type_id,
             short_sell_type_id,
             buy_to_cover_type_id,
+            transfer_type_id,  # NEW
             fees_type_id,
             cash_symbol_id,
-            STOCK_QUANTITY_CLOSE_TOLERANCE,  # Pass the tolerance
+            STOCK_QUANTITY_CLOSE_TOLERANCE,
             shortable_symbol_ids,
         )
     except Exception as e_numba_call:
         logging.error(f"Numba Call Error for {target_date}: {e_numba_call}")
-        return np.nan, True  # Indicate failure
+        return np.nan, True
 
     # --- Valuation Loop (using results from Numba) ---
+    # [The rest of the valuation loop logic remains identical to the existing file]
     total_market_value_display_curr_agg = 0.0
     any_lookup_nan_on_date = False
 
@@ -2197,7 +2194,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         internal_symbol = id_to_symbol.get(sym_id)
         account = id_to_account.get(acc_id)
         if internal_symbol is None or account is None:
-            continue  # Should not happen
+            continue
 
         current_qty = holdings_qty_np[sym_id, acc_id]
         currency_id = holdings_currency_np[sym_id, acc_id]
@@ -2212,9 +2209,8 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             break
 
         current_price_local = np.nan
-        manual_price_override_applied = False
 
-        # --- ADDED: Check for manual price override (similar to Python version) ---
+        # Manual Override check
         if manual_overrides_dict and internal_symbol in manual_overrides_dict:
             symbol_override_data = manual_overrides_dict[internal_symbol]
             manual_price = symbol_override_data.get("price")
@@ -2223,29 +2219,22 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
                     manual_price_float = float(manual_price)
                     if manual_price_float > 1e-9:
                         current_price_local = manual_price_float
-                        manual_price_override_applied = True
-                        # Add IS_DEBUG_DATE logging if needed here
                 except (ValueError, TypeError):
-                    pass  # Ignore invalid manual price
-        # --- END ADDED ---
+                    pass
 
         force_fallback = internal_symbol in YFINANCE_EXCLUDED_SYMBOLS
 
-        if (
-            pd.isna(current_price_local) and not force_fallback
-        ):  # If no manual override and not forced fallback
+        if pd.isna(current_price_local) and not force_fallback:
             yf_symbol_for_lookup = internal_to_yf_map.get(internal_symbol)
             if yf_symbol_for_lookup:
                 price_val = get_historical_price(
                     yf_symbol_for_lookup, target_date, historical_prices_yf_unadjusted
                 )
-                if (
-                    price_val is not None and pd.notna(price_val) and price_val > 1e-9
-                ):  # Check price_val > 0
+                if price_val is not None and pd.notna(price_val) and price_val > 1e-9:
                     current_price_local = float(price_val)
 
         if pd.isna(current_price_local) or force_fallback:
-            # Fallback logic (same as Python version)
+            # Fallback logic
             try:
                 fallback_tx = transactions_df[
                     (transactions_df["Symbol"] == internal_symbol)
@@ -2284,11 +2273,11 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         else:
             total_market_value_display_curr_agg += market_value_display
 
-    # Iterate through cash balances if no failure yet
+    # Iterate through cash balances
     if not any_lookup_nan_on_date:
         cash_indices = np.argwhere(np.abs(cash_balances_np) > 1e-9)
         for acc_id_tuple in cash_indices:
-            acc_id = acc_id_tuple[0]  # acc_id is the index from the 1D array
+            acc_id = acc_id_tuple[0]
             account = id_to_account.get(acc_id)
             if account is None:
                 continue
@@ -2305,20 +2294,13 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
                 total_market_value_display_curr_agg = np.nan
                 break
 
-            current_price_local = 1.0  # Cash price is 1.0
-            market_value_local = current_qty * current_price_local
-            market_value_display = market_value_local * fx_rate
+            market_value_display = current_qty * fx_rate
             if pd.isna(market_value_display):
                 any_lookup_nan_on_date = True
                 total_market_value_display_curr_agg = np.nan
                 break
             else:
                 total_market_value_display_curr_agg += market_value_display
-
-    if IS_DEBUG_DATE:
-        logging.debug(
-            f"--- DEBUG VALUE CALC (Numba) for {target_date} END --- Final Value: {total_market_value_display_curr_agg}, Lookup Failed: {any_lookup_nan_on_date}"
-        )
 
     return total_market_value_display_curr_agg, any_lookup_nan_on_date
 
@@ -3066,6 +3048,19 @@ def _load_or_calculate_daily_results(
                 .map(account_to_id)
                 .values.astype(np.int64)
             )
+            # --- NEW: Map To Account for chrono calc ---
+            if "To Account" in transactions_df_effective.columns:
+                tx_to_accounts_series = (
+                    transactions_df_effective["To Account"]
+                    .map(account_to_id)
+                    .fillna(-1)
+                )
+            else:
+                tx_to_accounts_series = pd.Series(
+                    -1, index=transactions_df_effective.index
+                )
+            tx_to_accounts_np = tx_to_accounts_series.values.astype(np.int64)
+            # --- END NEW ---
             tx_types_np = (
                 transactions_df_effective["Type"]
                 .str.lower()
@@ -3097,6 +3092,7 @@ def _load_or_calculate_daily_results(
             withdrawal_type_id = type_to_id.get("withdrawal", -1)
             short_sell_type_id = type_to_id.get("short sell", -1)
             buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
+            transfer_type_id = type_to_id.get("transfer", -1)
             cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
             shortable_symbol_ids = np.array(
                 [symbol_to_id[s] for s in SHORTABLE_SYMBOLS if s in symbol_to_id],
@@ -3111,6 +3107,7 @@ def _load_or_calculate_daily_results(
                     date_ordinals_np,
                     tx_dates_ordinal_np,
                     tx_symbols_np,
+                    tx_to_accounts_np,
                     tx_accounts_np,
                     tx_types_np,
                     tx_quantities_np,
@@ -3126,6 +3123,7 @@ def _load_or_calculate_daily_results(
                     withdrawal_type_id,
                     short_sell_type_id,
                     buy_to_cover_type_id,
+                    transfer_type_id,
                     cash_symbol_id,
                     STOCK_QUANTITY_CLOSE_TOLERANCE,
                     shortable_symbol_ids,
@@ -3741,25 +3739,21 @@ def _get_or_calculate_all_daily_holdings(
 ):
     """
     Layer 1 Cache: Calculates or loads from cache the daily holdings for ALL transactions.
-    This is the most expensive part of the historical calculation. The result is independent
-    of account selection or display currency.
     """
-    # 1. Generate Cache Key from transaction data
-    # Using a hash of the dataframe content ensures the cache invalidates if transactions change.
     tx_hash = hashlib.sha256(
         pd.util.hash_pandas_object(all_transactions_df, index=True).values
     ).hexdigest()
+    # Version bump for cache key
     cache_key = (
-        f"ALL_HOLDINGS_v1.1_{tx_hash}_{start_date.isoformat()}_{end_date.isoformat()}"
+        f"ALL_HOLDINGS_v1.2_{tx_hash}_{start_date.isoformat()}_{end_date.isoformat()}"
     )
 
-    # 2. Define Cache File Paths
     cache_dir_base = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
     if not cache_dir_base:
         logging.warning(
             "Could not find cache directory. Layer 1 caching will be disabled."
         )
-        return None, None  # Cannot cache
+        return None, None
 
     holdings_cache_dir = os.path.join(cache_dir_base, "all_holdings_cache")
     os.makedirs(holdings_cache_dir, exist_ok=True)
@@ -3768,7 +3762,6 @@ def _get_or_calculate_all_daily_holdings(
     qty_file = os.path.join(holdings_cache_dir, f"{cache_key}_qty.npy")
     cash_file = os.path.join(holdings_cache_dir, f"{cache_key}_cash.npy")
 
-    # 3. Check Cache
     if (
         os.path.exists(key_file)
         and os.path.exists(qty_file)
@@ -3783,16 +3776,14 @@ def _get_or_calculate_all_daily_holdings(
             return daily_holdings_qty, daily_cash_balances
         except Exception as e:
             logging.warning(f"L1 Cache Load Error: Failed to load numpy arrays: {e}")
-            # Proceed to recalculate if load fails
 
-    # 4. Cache MISS: Perform Calculation
     logging.info("L1 Cache MISS: Calculating daily holdings for all accounts...")
 
-    # Prepare inputs for Numba function (similar to the block in _load_or_calculate_daily_results)
     date_range_for_calc = pd.date_range(start=start_date, end=end_date, freq="D")
     date_ordinals_np = np.array(
         [d.toordinal() for d in date_range_for_calc], dtype=np.int64
     )
+
     tx_dates_ordinal_np = np.array(
         [d.toordinal() for d in all_transactions_df["Date"].dt.date.values],
         dtype=np.int64,
@@ -3803,6 +3794,17 @@ def _get_or_calculate_all_daily_holdings(
     tx_accounts_np = (
         all_transactions_df["Account"].map(account_to_id).values.astype(np.int64)
     )
+
+    # --- NEW: Map To Account ---
+    if "To Account" in all_transactions_df.columns:
+        tx_to_accounts_series = (
+            all_transactions_df["To Account"].map(account_to_id).fillna(-1)
+        )
+    else:
+        tx_to_accounts_series = pd.Series(-1, index=all_transactions_df.index)
+    tx_to_accounts_np = tx_to_accounts_series.values.astype(np.int64)
+    # --- END NEW ---
+
     tx_types_np = (
         all_transactions_df["Type"]
         .str.lower()
@@ -3820,6 +3822,7 @@ def _get_or_calculate_all_daily_holdings(
     tx_split_ratios_np = (
         all_transactions_df["Split Ratio"].fillna(0.0).values.astype(np.float64)
     )
+
     split_type_id = type_to_id.get("split", -1)
     stock_split_type_id = type_to_id.get("stock split", -1)
     buy_type_id = type_to_id.get("buy", -1)
@@ -3828,7 +3831,9 @@ def _get_or_calculate_all_daily_holdings(
     withdrawal_type_id = type_to_id.get("withdrawal", -1)
     short_sell_type_id = type_to_id.get("short sell", -1)
     buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
+    transfer_type_id = type_to_id.get("transfer", -1)  # NEW
     cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
+
     shortable_symbol_ids = np.array(
         [symbol_to_id[s] for s in SHORTABLE_SYMBOLS if s in symbol_to_id],
         dtype=np.int64,
@@ -3836,13 +3841,13 @@ def _get_or_calculate_all_daily_holdings(
     num_symbols = len(symbol_to_id)
     num_accounts = len(account_to_id)
 
-    # Call the Numba JIT function
     daily_holdings_qty, daily_cash_balances = (
         _calculate_daily_holdings_chronological_numba(
             date_ordinals_np,
             tx_dates_ordinal_np,
             tx_symbols_np,
             tx_accounts_np,
+            tx_to_accounts_np,  # NEW
             tx_types_np,
             tx_quantities_np,
             tx_commissions_np,
@@ -3857,13 +3862,13 @@ def _get_or_calculate_all_daily_holdings(
             withdrawal_type_id,
             short_sell_type_id,
             buy_to_cover_type_id,
+            transfer_type_id,  # NEW
             cash_symbol_id,
             STOCK_QUANTITY_CLOSE_TOLERANCE,
             shortable_symbol_ids,
         )
     )
 
-    # 5. Save to Cache
     try:
         np.save(qty_file, daily_holdings_qty)
         np.save(cash_file, daily_cash_balances)
@@ -4550,38 +4555,6 @@ def calculate_historical_performance(
     return daily_df, historical_prices_yf_adjusted, historical_fx_yf, final_status_str
 
 
-def generate_mappings(transactions_df_effective):
-    """Generates string-to-ID mappings based on the effective transaction data."""
-    symbol_to_id, id_to_symbol = {}, {}
-    account_to_id, id_to_account = {}, {}
-    type_to_id = {}
-    currency_to_id, id_to_currency = {}, {}
-    all_symbols = transactions_df_effective["Symbol"].unique()
-    symbol_to_id = {symbol: i for i, symbol in enumerate(all_symbols)}
-    id_to_symbol = {i: symbol for symbol, i in symbol_to_id.items()}
-    all_accounts = transactions_df_effective["Account"].unique()
-    account_to_id = {account: i for i, account in enumerate(all_accounts)}
-    id_to_account = {i: account for account, i in account_to_id.items()}
-    all_types = transactions_df_effective["Type"].unique()
-    type_to_id = {tx_type.lower().strip(): i for i, tx_type in enumerate(all_types)}
-    all_currencies = transactions_df_effective["Local Currency"].unique()
-    currency_to_id = {curr: i for i, curr in enumerate(all_currencies)}
-    id_to_currency = {i: curr for curr, i in currency_to_id.items()}
-    if CASH_SYMBOL_CSV not in symbol_to_id:
-        cash_id = len(symbol_to_id)
-        symbol_to_id[CASH_SYMBOL_CSV] = cash_id
-        id_to_symbol[cash_id] = CASH_SYMBOL_CSV
-    return (
-        symbol_to_id,
-        id_to_symbol,
-        account_to_id,
-        id_to_account,
-        type_to_id,
-        currency_to_id,
-        id_to_currency,
-    )
-
-
 # --- Helper to generate mappings (Needed for standalone profiling) ---
 def generate_mappings(transactions_df_effective):
     """Generates string-to-ID mappings based on the effective transaction data."""
@@ -4589,22 +4562,35 @@ def generate_mappings(transactions_df_effective):
     account_to_id, id_to_account = {}, {}
     type_to_id = {}
     currency_to_id, id_to_currency = {}, {}
+
     all_symbols = transactions_df_effective["Symbol"].unique()
     symbol_to_id = {symbol: i for i, symbol in enumerate(all_symbols)}
     id_to_symbol = {i: symbol for symbol, i in symbol_to_id.items()}
-    all_accounts = transactions_df_effective["Account"].unique()
+
+    # --- FIX: Include "To Account" in unique account list ---
+    accounts_source = set(transactions_df_effective["Account"].unique())
+    accounts_dest = set()
+    if "To Account" in transactions_df_effective.columns:
+        accounts_dest = set(transactions_df_effective["To Account"].dropna().unique())
+
+    all_accounts = sorted(list(accounts_source | accounts_dest))
     account_to_id = {account: i for i, account in enumerate(all_accounts)}
+    # --- END FIX ---
+
     id_to_account = {i: account for account, i in account_to_id.items()}
+
     all_types = transactions_df_effective["Type"].unique()
-    type_to_id = {tx_type: i for i, tx_type in enumerate(all_types)}
+    type_to_id = {tx_type.lower().strip(): i for i, tx_type in enumerate(all_types)}
+
     all_currencies = transactions_df_effective["Local Currency"].unique()
     currency_to_id = {curr: i for i, curr in enumerate(all_currencies)}
     id_to_currency = {i: curr for curr, i in currency_to_id.items()}
-    # Ensure CASH symbol is included if not present
+
     if CASH_SYMBOL_CSV not in symbol_to_id:
         cash_id = len(symbol_to_id)
         symbol_to_id[CASH_SYMBOL_CSV] = cash_id
         id_to_symbol[cash_id] = CASH_SYMBOL_CSV
+
     return (
         symbol_to_id,
         id_to_symbol,
