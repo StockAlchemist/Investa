@@ -2003,10 +2003,13 @@ def _calculate_daily_holdings_chronological_numba(
                         held_qty = current_holdings_qty[symbol_id, account_id]
                         qty_sold = min(qty, held_qty) if held_qty > 1e-9 else 0.0
                         current_holdings_qty[symbol_id, account_id] -= qty_sold
+                # --- BUG FIX: Add stock transfer logic ---
+                # This was missing. When a stock is transferred, its quantity needs to be
+                # moved from the source account to the destination account.
                 elif type_id == transfer_type_id:
                     if qty > 1e-9:
                         # 1. Deduct from Source
-                        current_holdings_qty[symbol_id, account_id] -= qty  # type: ignore
+                        current_holdings_qty[symbol_id, account_id] -= qty
                         # Zero out Source if negligible
                         if (
                             abs(current_holdings_qty[symbol_id, account_id])
@@ -2017,7 +2020,7 @@ def _calculate_daily_holdings_chronological_numba(
                         # 2. Add to Destination
                         dest_account_id = tx_to_accounts_np[tx_idx]
                         if dest_account_id != -1:
-                            current_holdings_qty[symbol_id, dest_account_id] += qty  # type: ignore
+                            current_holdings_qty[symbol_id, dest_account_id] += qty
                 else:
                     is_shortable = False
                     for short_id in shortable_symbol_ids:
@@ -2116,9 +2119,9 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         # --- ADDED: Map 'To Account' for transfers ---
         if "To Account" in transactions_til_date.columns:
             # Map 'To Account' to IDs, filling NaN with -1
-            tx_to_accounts_series = (
-                transactions_til_date["To Account"].map(account_to_id).fillna(-1)
-            )
+            tx_to_accounts_series = _normalize_series(
+                transactions_til_date["To Account"]
+            ).map(account_to_id)
         else:
             tx_to_accounts_series = pd.Series(-1, index=transactions_til_date.index)
         tx_to_accounts_np = tx_to_accounts_series.values.astype(np.int64)
@@ -2220,8 +2223,8 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             target_date_ordinal,
             tx_dates_ordinal_np,
             tx_symbols_np,
-            tx_to_accounts_np,  # Pass to Numba function
             tx_accounts_np,
+            tx_to_accounts_np,  # Pass to Numba function
             tx_types_np,
             tx_quantities_np,
             tx_prices_np,
@@ -3916,8 +3919,8 @@ def _get_or_calculate_all_daily_holdings(
             date_ordinals_np,
             tx_dates_ordinal_np,
             tx_symbols_np,  # type: ignore
+            tx_to_accounts_np,
             tx_to_accounts_np,  # Pass to Numba function
-            tx_to_accounts_np,  # NEW
             tx_types_np,
             tx_quantities_np,
             tx_commissions_np,

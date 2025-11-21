@@ -489,6 +489,25 @@ def update_transaction_in_db(
     )
     values_for_sql["id_placeholder"] = transaction_id
 
+    # --- BUG FIX: Handle linked transfer transaction ---
+    # If the transaction is a transfer, we need to update the corresponding deposit record as well.
+    # This logic assumes the 'Note' field links the two parts of the transfer.
+    original_note_for_transfer = None
+    if new_data_dict.get("Type", "").lower() == "transfer":
+        try:
+            # Fetch the original note before the update to find the linked transaction.
+            cursor_for_note = db_conn.cursor()
+            cursor_for_note.execute(
+                "SELECT Note FROM transactions WHERE id = ?", (transaction_id,)
+            )
+            result = cursor_for_note.fetchone()
+            if result:
+                original_note_for_transfer = result[0]
+        except sqlite3.Error as e:
+            logging.error(
+                f"Could not fetch original note for transfer transaction ID {transaction_id}: {e}"
+            )
+
     try:
         cursor = db_conn.cursor()
         cursor.execute(sql_update, values_for_sql)
@@ -499,6 +518,37 @@ def update_transaction_in_db(
             )
             return False
         logging.info(f"Successfully updated transaction ID: {transaction_id}.")
+
+        # If it was a transfer and we found the original note, update the other side.
+        if original_note_for_transfer:
+            # The 'new_data_dict' contains the new data. We only want to update a few fields
+            # on the other side of the transfer (Date, Total Amount, Note).
+            linked_update_data = {
+                "Date": new_data_dict.get("Date"),
+                "Total Amount": new_data_dict.get("Total Amount"),
+                "Note": new_data_dict.get("Note"),
+            }
+            # Remove None values so we only update fields that were actually changed.
+            linked_update_data = {
+                k: v for k, v in linked_update_data.items() if v is not None
+            }
+
+            if linked_update_data:
+                # Update the 'deposit' part of the transfer, which has the same note but is not the transaction we just updated.
+                set_clauses_linked = [f'"{k}" = ?' for k in linked_update_data.keys()]
+                sql_update_linked = f"UPDATE transactions SET {', '.join(set_clauses_linked)} WHERE Note = ? AND id != ?"
+                cursor.execute(
+                    sql_update_linked,
+                    (
+                        *linked_update_data.values(),
+                        original_note_for_transfer,
+                        transaction_id,
+                    ),
+                )
+                logging.info(
+                    f"Updated linked transfer transaction for original note: '{original_note_for_transfer}'"
+                )
+
         return True
     except sqlite3.Error as e:
         logging.error(

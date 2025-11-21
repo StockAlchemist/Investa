@@ -10429,6 +10429,13 @@ The CSV file should contain the following columns (header names must match exact
                 data_for_db_update["To Account"] = (
                     new_data_dict_from_dialog_pytypes.get("To Account")
                 )
+                # --- BUG FIX: Ensure date is passed for the deposit part of the transfer ---
+                # When a transfer is edited, the corresponding deposit record for the 'To Account'
+                # needs to be updated with the same date. The update_transaction_in_db function
+                # in db_utils handles finding and updating this second record if the date is provided.
+                data_for_db_update["Date"] = new_data_dict_from_dialog_pytypes.get(
+                    "Date (MMM DD, YYYY)"
+                ).strftime("%Y-%m-%d")
 
             # Determine Local Currency based on account
             acc_name_for_currency_update = data_for_db_update.get("Account")
