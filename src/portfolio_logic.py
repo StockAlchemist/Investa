@@ -1470,6 +1470,26 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
                     held_qty = holding_to_update["qty"]
                     qty_sold = min(sell_qty, held_qty) if held_qty > 1e-9 else 0
                     holding_to_update["qty"] -= qty_sold
+            elif tx_type == "transfer":  # type: ignore
+                to_account = str(row.get("To Account", "")).strip()
+                # Only process if quantity is positive
+                if pd.notna(qty) and qty > 0:
+                    # FIX: Do NOT cap at held_qty. Trust the transaction qty.
+                    # This handles cases where Transfer appears before Buy on the same day.
+                    transfer_qty = qty
+                    # 1. Deduct from Source
+                    holding_to_update["qty"] -= transfer_qty
+                    # 2. Add to Destination (if valid amount and destination exists)
+                    if to_account and transfer_qty > 0:
+                        to_key = (symbol, to_account)
+                        # Initialize destination holding if it doesn't exist
+                        if to_key not in holdings:
+                            holdings[to_key] = {
+                                "qty": 0.0,
+                                "local_currency": local_currency_from_row,
+                                "is_stock": True,
+                            }
+                        holdings[to_key]["qty"] += transfer_qty
         except Exception as e_h:
             if IS_DEBUG_DATE:
                 logging.error(
