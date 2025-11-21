@@ -468,8 +468,20 @@ class PortfolioCalculatorWorker(QRunnable):
                     f"WORKER: Unique stock symbols from all transactions: {unique_stock_symbols}"
                 )
 
-                # Filter to include only currently held stocks
-                if not holdings_df.empty and "Symbol" in holdings_df.columns:
+                # --- MODIFIED LOGIC for handling closed accounts ---
+                # If holdings_df is empty BUT we are filtering for a specific account,
+                # it means it's a closed account. We should use its historical transactions, not current holdings.
+                is_closed_account_view = (
+                    holdings_df.empty or "Symbol" not in holdings_df.columns
+                ) and self.portfolio_kwargs.get("include_accounts")
+
+                if is_closed_account_view:
+                    logging.info(
+                        "WORKER: Holdings are empty for a specific account view. Using all historical symbols for chart."
+                    )
+                    # unique_stock_symbols is already populated with all symbols from transactions, so we do nothing.
+                elif not holdings_df.empty and "Symbol" in holdings_df.columns:
+                    # This is the normal case: filter transaction symbols by what's currently held.
                     currently_held_symbols = holdings_df["Symbol"].unique().tolist()
                     unique_stock_symbols = [
                         sym
@@ -480,21 +492,11 @@ class PortfolioCalculatorWorker(QRunnable):
                         f"WORKER: Unique stock symbols filtered by current holdings: {unique_stock_symbols}"
                     )
                 else:
+                    # This will now only trigger if holdings_df is empty for the "All Accounts" view, which is correct.
                     logging.warning(
                         "WORKER: Holdings DataFrame is empty or missing 'Symbol' column. Cannot filter for currently held stocks."
                     )
-                # After filtering by holdings, if no stock symbols remain, we should not raise an error,
-                # but rather skip the correlation calculation for this run.
-                # The original code raised an error here, which is what we are fixing.
-
-                if not unique_stock_symbols:
-                    logging.info(
-                        "WORKER: No stock/ETF symbols found in transactions for correlation matrix."
-                    )
-                    # Do not raise an error. If there are no symbols, the subsequent
-                    # 'if yf_symbols_for_corr:' block will be skipped, and the worker
-                    # will proceed gracefully without calculating a correlation matrix.
-                    pass
+                # --- END MODIFICATION ---
 
                 # If we have stock symbols, proceed with mapping and fetching.
                 # If unique_stock_symbols is empty, the 'if yf_symbols_for_corr:'
@@ -664,16 +666,28 @@ class PortfolioCalculatorWorker(QRunnable):
                             benchmark_data=benchmark_data_for_factor_analysis,
                         )
                         if ff3_results:
-                            # Store relevant parts of the summary, e.g., params, pvalues, rsquared
+                            # --- MODIFIED: Gracefully handle cases with too few observations for a full summary ---
+                            # The .summary() method can fail if there are too few residuals (e.g., < 2).
+                            # We extract the essential data directly from the results object first.
                             factor_analysis_results = {
                                 "params": ff3_results.params.to_dict(),
                                 "pvalues": ff3_results.pvalues.to_dict(),
                                 "rsquared": ff3_results.rsquared,
-                                "summary_text": str(
-                                    ff3_results.summary()
-                                ),  # Store full summary for display
                                 "model_name": self.factor_model_name,  # NEW: Store the model name
                             }
+                            try:
+                                # Now, attempt to generate the full summary text.
+                                factor_analysis_results["summary_text"] = str(
+                                    ff3_results.summary()
+                                )
+                            except ValueError as summary_e:
+                                logging.warning(
+                                    f"WORKER: Could not generate full factor analysis summary: {summary_e}"
+                                )
+                                factor_analysis_results["summary_text"] = (
+                                    f"Could not generate summary due to insufficient data ({summary_e})."
+                                )
+                            # --- END MODIFICATION ---
                             logging.info(
                                 "WORKER: Factor analysis completed successfully."
                             )

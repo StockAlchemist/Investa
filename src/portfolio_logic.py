@@ -1651,13 +1651,10 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
                 pass
 
         if pd.isna(current_price_local):
-            any_lookup_nan_on_date = True
-            total_market_value_display_curr_agg = np.nan
-            if DO_DETAILED_LOG:
-                logging.debug(
-                    f"      CRITICAL: Final price determination failed. Aborting."
-                )
-            break
+            logging.warning(
+                f"Missing price for {internal_symbol} on {target_date}. Using 0.0."
+            )
+            current_price_local = 0.0
         else:
             if DO_DETAILED_LOG:
                 logging.debug(f"      Final Local Price: {current_price_local:.4f}")
@@ -2329,9 +2326,9 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
                 pass
 
         if pd.isna(current_price_local):
-            any_lookup_nan_on_date = True
-            total_market_value_display_curr_agg = np.nan
-            break
+            # Numba Fix: Treat missing price as 0.0 to allow other holdings to sum up.
+            # We cannot log inside a Numba nopython function.
+            current_price_local = 0.0
 
         market_value_local = current_qty * float(current_price_local)
         market_value_display = market_value_local * fx_rate
@@ -2590,6 +2587,8 @@ def _calculate_daily_metrics_worker(
         portfolio_value = portfolio_value_main
         val_lookup_failed = val_lookup_failed_main
 
+        if val_lookup_failed_main:
+            logging.warning(f"Valuation failed for date: {eval_date}")
         if pd.isna(portfolio_value):
             net_cash_flow = np.nan
             flow_lookup_failed = True  # If value failed, flow is irrelevant/failed

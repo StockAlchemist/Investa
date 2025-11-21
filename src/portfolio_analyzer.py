@@ -1745,12 +1745,14 @@ def _calculate_aggregate_metrics(
             # Keep rows that match the selected accounts
             account_mask = full_summary_df["Account"].isin(include_accounts)
 
-            # --- ADD THIS LINE ---
-            # Also keep the special aggregate cash row
+            # --- MODIFIED: Also keep the special aggregate cash row ---
+            # When filtering for specific accounts, we must still include the aggregated cash
+            # row to ensure the 'Overall' portfolio metrics (like total market value) are correct.
             cash_mask = full_summary_df["Account"] == _AGGREGATE_CASH_ACCOUNT_NAME_
-            # --- END ADD ---
 
-            df_for_overall_summary = full_summary_df[account_mask | cash_mask].copy()
+            # Combine the masks to keep selected accounts AND the cash row.
+            df_for_overall_summary = full_summary_df[account_mask | cash_mask]
+            # --- END MODIFICATION ---
         else:
             logging.warning("Cannot filter overall metrics: 'Account' column missing.")
     # --- END FIX ---
@@ -1976,7 +1978,7 @@ def calculate_periodic_returns(
             # We need to calculate it manually: (end_factor - 1)
             if not resampled_factors.empty:
                 # Calculate returns using pct_change for all periods after the first
-                period_returns_df = resampled_factors.pct_change()
+                period_returns_df = resampled_factors.pct_change(fill_method=None)
 
                 # Manually calculate the return for the first period
                 first_period_return = resampled_factors.iloc[0] - 1.0

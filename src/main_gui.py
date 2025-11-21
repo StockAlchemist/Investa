@@ -7947,6 +7947,9 @@ The CSV file should contain the following columns (header names must match exact
             start_date_hist_calc = (
                 self.all_transactions_df_cleaned_for_logic["Date"].min().date()
             )
+            logging.debug(
+                f"DEBUG: Full Transaction Min Date is: {start_date_hist_calc}"
+            )
             end_date_hist_calc = date.today()  # Always calculate up to today
         else:
             # Fallback if no transactions: use UI dates
