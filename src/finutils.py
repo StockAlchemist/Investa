@@ -364,9 +364,10 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
 def get_cash_flows_for_symbol_account(
     symbol: str,
     account: str,
-    transactions: pd.DataFrame,
-    final_market_value_local: float,
-    end_date: date,
+    transactions_df: pd.DataFrame,
+    final_market_value: float,
+    is_transfer_a_flow: bool,  # ADDED: New parameter to control transfer handling
+    report_date: Optional[date] = None,
 ) -> Tuple[List[date], List[float]]:
     """
     Extracts LOCAL currency cash flows for a specific symbol/account pair for IRR calculation.
@@ -396,8 +397,8 @@ def get_cash_flows_for_symbol_account(
             Returns ([], []) if no relevant transactions or final value exist, or if the
             cash flow pattern is invalid for IRR.
     """
-    symbol_account_tx_filtered = transactions[
-        (transactions["Symbol"] == symbol) & (transactions["Account"] == account)
+    symbol_account_tx_filtered = transactions_df[
+        (transactions_df["Symbol"] == symbol) & (transactions_df["Account"] == account)
     ]
     if symbol_account_tx_filtered.empty:
         return [], []
@@ -430,6 +431,18 @@ def get_cash_flows_for_symbol_account(
         elif tx_type == "sell" or tx_type == "withdrawal":
             if pd.notna(price_local) and pd.notna(qty) and qty_abs > 0:
                 cash_flow_local = (qty_abs * price_local) - commission_local
+        elif tx_type == "transfer" and is_transfer_a_flow:
+            # If transfers are treated as flows, an incoming transfer is like a "buy" (outflow of cash to acquire asset)
+            # and an outgoing transfer is like a "sell" (inflow of cash as asset is disposed).
+            # We determine if it's incoming or outgoing based on the 'To Account' column.
+            to_account = str(row.get("To Account", "")).strip()
+            flow = qty * price_local  # Value of the asset being moved
+            if to_account == account:
+                # This is a transfer IN to the specified account. Treat as a cash outflow (like a buy).
+                cash_flow_local = -flow
+            else:
+                # This is a transfer OUT of the specified account. Treat as a cash inflow (like a sell).
+                cash_flow_local = flow
         elif tx_type == "short sell" and symbol in SHORTABLE_SYMBOLS:
             if pd.notna(price_local) and pd.notna(qty) and qty_abs > 0:
                 cash_flow_local = (qty_abs * price_local) - commission_local
@@ -465,31 +478,31 @@ def get_cash_flows_for_symbol_account(
                 )
 
     sorted_dates = sorted(dates_flows.keys())
-    if not sorted_dates and abs(final_market_value_local) < 1e-9:
+    if not sorted_dates and abs(final_market_value) < 1e-9:
         return [], []
     final_dates = list(sorted_dates)
     final_flows = [float(dates_flows[d]) for d in final_dates]
-    final_market_value_local_abs = (
-        abs(final_market_value_local) if pd.notna(final_market_value_local) else 0.0
+    final_market_value_abs = (
+        abs(final_market_value) if pd.notna(final_market_value) else 0.0
     )
-    if final_market_value_local_abs > 1e-9 and isinstance(end_date, date):
+    if final_market_value_abs > 1e-9 and isinstance(report_date, date):
         if not final_dates:
             first_tx_date_for_holding = (
                 symbol_account_tx["Date"].min().date()
                 if not symbol_account_tx.empty
-                else end_date
+                else report_date
             )
-            if end_date >= first_tx_date_for_holding:
-                final_dates.append(end_date)
-                final_flows.append(final_market_value_local_abs)
+            if report_date >= first_tx_date_for_holding:
+                final_dates.append(report_date)
+                final_flows.append(final_market_value_abs)
             else:
                 return [], []
-        elif end_date >= final_dates[-1]:
-            if final_dates[-1] == end_date:
-                final_flows[-1] += final_market_value_local_abs
+        elif report_date >= final_dates[-1]:
+            if final_dates[-1] == report_date:
+                final_flows[-1] += final_market_value_abs
             else:
-                final_dates.append(end_date)
-                final_flows.append(final_market_value_local_abs)
+                final_dates.append(report_date)
+                final_flows.append(final_market_value_abs)
 
     if len(final_dates) < 2:
         return [], []

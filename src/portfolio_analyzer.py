@@ -1229,9 +1229,10 @@ def _build_summary_rows(
             cf_dates, cf_values = get_cash_flows_for_symbol_account(
                 symbol,
                 account,
-                transactions_df,
-                market_value_local_for_irr,
-                report_date,
+                transactions_df,  # The filtered transactions DataFrame
+                market_value_local_for_irr,  # The final value of this specific holding
+                is_transfer_a_flow=True,  # ADDED: Treat transfers as flows for IRR
+                report_date=report_date,  # The date of the final value
             )
             if cf_dates and cf_values:
                 stock_irr = calculate_irr(cf_dates, cf_values)
@@ -1970,11 +1971,22 @@ def calculate_periodic_returns(
                 historical_df[valid_gain_cols].resample(freq_code).last()
             )
 
-            # Calculate period return: (End Factor / Previous End Factor) - 1
-            # Use pct_change() which does this calculation efficiently
-            period_returns_df = (
-                resampled_factors.pct_change() * 100.0
-            )  # Multiply by 100 for percentage
+            # --- MODIFIED: Handle first period return correctly ---
+            # pct_change() will make the first period NaN, which gets dropped.
+            # We need to calculate it manually: (end_factor - 1)
+            if not resampled_factors.empty:
+                # Calculate returns using pct_change for all periods after the first
+                period_returns_df = resampled_factors.pct_change()
+
+                # Manually calculate the return for the first period
+                first_period_return = resampled_factors.iloc[0] - 1.0
+                period_returns_df.iloc[0] = first_period_return
+
+                # Convert to percentage
+                period_returns_df *= 100.0
+            else:
+                period_returns_df = pd.DataFrame(columns=resampled_factors.columns)
+            # --- END MODIFIED ---
 
             # Rename columns for clarity (optional)
             period_returns_df.columns = [
@@ -1982,9 +1994,7 @@ def calculate_periodic_returns(
                 for col in period_returns_df.columns
             ]
 
-            periodic_returns[interval_key] = period_returns_df.dropna(
-                how="all"
-            )  # Drop rows where all returns are NaN
+            periodic_returns[interval_key] = period_returns_df
 
         except Exception as e:
             logging.error(f"Error calculating {interval_key} periodic returns: {e}")
@@ -2307,9 +2317,9 @@ def extract_realized_capital_gains_history(
                 continue
             tx_date = tx_date_dt.date()
 
-            symbol = str(row["Symbol"]).strip()
-            account = str(row["Account"]).strip()
-            tx_type = str(row["Type"]).lower().strip()
+            symbol = str(row["Symbol"]).upper().strip()
+            account = str(row["Account"]).upper().strip()
+            tx_type = str(row["Type"]).lower().strip()  # type is case-insensitive
             local_curr_raw = row.get("Local Currency")
             local_curr = str(
                 local_curr_raw
@@ -2349,9 +2359,9 @@ def extract_realized_capital_gains_history(
         ]:
             continue
 
-        # --- NEW: Handle Transfers to move Tax Lots ---
+        # --- ADDED: Handle Transfers to move Tax Lots ---
         if tx_type == "transfer":
-            to_account = str(row.get("To Account", "")).strip()
+            to_account = str(row.get("To Account", "")).upper().strip()
             if not to_account:
                 # If no destination, it's just a removal (like a withdrawal of stock)
                 # We clear the lots but record no gain/loss? Or just skip?
@@ -2412,7 +2422,7 @@ def extract_realized_capital_gains_history(
             )
 
             continue  # Done with transfer
-        # --- END NEW ---
+        # --- END ADDED ---
 
         if tx_type in ["split", "stock split"]:
             if pd.notna(split_ratio) and split_ratio > 0:
@@ -2560,9 +2570,10 @@ def extract_realized_capital_gains_history(
     df_gains = pd.DataFrame(realized_gains_records, columns=output_columns)
     df_gains.sort_values(by=["Date", "Symbol", "Account"], inplace=True)
 
-    # --- FIX: FILTER ACCOUNTS HERE AT THE END ---
+    # --- CRITICAL: Filter accounts at the end after all lots have been tracked ---
     if include_accounts and isinstance(include_accounts, list):
         df_gains = df_gains[df_gains["Account"].isin(include_accounts)]
+    # --- END ---
 
     logging.info(f"Extracted {len(df_gains)} realized capital gains records.")
     return df_gains

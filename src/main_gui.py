@@ -13426,10 +13426,6 @@ The CSV file should contain the following columns (header names must match exact
                 current_bar_data = plot_data[col].fillna(0.0)
                 # If the interval is Annual ('Y'), assume the data might be a factor (e.g., 0.15 for 15%)
                 # and multiply by 100 to convert to percentage points (e.g., 15.0).
-                # This is a common discrepancy if other intervals already provide percentages.
-                if interval_key == "Y":
-                    # current_bar_data = current_bar_data * 100
-                    current_bar_data = current_bar_data
                 bars = ax.bar(
                     index + offset,
                     current_bar_data,  # Use potentially scaled data
@@ -13835,7 +13831,7 @@ The CSV file should contain the following columns (header names must match exact
         ]
 
         bars = ax.bar(
-            x_tick_labels,
+            np.arange(len(plot_data)),  # Use numerical index for x-axis
             plot_data[portfolio_value_change_col_name],
             color=bar_colors,
             width=0.9,  # Increased bar width
@@ -13847,6 +13843,8 @@ The CSV file should contain the following columns (header names must match exact
             mtick.FuncFormatter(lambda x, p: f"{currency_symbol_for_axis}{x:,.0f}")
         )
 
+        ax.set_xticks(np.arange(len(plot_data)))  # Set tick positions
+        ax.set_xticklabels(x_tick_labels)  # Set tick labels
         ax.tick_params(
             axis="x",
             labelrotation=45,

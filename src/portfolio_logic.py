@@ -49,6 +49,13 @@ except ImportError:
         return func  # No-op decorator if line_profiler not installed
 
 
+def _normalize_series(series):
+    """Normalizes a pandas Series to uppercase and trimmed strings."""
+    if series.empty:
+        return series
+    return series.astype(str).str.upper().str.strip()
+
+
 # --- END ADDED ---
 
 # --- Configure Logging ---
@@ -365,7 +372,7 @@ def calculate_portfolio_summary(
             )
 
         available_accounts_in_df = set(all_transactions_df_cleaned["Account"].unique())
-        # --- ADDED: Also consider accounts in the "To Account" column for filtering ---
+        # --- MODIFIED: Also consider accounts in the "To Account" column for filtering ---
         if "To Account" in all_transactions_df_cleaned.columns:
             available_accounts_in_df.update(
                 all_transactions_df_cleaned["To Account"].dropna().unique()
@@ -375,7 +382,10 @@ def calculate_portfolio_summary(
             acc for acc in include_accounts if acc in available_accounts_in_df
         ]
         if valid_include:
-            # --- MODIFIED: Robust filtering for transfers ---
+            # --- MODIFIED: Robust filtering for transfers. This logic ensures that if a user
+            # selects an account that received a transfer, the entire history of the transferred
+            # asset from its source account is also included, which is crucial for correct
+            # cost basis calculation. ---
 
             # 1. Get all transactions where the *primary* account matches
             from_account_mask = all_transactions_df_cleaned["Account"].isin(
@@ -1702,7 +1712,7 @@ def _calculate_holdings_numba(
     sell_type_id,
     withdrawal_type_id,
     short_sell_type_id,
-    buy_to_cover_type_id,
+    buy_to_cover_type_id,  # type: ignore
     transfer_type_id,  # NEW argument
     fees_type_id,
     cash_symbol_id,
@@ -1752,7 +1762,7 @@ def _calculate_holdings_numba(
                     if cash_currency_np[dest_account_id] == -1:
                         cash_currency_np[dest_account_id] = currency_id
 
-                    # Move Cash: Deduct from Source (plus commission?), Add to Dest
+                    # Move Cash: Deduct from Source, Add to Dest
                     # Assuming commission is paid by source
                     cash_balances_np[account_id] -= qty + commission
                     cash_balances_np[dest_account_id] += qty
@@ -1762,7 +1772,7 @@ def _calculate_holdings_numba(
         if holdings_currency_np[symbol_id, account_id] == -1:
             holdings_currency_np[symbol_id, account_id] = currency_id
 
-        # --- TRANSFER LOGIC ---
+        # --- STOCK TRANSFER LOGIC ---
         if type_id == transfer_type_id:
             if qty > 1e-9:
                 source_qty = holdings_qty_np[symbol_id, account_id]
@@ -1770,7 +1780,7 @@ def _calculate_holdings_numba(
 
                 cost_transferred = 0.0
 
-                # Calculate proportional cost to transfer
+                # Calculate proportional cost to transfer based on FIFO principles
                 if abs(source_qty) > 1e-9:
                     pct_transferred = qty / source_qty
                     if pct_transferred > 1.0:
@@ -1781,7 +1791,7 @@ def _calculate_holdings_numba(
                     holdings_qty_np[symbol_id, account_id] -= qty
                     holdings_cost_np[symbol_id, account_id] -= cost_transferred
 
-                    # Zero out Source if negligible (Transfer is full)
+                    # Zero out Source if negligible (e.g., full transfer)
                     if (
                         abs(holdings_qty_np[symbol_id, account_id])
                         < stock_qty_close_tolerance
@@ -1914,8 +1924,8 @@ def _calculate_holdings_numba(
 def _calculate_daily_holdings_chronological_numba(
     date_ordinals_np,
     tx_dates_ordinal_np,
-    tx_symbols_np,
-    tx_to_accounts_np,  # NEW
+    tx_symbols_np,  # type: ignore
+    tx_to_accounts_np,  # NEW argument
     tx_accounts_np,
     tx_types_np,
     tx_quantities_np,
@@ -1931,7 +1941,7 @@ def _calculate_daily_holdings_chronological_numba(
     withdrawal_type_id,
     short_sell_type_id,
     buy_to_cover_type_id,
-    transfer_type_id,  # NEW
+    transfer_type_id,  # NEW argument
     cash_symbol_id,
     stock_qty_close_tolerance,
     shortable_symbol_ids,
@@ -1974,7 +1984,7 @@ def _calculate_daily_holdings_chronological_numba(
                 elif type_id == transfer_type_id:
                     dest_account_id = tx_to_accounts_np[tx_idx]
                     if dest_account_id != -1:
-                        # Move Cash: Deduct from Source (plus commission?), Add to Dest
+                        # Move Cash: Deduct from Source, Add to Dest
                         # Assuming commission is paid by source
                         current_cash_balances[account_id] -= abs(qty) + commission
                         current_cash_balances[dest_account_id] += abs(qty)
@@ -1996,7 +2006,7 @@ def _calculate_daily_holdings_chronological_numba(
                 elif type_id == transfer_type_id:
                     if qty > 1e-9:
                         # 1. Deduct from Source
-                        current_holdings_qty[symbol_id, account_id] -= qty
+                        current_holdings_qty[symbol_id, account_id] -= qty  # type: ignore
                         # Zero out Source if negligible
                         if (
                             abs(current_holdings_qty[symbol_id, account_id])
@@ -2007,7 +2017,7 @@ def _calculate_daily_holdings_chronological_numba(
                         # 2. Add to Destination
                         dest_account_id = tx_to_accounts_np[tx_idx]
                         if dest_account_id != -1:
-                            current_holdings_qty[symbol_id, dest_account_id] += qty
+                            current_holdings_qty[symbol_id, dest_account_id] += qty  # type: ignore
                 else:
                     is_shortable = False
                     for short_id in shortable_symbol_ids:
@@ -2079,17 +2089,31 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     # --- Prepare NumPy Inputs (Step 4: Update Data Prep) ---
     try:
         target_date_ordinal = target_date.toordinal()
+        # --- FIX: Define tx_types_np earlier for use in debug block ---
+        tx_types_series = (
+            transactions_til_date["Type"]
+            .str.lower()
+            .str.strip()
+            .map(type_to_id)
+            .fillna(-1)
+        )
+        tx_types_np = tx_types_series.values.astype(np.int64)
+
         tx_dates_ordinal_np = np.array(
             [d.toordinal() for d in transactions_til_date["Date"].dt.date.values],
             dtype=np.int64,
         )
-        tx_symbols_series = transactions_til_date["Symbol"].map(symbol_to_id)
-        tx_symbols_np = tx_symbols_series.values.astype(np.int64)
+        tx_symbols_series = _normalize_series(transactions_til_date["Symbol"]).map(
+            symbol_to_id
+        )
+        tx_symbols_np = tx_symbols_series.fillna(-1).values.astype(np.int64)
 
-        tx_accounts_series = transactions_til_date["Account"].map(account_to_id)
-        tx_accounts_np = tx_accounts_series.values.astype(np.int64)
+        tx_accounts_series = _normalize_series(transactions_til_date["Account"]).map(
+            account_to_id
+        )
+        tx_accounts_np = tx_accounts_series.fillna(-1).values.astype(np.int64)
 
-        # --- NEW: Map To Account ---
+        # --- ADDED: Map 'To Account' for transfers ---
         if "To Account" in transactions_til_date.columns:
             # Map 'To Account' to IDs, filling NaN with -1
             tx_to_accounts_series = (
@@ -2098,10 +2122,52 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         else:
             tx_to_accounts_series = pd.Series(-1, index=transactions_til_date.index)
         tx_to_accounts_np = tx_to_accounts_series.values.astype(np.int64)
-        # --- END NEW ---
 
-        tx_types_series = transactions_til_date["Type"].map(type_to_id).fillna(-1)
-        tx_types_np = tx_types_series.values.astype(np.int64)
+        # --- DEBUG BLOCK 2: Check Mapping ---
+        logging.debug("\n--- DEBUG: MAPPING CHECK ---")
+
+        # 1. Check ID Map for specific target
+        target_acc = "IBKR Acct. 1".upper().strip()
+        logging.debug(
+            f"Direct ID lookup for '{target_acc}': {account_to_id.get(target_acc, 'NOT FOUND')}"
+        )
+
+        # 2. Dump all account keys to check for whitespace issues
+        logging.debug("All Account Keys in Map:")
+        for k, v in account_to_id.items():
+            logging.debug(f"  '{k}' -> {v}")
+
+        # 3. Check Transfer IDs in Arrays
+        transfer_id = type_to_id.get("transfer")
+        logging.debug(f"Transfer Type ID: {transfer_id}")
+        if transfer_id is not None:
+            transfer_indices = np.where(tx_types_np == transfer_id)[0]
+
+            if len(transfer_indices) > 0:
+                logging.debug(
+                    f"Found {len(transfer_indices)} transfers in NumPy arrays."
+                )
+                for idx in transfer_indices:
+                    src_id = tx_accounts_np[idx]
+                    dst_id = tx_to_accounts_np[idx]
+
+                    src_name = id_to_account.get(src_id, "UNKNOWN_ID")
+                    dst_name = id_to_account.get(dst_id, "UNKNOWN_ID")
+
+                    logging.debug(
+                        f"  Tx Index {idx}: From ID {src_id} ('{src_name}') -> To ID {dst_id} ('{dst_name}')"
+                    )
+
+                    if dst_id == -1:
+                        logging.debug(
+                            "  CRITICAL: Destination ID is -1. The Numba engine will IGNORE this transfer."
+                        )
+            else:
+                logging.debug(
+                    "CRITICAL: No transfers found in NumPy arrays (tx_types_np)."
+                )
+        logging.debug("----------------------------\n")
+        # --- END ADDED ---
 
         tx_quantities_np = (
             transactions_til_date["Quantity"].fillna(0.0).values.astype(np.float64)
@@ -2126,7 +2192,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         withdrawal_type_id = type_to_id.get("withdrawal", -1)
         short_sell_type_id = type_to_id.get("short sell", -1)
         buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
-        transfer_type_id = type_to_id.get("transfer", -1)  # NEW
+        transfer_type_id = type_to_id.get("transfer", -1)  # ADDED
         fees_type_id = type_to_id.get("fees", -1)
         cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
 
@@ -2154,8 +2220,8 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             target_date_ordinal,
             tx_dates_ordinal_np,
             tx_symbols_np,
+            tx_to_accounts_np,  # Pass to Numba function
             tx_accounts_np,
-            tx_to_accounts_np,  # NEW
             tx_types_np,
             tx_quantities_np,
             tx_prices_np,
@@ -2173,7 +2239,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             withdrawal_type_id,
             short_sell_type_id,
             buy_to_cover_type_id,
-            transfer_type_id,  # NEW
+            transfer_type_id,  # Pass to Numba function
             fees_type_id,
             cash_symbol_id,
             STOCK_QUANTITY_CLOSE_TOLERANCE,
@@ -3131,12 +3197,10 @@ def _load_or_calculate_daily_results(
             )
 
         # Get the set of account IDs to include in the valuation
-        account_ids_to_include_set = {
+        account_ids_to_include_set = {  # type: ignore
             account_to_id.get(acc) for acc in included_accounts_list
         }
-        account_ids_to_include_set.discard(
-            None
-        )  # Remove None if an account wasn't in the map
+        account_ids_to_include_set.discard(None)
 
         # 3. Python valuation loop
         @profile
@@ -3152,10 +3216,10 @@ def _load_or_calculate_daily_results(
                     np.abs(daily_holdings_qty_source[day_idx]) > 1e-9
                 )
                 for sym_id, acc_id in stock_indices:
-                    # --- NEW: Filter by selected accounts ---
+                    # Filter by selected accounts
                     if acc_id not in account_ids_to_include_set:
                         continue
-                    # --- END NEW ---
+
                     internal_symbol = id_to_symbol.get(sym_id)
                     if internal_symbol is None or internal_symbol == CASH_SYMBOL_CSV:
                         continue
@@ -3196,7 +3260,7 @@ def _load_or_calculate_daily_results(
                     for acc_id, cash_balance in enumerate(
                         daily_cash_balances_source[day_idx]
                     ):
-                        if abs(cash_balance) > 1e-9:
+                        if abs(cash_balance) > 1e-9:  # type: ignore
                             # --- NEW: Filter by selected accounts ---
                             if acc_id not in account_ids_to_include_set:
                                 continue
@@ -3789,13 +3853,19 @@ def _get_or_calculate_all_daily_holdings(
         dtype=np.int64,
     )
     tx_symbols_np = (
-        all_transactions_df["Symbol"].map(symbol_to_id).values.astype(np.int64)
+        all_transactions_df["Symbol"]
+        .map(symbol_to_id)
+        .fillna(-1)
+        .values.astype(np.int64)
     )
     tx_accounts_np = (
-        all_transactions_df["Account"].map(account_to_id).values.astype(np.int64)
+        all_transactions_df["Account"]
+        .map(account_to_id)
+        .fillna(-1)
+        .values.astype(np.int64)
     )
 
-    # --- NEW: Map To Account ---
+    # --- ADDED: Map 'To Account' for transfers ---
     if "To Account" in all_transactions_df.columns:
         tx_to_accounts_series = (
             all_transactions_df["To Account"].map(account_to_id).fillna(-1)
@@ -3803,7 +3873,7 @@ def _get_or_calculate_all_daily_holdings(
     else:
         tx_to_accounts_series = pd.Series(-1, index=all_transactions_df.index)
     tx_to_accounts_np = tx_to_accounts_series.values.astype(np.int64)
-    # --- END NEW ---
+    # --- END ADDED ---
 
     tx_types_np = (
         all_transactions_df["Type"]
@@ -3831,7 +3901,7 @@ def _get_or_calculate_all_daily_holdings(
     withdrawal_type_id = type_to_id.get("withdrawal", -1)
     short_sell_type_id = type_to_id.get("short sell", -1)
     buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
-    transfer_type_id = type_to_id.get("transfer", -1)  # NEW
+    transfer_type_id = type_to_id.get("transfer", -1)  # ADDED
     cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
 
     shortable_symbol_ids = np.array(
@@ -3845,8 +3915,8 @@ def _get_or_calculate_all_daily_holdings(
         _calculate_daily_holdings_chronological_numba(
             date_ordinals_np,
             tx_dates_ordinal_np,
-            tx_symbols_np,
-            tx_accounts_np,
+            tx_symbols_np,  # type: ignore
+            tx_to_accounts_np,  # Pass to Numba function
             tx_to_accounts_np,  # NEW
             tx_types_np,
             tx_quantities_np,
@@ -3862,7 +3932,7 @@ def _get_or_calculate_all_daily_holdings(
             withdrawal_type_id,
             short_sell_type_id,
             buy_to_cover_type_id,
-            transfer_type_id,  # NEW
+            transfer_type_id,  # Pass to Numba function
             cash_symbol_id,
             STOCK_QUANTITY_CLOSE_TOLERANCE,
             shortable_symbol_ids,
@@ -4563,19 +4633,23 @@ def generate_mappings(transactions_df_effective):
     type_to_id = {}
     currency_to_id, id_to_currency = {}, {}
 
-    all_symbols = transactions_df_effective["Symbol"].unique()
+    all_symbols = _normalize_series(transactions_df_effective["Symbol"]).unique()
     symbol_to_id = {symbol: i for i, symbol in enumerate(all_symbols)}
     id_to_symbol = {i: symbol for symbol, i in symbol_to_id.items()}
 
-    # --- FIX: Include "To Account" in unique account list ---
-    accounts_source = set(transactions_df_effective["Account"].unique())
+    # --- MODIFIED: Include "To Account" in unique account list --- # type: ignore
+    accounts_source = set(
+        _normalize_series(transactions_df_effective["Account"]).unique()
+    )
     accounts_dest = set()
     if "To Account" in transactions_df_effective.columns:
-        accounts_dest = set(transactions_df_effective["To Account"].dropna().unique())
-
+        accounts_dest = set(
+            _normalize_series(transactions_df_effective["To Account"]).dropna().unique()
+        )
+    # --- END MODIFIED ---
     all_accounts = sorted(list(accounts_source | accounts_dest))
+    # --- END MODIFIED ---
     account_to_id = {account: i for i, account in enumerate(all_accounts)}
-    # --- END FIX ---
 
     id_to_account = {i: account for account, i in account_to_id.items()}
 
