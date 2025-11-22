@@ -728,7 +728,6 @@ class PortfolioApp(QMainWindow, UiHelpersMixin):
             "transactions_management_columns": {},  # For column visibility in the main transactions table
             "stock_tx_columns": {},  # For column visibility in the stock transactions table
             "cash_tx_columns": {},  # For column visibility in the cash transactions table
-            "rebalancing_targets": {},  # For remembering target percentages
             "holdings_table_header_state": None,  # For column order and sizes
         }
         loaded_app_config = config_defaults.copy()  # Start with defaults
@@ -2274,6 +2273,10 @@ The CSV file should contain the following columns (header names must match exact
         self.last_calc_status = ""
         self.last_hist_twr_factor = np.nan
         self._is_setting_dates_programmatically = False
+        # --- ADDED: Attribute to track first data load for header state restoration ---
+        self._first_data_load_complete = False
+        # --- END ADDED ---
+
         # --- ADDED: Attribute for frozen table view ---
         self.frozen_table_view = None
         # --- END ADDED ---
@@ -4623,21 +4626,7 @@ The CSV file should contain the following columns (header names must match exact
         self._update_account_button_text()
         self._update_benchmark_button_text()
         self._update_table_title(pd.DataFrame())
-
-        # --- ADDED: Restore header state ---
-        if self.config.get("holdings_table_header_state"):
-            try:
-                # QByteArray.fromHex() expects bytes, so we encode the string.
-                header_state_hex = self.config["holdings_table_header_state"].encode()
-                self.table_view.horizontalHeader().restoreState(
-                    QByteArray.fromHex(header_state_hex)
-                )
-                logging.info(
-                    "Restored holdings table header state (column order/sizes)."
-                )
-            except Exception as e:
-                logging.warning(f"Could not restore holdings table header state: {e}")
-        # --- END ADDED ---
+        # Header state is now restored in handle_results after data is loaded.
 
         # --- Style Tab Titles ---
         if hasattr(self, "main_tab_widget") and self.main_tab_widget:
@@ -7826,8 +7815,11 @@ The CSV file should contain the following columns (header names must match exact
             # `original_to_cleaned_header_map` is not relevant for DB source in this context
             self.original_to_cleaned_header_map_from_csv = {}
 
-        # --- Update available accounts and selection based on DB data ---
-        if "Account" in self.all_transactions_df_cleaned_for_logic.columns:
+        # --- MODIFIED: Mark that the first data load has completed ---
+        if not self._first_data_load_complete:
+            self._first_data_load_complete = True
+
+            # --- Update available accounts and selection based on DB data ---
             self.available_accounts = sorted(
                 list(self.all_transactions_df_cleaned_for_logic["Account"].unique())
             )
@@ -8210,6 +8202,27 @@ The CSV file should contain the following columns (header names must match exact
             logging.debug("  Calling update_holdings_pie_chart...")
             self.update_holdings_pie_chart(df_for_pies)  # Uses filtered data
             logging.debug("  Calling _update_table_view_with_filtered_columns...")
+
+            # --- MODIFIED: Restore header state AFTER model is populated ---
+            # This should only run on the very first successful data load.
+            if not self._first_data_load_complete and self.config.get(
+                "holdings_table_header_state"
+            ):
+                try:
+                    header_state_hex = self.config[
+                        "holdings_table_header_state"
+                    ].encode()
+                    self.table_view.horizontalHeader().restoreState(
+                        QByteArray.fromHex(header_state_hex)
+                    )
+                    logging.info(
+                        "Restored holdings table header state (column order/sizes)."
+                    )
+                except Exception as e:
+                    logging.warning(
+                        f"Could not restore holdings table header state: {e}"
+                    )
+
             self._update_table_view_with_filtered_columns(df_for_table)  # Update table
             logging.debug("  Calling apply_column_visibility...")
             self.apply_column_visibility()  # Re-apply visibility
@@ -12254,6 +12267,7 @@ The CSV file should contain the following columns (header names must match exact
         all_col_defs = get_column_definitions(currency)
         cols_to_sum_ui = [
             "Mkt Val",
+            # "% of Total" is handled separately for groups to avoid summation errors
             "Day Chg",
             "Unreal. G/L",
             "Real. G/L",
@@ -12286,6 +12300,21 @@ The CSV file should contain the following columns (header names must match exact
                 "is_group_header": True,
                 "group_key": sector,
             }
+
+            # --- ADDED: Calculate % of Total for the group ---
+            total_portfolio_value = self.summary_metrics_data.get("market_value")
+            mkt_val_col_actual = all_col_defs.get("Mkt Val")
+
+            if (
+                total_portfolio_value
+                and total_portfolio_value > 0
+                and mkt_val_col_actual
+                and mkt_val_col_actual in summed_values
+            ):
+                group_header_data["pct_of_total"] = (
+                    summed_values[mkt_val_col_actual] / total_portfolio_value
+                ) * 100.0
+
             group_header_data.update(summed_values)
             group_header_data.update(
                 self._calculate_summary_percentages(group, summed_values)
@@ -12323,6 +12352,7 @@ The CSV file should contain the following columns (header names must match exact
         all_col_defs = get_column_definitions(currency)
         cols_to_sum_ui = [
             "Mkt Val",
+            "% of Total",
             "Day Chg",
             "Unreal. G/L",
             "Real. G/L",
@@ -12798,6 +12828,25 @@ The CSV file should contain the following columns (header names must match exact
             self.holdings_data = (
                 holdings_df if holdings_df is not None else pd.DataFrame()
             )
+
+            # --- ADDED: Calculate '% of Total' column ---
+            if not self.holdings_data.empty:
+                total_portfolio_value = self.summary_metrics_data.get("market_value")
+                display_currency = self.currency_combo.currentText()
+                mkt_val_col = f"Market Value ({display_currency})"
+
+                if (
+                    total_portfolio_value
+                    and total_portfolio_value > 0
+                    and mkt_val_col in self.holdings_data.columns
+                ):
+                    self.holdings_data["pct_of_total"] = (
+                        self.holdings_data[mkt_val_col] / total_portfolio_value
+                    ) * 100.0
+                else:
+                    self.holdings_data["pct_of_total"] = 0.0
+            # --- END ADDED ---
+
             self.periodic_returns_data: Dict[str, pd.DataFrame] = {}
             self.account_metrics_data = account_metrics if account_metrics else {}
             self.index_quote_data = index_quotes if index_quotes else {}

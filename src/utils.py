@@ -141,6 +141,7 @@ def get_column_definitions(display_currency="USD"):
         "Price": f"Price ({display_currency})",
         "Cost Basis": f"Cost Basis ({display_currency})",
         "Mkt Val": f"Market Value ({display_currency})",
+        "% of Total": "pct_of_total",
         "Unreal. G/L": f"Unreal. Gain ({display_currency})",
         "Unreal. G/L %": "Unreal. Gain %",
         "Real. G/L": f"Realized Gain ({display_currency})",
