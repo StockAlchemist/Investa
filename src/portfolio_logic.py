@@ -1470,19 +1470,17 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
                     held_qty = holding_to_update["qty"]
                     qty_sold = min(sell_qty, held_qty) if held_qty > 1e-9 else 0
                     holding_to_update["qty"] -= qty_sold
-            elif tx_type == "transfer":  # type: ignore
+            elif tx_type == "transfer":
                 to_account = str(row.get("To Account", "")).strip()
-                # Only process if quantity is positive
                 if pd.notna(qty) and qty > 0:
-                    # FIX: Do NOT cap at held_qty. Trust the transaction qty.
-                    # This handles cases where Transfer appears before Buy on the same day.
                     transfer_qty = qty
-                    # 1. Deduct from Source
+
+                    # 1. Deduct from Source Account
                     holding_to_update["qty"] -= transfer_qty
-                    # 2. Add to Destination (if valid amount and destination exists)
+
+                    # 2. Add to Destination Account
                     if to_account and transfer_qty > 0:
                         to_key = (symbol, to_account)
-                        # Initialize destination holding if it doesn't exist
                         if to_key not in holdings:
                             holdings[to_key] = {
                                 "qty": 0.0,
@@ -1490,6 +1488,20 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
                                 "is_stock": True,
                             }
                         holdings[to_key]["qty"] += transfer_qty
+
+                        # This function only calculates market value, not cost basis,
+                        # so only the quantity needs to be moved. The Numba version
+                        # below is where the cost basis logic is critical.
+                        if IS_DEBUG_DATE:
+                            logging.debug(
+                                f"  Transferring {transfer_qty} of {symbol} from {account} to {to_account}"
+                            )
+                            logging.debug(
+                                f"    New Source Qty: {holding_to_update['qty']:.4f}"
+                            )
+                            logging.debug(
+                                f"    New Dest Qty: {holdings[to_key]['qty']:.4f}"
+                            )
         except Exception as e_h:
             if IS_DEBUG_DATE:
                 logging.error(
@@ -1793,37 +1805,37 @@ def _calculate_holdings_numba(
         if type_id == transfer_type_id:
             if qty > 1e-9:
                 source_qty = holdings_qty_np[symbol_id, account_id]
-                source_cost = holdings_cost_np[symbol_id, account_id]
+                source_cost_basis = holdings_cost_np[symbol_id, account_id]
 
-                cost_transferred = 0.0
+                # Determine the quantity to transfer. Do not cap it. Trust the transaction.
+                transfer_qty = qty
+                cost_to_transfer = 0.0
 
-                # Calculate proportional cost to transfer based on FIFO principles
-                if abs(source_qty) > 1e-9:
-                    pct_transferred = qty / source_qty
-                    if pct_transferred > 1.0:
-                        pct_transferred = 1.0
-                    cost_transferred = source_cost * pct_transferred
+                # Calculate proportional cost to transfer.
+                if abs(source_qty) > 1e-9:  # Avoid division by zero
+                    # If transferring more than held (e.g., due to same-day buy), transfer 100% of cost.
+                    proportion = min(transfer_qty / source_qty, 1.0)
+                    cost_to_transfer = source_cost_basis * proportion
 
-                    # 1. Deduct from Source
-                    holdings_qty_np[symbol_id, account_id] -= qty
-                    holdings_cost_np[symbol_id, account_id] -= cost_transferred
+                # 1. Deduct from Source Account
+                holdings_qty_np[symbol_id, account_id] -= transfer_qty
+                holdings_cost_np[symbol_id, account_id] -= cost_to_transfer
 
-                    # Zero out Source if negligible (e.g., full transfer)
-                    if (
-                        abs(holdings_qty_np[symbol_id, account_id])
-                        < stock_qty_close_tolerance
-                    ):
-                        holdings_qty_np[symbol_id, account_id] = 0.0
-                        holdings_cost_np[symbol_id, account_id] = 0.0
+                # Zero out if quantity becomes negligible
+                if (
+                    abs(holdings_qty_np[symbol_id, account_id])
+                    < stock_qty_close_tolerance
+                ):
+                    holdings_qty_np[symbol_id, account_id] = 0.0
+                    holdings_cost_np[symbol_id, account_id] = 0.0
 
                 # 2. Add to Destination
                 dest_account_id = tx_to_accounts_np[i]
                 if dest_account_id != -1:
                     if holdings_currency_np[symbol_id, dest_account_id] == -1:
                         holdings_currency_np[symbol_id, dest_account_id] = currency_id
-
-                    holdings_qty_np[symbol_id, dest_account_id] += qty
-                    holdings_cost_np[symbol_id, dest_account_id] += cost_transferred
+                    holdings_qty_np[symbol_id, dest_account_id] += transfer_qty
+                    holdings_cost_np[symbol_id, dest_account_id] += cost_to_transfer
             continue
 
         # --- Existing Split Logic ---
@@ -2019,24 +2031,22 @@ def _calculate_daily_holdings_chronological_numba(
                         held_qty = current_holdings_qty[symbol_id, account_id]
                         qty_sold = min(qty, held_qty) if held_qty > 1e-9 else 0.0
                         current_holdings_qty[symbol_id, account_id] -= qty_sold
-                # --- BUG FIX: Add stock transfer logic ---
-                # This was missing. When a stock is transferred, its quantity needs to be
-                # moved from the source account to the destination account.
                 elif type_id == transfer_type_id:
                     if qty > 1e-9:
-                        # 1. Deduct from Source
-                        current_holdings_qty[symbol_id, account_id] -= qty
-                        # Zero out Source if negligible
-                        if (
-                            abs(current_holdings_qty[symbol_id, account_id])
-                            < stock_qty_close_tolerance
-                        ):
-                            current_holdings_qty[symbol_id, account_id] = 0.0
+                        transfer_qty = qty
 
-                        # 2. Add to Destination
+                        # 1. Deduct from Source Account
+                        current_holdings_qty[symbol_id, account_id] -= transfer_qty
+
+                        # 2. Add to Destination Account
                         dest_account_id = tx_to_accounts_np[tx_idx]
                         if dest_account_id != -1:
-                            current_holdings_qty[symbol_id, dest_account_id] += qty
+                            current_holdings_qty[
+                                symbol_id, dest_account_id
+                            ] += transfer_qty
+
+                        # Note: This function only tracks quantity, not cost basis.
+                        # The cost basis transfer is handled in _calculate_holdings_numba.
                 else:
                     is_shortable = False
                     for short_id in shortable_symbol_ids:
