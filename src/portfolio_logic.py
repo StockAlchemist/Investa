@@ -1905,7 +1905,6 @@ def _calculate_holdings_numba(
 
                     holdings_qty_np[symbol_id, account_id] -= qty_sold
                     holdings_cost_np[symbol_id, account_id] -= cost_sold
-                    holdings_cost_np[symbol_id, account_id] += commission
 
                     if abs(holdings_qty_np[symbol_id, account_id]) < 1e-9:
                         holdings_qty_np[symbol_id, account_id] = 0.0
@@ -2106,6 +2105,10 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     if transactions_til_date.empty:
         return 0.0, False
 
+    # --- FIX: Sort transactions to ensure chronological processing ---
+    transactions_til_date.sort_values(
+        by=["Date", "original_index"], inplace=True, ascending=True
+    )
     # --- Prepare NumPy Inputs (Step 4: Update Data Prep) ---
     try:
         target_date_ordinal = target_date.toordinal()
@@ -2141,7 +2144,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             ).map(account_to_id)
         else:
             tx_to_accounts_series = pd.Series(-1, index=transactions_til_date.index)
-        tx_to_accounts_np = tx_to_accounts_series.values.astype(np.int64)
+        tx_to_accounts_np = tx_to_accounts_series.fillna(-1).values.astype(np.int64)
 
         # --- DEBUG BLOCK 2: Check Mapping ---
         logging.debug("\n--- DEBUG: MAPPING CHECK ---")
@@ -3115,42 +3118,34 @@ def _load_or_calculate_daily_results(
                 f"Hist Daily (Scope: {filter_desc}): L1 cache miss. Calculating daily holdings chronologically (numba_chrono)..."
             )
             status_update = " Calculating daily values (chrono)..."
+            # --- FIX: Sort transactions before creating numpy arrays ---
+            sorted_df = transactions_df_effective.sort_values(
+                by=["Date", "original_index"]
+            ).copy()
+
             # Prepare inputs for chronological Numba function
             date_ordinals_np = np.array(
                 [d.toordinal() for d in date_range_for_calc], dtype=np.int64
             )
             tx_dates_ordinal_np = np.array(
-                [
-                    d.toordinal()
-                    for d in transactions_df_effective["Date"].dt.date.values
-                ],
+                [d.toordinal() for d in sorted_df["Date"].dt.date.values],
                 dtype=np.int64,
             )
             tx_symbols_np = (
-                transactions_df_effective["Symbol"]
-                .map(symbol_to_id)
-                .values.astype(np.int64)
+                sorted_df["Symbol"].map(symbol_to_id).values.astype(np.int64)
             )
             tx_accounts_np = (
-                transactions_df_effective["Account"]
-                .map(account_to_id)
-                .values.astype(np.int64)
+                sorted_df["Account"].map(account_to_id).values.astype(np.int64)
             )
             # --- NEW: Map To Account for chrono calc ---
-            if "To Account" in transactions_df_effective.columns:
-                tx_to_accounts_series = (
-                    transactions_df_effective["To Account"]
-                    .map(account_to_id)
-                    .fillna(-1)
-                )
+            if "To Account" in sorted_df.columns:
+                tx_to_accounts_series = sorted_df["To Account"].map(account_to_id)
             else:
-                tx_to_accounts_series = pd.Series(
-                    -1, index=transactions_df_effective.index
-                )
-            tx_to_accounts_np = tx_to_accounts_series.values.astype(np.int64)
+                tx_to_accounts_series = pd.Series(-1, index=sorted_df.index)
+            tx_to_accounts_np = tx_to_accounts_series.fillna(-1).values.astype(np.int64)
             # --- END NEW ---
             tx_types_np = (
-                transactions_df_effective["Type"]
+                sorted_df["Type"]
                 .str.lower()
                 .str.strip()
                 .map(type_to_id)
@@ -3158,19 +3153,13 @@ def _load_or_calculate_daily_results(
                 .values.astype(np.int64)
             )
             tx_quantities_np = (
-                transactions_df_effective["Quantity"]
-                .fillna(0.0)
-                .values.astype(np.float64)
+                sorted_df["Quantity"].fillna(0.0).values.astype(np.float64)
             )
             tx_commissions_np = (
-                transactions_df_effective["Commission"]
-                .fillna(0.0)
-                .values.astype(np.float64)
+                sorted_df["Commission"].fillna(0.0).values.astype(np.float64)
             )
             tx_split_ratios_np = (
-                transactions_df_effective["Split Ratio"]
-                .fillna(0.0)
-                .values.astype(np.float64)
+                sorted_df["Split Ratio"].fillna(0.0).values.astype(np.float64)
             )
             split_type_id = type_to_id.get("split", -1)
             stock_split_type_id = type_to_id.get("stock split", -1)
@@ -3865,54 +3854,45 @@ def _get_or_calculate_all_daily_holdings(
 
     logging.info("L1 Cache MISS: Calculating daily holdings for all accounts...")
 
+    # --- FIX: Create a sorted copy to ensure chronological processing ---
+    sorted_tx_df = all_transactions_df.sort_values(by=["Date", "original_index"]).copy()
+
     date_range_for_calc = pd.date_range(start=start_date, end=end_date, freq="D")
     date_ordinals_np = np.array(
         [d.toordinal() for d in date_range_for_calc], dtype=np.int64
     )
 
     tx_dates_ordinal_np = np.array(
-        [d.toordinal() for d in all_transactions_df["Date"].dt.date.values],
+        [d.toordinal() for d in sorted_tx_df["Date"].dt.date.values],
         dtype=np.int64,
     )
     tx_symbols_np = (
-        all_transactions_df["Symbol"]
-        .map(symbol_to_id)
-        .fillna(-1)
-        .values.astype(np.int64)
+        sorted_tx_df["Symbol"].map(symbol_to_id).fillna(-1).values.astype(np.int64)
     )
     tx_accounts_np = (
-        all_transactions_df["Account"]
-        .map(account_to_id)
-        .fillna(-1)
-        .values.astype(np.int64)
+        sorted_tx_df["Account"].map(account_to_id).fillna(-1).values.astype(np.int64)
     )
 
     # --- ADDED: Map 'To Account' for transfers ---
-    if "To Account" in all_transactions_df.columns:
-        tx_to_accounts_series = (
-            all_transactions_df["To Account"].map(account_to_id).fillna(-1)
-        )
+    if "To Account" in sorted_tx_df.columns:
+        tx_to_accounts_series = sorted_tx_df["To Account"].map(account_to_id)
     else:
-        tx_to_accounts_series = pd.Series(-1, index=all_transactions_df.index)
-    tx_to_accounts_np = tx_to_accounts_series.values.astype(np.int64)
+        tx_to_accounts_series = pd.Series(-1, index=sorted_tx_df.index)
+    tx_to_accounts_np = tx_to_accounts_series.fillna(-1).values.astype(np.int64)
     # --- END ADDED ---
 
     tx_types_np = (
-        all_transactions_df["Type"]
+        sorted_tx_df["Type"]
         .str.lower()
         .str.strip()
         .map(type_to_id)
         .fillna(-1)
         .values.astype(np.int64)
     )
-    tx_quantities_np = (
-        all_transactions_df["Quantity"].fillna(0.0).values.astype(np.float64)
-    )
-    tx_commissions_np = (
-        all_transactions_df["Commission"].fillna(0.0).values.astype(np.float64)
-    )
+    tx_quantities_np = sorted_tx_df["Quantity"].fillna(0.0).values.astype(np.float64)
+    tx_commissions_np = sorted_tx_df["Commission"].fillna(0.0).values.astype(np.float64)
     tx_split_ratios_np = (
-        all_transactions_df["Split Ratio"].fillna(0.0).values.astype(np.float64)
+        sorted_tx_df["Split Ratio"].fillna(0.0).values.astype(np.float64)
     )
 
     split_type_id = type_to_id.get("split", -1)
@@ -3937,9 +3917,9 @@ def _get_or_calculate_all_daily_holdings(
         _calculate_daily_holdings_chronological_numba(
             date_ordinals_np,
             tx_dates_ordinal_np,
-            tx_symbols_np,  # type: ignore
-            tx_to_accounts_np,
-            tx_to_accounts_np,  # Pass to Numba function
+            tx_symbols_np,
+            tx_to_accounts_np,  # Corrected: This is the destination account array
+            tx_accounts_np,  # Corrected: This is the source account array
             tx_types_np,
             tx_quantities_np,
             tx_commissions_np,

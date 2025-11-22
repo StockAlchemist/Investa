@@ -74,7 +74,7 @@ SHORTABLE_SYMBOLS = {"AAPL", "RIMM"}
 DEFAULT_CSV = "my_transactions.csv"  # Default name for CSV related operations (e.g. export suggestion)
 
 # --- Calculation Method Configuration ---
-HISTORICAL_CALC_METHOD = "python"  # Options: 'python', 'numba' #### MODIFIED: Default to 'python' for compatibility, 'numba' may need review.
+HISTORICAL_CALC_METHOD = "python"  # Options: 'python', 'numba' MODIFIED: Default to 'python' for compatibility, 'numba' needs review.
 HISTORICAL_COMPARE_METHODS = (
     False  # If true, historical calc will run both methods and log diffs
 )

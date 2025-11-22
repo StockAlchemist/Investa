@@ -2,6 +2,7 @@
 from PySide6.QtCore import QRunnable, QObject, Signal, Slot
 from typing import Dict, Any, Set, Optional
 import pandas as pd
+import numpy as np
 import logging
 import traceback
 from datetime import datetime, timedelta
@@ -645,6 +646,12 @@ class PortfolioCalculatorWorker(QRunnable):
                         portfolio_returns_series = (
                             df_for_analysis["Portfolio Value"].pct_change().dropna()
                         )
+                        # --- FIX: Clean the returns series of NaNs and Infs before passing to model ---
+                        portfolio_returns_series.replace(
+                            [np.inf, -np.inf], np.nan, inplace=True
+                        )
+                        portfolio_returns_series.dropna(inplace=True)
+                        # --- END FIX ---
                         portfolio_returns_series.name = "Portfolio_Returns"
 
                     if not portfolio_returns_series.empty:
