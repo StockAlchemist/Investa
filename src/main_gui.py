@@ -7819,42 +7819,17 @@ The CSV file should contain the following columns (header names must match exact
         if not self._first_data_load_complete:
             self._first_data_load_complete = True
 
-            # --- Update available accounts and selection based on DB data ---
+        # --- Update available accounts and selection based on DB data ---
+        if "Account" in self.all_transactions_df_cleaned_for_logic.columns:
             self.available_accounts = sorted(
                 list(self.all_transactions_df_cleaned_for_logic["Account"].unique())
             )
         else:
             self.available_accounts = []
             logging.warning(
-                "No 'Account' column in data loaded from DB. Account filtering may fail."
+                "No 'Account' column in data loaded from DB. Account filtering may not be available."
             )
         self._update_account_button_text()  # Update button with new list of accounts
-
-        # Validate selected_accounts against newly available_accounts
-        if self.selected_accounts:  # Only validate if there was a prior selection
-            valid_selected_accounts = [
-                acc for acc in self.selected_accounts if acc in self.available_accounts
-            ]
-            if len(valid_selected_accounts) != len(self.selected_accounts):
-                self.selected_accounts = (
-                    valid_selected_accounts  # Update to only valid ones
-                )
-                logging.info(
-                    f"Adjusted selected accounts to: {self.selected_accounts} based on available accounts."
-                )
-            if (
-                not self.selected_accounts and self.available_accounts
-            ):  # If validation made it empty
-                self.selected_accounts = []  # This means "All"
-                logging.info(
-                    "Selected accounts became empty after validation, defaulting to all."
-                )
-            self._update_account_button_text()  # Update button text again if selection changed
-        elif (
-            not self.selected_accounts and self.available_accounts
-        ):  # If it was already empty (meaning "All")
-            self.selected_accounts = []  # Keep it as "All"
-        # If self.available_accounts is empty, self.selected_accounts will also be empty or become empty.
 
         # --- MODIFIED: Reset group expansion state if account scope changes ---
         # This logic now correctly handles the "All Accounts" case by comparing the
