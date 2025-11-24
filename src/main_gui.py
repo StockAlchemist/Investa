@@ -729,6 +729,7 @@ class PortfolioApp(QMainWindow, UiHelpersMixin):
             "stock_tx_columns": {},  # For column visibility in the stock transactions table
             "cash_tx_columns": {},  # For column visibility in the cash transactions table
             "holdings_table_header_state": None,  # For column order and sizes
+            "account_groups": {},  # For grouping accounts in the menu
         }
         loaded_app_config = config_defaults.copy()  # Start with defaults
 
@@ -850,6 +851,14 @@ class PortfolioApp(QMainWindow, UiHelpersMixin):
                         loaded_app_config[key] = (
                             {}
                         )  # Ensure key exists with default empty dict
+
+                # Validate account_groups
+                if "account_groups" in loaded_app_config:
+                    if not isinstance(loaded_app_config["account_groups"], dict):
+                        logging.warning(
+                            "Invalid 'account_groups' in config. Resetting to default empty dict."
+                        )
+                        loaded_app_config["account_groups"] = {}
 
             except Exception as e:
                 logging.warning(
@@ -2913,6 +2922,62 @@ The CSV file should contain the following columns (header names must match exact
         else:
             logging.warning("Warn: Account button not ready for menu.")
 
+    @Slot()
+    def manage_account_groups(self):
+        """Opens the AccountGroupingDialog to manage account groups."""
+        current_groups = self.config.get("account_groups", {})
+        all_accounts = self.available_accounts
+
+        dialog = AccountGroupingDialog(
+            parent=self, current_groups=current_groups, all_accounts=all_accounts
+        )
+        if dialog.exec():
+            new_groups = dialog.get_settings()
+            if new_groups != current_groups:
+                self.config["account_groups"] = new_groups
+                self.save_config()
+                self.set_status(
+                    "Account groups updated. Re-open the account menu to see changes."
+                )
+                # No refresh needed, as this only affects the UI menu structure
+            else:
+                self.set_status("Account groups unchanged.")
+
+    def _toggle_group_selection(self, group_name: str, select_all: bool):
+        """Selects or deselects all accounts within a specific group."""
+        account_groups = self.config.get("account_groups", {})
+        accounts_in_group = account_groups.get(group_name, [])
+
+        if not accounts_in_group:
+            return
+
+        if select_all:
+            for acc in accounts_in_group:
+                if acc not in self.selected_accounts:
+                    self.selected_accounts.append(acc)
+            logging.info(f"Selected all accounts in group '{group_name}'.")
+        else:  # Deselect all
+            self.selected_accounts = [
+                acc for acc in self.selected_accounts if acc not in accounts_in_group
+            ]
+            logging.info(f"Deselected all accounts in group '{group_name}'.")
+
+        # If selection becomes empty, default back to selecting all available accounts
+        if not self.selected_accounts and self.available_accounts:
+            self.selected_accounts = self.available_accounts.copy()
+
+        # Sort selected list based on available accounts order for consistency
+        self.selected_accounts.sort(
+            key=lambda acc: (
+                self.available_accounts.index(acc)
+                if acc in self.available_accounts
+                else float("inf")
+            )
+        )
+
+        self._update_account_button_text()
+        self.set_status("Account selection changed. Click 'Update Accounts' to apply.")
+
     def _toggle_all_accounts(self, select_all: bool):
         """
         Selects or deselects all available accounts.
@@ -2938,6 +3003,79 @@ The CSV file should contain the following columns (header names must match exact
         self.set_status("Account selection changed. Click 'Update Accounts' to apply.")
 
     # --- End Account Selection Methods ---
+
+    def _build_account_menu_actions(self, menu: QMenu):
+        """
+        Builds the account selection menu, including groups as sub-menus.
+        Overrides the method from UiHelpersMixin.
+        """
+        account_groups = self.config.get("account_groups", {})
+        all_available_accounts = set(self.available_accounts)
+        grouped_accounts = set()
+
+        # --- "Select All" / "Deselect All" Actions ---
+        select_all_action = QAction("Select All", self)
+        select_all_action.triggered.connect(lambda: self._toggle_all_accounts(True))
+        menu.addAction(select_all_action)
+
+        deselect_all_action = QAction("Deselect All", self)
+        deselect_all_action.triggered.connect(lambda: self._toggle_all_accounts(False))
+        menu.addAction(deselect_all_action)
+        menu.addSeparator()
+
+        # --- Grouped Accounts (as Sub-menus) ---
+        if account_groups:
+            for group_name, accounts_in_group in sorted(account_groups.items()):
+                valid_accounts_in_group = [
+                    acc for acc in accounts_in_group if acc in all_available_accounts
+                ]
+                if not valid_accounts_in_group:
+                    continue
+
+                group_menu = menu.addMenu(f"📂 {group_name}")
+                grouped_accounts.update(valid_accounts_in_group)
+
+                # Add "Select All in Group" action
+                select_group_action = QAction(f"Select All in '{group_name}'", self)
+                select_group_action.triggered.connect(
+                    partial(self._toggle_group_selection, group_name, True)
+                )
+                group_menu.addAction(select_group_action)
+                group_menu.addSeparator()
+
+                for account_name in sorted(valid_accounts_in_group):
+                    action = QAction(account_name, self)
+                    action.setCheckable(True)
+                    action.setChecked(account_name in self.selected_accounts)
+                    action.triggered.connect(
+                        partial(
+                            self.toggle_account_selection,
+                            account_name,
+                            action.isChecked,
+                        )
+                    )
+                    group_menu.addAction(action)
+            menu.addSeparator()
+
+        # --- Ungrouped Accounts ---
+        ungrouped_accounts = sorted(list(all_available_accounts - grouped_accounts))
+        if ungrouped_accounts:
+            for account_name in ungrouped_accounts:
+                action = QAction(account_name, self)
+                action.setCheckable(True)
+                action.setChecked(account_name in self.selected_accounts)
+                action.triggered.connect(
+                    partial(
+                        self.toggle_account_selection, account_name, action.isChecked
+                    )
+                )
+                menu.addAction(action)
+
+        # --- Footer Actions ---
+        menu.addSeparator()
+        manage_groups_action = QAction("Manage Groups...", self)
+        manage_groups_action.triggered.connect(self.manage_account_groups)
+        menu.addAction(manage_groups_action)
 
     def _load_manual_overrides(self):  # No longer returns, sets instance attributes
         """Loads manual overrides, symbol map, and excluded symbols from MANUAL_OVERRIDES_FILE.
@@ -15597,6 +15735,151 @@ The CSV file should contain the following columns (header names must match exact
     # This block handles:
     # - Checking for required library dependencies.
     # - Setting up basic logging.
+
+
+class AccountGroupingDialog(QDialog):
+    """A dialog to manage account groups."""
+
+    def __init__(
+        self, parent, current_groups: Dict[str, List[str]], all_accounts: List[str]
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Manage Account Groups")
+        self.setMinimumSize(600, 400)
+
+        self.groups = {
+            k: list(v) for k, v in current_groups.items()
+        }  # Make a mutable copy
+        self.all_accounts = set(all_accounts)
+
+        main_layout = QVBoxLayout(self)
+        h_layout = QHBoxLayout()
+        main_layout.addLayout(h_layout)
+
+        # Left: Groups
+        groups_layout = QVBoxLayout()
+        groups_layout.addWidget(QLabel("<b>Groups</b>"))
+        self.groups_list = QListWidget()
+        self.groups_list.itemSelectionChanged.connect(self.on_group_selected)
+        groups_layout.addWidget(self.groups_list)
+        group_buttons_layout = QHBoxLayout()
+        add_group_btn = QPushButton("Add")
+        add_group_btn.clicked.connect(self.add_group)
+        del_group_btn = QPushButton("Delete")
+        del_group_btn.clicked.connect(self.delete_group)
+        group_buttons_layout.addWidget(add_group_btn)
+        group_buttons_layout.addWidget(del_group_btn)
+        groups_layout.addLayout(group_buttons_layout)
+        h_layout.addLayout(groups_layout, 1)
+
+        # Middle: Accounts in Group
+        accounts_in_group_layout = QVBoxLayout()
+        accounts_in_group_layout.addWidget(QLabel("<b>Accounts in Selected Group</b>"))
+        self.accounts_in_group_list = QListWidget()
+        accounts_in_group_layout.addWidget(self.accounts_in_group_list)
+        h_layout.addLayout(accounts_in_group_layout, 1)
+
+        # Arrow buttons
+        arrow_layout = QVBoxLayout()
+        arrow_layout.addStretch()
+        self.move_in_btn = QPushButton("<<")
+        self.move_in_btn.setToolTip("Add selected account(s) to group")
+        self.move_in_btn.clicked.connect(self.move_accounts_in)
+        self.move_out_btn = QPushButton(">>")
+        self.move_out_btn.setToolTip("Remove selected account(s) from group")
+        self.move_out_btn.clicked.connect(self.move_accounts_out)
+        arrow_layout.addWidget(self.move_in_btn)
+        arrow_layout.addWidget(self.move_out_btn)
+        arrow_layout.addStretch()
+        h_layout.addLayout(arrow_layout)
+
+        # Right: Ungrouped Accounts
+        ungrouped_layout = QVBoxLayout()
+        ungrouped_layout.addWidget(QLabel("<b>Ungrouped Accounts</b>"))
+        self.ungrouped_accounts_list = QListWidget()
+        self.ungrouped_accounts_list.setSelectionMode(
+            QAbstractItemView.ExtendedSelection
+        )
+        ungrouped_layout.addWidget(self.ungrouped_accounts_list)
+        h_layout.addLayout(ungrouped_layout, 1)
+
+        # Dialog Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        main_layout.addWidget(button_box)
+
+        self.populate_lists()
+
+    def populate_lists(self):
+        self.groups_list.clear()
+        self.groups_list.addItems(sorted(self.groups.keys()))
+        self.update_account_lists()
+
+    def update_account_lists(self):
+        self.accounts_in_group_list.clear()
+        self.ungrouped_accounts_list.clear()
+
+        selected_group_items = self.groups_list.selectedItems()
+        grouped_accounts = set(
+            acc for acc_list in self.groups.values() for acc in acc_list
+        )
+        ungrouped = sorted(list(self.all_accounts - grouped_accounts))
+        self.ungrouped_accounts_list.addItems(ungrouped)
+
+        if selected_group_items:
+            group_name = selected_group_items[0].text()
+            self.accounts_in_group_list.addItems(
+                sorted(self.groups.get(group_name, []))
+            )
+
+    def on_group_selected(self):
+        self.update_account_lists()
+
+    def add_group(self):
+        group_name, ok = QInputDialog.getText(
+            self, "Add Group", "Enter new group name:"
+        )
+        if ok and group_name:
+            if group_name in self.groups:
+                QMessageBox.warning(
+                    self, "Duplicate", "A group with this name already exists."
+                )
+            else:
+                self.groups[group_name] = []
+                self.populate_lists()
+
+    def delete_group(self):
+        selected_items = self.groups_list.selectedItems()
+        if not selected_items:
+            return
+        group_name = selected_items[0].text()
+        del self.groups[group_name]
+        self.populate_lists()
+
+    def move_accounts_in(self):
+        selected_group_items = self.groups_list.selectedItems()
+        selected_accounts = self.ungrouped_accounts_list.selectedItems()
+        if not selected_group_items or not selected_accounts:
+            return
+        group_name = selected_group_items[0].text()
+        for item in selected_accounts:
+            self.groups[group_name].append(item.text())
+        self.update_account_lists()
+
+    def move_accounts_out(self):
+        selected_group_items = self.groups_list.selectedItems()
+        selected_accounts = self.accounts_in_group_list.selectedItems()
+        if not selected_group_items or not selected_accounts:
+            return
+        group_name = selected_group_items[0].text()
+        for item in selected_accounts:
+            self.groups[group_name].remove(item.text())
+        self.update_account_lists()
+
+    def get_settings(self) -> Dict[str, List[str]]:
+        return self.groups
+
     # - Initializing the QApplication.
     # - Creating and showing the main PortfolioApp window.
     # - Starting the Qt event loop.
