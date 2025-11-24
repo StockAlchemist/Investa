@@ -15745,7 +15745,7 @@ class AccountGroupingDialog(QDialog):
     ):
         super().__init__(parent)
         self.setWindowTitle("Manage Account Groups")
-        self.setMinimumSize(600, 400)
+        self.setMinimumSize(700, 500)
 
         self.groups = {
             k: list(v) for k, v in current_groups.items()
@@ -15756,30 +15756,43 @@ class AccountGroupingDialog(QDialog):
         h_layout = QHBoxLayout()
         main_layout.addLayout(h_layout)
 
-        # Left: Groups
+        # --- Left: Groups ---
         groups_layout = QVBoxLayout()
         groups_layout.addWidget(QLabel("<b>Groups</b>"))
         self.groups_list = QListWidget()
+        self.groups_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.groups_list.customContextMenuRequested.connect(self.show_group_context_menu)
         self.groups_list.itemSelectionChanged.connect(self.on_group_selected)
         groups_layout.addWidget(self.groups_list)
+
         group_buttons_layout = QHBoxLayout()
         add_group_btn = QPushButton("Add")
         add_group_btn.clicked.connect(self.add_group)
+        rename_group_btn = QPushButton("Rename")
+        rename_group_btn.clicked.connect(self.rename_group)
         del_group_btn = QPushButton("Delete")
         del_group_btn.clicked.connect(self.delete_group)
+        
         group_buttons_layout.addWidget(add_group_btn)
+        group_buttons_layout.addWidget(rename_group_btn)
         group_buttons_layout.addWidget(del_group_btn)
         groups_layout.addLayout(group_buttons_layout)
         h_layout.addLayout(groups_layout, 1)
 
-        # Middle: Accounts in Group
+        # --- Middle: Accounts in Group ---
         accounts_in_group_layout = QVBoxLayout()
         accounts_in_group_layout.addWidget(QLabel("<b>Accounts in Selected Group</b>"))
         self.accounts_in_group_list = QListWidget()
+        self.accounts_in_group_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.accounts_in_group_list.itemDoubleClicked.connect(self.move_accounts_out)
+        self.accounts_in_group_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.accounts_in_group_list.customContextMenuRequested.connect(
+            lambda pos: self.show_account_context_menu(pos, is_grouped=True)
+        )
         accounts_in_group_layout.addWidget(self.accounts_in_group_list)
         h_layout.addLayout(accounts_in_group_layout, 1)
 
-        # Arrow buttons
+        # --- Arrow buttons ---
         arrow_layout = QVBoxLayout()
         arrow_layout.addStretch()
         self.move_in_btn = QPushButton("<<")
@@ -15793,17 +15806,22 @@ class AccountGroupingDialog(QDialog):
         arrow_layout.addStretch()
         h_layout.addLayout(arrow_layout)
 
-        # Right: Ungrouped Accounts
+        # --- Right: Ungrouped Accounts ---
         ungrouped_layout = QVBoxLayout()
         ungrouped_layout.addWidget(QLabel("<b>Ungrouped Accounts</b>"))
         self.ungrouped_accounts_list = QListWidget()
         self.ungrouped_accounts_list.setSelectionMode(
             QAbstractItemView.ExtendedSelection
         )
+        self.ungrouped_accounts_list.itemDoubleClicked.connect(self.move_accounts_in)
+        self.ungrouped_accounts_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.ungrouped_accounts_list.customContextMenuRequested.connect(
+            lambda pos: self.show_account_context_menu(pos, is_grouped=False)
+        )
         ungrouped_layout.addWidget(self.ungrouped_accounts_list)
         h_layout.addLayout(ungrouped_layout, 1)
 
-        # Dialog Buttons
+        # --- Dialog Buttons ---
         button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
@@ -15812,18 +15830,29 @@ class AccountGroupingDialog(QDialog):
         self.populate_lists()
 
     def populate_lists(self):
+        # Remember selection if possible
+        current_row = self.groups_list.currentRow()
         self.groups_list.clear()
         self.groups_list.addItems(sorted(self.groups.keys()))
-        self.update_account_lists()
+        if current_row >= 0 and current_row < self.groups_list.count():
+            self.groups_list.setCurrentRow(current_row)
+        elif self.groups_list.count() > 0:
+            self.groups_list.setCurrentRow(0)
+        else:
+            self.update_account_lists()
 
     def update_account_lists(self):
         self.accounts_in_group_list.clear()
         self.ungrouped_accounts_list.clear()
 
         selected_group_items = self.groups_list.selectedItems()
+        
+        # Calculate all currently grouped accounts across ALL groups
         grouped_accounts = set(
             acc for acc_list in self.groups.values() for acc in acc_list
         )
+        
+        # Ungrouped is everything else
         ungrouped = sorted(list(self.all_accounts - grouped_accounts))
         self.ungrouped_accounts_list.addItems(ungrouped)
 
@@ -15832,6 +15861,13 @@ class AccountGroupingDialog(QDialog):
             self.accounts_in_group_list.addItems(
                 sorted(self.groups.get(group_name, []))
             )
+            self.move_in_btn.setEnabled(True)
+            self.move_out_btn.setEnabled(True)
+            self.accounts_in_group_list.setEnabled(True)
+        else:
+            self.move_in_btn.setEnabled(False)
+            self.move_out_btn.setEnabled(False)
+            self.accounts_in_group_list.setEnabled(False)
 
     def on_group_selected(self):
         self.update_account_lists()
@@ -15841,6 +15877,9 @@ class AccountGroupingDialog(QDialog):
             self, "Add Group", "Enter new group name:"
         )
         if ok and group_name:
+            group_name = group_name.strip()
+            if not group_name:
+                return
             if group_name in self.groups:
                 QMessageBox.warning(
                     self, "Duplicate", "A group with this name already exists."
@@ -15848,14 +15887,51 @@ class AccountGroupingDialog(QDialog):
             else:
                 self.groups[group_name] = []
                 self.populate_lists()
+                # Select the new group
+                items = self.groups_list.findItems(group_name, Qt.MatchExactly)
+                if items:
+                    self.groups_list.setCurrentItem(items[0])
+
+    def rename_group(self):
+        selected_items = self.groups_list.selectedItems()
+        if not selected_items:
+            return
+        old_name = selected_items[0].text()
+        new_name, ok = QInputDialog.getText(
+            self, "Rename Group", "Enter new group name:", text=old_name
+        )
+        if ok and new_name:
+            new_name = new_name.strip()
+            if not new_name or new_name == old_name:
+                return
+            if new_name in self.groups:
+                QMessageBox.warning(
+                    self, "Duplicate", "A group with this name already exists."
+                )
+                return
+            
+            # Preserve the list of accounts
+            self.groups[new_name] = self.groups.pop(old_name)
+            self.populate_lists()
+            # Reselect
+            items = self.groups_list.findItems(new_name, Qt.MatchExactly)
+            if items:
+                self.groups_list.setCurrentItem(items[0])
 
     def delete_group(self):
         selected_items = self.groups_list.selectedItems()
         if not selected_items:
             return
         group_name = selected_items[0].text()
-        del self.groups[group_name]
-        self.populate_lists()
+        
+        reply = QMessageBox.question(
+            self, "Confirm Delete", 
+            f"Are you sure you want to delete group '{group_name}'?\nAccounts will become ungrouped.",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            del self.groups[group_name]
+            self.populate_lists()
 
     def move_accounts_in(self):
         selected_group_items = self.groups_list.selectedItems()
@@ -15874,8 +15950,45 @@ class AccountGroupingDialog(QDialog):
             return
         group_name = selected_group_items[0].text()
         for item in selected_accounts:
-            self.groups[group_name].remove(item.text())
+            if item.text() in self.groups[group_name]:
+                self.groups[group_name].remove(item.text())
         self.update_account_lists()
+
+    def show_group_context_menu(self, pos):
+        item = self.groups_list.itemAt(pos)
+        if not item:
+            return
+        
+        menu = QMenu(self)
+        rename_action = menu.addAction("Rename")
+        delete_action = menu.addAction("Delete")
+        
+        action = menu.exec(self.groups_list.mapToGlobal(pos))
+        
+        if action == rename_action:
+            self.rename_group()
+        elif action == delete_action:
+            self.delete_group()
+
+    def show_account_context_menu(self, pos, is_grouped):
+        list_widget = self.accounts_in_group_list if is_grouped else self.ungrouped_accounts_list
+        item = list_widget.itemAt(pos)
+        if not item:
+            return
+
+        menu = QMenu(self)
+        if is_grouped:
+            action_move = menu.addAction("Remove from Group")
+            action_move.triggered.connect(self.move_accounts_out)
+        else:
+            action_move = menu.addAction("Add to Group")
+            action_move.triggered.connect(self.move_accounts_in)
+            
+            # Only enable if a group is selected
+            if not self.groups_list.selectedItems():
+                action_move.setEnabled(False)
+
+        menu.exec(list_widget.mapToGlobal(pos))
 
     def get_settings(self) -> Dict[str, List[str]]:
         return self.groups
