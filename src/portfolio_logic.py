@@ -1758,6 +1758,9 @@ def _calculate_holdings_numba(
 
     cash_balances_np = np.zeros(num_accounts, dtype=np.float64)
     cash_currency_np = np.full(num_accounts, -1, dtype=np.int64)
+    
+    # --- NEW: Track last prices ---
+    last_prices_np = np.zeros((num_symbols, num_accounts), dtype=np.float64)
 
     num_transactions = len(tx_dates_ordinal_np)
 
@@ -1800,6 +1803,10 @@ def _calculate_holdings_numba(
         # --- Handle STOCK transactions ---
         if holdings_currency_np[symbol_id, account_id] == -1:
             holdings_currency_np[symbol_id, account_id] = currency_id
+            
+        # --- NEW: Update Last Price ---
+        if price > 1e-9:
+            last_prices_np[symbol_id, account_id] = price
 
         # --- STOCK TRANSFER LOGIC ---
         if type_id == transfer_type_id:
@@ -1836,6 +1843,10 @@ def _calculate_holdings_numba(
                         holdings_currency_np[symbol_id, dest_account_id] = currency_id
                     holdings_qty_np[symbol_id, dest_account_id] += transfer_qty
                     holdings_cost_np[symbol_id, dest_account_id] += cost_to_transfer
+                    
+                    # Also copy last price to destination if available
+                    if last_prices_np[symbol_id, account_id] > 1e-9:
+                        last_prices_np[symbol_id, dest_account_id] = last_prices_np[symbol_id, account_id]
             continue
 
         # --- Existing Split Logic ---
@@ -1940,6 +1951,7 @@ def _calculate_holdings_numba(
         holdings_currency_np,
         cash_balances_np,
         cash_currency_np,
+        last_prices_np,  # NEW return
     )
 
 
@@ -1959,6 +1971,7 @@ def _calculate_daily_holdings_chronological_numba(
     tx_quantities_np,
     tx_commissions_np,
     tx_split_ratios_np,
+    tx_prices_np,  # NEW argument
     num_symbols,
     num_accounts,
     split_type_id,
@@ -1975,17 +1988,24 @@ def _calculate_daily_holdings_chronological_numba(
     shortable_symbol_ids,
 ):
     """
-    Calculates daily holding quantities and cash balances chronologically.
+    Calculates holdings and cash balances chronologically for each day in the target range.
     This is much more efficient than recalculating from scratch each day.
     """
     num_days = len(date_ordinals_np)
+    # Initialize daily result arrays
     daily_holdings_qty_np = np.zeros(
         (num_days, num_symbols, num_accounts), dtype=np.float64
     )
     daily_cash_balances_np = np.zeros((num_days, num_accounts), dtype=np.float64)
+    # --- NEW: Track last transaction prices for fallback ---
+    daily_last_prices_np = np.zeros(
+        (num_days, num_symbols, num_accounts), dtype=np.float64
+    )
 
+    # Initialize current state
     current_holdings_qty = np.zeros((num_symbols, num_accounts), dtype=np.float64)
     current_cash_balances = np.zeros(num_accounts, dtype=np.float64)
+    current_last_prices = np.zeros((num_symbols, num_accounts), dtype=np.float64)
 
     tx_idx = 0
     num_transactions = len(tx_dates_ordinal_np)
@@ -1993,9 +2013,10 @@ def _calculate_daily_holdings_chronological_numba(
     for day_idx in range(num_days):
         current_date_ordinal = date_ordinals_np[day_idx]
 
+        # Process all transactions for this day
         while (
             tx_idx < num_transactions
-            and tx_dates_ordinal_np[tx_idx] == current_date_ordinal
+            and tx_dates_ordinal_np[tx_idx] <= current_date_ordinal
         ):
             symbol_id = tx_symbols_np[tx_idx]
             account_id = tx_accounts_np[tx_idx]
@@ -2003,6 +2024,8 @@ def _calculate_daily_holdings_chronological_numba(
             qty = tx_quantities_np[tx_idx]
             commission = tx_commissions_np[tx_idx]
             split_ratio = tx_split_ratios_np[tx_idx]
+            # --- NEW: Get price for fallback ---
+            price = tx_prices_np[tx_idx]
 
             if symbol_id == cash_symbol_id:
                 if type_id == buy_type_id or type_id == deposit_type_id:
@@ -2018,6 +2041,10 @@ def _calculate_daily_holdings_chronological_numba(
                         current_cash_balances[dest_account_id] += abs(qty)
 
             else:
+                # --- NEW: Update Last Price ---
+                if price > 1e-9:
+                    current_last_prices[symbol_id, account_id] = price
+
                 if type_id == split_type_id or type_id == stock_split_type_id:
                     if split_ratio > 1e-9:
                         for acc_idx in range(num_accounts):
@@ -2044,6 +2071,9 @@ def _calculate_daily_holdings_chronological_numba(
                             current_holdings_qty[
                                 symbol_id, dest_account_id
                             ] += transfer_qty
+                            # Also copy last price to destination if available
+                            if current_last_prices[symbol_id, account_id] > 1e-9:
+                                current_last_prices[symbol_id, dest_account_id] = current_last_prices[symbol_id, account_id]
 
                         # Note: This function only tracks quantity, not cost basis.
                         # The cost basis transfer is handled in _calculate_holdings_numba.
@@ -2076,8 +2106,10 @@ def _calculate_daily_holdings_chronological_numba(
 
         daily_holdings_qty_np[day_idx] = current_holdings_qty
         daily_cash_balances_np[day_idx] = current_cash_balances
+        # --- NEW: Store daily last prices ---
+        daily_last_prices_np[day_idx] = current_last_prices
 
-    return daily_holdings_qty_np, daily_cash_balances_np
+    return daily_holdings_qty_np, daily_cash_balances_np, daily_last_prices_np
 
 
 @profile
@@ -2241,6 +2273,21 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         logging.error(f"Numba Prep Error for {target_date}: {e_np_prep}")
         return np.nan, True
 
+    # --- DEBUG NUMBA INPUTS ---
+    if target_date == date(2002, 6, 29): # Inspect first date
+        print(f"--- DEBUG NUMBA INPUTS for {target_date} ---")
+        print(f"buy_type_id: {buy_type_id}")
+        print(f"deposit_type_id: {deposit_type_id}")
+        print(f"cash_symbol_id: {cash_symbol_id}")
+        print(f"symbol_to_id (first 5): {list(symbol_to_id.items())[:5]}")
+        print(f"tx_types_np (first 10): {tx_types_np[:10]}")
+        print(f"tx_quantities_np (first 10): {tx_quantities_np[:10]}")
+        print(f"tx_dates_ordinal_np (first 10): {tx_dates_ordinal_np[:10]}")
+        print(f"target_date_ordinal: {target_date_ordinal}")
+        print(f"tx_symbols_np (first 10): {tx_symbols_np[:10]}")
+        print(f"tx_accounts_np (first 10): {tx_accounts_np[:10]}")
+        print(f"tx_to_accounts_np (first 10): {tx_to_accounts_np[:10]}")
+        
     # --- Call Numba Helper ---
     try:
         (
@@ -2249,6 +2296,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             holdings_currency_np,
             cash_balances_np,
             cash_currency_np,
+            last_prices_np,  # NEW return
         ) = _calculate_holdings_numba(
             target_date_ordinal,
             tx_dates_ordinal_np,
@@ -2278,6 +2326,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             STOCK_QUANTITY_CLOSE_TOLERANCE,
             shortable_symbol_ids,
         )
+        
     except Exception as e_numba_call:
         logging.error(f"Numba Call Error for {target_date}: {e_numba_call}")
         return np.nan, True
@@ -2288,15 +2337,36 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     any_lookup_nan_on_date = False
 
     # Iterate through stock holdings
-    stock_indices = np.argwhere(np.abs(holdings_qty_np) > 1e-9)
-    for sym_id, acc_id in stock_indices:
-        internal_symbol = id_to_symbol.get(sym_id)
-        account = id_to_account.get(acc_id)
-        if internal_symbol is None or account is None:
-            continue
+    stock_indices = np.argwhere(np.abs(holdings_qty_np) > STOCK_QUANTITY_CLOSE_TOLERANCE)
+    
+    for idx_tuple in stock_indices:
+        symbol_id = idx_tuple[0]
+        account_id = idx_tuple[1]
+        current_qty = holdings_qty_np[symbol_id, account_id]
+        
+        internal_symbol = id_to_symbol[symbol_id]
+        account = id_to_account[account_id]
+        
+        # 3. Get Price
+        current_price_local = np.nan
+        try:
+            # Correctly map internal symbol to YF symbol first
+            yf_symbol = internal_to_yf_map.get(internal_symbol, internal_symbol)
+            current_price_local = get_historical_price(
+                yf_symbol,
+                target_date,
+                historical_prices_yf_unadjusted,
+            )
+        except Exception:
+            pass
+            
+        # --- NEW: Fallback to last transaction price ---
+        if pd.isna(current_price_local):
+            last_price = last_prices_np[symbol_id, account_id]
+            if last_price > 1e-9:
+                current_price_local = last_price
 
-        current_qty = holdings_qty_np[sym_id, acc_id]
-        currency_id = holdings_currency_np[sym_id, acc_id]
+        currency_id = holdings_currency_np[symbol_id, account_id]
         local_currency = id_to_currency.get(currency_id, default_currency)
 
         fx_rate = get_historical_rate_via_usd_bridge(
@@ -2306,8 +2376,6 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             any_lookup_nan_on_date = True
             total_market_value_display_curr_agg = np.nan
             break
-
-        current_price_local = np.nan
 
         # Manual Override check
         if manual_overrides_dict and internal_symbol in manual_overrides_dict:
@@ -2599,6 +2667,9 @@ def _calculate_daily_metrics_worker(
                     if pd.notna(portfolio_value_main) and pd.notna(portfolio_value_py)
                     else np.nan
                 )
+                # DEBUG PRINT
+                print(f"DEBUG COMPARE: Date={eval_date}, Numba={portfolio_value_main}, Py={portfolio_value_py}, Diff={diff}")
+                
                 if diff > 1e-3:  # Log significant differences
                     logging.warning(
                         f"COMPARE {eval_date}: Numba={portfolio_value_main:.4f} ({end_time_main-start_time:.4f}s), Python={portfolio_value_py:.4f} ({end_time_py-start_time_py:.4f}s), Diff={diff:.4f}"
@@ -3040,10 +3111,11 @@ def _load_or_calculate_daily_results(
     # --- NEW: Add pre-calculated holdings and account filter list ---
     all_holdings_qty: Optional[np.ndarray],
     all_cash_balances: Optional[np.ndarray],
+    all_last_prices: Optional[np.ndarray],  # NEW argument
     included_accounts_list: List[str],
     # --- Parameters with defaults follow ---
     num_processes: Optional[int] = None,
-    current_hist_version: str = "v10",
+    current_hist_version: str = "v11",
     filter_desc: str = "All Accounts",
     calc_method: str = HISTORICAL_CALC_METHOD,
 ) -> Tuple[pd.DataFrame, bool, str]:  # type: ignore
@@ -3123,6 +3195,7 @@ def _load_or_calculate_daily_results(
             status_update = " Using pre-calculated daily values..."
             daily_holdings_qty_source = all_holdings_qty
             daily_cash_balances_source = all_cash_balances
+            daily_last_prices_source = all_last_prices
         else:
             logging.info(
                 f"Hist Daily (Scope: {filter_desc}): L1 cache miss. Calculating daily holdings chronologically (numba_chrono)..."
@@ -3149,7 +3222,10 @@ def _load_or_calculate_daily_results(
             )
             # --- NEW: Map To Account for chrono calc ---
             if "To Account" in sorted_df.columns:
-                tx_to_accounts_series = sorted_df["To Account"].map(account_to_id)
+                # Use _normalize_series to ensure matching with account_to_id keys
+                tx_to_accounts_series = _normalize_series(sorted_df["To Account"]).map(
+                    account_to_id
+                )
             else:
                 tx_to_accounts_series = pd.Series(-1, index=sorted_df.index)
             tx_to_accounts_np = tx_to_accounts_series.fillna(-1).values.astype(np.int64)
@@ -3171,6 +3247,16 @@ def _load_or_calculate_daily_results(
             tx_split_ratios_np = (
                 sorted_df["Split Ratio"].fillna(0.0).values.astype(np.float64)
             )
+            # --- NEW: Prepare prices for fallback ---
+            # "Price/Share" might be the column name, or "Price". Check both or standard.
+            # Assuming "Price/Share" based on previous code.
+            price_col = "Price/Share" if "Price/Share" in sorted_df.columns else "Price"
+            tx_prices_np = (
+                sorted_df[price_col].fillna(0.0).values.astype(np.float64)
+                if price_col in sorted_df.columns
+                else np.zeros(len(sorted_df), dtype=np.float64)
+            )
+
             split_type_id = type_to_id.get("split", -1)
             stock_split_type_id = type_to_id.get("stock split", -1)
             buy_type_id = type_to_id.get("buy", -1)
@@ -3189,7 +3275,7 @@ def _load_or_calculate_daily_results(
             num_accounts = len(account_to_id)
 
             # Call Numba function to get daily holdings
-            daily_holdings_qty_source, daily_cash_balances_source = (
+            daily_holdings_qty_source, daily_cash_balances_source, daily_last_prices_source = (
                 _calculate_daily_holdings_chronological_numba(
                     date_ordinals_np,
                     tx_dates_ordinal_np,
@@ -3200,6 +3286,7 @@ def _load_or_calculate_daily_results(
                     tx_quantities_np,
                     tx_commissions_np,
                     tx_split_ratios_np,
+                    tx_prices_np,  # NEW argument
                     num_symbols,
                     num_accounts,
                     split_type_id,
@@ -3260,8 +3347,15 @@ def _load_or_calculate_daily_results(
                             price_local = float(price_val)
 
                     if pd.isna(price_local):
-                        day_lookup_failed = True
-                        break
+                        # --- NEW: Fallback to last transaction price ---
+                        if daily_last_prices_source is not None:
+                            last_price = daily_last_prices_source[day_idx, sym_id, acc_id]
+                            if last_price > 1e-9:
+                                price_local = last_price
+                        
+                        if pd.isna(price_local):
+                            day_lookup_failed = True
+                            break
 
                     fx_rate = get_historical_rate_via_usd_bridge(
                         local_currency, display_currency, eval_date, historical_fx_yf
@@ -3830,7 +3924,7 @@ def _get_or_calculate_all_daily_holdings(
     ).hexdigest()
     # Version bump for cache key
     cache_key = (
-        f"ALL_HOLDINGS_v1.2_{tx_hash}_{start_date.isoformat()}_{end_date.isoformat()}"
+        f"ALL_HOLDINGS_v1.3_{tx_hash}_{start_date.isoformat()}_{end_date.isoformat()}"
     )
 
     cache_dir_base = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
@@ -3838,7 +3932,7 @@ def _get_or_calculate_all_daily_holdings(
         logging.warning(
             "Could not find cache directory. Layer 1 caching will be disabled."
         )
-        return None, None
+        return None, None, None
 
     holdings_cache_dir = os.path.join(cache_dir_base, "all_holdings_cache")
     os.makedirs(holdings_cache_dir, exist_ok=True)
@@ -3846,11 +3940,13 @@ def _get_or_calculate_all_daily_holdings(
     key_file = os.path.join(holdings_cache_dir, f"{cache_key}.key")
     qty_file = os.path.join(holdings_cache_dir, f"{cache_key}_qty.npy")
     cash_file = os.path.join(holdings_cache_dir, f"{cache_key}_cash.npy")
+    prices_file = os.path.join(holdings_cache_dir, f"{cache_key}_prices.npy")
 
     if (
         os.path.exists(key_file)
         and os.path.exists(qty_file)
         and os.path.exists(cash_file)
+        and os.path.exists(prices_file)
     ):
         logging.info(
             "L1 Cache HIT: Loading pre-calculated daily holdings for all accounts."
@@ -3858,7 +3954,8 @@ def _get_or_calculate_all_daily_holdings(
         try:
             daily_holdings_qty = np.load(qty_file)
             daily_cash_balances = np.load(cash_file)
-            return daily_holdings_qty, daily_cash_balances
+            daily_last_prices = np.load(prices_file)
+            return daily_holdings_qty, daily_cash_balances, daily_last_prices
         except Exception as e:
             logging.warning(f"L1 Cache Load Error: Failed to load numpy arrays: {e}")
 
@@ -3904,6 +4001,13 @@ def _get_or_calculate_all_daily_holdings(
     tx_split_ratios_np = (
         sorted_tx_df["Split Ratio"].fillna(0.0).values.astype(np.float64)
     )
+    # --- NEW: Prepare prices for fallback ---
+    price_col = "Price/Share" if "Price/Share" in sorted_tx_df.columns else "Price"
+    tx_prices_np = (
+        sorted_tx_df[price_col].fillna(0.0).values.astype(np.float64)
+        if price_col in sorted_tx_df.columns
+        else np.zeros(len(sorted_tx_df), dtype=np.float64)
+    )
 
     split_type_id = type_to_id.get("split", -1)
     stock_split_type_id = type_to_id.get("stock split", -1)
@@ -3923,17 +4027,18 @@ def _get_or_calculate_all_daily_holdings(
     num_symbols = len(symbol_to_id)
     num_accounts = len(account_to_id)
 
-    daily_holdings_qty, daily_cash_balances = (
+    daily_holdings_qty, daily_cash_balances, daily_last_prices = (
         _calculate_daily_holdings_chronological_numba(
             date_ordinals_np,
             tx_dates_ordinal_np,
             tx_symbols_np,
-            tx_to_accounts_np,  # Corrected: This is the destination account array
-            tx_accounts_np,  # Corrected: This is the source account array
+            tx_to_accounts_np,
+            tx_accounts_np,
             tx_types_np,
             tx_quantities_np,
             tx_commissions_np,
             tx_split_ratios_np,
+            tx_prices_np,  # NEW argument
             num_symbols,
             num_accounts,
             split_type_id,
@@ -3944,7 +4049,7 @@ def _get_or_calculate_all_daily_holdings(
             withdrawal_type_id,
             short_sell_type_id,
             buy_to_cover_type_id,
-            transfer_type_id,  # Pass to Numba function
+            transfer_type_id,
             cash_symbol_id,
             STOCK_QUANTITY_CLOSE_TOLERANCE,
             shortable_symbol_ids,
@@ -3954,13 +4059,14 @@ def _get_or_calculate_all_daily_holdings(
     try:
         np.save(qty_file, daily_holdings_qty)
         np.save(cash_file, daily_cash_balances)
+        np.save(prices_file, daily_last_prices)
         with open(key_file, "w") as f:
             f.write("valid")
         logging.info("L1 Cache SAVE: Saved calculated daily holdings to cache.")
     except Exception as e:
         logging.error(f"L1 Cache SAVE Error: Failed to save numpy arrays: {e}")
 
-    return daily_holdings_qty, daily_cash_balances
+    return daily_holdings_qty, daily_cash_balances, daily_last_prices
 
 
 # --- Accumulated Gain and Resampling (Keep as is) ---
@@ -4432,7 +4538,7 @@ def calculate_historical_performance(
     # --- 3. Load or Fetch ADJUSTED Historical Raw Data ---
     # --- NEW: Load/Calculate ALL daily holdings (Layer 1 Cache) ---
     logging.info("Checking Layer 1 cache for all daily holdings...")
-    all_holdings_qty, all_cash_balances = _get_or_calculate_all_daily_holdings(
+    all_holdings_qty, all_cash_balances, all_last_prices = _get_or_calculate_all_daily_holdings(
         all_transactions_df=all_transactions_df_cleaned,
         start_date=full_start_date,
         end_date=fetch_end_date,
@@ -4539,6 +4645,7 @@ def calculate_historical_performance(
             # --- NEW: Pass pre-calculated holdings and account filter list ---
             all_holdings_qty=all_holdings_qty,
             all_cash_balances=all_cash_balances,
+            all_last_prices=all_last_prices,  # NEW argument
             included_accounts_list=included_accounts_list_sorted,
             num_processes=num_processes,
             current_hist_version=CURRENT_HIST_VERSION,

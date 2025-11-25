@@ -74,10 +74,8 @@ SHORTABLE_SYMBOLS = {"AAPL", "RIMM"}
 DEFAULT_CSV = "my_transactions.csv"  # Default name for CSV related operations (e.g. export suggestion)
 
 # --- Calculation Method Configuration ---
-HISTORICAL_CALC_METHOD = "python"  # Options: 'python', 'numba' MODIFIED: Default to 'python' for compatibility, 'numba' needs review.
-HISTORICAL_COMPARE_METHODS = (
-    False  # If true, historical calc will run both methods and log diffs
-)
+HISTORICAL_CALC_METHOD = "numba"  # Options: 'python', 'numba' MODIFIED: Default to 'python' for compatibility, 'numba' needs review.
+HISTORICAL_COMPARE_METHODS = False  # If true, historical calc will run both methods and log diffs
 
 # --- Position Closing Tolerance ---
 STOCK_QUANTITY_CLOSE_TOLERANCE = (
