@@ -397,6 +397,16 @@ except ImportError as import_err:
             "Error: Logic missing",
         )  # Return 4 items
 
+    # --- ADD Dummy for load_and_clean_transactions ---
+    def load_and_clean_transactions(*args, **kwargs):
+        logging.error("Using dummy load_and_clean_transactions due to import error.")
+        return None, None, set(), {}, True, True  # Return tuple indicating error
+
+    # --- ADD Dummy for calculate_periodic_returns ---
+    def calculate_periodic_returns(*args, **kwargs):
+        logging.error("Using dummy calculate_periodic_returns due to import error.")
+        return {}  # Return empty dict
+
     logging.warning(f"Warning: Using fallback CASH_SYMBOL_CSV: {CASH_SYMBOL_CSV}")
 except Exception as import_err:
     logging.error(

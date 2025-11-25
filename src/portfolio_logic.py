@@ -1528,15 +1528,13 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
     if not cash_transactions.empty:
 
         def get_signed_quantity_cash(row):
-            """Calculates cash flow including commission impact."""  # <-- Corrected Indentation
-            type_lower = str(row.get("Type", "")).lower()  # <-- Corrected Indentation
-            qty = pd.to_numeric(
-                row.get("Quantity"), errors="coerce"
-            )  # <-- Corrected Indentation
+            """Calculates cash flow including commission impact."""
+            type_lower = str(row.get("Type", "")).lower()
+            qty = pd.to_numeric(row.get("Quantity"), errors="coerce")
             commission_raw = pd.to_numeric(row.get("Commission"), errors="coerce")
             commission = 0.0 if pd.isna(commission_raw) else float(commission_raw)
 
-            return (  # <-- Corrected Indentation
+            return (
                 0.0
                 if pd.isna(qty)
                 else (
