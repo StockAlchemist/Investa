@@ -105,6 +105,8 @@ def _process_transactions_to_holdings(
     Dict[str, float],
     Set[int],
     Dict[int, str],
+    Dict[int, str],
+    Dict[int, float],  # NEW: Transfer costs map
     bool,
 ]:
     """
@@ -117,6 +119,7 @@ def _process_transactions_to_holdings(
     overall_commissions_local: Dict[str, float] = defaultdict(float)
     ignored_row_indices_local = set()
     ignored_reasons_local = {}
+    transfer_costs: Dict[int, float] = {}  # NEW: Map original_index -> unit_cost
     has_warnings = False
     # --- PERFORMANCE OPTIMIZATION ---
     # Auxiliary map to track which accounts hold a given symbol, to avoid iterating
@@ -146,7 +149,7 @@ def _process_transactions_to_holdings(
         logging.error(
             f"CRITICAL ERROR in _process_transactions: Input DataFrame missing required columns: {missing_cols}. Cannot proceed."
         )
-        return ({}, {}, {}, {}, ignored_row_indices_local, ignored_reasons_local, True)
+        return ({}, {}, {}, {}, ignored_row_indices_local, ignored_reasons_local, {}, True)
 
     for index, row in transactions_df.iterrows():
         try:
@@ -445,6 +448,12 @@ def _process_transactions_to_holdings(
                 logging.debug(
                     f"Processed TRANSFER of {qty} {symbol} from '{from_account}' to '{to_account}'. Cost transferred: {cost_to_transfer_local:.2f}"
                 )
+                
+                # --- NEW: Store transfer cost for patching ---
+                if qty > 1e-9:
+                    unit_cost = cost_to_transfer_local / qty
+                    transfer_costs[original_index] = unit_cost
+                
                 continue  # CRITICAL: Skip all other logic for this row
 
             # --- Validate Numeric Inputs (for non-transfer types) ---
@@ -819,6 +828,7 @@ def _process_transactions_to_holdings(
         dict(overall_commissions_local),
         ignored_row_indices_local,
         ignored_reasons_local,
+        transfer_costs,  # NEW
         has_warnings,
     )
 

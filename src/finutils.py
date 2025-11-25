@@ -398,7 +398,11 @@ def get_cash_flows_for_symbol_account(
             cash flow pattern is invalid for IRR.
     """
     symbol_account_tx_filtered = transactions_df[
-        (transactions_df["Symbol"] == symbol) & (transactions_df["Account"] == account)
+        (transactions_df["Symbol"] == symbol)
+        & (
+            (transactions_df["Account"] == account)
+            | (transactions_df["To Account"] == account)
+        )
     ]
     if symbol_account_tx_filtered.empty:
         return [], []

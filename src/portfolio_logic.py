@@ -542,7 +542,7 @@ def calculate_portfolio_summary(
     # --- END ADDED ---
 
     # --- 3. Process Stock/ETF Transactions ---
-    holdings, _, _, _, ignored_indices_proc, ignored_reasons_proc, warn_proc = (
+    holdings, _, _, _, ignored_indices_proc, ignored_reasons_proc, transfer_costs, warn_proc = (
         _process_transactions_to_holdings(
             transactions_df=transactions_df_filtered,  # Pass filtered DataFrame
             default_currency=default_currency,
@@ -552,6 +552,35 @@ def calculate_portfolio_summary(
             report_date=report_date,
         )
     )
+
+    # --- NEW: Patch Transfer Prices for Summary Calculation ---
+    # We want the summary builder (IRR calc) to see the "Cost Price" for transfers,
+    # so that the cash flow is generated correctly (as a flow at cost).
+    transactions_for_summary = transactions_df_filtered.copy()
+    if transfer_costs:
+        logging.debug(f"Patching {len(transfer_costs)} transfer transactions with cost-based prices for IRR...")
+        # We can iterate and set, or use map if index aligns.
+        # Since transfer_costs keys are 'original_index', and transactions_for_summary has 'original_index' column:
+        
+        # Create a mapping series
+        transfer_cost_series = pd.Series(transfer_costs)
+        
+        # Find rows where original_index is in the map
+        mask = transactions_for_summary["original_index"].isin(transfer_costs.keys())
+        
+        # For these rows, update 'Price/Share'
+        # We need to map the original_index to the price.
+        # set_index temporarily to map easily
+        temp_df = transactions_for_summary.set_index("original_index")
+        temp_df.update(pd.DataFrame({"Price/Share": transfer_cost_series}))
+        
+        # Restore index/structure (update modifies in place but we need to be careful with index)
+        # Actually, simpler loop might be safer to avoid index mess if original_index is not unique (though it should be)
+        for orig_idx, cost_price in transfer_costs.items():
+             transactions_for_summary.loc[
+                transactions_for_summary["original_index"] == orig_idx, "Price/Share"
+            ] = cost_price
+    # --- END NEW ---
     combined_ignored_indices.update(ignored_indices_proc)
     combined_ignored_reasons.update(ignored_reasons_proc)
     if warn_proc:
@@ -672,7 +701,7 @@ def calculate_portfolio_summary(
         ),
         display_currency=display_currency,
         default_currency=default_currency,
-        transactions_df=transactions_df_filtered,  # Pass filtered DataFrame
+        transactions_df=transactions_for_summary,  # Pass PATCHED DataFrame
         report_date=report_date,
         shortable_symbols=SHORTABLE_SYMBOLS,
         user_excluded_symbols=effective_user_excluded_symbols,
@@ -1301,7 +1330,8 @@ def _calculate_daily_net_cash_flow(
 
     # 2. Asset Transfer Flows (Transfer IN/OUT)
     if included_accounts:
-        included_set = set(included_accounts)
+        # Normalize included_accounts to uppercase/stripped
+        included_set = {acc.strip().upper() for acc in included_accounts}
         transfer_tx = daily_tx[daily_tx["Type"] == "transfer"].copy()
         
         for _, row in transfer_tx.iterrows():
@@ -1318,8 +1348,12 @@ def _calculate_daily_net_cash_flow(
             if pd.isna(qty) or pd.isna(price_local):
                 continue
                 
-            is_from_included = account in included_set
-            is_to_included = to_account in included_set if to_account else False
+            # Normalize account names from transaction
+            account_norm = str(account).strip().upper()
+            to_account_norm = str(to_account).strip().upper() if to_account else None
+            
+            is_from_included = account_norm in included_set
+            is_to_included = to_account_norm in included_set if to_account_norm else False
             
             flow_val_local = 0.0
             if is_from_included and not is_to_included:
@@ -1358,6 +1392,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
     default_currency: str,
     manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]],  # ADDED
     processed_warnings: set,
+    included_accounts: Optional[List[str]] = None,  # ADDED
 ) -> Tuple[float, bool]:
     """
     Calculates the total portfolio market value for a specific date using UNADJUSTED historical prices (Pure Python version).
@@ -1406,10 +1441,18 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
             logging.debug(f"  No transactions found up to {target_date}.")
         return 0.0, False
 
+    # --- ADDED: Normalize included_accounts ---
+    included_accounts_norm = set()
+    if included_accounts:
+        included_accounts_norm = {acc.strip().upper() for acc in included_accounts}
+    # --- END ADDED ---
+
     holdings: Dict[Tuple[str, str], Dict] = {}
     for index, row in transactions_til_date.iterrows():
         symbol = str(row.get("Symbol", "UNKNOWN")).strip()
-        account = str(row.get("Account", "Unknown"))
+        # Normalize account
+        account_raw = str(row.get("Account", "Unknown"))
+        account = account_raw.strip().upper()
         local_currency_from_row = str(row.get("Local Currency", default_currency))
         holding_key_from_row = (symbol, account)
         tx_type = str(row.get("Type", "UNKNOWN_TYPE")).lower().strip()
@@ -1490,7 +1533,8 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
                     qty_sold = min(sell_qty, held_qty) if held_qty > 1e-9 else 0
                     holding_to_update["qty"] -= qty_sold
             elif tx_type == "transfer":
-                to_account = str(row.get("To Account", "")).strip()
+                to_account_raw = str(row.get("To Account", ""))
+                to_account = to_account_raw.strip().upper()
                 if pd.notna(qty) and qty > 0:
                     transfer_qty = qty
 
@@ -1606,6 +1650,12 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
             )
         if abs(current_qty) < 1e-9:
             continue
+            
+        # --- ADDED: Filter by included_accounts ---
+        # Filter by included_accounts
+        if included_accounts and account not in included_accounts_norm:
+            continue
+        # --- END ADDED ---
 
         fx_rate = get_historical_rate_via_usd_bridge(
             local_currency, target_currency, target_date, historical_fx_yf
@@ -2148,6 +2198,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     type_to_id: Dict[str, int],
     currency_to_id: Dict[str, int],
     id_to_currency: Dict[int, str],
+    included_accounts: Optional[List[str]] = None,  # ADDED
 ) -> Tuple[float, bool]:
     """
     Calculates the total portfolio market value for a specific date using UNADJUSTED historical prices (Numba version).
@@ -2169,6 +2220,16 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         by=["Date", "original_index"], inplace=True, ascending=True
     )
     # --- Prepare NumPy Inputs (Step 4: Update Data Prep) ---
+    # --- ADDED: Prepare included_account_ids set ---
+    included_account_ids = set()
+    if included_accounts:
+        # Normalize included_accounts to match account_to_id keys (which are normalized in generate_mappings)
+        normalized_included = [acc.strip().upper() for acc in included_accounts]
+        for acc in normalized_included:
+            if acc in account_to_id:
+                included_account_ids.add(account_to_id[acc])
+    # --- END ADDED ---
+
     try:
         target_date_ordinal = target_date.toordinal()
         # --- FIX: Define tx_types_np earlier for use in debug block ---
@@ -2204,6 +2265,8 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         else:
             tx_to_accounts_series = pd.Series(-1, index=transactions_til_date.index)
         tx_to_accounts_np = tx_to_accounts_series.fillna(-1).values.astype(np.int64)
+    
+        # --- END ADDED ---
 
         # --- DEBUG BLOCK 2: Check Mapping ---
         logging.debug("\n--- DEBUG: MAPPING CHECK ---")
@@ -2359,6 +2422,12 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     for idx_tuple in stock_indices:
         symbol_id = idx_tuple[0]
         account_id = idx_tuple[1]
+        
+        # --- ADDED: Filter by included_accounts ---
+        if included_accounts and account_id not in included_account_ids:
+            continue
+        # --- END ADDED ---
+
         current_qty = holdings_qty_np[symbol_id, account_id]
         
         internal_symbol = id_to_symbol[symbol_id]
@@ -2462,6 +2531,12 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         cash_indices = np.argwhere(np.abs(cash_balances_np) > 1e-9)
         for acc_id_tuple in cash_indices:
             acc_id = acc_id_tuple[0]
+            
+            # --- ADDED: Filter by included_accounts ---
+            if included_accounts and acc_id not in included_account_ids:
+                continue
+            # --- END ADDED ---
+
             account = id_to_account.get(acc_id)
             if account is None:
                 continue
@@ -2510,6 +2585,7 @@ def _calculate_portfolio_value_at_date_unadjusted(
     currency_to_id: Dict[str, int],
     id_to_currency: Dict[int, str],
     method: str = HISTORICAL_CALC_METHOD,
+    included_accounts: Optional[List[str]] = None,  # ADDED
 ) -> Tuple[float, bool]:
     """
     Dispatcher function to calculate portfolio value using either Python or Numba method.
@@ -2533,6 +2609,7 @@ def _calculate_portfolio_value_at_date_unadjusted(
             type_to_id,
             currency_to_id,
             id_to_currency,
+            included_accounts=included_accounts,  # Pass included_accounts
         )
     elif method == "python":
         return _calculate_portfolio_value_at_date_unadjusted_python(
@@ -2546,6 +2623,7 @@ def _calculate_portfolio_value_at_date_unadjusted(
             default_currency,
             manual_overrides_dict,  # Pass through
             processed_warnings,
+            included_accounts=included_accounts,  # Pass included_accounts
         )
     else:
         logging.error(
@@ -2657,6 +2735,7 @@ def _calculate_daily_metrics_worker(
                 id_to_currency,
                 # STOCK_QUANTITY_CLOSE_TOLERANCE is implicitly passed to numba version via _calculate_daily_metrics_worker
                 method=calc_method,
+                included_accounts=included_accounts,  # Pass included_accounts
             )
         )
         end_time_main = time.time()
@@ -4454,7 +4533,7 @@ def calculate_historical_performance(
     # pd.DataFrame, # key_ratios_df - Ratios are not calculated here
     # Dict[str, Any] # current_valuation_ratios - Ratios are not calculated here
 ]:
-    CURRENT_HIST_VERSION = "v1.1"  # Bump version due to changes (e.g. Numba, cache key)
+    CURRENT_HIST_VERSION = "v1.2"  # Bump version due to changes (e.g. Numba, cache key)
     start_time_hist = time.time()
     has_errors = False
     has_warnings = False
