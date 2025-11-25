@@ -1233,97 +1233,116 @@ def _calculate_daily_net_cash_flow(
     account_currency_map: Dict[str, str],
     default_currency: str,
     processed_warnings: set,
+    included_accounts: Optional[List[str]] = None,  # ADDED
 ) -> Tuple[float, bool]:
     """
     Calculates the net external cash flow for a specific date in the target currency.
-
-    Considers only explicit '$CASH' transactions of type 'deposit' or 'withdrawal'.
-    Converts the flow amount (Quantity - Commission for deposit, -(Quantity + Commission) for withdrawal)
-    from the transaction's local currency to the target_currency using historical FX rates.
-
-    Args:
-        target_date (date): The specific date for which to calculate the cash flow.
-        transactions_df (pd.DataFrame): DataFrame containing all cleaned transactions.
-        target_currency (str): The currency code (e.g., "USD") for the output flow value.
-        historical_fx_yf (Dict[str, pd.DataFrame]): Dictionary mapping YF FX pair tickers
-            (e.g., 'EUR=X') to DataFrames containing historical rates vs USD.
-        account_currency_map (Dict[str, str]): Mapping of account names to their local currencies.
-        default_currency (str): Default currency if not found in transaction or map.
-        processed_warnings (set): A set used to track and avoid logging duplicate warnings.
-
-    Returns:
-        Tuple[float, bool]:
-            - net_flow_target_curr (float): The net cash flow in the target currency for the date.
-                                            Returns np.nan if a critical FX lookup fails.
-            - fx_lookup_failed (bool): True if any required FX rate lookup failed critically.
+    Now includes ASSET TRANSFERS in/out of the included accounts as flows.
     """
-    # ... (Function body remains unchanged) ...
     fx_lookup_failed = False
     net_flow_target_curr = 0.0
     daily_tx = transactions_df[transactions_df["Date"].dt.date == target_date].copy()
     if daily_tx.empty:
         return 0.0, False
 
+    # 1. Explicit Cash Flows (Deposit/Withdrawal)
     external_flow_types = ["deposit", "withdrawal"]
     cash_flow_tx = daily_tx[
         (daily_tx["Symbol"] == CASH_SYMBOL_CSV)
         & (daily_tx["Type"].isin(external_flow_types))
     ].copy()
-    if cash_flow_tx.empty:
-        return 0.0, False
 
-    logging.debug(
-        f"Found {len(cash_flow_tx)} explicit external $CASH flows for {target_date}"
-    )
-
-    for _, row in cash_flow_tx.iterrows():
-        tx_type = row["Type"]
-        qty = pd.to_numeric(row["Quantity"], errors="coerce")
-        commission_local_raw = pd.to_numeric(row.get("Commission"), errors="coerce")
-        commission_local = (
-            0.0 if pd.isna(commission_local_raw) else float(commission_local_raw)
-        )
-        local_currency = row["Local Currency"]
-        flow_local = 0.0
-
-        if pd.isna(qty):
-            logging.warning(
-                f"Skipping external cash flow row on {target_date} due to missing Quantity."
+    # Process Cash Flows
+    if not cash_flow_tx.empty:
+        for _, row in cash_flow_tx.iterrows():
+            tx_type = row["Type"]
+            qty = pd.to_numeric(row["Quantity"], errors="coerce")
+            commission_local_raw = pd.to_numeric(row.get("Commission"), errors="coerce")
+            commission_local = (
+                0.0 if pd.isna(commission_local_raw) else float(commission_local_raw)
             )
-            processed_warnings.add(f"missing_cash_flow_qty_{target_date}")
-            continue
+            local_currency = row["Local Currency"]
+            flow_local = 0.0
 
-        if tx_type == "deposit":
-            flow_local = abs(qty) - commission_local
-        elif tx_type == "withdrawal":
-            flow_local = -abs(qty) - commission_local
+            if pd.isna(qty):
+                continue
 
-        flow_target = flow_local
-        if local_currency != target_currency:
-            fx_rate = get_historical_rate_via_usd_bridge(
-                local_currency, target_currency, target_date, historical_fx_yf
-            )
-            if pd.isna(fx_rate):
-                logging.warning(
-                    f"Hist FX Lookup CRITICAL Failure for cash flow: {local_currency}->{target_currency} on {target_date}. Aborting day's flow."
+            if tx_type == "deposit":
+                flow_local = abs(qty) - commission_local
+            elif tx_type == "withdrawal":
+                flow_local = -abs(qty) - commission_local
+
+            flow_target = flow_local
+            if local_currency != target_currency:
+                fx_rate = get_historical_rate_via_usd_bridge(
+                    local_currency, target_currency, target_date, historical_fx_yf
                 )
-                fx_lookup_failed = True
-                net_flow_target_curr = np.nan
-                break
-            else:
-                flow_target = flow_local * fx_rate
+                if pd.isna(fx_rate):
+                    logging.warning(
+                        f"Hist FX Lookup CRITICAL Failure for cash flow: {local_currency}->{target_currency} on {target_date}. Aborting day's flow."
+                    )
+                    fx_lookup_failed = True
+                    net_flow_target_curr = np.nan
+                    break
+                else:
+                    flow_target = flow_local * fx_rate
 
-        if pd.isna(net_flow_target_curr):
-            break
-        if pd.notna(flow_target):
-            net_flow_target_curr += flow_target
-        else:
-            logging.warning(
-                f"Unexpected NaN cash flow target for {tx_type} on {target_date} after FX conversion."
-            )
-            net_flow_target_curr = np.nan
-            fx_lookup_failed = True
-            break
+            if pd.isna(net_flow_target_curr):
+                break
+            if pd.notna(flow_target):
+                net_flow_target_curr += flow_target
+            else:
+                net_flow_target_curr = np.nan
+                fx_lookup_failed = True
+                break
+
+    if fx_lookup_failed:
+        return np.nan, True
+
+    # 2. Asset Transfer Flows (Transfer IN/OUT)
+    if included_accounts:
+        included_set = set(included_accounts)
+        transfer_tx = daily_tx[daily_tx["Type"] == "transfer"].copy()
+        
+        for _, row in transfer_tx.iterrows():
+            symbol = row["Symbol"]
+            if is_cash_symbol(symbol): # Skip cash transfers (handled by cash balance logic usually, or ignored if internal)
+                 continue
+                 
+            account = row["Account"]
+            to_account = row.get("To Account")
+            qty = pd.to_numeric(row["Quantity"], errors="coerce")
+            price_local = pd.to_numeric(row.get("Price/Share"), errors="coerce")
+            local_currency = row["Local Currency"]
+            
+            if pd.isna(qty) or pd.isna(price_local):
+                continue
+                
+            is_from_included = account in included_set
+            is_to_included = to_account in included_set if to_account else False
+            
+            flow_val_local = 0.0
+            if is_from_included and not is_to_included:
+                # Transfer OUT (Withdrawal)
+                flow_val_local = -(abs(qty) * price_local)
+            elif not is_from_included and is_to_included:
+                # Transfer IN (Deposit)
+                flow_val_local = abs(qty) * price_local
+            
+            if abs(flow_val_local) > 1e-9:
+                flow_target = flow_val_local
+                if local_currency != target_currency:
+                    fx_rate = get_historical_rate_via_usd_bridge(
+                        local_currency, target_currency, target_date, historical_fx_yf
+                    )
+                    if pd.isna(fx_rate):
+                        fx_lookup_failed = True
+                        net_flow_target_curr = np.nan
+                        break
+                    flow_target = flow_val_local * fx_rate
+                
+                if pd.notna(flow_target):
+                    net_flow_target_curr += flow_target
 
     return net_flow_target_curr, fx_lookup_failed
 
@@ -2568,6 +2587,7 @@ def _calculate_daily_metrics_worker(
     currency_to_id: Dict[str, int],
     id_to_currency: Dict[int, str],  # type: ignore
     calc_method: str = HISTORICAL_CALC_METHOD,  # Use config default
+    included_accounts: Optional[List[str]] = None,  # ADDED
 ) -> Optional[Dict]:
     """
     Worker function (for multiprocessing) to calculate key metrics for a single date.
@@ -2703,6 +2723,7 @@ def _calculate_daily_metrics_worker(
                 account_currency_map,
                 default_currency,
                 dummy_warnings_set,
+                included_accounts,  # Pass included_accounts
             )
 
         benchmark_prices = {}
@@ -2844,25 +2865,80 @@ def _prepare_historical_inputs(
         transactions_df_included = all_transactions_df.copy()
         included_accounts_list_sorted = sorted(list(available_accounts_set))
     else:
+        # Check if accounts exist in "Account" OR "To Account"
+        available_accounts_in_df = set(all_transactions_df["Account"].unique())
+        if "To Account" in all_transactions_df.columns:
+            available_accounts_in_df.update(
+                all_transactions_df["To Account"].dropna().unique()
+            )
+
         valid_include_accounts = [
-            acc for acc in include_accounts if acc in available_accounts_set
+            acc for acc in include_accounts if acc in available_accounts_in_df
         ]
         if not valid_include_accounts:
             logging.warning(
                 "WARN in _prepare_historical_inputs: No valid accounts to include."
             )
             return empty_tuple_return  # type: ignore
-        transactions_df_included = all_transactions_df[
-            all_transactions_df["Account"].isin(valid_include_accounts)
-        ].copy()
+
+        # --- Robust Filtering Logic (Matches calculate_portfolio_summary) ---
+        # 1. Primary Account Match
+        from_account_mask = all_transactions_df["Account"].isin(valid_include_accounts)
+
+        # 2. Destination Account Match (Transfers In)
+        to_account_mask = pd.Series(False, index=all_transactions_df.index)
+        if "To Account" in all_transactions_df.columns:
+            to_account_mask = (
+                all_transactions_df["To Account"]
+                .isin(valid_include_accounts)
+                .fillna(False)
+            )
+
+        # 3. Preceding Transactions for Transfers In
+        preceding_tx_mask = pd.Series(False, index=all_transactions_df.index)
+        transfers_in_df = all_transactions_df[to_account_mask]
+
+        if not transfers_in_df.empty:
+            # Get unique (Symbol, From_Account, Date) tuples from the transfers-in
+            transfer_events = transfers_in_df[
+                ["Symbol", "Account", "Date"]
+            ].drop_duplicates()
+
+            masks_to_combine = []
+            for _, event_row in transfer_events.iterrows():
+                transfer_symbol = event_row["Symbol"]
+                transfer_from_account = event_row["Account"]
+                transfer_date = event_row["Date"]
+
+                # Create a mask for all preceding/concurrent tx for this specific asset
+                mask = (
+                    (all_transactions_df["Symbol"] == transfer_symbol)
+                    & (all_transactions_df["Account"] == transfer_from_account)
+                    & (all_transactions_df["Date"] <= transfer_date)
+                )
+                masks_to_combine.append(mask)
+
+            if masks_to_combine:
+                preceding_tx_mask = pd.concat(masks_to_combine, axis=1).any(axis=1)
+
+        final_combined_mask = from_account_mask | to_account_mask | preceding_tx_mask
+        transactions_df_included = all_transactions_df[final_combined_mask].copy()
+
         included_accounts_list_sorted = sorted(valid_include_accounts)
         filter_desc = f"Included: {', '.join(included_accounts_list_sorted)}"
 
     if not exclude_accounts or not isinstance(exclude_accounts, list):
         transactions_df_effective = transactions_df_included.copy()
     else:
+        # Check if accounts exist in "Account" OR "To Account"
+        available_accounts_in_df = set(all_transactions_df["Account"].unique())
+        if "To Account" in all_transactions_df.columns:
+            available_accounts_in_df.update(
+                all_transactions_df["To Account"].dropna().unique()
+            )
+
         valid_exclude_accounts = [
-            acc for acc in exclude_accounts if acc in available_accounts_set
+            acc for acc in exclude_accounts if acc in available_accounts_in_df
         ]
         if valid_exclude_accounts:
             logging.info(
@@ -3391,7 +3467,7 @@ def _load_or_calculate_daily_results(
                                 any_lookup_failed_overall = True
                                 total_market_value_day = np.nan
                                 break
-                            total_market_value_day += cash_balance * fx_rate
+                total_market_value_day += cash_balance * fx_rate
 
                 # Get net flow and benchmarks
                 net_cash_flow, flow_lookup_failed = _calculate_daily_net_cash_flow(
@@ -3402,6 +3478,7 @@ def _load_or_calculate_daily_results(
                     account_currency_map,
                     default_currency,
                     dummy_warnings_set,
+                    included_accounts_list,  # Pass included_accounts_list
                 )
 
                 benchmark_prices = {}
@@ -3702,6 +3779,7 @@ def _load_or_calculate_daily_results(
             currency_to_id=currency_to_id,
             id_to_currency=id_to_currency,
             calc_method=HISTORICAL_CALC_METHOD,  # Pass method from config
+            included_accounts=included_accounts_list,  # Pass included_accounts_list
         )
         daily_results_list = []
         pool_start_time = time.time()
