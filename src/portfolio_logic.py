@@ -1262,18 +1262,24 @@ def _calculate_daily_net_cash_flow(
     account_currency_map: Dict[str, str],
     default_currency: str,
     processed_warnings: set,
-    included_accounts: Optional[List[str]] = None,  # ADDED
+    included_accounts: Optional[List[str]] = None,
+    historical_prices_yf_unadjusted: Optional[Dict[str, pd.DataFrame]] = None,  # ADDED
+    internal_to_yf_map: Optional[Dict[str, str]] = None,  # ADDED
 ) -> Tuple[float, bool]:
     """
     Calculates the net external cash flow for a specific date in the target currency.
     Now includes ASSET TRANSFERS in/out of the included accounts as flows.
     """
-    fx_lookup_failed = False
-    net_flow_target_curr = 0.0
-    daily_tx = transactions_df[transactions_df["Date"].dt.date == target_date].copy()
+    # --- 1. Filter Transactions for the Date ---
+    # Filter for transactions on this specific date
+    daily_tx = transactions_df[transactions_df["Date"].dt.date == target_date]
+    
     if daily_tx.empty:
         return 0.0, False
 
+    fx_lookup_failed = False
+    net_flow_target_curr = 0.0
+    
     # 1. Explicit Cash Flows (Deposit/Withdrawal)
     external_flow_types = ["deposit", "withdrawal"]
     cash_flow_tx = daily_tx[
@@ -1332,7 +1338,7 @@ def _calculate_daily_net_cash_flow(
     if included_accounts:
         # Normalize included_accounts to uppercase/stripped
         included_set = {acc.strip().upper() for acc in included_accounts}
-        transfer_tx = daily_tx[daily_tx["Type"] == "transfer"].copy()
+        transfer_tx = daily_tx[daily_tx["Type"].str.lower().str.strip() == "transfer"].copy()
         
         for _, row in transfer_tx.iterrows():
             symbol = row["Symbol"]
@@ -1345,7 +1351,32 @@ def _calculate_daily_net_cash_flow(
             price_local = pd.to_numeric(row.get("Price/Share"), errors="coerce")
             local_currency = row["Local Currency"]
             
-            if pd.isna(qty) or pd.isna(price_local):
+            if pd.isna(qty):
+                continue
+
+            # FIX: If price is missing or 0, try to look up market price
+            if pd.isna(price_local) or price_local <= 0:
+                if historical_prices_yf_unadjusted and internal_to_yf_map:
+                    yf_ticker = internal_to_yf_map.get(symbol)
+                    if yf_ticker and yf_ticker in historical_prices_yf_unadjusted:
+                        prices_df = historical_prices_yf_unadjusted[yf_ticker]
+                        
+                        # Look for price on target_date
+                        # Try exact match first
+                        if target_date in prices_df.index:
+                            price_local = prices_df.loc[target_date, "Close"]
+                        else:
+                            # Try converting target_date to datetime if index is datetime
+                            try:
+                                target_ts = pd.Timestamp(target_date)
+                                if target_ts in prices_df.index:
+                                    price_local = prices_df.loc[target_ts, "Close"]
+                            except:
+                                pass
+                                
+            if pd.isna(price_local) or price_local <= 0:
+                if target_date.year == 2025 and target_date.month == 11 and target_date.day == 11:
+                    print(f"DEBUG Transfer {symbol}: Price still invalid {price_local}", flush=True)
                 continue
                 
             # Normalize account names from transaction
@@ -2354,20 +2385,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         return np.nan, True
 
     # --- DEBUG NUMBA INPUTS ---
-    if target_date == date(2002, 6, 29): # Inspect first date
-        print(f"--- DEBUG NUMBA INPUTS for {target_date} ---")
-        print(f"buy_type_id: {buy_type_id}")
-        print(f"deposit_type_id: {deposit_type_id}")
-        print(f"cash_symbol_id: {cash_symbol_id}")
-        print(f"symbol_to_id (first 5): {list(symbol_to_id.items())[:5]}")
-        print(f"tx_types_np (first 10): {tx_types_np[:10]}")
-        print(f"tx_quantities_np (first 10): {tx_quantities_np[:10]}")
-        print(f"tx_dates_ordinal_np (first 10): {tx_dates_ordinal_np[:10]}")
-        print(f"target_date_ordinal: {target_date_ordinal}")
-        print(f"tx_symbols_np (first 10): {tx_symbols_np[:10]}")
-        print(f"tx_accounts_np (first 10): {tx_accounts_np[:10]}")
-        print(f"tx_to_accounts_np (first 10): {tx_to_accounts_np[:10]}")
-        
+    
     # --- Call Numba Helper ---
     try:
         (
@@ -2684,7 +2702,7 @@ def _calculate_daily_metrics_worker(
         historical_fx_yf (Dict): Historical FX rates vs USD.
         target_currency (str): The currency for portfolio value and cash flow results.
         internal_to_yf_map (Dict): Mapping from internal symbols to YF tickers.
-        account_currency_map (Dict): Mapping of accounts to local currencies.
+        account_currency_map (Dict): Mapping of accounts to their local currencies.
         default_currency (str): Default currency.
         manual_overrides_dict (Optional[Dict[str, Dict[str, Any]]]): Manual overrides for price, etc.
         benchmark_symbols_yf (List[str]): List of YF tickers for benchmark symbols.
@@ -2692,7 +2710,7 @@ def _calculate_daily_metrics_worker(
         account_to_id (Dict): Map account string to int ID.
         type_to_id (Dict): Map transaction type string to int ID.
         currency_to_id (Dict): Map currency string to int ID.
-        calc_method (str): Calculation method ('python' or 'numba').
+        calc_method (str): The calculation method to use ('python' or 'numba').
 
     Returns:
         Optional[Dict]: A dictionary containing calculated metrics for the date:
@@ -2764,8 +2782,6 @@ def _calculate_daily_metrics_worker(
                     if pd.notna(portfolio_value_main) and pd.notna(portfolio_value_py)
                     else np.nan
                 )
-                # DEBUG PRINT
-                print(f"DEBUG COMPARE: Date={eval_date}, Numba={portfolio_value_main}, Py={portfolio_value_py}, Diff={diff}")
                 
                 if diff > 1e-3:  # Log significant differences
                     logging.warning(
@@ -2802,7 +2818,9 @@ def _calculate_daily_metrics_worker(
                 account_currency_map,
                 default_currency,
                 dummy_warnings_set,
-                included_accounts,  # Pass included_accounts
+                included_accounts=included_accounts,  # FIX: Pass the actual included_accounts list
+                historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,
+                internal_to_yf_map=internal_to_yf_map,
             )
 
         benchmark_prices = {}
@@ -2944,15 +2962,22 @@ def _prepare_historical_inputs(
         transactions_df_included = all_transactions_df.copy()
         included_accounts_list_sorted = sorted(list(available_accounts_set))
     else:
-        # Check if accounts exist in "Account" OR "To Account"
-        available_accounts_in_df = set(all_transactions_df["Account"].unique())
+        # Normalize the DataFrame's Account columns to ensure consistent matching
+        # Generate normalized account sets from the DataFrame
+        df_accounts_normalized = _normalize_series(all_transactions_df["Account"]).unique()
+        available_accounts_in_df = set(df_accounts_normalized)
+        
         if "To Account" in all_transactions_df.columns:
-            available_accounts_in_df.update(
-                all_transactions_df["To Account"].dropna().unique()
-            )
+            df_to_accounts_normalized = _normalize_series(
+                all_transactions_df["To Account"]
+            ).dropna().unique()
+            available_accounts_in_df.update(df_to_accounts_normalized)
 
+        # Normalize include_accounts to match
+        normalized_include_accounts = [acc.strip().upper() for acc in include_accounts]
+        
         valid_include_accounts = [
-            acc for acc in include_accounts if acc in available_accounts_in_df
+            acc for acc in normalized_include_accounts if acc in available_accounts_in_df
         ]
         if not valid_include_accounts:
             logging.warning(
@@ -2961,14 +2986,14 @@ def _prepare_historical_inputs(
             return empty_tuple_return  # type: ignore
 
         # --- Robust Filtering Logic (Matches calculate_portfolio_summary) ---
-        # 1. Primary Account Match
-        from_account_mask = all_transactions_df["Account"].isin(valid_include_accounts)
+        # 1. Primary Account Match - use normalized account column
+        from_account_mask = _normalize_series(all_transactions_df["Account"]).isin(valid_include_accounts)
 
-        # 2. Destination Account Match (Transfers In)
+        # 2. Destination Account Match (Transfers In) - use normalized to account column
         to_account_mask = pd.Series(False, index=all_transactions_df.index)
         if "To Account" in all_transactions_df.columns:
             to_account_mask = (
-                all_transactions_df["To Account"]
+                _normalize_series(all_transactions_df["To Account"])
                 .isin(valid_include_accounts)
                 .fillna(False)
             )
@@ -3023,9 +3048,23 @@ def _prepare_historical_inputs(
             logging.info(
                 f"Hist Prep: Excluding accounts: {', '.join(sorted(valid_exclude_accounts))}"
             )
-            transactions_df_effective = transactions_df_included[
-                ~transactions_df_included["Account"].isin(valid_exclude_accounts)
-            ].copy()
+            
+            # FIX: If include_accounts is set, we only exclude accounts that are explicitly in the include list
+            # (resolving contradiction). We do NOT exclude dependencies (like transfer sources) that are not in the include list.
+            if include_accounts:
+                accounts_to_exclude_really = set(valid_exclude_accounts).intersection(set(valid_include_accounts))
+                if accounts_to_exclude_really:
+                     transactions_df_effective = transactions_df_included[
+                        ~transactions_df_included["Account"].isin(accounts_to_exclude_really)
+                    ].copy()
+                else:
+                    transactions_df_effective = transactions_df_included.copy()
+            else:
+                # Original logic for "All Accounts"
+                transactions_df_effective = transactions_df_included[
+                    ~transactions_df_included["Account"].isin(valid_exclude_accounts)
+                ].copy()
+                
             excluded_accounts_list_sorted = sorted(valid_exclude_accounts)
             if include_accounts:
                 filter_desc += (
@@ -3341,7 +3380,16 @@ def _load_or_calculate_daily_results(
         )
 
         # Determine which set of holdings to use (L1 cached or calculate now)
-        if all_holdings_qty is not None and all_cash_balances is not None:
+        # IMPORTANT: Only use L1 cache if we're calculating for ALL accounts
+        # The L1 cache is calculated from all_transactions_df (all accounts combined)
+        # If we're filtering to specific accounts, we MUST recalculate from filtered transactions
+        use_l1_cache = (
+            all_holdings_qty is not None 
+            and all_cash_balances is not None
+            and not included_accounts_list  # Only use cache if no account filtering
+        )
+        
+        if use_l1_cache:
             logging.info(
                 f"Hist Daily (Scope: {filter_desc}): Using L1 cached holdings..."
             )
@@ -3558,6 +3606,8 @@ def _load_or_calculate_daily_results(
                     default_currency,
                     dummy_warnings_set,
                     included_accounts_list,  # Pass included_accounts_list
+                    historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,
+                    internal_to_yf_map=internal_to_yf_map,
                 )
 
                 benchmark_prices = {}
@@ -3837,7 +3887,9 @@ def _load_or_calculate_daily_results(
             f"Hist Daily (Scope: {filter_desc}): Calculating {len(all_dates_to_process)} daily metrics parallel..."
         )
 
-        partial_worker = partial(
+        # Prepare arguments for parallel processing
+        # Note: We must pass all arguments required by _calculate_daily_metrics_worker
+        worker_partial = partial(
             _calculate_daily_metrics_worker,
             transactions_df=transactions_df_effective,
             historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,
@@ -3847,9 +3899,8 @@ def _load_or_calculate_daily_results(
             internal_to_yf_map=internal_to_yf_map,
             account_currency_map=account_currency_map,
             default_currency=default_currency,
-            manual_overrides_dict=manual_overrides_dict,  # Pass through
+            manual_overrides_dict=manual_overrides_dict,
             benchmark_symbols_yf=clean_benchmark_symbols_yf,
-            # --- PASS MAPPINGS and METHOD ---
             symbol_to_id=symbol_to_id,
             id_to_symbol=id_to_symbol,
             account_to_id=account_to_id,
@@ -3876,7 +3927,7 @@ def _load_or_calculate_daily_results(
             )
             with multiprocessing.Pool(processes=num_processes) as pool:
                 results_iterator = pool.imap_unordered(
-                    partial_worker, all_dates_to_process, chunksize=chunksize
+                    worker_partial, all_dates_to_process, chunksize=chunksize
                 )
                 # --- ADDED: Progress Reporting ---
                 total_dates = len(all_dates_to_process)
@@ -3979,12 +4030,20 @@ def _load_or_calculate_daily_results(
                 daily_df["value"] - previous_value - net_flow_filled
             )
             daily_df["daily_return"] = np.nan
-            valid_prev_value_mask = previous_value.notna() & (
-                abs(previous_value) > 1e-9
+            daily_df["daily_return"] = np.nan
+            
+            # FIX: Adjusted Denominator for TWR
+            # Treat positive net flows (Deposits) as Start-of-Day (participating in gain)
+            # Treat negative net flows (Withdrawals) as End-of-Day (capital was at risk)
+            # Denom = PrevValue + max(0, NetFlow)
+            adjusted_prev_value = previous_value + net_flow_filled.clip(lower=0.0)
+            
+            valid_denom_mask = adjusted_prev_value.notna() & (
+                abs(adjusted_prev_value) > 1e-9
             )
-            daily_df.loc[valid_prev_value_mask, "daily_return"] = (
-                daily_df.loc[valid_prev_value_mask, "daily_gain"]
-                / previous_value.loc[valid_prev_value_mask]
+            daily_df.loc[valid_denom_mask, "daily_return"] = (
+                daily_df.loc[valid_denom_mask, "daily_gain"]
+                / adjusted_prev_value.loc[valid_denom_mask]
             )
             zero_gain_mask = daily_df["daily_gain"].notna() & (
                 abs(daily_df["daily_gain"]) < 1e-9
@@ -4800,14 +4859,24 @@ def calculate_historical_performance(
             # --- NEW: Pass pre-calculated holdings and account filter list ---
             all_holdings_qty=all_holdings_qty,
             all_cash_balances=all_cash_balances,
-            all_last_prices=all_last_prices,  # NEW argument
+            all_last_prices=all_last_prices, # Pass L1 cache
             included_accounts_list=included_accounts_list_sorted,
+            # DEBUG
+            # print(f"DEBUG calc_summary before load_calc: {len(transactions_df_effective)} rows", flush=True)
+            # if not transactions_df_effective.empty and "Date" in transactions_df_effective.columns:
+            #     nov_11 = transactions_df_effective[transactions_df_effective["Date"].dt.date == pd.Timestamp("2025-11-11").date()]
+            #     print(f"DEBUG calc_summary before load_calc Nov 11: {len(nov_11)} rows", flush=True)
             num_processes=num_processes,
             current_hist_version=CURRENT_HIST_VERSION,
             filter_desc=filter_desc,
             calc_method=HISTORICAL_CALC_METHOD,
         )
     )
+    # DEBUG
+    logging.debug(f"DEBUG calc_summary before load_calc: {len(transactions_df_effective)} rows", flush=True)
+    if not transactions_df_effective.empty and "Date" in transactions_df_effective.columns:
+        nov_11 = transactions_df_effective[transactions_df_effective["Date"].dt.date == pd.Timestamp("2025-11-11").date()]
+        logging.debug(f"DEBUG calc_summary before load_calc Nov 11: {len(nov_11)} rows", flush=True)
     if status_update_daily:
         status_parts.append(status_update_daily.strip())
     if daily_df is None or daily_df.empty:

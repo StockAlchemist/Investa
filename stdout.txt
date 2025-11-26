@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/reproduce_issue_v2.py", line 11, in <module>
+    from portfolio_logic import _load_or_calculate_daily_results, _prepare_historical_inputs
+  File "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/portfolio_logic.py", line 4334
+    - final_df_output (pd.DataFrame): DataFrame indexed by the chosen interval's dates,
+                                                                              ^
+SyntaxError: unterminated string literal (detected at line 4334)
