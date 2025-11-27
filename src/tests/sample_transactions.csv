@@ -1,10 +1,10 @@
 "Date (MMM DD, YYYY)",Transaction Type,Stock / ETF Symbol,Quantity of Units,Amount per unit,Total Amount,Fees,Investment Account,Split Ratio (new shares per old share),Note
-Jan 15, 2023,Buy,AAPL,10,150.00,,5.00,IBKR,,Buy AAPL
-Feb 10, 2023,Deposit,$CASH,50000,,,100.00,SET,,Initial Deposit THB
-Mar 01, 2023,Buy,MSFT,5,250.00,,5.00,IBKR,,Buy MSFT
-Apr 05, 2023,Dividend,AAPL,10,0.50,5.00,,IBKR,,AAPL Dividend (Net 0 after fee)
-May 20, 2023,Sell,AAPL,5,175.00,,5.00,IBKR,,Sell AAPL
-Jun 15, 2023,Withdrawal,$CASH,10000,,,50.00,SET,,Withdraw THB
-Jan 01, 2024,Split,AAPL,,,,,IBKR,2.0,AAPL 2:1 Split
-Aug 10, 2023,Fees,$CASH,,,,2.00,IBKR,,Account Fee IBKR
-Sep 01, 2023,Buy,DELTA.BK,100,75.00,,15.00,SET,,Buy DELTA in THB
+"Jan 15, 2023",Buy,AAPL,10,150.00,,5.00,IBKR,,Buy AAPL
+"Feb 10, 2023",Deposit,$CASH,50000,,,100.00,SET,,Initial Deposit THB
+"Mar 01, 2023",Buy,MSFT,5,250.00,,5.00,IBKR,,Buy MSFT
+"Apr 05, 2023",Dividend,AAPL,10,0.50,5.00,,IBKR,,AAPL Dividend (Net 0 after fee)
+"May 20, 2023",Sell,AAPL,5,175.00,,5.00,IBKR,,Sell AAPL
+"Jun 15, 2023",Withdrawal,$CASH,10000,,,50.00,SET,,Withdraw THB
+"Jan 01, 2024",Split,AAPL,,,,,IBKR,2.0,AAPL 2:1 Split
+"Aug 10, 2023",Fees,$CASH,,,,2.00,IBKR,,Account Fee IBKR
+"Sep 01, 2023",Buy,DELTA.BK,100,75.00,,15.00,SET,,Buy DELTA in THB

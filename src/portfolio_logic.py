@@ -1895,8 +1895,10 @@ def _calculate_holdings_numba(
 
             if type_id == buy_type_id or type_id == deposit_type_id:
                 cash_balances_np[account_id] += qty - commission
+                # print(f"DEBUG Numba: Cash Deposit/Buy Acc {account_id}: Qty {qty}, Comm {commission}, New Bal {cash_balances_np[account_id]}")
             elif type_id == sell_type_id or type_id == withdrawal_type_id:
                 cash_balances_np[account_id] -= qty + commission
+                # print(f"DEBUG Numba: Cash Withdrawal/Sell Acc {account_id}: Qty {qty}, Comm {commission}, New Bal {cash_balances_np[account_id]}")
             elif type_id == transfer_type_id:
                 dest_account_id = tx_to_accounts_np[i]
                 if dest_account_id != -1:
@@ -1908,8 +1910,8 @@ def _calculate_holdings_numba(
                     # Assuming commission is paid by source
                     cash_balances_np[account_id] -= qty + commission
                     cash_balances_np[dest_account_id] += qty
+                    # print(f"DEBUG Numba: Cash Transfer Acc {account_id}->{dest_account_id}: Qty {qty}, Comm {commission}")
             continue
-
         # --- Handle STOCK transactions ---
         if holdings_currency_np[symbol_id, account_id] == -1:
             holdings_currency_np[symbol_id, account_id] = currency_id
@@ -2544,19 +2546,24 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
 
         if pd.isna(current_price_local):
             # Numba Fix: Treat missing price as 0.0 to allow other holdings to sum up.
-            # We cannot log inside a Numba nopython function.
-            current_price_local = 0.0
+             if manual_price is not None and pd.notna(manual_price):
+                current_price_local = manual_price
 
         market_value_local = current_qty * float(current_price_local)
         market_value_display = market_value_local * fx_rate
+
+        if IS_DEBUG_DATE:
+            logging.debug(f"    Numba Val Agg: Stock {internal_symbol}/{account}, Qty: {current_qty}, Price: {current_price_local}, MV: {market_value_display}")
+
         if pd.isna(market_value_display):
             any_lookup_nan_on_date = True
-            total_market_value_display_curr_agg = np.nan
-            break
         else:
             total_market_value_display_curr_agg += market_value_display
 
-    # Iterate through cash balances
+    if IS_DEBUG_DATE:
+        logging.debug(f"    Numba Val Agg: Pre-Cash Total: {total_market_value_display_curr_agg}")
+
+    # --- ADDED: Aggregate Cash Balances from Numba ---
     if not any_lookup_nan_on_date:
         cash_indices = np.argwhere(np.abs(cash_balances_np) > 1e-9)
         for acc_id_tuple in cash_indices:
@@ -2578,19 +2585,24 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             fx_rate = get_historical_rate_via_usd_bridge(
                 local_currency, target_currency, target_date, historical_fx_yf
             )
+            
+            cash_val_display = current_qty * fx_rate
+            if IS_DEBUG_DATE:
+                logging.debug(f"    Numba Val Agg: Cash {account}, Qty: {current_qty}, FX: {fx_rate}, MV: {cash_val_display}")
+
             if pd.isna(fx_rate):
                 any_lookup_nan_on_date = True
                 total_market_value_display_curr_agg = np.nan
                 break
+            
+            total_market_value_display_curr_agg += cash_val_display
+            if IS_DEBUG_DATE:
+                logging.debug(f"    Numba Val Agg: Running Total after Cash {account}: {total_market_value_display_curr_agg}")
 
-            market_value_display = current_qty * fx_rate
-            if pd.isna(market_value_display):
-                any_lookup_nan_on_date = True
-                total_market_value_display_curr_agg = np.nan
-                break
-            else:
-                total_market_value_display_curr_agg += market_value_display
-
+    if IS_DEBUG_DATE:
+        logging.debug(
+            f"--- DEBUG VALUE CALC for {target_date} END --- Final Value: {total_market_value_display_curr_agg}, Lookup Failed: {any_lookup_nan_on_date}"
+        )
     return total_market_value_display_curr_agg, any_lookup_nan_on_date
 
 
