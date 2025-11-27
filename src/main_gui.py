@@ -298,6 +298,7 @@ from portfolio_logic import (
     CASH_SYMBOL_CSV,
     calculate_historical_performance,
 )
+from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series
 
 from market_data import MarketDataProvider
 from finutils import (
@@ -1528,6 +1529,7 @@ The CSV file should contain the following columns (header names must match exact
             # --- END ADDED ---
 
             with self._programmatic_date_change():
+                print(f"DEBUG: _set_graph_date_range setting date to {start_date}")
                 self.graph_start_date_edit.setDate(QDate(start_date))
                 self.graph_end_date_edit.setDate(QDate(end_date))
                 logging.info(
@@ -4590,6 +4592,11 @@ The CSV file should contain the following columns (header names must match exact
         if hasattr(self, "graph_interval_combo"):
             self.config["graph_interval"] = self.graph_interval_combo.currentText()
 
+        # --- ADDED: Save Performance Graph Tab Index ---
+        if hasattr(self, "perf_graphs_tab_widget"):
+            self.config["perf_graph_tab_index"] = self.perf_graphs_tab_widget.currentIndex()
+        # --- END ADDED ---
+
         if hasattr(self, "selected_benchmarks") and isinstance(
             self.selected_benchmarks, list
         ):
@@ -5052,6 +5059,7 @@ The CSV file should contain the following columns (header names must match exact
         self.graph_start_date_edit.setObjectName("GraphDateEdit")
         self.graph_start_date_edit.setCalendarPopup(True)
         self.graph_start_date_edit.setDisplayFormat("yyyy-MM-dd")
+        print(f"DEBUG: _init_graph_controls setting start date from config: {self.config.get('graph_start_date')}")
         self.graph_start_date_edit.setDate(
             QDate.fromString(self.config.get("graph_start_date"), "yyyy-MM-dd")
         )
@@ -5200,6 +5208,16 @@ The CSV file should contain the following columns (header names must match exact
         # Apply stretch to the row *after* the last content row (row index 5 is last content)
         # summary_layout.rowCount() will be 6 after adding items to row 5.
         summary_layout.setRowStretch(summary_layout.rowCount(), 1)
+        
+        # --- ADDED: Risk Metrics Button ---
+        self.view_risk_metrics_button = QPushButton("View Risk Metrics")
+        self.view_risk_metrics_button.setIcon(QIcon.fromTheme("utilities-system-monitor"))
+        self.view_risk_metrics_button.setToolTip("Calculate and view risk metrics (Drawdown, Sharpe, etc.) based on historical performance.")
+        self.view_risk_metrics_button.clicked.connect(self.show_risk_metrics_dialog)
+        # Add to the bottom, spanning all columns
+        summary_layout.addWidget(self.view_risk_metrics_button, 6, 0, 1, 4)
+        # --- END ADDED ---
+
         summary_graphs_layout.addWidget(summary_grid_widget, 9)
 
     def _init_performance_graph_widgets(self, summary_graphs_layout: QHBoxLayout):
@@ -5213,6 +5231,22 @@ The CSV file should contain the following columns (header names must match exact
         perf_graphs_main_layout.setContentsMargins(0, 0, 0, 0)
         perf_graphs_main_layout.setSpacing(0)  # Spacing between the two graph columns
 
+        # --- Restructured Performance Graphs with Tabs ---
+        # Create a QTabWidget to hold the graphs
+        self.perf_graphs_tab_widget = QTabWidget()
+        self.perf_graphs_tab_widget.setObjectName("PerfGraphsTabWidget")
+        self.perf_graphs_tab_widget.setTabPosition(QTabWidget.South) # Move tabs to bottom
+        # Increase tab width to show full titles
+        self.perf_graphs_tab_widget.setStyleSheet(
+            "QTabBar::tab { min-width: 150px; padding: 5px; }"
+        )
+
+        # --- Tab 1: Standard Performance (Return & Value) ---
+        perf_std_tab = QWidget()
+        perf_std_layout = QHBoxLayout(perf_std_tab)
+        perf_std_layout.setContentsMargins(0, 0, 0, 0)
+        perf_std_layout.setSpacing(0)
+
         # -- Return Graph (Left Column) --
         self.perf_return_fig = Figure(figsize=PERF_CHART_FIG_SIZE, dpi=CHART_DPI)
         self.perf_return_ax = self.perf_return_fig.add_subplot(111)
@@ -5222,9 +5256,7 @@ The CSV file should contain the following columns (header names must match exact
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
         self.perf_return_canvas.setContextMenuPolicy(Qt.CustomContextMenu)
-        perf_graphs_main_layout.addWidget(
-            self.perf_return_canvas, 1
-        )  # Add canvas directly
+        perf_std_layout.addWidget(self.perf_return_canvas, 1)
 
         # -- Absolute Value Graph (Right Column) --
         self.abs_value_fig = Figure(figsize=PERF_CHART_FIG_SIZE, dpi=CHART_DPI)
@@ -5235,10 +5267,47 @@ The CSV file should contain the following columns (header names must match exact
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
         self.abs_value_canvas.setContextMenuPolicy(Qt.CustomContextMenu)
-        perf_graphs_main_layout.addWidget(
-            self.abs_value_canvas, 1
-        )  # Add canvas directly
+        perf_std_layout.addWidget(self.abs_value_canvas, 1)
+        
+        self.perf_graphs_tab_widget.addTab(perf_std_tab, "Return & Value")
 
+        # --- Tab 2: Drawdown ---
+        drawdown_tab = QWidget()
+        drawdown_layout = QVBoxLayout(drawdown_tab) # Vertical layout for single large chart
+        drawdown_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.drawdown_fig = Figure(figsize=PERF_CHART_FIG_SIZE, dpi=CHART_DPI)
+        self.drawdown_ax = self.drawdown_fig.add_subplot(111)
+        self.drawdown_canvas = FigureCanvas(self.drawdown_fig)
+        self.drawdown_canvas.setObjectName("DrawdownCanvas")
+        self.drawdown_canvas.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Expanding
+        )
+        # Context menu for drawdown (optional, can reuse graph context menu logic)
+        self.drawdown_canvas.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.drawdown_canvas.customContextMenuRequested.connect(
+            lambda pos: self._show_graph_context_menu(
+                pos, self.drawdown_fig, "Drawdown_Graph"
+            )
+        )
+        
+        drawdown_layout.addWidget(self.drawdown_canvas)
+        self.perf_graphs_tab_widget.addTab(drawdown_tab, "Drawdown")
+        self.perf_graphs_tab_widget.setTabToolTip(1, "Visualizes the percentage decline from the historical peak value (Drawdown).")
+
+        # --- Drawdown Hover Event ---
+        self.drawdown_canvas.mpl_connect("motion_notify_event", self._on_drawdown_hover)
+        self.drawdown_annot = None # Will be initialized in _update_drawdown_chart
+
+        # Add the tab widget to the main layout
+        perf_graphs_main_layout.addWidget(self.perf_graphs_tab_widget)
+        
+        # --- Restore Saved Tab Index ---
+        saved_tab_index = self.config.get("perf_graph_tab_index", 0)
+        if isinstance(saved_tab_index, int) and 0 <= saved_tab_index < self.perf_graphs_tab_widget.count():
+            self.perf_graphs_tab_widget.setCurrentIndex(saved_tab_index)
+        # --- End Restore ---
+        
         # Add the main performance graphs container to the summary/graphs frame
         summary_graphs_layout.addWidget(perf_graphs_container_widget, 20)
         # --- End Performance Graphs Container Modification ---
@@ -7836,19 +7905,26 @@ The CSV file should contain the following columns (header names must match exact
                     # Use the exact start date as requested
                     new_start_date = min_date
                     
-                    logging.debug(f"DEBUG: Graph Date Logic: Found min date {min_date} for accounts {selected_accounts}")
-
-                    # Update the UI
-                    # We always update to ensure the view is correct for the selected account
-                    self.graph_start_date_edit.setDate(QDate(new_start_date))
+                    # Check current UI date
+                    current_ui_date = self.graph_start_date_edit.date().toPython()
                     
-                    # Explicitly reset preset combo to "Presets..." to avoid confusion
-                    if hasattr(self, "date_preset_combo"):
-                        self.date_preset_combo.setCurrentIndex(0)
+                    # Only update if the current date is BEFORE the new min date (invalid range)
+                    # This preserves user-selected ranges like YTD that are within the valid range.
+                    if current_ui_date < new_start_date:
+                        print(f"DEBUG: _update_graph_date_range_for_accounts updating date to {new_start_date}")
+                        self.graph_start_date_edit.setDate(QDate(new_start_date))
                         
-                    logging.debug(
-                        f"DEBUG: Auto-updated graph start date to {new_start_date} based on selected accounts."
-                    )
+                        # Explicitly reset preset combo to "Presets..." to avoid confusion
+                        if hasattr(self, "date_preset_combo"):
+                            self.date_preset_combo.setCurrentIndex(0)
+                            
+                        logging.debug(
+                            f"DEBUG: Auto-updated graph start date to {new_start_date} based on selected accounts (was {current_ui_date})."
+                        )
+                    else:
+                        logging.debug(
+                            f"DEBUG: Kept existing graph start date {current_ui_date} as it is valid (>= {new_start_date})."
+                        )
             except Exception as e:
                 logging.error(f"Error calculating min date for graph: {e}")
         else:
@@ -8957,6 +9033,192 @@ The CSV file should contain the following columns (header names must match exact
             QMessageBox.information(
                 self, "Info", "No ignored transaction data available."
             )
+
+    # --- ADDED: Risk Metrics Dialog ---
+    @Slot()
+    def show_risk_metrics_dialog(self):
+        """Calculates and displays risk metrics in a dialog."""
+        if not hasattr(self, "full_historical_data") or self.full_historical_data.empty:
+            QMessageBox.warning(
+                self,
+                "Data Unavailable",
+                "No historical data available. Please ensure data is loaded and historical performance is calculated.",
+            )
+            return
+
+        if "Portfolio Value" not in self.full_historical_data.columns:
+            QMessageBox.warning(
+                self,
+                "Data Error",
+                "Historical data does not contain 'Portfolio Value' column.",
+            )
+            return
+
+        try:
+            # Extract portfolio value series
+            portfolio_values = self.full_historical_data["Portfolio Value"].sort_index()
+            
+            # Calculate metrics
+            metrics = calculate_all_risk_metrics(portfolio_values)
+            
+            if not metrics:
+                QMessageBox.information(self, "Risk Metrics", "Could not calculate metrics (insufficient data?).")
+                return
+
+            # Format for display
+            msg = "<h3>Portfolio Risk Metrics</h3>"
+            msg += "<table border='0' cellpadding='5'>"
+            
+            # Max Drawdown
+            mdd = metrics.get("Max Drawdown", 0.0)
+            msg += f"<tr><td><b>Max Drawdown:</b></td><td><font color='red'>{mdd:.2%}</font></td></tr>"
+            
+            # Volatility
+            vol = metrics.get("Volatility (Ann.)", 0.0)
+            msg += f"<tr><td><b>Volatility (Ann.):</b></td><td>{vol:.2%}</td></tr>"
+            
+            # Sharpe Ratio
+            sharpe = metrics.get("Sharpe Ratio", 0.0)
+            sharpe_color = "green" if sharpe > 1 else "black"
+            msg += f"<tr><td><b>Sharpe Ratio:</b></td><td><font color='{sharpe_color}'>{sharpe:.2f}</font></td></tr>"
+            
+            # Sortino Ratio
+            sortino = metrics.get("Sortino Ratio", 0.0)
+            sortino_color = "green" if sortino > 1 else "black"
+            msg += f"<tr><td><b>Sortino Ratio:</b></td><td><font color='{sortino_color}'>{sortino:.2f}</font></td></tr>"
+            
+            msg += "</table>"
+            msg += "<br><i>Note: Metrics are based on daily returns from the loaded historical period. Risk-free rate assumed 2%.</i>"
+
+            QMessageBox.information(self, "Risk Metrics", msg)
+
+        except Exception as e:
+            logging.error(f"Error calculating/displaying risk metrics: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"An error occurred while calculating metrics:\n{e}")
+
+
+    def _update_drawdown_chart(self, drawdown_series: pd.Series):
+        """Updates the drawdown chart with the provided drawdown series."""
+        if not hasattr(self, "drawdown_ax"):
+            return
+
+        self.drawdown_ax.clear()
+        
+        # Set background color
+        if hasattr(self, "QCOLOR_BACKGROUND_THEMED"):
+             self.drawdown_ax.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
+             self.drawdown_fig.patch.set_facecolor(self.QCOLOR_BACKGROUND_THEMED.name())
+
+        if drawdown_series.empty:
+            self.drawdown_canvas.draw()
+            return
+
+        try:
+            # Plot
+            dates = drawdown_series.index
+            values = drawdown_series.values
+            
+            self.drawdown_ax.fill_between(dates, values, 0, color='red', alpha=0.3)
+            self.drawdown_line, = self.drawdown_ax.plot(dates, values, color='red', linewidth=1)
+            
+            # Formatting
+            # self.drawdown_ax.set_title("Portfolio Drawdown", color=COLOR_TEXT_DARK) # REMOVED TITLE
+            self.drawdown_ax.grid(True, linestyle="--", alpha=0.5)
+            
+            # Format Y-axis as percentage
+            import matplotlib.ticker as mtick
+            self.drawdown_ax.yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
+            
+            # Rotate date labels
+            self.drawdown_fig.autofmt_xdate()
+
+            # --- Initialize Annotation ---
+            self.drawdown_annot = self.drawdown_ax.annotate(
+                "",
+                xy=(0, 0),
+                xytext=(10, 10),
+                textcoords="offset points",
+                bbox=dict(boxstyle="round", fc="white", alpha=0.8),
+                arrowprops=dict(arrowstyle="->"),
+            )
+            self.drawdown_annot.set_visible(False)
+            
+            self.drawdown_canvas.draw()
+            
+        except Exception as e:
+            logging.error(f"Error updating drawdown chart: {e}")
+
+    def _on_drawdown_hover(self, event):
+        """Handles mouse hover events on the drawdown chart."""
+        # logging.debug(f"Hover event: inaxes={event.inaxes}, x={event.xdata}, y={event.ydata}")
+        if event.inaxes != self.drawdown_ax:
+            if hasattr(self, "drawdown_annot") and self.drawdown_annot and self.drawdown_annot.get_visible():
+                self.drawdown_annot.set_visible(False)
+                self.drawdown_canvas.draw_idle()
+            return
+
+        if not hasattr(self, "drawdown_line"):
+            return
+
+        # Find closest data point
+        try:
+            # Convert event x (date) to numerical format used by matplotlib
+            x_mouse = event.xdata
+            if x_mouse is None: return
+            
+            # Get line data
+            x_data = self.drawdown_line.get_xdata()
+            y_data = self.drawdown_line.get_ydata()
+            
+            # Find index of nearest date
+            import matplotlib.dates as mdates
+            
+            # Check type of x_data to handle both numeric and datetime arrays
+            if np.issubdtype(x_data.dtype, np.datetime64):
+                # x_data is datetime64, convert x_mouse (float) to datetime64
+                dt_mouse = mdates.num2date(x_mouse)
+                # Remove timezone info if present to match typical numpy datetime64[ns]
+                if dt_mouse.tzinfo is not None:
+                    dt_mouse = dt_mouse.replace(tzinfo=None)
+                x_mouse_val = np.datetime64(dt_mouse)
+            else:
+                # x_data is likely float/numeric
+                x_mouse_val = x_mouse
+
+            # Find closest index
+            idx = (np.abs(x_data - x_mouse_val)).argmin()
+            
+            x_val = x_data[idx]
+            y_val = y_data[idx]
+            
+            # Update annotation
+            # Note: annotate xy expects the data coordinates. 
+            # If x_val is datetime64, matplotlib's plot usually handles it, 
+            # but for xy we might need the float representation if the axis is date-based?
+            # Actually, if we pass the same type as the data, it should work.
+            self.drawdown_annot.xy = (x_val, y_val)
+            
+            # Format date and value
+            # If x_val is datetime, format it directly
+            if isinstance(x_val, (np.datetime64, pd.Timestamp, datetime)):
+                # Convert to python datetime for strftime
+                # Use pd.to_datetime for robust conversion handling numpy/pandas types
+                date_obj = pd.to_datetime(x_val).to_pydatetime()
+                date_str = date_obj.strftime("%Y-%m-%d")
+            else:
+                # It's a float, convert using mdates
+                date_str = mdates.num2date(x_val).strftime("%Y-%m-%d")
+
+            text = f"{date_str}\nDrawdown: {y_val:.2%}"
+            
+            self.drawdown_annot.set_text(text)
+            self.drawdown_annot.set_visible(True)
+            self.drawdown_canvas.draw_idle()
+            
+        except Exception as e:
+            logging.error(f"Error in hover: {e}")
+            # Suppress errors during hover to avoid spamming logs
+            pass
 
     def update_account_pie_chart(self, df_account_data=None):
         """Updates the 'Value by Account' pie chart.
@@ -12997,10 +13259,24 @@ The CSV file should contain the following columns (header names must match exact
                 if full_historical_data_df is not None
                 else pd.DataFrame()
             )
+            # Ensure 'Portfolio Value' column exists or rename 'value' if present (just in case logic differs)
+            if not self.full_historical_data.empty:
+                 if "Portfolio Value" not in self.full_historical_data.columns and "value" in self.full_historical_data.columns:
+                     self.full_historical_data.rename(columns={"value": "Portfolio Value"}, inplace=True)
+
             self.historical_prices_yf_adjusted = (
                 hist_prices_adj if hist_prices_adj is not None else {}
             )
             self.historical_fx_yf = hist_fx if hist_fx is not None else {}
+            self.combined_ignored_indices = (
+                combined_ignored_indices if combined_ignored_indices else []
+            )
+            self.combined_ignored_reasons = (
+                combined_ignored_reasons if combined_ignored_reasons else []
+            )
+            
+
+
             self.ignored_data = pd.DataFrame()
             if (
                 combined_ignored_indices
@@ -13264,6 +13540,30 @@ The CSV file should contain the following columns (header names must match exact
             logging.info(
                 "HANDLE_RESULTS: Calling _update_ui_components_after_calculation..."
             )
+            # --- ADDED: Update Drawdown Chart (Moved here to use filtered historical_data) ---
+            # Calculate drawdown on FULL history to preserve global peak context
+            if not self.full_historical_data.empty and "Portfolio Value" in self.full_historical_data.columns:
+                 full_drawdown = calculate_drawdown_series(self.full_historical_data["Portfolio Value"])
+                 
+                 # Now slice to the selected date range
+                 if hasattr(self, "historical_data") and not self.historical_data.empty:
+                     # Align indices
+                     # Ensure indices are datetime
+                     if not isinstance(full_drawdown.index, pd.DatetimeIndex):
+                         full_drawdown.index = pd.to_datetime(full_drawdown.index)
+                     
+                     start_date = self.historical_data.index.min()
+                     end_date = self.historical_data.index.max()
+                     
+                     sliced_drawdown = full_drawdown.loc[start_date:end_date]
+                     self._update_drawdown_chart(sliced_drawdown)
+                 else:
+                     self._update_drawdown_chart(full_drawdown)
+            else:
+                 # Clear chart if no data
+                 self._update_drawdown_chart(pd.Series(dtype=float))
+            # --- END ADDED ---
+
             # --- ADDED: Populate intraday symbol combo ---
             self._populate_intraday_symbol_combo()
             self._update_ui_components_after_calculation()
