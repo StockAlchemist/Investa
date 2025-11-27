@@ -1459,6 +1459,10 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
         included_accounts_norm = {acc.strip().upper() for acc in included_accounts}
     # --- END ADDED ---
 
+    # --- ADDED: Track last known prices for fallback ---
+    last_known_prices: Dict[Tuple[str, str], float] = {}
+    # --- END ADDED ---
+
     holdings: Dict[Tuple[str, str], Dict] = {}
     for index, row in transactions_til_date.iterrows():
         symbol = str(row.get("Symbol", "UNKNOWN")).strip()
@@ -1469,6 +1473,15 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
         holding_key_from_row = (symbol, account)
         tx_type = str(row.get("Type", "UNKNOWN_TYPE")).lower().strip()
         tx_date_row = row["Date"].date()
+
+        # --- ADDED: Update last known price from transaction ---
+        try:
+            tx_price = pd.to_numeric(row.get("Price/Share"), errors="coerce")
+            if pd.notna(tx_price) and tx_price > 1e-9:
+                last_known_prices[holding_key_from_row] = float(tx_price)
+        except Exception:
+            pass
+        # --- END ADDED ---
 
         if symbol != CASH_SYMBOL_CSV and holding_key_from_row not in holdings:
             holdings[holding_key_from_row] = {
@@ -1563,6 +1576,11 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
                                 "is_stock": True,
                             }
                         holdings[to_key]["qty"] += transfer_qty
+
+                        # --- ADDED: Propagate last known price to destination ---
+                        if holding_key_from_row in last_known_prices:
+                            last_known_prices[to_key] = last_known_prices[holding_key_from_row]
+                        # --- END ADDED ---
 
                         # This function only calculates market value, not cost basis,
                         # so only the quantity needs to be moved. The Numba version
@@ -1733,33 +1751,46 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
 
         if (pd.isna(current_price_local) or force_fallback) and is_stock:
             # Fallback to last transaction price if still no price, or if yfinance is excluded (and no manual override was applied for it)
-            try:
-                fallback_tx = transactions_df[
-                    (transactions_df["Symbol"] == internal_symbol)
-                    & (transactions_df["Account"] == account)
-                    & (transactions_df["Price/Share"].notna())
-                    & (
-                        pd.to_numeric(transactions_df["Price/Share"], errors="coerce")
-                        > 1e-9
-                    )
-                    & (transactions_df["Date"].dt.date <= target_date)
-                ].copy()
-                if not fallback_tx.empty:
-                    fallback_tx.sort_values(
-                        by=["Date", "original_index"], inplace=True, ascending=True
-                    )
-                    last_tx_row = fallback_tx.iloc[-1]
-                    last_tx_price = pd.to_numeric(
-                        last_tx_row["Price/Share"], errors="coerce"
-                    )
-                    if pd.notna(last_tx_price) and last_tx_price > 1e-9:
-                        current_price_local = float(last_tx_price)
-                        if DO_DETAILED_LOG:
-                            logging.debug(  # This log might be hit if force_fallback=True and no manual price
-                                f"      Using Fallback Price: {current_price_local}"
-                            )
-            except Exception:
-                pass
+            
+            # --- ADDED: Check last_known_prices first ---
+            if (internal_symbol, account) in last_known_prices:
+                last_known = last_known_prices[(internal_symbol, account)]
+                if pd.notna(last_known) and last_known > 1e-9:
+                    current_price_local = last_known
+                    if DO_DETAILED_LOG:
+                        logging.debug(
+                            f"      Using Last Known Price (tracked): {current_price_local}"
+                        )
+            # --- END ADDED ---
+
+            if pd.isna(current_price_local):
+                try:
+                    fallback_tx = transactions_df[
+                        (transactions_df["Symbol"] == internal_symbol)
+                        & (transactions_df["Account"] == account)
+                        & (transactions_df["Price/Share"].notna())
+                        & (
+                            pd.to_numeric(transactions_df["Price/Share"], errors="coerce")
+                            > 1e-9
+                        )
+                        & (transactions_df["Date"].dt.date <= target_date)
+                    ].copy()
+                    if not fallback_tx.empty:
+                        fallback_tx.sort_values(
+                            by=["Date", "original_index"], inplace=True, ascending=True
+                        )
+                        last_tx_row = fallback_tx.iloc[-1]
+                        last_tx_price = pd.to_numeric(
+                            last_tx_row["Price/Share"], errors="coerce"
+                        )
+                        if pd.notna(last_tx_price) and last_tx_price > 1e-9:
+                            current_price_local = float(last_tx_price)
+                            if DO_DETAILED_LOG:
+                                logging.debug(  # This log might be hit if force_fallback=True and no manual price
+                                    f"      Using Fallback Price (DF lookup): {current_price_local}"
+                                )
+                except Exception:
+                    pass
 
         if pd.isna(current_price_local):
             logging.warning(
