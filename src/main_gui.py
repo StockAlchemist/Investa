@@ -125,42 +125,25 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QTableWidget,
-    QGroupBox,  # <-- ADDED for grouping
-    QTextEdit,  # <-- ADDED for FundamentalDataDialog
-    QSplitter,  # <-- ADDED for Transactions Log tab
-    QTabWidget,  # <-- ADDED for main content tabs
+    QGroupBox,
+    QTextEdit,
+    QSplitter,
+    QTabWidget,
     QTableWidgetItem,
     QAbstractItemView,
-    QToolBar,  # <-- ADDED QToolBar
-    QHeaderView,
+    QToolBar,
     QScrollArea,
     QButtonGroup,
-    QSpinBox,  # <-- Import QSpinBox
-    QCompleter,  # <-- ADDED for symbol autocompletion
+    QSpinBox,
+    QCompleter,
     QListWidgetItem,
-    QInputDialog,  # <-- ADDED for rebalancing tab
-    QSpacerItem,  # <-- ADDED for layout spacing
+    QInputDialog,
+    QSpacerItem,
+    QProgressBar,
 )
 from functools import partial
 import contextlib
 
-from PySide6.QtWidgets import QProgressBar  # <-- ADDED for progress bar
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QWidget, QLabel
-from PySide6.QtCore import Qt
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_qtagg import (
-    NavigationToolbar2QT as NavigationToolbar,
-)
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas  # type: ignore
-
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-import matplotlib.dates as mdates
-import matplotlib.ticker as mtick
-import pandas as pd
-from datetime import date
-
-from PySide6.QtGui import QDoubleValidator
-from PySide6.QtGui import QColor, QPalette, QFont, QIcon, QPixmap, QAction, QActionGroup
 from PySide6.QtCore import (
     Qt,
     QAbstractTableModel,
@@ -173,19 +156,36 @@ from PySide6.QtCore import (
     QDateTime,
     QDate,
     QPoint,
-    QStringListModel,  # <-- ADDED for QCompleter
+    QStringListModel,
     QStandardPaths,
     QByteArray,
     QTimer,
     QItemSelection,
     QItemSelectionModel,
+    QSize,
 )
-from PySide6.QtGui import QValidator, QIcon  # <-- ADDED Import QValidator
-from PySide6.QtCore import QSize  # <-- ADDED Import QSize
-import matplotlib
+from PySide6.QtGui import (
+    QDoubleValidator,
+    QColor,
+    QPalette,
+    QFont,
+    QIcon,
+    QPixmap,
+    QAction,
+    QActionGroup,
+    QValidator,
+)
 
+import matplotlib
 matplotlib.use("QtAgg")
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_qtagg import (
+    NavigationToolbar2QT as NavigationToolbar,
+    FigureCanvasQTAgg as FigureCanvas,
+)
+import matplotlib.dates as mdates
+import matplotlib.ticker as mtick
 
 # --- Matplotlib Font Configuration ---
 try:
@@ -215,11 +215,6 @@ try:
 
 except Exception as e:
     logging.warning(f"Warning: Could not configure Matplotlib font: {e}")
-
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-
-from matplotlib.figure import Figure
-import matplotlib.ticker as mtick
 
 try:
     import mplcursors
@@ -295,10 +290,6 @@ from workers import (
     FundamentalDataWorker,
 )
 from models import PandasModel
-from utils import (
-    resource_path,
-    get_column_definitions,
-)
 from io_handlers import write_dataframe_to_csv, write_dataframe_to_excel
 
 try:

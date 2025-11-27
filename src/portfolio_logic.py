@@ -115,7 +115,7 @@ except ImportError:
     logging.critical("CRITICAL ERROR: Could not import from data_loader.py. Exiting.")
     raise
 
-# --- ADDED: Import QStandardPaths for cache directory ---
+# --- Import QStandardPaths for cache directory ---
 try:
     from PySide6.QtCore import QStandardPaths
 except ImportError:
@@ -591,26 +591,7 @@ def calculate_portfolio_summary(
     # --- 4. (Obsolete) Cash Balance Calculation ---
     # Cash is now processed as a regular holding in _process_transactions_to_holdings.
     # The cash_summary dict is no longer needed.
-    if has_errors:  # Critical error during cash balance calculation
-        msg = "Error: Failed critically during cash balance calculation."
-        logging.error(msg)
-        final_status_prefix = "Finished with Errors"
-        final_status = f"{final_status_prefix} ({filter_desc})" + (
-            f" [{'; '.join(status_parts)}]" if status_parts else ""
-        )
-        return (
-            get_default_metrics_dict(
-                display_currency,
-                report_date,
-                available_accounts_for_errors,
-                is_empty_data_case=False,
-            ),  # MODIFIED
-            None,  # summary_df_final
-            None,  # account_level_metrics
-            combined_ignored_indices,
-            combined_ignored_reasons,
-            final_status,
-        )
+    # Removed obsolete cash balance calculation block.
 
     # --- 5. Fetch Current Market Data ---
     all_stock_symbols_internal = list(set(key[0] for key in holdings.keys()))
