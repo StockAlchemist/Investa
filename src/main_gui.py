@@ -9121,9 +9121,41 @@ The CSV file should contain the following columns (header names must match exact
             self.drawdown_ax.fill_between(dates, values, 0, color='red', alpha=0.3)
             self.drawdown_line, = self.drawdown_ax.plot(dates, values, color='red', linewidth=1)
             
-            # Formatting
-            # self.drawdown_ax.set_title("Portfolio Drawdown", color=COLOR_TEXT_DARK) # REMOVED TITLE
-            self.drawdown_ax.grid(True, linestyle="--", alpha=0.5)
+            # --- Formatting to match Value Graphs ---
+            # Spines
+            self.drawdown_ax.spines["top"].set_visible(False)
+            self.drawdown_ax.spines["right"].set_visible(False)
+            if hasattr(self, "QCOLOR_BORDER_THEMED"):
+                self.drawdown_ax.spines["bottom"].set_color(self.QCOLOR_BORDER_THEMED.name())
+                self.drawdown_ax.spines["left"].set_color(self.QCOLOR_BORDER_THEMED.name())
+            
+            # Ticks and Labels
+            if hasattr(self, "QCOLOR_TEXT_SECONDARY_THEMED"):
+                self.drawdown_ax.tick_params(
+                    axis="x", colors=self.QCOLOR_TEXT_SECONDARY_THEMED.name(), labelsize=8
+                )
+                self.drawdown_ax.tick_params(
+                    axis="y", colors=self.QCOLOR_TEXT_SECONDARY_THEMED.name(), labelsize=8
+                )
+            
+            if hasattr(self, "QCOLOR_TEXT_PRIMARY_THEMED"):
+                self.drawdown_ax.xaxis.label.set_color(self.QCOLOR_TEXT_PRIMARY_THEMED.name())
+                self.drawdown_ax.yaxis.label.set_color(self.QCOLOR_TEXT_PRIMARY_THEMED.name())
+                # self.drawdown_ax.title.set_color(self.QCOLOR_TEXT_PRIMARY_THEMED.name()) # Title removed
+                
+            # Grid
+            grid_color = "gray"
+            if hasattr(self, "QCOLOR_BORDER_THEMED"):
+                 grid_color = self.QCOLOR_BORDER_THEMED.name()
+                 
+            self.drawdown_ax.grid(
+                True,
+                which="major",
+                linestyle="--",
+                linewidth=0.5,
+                color=grid_color,
+                alpha=1.0 # Use alpha 1.0 because color handles transparency/lightness
+            )
             
             # Format Y-axis as percentage
             import matplotlib.ticker as mtick
