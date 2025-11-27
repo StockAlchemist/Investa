@@ -252,6 +252,25 @@ You can package Investa as a standalone desktop application using PyInstaller.
 
     The final application bundle will be located in the `dist/` directory.
 
+## Development & Testing
+
+We encourage developers to run the test suite to ensure everything is working correctly, especially after making changes.
+
+1.  **Install Test Dependencies**
+    Ensure you have installed all requirements:
+    ```bash
+    pip install -r requirements.txt
+    ```
+    (This includes `pytest` and `numba` which are required for testing).
+
+2.  **Run the Tests**
+    Execute the full test suite from the project root:
+    ```bash
+    pytest src/tests
+    ```
+
+    This will run all unit and integration tests, including the historical calculation verifications that use deterministic mock data.
+
 ## Contributing
 
 We welcome contributions to Investa! If you're interested in helping out, please take a look at our **[Contributing Guidelines](CONTRIBUTING.md)** for more information on how to get started, coding standards, and how to submit your changes.

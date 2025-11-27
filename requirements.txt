@@ -100,3 +100,5 @@ websockets==15.0.1
 yfinance==0.2.65
     # via -r /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/requirements.in
 seaborn
+numba
+pytest
