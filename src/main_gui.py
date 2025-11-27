@@ -1602,6 +1602,38 @@ The CSV file should contain the following columns (header names must match exact
                     start_date = date.fromisoformat(start_date)
 
         if start_date:
+        # --- ADDED: Clamp start date to first transaction date of selected accounts ---
+        # If the calculated start date (e.g. Jan 1 for YTD) is earlier than the
+        # actual first transaction (e.g. Oct 22), use the transaction date.
+            try:
+                if (
+                    hasattr(self, "all_transactions_df_cleaned_for_logic")
+                    and not self.all_transactions_df_cleaned_for_logic.empty
+                ):
+                    # Get selected accounts
+                    selected_accounts = getattr(self, "selected_accounts", [])
+                    if not selected_accounts:
+                        selected_accounts = self.config.get("selected_accounts", [])
+                    
+                    df = self.all_transactions_df_cleaned_for_logic
+                    if selected_accounts and "Account" in df.columns:
+                        df = df[df["Account"].isin(selected_accounts)]
+                    
+                    if not df.empty and "Date" in df.columns:
+                        min_tx_date = df["Date"].min()
+                        if pd.notna(min_tx_date):
+                            if isinstance(min_tx_date, (pd.Timestamp, datetime)):
+                                min_tx_date = min_tx_date.date()
+                            
+                            # If preset date is BEFORE the first transaction, clamp it.
+                            # Exception: If "All" is selected, we already used min date above, so this is redundant but safe.
+                            if start_date < min_tx_date:
+                                logging.debug(f"DEBUG: Clamping preset '{period}' start date from {start_date} to first transaction {min_tx_date}")
+                                start_date = min_tx_date
+            except Exception as e:
+                logging.error(f"Error clamping start date: {e}")
+            # --- END ADDED ---
+
             with self._programmatic_date_change():
                 self.graph_start_date_edit.setDate(QDate(start_date))
                 self.graph_end_date_edit.setDate(QDate(end_date))
@@ -7856,6 +7888,81 @@ The CSV file should contain the following columns (header names must match exact
         self.progress_bar.setObjectName("StatusBarProgressBar")
         self.progress_bar.setVisible(False)  # Initially hidden
         self.status_bar.addPermanentWidget(self.progress_bar)  # RESTORED
+    def _on_update_accounts_clicked(self):
+        """
+        Handles the 'Update Accounts' button click.
+        Updates the graph date range based on the selected accounts, then refreshes data.
+        """
+        self._update_graph_date_range_for_accounts()
+        self.refresh_data(force_historical_refresh=False)
+
+    def _update_graph_date_range_for_accounts(self):
+        """
+        Updates the graph start date based on the earliest transaction of the selected accounts.
+        If no transactions are found or data is not loaded, does nothing.
+        """
+        if (
+            not hasattr(self, "all_transactions_df_cleaned_for_logic")
+            or self.all_transactions_df_cleaned_for_logic.empty
+        ):
+            return
+
+        # Use self.selected_accounts if available (which is updated by the menu),
+        # otherwise fall back to config.
+        selected_accounts = getattr(self, "selected_accounts", [])
+        if not selected_accounts:
+             selected_accounts = self.config.get("selected_accounts", [])
+        
+        df = self.all_transactions_df_cleaned_for_logic
+
+        # Filter by selected accounts if any are selected
+        if selected_accounts:
+            # Filter df for transactions belonging to selected accounts
+            # Note: 'Account' column name might vary, check get_column_definitions or standard name
+            # Usually it's 'Account' in the cleaned DF.
+            if "Account" in df.columns:
+                df = df[df["Account"].isin(selected_accounts)]
+            else:
+                logging.warning(
+                    "Could not filter by account for date range: 'Account' column missing."
+                )
+                return
+
+        if df.empty:
+            return
+
+        # Find the earliest date
+        if "Date" in df.columns:
+            try:
+                min_date = df["Date"].min()
+                if pd.notna(min_date):
+                    # Convert to python date if it's a timestamp
+                    if isinstance(min_date, (pd.Timestamp, datetime)):
+                        min_date = min_date.date()
+
+                    # Use the exact start date as requested
+                    new_start_date = min_date
+                    
+                    logging.debug(f"DEBUG: Graph Date Logic: Found min date {min_date} for accounts {selected_accounts}")
+
+                    # Update the UI
+                    # We always update to ensure the view is correct for the selected account
+                    self.graph_start_date_edit.setDate(QDate(new_start_date))
+                    
+                    # Explicitly reset preset combo to "Presets..." to avoid confusion
+                    if hasattr(self, "date_preset_combo"):
+                        self.date_preset_combo.setCurrentIndex(0)
+                        
+                    logging.debug(
+                        f"DEBUG: Auto-updated graph start date to {new_start_date} based on selected accounts."
+                    )
+            except Exception as e:
+                logging.error(f"Error calculating min date for graph: {e}")
+        else:
+            logging.warning(
+                "Could not determine min date: 'Date' column missing in transactions."
+            )
+
 
     @Slot(bool)
     def refresh_data(self, force_historical_refresh: Optional[bool] = None):
@@ -8579,9 +8686,7 @@ The CSV file should contain the following columns (header names must match exact
         self.refresh_action.triggered.connect(
             lambda: self.refresh_data(force_historical_refresh=True)
         )
-        self.update_accounts_button.clicked.connect(
-            lambda: self.refresh_data(force_historical_refresh=False)
-        )
+        self.update_accounts_button.clicked.connect(self._on_update_accounts_clicked)
         self.currency_combo.currentTextChanged.connect(self.filter_changed_refresh)
         self.show_closed_check.stateChanged.connect(self.filter_changed_refresh)
         # --- MODIFIED: Decouple grouping from full refresh ---
