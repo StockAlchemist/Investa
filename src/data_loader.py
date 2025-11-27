@@ -81,6 +81,7 @@ EXPECTED_CLEANED_COLUMNS = [
     "Note",
     "Local Currency",
     "original_index",  # original_index is crucial
+    "To Account",
 ]
 
 # --- Column Mapping (for CSV loading if still used) ---

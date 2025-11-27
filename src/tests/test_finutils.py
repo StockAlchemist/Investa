@@ -261,7 +261,7 @@ def test_get_cash_flows_irr_basic(sample_transactions_df):
     expected_flows = [-1505.0, 5.0, 895.0, -2.0, -1.0, 950.0]
 
     dates, flows = get_cash_flows_for_symbol_account(
-        symbol, account, sample_transactions_df, final_mv_local, end_date
+        symbol, account, sample_transactions_df, final_mv_local, is_transfer_a_flow=False, report_date=end_date
     )
 
     assert dates == expected_dates
@@ -306,10 +306,43 @@ def test_get_cash_flows_irr_only_final_value(sample_transactions_df):
     # The function *should* probably return empty if there are no cash flows before the end date.
     # Let's assert that. If the implementation changes, this test needs adjustment.
     dates, flows = get_cash_flows_for_symbol_account(
-        symbol, account, tx_filtered, final_mv_local, end_date
+        symbol, account, tx_filtered, final_mv_local, is_transfer_a_flow=False, report_date=end_date
     )
     assert dates == []
     assert flows == []
+
+def test_get_cash_flows_missing_to_account_column():
+    """
+    Test that get_cash_flows_for_symbol_account handles a DataFrame missing the 'To Account' column
+    without raising a KeyError.
+    """
+    symbol = "AAPL"
+    account = "MyAccount"
+    
+    # Create DataFrame WITHOUT 'To Account'
+    data = {
+        "Date": [pd.Timestamp("2023-01-01"), pd.Timestamp("2023-01-15")],
+        "Symbol": ["AAPL", "AAPL"],
+        "Account": ["MyAccount", "MyAccount"],
+        "Type": ["Buy", "Sell"],
+        "Quantity": [10.0, 5.0],
+        "Price/Share": [100.0, 110.0],
+        "Commission": [1.0, 1.0],
+        "Total Amount": [1001.0, 549.0],
+        "Local Currency": ["USD", "USD"],
+        "original_index": [1, 2]
+    }
+    df = pd.DataFrame(data)
+    
+    final_mv_local = 550.0 # Remaining 5 shares * 110
+    
+    # Should not raise KeyError
+    dates, flows = get_cash_flows_for_symbol_account(
+        symbol, account, df, final_mv_local, is_transfer_a_flow=False
+    )
+    
+    assert len(dates) > 0
+    assert len(flows) > 0
 
 
 # --- Tests for get_conversion_rate ---

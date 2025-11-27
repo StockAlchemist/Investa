@@ -397,13 +397,22 @@ def get_cash_flows_for_symbol_account(
             Returns ([], []) if no relevant transactions or final value exist, or if the
             cash flow pattern is invalid for IRR.
     """
-    symbol_account_tx_filtered = transactions_df[
-        (transactions_df["Symbol"] == symbol)
-        & (
-            (transactions_df["Account"] == account)
-            | (transactions_df["To Account"] == account)
-        )
-    ]
+    # --- MODIFIED: Handle missing 'To Account' column gracefully ---
+    if "To Account" in transactions_df.columns:
+        symbol_account_tx_filtered = transactions_df[
+            (transactions_df["Symbol"] == symbol)
+            & (
+                (transactions_df["Account"] == account)
+                | (transactions_df["To Account"] == account)
+            )
+        ]
+    else:
+        # If 'To Account' is missing, fallback to filtering only by 'Account'
+        symbol_account_tx_filtered = transactions_df[
+            (transactions_df["Symbol"] == symbol)
+            & (transactions_df["Account"] == account)
+        ]
+    # --- END MODIFIED ---
     if symbol_account_tx_filtered.empty:
         return [], []
     symbol_account_tx = symbol_account_tx_filtered.copy()
