@@ -292,148 +292,50 @@ from workers import (
 from models import PandasModel
 from io_handlers import write_dataframe_to_csv, write_dataframe_to_excel
 
-try:
-    from portfolio_logic import (
-        calculate_portfolio_summary,
-        CASH_SYMBOL_CSV,
-        calculate_historical_performance,
+# --- Core Logic Imports ---
+from portfolio_logic import (
+    calculate_portfolio_summary,
+    CASH_SYMBOL_CSV,
+    calculate_historical_performance,
+)
+
+from market_data import MarketDataProvider
+from finutils import (
+    map_to_yf_symbol,
+    format_currency_value,
+    format_percentage_value,
+    is_cash_symbol,
+    format_large_number_display,
+    format_integer_with_commas,
+    format_float_with_commas,
+    calculate_irr,
+    get_historical_rate_via_usd_bridge,
+)
+
+from data_loader import load_and_clean_transactions
+from data_loader import COLUMN_MAPPING_CSV_TO_INTERNAL
+from csv_utils import DESIRED_CLEANED_COLUMN_ORDER
+
+from portfolio_analyzer import (
+    calculate_periodic_returns,
+    _AGGREGATE_CASH_ACCOUNT_NAME_,
+    extract_dividend_history,
+    extract_realized_capital_gains_history,
+    calculate_rebalancing_trades,
+)
+
+LOGIC_AVAILABLE = True
+MARKET_PROVIDER_AVAILABLE = True
+
+# Check if the imported function signature actually supports 'exclude_accounts'
+import inspect
+
+sig = inspect.signature(calculate_historical_performance)
+HISTORICAL_FN_SUPPORTS_EXCLUDE = "exclude_accounts" in sig.parameters
+if not HISTORICAL_FN_SUPPORTS_EXCLUDE:
+    logging.warning(
+        "Warn: Imported 'calculate_historical_performance' does NOT support 'exclude_accounts' argument. Exclusion logic in GUI will be ignored."
     )
-
-    # --- ADDED Import for MarketDataProvider ---
-    from market_data import MarketDataProvider
-    from finutils import map_to_yf_symbol  # Keep this import for direct lookups
-
-    LOGIC_AVAILABLE = True
-    # --- ADDED Import from data_loader ---
-    from data_loader import load_and_clean_transactions
-    from data_loader import COLUMN_MAPPING_CSV_TO_INTERNAL
-    from csv_utils import DESIRED_CLEANED_COLUMN_ORDER
-
-    # --- ADDED Import from portfolio_analyzer ---
-    from portfolio_analyzer import (
-        calculate_periodic_returns,
-        _AGGREGATE_CASH_ACCOUNT_NAME_,  # Import the constant
-        # --- ADDED: Import extract_dividend_history ---
-        extract_dividend_history,  # <-- ADDED for dividend history
-    )  # Add the new function
-    from portfolio_analyzer import (
-        extract_realized_capital_gains_history,
-        calculate_rebalancing_trades,
-    )  # <-- ADDED for capital gains
-
-    # --- END ADD ---
-    MARKET_PROVIDER_AVAILABLE = True  # Assume available if import succeeds
-    # Check if the imported function signature actually supports 'exclude_accounts'
-    # --- Import new formatting utilities from finutils ---
-    from finutils import (
-        format_currency_value,
-        format_percentage_value,
-        is_cash_symbol,
-        format_large_number_display,
-        format_integer_with_commas,
-        format_float_with_commas,
-        calculate_irr,
-        get_historical_rate_via_usd_bridge,
-    )
-
-    # --- End Import ---
-    import inspect
-
-    sig = inspect.signature(calculate_historical_performance)
-    HISTORICAL_FN_SUPPORTS_EXCLUDE = "exclude_accounts" in sig.parameters
-    if not HISTORICAL_FN_SUPPORTS_EXCLUDE:
-        logging.warning(
-            "Warn: Imported 'calculate_historical_performance' does NOT support 'exclude_accounts' argument. Exclusion logic in GUI will be ignored."
-        )
-
-except ImportError as import_err:
-    logging.error(
-        f"ERROR: portfolio_logic.py or market_data.py not found or missing required functions: {import_err}"
-    )
-    logging.info(
-        "Ensure portfolio_logic.py contains the v1.0 calculate_historical_performance with include_accounts."
-    )
-    LOGIC_AVAILABLE = False
-    MARKET_PROVIDER_AVAILABLE = False  # Mark as unavailable on import error
-    HISTORICAL_FN_SUPPORTS_EXCLUDE = False  # Assume false if import fails
-    CASH_SYMBOL_CSV = "__CASH__"
-
-    # --- Dummy functions remain the same, but add a dummy provider ---
-    def calculate_portfolio_summary(*args, **kwargs):
-        return {}, pd.DataFrame(), pd.DataFrame(), {}, "Error: Logic missing"
-
-    # Dummy MarketDataProvider class
-    class MarketDataProvider:
-        def get_index_quotes(self, *args, **kwargs):
-            return {}
-
-        # Add other methods if needed by dummy logic, returning defaults
-
-    def calculate_historical_performance(*args, **kwargs):
-        # Remove unexpected arg if present in dummy function call
-        kwargs.pop("exclude_accounts", None)
-        logging.warning(
-            "Warn: Using dummy calculate_historical_performance (v1.0 signature)"
-        )
-        dummy_cols = ["Portfolio Value", "Portfolio Accumulated Gain"]
-        if "benchmark_symbols_yf" in kwargs and isinstance(
-            kwargs["benchmark_symbols_yf"], list
-        ):
-            for sym in kwargs["benchmark_symbols_yf"]:
-                dummy_cols.extend([f"{sym} Price", f"{sym} Accumulated Gain"])
-        return (
-            pd.DataFrame(columns=dummy_cols),
-            {},
-            {},
-            "Error: Logic missing",
-        )  # Return 4 items
-
-    # --- ADD Dummy for load_and_clean_transactions ---
-    def load_and_clean_transactions(*args, **kwargs):
-        logging.error("Using dummy load_and_clean_transactions due to import error.")
-        return None, None, set(), {}, True, True  # Return tuple indicating error
-
-    # --- ADD Dummy for calculate_periodic_returns ---
-    def calculate_periodic_returns(*args, **kwargs):
-        logging.error("Using dummy calculate_periodic_returns due to import error.")
-        return {}  # Return empty dict
-
-    logging.warning(f"Warning: Using fallback CASH_SYMBOL_CSV: {CASH_SYMBOL_CSV}")
-except Exception as import_err:
-    logging.error(
-        f"ERROR: Unexpected error importing from portfolio_logic.py or market_data.py: {import_err}"
-    )
-    traceback.print_exc()
-    LOGIC_AVAILABLE = False
-    MARKET_PROVIDER_AVAILABLE = False  # Mark as unavailable on import error
-    HISTORICAL_FN_SUPPORTS_EXCLUDE = False  # Assume false on error
-    CASH_SYMBOL_CSV = "__CASH__"
-
-    def calculate_portfolio_summary(*args, **kwargs):
-        return {}, pd.DataFrame(), pd.DataFrame(), {}, "Error: Logic import failed"
-
-    # Dummy MarketDataProvider class
-    class MarketDataProvider:
-        def get_index_quotes(self, *args, **kwargs):
-            return {}
-
-    # --- ADD Dummy for load_and_clean_transactions ---
-    def load_and_clean_transactions(*args, **kwargs):
-        logging.error("Using dummy load_and_clean_transactions due to import error.")
-        return None, None, set(), {}, True, True  # Return tuple indicating error
-
-    # --- ADD Dummy for calculate_periodic_returns ---
-    def calculate_periodic_returns(*args, **kwargs):
-        logging.error("Using dummy calculate_periodic_returns due to import error.")
-        return {}  # Return empty dict
-
-    def calculate_historical_performance(*args, **kwargs):
-        # Remove unexpected arg if present in dummy function call
-        kwargs.pop("exclude_accounts", None)
-        return pd.DataFrame(), {}, {}, "Error: Logic import failed"  # Return 4 items
-
-    logging.warning(f"Warning: Using fallback CASH_SYMBOL_CSV: {CASH_SYMBOL_CSV}")
-
 
 # --- ADDED: db_utils import ---
 from db_utils import (
