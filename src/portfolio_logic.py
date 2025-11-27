@@ -475,7 +475,7 @@ def calculate_portfolio_summary(
         logging.debug(
             "Preparing historical FX rates for transaction processing (current summary)..."
         )
-        unique_dates = transactions_df_filtered["Date"].dt.date.unique()
+        unique_dates = sorted(transactions_df_filtered["Date"].dt.date.unique())
 
         # Collect all relevant currencies for historical FX fetching
         currencies_for_hist_fx_fetch = set(
@@ -515,7 +515,9 @@ def calculate_portfolio_summary(
                 start_date=min_tx_date,
                 end_date=report_date,
                 use_cache=True,
-                cache_key=f"PROC_FX_HIST_{min_tx_date}_{report_date}_{'_'.join(sorted(list(set(fx_pairs_to_fetch_hist))))}",
+                # Use stable cache key (no dates) to allow incremental updates
+                # The market_data provider will handle date range checks
+                cache_key=f"PROC_FX_HIST_{'_'.join(sorted(list(set(fx_pairs_to_fetch_hist))))}",
             )
         )
         if fx_fetch_err_hist:
@@ -524,21 +526,72 @@ def calculate_portfolio_summary(
             )
             has_warnings = True
 
-        for tx_date_obj in unique_dates:
-            for loc_curr in transactions_df_filtered[
-                "Local Currency"
-            ].unique():  # Iterate original unique local currencies from transactions
-                if pd.isna(loc_curr) or str(loc_curr).strip() == "":
+        # --- OPTIMIZED: Vectorized FX Rate Calculation ---
+        # Instead of iterating dates and currencies, we build a master DataFrame.
+        
+        fx_series_list = []
+        if historical_fx_data_usd_based:
+            for pair, df in historical_fx_data_usd_based.items():
+                if df is None or df.empty:
                     continue
-                rate = get_historical_rate_via_usd_bridge(
-                    str(loc_curr),
-                    display_currency,
-                    tx_date_obj,
-                    historical_fx_data_usd_based or {},
-                )
-                historical_fx_for_processing[(tx_date_obj, str(loc_curr))] = (
-                    float(rate) if pd.notna(rate) else np.nan
-                )
+                curr_code = pair.replace("=X", "")
+                # Ensure index is datetime/date
+                if not isinstance(df.index, pd.DatetimeIndex):
+                    df.index = pd.to_datetime(df.index)
+                
+                # Just take the price column
+                series = df['price'].rename(curr_code)
+                # Ensure index is date (not datetime with time)
+                series.index = series.index.date
+                # Remove duplicates in index if any
+                series = series[~series.index.duplicated(keep='last')]
+                fx_series_list.append(series)
+
+        if fx_series_list:
+            # Concat into a wide DataFrame
+            master_fx_df = pd.concat(fx_series_list, axis=1)
+            master_fx_df.sort_index(inplace=True)
+            
+            # 2. Reindex to cover all transaction dates (ffill)
+            # We need the union of existing FX dates and transaction dates
+            all_needed_dates = sorted(list(set(master_fx_df.index) | set(unique_dates)))
+            master_fx_df = master_fx_df.reindex(all_needed_dates).ffill()
+            
+            # 3. Add USD column (always 1.0)
+            master_fx_df['USD'] = 1.0
+            
+            # 4. Calculate Cross Rates (Display / Local)
+            display_curr_col = display_currency.upper()
+            if display_curr_col not in master_fx_df.columns:
+                if display_curr_col == 'USD':
+                     master_fx_df[display_curr_col] = 1.0
+                else:
+                     logging.warning(f"Display currency {display_curr_col} not found in FX data. FX conversion may fail.")
+            
+            if display_curr_col in master_fx_df.columns:
+                display_rates = master_fx_df[display_curr_col]
+                
+                # Iterate over all available currencies to calculate cross rates
+                for curr_col in master_fx_df.columns:
+                    try:
+                        # Calculate cross rate vector: Rate = Display / Local
+                        cross_rates = display_rates / master_fx_df[curr_col]
+                        
+                        # Filter for relevant dates and update dict
+                        relevant_rates = cross_rates.loc[cross_rates.index.isin(unique_dates)]
+                        
+                        # Update the dictionary
+                        for d, r in relevant_rates.items():
+                            if pd.notna(r):
+                                historical_fx_for_processing[(d, curr_col)] = float(r)
+                                
+                    except Exception as e:
+                        logging.warning(f"Error calculating vectorized FX for {curr_col}: {e}")
+        
+        # Fallback/Fill for USD if not present
+        for d in unique_dates:
+            historical_fx_for_processing[(d, 'USD')] = 1.0
+
     # --- END ADDED ---
 
     # --- 3. Process Stock/ETF Transactions ---
@@ -3215,7 +3268,9 @@ def _prepare_historical_inputs(
         else raw_data_cache_file_name
     )
 
-    raw_data_cache_key = f"ADJUSTED_v7::{start_date.isoformat()}::{end_date.isoformat()}::{'_'.join(sorted(symbols_for_stocks_and_benchmarks_yf))}::{'_'.join(fx_pairs_for_api_yf)}"
+    # Use stable cache key (no dates) to allow incremental updates
+    # The market_data provider will handle date range checks
+    raw_data_cache_key = f"ADJUSTED_v7::{'_'.join(sorted(symbols_for_stocks_and_benchmarks_yf))}::{'_'.join(fx_pairs_for_api_yf)}"
 
     daily_results_cache_file: Optional[str] = None
     daily_results_cache_key: Optional[str] = None
