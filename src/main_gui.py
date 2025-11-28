@@ -46,8 +46,9 @@ import re
 import warnings
 import sqlite3  # Added import for sqlite3
 import shutil
-from io import StringIO  # <-- ADDED: For in-memory log stream
+from io import StringIO, BytesIO  # <-- ADDED: For in-memory log stream and image handling
 import logging
+import base64
 
 # Ensure this is defined before any use
 HISTORICAL_FN_SUPPORTS_EXCLUDE = False
@@ -163,6 +164,7 @@ from PySide6.QtCore import (
     QItemSelection,
     QItemSelectionModel,
     QSize,
+    QSizeF,
 )
 from PySide6.QtGui import (
     QDoubleValidator,
@@ -174,7 +176,11 @@ from PySide6.QtGui import (
     QAction,
     QActionGroup,
     QValidator,
+    QTextDocument,
+    QPageSize,
+    QPageLayout,
 )
+from PySide6.QtPrintSupport import QPrinter
 
 import matplotlib
 matplotlib.use("QtAgg")
@@ -1054,6 +1060,18 @@ class PortfolioApp(QMainWindow, UiHelpersMixin):
         self.export_excel_action.triggered.connect(self.export_holdings_to_excel)
         file_menu.addAction(self.export_excel_action)
 
+        # NEW: Export to PDF/HTML
+        self.export_pdf_html_action = QAction(
+            QIcon.fromTheme("application-pdf"),
+            "Export to &PDF/HTML...",
+            self,
+        )
+        self.export_pdf_html_action.setStatusTip(
+            "Export portfolio report to PDF or HTML"
+        )
+        self.export_pdf_html_action.triggered.connect(self.export_to_pdf_html)
+        file_menu.addAction(self.export_pdf_html_action)
+
         file_menu.addSeparator()
 
         # Exit
@@ -1529,7 +1547,7 @@ The CSV file should contain the following columns (header names must match exact
             # --- END ADDED ---
 
             with self._programmatic_date_change():
-                print(f"DEBUG: _set_graph_date_range setting date to {start_date}")
+                logging.debug(f"DEBUG: _set_graph_date_range setting date to {start_date}")
                 self.graph_start_date_edit.setDate(QDate(start_date))
                 self.graph_end_date_edit.setDate(QDate(end_date))
                 logging.info(
@@ -1821,6 +1839,225 @@ The CSV file should contain the following columns (header names must match exact
                     title="Export Error",
                 )
                 self.set_status("Export failed.")
+
+    def export_to_pdf_html(self):
+        """Exports the portfolio report to PDF or HTML."""
+        if not hasattr(self, "table_model") or self.table_model.rowCount() == 0:
+            self.show_warning(
+                "There is no data to export.", popup=True, title="No Data"
+            )
+            return
+
+        # Suggest filename
+        current_date_str = datetime.now().strftime("%Y%m%d")
+        default_filename = f"Investa_Report_{current_date_str}.pdf"
+        
+        start_dir = self.config.get("last_report_export_path", "")
+        if not start_dir or not os.path.isdir(start_dir):
+            start_dir = (
+                QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+                or os.getcwd()
+            )
+
+        file_path, filter_selected = QFileDialog.getSaveFileName(
+            self,
+            "Export Portfolio Report",
+            os.path.join(start_dir, default_filename),
+            "PDF Files (*.pdf);;HTML Files (*.html);;All Files (*)",
+        )
+
+        if not file_path:
+            return
+
+        # Ensure correct extension
+        if filter_selected.startswith("PDF") and not file_path.lower().endswith(".pdf"):
+            file_path += ".pdf"
+        elif filter_selected.startswith("HTML") and not file_path.lower().endswith(".html"):
+            file_path += ".html"
+
+        self.config["last_report_export_path"] = os.path.dirname(file_path)
+        self.save_config()
+        
+        self.set_status(f"Generating report to {os.path.basename(file_path)}...")
+        QApplication.processEvents()
+
+        try:
+            # --- Helper to capture figure as base64 image ---
+            def fig_to_base64(fig):
+                if not fig: return ""
+                buf = BytesIO()
+                fig.savefig(buf, format="png", bbox_inches="tight", dpi=100)
+                buf.seek(0)
+                img_str = base64.b64encode(buf.read()).decode("utf-8")
+                return f"data:image/png;base64,{img_str}"
+
+            # --- Capture Charts ---
+            value_chart_img = fig_to_base64(getattr(self, "abs_value_fig", None))
+            return_chart_img = fig_to_base64(getattr(self, "perf_return_fig", None))
+            drawdown_chart_img = fig_to_base64(getattr(self, "drawdown_fig", None))
+            alloc_account_img = fig_to_base64(getattr(self, "account_fig", None))
+            alloc_holding_img = fig_to_base64(getattr(self, "holdings_fig", None))
+
+            # --- Gather Summary Data ---
+            # Note: summary items are tuples (label_widget, value_widget, [percent_widget])
+            # We need the text from the value_widget (index 1)
+            # Some items are unpacked directly in __init__, so we access them directly.
+            
+            # Helper to safely get text
+            def get_text(widget):
+                return widget.text() if widget and hasattr(widget, "text") else "N/A"
+
+            summary_data = {
+                "Net Value": self.summary_net_value[1].text() if hasattr(self, "summary_net_value") else "N/A",
+                "Day's G/L": get_text(getattr(self, "summary_day_change_value", None)),
+                "Total G/L": self.summary_total_gain[1].text() if hasattr(self, "summary_total_gain") else "N/A",
+                "Unrealized G/L": self.summary_unrealized_gain[1].text() if hasattr(self, "summary_unrealized_gain") else "N/A",
+                "Realized G/L": self.summary_realized_gain[1].text() if hasattr(self, "summary_realized_gain") else "N/A",
+                "Dividends": self.summary_dividends[1].text() if hasattr(self, "summary_dividends") else "N/A",
+                "Fees": self.summary_commissions[1].text() if hasattr(self, "summary_commissions") else "N/A",
+                "Cash Balance": self.summary_cash[1].text() if hasattr(self, "summary_cash") else "N/A",
+                "Total Return %": self.summary_total_return_pct[1].text() if hasattr(self, "summary_total_return_pct") else "N/A",
+                "Ann. TWR %": self.summary_annualized_twr[1].text() if hasattr(self, "summary_annualized_twr") else "N/A",
+                "FX Gain/Loss": get_text(getattr(self, "summary_fx_gl_abs_value", None)),
+                "FX G/L %": get_text(getattr(self, "summary_fx_gl_pct_value", None)),
+            }
+
+            # --- Generate HTML ---
+            html_content = f"""
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; color: #333; font-size: 10pt; margin: 20px; }}
+                    h1 {{ color: #2c3e50; border-bottom: 2px solid #2c3e50; padding-bottom: 5px; font-size: 16pt; margin-bottom: 15px; }}
+                    h2 {{ color: #2980b9; margin-top: 20px; font-size: 14pt; border-bottom: 1px solid #eee; padding-bottom: 3px; }}
+                    h3 {{ font-size: 11pt; margin-bottom: 5px; color: #555; }}
+                    
+                    .summary-grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; page-break-inside: avoid; }}
+                    .summary-item {{ background: #f8f9fa; padding: 8px; border-radius: 4px; border: 1px solid #e9ecef; }}
+                    .summary-label {{ font-size: 0.8em; color: #7f8c8d; display: block; }}
+                    .summary-value {{ font-size: 1.0em; font-weight: bold; color: #2c3e50; }}
+                    
+                    /* Table styling for Landscape mode */
+                    table {{ width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 7pt; page-break-inside: auto; }}
+                    th, td {{ padding: 4px 5px; text-align: right; border-bottom: 1px solid #ddd; }}
+                    th {{ background-color: #f2f2f2; text-align: center; font-weight: bold; white-space: nowrap; }}
+                    td:first-child {{ text-align: left; white-space: nowrap; font-weight: bold; }}
+                    tr {{ page-break-inside: avoid; page-break-after: auto; }}
+                    
+                    .chart-container {{ text-align: center; margin-bottom: 20px; page-break-inside: avoid; }}
+                    img {{ max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 4px; }}
+                    
+                    .footer {{ margin-top: 30px; font-size: 8pt; color: #7f8c8d; text-align: center; border-top: 1px solid #eee; padding-top: 5px; }}
+                </style>
+            </head>
+            <body>
+                <h1>Portfolio Report</h1>
+                <p style="font-size: 9pt; color: #666;">Generated on: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+
+                <h2>Summary</h2>
+                <div class="summary-grid">
+                    {''.join([f'<div class="summary-item"><span class="summary-label">{k}</span><span class="summary-value">{v}</span></div>' for k, v in summary_data.items()])}
+                </div>
+
+                <h2>Performance</h2>
+                <div style="display: flex; justify-content: space-around; page-break-inside: avoid;">
+                    <div class="chart-container" style="width: 48%;">
+                        <h3>Portfolio Value</h3>
+                        <img src="{value_chart_img}" style="max-height: 300px;" />
+                    </div>
+                    <div class="chart-container" style="width: 48%;">
+                        <h3>Portfolio Return</h3>
+                        <img src="{return_chart_img}" style="max-height: 300px;" />
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <h3>Drawdown</h3>
+                    <img src="{drawdown_chart_img}" style="max-height: 250px;" />
+                </div>
+
+                <h2>Allocation</h2>
+                <div style="display: flex; justify-content: space-around; page-break-inside: avoid;">
+                    <div class="chart-container" style="width: 48%;">
+                        <h3>By Account</h3>
+                        <img src="{alloc_account_img}" style="max-height: 250px;" />
+                    </div>
+                    <div class="chart-container" style="width: 48%;">
+                        <h3>By Holding</h3>
+                        <img src="{alloc_holding_img}" style="max-height: 250px;" />
+                    </div>
+                </div>
+
+                <h2>Holdings</h2>
+            """
+
+            # Add Holdings Table
+            if hasattr(self, "table_model"):
+                df = self.table_model._data.copy()
+                # Clean up for display - Drop technical and less critical columns for print
+                cols_to_drop = [
+                    "is_group_header", "group_key", "original_index",
+                    "Sector", "Industry", "Currency", "Exchange",
+                    "Realized G/L", "Unrealized G/L", "Total G/L", # Keep G/L % and Total Value
+                    "Cost Basis", "Mkt Price" # Can be inferred or less critical than Value
+                ]
+                # Keep: Account, Symbol, Quantity, Mkt Value, Day's G/L, Day's G/L %, Total G/L %, Yield %
+                
+                df.drop(columns=[c for c in cols_to_drop if c in df.columns], inplace=True)
+                
+                # Rename for brevity
+                df.rename(columns={
+                    "Account": "Acct",
+                    "Quantity": "Qty",
+                    "Mkt Value": "Value",
+                    "Day's G/L": "Day G/L",
+                    "Total G/L %": "Tot %",
+                    "Yield (Cost) %": "Yld(C)%",
+                    "Yield (Mkt) %": "Yld(M)%"
+                }, inplace=True)
+                
+                # Convert to HTML table
+                html_content += df.to_html(index=False, border=0, classes="table")
+
+            html_content += """
+                <div class="footer">
+                    Generated by Investa Portfolio Dashboard
+                </div>
+            </body>
+            </html>
+            """
+
+            # --- Save File ---
+            if file_path.lower().endswith(".html"):
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(html_content)
+            else:
+                # PDF Export
+                document = QTextDocument()
+                document.setHtml(html_content)
+                
+                printer = QPrinter(QPrinter.HighResolution)
+                printer.setOutputFormat(QPrinter.PdfFormat)
+                printer.setOutputFileName(file_path)
+                printer.setPageSize(QPageSize(QPageSize.A4))
+                printer.setPageOrientation(QPageLayout.Landscape) # Switch to Landscape
+                
+                # IMPORTANT: Set document page size to match printer page rect
+                # This ensures the HTML layout respects the PDF page width
+                document.setPageSize(QSizeF(printer.pageRect(QPrinter.Unit.Point).size()))
+                
+                document.print_(printer)
+
+            self.show_info(
+                f"Report exported successfully to:\n{file_path}",
+                popup=True,
+                title="Export Successful",
+            )
+            self.set_status(f"Report exported to {os.path.basename(file_path)}")
+
+        except Exception as e:
+            logging.error(f"Error exporting report: {e}", exc_info=True)
+            self.show_error(f"Failed to export report:\n{e}", popup=True)
+            self.set_status("Export failed.")
 
     def show_about_dialog(self):
         # Placeholder - shows a simple message box with app info
@@ -5059,7 +5296,7 @@ The CSV file should contain the following columns (header names must match exact
         self.graph_start_date_edit.setObjectName("GraphDateEdit")
         self.graph_start_date_edit.setCalendarPopup(True)
         self.graph_start_date_edit.setDisplayFormat("yyyy-MM-dd")
-        print(f"DEBUG: _init_graph_controls setting start date from config: {self.config.get('graph_start_date')}")
+        logging.debug(f"DEBUG: _init_graph_controls setting start date from config: {self.config.get('graph_start_date')}")
         self.graph_start_date_edit.setDate(
             QDate.fromString(self.config.get("graph_start_date"), "yyyy-MM-dd")
         )
@@ -7911,7 +8148,7 @@ The CSV file should contain the following columns (header names must match exact
                     # Only update if the current date is BEFORE the new min date (invalid range)
                     # This preserves user-selected ranges like YTD that are within the valid range.
                     if current_ui_date < new_start_date:
-                        print(f"DEBUG: _update_graph_date_range_for_accounts updating date to {new_start_date}")
+                        logging.debug(f"DEBUG: _update_graph_date_range_for_accounts updating date to {new_start_date}")
                         self.graph_start_date_edit.setDate(QDate(new_start_date))
                         
                         # Explicitly reset preset combo to "Presets..." to avoid confusion
