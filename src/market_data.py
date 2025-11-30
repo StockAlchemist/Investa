@@ -257,10 +257,11 @@ class MarketDataProvider:
             user_excluded_symbols (Set[str]): User-defined set of symbols to exclude from YF fetching.
 
         Returns:
-            Tuple[Dict[str, Dict], Dict[str, float], bool, bool]:
+            Tuple[Dict[str, Dict], Dict[str, float], Dict[str, float], bool, bool]:
                 - results (Dict[str, Dict]): Dictionary mapping *internal* stock symbols to quote data
                   (price, change, changesPercentage, currency, name, source, timestamp).
                 - fx_rates_vs_usd (Dict[str, float]): Dictionary mapping currency codes to their rate vs USD.
+                - fx_prev_close_vs_usd (Dict[str, float]): Dictionary mapping currency codes to their previous close rate vs USD.
                 - has_errors (bool): True if critical errors occurred during fetching.
                 - has_warnings (bool): True if non-critical warnings occurred.
         """
@@ -311,9 +312,10 @@ class MarketDataProvider:
             logging.info("No valid stock symbols provided for current quotes.")
 
         # --- 2. Caching Logic for Current Quotes ---
-        cache_key = f"CURRENT_QUOTES_v3::{'_'.join(sorted(yf_symbols_to_fetch))}::{'_'.join(sorted(required_currencies))}"  # Cache key bumped for new fields
+        cache_key = f"CURRENT_QUOTES_v4::{'_'.join(sorted(yf_symbols_to_fetch))}::{'_'.join(sorted(required_currencies))}"  # Cache key bumped for new fields
         cached_quotes = None
         cached_fx = None
+        cached_fx_prev = None
         cache_valid = False
 
         if os.path.exists(self.current_cache_file):
@@ -335,6 +337,7 @@ class MarketDataProvider:
                         ):
                             cached_quotes = cache_data.get("quotes")
                             cached_fx = cache_data.get("fx_rates")
+                            cached_fx_prev = cache_data.get("fx_prev_close")
                             if cached_quotes is not None and cached_fx is not None:
                                 cache_valid = True
                                 logging.info(
@@ -366,6 +369,7 @@ class MarketDataProvider:
             # The cache should ideally store quotes keyed by internal symbol already
             results = cached_quotes
             fx_rates_vs_usd = cached_fx
+            fx_prev_close_vs_usd = cached_fx_prev or {}
             cached_data_used = True  # Mark cache as used
             # --- End Populate results ---
         else:
@@ -675,6 +679,7 @@ class MarketDataProvider:
                         return (
                             cached_quotes or {},
                             cached_fx or {},
+                            cached_fx_prev or {},
                             True,
                             True,
                         )  # Error = True, Warning = True
@@ -697,6 +702,7 @@ class MarketDataProvider:
                 return (
                     cached_quotes or {},
                     cached_fx or {},
+                    cached_fx_prev or {},
                     True,
                     True,
                 )  # Error = True, Warning = True
@@ -716,6 +722,7 @@ class MarketDataProvider:
                 f"Fetching current FX rates for {len(fx_pairs_to_fetch)} pairs..."
             )
             fx_rates_vs_usd = {}
+            fx_prev_close_vs_usd = {}
             fx_data_yf = {}  # Initialize as dict
             if fx_pairs_to_fetch:
                 fx_tickers_str = " ".join(fx_pairs_to_fetch)
@@ -740,9 +747,10 @@ class MarketDataProvider:
                                 rate_val = (
                                     fx_info.get("currentPrice")
                                     or fx_info.get("regularMarketPrice")
-                                    or fx_info.get(
-                                        "regularMarketPreviousClose"
-                                    )  # Added one more fallback
+                                    or fx_info.get("previousClose")
+                                )
+                                prev_close_val = (
+                                    fx_info.get("regularMarketPreviousClose")
                                     or fx_info.get("previousClose")
                                 )
                                 currency_code_from_info = fx_info.get("currency")
@@ -773,6 +781,10 @@ class MarketDataProvider:
                                         fx_rates_vs_usd[base_curr_from_symbol] = (
                                             1.0 / rate_float
                                         )
+                                        if prev_close_val is not None and float(prev_close_val) > 1e-9:
+                                            fx_prev_close_vs_usd[base_curr_from_symbol] = 1.0 / float(prev_close_val)
+                                        else:
+                                            fx_prev_close_vs_usd[base_curr_from_symbol] = fx_rates_vs_usd[base_curr_from_symbol] # Fallback to current if prev missing
                                         # ADDED LOG
                                         logging.info(
                                             f"Processed FX {yf_symbol} (USD quoted): {rate_float:.4f} {currency_code_from_info}/{base_curr_from_symbol} -> {fx_rates_vs_usd[base_curr_from_symbol]:.4f} {base_curr_from_symbol}/USD"
@@ -785,6 +797,10 @@ class MarketDataProvider:
                                         fx_rates_vs_usd[base_curr_from_symbol] = (
                                             rate_float
                                         )
+                                        if prev_close_val is not None and float(prev_close_val) > 1e-9:
+                                            fx_prev_close_vs_usd[base_curr_from_symbol] = float(prev_close_val)
+                                        else:
+                                            fx_prev_close_vs_usd[base_curr_from_symbol] = rate_float # Fallback to current
                                         # ADDED LOG
                                         logging.info(
                                             f"Processed FX {yf_symbol} (Base quoted): {rate_float:.4f} {base_curr_from_symbol}/USD"
@@ -802,6 +818,7 @@ class MarketDataProvider:
                                             fx_rates_vs_usd[base_curr_from_symbol] = (
                                                 np.nan
                                             )
+                                            fx_prev_close_vs_usd[base_curr_from_symbol] = np.nan
                                         has_warnings = True
                                 else:
                                     # Rate or currency code missing from info
@@ -813,6 +830,7 @@ class MarketDataProvider:
                                         base_curr_from_symbol not in fx_rates_vs_usd
                                     ):  # Ensure key exists for fallback
                                         fx_rates_vs_usd[base_curr_from_symbol] = np.nan
+                                        fx_prev_close_vs_usd[base_curr_from_symbol] = np.nan
                                     has_warnings = True
                             else:
                                 # fx_info is None
@@ -822,6 +840,7 @@ class MarketDataProvider:
                                 base_curr_no_info = yf_symbol.replace("=X", "").upper()
                                 if base_curr_no_info not in fx_rates_vs_usd:
                                     fx_rates_vs_usd[base_curr_no_info] = np.nan
+                                    fx_prev_close_vs_usd[base_curr_no_info] = np.nan
                                 has_warnings = True
 
                         except yf.exceptions.YFRateLimitError:
@@ -832,6 +851,7 @@ class MarketDataProvider:
                             return (
                                 cached_quotes or {},
                                 cached_fx or {},
+                                cached_fx_prev or {},
                                 True,
                                 True,
                             )  # Error = True, Warning = True
@@ -850,6 +870,7 @@ class MarketDataProvider:
                     return (
                         cached_quotes or {},
                         cached_fx or {},
+                        cached_fx_prev or {},
                         True,
                         True,
                     )  # Error = True, Warning = True
@@ -859,6 +880,7 @@ class MarketDataProvider:
 
             # Add USD rate (always 1.0)
             fx_rates_vs_usd["USD"] = 1.0
+            fx_prev_close_vs_usd["USD"] = 1.0
 
             # --- MOVED: Fallback for FX Rates using recent historical data ---
             # This now runs AFTER the primary attempt to fetch current FX rates.
@@ -910,6 +932,8 @@ class MarketDataProvider:
                             fx_rates_vs_usd[base_curr_fb] = float(
                                 last_known_rate
                             )  # Update the main dict
+                            # For fallback, assume prev close is same as last known (no day change)
+                            fx_prev_close_vs_usd[base_curr_fb] = float(last_known_rate)
                             logging.info(
                                 f"Used historical fallback for {base_curr_fb}: {last_known_rate:.4f} (from {fallback_fx_data[yf_fx_pair_fallback].index[-1]})"
                             )
@@ -936,6 +960,7 @@ class MarketDataProvider:
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "quotes": results,  # Store quotes keyed by internal symbol
                         "fx_rates": fx_rates_vs_usd,
+                        "fx_prev_close": fx_prev_close_vs_usd,
                     }
                     with open(self.current_cache_file, "w") as f:
                         json.dump(cache_content, f, indent=2)
@@ -949,7 +974,7 @@ class MarketDataProvider:
             # --- End Save to Cache ---
 
         # --- 7. Return results (either from cache or fresh fetch) ---
-        return results, fx_rates_vs_usd, has_errors, has_warnings
+        return results, fx_rates_vs_usd, fx_prev_close_vs_usd, has_errors, has_warnings
 
     @profile
     def get_index_quotes(

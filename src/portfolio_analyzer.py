@@ -39,7 +39,7 @@ except ImportError:
 from typing import List, Tuple, Dict, Optional, Any, Set
 from collections import defaultdict
 import numba
-from numba import jit, float64, int64, types
+from numba import jit, njit, prange, float64, int64, types
 from numba.typed import Dict as NumbaDict
 
 # --- Import Configuration ---
@@ -125,7 +125,7 @@ def _process_numba_core(
     shortable_sym_ids, stock_qty_tol,
     num_tx, num_syms, num_accs
 ):
-    # State Array: (num_syms, num_accs, 12)
+    # State Array: (num_syms, num_accs, 13)
     # 0: qty
     # 1: total_cost_local
     # 2: realized_gain_local
@@ -138,8 +138,9 @@ def _process_numba_core(
     # 9: total_buy_cost_local
     # 10: total_cost_display_historical_fx
     # 11: local_curr_id (stored as float)
+    # 12: realized_gain_display (accumulated at historical FX)
     
-    state = np.zeros((num_syms, num_accs, 12), dtype=np.float64)
+    state = np.zeros((num_syms, num_accs, 13), dtype=np.float64)
     # Initialize currency ID to -1.0 to detect first use
     state[:, :, 11] = -1.0
     
@@ -276,17 +277,41 @@ def _process_numba_core(
                 cost = (qty_covered * price) + comm
                 
                 if current_state[6] > 1e-9:
-                    avg_proceeds = current_state[5] / current_state[6]
+                    # Calculate historical proceeds (negative cost basis) for the covered portion
+                    # BEFORE updating the state
+                    if abs(current_state[6]) > 1e-9:
+                        avg_proceeds_display_neg = current_state[10] / current_state[6]
+                        avg_proceeds = current_state[5] / current_state[6]
+                    else:
+                        avg_proceeds_display_neg = 0.0
+                        avg_proceeds = 0.0
+
+                    proceeds_display_attr = - (avg_proceeds_display_neg * qty_covered) # This is positive value in display currency
+                    
+                    # Also calculate local proceeds for gain calc (existing logic)
                     proceeds_attr = qty_covered * avg_proceeds
                     gain = proceeds_attr - cost
                     
+                    # Update State
                     current_state[0] += qty_covered
                     current_state[5] -= proceeds_attr
                     current_state[6] -= qty_covered
                     current_state[4] += comm
                     current_state[2] += gain
                     current_state[8] += cost
-                    current_state[10] += (cost * fx_rate)
+                    
+                    # Update historical cost basis (remove the portion covered)
+                    # current_state[10] is negative (proceeds). We want to reduce its magnitude.
+                    # proceeds_covered_hist_val = avg_proceeds_display_neg * qty_covered (negative)
+                    # current_state[10] -= proceeds_covered_hist_val
+                    current_state[10] -= (avg_proceeds_display_neg * qty_covered)
+                    
+                    # Realized Gain Display Calculation
+                    # Gain = Proceeds (Historical) - Cost (Current)
+                    cost_display_cover = cost * fx_rate
+                    gain_display = proceeds_display_attr - cost_display_cover
+                    
+                    current_state[12] += gain_display
                     
                     if abs(current_state[6]) < 1e-9:
                         current_state[5] = 0.0
@@ -321,11 +346,18 @@ def _process_numba_core(
                 proceeds = (qty_sold * price) - comm
                 gain = proceeds - cost_sold
                 
+                # Realized Gain Display Calculation (Long Sell)
+                # Proceeds (Display) = Proceeds_Local * FX_Rate_At_Sell
+                # Cost (Display) = Cost_Sold_Hist (already in display currency)
+                proceeds_display = proceeds * fx_rate
+                gain_display = proceeds_display - cost_sold_hist
+                
                 current_state[0] -= qty_sold
                 current_state[1] -= cost_sold
-                current_state[10] -= cost_sold_hist
+                current_state[10] -= cost_sold_hist # Update total_cost_display_historical_fx
                 current_state[4] += comm
-                current_state[2] += gain
+                current_state[2] += gain # Update realized_gain_local
+                current_state[12] += gain_display # Update realized_gain_display
                 current_state[7] -= cost_sold
                 current_state[8] -= proceeds
                 
@@ -398,7 +430,7 @@ def _process_transactions_to_holdings(
     n = len(transactions_df)
     num_syms = len(all_symbols)
     num_accs = len(all_accounts)
-    
+    # --- Prepare Data for Numba ---
     df = transactions_df.copy()
     df['Symbol'] = df['Symbol'].astype(str).str.strip()
     df['Account'] = df['Account'].astype(str).str.strip()
@@ -434,6 +466,7 @@ def _process_transactions_to_holdings(
     
     to_acc_ids = np.full(n, -1, dtype=np.int64)
     if 'To Account' in df.columns:
+        df['To Account'] = df['To Account'].astype(str).str.strip()
         to_acc_ids = df['To Account'].map(acc_map).fillna(-1).astype(np.int64).values
     
     df['Local Currency'] = df['Local Currency'].astype(str).str.strip().str.upper()
@@ -510,6 +543,7 @@ def _process_transactions_to_holdings(
             "cumulative_investment_local": val[8],
             "total_buy_cost_local": val[9],
             "total_cost_display_historical_fx": val[10],
+            "realized_gain_display": val[12],
         }
         
         overall_realized_gains_local[curr] += val[2]
@@ -544,6 +578,7 @@ def _build_summary_rows(
         str, Dict[str, Optional[float]]
     ],  # Data from MarketDataProvider
     current_fx_rates_vs_usd: Dict[str, float],  # Data from MarketDataProvider
+    current_fx_prev_close_vs_usd: Dict[str, float], # NEW: For Asset Change calc
     display_currency: str,
     default_currency: str,
     transactions_df: pd.DataFrame,  # Filtered transactions for IRR/fallback
@@ -567,7 +602,7 @@ def _build_summary_rows(
     # --- NEW: Separate cash from stock holdings ---
     cash_holdings_by_currency: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     stock_holdings: Dict[Tuple[str, str], Dict] = {}
-
+    
     for holding_key, data in holdings.items():
         symbol, account = holding_key
         if is_cash_symbol(symbol):
@@ -594,6 +629,7 @@ def _build_summary_rows(
         total_cost_display_historical_fx_val = data.get(
             "total_cost_display_historical_fx", np.nan
         )
+        realized_gain_display_from_holdings = data.get("realized_gain_display", np.nan)
 
         account_local_currency_map[account] = local_currency
         stock_data = current_stock_data.get(symbol, {})
@@ -832,11 +868,30 @@ def _build_summary_rows(
         market_value_display = (
             market_value_local * fx_rate if pd.notna(fx_rate) else np.nan
         )
-        day_change_value_display = (
-            (current_qty * day_change_local * fx_rate)
-            if pd.notna(day_change_local) and pd.notna(fx_rate)
-            else np.nan
-        )
+        # --- Asset Change (Day Change) with FX ---
+        # Value Today = Qty * Price_Today_Local * FX_Today
+        # Value Yesterday = Qty * (Price_Today_Local - Day_Change_Local) * FX_Yesterday
+        day_change_value_display = np.nan
+        
+        if pd.notna(current_price_local) and pd.notna(fx_rate) and pd.notna(day_change_local):
+             # 1. Get FX Previous Close
+             fx_prev = np.nan
+             if local_currency == display_currency:
+                 fx_prev = 1.0
+             else:
+                 fx_prev = get_conversion_rate(
+                    local_currency, display_currency, current_fx_prev_close_vs_usd
+                 )
+             
+             if pd.notna(fx_prev):
+                 val_today = current_qty * current_price_local * fx_rate
+                 price_yesterday_local = current_price_local - day_change_local
+                 val_yesterday = current_qty * price_yesterday_local * fx_prev
+                 val_yesterday = current_qty * price_yesterday_local * fx_prev
+                 day_change_value_display = val_today - val_yesterday
+             else:
+                 # Fallback if FX prev missing: Ignore FX change
+                 day_change_value_display = current_qty * day_change_local * fx_rate
         current_price_display = (
             current_price_local * fx_rate
             if pd.notna(current_price_local) and pd.notna(fx_rate)
@@ -891,7 +946,14 @@ def _build_summary_rows(
                     unrealized_gain_pct = 0.0
 
         realized_gain_display = (
-            realized_gain_local * fx_rate if pd.notna(fx_rate) else np.nan
+            realized_gain_display_from_holdings 
+            if pd.notna(realized_gain_display_from_holdings) 
+            else (realized_gain_local * fx_rate if pd.notna(fx_rate) else np.nan)
+        )
+        realized_gain_display = (
+            realized_gain_display_from_holdings 
+            if pd.notna(realized_gain_display_from_holdings) 
+            else (realized_gain_local * fx_rate if pd.notna(fx_rate) else np.nan)
         )
         dividends_display = dividends_local * fx_rate if pd.notna(fx_rate) else np.nan
         commissions_display = (

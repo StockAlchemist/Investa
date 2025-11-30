@@ -702,7 +702,7 @@ def calculate_portfolio_summary(
     required_currencies = cleaned_required_currencies
 
     market_provider = MarketDataProvider(current_cache_file=cache_file_path)
-    current_stock_data_internal, current_fx_rates_vs_usd, err_fetch, warn_fetch = (
+    current_stock_data_internal, current_fx_rates_vs_usd, current_fx_prev_close_vs_usd, err_fetch, warn_fetch = (
         market_provider.get_current_quotes(
             internal_stock_symbols=all_stock_symbols_internal,
             required_currencies=required_currencies,  # Pass as set
@@ -770,6 +770,9 @@ def calculate_portfolio_summary(
         ),
         current_fx_rates_vs_usd=(
             current_fx_rates_vs_usd if current_fx_rates_vs_usd is not None else {}
+        ),
+        current_fx_prev_close_vs_usd=(
+            current_fx_prev_close_vs_usd if current_fx_prev_close_vs_usd is not None else {}
         ),
         display_currency=display_currency,
         default_currency=default_currency,
