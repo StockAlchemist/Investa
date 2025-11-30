@@ -1450,8 +1450,6 @@ def _calculate_daily_net_cash_flow(
                                 pass
                                 
             if pd.isna(price_local) or price_local <= 0:
-                if target_date.year == 2025 and target_date.month == 11 and target_date.day == 11:
-                    print(f"DEBUG Transfer {symbol}: Price still invalid {price_local}", flush=True)
                 continue
                 
             # Normalize account names from transaction
@@ -1989,10 +1987,8 @@ def _calculate_holdings_numba(
 
             if type_id == buy_type_id or type_id == deposit_type_id:
                 cash_balances_np[account_id] += qty - commission
-                # print(f"DEBUG Numba: Cash Deposit/Buy Acc {account_id}: Qty {qty}, Comm {commission}, New Bal {cash_balances_np[account_id]}")
             elif type_id == sell_type_id or type_id == withdrawal_type_id:
                 cash_balances_np[account_id] -= qty + commission
-                # print(f"DEBUG Numba: Cash Withdrawal/Sell Acc {account_id}: Qty {qty}, Comm {commission}, New Bal {cash_balances_np[account_id]}")
             elif type_id == transfer_type_id:
                 dest_account_id = tx_to_accounts_np[i]
                 if dest_account_id != -1:
@@ -2004,7 +2000,6 @@ def _calculate_holdings_numba(
                     # Assuming commission is paid by source
                     cash_balances_np[account_id] -= qty + commission
                     cash_balances_np[dest_account_id] += qty
-                    # print(f"DEBUG Numba: Cash Transfer Acc {account_id}->{dest_account_id}: Qty {qty}, Comm {commission}")
             continue
         # --- Handle STOCK transactions ---
         if holdings_currency_np[symbol_id, account_id] == -1:
@@ -4982,10 +4977,8 @@ def calculate_historical_performance(
             all_last_prices=all_last_prices, # Pass L1 cache
             included_accounts_list=included_accounts_list_sorted,
             # DEBUG
-            # print(f"DEBUG calc_summary before load_calc: {len(transactions_df_effective)} rows", flush=True)
             # if not transactions_df_effective.empty and "Date" in transactions_df_effective.columns:
             #     nov_11 = transactions_df_effective[transactions_df_effective["Date"].dt.date == pd.Timestamp("2025-11-11").date()]
-            #     print(f"DEBUG calc_summary before load_calc Nov 11: {len(nov_11)} rows", flush=True)
             num_processes=num_processes,
             current_hist_version=CURRENT_HIST_VERSION,
             filter_desc=filter_desc,

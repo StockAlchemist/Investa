@@ -265,14 +265,6 @@ class MarketDataProvider:
                 - has_errors (bool): True if critical errors occurred during fetching.
                 - has_warnings (bool): True if non-critical warnings occurred.
         """
-        # ADDED LOGS
-        logging.debug(
-            f"get_current_quotes: Received internal_stock_symbols ({len(internal_stock_symbols)}): {internal_stock_symbols}"
-        )
-        logging.debug(
-            f"get_current_quotes: Received required_currencies ({len(required_currencies)}): {required_currencies}"
-        )
-        # END ADDED LOGS
 
         logging.info(
             f"Getting current quotes for {len(internal_stock_symbols)} symbols and FX for {len(required_currencies)} currencies."
@@ -319,11 +311,6 @@ class MarketDataProvider:
         cache_valid = False
 
         if os.path.exists(self.current_cache_file):
-            # ADDED LOG
-            logging.debug(
-                f"get_current_quotes: Cache file exists: {self.current_cache_file}"
-            )
-            # END ADDED LOG
             try:
                 with open(self.current_cache_file, "r") as f:
                     cache_data = json.load(f)
@@ -403,19 +390,9 @@ class MarketDataProvider:
                 # Using fast_info is generally preferred for speed if available fields suffice.
                 # However, 'currency' might only be in .info
 
-                # ADDED LOG
-                logging.debug(
-                    f"get_current_quotes: yf.Tickers({stock_tickers_str}) returned {len(tickers.tickers)} tickers."
-                )
-                # END ADDED LOG
 
                 # Iterate through tickers and get necessary info
                 for yf_symbol, ticker_obj in tickers.tickers.items():
-                    # ADDED LOG
-                    logging.debug(
-                        f"get_current_quotes: Processing ticker object for {yf_symbol}"
-                    )
-                    # END ADDED LOG
                     try:
                         # Use fast_info for speed if possible
                         fast_info = getattr(ticker_obj, "fast_info", None)
@@ -660,11 +637,6 @@ class MarketDataProvider:
                                     "dividendYield": dividend_yield_on_current,
                                 }
                             )
-                            # ADDED LOG
-                            logging.debug(
-                                f"get_current_quotes: Stored data for internal symbol {internal_symbol} (Source: {'fast_info' if not used_info_fallback else 'info'})"
-                            )
-                            # END ADDED LOG
                         else:
                             logging.warning(
                                 f"Could not get sufficient quote data (price/currency) for {yf_symbol}."
@@ -713,9 +685,6 @@ class MarketDataProvider:
             # The original "Fallback for FX Rates" block (lines 308-338 in the provided file) is removed.
             # The correctly positioned fallback logic is already present later in the code (lines 358-398).
 
-            # ADDED LOG
-            logging.debug("get_current_quotes: Skipping old FX fallback block.")
-            # END ADDED LOG
 
             # --- 4. Fetch FX Rates ---
             logging.info(
@@ -726,11 +695,6 @@ class MarketDataProvider:
             fx_data_yf = {}  # Initialize as dict
             if fx_pairs_to_fetch:
                 fx_tickers_str = " ".join(fx_pairs_to_fetch)
-                # ADDED LOG
-                logging.debug(
-                    f"get_current_quotes: YF FX pairs to fetch ({len(fx_pairs_to_fetch)}): {fx_pairs_to_fetch}"
-                )
-                # END ADDED LOG
                 try:
                     fx_tickers = yf.Tickers(fx_tickers_str)  # REMOVED session argument
                     # Iterate and extract rates
@@ -738,11 +702,6 @@ class MarketDataProvider:
                         try:
                             # Use .info for FX
                             fx_info = getattr(ticker_obj, "info", None)
-                            # ADDED LOG
-                            logging.debug(
-                                f"get_current_quotes: Processing FX ticker object for {yf_symbol}"
-                            )
-                            # END ADDED LOG
                             if fx_info:
                                 rate_val = (
                                     fx_info.get("currentPrice")
@@ -786,7 +745,7 @@ class MarketDataProvider:
                                         else:
                                             fx_prev_close_vs_usd[base_curr_from_symbol] = fx_rates_vs_usd[base_curr_from_symbol] # Fallback to current if prev missing
                                         # ADDED LOG
-                                        logging.info(
+                                        logging.debug(
                                             f"Processed FX {yf_symbol} (USD quoted): {rate_float:.4f} {currency_code_from_info}/{base_curr_from_symbol} -> {fx_rates_vs_usd[base_curr_from_symbol]:.4f} {base_curr_from_symbol}/USD"
                                         )
                                     elif (

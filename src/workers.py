@@ -221,7 +221,6 @@ class PortfolioCalculatorWorker(QRunnable):
             # --- 2. Fetch Index Quotes using MarketDataProvider ---
             logging.info("WORKER: Fetching index quotes...")
             try:
-                logging.debug("DEBUG Worker: Fetching index quotes...")
                 logging.info("WORKER: Fetching index quotes...")
                 # --- Instantiate and call MarketDataProvider ---
                 if self.market_provider_available:
@@ -241,9 +240,6 @@ class PortfolioCalculatorWorker(QRunnable):
                     )
                     index_quotes = {}
                 # --- End MarketDataProvider usage ---
-                logging.debug(
-                    f"DEBUG Worker: Index quotes fetched ({len(index_quotes)} items)."
-                )
                 logging.info(
                     f"WORKER: Index quotes fetched ({len(index_quotes)} items)."
                 )
@@ -266,9 +262,6 @@ class PortfolioCalculatorWorker(QRunnable):
                 ):
                     current_historical_kwargs.pop("exclude_accounts")
 
-                logging.debug(
-                    f"DEBUG Worker: Calling historical_fn with kwargs keys: {list(current_historical_kwargs.keys())}"
-                )
                 # Extract the DataFrame to pass positionally
                 transactions_df_for_hist = current_historical_kwargs.pop(
                     "all_transactions_df_cleaned", None
@@ -285,11 +278,6 @@ class PortfolioCalculatorWorker(QRunnable):
                 current_historical_kwargs["manual_overrides_dict"] = (
                     self.manual_overrides_dict
                 )
-                # --- ADD DEBUG LOG ---
-                logging.debug(
-                    f"WORKER: Passing to historical_fn, manual_overrides_dict: {self.manual_overrides_dict}"
-                )
-                # --- END DEBUG LOG ---
 
                 # MODIFIED: Unpack 4 items (full_daily_df, prices, fx, status)
                 full_hist_df, h_prices_adj, h_fx, hist_status = self.historical_fn(
@@ -319,9 +307,6 @@ class PortfolioCalculatorWorker(QRunnable):
                     portfolio_summary_metrics["historical_status_msg"] = (
                         historical_status
                     )
-                logging.debug(
-                    f"DEBUG Worker: Historical calculation finished. Status: {historical_status}"
-                )
                 logging.info(
                     f"WORKER: Historical performance calculation finished. Status: {historical_status}"
                 )
@@ -444,9 +429,6 @@ class PortfolioCalculatorWorker(QRunnable):
 
                 # Filter for stock/ETF transactions and get unique symbols
                 logging.debug(
-                    f"DEBUG WORKER: Columns in all_transactions_df: {all_transactions_df.columns.tolist()}"
-                )  # Direct print for debugging
-                logging.debug(
                     f"WORKER: Columns in all_transactions_df: {all_transactions_df.columns.tolist()}"
                 )
 
@@ -567,9 +549,6 @@ class PortfolioCalculatorWorker(QRunnable):
                             returns_for_corr[internal_sym] = price_df[
                                 "price"
                             ].pct_change()
-                    logging.debug(
-                        f"WORKER: Returns DataFrame before dropna (shape: {returns_for_corr.shape}):\n{returns_for_corr.head().to_string()}"
-                    )
 
                     if returns_for_corr.empty:
                         logging.warning(
@@ -579,9 +558,6 @@ class PortfolioCalculatorWorker(QRunnable):
 
                     # Drop rows with NaNs (e.g., first row after pct_change)
                     returns_for_corr.dropna(inplace=True)
-                    logging.debug(
-                        f"WORKER: Returns DataFrame after dropna (shape: {returns_for_corr.shape}):\n{returns_for_corr.head().to_string()}"
-                    )
 
                     # Calculate correlation matrix
                     if (
@@ -754,17 +730,6 @@ class PortfolioCalculatorWorker(QRunnable):
                 traceback.print_exc()
                 scenario_analysis_result = {}
 
-            logging.debug(
-                f"DEBUG Worker: dividend_history_df before emit (shape {dividend_history_df.shape if isinstance(dividend_history_df, pd.DataFrame) else 'Not a DF'}):"
-            )
-            if (
-                isinstance(dividend_history_df, pd.DataFrame)
-                and not dividend_history_df.empty
-            ):
-                logging.debug(f"  Head:\n{dividend_history_df.head().to_string()}")
-                logging.debug(
-                    f"  'DividendAmountDisplayCurrency' NaNs in worker: {dividend_history_df['DividendAmountDisplayCurrency'].isna().sum()} out of {len(dividend_history_df)}"
-                )
 
             # --- Prepare and Emit Combined Results ---
             overall_status = (
@@ -783,18 +748,6 @@ class PortfolioCalculatorWorker(QRunnable):
                 )
                 self.signals.error.emit(overall_status)
 
-            logging.debug(
-                f"WORKER EMIT: Summary Metrics Keys: {list(portfolio_summary_metrics.keys()) if portfolio_summary_metrics else 'Empty'}"
-            )
-            logging.debug(
-                f"WORKER EMIT: Holdings DF Shape: {holdings_df.shape if isinstance(holdings_df, pd.DataFrame) else 'Not DF'}"
-            )
-            logging.debug(
-                f"WORKER EMIT: Full Historical DF Shape: {full_historical_data_df.shape if isinstance(full_historical_data_df, pd.DataFrame) else 'Not DF'}"
-            )
-            logging.debug(
-                f"WORKER EMIT: Dividend History DF Shape: {dividend_history_df.shape if isinstance(dividend_history_df, pd.DataFrame) else 'Not DF'}"
-            )
             if (
                 isinstance(dividend_history_df, pd.DataFrame)
                 and not dividend_history_df.empty
