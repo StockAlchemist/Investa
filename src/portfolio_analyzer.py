@@ -2349,7 +2349,9 @@ def extract_realized_capital_gains_history(
 
     # --- CRITICAL: Filter accounts at the end after all lots have been tracked ---
     if include_accounts and isinstance(include_accounts, list):
-        df_gains = df_gains[df_gains["Account"].isin(include_accounts)]
+        # Normalize filter to match internal uppercase account names
+        include_accounts_upper = [str(acc).upper().strip() for acc in include_accounts]
+        df_gains = df_gains[df_gains["Account"].isin(include_accounts_upper)]
     # --- END ---
 
     logging.info(f"Extracted {len(df_gains)} realized capital gains records.")

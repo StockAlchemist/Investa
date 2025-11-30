@@ -8145,13 +8145,21 @@ The CSV file should contain the following columns (header names must match exact
                     # Check current UI date
                     current_ui_date = self.graph_start_date_edit.date().toPython()
                     
-                    # Only update if the current date is BEFORE the new min date (invalid range)
-                    # This preserves user-selected ranges like YTD that are within the valid range.
-                    if current_ui_date < new_start_date:
+                    # Check if we should force update (e.g. if "All" or "Presets..." is selected)
+                    should_force_update = False
+                    if hasattr(self, "date_preset_combo"):
+                        current_preset = self.date_preset_combo.currentText()
+                        if current_preset in ["Presets...", "All"]:
+                            should_force_update = True
+
+                    # Update if current date is LATER than new start date (we want to expand range)
+                    # OR if we should force update (e.g. user selected "All")
+                    if current_ui_date > new_start_date or should_force_update:
                         logging.debug(f"DEBUG: _update_graph_date_range_for_accounts updating date to {new_start_date}")
                         self.graph_start_date_edit.setDate(QDate(new_start_date))
                         
                         # Explicitly reset preset combo to "Presets..." to avoid confusion
+                        # But if it was "All", maybe keep it? For now reset to 0 (Presets...)
                         if hasattr(self, "date_preset_combo"):
                             self.date_preset_combo.setCurrentIndex(0)
                             
@@ -8160,7 +8168,7 @@ The CSV file should contain the following columns (header names must match exact
                         )
                     else:
                         logging.debug(
-                            f"DEBUG: Kept existing graph start date {current_ui_date} as it is valid (>= {new_start_date})."
+                            f"DEBUG: Kept existing graph start date {current_ui_date} as it is valid (<= {new_start_date})."
                         )
             except Exception as e:
                 logging.error(f"Error calculating min date for graph: {e}")

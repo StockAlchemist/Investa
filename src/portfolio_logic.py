@@ -1439,13 +1439,28 @@ def _calculate_daily_net_cash_flow(
                         # Look for price on target_date
                         # Try exact match first
                         if target_date in prices_df.index:
-                            price_local = prices_df.loc[target_date, "Close"]
+                            if "Close" in prices_df.columns:
+                                price_local = prices_df.loc[target_date, "Close"]
+                            elif "price" in prices_df.columns:
+                                price_local = prices_df.loc[target_date, "price"]
+                            elif "Adj Close" in prices_df.columns:
+                                price_local = prices_df.loc[target_date, "Adj Close"]
+                            elif not prices_df.empty:
+                                # Fallback to first column if standard names missing
+                                price_local = prices_df.loc[target_date].iloc[0]
                         else:
                             # Try converting target_date to datetime if index is datetime
                             try:
                                 target_ts = pd.Timestamp(target_date)
                                 if target_ts in prices_df.index:
-                                    price_local = prices_df.loc[target_ts, "Close"]
+                                    if "Close" in prices_df.columns:
+                                        price_local = prices_df.loc[target_ts, "Close"]
+                                    elif "price" in prices_df.columns:
+                                        price_local = prices_df.loc[target_ts, "price"]
+                                    elif "Adj Close" in prices_df.columns:
+                                        price_local = prices_df.loc[target_ts, "Adj Close"]
+                                    elif not prices_df.empty:
+                                        price_local = prices_df.loc[target_ts].iloc[0]
                             except:
                                 pass
                                 
@@ -2254,11 +2269,21 @@ def _calculate_daily_holdings_chronological_numba(
                 elif type_id == buy_type_id or type_id == deposit_type_id:
                     if qty > 1e-9:
                         current_holdings_qty[symbol_id, account_id] += qty
+                        # --- FIX: Update Cash for BUY ---
+                        # Cash decreases by (Qty * Price) + Commission
+                        cost = (qty * price) + commission
+                        current_cash_balances[account_id] -= cost
+
                 elif type_id == sell_type_id or type_id == withdrawal_type_id:
                     if qty > 1e-9:
                         held_qty = current_holdings_qty[symbol_id, account_id]
                         qty_sold = min(qty, held_qty) if held_qty > 1e-9 else 0.0
                         current_holdings_qty[symbol_id, account_id] -= qty_sold
+                        # --- FIX: Update Cash for SELL ---
+                        # Cash increases by (Qty * Price) - Commission
+                        proceeds = (qty_sold * price) - commission
+                        current_cash_balances[account_id] += proceeds
+
                 elif type_id == transfer_type_id:
                     if qty > 1e-9:
                         transfer_qty = qty
@@ -2757,6 +2782,8 @@ def _calculate_portfolio_value_at_date_unadjusted(
             included_accounts=included_accounts,  # Pass included_accounts
         )
     else:
+        import traceback
+        traceback.print_stack()
         logging.error(
             f"Invalid calculation method specified: {method}. Defaulting to python."
         )
@@ -3479,6 +3506,8 @@ def _load_or_calculate_daily_results(
     status_update = ""
     dummy_warnings_set = set()
 
+    dummy_warnings_set = set()
+
     # --- Chronological Calculation (numba_chrono) ---
     # --- MODIFIED: Use L1 cache if available, otherwise calculate from scratch ---
     if calc_method == "numba_chrono":
@@ -3533,9 +3562,15 @@ def _load_or_calculate_daily_results(
             tx_symbols_np = (
                 sorted_df["Symbol"].map(symbol_to_id).values.astype(np.int64)
             )
-            tx_accounts_np = (
-                sorted_df["Account"].map(account_to_id).values.astype(np.int64)
-            )
+            # Ensure no NaNs in account mapping
+            account_ids_series = _normalize_series(sorted_df["Account"]).map(account_to_id)
+            if account_ids_series.isna().any():
+                logging.warning("Found transactions with unknown accounts during mapping. Dropping them.")
+                valid_mask = account_ids_series.notna()
+                sorted_df = sorted_df[valid_mask]
+                account_ids_series = account_ids_series[valid_mask]
+
+            tx_accounts_np = account_ids_series.values.astype(np.int64)
             # --- NEW: Map To Account for chrono calc ---
             if "To Account" in sorted_df.columns:
                 # Use _normalize_series to ensure matching with account_to_id keys
@@ -3621,8 +3656,9 @@ def _load_or_calculate_daily_results(
             )
 
         # Get the set of account IDs to include in the valuation
+        # account_to_id keys are normalized (uppercase, stripped)
         account_ids_to_include_set = {  # type: ignore
-            account_to_id.get(acc) for acc in included_accounts_list
+            account_to_id.get(str(acc).upper().strip()) for acc in included_accounts_list
         }
         account_ids_to_include_set.discard(None)
 
@@ -3680,6 +3716,10 @@ def _load_or_calculate_daily_results(
                         day_lookup_failed = True
                         break
 
+                    if pd.isna(fx_rate):
+                        day_lookup_failed = True
+                        break
+
                     total_market_value_day += qty * price_local * fx_rate
 
                 if day_lookup_failed:
@@ -3709,7 +3749,7 @@ def _load_or_calculate_daily_results(
                                 any_lookup_failed_overall = True
                                 total_market_value_day = np.nan
                                 break
-                total_market_value_day += cash_balance * fx_rate
+                            total_market_value_day += cash_balance * fx_rate
 
                 # Get net flow and benchmarks
                 net_cash_flow, flow_lookup_failed = _calculate_daily_net_cash_flow(
@@ -3746,18 +3786,39 @@ def _load_or_calculate_daily_results(
                 }
                 result_row.update(benchmark_prices)
                 daily_results_list.append(result_row)
-
+            
+            # Unify variable name for return
+            any_lookup_failed = any_lookup_failed_overall
+            
             return daily_results_list, any_lookup_failed_overall
 
+        # Call the valuation function
         daily_results_list, any_lookup_failed = _value_daily_holdings_in_python()
 
-        if (
-            any_lookup_failed
-        ):  # This part seems to be missing from the original file, but it's good to have.
+        if any_lookup_failed:
             status_update += " (some lookups failed)."
+        
+        # --- Convert to DataFrame (Unified Return Path) ---
+        daily_df = pd.DataFrame(daily_results_list)
+        if not daily_df.empty:
+            daily_df["Date"] = pd.to_datetime(daily_df["Date"])
+            daily_df.set_index("Date", inplace=True)
+            daily_df.sort_index(inplace=True)
+            cols_to_numeric = ["value", "net_flow"] + [
+                f"{bm} Price"
+                for bm in clean_benchmark_symbols_yf
+                if f"{bm} Price" in daily_df.columns
+            ]
+            for col in cols_to_numeric:
+                daily_df[col] = pd.to_numeric(daily_df[col], errors="coerce")
+            
+            daily_df.dropna(subset=["value"], inplace=True)
+        
+        return daily_df, any_lookup_failed, status_update
 
     # --- END of new chronological calculation block ---
     else:  # Original parallel calculation
+        # ... (existing code with multiprocessing.Pool) ...
         # ... (existing code with multiprocessing.Pool) ...
         # The following is the original block, now under an `else`
         status_update = " Calculating daily values..."
@@ -4037,19 +4098,16 @@ def _load_or_calculate_daily_results(
 
         try:
             chunksize = max(1, len(all_dates_to_process) // (num_processes * 4))
-            logging.info(
-                f"Hist Daily: Starting pool with {num_processes} processes, chunksize={chunksize}"
-            )
-            with multiprocessing.Pool(processes=num_processes) as pool:
-                results_iterator = pool.imap_unordered(
-                    worker_partial, all_dates_to_process, chunksize=chunksize
-                )
-                # --- ADDED: Progress Reporting ---
-                total_dates = len(all_dates_to_process)
-                last_reported_percent = -1
+            
+            # --- ADDED: Progress Reporting ---
+            total_dates = len(all_dates_to_process)
+            last_reported_percent = -1
 
-                for i, result in enumerate(results_iterator):
-                    if i % 100 == 0 and i > 0:  # FIX: Use > instead of &gt;
+            # Define helper to consume results (avoids code duplication)
+            def consume_results(iterator):
+                nonlocal last_reported_percent
+                for i, result in enumerate(iterator):
+                    if i % 100 == 0 and i > 0:
                         logging.info(
                             f"  Processed {i}/{len(all_dates_to_process)} days..."
                         )
@@ -4060,7 +4118,7 @@ def _load_or_calculate_daily_results(
                     if worker_signals and hasattr(worker_signals, "progress"):
                         try:
                             percent_done = int(((i + 1) / total_dates) * 100)
-                            if (  # FIX: Use > instead of &gt;
+                            if (
                                 percent_done > last_reported_percent
                             ):  # Avoid emitting too often
                                 worker_signals.progress.emit(percent_done)
@@ -4072,6 +4130,17 @@ def _load_or_calculate_daily_results(
                 logging.info(
                     f"  Finished processing all {len(all_dates_to_process)} days."
                 )
+
+            if num_processes == 1:
+                # Run synchronously in the main process
+                results_iterator = map(worker_partial, all_dates_to_process)
+                consume_results(results_iterator)
+            else:
+                with multiprocessing.Pool(processes=num_processes) as pool:
+                    results_iterator = pool.imap_unordered(
+                        worker_partial, all_dates_to_process, chunksize=chunksize
+                    )
+                    consume_results(results_iterator)
         except Exception as e_pool:
             logging.error(
                 f"Hist CRITICAL (Scope: {filter_desc}): Pool failed: {e_pool}"
@@ -4100,6 +4169,11 @@ def _load_or_calculate_daily_results(
         failed_count = len(all_dates_to_process) - len(successful_results)
         if failed_count > 0:
             status_update += f" ({failed_count} dates failed in worker)."
+            # Log first failure
+            for r in daily_results_list:
+                if r.get("worker_error", False):
+                    logging.error(f"Worker Error Sample: {r.get('error_message', 'Unknown Error')}")
+                    break
         if not successful_results:
             # --- ADDED: Log why results are empty ---
             logging.error(
@@ -4126,6 +4200,8 @@ def _load_or_calculate_daily_results(
             for col in cols_to_numeric:
                 daily_df[col] = pd.to_numeric(daily_df[col], errors="coerce")
             initial_rows_calc = len(daily_df)
+            
+            # Drop rows where 'value' is NaN (failed lookup)
             daily_df.dropna(subset=["value"], inplace=True)
             rows_dropped = initial_rows_calc - len(daily_df)
             if rows_dropped > 0:
@@ -5076,7 +5152,6 @@ def calculate_historical_performance(
 
     if not daily_df.empty and "value" in daily_df.columns:
         daily_df.rename(columns={"value": "Portfolio Value"}, inplace=True)
-        logging.debug("Renamed 'value' column to 'Portfolio Value' in daily_df.")
 
     return daily_df, historical_prices_yf_adjusted, historical_fx_yf, final_status_str
 
