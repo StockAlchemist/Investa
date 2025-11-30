@@ -75,6 +75,14 @@ def _fetch_factor_data(
     if model_name == "Carhart 4-Factor":
         factor_df["UMD"] = np.random.normal(0.001, 0.01, len(spy_returns.index))
 
+    # Ensure index is DatetimeIndex (sometimes it comes back as generic Index)
+    if not isinstance(factor_df.index, pd.DatetimeIndex):
+        try:
+            factor_df.index = pd.to_datetime(factor_df.index)
+        except Exception as e:
+            logging.error(f"Failed to convert factor data index to DatetimeIndex: {e}")
+            return pd.DataFrame()
+
     return factor_df
 
 
@@ -133,6 +141,13 @@ def run_factor_regression(
     aligned_data = pd.concat(
         [portfolio_returns_monthly, factor_data_monthly], axis=1
     ).dropna()
+
+    # Check for sufficient data points (at least 6 months recommended for any meaningful regression)
+    if len(aligned_data) < 6:
+        logging.warning(
+            f"Insufficient data for factor analysis. Need at least 6 data points, got {len(aligned_data)}."
+        )
+        return None
 
     if "RF" not in aligned_data.columns:
         logging.error(

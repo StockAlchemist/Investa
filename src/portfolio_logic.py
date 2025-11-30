@@ -552,11 +552,42 @@ def calculate_portfolio_summary(
             master_fx_df = pd.concat(fx_series_list, axis=1)
             master_fx_df.sort_index(inplace=True)
             
-            # 2. Reindex to cover all transaction dates (ffill)
+            # 2. Reindex to cover all transaction dates (ffill AND bfill)
             # We need the union of existing FX dates and transaction dates
             all_needed_dates = sorted(list(set(master_fx_df.index) | set(unique_dates)))
-            master_fx_df = master_fx_df.reindex(all_needed_dates).ffill()
+            # ADDED: bfill() to handle cases where transactions start before FX history
+            master_fx_df = master_fx_df.reindex(all_needed_dates).ffill().bfill()
             
+            # --- ADDED: Fallback for completely missing currencies ---
+            # If a currency was requested but is not in master_fx_df (e.g. history fetch failed completely),
+            # we try to fetch the CURRENT rate and use it as a constant fallback.
+            existing_cols = set(master_fx_df.columns)
+            missing_currencies = [
+                c for c in cleaned_currencies_for_hist_fx 
+                if c and c.upper() != "USD" and c not in existing_cols
+            ]
+            
+            if missing_currencies:
+                logging.warning(f"Historical FX missing for {missing_currencies}. Attempting to fetch current rates as fallback.")
+                missing_pairs = [f"{c.upper()}=X" for c in missing_currencies]
+                try:
+                    # Fetch current quotes for missing pairs
+                    _, current_fx_rates, _, _ = market_provider_for_hist_fx.get_current_quotes(
+                        stock_tickers=[], fx_pairs=missing_pairs
+                    )
+                    
+                    for curr in missing_currencies:
+                        curr_upper = curr.upper()
+                        if curr_upper in current_fx_rates and pd.notna(current_fx_rates[curr_upper]):
+                            rate = current_fx_rates[curr_upper]
+                            logging.info(f"Using current FX rate {rate} for {curr} as historical fallback (constant).")
+                            master_fx_df[curr] = rate
+                        else:
+                            logging.error(f"Could not get even current FX rate for {curr}. FX conversion will fail/default.")
+                            
+                except Exception as e_fallback:
+                    logging.error(f"Error fetching current FX fallback: {e_fallback}")
+
             # 3. Add USD column (always 1.0)
             master_fx_df['USD'] = 1.0
             
@@ -575,6 +606,12 @@ def calculate_portfolio_summary(
                 for curr_col in master_fx_df.columns:
                     try:
                         # Calculate cross rate vector: Rate = Display / Local
+                        # Note: master_fx_df contains Base/USD rates (e.g. EUR/USD ~ 0.92, THB/USD ~ 34.0)
+                        # We want Display/Local.
+                        # Display/Local = (Display/USD) / (Local/USD)
+                        # Example: Display=USD (1.0), Local=EUR (0.92). Rate = 1.0 / 0.92 = 1.08 USD/EUR. Correct.
+                        # Example: Display=THB (34.0), Local=USD (1.0). Rate = 34.0 / 1.0 = 34.0 THB/USD. Correct.
+                        
                         cross_rates = display_rates / master_fx_df[curr_col]
                         
                         # Filter for relevant dates and update dict
@@ -590,7 +627,8 @@ def calculate_portfolio_summary(
         
         # Fallback/Fill for USD if not present
         for d in unique_dates:
-            historical_fx_for_processing[(d, 'USD')] = 1.0
+            if (d, 'USD') not in historical_fx_for_processing:
+                historical_fx_for_processing[(d, 'USD')] = 1.0
 
     # --- END ADDED ---
 

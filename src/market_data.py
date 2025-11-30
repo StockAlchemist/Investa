@@ -1898,16 +1898,23 @@ class MarketDataProvider:
                     "Hist FX: All required FX pairs present."
                 )
 
-            # --- 3. Update Cache if Fetch Occurred (or if cache was incomplete) and Cache Enabled ---
+            # --- 3. Save to Cache (Manifest) ---
             if use_cache and cache_key:
-                # The new _save_historical_data_and_manifest will handle merging/updating the manifest correctly.
+                # We save ALL currently available FX data for the requested keys
+                # This includes what was loaded + what was fetched.
+                data_to_save = {
+                    k: v for k, v in historical_fx_yf.items() if k in fx_pairs_yf
+                }
                 self._save_historical_data_and_manifest(
                     cache_key_to_save=cache_key,
-                    data_to_save_map=historical_fx_yf,  # Save all currently held FX data
+                    data_to_save_map=data_to_save,
                     data_type="fx",
                 )
 
-        # --- 4. Final Check and Return ---
+
+
+
+        # --- 5. Final Check and Return ---
         # Check again if critical data is missing (redundant if fetch_failed already True, but safe)
         if fx_pairs_yf:  # Only if FX pairs were requested
             if any(
