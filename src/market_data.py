@@ -203,7 +203,7 @@ class MarketDataProvider:
         # Ensure the fundamentals cache directory exists
         os.makedirs(self.fundamentals_cache_dir, exist_ok=True)
 
-        logging.info("MarketDataProvider initialized.")
+        # logging.info("MarketDataProvider initialized.")
 
     def _get_historical_cache_dir(self) -> str:
         """Constructs and returns the full path to the historical data cache subdirectory."""
@@ -301,7 +301,8 @@ class MarketDataProvider:
         # added to the `required_currencies` set by the calling function.
 
         if not yf_symbols_to_fetch:
-            logging.info("No valid stock symbols provided for current quotes.")
+            # logging.info("No valid stock symbols provided for current quotes.")
+            pass
 
         # --- 2. Caching Logic for Current Quotes ---
         cache_key = f"CURRENT_QUOTES_v4::{'_'.join(sorted(yf_symbols_to_fetch))}::{'_'.join(sorted(required_currencies))}"  # Cache key bumped for new fields
@@ -339,7 +340,8 @@ class MarketDataProvider:
                     else:
                         logging.warning("Current quotes cache missing timestamp.")
                 else:
-                    logging.info("Current quotes cache key mismatch.")
+                    # logging.info("Current quotes cache key mismatch.")
+                    pass
             # ADDED LOGS for cache read errors
             except json.JSONDecodeError as e:
                 logging.warning(
@@ -360,7 +362,7 @@ class MarketDataProvider:
             cached_data_used = True  # Mark cache as used
             # --- End Populate results ---
         else:
-            logging.info("Fetching fresh current quotes and FX rates...")
+            # logging.info("Fetching fresh current quotes and FX rates...")
             # --- Fetching logic will run if cache was invalid/missing ---
             pass  # Let the fetching logic below execute
 
@@ -761,9 +763,9 @@ class MarketDataProvider:
                                         else:
                                             fx_prev_close_vs_usd[base_curr_from_symbol] = rate_float # Fallback to current
                                         # ADDED LOG
-                                        logging.info(
-                                            f"Processed FX {yf_symbol} (Base quoted): {rate_float:.4f} {base_curr_from_symbol}/USD"
-                                        )
+                                        # logging.info(
+                                        #     f"Processed FX {yf_symbol} (Base quoted): {rate_float:.4f} {base_curr_from_symbol}/USD"
+                                        # )
                                     else:
                                         # Unexpected currency code
                                         logging.warning(
@@ -986,11 +988,13 @@ class MarketDataProvider:
                                     f"Using valid cache for index quotes (Key: {cache_key[:30]}...)."
                                 )
                         else:
-                            logging.info("Index quotes cache expired.")
+                            # logging.info("Index quotes cache expired.")
+                            pass
                     else:
                         logging.warning("Index quotes cache entry missing timestamp.")
                 else:
-                    logging.info("Index quotes cache key not found in file.")
+                    # logging.info("Index quotes cache key not found in file.")
+                    pass
             except (json.JSONDecodeError, IOError, Exception) as e:
                 logging.warning(f"Error reading index quotes cache: {e}. Will refetch.")
 
@@ -998,7 +1002,7 @@ class MarketDataProvider:
             results = cached_results
             cached_data_used = True
         else:
-            logging.info("Fetching fresh index quotes...")
+            # logging.info("Fetching fresh index quotes...")
             # Fetching logic will run if cache was invalid/missing
             pass  # Let the fetching logic below execute
 
@@ -1647,7 +1651,7 @@ class MarketDataProvider:
 
         # --- 2. Fetch Missing Data if Cache Invalid/Incomplete ---
         if not cache_is_valid_and_complete:
-            logging.info("Hist Prices: Checking for missing or stale data...")
+            # logging.info("Hist Prices: Checking for missing or stale data...")
             
             symbols_needing_full_fetch = []
             symbols_needing_incremental_fetch = []
@@ -1687,7 +1691,7 @@ class MarketDataProvider:
                 for last_d, syms in by_last_date.items():
                     fetch_start = last_d + timedelta(days=1)
                     if fetch_start <= end_date:
-                        logging.info(f"  Fetching delta from {fetch_start} for {len(syms)} symbols...")
+                        # logging.info(f"  Fetching delta from {fetch_start} for {len(syms)} symbols...")
                         delta_data = self._fetch_yf_historical_data(
                             syms, fetch_start, end_date
                         )
@@ -1808,7 +1812,7 @@ class MarketDataProvider:
 
         # --- 2. Fetch Missing Data if Needed ---
         if not cache_is_valid_and_complete:
-            logging.info("Hist FX: Checking for missing or stale data...")
+            # logging.info("Hist FX: Checking for missing or stale data...")
             
             fx_needing_full_fetch = []
             fx_needing_incremental_fetch = []
@@ -1847,7 +1851,7 @@ class MarketDataProvider:
                 for last_d, syms in by_last_date.items():
                     fetch_start = last_d + timedelta(days=1)
                     if fetch_start <= end_date:
-                        logging.info(f"  Fetching FX delta from {fetch_start} for {len(syms)} pairs...")
+                        # logging.info(f"  Fetching FX delta from {fetch_start} for {len(syms)} pairs...")
                         delta_data = self._fetch_yf_historical_data(
                             syms, fetch_start, end_date
                         )

@@ -818,7 +818,7 @@ def calculate_portfolio_summary(
         # Don't return early, let it try to create empty aggregates.
 
     # --- Add Sector/Geo information ---
-    logging.info("Categorizing transactions by symbol...")
+    # logging.info("Categorizing transactions by symbol...")
     if portfolio_summary_rows:
         summary_df_unfiltered_temp = pd.DataFrame(portfolio_summary_rows)
         if "Symbol" in summary_df_unfiltered_temp.columns:
@@ -1094,7 +1094,7 @@ def calculate_portfolio_summary(
     if status_parts:
         final_status += f" [{'; '.join(status_parts)}]"
 
-    logging.info(f"Portfolio Summary Calculation Finished ({filter_desc})")
+    # logging.info(f"Portfolio Summary Calculation Finished ({filter_desc})")
     logging.info(
         f"Total Summary Calc Time: {end_time_summary - start_time_summary:.2f} seconds"
     )
@@ -1153,7 +1153,7 @@ def _unadjust_prices(
             - combined_ignored_reasons (Dict[int, str]): Maps 'original_index' to a string describing the reason the row was ignored.
             - final_status (str): Overall status message indicating success, warnings, or errors.
     """
-    logging.info("--- Starting Price Unadjustment ---")
+    # logging.info("--- Starting Price Unadjustment ---")
     unadjusted_prices_yf = {}
     unadjusted_count = 0
 
@@ -3045,7 +3045,7 @@ def _prepare_historical_inputs(
     Optional[str],
     str,
 ]:
-    logging.info("Preparing inputs for historical calculation...")
+    # logging.info("Preparing inputs for historical calculation...")
     empty_tuple_return = (
         None,
         None,
@@ -4364,7 +4364,7 @@ def _get_or_calculate_all_daily_holdings(
         except Exception as e:
             logging.warning(f"L1 Cache Load Error: Failed to load numpy arrays: {e}")
 
-    logging.info("L1 Cache MISS: Calculating daily holdings for all accounts...")
+    # logging.info("L1 Cache MISS: Calculating daily holdings for all accounts...")
 
     # --- FIX: Create a sorted copy to ensure chronological processing ---
     sorted_tx_df = all_transactions_df.sort_values(by=["Date", "original_index"]).copy()
@@ -4467,7 +4467,7 @@ def _get_or_calculate_all_daily_holdings(
         np.save(prices_file, daily_last_prices)
         with open(key_file, "w") as f:
             f.write("valid")
-        logging.info("L1 Cache SAVE: Saved calculated daily holdings to cache.")
+        # logging.info("L1 Cache SAVE: Saved calculated daily holdings to cache.")
     except Exception as e:
         logging.error(f"L1 Cache SAVE Error: Failed to save numpy arrays: {e}")
 
@@ -4585,7 +4585,7 @@ def _calculate_accumulated_gains_and_resample(
         elif (
             interval in ["W", "M", "ME"] and not results_df.empty
         ):  # <-- ADD 'M' to the check
-            logging.info(f"Hist Final: Resampling to interval '{interval}'...")
+            # logging.info(f"Hist Final: Resampling to interval '{interval}'...")
             try:
                 # --- ADDED: Log before resampling ---
                 logging.debug(
@@ -4942,7 +4942,7 @@ def calculate_historical_performance(
 
     # --- 3. Load or Fetch ADJUSTED Historical Raw Data ---
     # --- NEW: Load/Calculate ALL daily holdings (Layer 1 Cache) ---
-    logging.info("Checking Layer 1 cache for all daily holdings...")
+    # logging.info("Checking Layer 1 cache for all daily holdings...")
     all_holdings_qty, all_cash_balances, all_last_prices = _get_or_calculate_all_daily_holdings(
         all_transactions_df=all_transactions_df_cleaned,
         start_date=full_start_date,
@@ -4956,7 +4956,7 @@ def calculate_historical_performance(
         has_errors = True  # This is a critical failure
     # --- END NEW ---
 
-    logging.info("Fetching/Loading adjusted historical prices...")
+    # logging.info("Fetching/Loading adjusted historical prices...")
     fetched_prices_adj, fetch_failed_prices = market_provider.get_historical_data(
         symbols_yf=symbols_for_stocks_and_benchmarks_yf,
         start_date=full_start_date,
@@ -5003,7 +5003,7 @@ def calculate_historical_performance(
         )
 
     # --- 4. Derive Unadjusted Prices ---
-    logging.info("Deriving unadjusted prices using split data...")
+    # logging.info("Deriving unadjusted prices using split data...")
     historical_prices_yf_unadjusted = _unadjust_prices(
         adjusted_prices_yf=historical_prices_yf_adjusted,
         yf_to_internal_map=yf_to_internal_map_hist,
@@ -5129,7 +5129,7 @@ def calculate_historical_performance(
 
     # --- 8. Final Status and Return ---
     end_time_hist = time.time()
-    logging.info(f"Historical Performance Calculation Finished (Scope: {filter_desc})")
+    # logging.info(f"Historical Performance Calculation Finished (Scope: {filter_desc})")
     logging.info(
         f"Total Historical Calc Time: {end_time_hist - start_time_hist:.2f} seconds"
     )
@@ -5216,7 +5216,7 @@ if __name__ == "__main__":
         force=True,  # Ensure this config takes precedence
     )
     multiprocessing.freeze_support()  # For PyInstaller
-    logging.info("Running portfolio_logic.py tests...")
+    # logging.info("Running portfolio_logic.py tests...")
 
     # --- Define test parameters ---
     test_csv_file_main = "my_transactions.csv"  # Keep a distinct name for main test CSV
@@ -5256,7 +5256,7 @@ if __name__ == "__main__":
             f"CRITICAL: Failed to load test CSV '{test_csv_file_main}'. Cannot run tests."
         )
     else:
-        logging.info(f"\n--- Testing Current Portfolio Summary (with DataFrame) ---")
+        # logging.info(f"\n--- Testing Current Portfolio Summary (with DataFrame) ---")
         (
             summary_metrics,
             holdings_df,
@@ -5281,11 +5281,13 @@ if __name__ == "__main__":
             user_symbol_map={},
             user_excluded_symbols=set(),
         )
-        logging.info(f"Current Summary Status (All Accounts): {status_summary}")
+        # logging.info(f"Current Summary Status (All Accounts): {status_summary}")
         if summary_metrics:
-            logging.info(f"Overall Metrics: {summary_metrics}")
+            # logging.info(f"Overall Metrics: {summary_metrics}")
+            pass
         if holdings_df is not None and not holdings_df.empty:
-            logging.info(f"Holdings DF Head:\n{holdings_df.head().to_string()}")
+            # logging.info(f"Holdings DF Head:\n{holdings_df.head().to_string()}")
+            pass
         # ... (rest of summary logging)
 
         logging.info(
@@ -5318,7 +5320,7 @@ if __name__ == "__main__":
             # ... other args like user_symbol_map, manual_overrides_dict etc.
         )
         end_time_run_hist = time.time()
-        logging.info(f"Test 'All Accounts' Hist Status: {hist_status}")
+        # logging.info(f"Test 'All Accounts' Hist Status: {hist_status}")
         logging.info(
             f"Test 'All Accounts' Hist Exec Time: {end_time_run_hist - start_time_run_hist:.2f} seconds"
         )

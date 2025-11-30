@@ -731,9 +731,9 @@ class PandasModel(QAbstractTableModel):
                 column
             ]  # Get the UI/Actual column name being sorted
             ascending_order = order == Qt.AscendingOrder
-            logging.info(
-                f"Sorting by column: '{col_name}' (Index: {column}), Ascending: {ascending_order}"
-            )
+            # logging.info(
+            #     f"Sorting by column: '{col_name}' (Index: {column}), Ascending: {ascending_order}"
+            # )
 
             self.layoutAboutToBeChanged.emit()  # Notify view about layout change start
 
@@ -997,7 +997,7 @@ class PandasModel(QAbstractTableModel):
             # --- END ADDED ---
 
             self.layoutChanged.emit()  # Notify view about layout change end
-            logging.info(f"Sorting finished for '{col_name}'.")
+            # logging.info(f"Sorting finished for '{col_name}'.")
 
         except Exception as e:
             # Catch-all for unexpected errors in the sort method

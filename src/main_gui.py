@@ -94,6 +94,7 @@ logging.basicConfig(
 
 # Quieten overly verbose libraries (optional, but often useful)
 logging.getLogger("matplotlib.font_manager").setLevel(logging.WARNING)
+logging.getLogger("matplotlib").setLevel(logging.WARNING)  # Suppress categorical units warnings
 logging.getLogger("yfinance").setLevel(
     logging.WARNING
 )  # yfinance can be noisy on DEBUG
@@ -230,7 +231,7 @@ except ImportError:
     logging.warning(
         "Warning: mplcursors library not found. Hover tooltips on graphs will be disabled."
     )
-    logging.info("         Install it using: pip install mplcursors")
+# logging.info("         Install it using: pip install mplcursors")
     MPLCURSORS_AVAILABLE = False
 
 import matplotlib.dates as mdates  # Needed for date formatting in tooltips
@@ -650,7 +651,7 @@ class PortfolioApp(QMainWindow, UiHelpersMixin):
                 loaded_app_config.update(
                     loaded_config_from_file
                 )  # Update defaults with loaded values
-                logging.info(f"Config loaded from {self.CONFIG_FILE}")
+                # logging.info(f"Config loaded from {self.CONFIG_FILE}")
 
                 # Specific validation for transactions_file (DB path)
                 # If the loaded 'transactions_file' is a CSV, it means it's an old config.
@@ -781,7 +782,7 @@ class PortfolioApp(QMainWindow, UiHelpersMixin):
                     default_db_path  # Ensure DB path is default on error
                 )
         else:
-            logging.info(f"Config file {self.CONFIG_FILE} not found. Using defaults.")
+            # logging.info(f"Config file {self.CONFIG_FILE} not found. Using defaults.")
             loaded_app_config["transactions_file"] = (
                 default_db_path  # Ensure DB path is default if no config file
             )
@@ -1220,7 +1221,7 @@ The CSV file should contain the following columns (header names must match exact
     @Slot(str)  # Ensure Slot decorator is imported
     def _chart_holding_history(self, symbol: str):
         """Handles 'Chart History' context menu action by showing a price chart dialog."""
-        logging.info(f"Action triggered: Chart History for {symbol}")
+        # logging.info(f"Action triggered: Chart History for {symbol}")
 
         if symbol == CASH_SYMBOL_CSV:
             QMessageBox.information(self, "Info", "Cannot chart history for Cash.")
@@ -1453,7 +1454,8 @@ The CSV file should contain the following columns (header names must match exact
                 self.save_config()  # Save the updated config
                 self.refresh_data()  # Trigger a full refresh as currencies impact calculations
             else:
-                logging.info("Account currency settings unchanged.")
+                # logging.info("Account currency settings unchanged.")
+                pass
 
     @contextlib.contextmanager
     def _programmatic_date_change(self):
@@ -1648,7 +1650,7 @@ The CSV file should contain the following columns (header names must match exact
             self.config["last_csv_export_path"] = os.path.dirname(fname)
             self.save_config()
 
-            logging.info(f"Attempting to export transactions to CSV: {fname}")
+            # logging.info(f"Attempting to export transactions to CSV: {fname}")
             self.set_status(f"Exporting transactions to {os.path.basename(fname)}...")
             QApplication.processEvents()
 
@@ -1755,7 +1757,7 @@ The CSV file should contain the following columns (header names must match exact
                 )
                 self.set_status("Export failed.")
         else:
-            logging.info("CSV export cancelled by user.")
+            # logging.info("CSV export cancelled by user.")
             self.set_status("Export cancelled.")
 
     @Slot()
@@ -1796,7 +1798,7 @@ The CSV file should contain the following columns (header names must match exact
             self.config["last_excel_export_path"] = os.path.dirname(file_path)
             self.save_config()
 
-            logging.info(f"Attempting to export holdings to Excel: {file_path}")
+            # logging.info(f"Attempting to export holdings to Excel: {file_path}")
             self.set_status(f"Exporting holdings to {os.path.basename(file_path)}...")
             QApplication.processEvents()
 
@@ -2106,14 +2108,15 @@ The CSV file should contain the following columns (header names must match exact
                 or new_symbol_map != self.user_symbol_map_config
                 or new_excluded_symbols != self.user_excluded_symbols_config
             ):
-                logging.info("Symbol settings changed. Saving and refreshing...")
+                # logging.info("Symbol settings changed. Saving and refreshing...")
                 self.manual_overrides_dict = new_manual_overrides
                 self.user_symbol_map_config = new_symbol_map
                 self.user_excluded_symbols_config = new_excluded_symbols
                 if self._save_manual_overrides_to_json():  # Save all parts to JSON
                     self.refresh_data()
             else:
-                logging.info("Symbol settings unchanged.")
+                # logging.info("Symbol settings unchanged.")
+                pass
 
     def _save_manual_overrides_to_json(
         self,
@@ -2128,7 +2131,7 @@ The CSV file should contain the following columns (header names must match exact
             return False
 
         overrides_file_path = self.MANUAL_OVERRIDES_FILE
-        logging.info(f"Saving symbol settings to: {overrides_file_path}")
+        # logging.info(f"Saving symbol settings to: {overrides_file_path}")
 
         data_to_save = {
             "manual_price_overrides": dict(sorted(self.manual_overrides_dict.items())),
@@ -2145,7 +2148,7 @@ The CSV file should contain the following columns (header names must match exact
 
             with open(overrides_file_path, "w", encoding="utf-8") as f:
                 json.dump(data_to_save, f, indent=4, ensure_ascii=False)
-            logging.info("Symbol settings saved successfully.")
+            # logging.info("Symbol settings saved successfully.")
             return True
         except TypeError as e:
             logging.error(f"TypeError writing symbol settings JSON: {e}")
@@ -2314,7 +2317,7 @@ The CSV file should contain the following columns (header names must match exact
         # string_io_handler.setFormatter(formatter)
         # Add the new handler to the root logger.
         root_logger.addHandler(string_io_handler)
-        logging.info("In-memory log stream configured.")
+        # logging.info("In-memory log stream configured.")
         # --- END ADDED ---
 
         # --- Early Initialization of Themed QColor Attributes with Light Theme Defaults ---
@@ -2393,7 +2396,7 @@ The CSV file should contain the following columns (header names must match exact
         # DB_FILE_PATH is determined by load_config or set if a new DB is created/opened.
         # It will also use get_database_path() which has similar fallback logic.
 
-        logging.info(f"CONFIG_FILE path determined as: {self.CONFIG_FILE}")
+        # logging.info(f"CONFIG_FILE path determined as: {self.CONFIG_FILE}")
         logging.info(
             f"MANUAL_OVERRIDES_FILE path determined as: {self.MANUAL_OVERRIDES_FILE}"
         )
@@ -2423,8 +2426,8 @@ The CSV file should contain the following columns (header names must match exact
             self.load_config()
         )  # This will set self.DB_FILE_PATH from config or default
         self.current_theme = self.config.get("theme", "light")  # Load theme preference
-        logging.info(f"DB_FILE_PATH set from/to config: {self.DB_FILE_PATH}")
-        logging.info(f"Initial theme set to: {self.current_theme}")
+        # logging.info(f"DB_FILE_PATH set from/to config: {self.DB_FILE_PATH}")
+        # logging.info(f"Initial theme set to: {self.current_theme}")
 
         # --- Initialize DB Connection ---
         # initialize_database will create the DB file and tables if they don't exist at self.DB_FILE_PATH
@@ -2436,7 +2439,7 @@ The CSV file should contain the following columns (header names must match exact
                 f"Could not initialize or connect to the database at:\n{self.DB_FILE_PATH}\n\nThe application may not function correctly.",
             )
         else:
-            logging.info(f"Database connection established: {self.DB_FILE_PATH}")
+            # logging.info(f"Database connection established: {self.DB_FILE_PATH}")
             self.setWindowTitle(
                 f"{self.base_window_title} - {os.path.basename(self.DB_FILE_PATH)}"
             )
@@ -2522,7 +2525,7 @@ The CSV file should contain the following columns (header names must match exact
         # --- END ADDED ---
         self._ensure_all_columns_in_visibility()
         self.threadpool = QThreadPool()
-        logging.info(f"Max threads: {self.threadpool.maxThreadCount()}")
+        # logging.info(f"Max threads: {self.threadpool.maxThreadCount()}")
 
         # This will store the full, cleaned DataFrame loaded from the DB (or migrated CSV)
         # It's the primary source for portfolio_logic functions.
@@ -2582,7 +2585,7 @@ The CSV file should contain the following columns (header names must match exact
             if check_if_db_empty_and_csv_exists(
                 self.db_conn, csv_for_potential_migration
             ):
-                logging.info("Startup: DB is empty and migration CSV exists.")
+                # logging.info("Startup: DB is empty and migration CSV exists.")
                 reply = QMessageBox.question(
                     self,
                     "Migrate CSV to Database?",
@@ -2624,7 +2627,7 @@ The CSV file should contain the following columns (header names must match exact
         self, theme_name: str
     ):  # Removed _config_already_saved_for_theme from signature
         """Applies the selected theme (light or dark) to the application."""
-        logging.info(f"Applying theme: {theme_name}")
+        # logging.info(f"Applying theme: {theme_name}")
 
         if (
             hasattr(self, "current_theme")
@@ -2725,7 +2728,7 @@ The CSV file should contain the following columns (header names must match exact
             with open(qss_path, "r", encoding="utf-8") as f:  # Added encoding
                 style_sheet_content = f.read()
                 self.setStyleSheet(style_sheet_content)
-            logging.info(f"Successfully applied stylesheet: {qss_file}")
+            # logging.info(f"Successfully applied stylesheet: {qss_file}")
 
         except Exception as e:
             logging.error(
@@ -2907,7 +2910,7 @@ The CSV file should contain the following columns (header names must match exact
         self.update_header_info()  # Re-color header text
 
         self._update_periodic_value_change_display()  # Update new tab
-        logging.info(f"UI components refreshed for {theme_name} theme.")
+        # logging.info(f"UI components refreshed for {theme_name} theme.")
 
         # Save the theme preference if triggered by menu action
         if hasattr(self, "light_theme_action") and self.sender() in [
@@ -3043,11 +3046,11 @@ The CSV file should contain the following columns (header names must match exact
         if is_checked:
             if account_name not in self.selected_accounts:
                 self.selected_accounts.append(account_name)
-                logging.info(f"Account added: {account_name}.")
+                # logging.info(f"Account added: {account_name}.")
         else:
             if account_name in self.selected_accounts:
                 self.selected_accounts.remove(account_name)
-                logging.info(f"Account removed: {account_name}.")
+                # logging.info(f"Account removed: {account_name}.")
 
         # If selection becomes empty, default back to selecting all available accounts
         if not self.selected_accounts and self.available_accounts:
@@ -3067,7 +3070,7 @@ The CSV file should contain the following columns (header names must match exact
             )
         )
 
-        logging.info(f"Selected Accounts: {self.selected_accounts}")
+        # logging.info(f"Selected Accounts: {self.selected_accounts}")
         self._update_account_button_text()
 
         # Inform user to click Update
@@ -3129,12 +3132,12 @@ The CSV file should contain the following columns (header names must match exact
             for acc in accounts_in_group:
                 if acc not in self.selected_accounts:
                     self.selected_accounts.append(acc)
-            logging.info(f"Selected all accounts in group '{group_name}'.")
+            # logging.info(f"Selected all accounts in group '{group_name}'.")
         else:  # Deselect all
             self.selected_accounts = [
                 acc for acc in self.selected_accounts if acc not in accounts_in_group
             ]
-            logging.info(f"Deselected all accounts in group '{group_name}'.")
+            # logging.info(f"Deselected all accounts in group '{group_name}'.")
 
         # If selection becomes empty, default back to selecting all available accounts
         if not self.selected_accounts and self.available_accounts:
@@ -3161,7 +3164,7 @@ The CSV file should contain the following columns (header names must match exact
         """
         if select_all:
             self.selected_accounts = self.available_accounts.copy()
-            logging.info("All accounts selected.")
+            # logging.info("All accounts selected.")
         else:
             # Prevent deselecting all - keep at least one if possible, or default back to all later
             # For simplicity now, allow deselecting all, toggle_account_selection will handle the empty case.
@@ -3358,7 +3361,7 @@ The CSV file should contain the following columns (header names must match exact
                 elif isinstance(loaded_data, dict) and all(
                     isinstance(v, (int, float)) for v in loaded_data.values()
                 ):
-                    logging.info("Attempting to migrate old manual price format...")
+                    # logging.info("Attempting to migrate old manual price format...")
                     migrated_prices: Dict[str, Dict[str, Any]] = {}
                     for key, price_val in loaded_data.items():
                         if (
@@ -3409,7 +3412,7 @@ The CSV file should contain the following columns (header names must match exact
             return False
 
         overrides_file_path = self.MANUAL_OVERRIDES_FILE
-        logging.info(f"Saving symbol settings to: {overrides_file_path}")
+        # logging.info(f"Saving symbol settings to: {overrides_file_path}")
 
         data_to_save = {
             "manual_price_overrides": dict(sorted(self.manual_overrides_dict.items())),
@@ -3426,7 +3429,7 @@ The CSV file should contain the following columns (header names must match exact
 
             with open(overrides_file_path, "w", encoding="utf-8") as f:
                 json.dump(data_to_save, f, indent=4, ensure_ascii=False)
-            logging.info("Symbol settings saved successfully.")
+            # logging.info("Symbol settings saved successfully.")
             return True
         except TypeError as e:
             logging.error(f"TypeError writing symbol settings JSON: {e}")
@@ -3841,7 +3844,8 @@ The CSV file should contain the following columns (header names must match exact
             )
             # self.refresh_data() # Explicitly removed to prevent immediate refresh
         else:
-            logging.info("Currency selection cancelled by user.")
+            # logging.info("Currency selection cancelled by user.")
+            pass
         del self.currency_manage_list_widget  # Clean up temp attribute
 
     def _add_currency_to_manage_list(self):
@@ -3875,7 +3879,7 @@ The CSV file should contain the following columns (header names must match exact
 
         self.currency_manage_list_widget.addItem(new_code)
         self.new_currency_edit.clear()
-        logging.info(f"Currency '{new_code}' added to management list.")
+        # logging.info(f"Currency '{new_code}' added to management list.")
 
     def _delete_currency_from_manage_list(self):
         """Deletes the selected currency from the list in the 'Manage Currencies' dialog."""
@@ -3912,7 +3916,7 @@ The CSV file should contain the following columns (header names must match exact
         self.currency_manage_list_widget.takeItem(
             self.currency_manage_list_widget.row(selected_items[0])
         )
-        logging.info(f"Currency '{currency_to_delete}' removed from management list.")
+        # logging.info(f"Currency '{currency_to_delete}' removed from management list.")
 
     # --- ADDED: Slot for CSV Format Help ---
     @Slot()
@@ -3951,7 +3955,7 @@ The CSV file should contain the following columns (header names must match exact
     @Slot(str)  # Ensure Slot decorator is imported
     def _chart_holding_history(self, symbol: str):
         """Handles 'Chart History' context menu action by showing a price chart dialog."""
-        logging.info(f"Action triggered: Chart History for {symbol}")
+        # logging.info(f"Action triggered: Chart History for {symbol}")
         if is_cash_symbol(symbol):
             QMessageBox.information(self, "Info", "Cannot chart history for Cash.")
             return
@@ -9840,9 +9844,9 @@ The CSV file should contain the following columns (header names must match exact
         elif not self.available_accounts:
             scope_label = "No Accounts Available"
 
-        logging.info(
-            f"Updating performance graphs for scope: {scope_label}... Initial: {initial}, Benchmarks: {self.selected_benchmarks}"
-        )
+        # logging.info(
+        #     f"Updating performance graphs for scope: {scope_label}... Initial: {initial}, Benchmarks: {self.selected_benchmarks}"
+        # )
         self.perf_return_ax.clear()
         self.abs_value_ax.clear()
 
@@ -12177,9 +12181,9 @@ The CSV file should contain the following columns (header names must match exact
 
         self.stock_transactions_table_view.resizeColumnsToContents()
         self.cash_transactions_table_view.resizeColumnsToContents()
-        logging.info(
-            f"Transaction log tables updated. Stock Txs: {len(stock_tx_df)}, Cash Txs: {len(cash_tx_df)}"
-        )
+        # logging.info(
+        #     f"Transaction log tables updated. Stock Txs: {len(stock_tx_df)}, Cash Txs: {len(cash_tx_df)}"
+        # )
 
     # Ensure this method is part of the PortfolioApp class and correctly indented
     def _clear_asset_allocation_charts(self):
@@ -13459,13 +13463,11 @@ The CSV file should contain the following columns (header names must match exact
         This orchestrator method now contains the logic to store, process, and
         prepare all data before triggering the final UI component updates.
         """
-        logging.info(
-            "HANDLE_RESULTS: Orchestrator entered."
-        )  # Changed to INFO for visibility
+        # logging.info("HANDLE_RESULTS: Orchestrator entered.")  # Changed to INFO for visibility
 
         try:
             # --- Part 1: Store Worker Data ---
-            logging.info("HANDLE_RESULTS: Storing worker data...")
+            # logging.info("HANDLE_RESULTS: Storing worker data...")
             portfolio_status = summary_metrics.pop("status_msg", "Status Unknown")
             historical_status = summary_metrics.pop(
                 "historical_status_msg", "Status Unknown"
@@ -13553,7 +13555,6 @@ The CSV file should contain the following columns (header names must match exact
             )
             
 
-
             self.ignored_data = pd.DataFrame()
             if (
                 combined_ignored_indices
@@ -13590,7 +13591,7 @@ The CSV file should contain the following columns (header names must match exact
                     self.ignored_data = pd.DataFrame()
 
             # --- Part 2: Process Historical and Periodic Data ---
-            logging.info("HANDLE_RESULTS: Processing historical and periodic data...")
+            # logging.info("HANDLE_RESULTS: Processing historical and periodic data...")
             if (
                 isinstance(self.full_historical_data, pd.DataFrame)
                 and not self.full_historical_data.empty
@@ -13787,7 +13788,7 @@ The CSV file should contain the following columns (header names must match exact
                     self.historical_data = filtered_by_date_df
 
             # --- Part 3: Update Available Accounts ---
-            logging.info("HANDLE_RESULTS: Updating available accounts...")
+            # logging.info("HANDLE_RESULTS: Updating available accounts...")
             available_accounts_from_backend = self.summary_metrics_data.get(
                 "_available_accounts", []
             )
@@ -13814,9 +13815,9 @@ The CSV file should contain the following columns (header names must match exact
             self._update_account_button_text()
 
             # --- Part 4: Trigger UI Component Updates ---
-            logging.info(
-                "HANDLE_RESULTS: Calling _update_ui_components_after_calculation..."
-            )
+            # logging.info(
+            #     "HANDLE_RESULTS: Calling _update_ui_components_after_calculation..."
+            # )
             # --- ADDED: Update Drawdown Chart (Moved here to use filtered historical_data) ---
             # Calculate drawdown on FULL history to preserve global peak context
             if not self.full_historical_data.empty and "Portfolio Value" in self.full_historical_data.columns:
@@ -13844,10 +13845,10 @@ The CSV file should contain the following columns (header names must match exact
             # --- ADDED: Populate intraday symbol combo ---
             self._populate_intraday_symbol_combo()
             self._update_ui_components_after_calculation()
-            logging.info(
-                "HANDLE_RESULTS: Finished _update_ui_components_after_calculation."
-            )
-            logging.info("HANDLE_RESULTS: Successfully processed and updated UI.")
+            # logging.info(
+            #     "HANDLE_RESULTS: Finished _update_ui_components_after_calculation."
+            # )
+            # logging.info("HANDLE_RESULTS: Successfully processed and updated UI.")
 
         except Exception as e:
             logging.critical(f"CRITICAL ERROR in handle_results: {e}", exc_info=True)
@@ -13862,7 +13863,7 @@ The CSV file should contain the following columns (header names must match exact
             # It's important that calculation_finished still runs to re-enable UI
             # self.calculation_finished(f"Error in handle_results: {e}") # This might be redundant if finished signal is always processed
 
-        logging.info("HANDLE_RESULTS: Exiting.")
+        # logging.info("HANDLE_RESULTS: Exiting.")
 
     @Slot(str)
     def handle_error(self, error_message):
@@ -13910,9 +13911,9 @@ The CSV file should contain the following columns (header names must match exact
     def calculation_finished(
         self, error_message: Optional[str] = None
     ):  # Add optional error_message
-        logging.info(
-            f"CALC_FINISHED: Slot entered. Error message from worker: {error_message}"
-        )  # Changed to INFO
+        # logging.info(
+        #     f"CALC_FINISHED: Slot entered. Error message from worker: {error_message}"
+        # )  # Changed to INFO
         """
         Slot called when the worker thread finishes (success or error).
         Re-enables UI controls and updates the status bar with the final status message.
@@ -13965,7 +13966,7 @@ The CSV file should contain the following columns (header names must match exact
 
             if hasattr(self, "status_label") and self.status_label:
                 self.set_status(final_status_text)
-            logging.info(f"CALC_FINISHED: Status label set to: '{final_status_text}'")
+            # logging.info(f"CALC_FINISHED: Status label set to: '{final_status_text}'")
 
             if error_message and (
                 isinstance(error_message, str)
@@ -13981,8 +13982,8 @@ The CSV file should contain the following columns (header names must match exact
 
             if hasattr(self, "progress_bar"):
                 self.progress_bar.setVisible(False)
-                logging.info("CALC_FINISHED: Progress bar hidden.")
-            logging.info("CALC_FINISHED: Slot exited successfully.")
+                # logging.info("CALC_FINISHED: Progress bar hidden.")
+            # logging.info("CALC_FINISHED: Slot exited successfully.")
 
         except Exception as e:
             logging.critical(

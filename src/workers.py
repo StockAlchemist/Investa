@@ -151,7 +151,7 @@ class PortfolioCalculatorWorker(QRunnable):
 
         try:
             # --- 1. Run Portfolio Summary Calculation ---
-            logging.info("WORKER: Starting portfolio summary calculation...")
+            # logging.info("WORKER: Starting portfolio summary calculation...")
             # (No changes needed here, it uses self.portfolio_fn)
             # Make a copy of portfolio_kwargs to modify for the portfolio_fn call
             portfolio_fn_kwargs = self.portfolio_kwargs.copy()
@@ -219,9 +219,9 @@ class PortfolioCalculatorWorker(QRunnable):
                 combined_ignored_reasons = {}
 
             # --- 2. Fetch Index Quotes using MarketDataProvider ---
-            logging.info("WORKER: Fetching index quotes...")
+            # logging.info("WORKER: Fetching index quotes...")
             try:
-                logging.info("WORKER: Fetching index quotes...")
+                # logging.info("WORKER: Fetching index quotes...")
                 # --- Instantiate and call MarketDataProvider ---
                 if self.market_provider_available:
                     market_provider = MarketDataProvider()
@@ -254,7 +254,7 @@ class PortfolioCalculatorWorker(QRunnable):
             # --- 3. Run Historical Performance Calculation ---
             # (No changes needed here, it uses self.historical_fn)
             try:
-                logging.info("WORKER: Starting historical performance calculation...")
+                # logging.info("WORKER: Starting historical performance calculation...")
                 current_historical_kwargs = self.historical_kwargs.copy()
                 if (
                     not self.historical_fn_supports_exclude
@@ -334,7 +334,7 @@ class PortfolioCalculatorWorker(QRunnable):
                 hist_fx = {}
 
             # --- 4. Extract Dividend History ---
-            logging.info("WORKER: Extracting dividend history...")
+            # logging.info("WORKER: Extracting dividend history...")
             try:
                 # Ensure historical_fx_yf is available from the historical calculation step
                 # It should be in hist_fx if historical_fn ran successfully
@@ -378,7 +378,7 @@ class PortfolioCalculatorWorker(QRunnable):
                 dividend_history_df = pd.DataFrame()  # Ensure it's an empty DF on error
 
             # --- 5. Extract Realized Capital Gains History ---
-            logging.info("WORKER: Extracting realized capital gains history...")
+            # logging.info("WORKER: Extracting realized capital gains history...")
             try:
                 # Ensure hist_fx is available (from historical calc)
                 # and other necessary args from portfolio_kwargs
@@ -412,7 +412,7 @@ class PortfolioCalculatorWorker(QRunnable):
 
             # --- 6. Calculate Correlation Matrix ---
             correlation_matrix_df = pd.DataFrame()
-            logging.info("WORKER: Calculating correlation matrix...")
+            # logging.info("WORKER: Calculating correlation matrix...")
             try:
                 # Get all unique stock symbols from transactions
                 all_transactions_df = self.portfolio_kwargs.get(
@@ -591,7 +591,7 @@ class PortfolioCalculatorWorker(QRunnable):
 
             # --- 7. Run Factor Analysis ---
             factor_analysis_results = {}
-            logging.info("WORKER: Running factor analysis...")
+            # logging.info("WORKER: Running factor analysis...")
 
             # Check if there are any non-cash holdings. Factor analysis is not meaningful for a cash-only portfolio.
             # This check prevents the "No portfolio returns data" warning in valid cash-only scenarios.
@@ -692,7 +692,7 @@ class PortfolioCalculatorWorker(QRunnable):
 
             # --- 8. Run Scenario Analysis (Placeholder - requires UI input) ---
             scenario_analysis_result = {}
-            logging.info("WORKER: Running scenario analysis (placeholder)...")
+            # logging.info("WORKER: Running scenario analysis (placeholder)...")
             try:
                 # This function typically takes user input (scenario shocks) and factor betas.
                 # Since this is a worker, we'll just pass dummy data for now.
@@ -717,7 +717,7 @@ class PortfolioCalculatorWorker(QRunnable):
                         scenario_shocks=self.scenario_shocks,
                         portfolio_value=dummy_portfolio_value,
                     )
-                    logging.info("WORKER: Scenario analysis completed.")
+                    # logging.info("WORKER: Scenario analysis completed.")
                 else:
                     logging.info(
                         "WORKER: Skipping scenario analysis due to missing betas, scenario shocks, or portfolio value."
@@ -811,7 +811,7 @@ class PortfolioCalculatorWorker(QRunnable):
             # --- END EMIT ---
             self.signals.error.emit(overall_status)
         finally:
-            logging.info("WORKER: Emitting finished signal.")
+            # logging.info("WORKER: Emitting finished signal.")
             self.signals.finished.emit()
 
 
