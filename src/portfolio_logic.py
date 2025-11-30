@@ -5062,10 +5062,10 @@ def calculate_historical_performance(
         )
     )
     # DEBUG
-    logging.debug(f"DEBUG calc_summary before load_calc: {len(transactions_df_effective)} rows", flush=True)
+    logging.debug(f"DEBUG calc_summary before load_calc: {len(transactions_df_effective)} rows")
     if not transactions_df_effective.empty and "Date" in transactions_df_effective.columns:
         nov_11 = transactions_df_effective[transactions_df_effective["Date"].dt.date == pd.Timestamp("2025-11-11").date()]
-        logging.debug(f"DEBUG calc_summary before load_calc Nov 11: {len(nov_11)} rows", flush=True)
+        logging.debug(f"DEBUG calc_summary before load_calc Nov 11: {len(nov_11)} rows")
     if status_update_daily:
         status_parts.append(status_update_daily.strip())
     if daily_df is None or daily_df.empty:
