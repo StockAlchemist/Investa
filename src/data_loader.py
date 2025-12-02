@@ -461,7 +461,7 @@ def load_and_clean_transactions(
                 )
         else:  # is_db_source was true but no data loaded
             df = pd.DataFrame()  # Start with an empty DF if DB load failed or was empty
-            if not raw_df_for_ignored_context:  # Ensure it's an empty DF if not set
+            if raw_df_for_ignored_context is None:  # Ensure it's an empty DF if not set
                 raw_df_for_ignored_context = pd.DataFrame()
             # No original_to_cleaned_header_map from DB source
 

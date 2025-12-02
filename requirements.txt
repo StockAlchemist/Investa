@@ -102,3 +102,6 @@ yfinance==0.2.65
 seaborn
 numba
 pytest
+fastapi
+uvicorn
+pydantic
