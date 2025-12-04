@@ -1202,28 +1202,27 @@ def _unadjust_prices(
         # --- Prepare DataFrame for Unadjustment ---
         unadj_df = adj_price_df.copy()
         # --- Robust Index Conversion ---
-        if not isinstance(unadj_df.index, pd.DatetimeIndex):
-            try:
-                # Convert index to date objects for comparison with split dates
-                unadj_df.index = pd.to_datetime(unadj_df.index, errors="coerce").date
-                unadj_df = unadj_df[
-                    pd.notnull(unadj_df.index)
-                ]  # Remove rows where conversion failed
-            except Exception as e_idx:
-                warn_key = f"unadjust_index_conv_{yf_symbol}"
-                if warn_key not in processed_warnings:
-                    logging.warning(
-                        f"Hist WARN: Failed converting index to date for {yf_symbol}: {e_idx}"
-                    )
-                    processed_warnings.add(warn_key)
-                if IS_DEBUG_SYMBOL:
-                    logging.warning(
-                        "    Failed to convert index to date. Skipping unadjustment."
-                    )
-                unadjusted_prices_yf[yf_symbol] = (
-                    adj_price_df.copy()
-                )  # Return original on failure
-                continue
+        try:
+            # Convert index to date objects for comparison with split dates
+            unadj_df.index = pd.to_datetime(unadj_df.index, errors="coerce").date
+            unadj_df = unadj_df[
+                pd.notnull(unadj_df.index)
+            ]  # Remove rows where conversion failed
+        except Exception as e_idx:
+            warn_key = f"unadjust_index_conv_{yf_symbol}"
+            if warn_key not in processed_warnings:
+                logging.warning(
+                    f"Hist WARN: Failed converting index to date for {yf_symbol}: {e_idx}"
+                )
+                processed_warnings.add(warn_key)
+            if IS_DEBUG_SYMBOL:
+                logging.warning(
+                    "    Failed to convert index to date. Skipping unadjustment."
+                )
+            unadjusted_prices_yf[yf_symbol] = (
+                adj_price_df.copy()
+            )  # Return original on failure
+            continue
         # --- END Robust Index Conversion ---
 
         if unadj_df.empty:  # Check if empty after index conversion/filtering
@@ -1551,6 +1550,9 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
     )
     if IS_DEBUG_DATE:
         logging.debug(f"--- DEBUG VALUE CALC for {target_date} ---")
+        logging.debug(f"  Target Currency: {target_currency}")
+        logging.debug(f"  Included Accounts: {included_accounts}")
+        logging.debug(f"  Transactions count up to date: {len(transactions_df[transactions_df['Date'].dt.date <= target_date])}")
 
     transactions_til_date = transactions_df[
         transactions_df["Date"].dt.date <= target_date
@@ -3449,7 +3451,7 @@ def _load_or_calculate_daily_results(
     included_accounts_list: List[str],
     # --- Parameters with defaults follow ---
     num_processes: Optional[int] = None,
-    current_hist_version: str = "v11",
+    current_hist_version: str = "v12",
     filter_desc: str = "All Accounts",
     calc_method: str = HISTORICAL_CALC_METHOD,
 ) -> Tuple[pd.DataFrame, bool, str]:  # type: ignore
@@ -3522,6 +3524,7 @@ def _load_or_calculate_daily_results(
         date_range_for_calc = pd.date_range(
             start=calc_start_date, end=calc_end_date, freq="D"
         )
+        print(f"DEBUG HIST: calc_start_date={calc_start_date}, first_tx_date={first_tx_date}, range_len={len(date_range_for_calc)}")
 
         # Determine which set of holdings to use (L1 cached or calculate now)
         # IMPORTANT: Only use L1 cache if we're calculating for ALL accounts
@@ -3541,6 +3544,18 @@ def _load_or_calculate_daily_results(
             daily_holdings_qty_source = all_holdings_qty
             daily_cash_balances_source = all_cash_balances
             daily_last_prices_source = all_last_prices
+            
+            # Calculate offset if we are starting later than the first transaction
+            # all_holdings_qty starts at first_tx_date (of the full history)
+            # date_range_for_calc starts at calc_start_date
+            # We need to ensure we align them correctly.
+            # Assuming all_holdings_qty was calculated from first_tx_date to end_date (or beyond).
+            l1_cache_start_date = transactions_df_effective["Date"].min().date() # Should match L1 cache start
+            l1_offset = (calc_start_date - l1_cache_start_date).days
+            if l1_offset < 0:
+                l1_offset = 0 # Should not happen if logic is correct
+            
+            logging.info(f"Hist Daily: Using L1 cache with offset {l1_offset} days.")
         else:
             logging.info(
                 f"Hist Daily (Scope: {filter_desc}): L1 cache miss. Calculating daily holdings chronologically (numba_chrono)..."
@@ -3684,7 +3699,12 @@ def _load_or_calculate_daily_results(
                     if internal_symbol is None or internal_symbol == CASH_SYMBOL_CSV:
                         continue
 
-                    qty = daily_holdings_qty_source[day_idx, sym_id, acc_id]
+                    qty = 0.0
+                    if use_l1_cache:
+                        if day_idx + l1_offset < len(daily_holdings_qty_source):
+                            qty = daily_holdings_qty_source[day_idx + l1_offset, sym_id, acc_id]
+                    else:
+                        qty = daily_holdings_qty_source[day_idx, sym_id, acc_id]
                     local_currency = account_currency_map.get(
                         id_to_account.get(acc_id), default_currency
                     )
@@ -3701,9 +3721,15 @@ def _load_or_calculate_daily_results(
                     if pd.isna(price_local):
                         # --- NEW: Fallback to last transaction price ---
                         if daily_last_prices_source is not None:
-                            last_price = daily_last_prices_source[day_idx, sym_id, acc_id]
-                            if last_price > 1e-9:
-                                price_local = last_price
+                            # Use offset for L1 cache
+                            idx_to_use = day_idx
+                            if use_l1_cache:
+                                idx_to_use = day_idx + l1_offset
+                            
+                            if idx_to_use < len(daily_last_prices_source):
+                                last_price = daily_last_prices_source[idx_to_use, sym_id, acc_id]
+                                if last_price > 1e-9:
+                                    price_local = last_price
                         
                         if pd.isna(price_local):
                             day_lookup_failed = True
@@ -3728,28 +3754,34 @@ def _load_or_calculate_daily_results(
 
                 # Value cash
                 if not day_lookup_failed:
-                    for acc_id, cash_balance in enumerate(
-                        daily_cash_balances_source[day_idx]
-                    ):
-                        if abs(cash_balance) > 1e-9:  # type: ignore
-                            # --- NEW: Filter by selected accounts ---
-                            if acc_id not in account_ids_to_include_set:
-                                continue
-                            local_currency = account_currency_map.get(
-                                id_to_account.get(acc_id), default_currency
-                            )
-                            fx_rate = get_historical_rate_via_usd_bridge(
-                                local_currency,
-                                display_currency,
-                                eval_date,
-                                historical_fx_yf,
-                            )
-                            if pd.isna(fx_rate):
-                                day_lookup_failed = True
-                                any_lookup_failed_overall = True
-                                total_market_value_day = np.nan
-                                break
-                            total_market_value_day += cash_balance * fx_rate
+                    # Determine correct index for cash balances
+                    cash_idx = day_idx
+                    if use_l1_cache:
+                        cash_idx = day_idx + l1_offset
+
+                    if cash_idx < len(daily_cash_balances_source):
+                        for acc_id, cash_balance in enumerate(
+                            daily_cash_balances_source[cash_idx]
+                        ):
+                            if abs(cash_balance) > 1e-9:  # type: ignore
+                                # --- NEW: Filter by selected accounts ---
+                                if acc_id not in account_ids_to_include_set:
+                                    continue
+                                local_currency = account_currency_map.get(
+                                    id_to_account.get(acc_id), default_currency
+                                )
+                                fx_rate = get_historical_rate_via_usd_bridge(
+                                    local_currency,
+                                    display_currency,
+                                    eval_date,
+                                    historical_fx_yf,
+                                )
+                                if pd.isna(fx_rate):
+                                    day_lookup_failed = True
+                                    any_lookup_failed_overall = True
+                                    total_market_value_day = np.nan
+                                    break
+                                total_market_value_day += cash_balance * fx_rate
 
                 # Get net flow and benchmarks
                 net_cash_flow, flow_lookup_failed = _calculate_daily_net_cash_flow(
@@ -3927,6 +3959,13 @@ def _load_or_calculate_daily_results(
                     daily_df = daily_df[pd.notnull(daily_df.index)]
 
                 daily_df.sort_index(inplace=True)
+                
+                # --- FIX: Filter cached data by requested date range ---
+                # The cache might contain more data than requested (e.g. if key collision or logic change)
+                # or if we want to be absolutely sure.
+                # --- FIX REVERTED: Filtering moved to calculate_historical_performance ---
+                # daily_df = daily_df[(daily_df.index >= ts_start) & (daily_df.index <= ts_end)]
+                # --- END FIX REVERTED ---
 
                 required_cols = [
                     "value",
@@ -4894,6 +4933,7 @@ def calculate_historical_performance(
         filter_desc,
     ) = prep_result
 
+
     if transactions_df_effective is None:  # Check if prep failed
         status_msg = "Error: Failed to prepare inputs from preloaded DataFrame."
         return pd.DataFrame(), {}, {}, status_msg
@@ -5079,6 +5119,14 @@ def calculate_historical_performance(
     elif "WARN" in status_update_daily.upper():
         has_warnings = True
 
+    # --- FIX: Filter DataFrame by requested date range BEFORE gain calc ---
+    # This ensures accumulated gains start at 0% (1.0 factor) for the requested period.
+    if not daily_df.empty:
+        ts_req_start = pd.Timestamp(start_date)
+        ts_req_end = pd.Timestamp(end_date)
+        daily_df = daily_df[(daily_df.index >= ts_req_start) & (daily_df.index <= ts_req_end)]
+    # --- END FIX ---
+
     if not daily_df.empty and "daily_return" in daily_df.columns:
         logging.debug("Calculating daily accumulated gains for full_df...")
         try:
@@ -5152,7 +5200,10 @@ def calculate_historical_performance(
 
     if not daily_df.empty and "value" in daily_df.columns:
         daily_df.rename(columns={"value": "Portfolio Value"}, inplace=True)
-
+        
+        # --- FIX: Filter final DataFrame by requested date range ---
+        # Calculation is done on full range for correctness, but we must return only requested range.
+        ts_req_start = pd.Timestamp(start_date)
     return daily_df, historical_prices_yf_adjusted, historical_fx_yf, final_status_str
 
 

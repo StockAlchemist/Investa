@@ -2,15 +2,26 @@ const API_BASE_URL = 'http://localhost:8000/api';
 
 export interface PortfolioSummary {
     metrics: {
-        'Total Value': number;
-        'Day\'s G/L': number;
-        'Day\'s G/L %': number;
-        'Unrealized G/L': number;
-        'Unrealized G/L %': number;
-        'Realized G/L': number;
-        'Dividends': number;
-        'Cash Balance': number;
-        [key: string]: number | null;
+        market_value: number;
+        day_change_display: number;
+        day_change_percent: number;
+        unrealized_gain: number;
+        realized_gain: number;
+        total_gain: number;
+        total_return_pct: number;
+        dividends: number;
+        commissions: number;
+        annualized_twr?: number;
+        cash_balance?: number; // Might not be directly in metrics, check account_metrics for Cash
+        exchange_rate_to_display?: number;
+        indices?: Record<string, {
+            price: number;
+            change: number;
+            changesPercentage: number;
+            name: string;
+            [key: string]: any;
+        }>;
+        [key: string]: any;
     } | null;
     account_metrics: Record<string, any> | null;
 }
@@ -18,41 +29,165 @@ export interface PortfolioSummary {
 export interface Holding {
     Symbol: string;
     Quantity: number;
-    'Price/Share': number;
-    'Market Value': number;
-    'Day\'s G/L': number;
-    'Day\'s G/L %': number;
-    'Unrealized G/L': number;
-    'Unrealized G/L %': number;
+    Account?: string;
+    Sector?: string;
+    Industry?: string;
+    "Day Change %"?: number;
+    "Unreal. Gain %"?: number;
+    "Total Return %"?: number;
+    "IRR (%)"?: number;
+    Country?: string;
+    quoteType?: string;
+    // Keys are dynamic based on currency, e.g., "Market Value (USD)"
     [key: string]: any;
 }
 
-export async function fetchSummary(currency: string = 'USD'): Promise<PortfolioSummary> {
-    try {
-        const res = await fetch(`${API_BASE_URL}/summary?currency=${currency}`, {
-            cache: 'no-store', // Ensure fresh data
-        });
-        if (!res.ok) {
-            throw new Error('Failed to fetch summary');
-        }
-        return res.json();
-    } catch (error) {
-        console.error('Error fetching summary:', error);
-        return { metrics: null, account_metrics: null };
-    }
+export interface Transaction {
+    Date: string;
+    Account: string;
+    Symbol: string;
+    Type: string;
+    Quantity: number;
+    "Price/Share": number;
+    Commission: number;
+    "Total Amount": number;
+    "Local Currency": string;
+    "Split Ratio"?: number;
+    Note?: string;
+    [key: string]: any;
 }
 
-export async function fetchHoldings(currency: string = 'USD'): Promise<Holding[]> {
-    try {
-        const res = await fetch(`${API_BASE_URL}/holdings?currency=${currency}`, {
-            cache: 'no-store',
-        });
-        if (!res.ok) {
-            throw new Error('Failed to fetch holdings');
-        }
-        return res.json();
-    } catch (error) {
-        console.error('Error fetching holdings:', error);
-        return [];
+export async function fetchSummary(currency: string = 'USD', accounts?: string[]): Promise<PortfolioSummary> {
+    const params = new URLSearchParams({ currency });
+    if (accounts) {
+        accounts.forEach(acc => params.append('accounts', acc));
     }
+    const res = await fetch(`${API_BASE_URL}/summary?${params.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch summary');
+    return res.json();
+}
+
+export async function fetchHoldings(currency: string = 'USD', accounts?: string[]): Promise<Holding[]> {
+    const params = new URLSearchParams({ currency });
+    if (accounts) {
+        accounts.forEach(acc => params.append('accounts', acc));
+    }
+    const res = await fetch(`${API_BASE_URL}/holdings?${params.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch holdings');
+    return res.json();
+}
+
+export interface PerformanceData {
+    date: string;
+    value: number;
+    twr: number;
+    [key: string]: any; // Allow dynamic keys for benchmarks
+}
+
+export async function fetchTransactions(accounts?: string[]): Promise<Transaction[]> {
+    const params = new URLSearchParams();
+    if (accounts) {
+        accounts.forEach(acc => params.append('accounts', acc));
+    }
+    const res = await fetch(`${API_BASE_URL}/transactions?${params.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch transactions');
+    return res.json();
+}
+
+export async function fetchHistory(
+    currency: string = 'USD',
+    accounts?: string[],
+    period: string = '1y',
+    benchmarks?: string[]
+): Promise<PerformanceData[]> {
+    const params = new URLSearchParams({ currency, period });
+    if (accounts) {
+        accounts.forEach(acc => params.append('accounts', acc));
+    }
+    if (benchmarks) {
+        benchmarks.forEach(b => params.append('benchmarks', b));
+    }
+    const res = await fetch(`${API_BASE_URL}/history?${params.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch history');
+    return res.json();
+}
+
+export interface AssetChangeData {
+    [period: string]: {
+        Date: string;
+        [key: string]: any;
+    }[];
+}
+
+export async function fetchAssetChange(
+    currency: string = 'USD',
+    accounts?: string[],
+    benchmarks?: string[]
+): Promise<AssetChangeData> {
+    const params = new URLSearchParams({ currency });
+    if (accounts) {
+        accounts.forEach(acc => params.append('accounts', acc));
+    }
+    if (benchmarks) {
+        benchmarks.forEach(b => params.append('benchmarks', b));
+    }
+    const res = await fetch(`${API_BASE_URL}/asset_change?${params.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch asset change data');
+    return res.json();
+}
+
+export interface CapitalGain {
+    Date: string;
+    Symbol: string;
+    Account: string;
+    Type: string;
+    Quantity: number;
+    "Avg Sale Price (Local)": number;
+    "Total Proceeds (Local)": number;
+    "Total Cost Basis (Local)": number;
+    "Realized Gain (Local)": number;
+    "Sale/Cover FX Rate": number;
+    "Total Proceeds (Display)": number;
+    "Total Cost Basis (Display)": number;
+    "Realized Gain (Display)": number;
+    LocalCurrency: string;
+    original_tx_id: number;
+    [key: string]: any;
+}
+
+export async function fetchCapitalGains(
+    currency: string = 'USD',
+    accounts?: string[]
+): Promise<CapitalGain[]> {
+    const params = new URLSearchParams({ currency });
+    if (accounts) {
+        accounts.forEach(acc => params.append('accounts', acc));
+    }
+    const res = await fetch(`${API_BASE_URL}/capital_gains?${params.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch capital gains');
+    return res.json();
+}
+
+export interface Dividend {
+    Date: string;
+    Symbol: string;
+    Account: string;
+    LocalCurrency: string;
+    DividendAmountLocal: number;
+    FXRateUsed: number;
+    DividendAmountDisplayCurrency: number;
+    [key: string]: any;
+}
+
+export async function fetchDividends(
+    currency: string = 'USD',
+    accounts?: string[]
+): Promise<Dividend[]> {
+    const params = new URLSearchParams({ currency });
+    if (accounts) {
+        accounts.forEach(acc => params.append('accounts', acc));
+    }
+    const res = await fetch(`${API_BASE_URL}/dividends?${params.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch dividends');
+    return res.json();
 }

@@ -25,6 +25,7 @@ from datetime import (
     date,
     datetime,
 )  # Used in _build_summary_rows, _process_transactions...
+from pandas.tseries.holiday import USFederalHolidayCalendar
 
 # --- ADDED: Import line_profiler if available, otherwise create dummy decorator ---
 try:
@@ -1739,14 +1740,48 @@ def calculate_periodic_returns(
         return periodic_returns
 
     # Define intervals and corresponding pandas frequency codes
-    intervals = {"W": "W-FRI", "M": "ME", "Y": "YE"}
+    intervals = {"W": "W-FRI", "M": "ME", "Y": "YE", "D": "D"}
 
     for interval_key, freq_code in intervals.items():
         try:
-            # Resample to get the *last* value within each period
-            resampled_factors = (
-                historical_df[valid_gain_cols].resample(freq_code).last()
+            # --- MODIFIED: Include daily_gain for value change calculation ---
+            cols_to_resample = list(valid_gain_cols)
+            agg_dict = {col: "last" for col in valid_gain_cols}
+            
+            if "daily_gain" in historical_df.columns:
+                cols_to_resample.append("daily_gain")
+                agg_dict["daily_gain"] = "sum"
+            
+            # Resample
+            resampled_data = (
+                historical_df[cols_to_resample].resample(freq_code).agg(agg_dict)
             )
+            
+            # Separate factors and value changes
+            resampled_factors = resampled_data[valid_gain_cols]
+            resampled_value_change = resampled_data["daily_gain"] if "daily_gain" in resampled_data.columns else pd.Series()
+            # --- END MODIFIED ---
+
+            # --- ADDED: Filter out weekends for Daily returns ---
+            if interval_key == "D":
+                # 0=Monday, 6=Sunday. Filter out 5 (Sat) and 6 (Sun)
+                # Filter both factors and value change
+                mask = resampled_factors.index.dayofweek < 5
+                resampled_factors = resampled_factors[mask]
+                if not resampled_value_change.empty:
+                    resampled_value_change = resampled_value_change[mask]
+                
+                # Filter out US Holidays
+                try:
+                    cal = USFederalHolidayCalendar()
+                    holidays = cal.holidays(start=resampled_factors.index.min(), end=resampled_factors.index.max())
+                    mask_hol = ~resampled_factors.index.isin(holidays)
+                    resampled_factors = resampled_factors[mask_hol]
+                    if not resampled_value_change.empty:
+                        resampled_value_change = resampled_value_change[mask_hol]
+                except Exception as e_hol:
+                    logging.warning(f"Failed to filter holidays: {e_hol}")
+            # --- END ADDED ---
 
             # --- MODIFIED: Handle first period return correctly ---
             # pct_change() will make the first period NaN, which gets dropped.
@@ -1761,8 +1796,14 @@ def calculate_periodic_returns(
 
                 # Convert to percentage
                 period_returns_df *= 100.0
+                
+                # Add Value Change column
+                if not resampled_value_change.empty:
+                    # Align indices just in case
+                    period_returns_df[f"Portfolio {interval_key}-Value"] = resampled_value_change
             else:
                 period_returns_df = pd.DataFrame(columns=resampled_factors.columns)
+            # --- END MODIFIED ---
             # --- END MODIFIED ---
 
             # Rename columns for clarity (optional)

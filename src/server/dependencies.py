@@ -3,7 +3,7 @@ import sys
 import pandas as pd
 import logging
 import json
-from typing import Optional, Tuple, Set, Dict
+from typing import Optional, Tuple, Set, Dict, Any
 
 # Ensure src is in path (redundant if imported from main, but good for standalone testing)
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -16,23 +16,32 @@ from db_utils import get_database_path, load_all_transactions_from_db, DB_FILENA
 from data_loader import load_and_clean_transactions
 import config
 
+logging.info("DEPENDENCIES MODULE LOADED - VERSION 2")
+
 # Global cache for transactions to avoid reloading on every request
 # In a real production app, this might be handled differently, but for a personal app this is fine.
 _TRANSACTIONS_CACHE: Optional[pd.DataFrame] = None
 _IGNORED_INDICES: Set[int] = set()
 _IGNORED_REASONS: Dict[int, str] = {}
+_MANUAL_OVERRIDES: Dict[str, Any] = {}
+_USER_SYMBOL_MAP: Dict[str, str] = {}
+_USER_EXCLUDED_SYMBOLS: Set[str] = set()
+_ACCOUNT_CURRENCY_MAP: Dict[str, str] = {}
+_DB_PATH: str = ""
 
-def get_transaction_data() -> Tuple[pd.DataFrame, Set[int], Dict[int, str]]:
+def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str], Set[str], Dict[str, str], str]:
     """
     Loads transaction data from the database.
     Uses a simple in-memory cache.
     """
-    global _TRANSACTIONS_CACHE, _IGNORED_INDICES, _IGNORED_REASONS
+    global _TRANSACTIONS_CACHE, _IGNORED_INDICES, _IGNORED_REASONS, _MANUAL_OVERRIDES, _USER_SYMBOL_MAP, _USER_EXCLUDED_SYMBOLS, _ACCOUNT_CURRENCY_MAP, _DB_PATH
     
     # Simple cache invalidation could be added here (e.g. check file mtime), 
     # but for now we'll load once per server restart or if explicitly cleared.
     if _TRANSACTIONS_CACHE is not None:
-        return _TRANSACTIONS_CACHE, _IGNORED_INDICES, _IGNORED_REASONS
+        # Return order MUST match api.py unpacking:
+        # df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, original_csv_path
+        return _TRANSACTIONS_CACHE, _MANUAL_OVERRIDES, _USER_SYMBOL_MAP, _USER_EXCLUDED_SYMBOLS, _ACCOUNT_CURRENCY_MAP, _DB_PATH
 
     # Use my_transactions.db in the project root if it exists, otherwise fallback to db_utils default
     db_path = os.path.join(project_root, "my_transactions.db")
@@ -42,20 +51,53 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Set[int], Dict[int, str]]:
     
     logging.info(f"Loading transactions from: {db_path}")
     
-    # Try to load gui_config.json for account_currency_map
+    # Try to load gui_config.json for account_currency_map and other settings
     account_currency_map = {"SET": "THB"} # Default
     default_currency = config.DEFAULT_CURRENCY
     
+    # Initialize with defaults from config.py
+    user_symbol_map = config.SYMBOL_MAP_TO_YFINANCE.copy()
+    user_excluded_symbols = set(config.YFINANCE_EXCLUDED_SYMBOLS.copy())
+
     config_path = os.path.join(project_root, "gui_config.json")
     if os.path.exists(config_path):
         try:
-            import json
             with open(config_path, "r") as f:
                 gui_config = json.load(f)
-                account_currency_map = gui_config.get("account_currency_map", account_currency_map)
-                default_currency = gui_config.get("default_currency", default_currency)
+                if "account_currency_map" in gui_config:
+                    account_currency_map.update(gui_config["account_currency_map"])
+                if "user_symbol_map" in gui_config:
+                    user_symbol_map.update(gui_config["user_symbol_map"])
+                if "user_excluded_symbols" in gui_config:
+                     user_excluded_symbols.update(set(gui_config["user_excluded_symbols"]))
         except Exception as e:
             logging.warning(f"Could not load gui_config.json: {e}")
+
+    # Load manual_overrides.json if it exists
+    manual_overrides = {}
+    overrides_path = os.path.join(project_root, "manual_overrides.json")
+    if os.path.exists(overrides_path):
+        try:
+            with open(overrides_path, "r") as f:
+                manual_overrides = json.load(f)
+            logging.info(f"Loaded manual overrides from {overrides_path}")
+        except Exception as e:
+            logging.warning(f"Could not load manual_overrides.json: {e}")
+
+    # Merge user_excluded_symbols from manual_overrides if present
+    if "user_excluded_symbols" in manual_overrides:
+        loaded_excluded = manual_overrides.get("user_excluded_symbols", [])
+        if isinstance(loaded_excluded, list):
+            clean_excluded = {s.upper().strip() for s in loaded_excluded if isinstance(s, str)}
+            user_excluded_symbols.update(clean_excluded)
+            logging.info(f"Loaded {len(clean_excluded)} excluded symbols from manual_overrides.json")
+
+    # Merge user_symbol_map from manual_overrides if present
+    if "user_symbol_map" in manual_overrides:
+        loaded_map = manual_overrides.get("user_symbol_map", {})
+        if isinstance(loaded_map, dict):
+            user_symbol_map.update(loaded_map)
+            logging.info(f"Loaded {len(loaded_map)} symbol mappings from manual_overrides.json")
 
     # We use the existing data_loader logic which expects a file path (CSV or DB)
     # load_and_clean_transactions handles DB loading if the path ends in .db
@@ -72,11 +114,20 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Set[int], Dict[int, str]]:
         _TRANSACTIONS_CACHE = df
         _IGNORED_INDICES = ignored_indices
         _IGNORED_REASONS = ignored_reasons
+        _MANUAL_OVERRIDES = manual_overrides
+        _USER_SYMBOL_MAP = user_symbol_map
+        _USER_EXCLUDED_SYMBOLS = user_excluded_symbols
+        _ACCOUNT_CURRENCY_MAP = account_currency_map
+        _DB_PATH = db_path
+        
         logging.info(f"Loaded {len(df)} transactions.")
-        return df, ignored_indices, ignored_reasons
+        # Return order MUST match api.py unpacking:
+        # df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, original_csv_path
+        return df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, db_path
     except Exception as e:
         logging.error(f"Error loading transactions: {e}", exc_info=True)
-        return pd.DataFrame(), set(), {}
+        # Return empty/default values on error
+        return pd.DataFrame(), {}, {}, set(), {}, ""
 
 def reload_data():
     """Forces a reload of the transaction data."""

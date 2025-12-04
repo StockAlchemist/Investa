@@ -60,6 +60,9 @@ try:
         YFINANCE_EXCLUDED_SYMBOLS,
         CASH_SYMBOL_CSV,  # DEFAULT_CURRENT_CACHE_FILE_PATH is used by main_gui now
         HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
+        INDEX_DISPLAY_NAMES,
+        ORG_NAME,  # <-- ADDED
+        APP_NAME,  # <-- ADDED
     )
 except ImportError:
     logging.error(
@@ -208,15 +211,26 @@ class MarketDataProvider:
     def _get_historical_cache_dir(self) -> str:
         """Constructs and returns the full path to the historical data cache subdirectory."""
         cache_dir_base = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
+        
+        # --- FIX: Ensure consistent path structure (Org/App) ---
+        # QStandardPaths returns generic root if QApplication name/org not set (e.g. in FastAPI).
+        # We manually append them if missing to match Desktop App behavior.
         if cache_dir_base:
-            app_specific_cache_dir = (
-                cache_dir_base  # QStandardPaths.CacheLocation is already app-specific
-            )
+            # Check if path already ends with Org/App (Desktop App case)
+            expected_suffix = os.path.join(ORG_NAME, APP_NAME)
+            if not cache_dir_base.endswith(expected_suffix):
+                # Web App case: Append Org/App manually
+                app_specific_cache_dir = os.path.join(cache_dir_base, ORG_NAME, APP_NAME)
+            else:
+                # Desktop App case: Already correct
+                app_specific_cache_dir = cache_dir_base
+            
             hist_dir = os.path.join(
                 app_specific_cache_dir, self.hist_data_cache_dir_name
             )
         else:  # Fallback
             hist_dir = self.hist_data_cache_dir_name  # Relative path
+            
         os.makedirs(hist_dir, exist_ok=True)
         return hist_dir
 
@@ -798,43 +812,25 @@ class MarketDataProvider:
                                 logging.warning(
                                     f"Could not get .info for FX pair {yf_symbol}. Will attempt fallback."
                                 )
-                                base_curr_no_info = yf_symbol.replace("=X", "").upper()
-                                if base_curr_no_info not in fx_rates_vs_usd:
-                                    fx_rates_vs_usd[base_curr_no_info] = np.nan
-                                    fx_prev_close_vs_usd[base_curr_no_info] = np.nan
+                                if (
+                                    base_curr_from_symbol not in fx_rates_vs_usd
+                                ):  # Ensure key exists for fallback
+                                    fx_rates_vs_usd[base_curr_from_symbol] = np.nan
+                                    fx_prev_close_vs_usd[base_curr_from_symbol] = np.nan
                                 has_warnings = True
 
-                        except yf.exceptions.YFRateLimitError:
-                            logging.error(
-                                f"RATE LIMITED while fetching info for FX {yf_symbol}. Aborting FX fetch."
-                            )
-                            # Return any valid cached data if available, otherwise indicate error
-                            return (
-                                cached_quotes or {},
-                                cached_fx or {},
-                                cached_fx_prev or {},
-                                True,
-                                True,
-                            )  # Error = True, Warning = True
                         except Exception as e_fx_ticker:
                             logging.error(
-                                f"Error fetching info for FX pair {yf_symbol}: {e_fx_ticker}"
+                                f"Error processing FX pair {yf_symbol}: {e_fx_ticker}"
                             )
-                        # time.sleep(0.05)  # Add small delay after each FX info fetch
-                        # time.sleep(0.2)  # Add small delay after each FX info fetch
+                            base_curr_err = yf_symbol.replace("=X", "").upper()
+                            if base_curr_err not in fx_rates_vs_usd:
+                                fx_rates_vs_usd[base_curr_err] = np.nan
+                                fx_prev_close_vs_usd[base_curr_err] = np.nan
+                            has_warnings = True
 
-                except yf.exceptions.YFRateLimitError:
-                    logging.error(
-                        "RATE LIMITED during yf.Tickers() call for FX. Aborting FX fetch."
-                    )
-                    # Return any valid cached data if available, otherwise indicate error
-                    return (
-                        cached_quotes or {},
-                        cached_fx or {},
-                        cached_fx_prev or {},
-                        True,
-                        True,
-                    )  # Error = True, Warning = True
+
+
                 except Exception as e_fx:
                     logging.error(f"Error fetching FX rates batch: {e_fx}")
                     has_errors = True  # Treat batch FX errors as critical
@@ -1059,8 +1055,10 @@ class MarketDataProvider:
                             )
                             change = ticker_info.get("regularMarketChange")
                             change_pct = ticker_info.get("regularMarketChangePercent")
-                            name = ticker_info.get("shortName") or ticker_info.get(
-                                "longName"
+                            name = (
+                                INDEX_DISPLAY_NAMES.get(yf_symbol)
+                                or ticker_info.get("shortName")
+                                or ticker_info.get("longName")
                             )
 
                             # Map back to the original internal symbol for results dictionary
@@ -1181,6 +1179,8 @@ class MarketDataProvider:
         for i in range(0, len(symbols_yf), fetch_batch_size):
             batch_symbols = symbols_yf[i : i + fetch_batch_size]
             data = pd.DataFrame()  # Initialize empty DataFrame for the batch
+            
+            # --- Attempt Batch Fetch ---
             for attempt in range(retries):
                 try:
                     data = yf.download(
@@ -1219,62 +1219,151 @@ class MarketDataProvider:
                         )
                         # data will remain an empty DataFrame if all retries fail
 
+            # --- Process Batch Results & Identify Missing ---
+            missing_symbols_in_batch = []
+            
             if data.empty:
-                continue
-
-            for symbol in batch_symbols:
-                df_symbol = None
-                try:
-                    if len(batch_symbols) == 1 and not data.columns.nlevels > 1:
-                        df_symbol = data if not data.empty else None
-                    elif symbol in data.columns.levels[0]:
-                        df_symbol = data[symbol]
-                    elif len(batch_symbols) > 1 and not data.columns.nlevels > 1:
-                        logging.warning(
-                            f"  Hist Fetch Helper WARN: Unexpected flat DataFrame structure for multi-ticker batch. Symbol {symbol} might be missing."
-                        )
-                        continue
-                    else:  # Handle other potential structures (less common with group_by='ticker')
-                        if isinstance(data, pd.Series) and data.name == symbol:
-                            df_symbol = pd.DataFrame(data)
-                        elif isinstance(data, pd.DataFrame) and symbol in data.columns:
-                            df_symbol = data[[symbol]].rename(columns={symbol: "Close"})
-                        else:
-                            logging.warning(
-                                f"  Hist Fetch Helper WARN: Symbol {symbol} not found in download results for this batch."
-                            )
+                # If batch failed completely, all are missing
+                missing_symbols_in_batch = batch_symbols
+            else:
+                for symbol in batch_symbols:
+                    df_symbol = None
+                    found_in_batch = False
+                    try:
+                        if len(batch_symbols) == 1 and not data.columns.nlevels > 1:
+                            if not data.empty:
+                                df_symbol = data
+                                found_in_batch = True
+                        elif symbol in data.columns.levels[0]:
+                            df_symbol = data[symbol]
+                            found_in_batch = True
+                        elif len(batch_symbols) > 1 and not data.columns.nlevels > 1:
+                            # Unexpected flat structure for multi-ticker batch
+                            pass 
+                        else:  # Handle other potential structures
+                            if isinstance(data, pd.Series) and data.name == symbol:
+                                df_symbol = pd.DataFrame(data)
+                                found_in_batch = True
+                            elif isinstance(data, pd.DataFrame) and symbol in data.columns:
+                                df_symbol = data[[symbol]].rename(columns={symbol: "Close"})
+                                found_in_batch = True
+                        
+                        if not found_in_batch:
+                            missing_symbols_in_batch.append(symbol)
                             continue
 
-                    if df_symbol is None or df_symbol.empty:
-                        continue
+                        if df_symbol is None or df_symbol.empty:
+                            missing_symbols_in_batch.append(symbol)
+                            continue
 
-                    price_col = "Close"  # Adjusted close price
-                    if price_col not in df_symbol.columns:
-                        logging.warning(
-                            f"  Hist Fetch Helper WARN: Expected 'Close' column not found for {symbol}. Columns: {df_symbol.columns}"
+                        price_col = "Close"  # Adjusted close price
+                        if price_col not in df_symbol.columns:
+                             # Try to find it or just mark as missing?
+                             # If 'Close' is missing, maybe it's single column?
+                             if len(df_symbol.columns) == 1:
+                                 df_symbol.columns = ["Close"]
+                             else:
+                                 logging.warning(f"  Hist Fetch Helper WARN: Expected 'Close' column not found for {symbol}. Columns: {df_symbol.columns}")
+                                 missing_symbols_in_batch.append(symbol)
+                                 continue
+
+                        # Ensure index is datetime
+                        if not isinstance(df_symbol.index, pd.DatetimeIndex):
+                            df_symbol.index = pd.to_datetime(df_symbol.index)
+
+                        # Filter for requested range
+                        mask = (df_symbol.index.date >= start_date) & (
+                            df_symbol.index.date <= end_date
                         )
-                        continue
+                        df_filtered = df_symbol.loc[mask]
 
-                    df_filtered = df_symbol[[price_col]].copy()
-                    df_filtered.rename(columns={price_col: "price"}, inplace=True)
-                    df_filtered.index = pd.to_datetime(
-                        df_filtered.index
-                    ).date  # Use date objects
-                    df_filtered["price"] = pd.to_numeric(
-                        df_filtered["price"], errors="coerce"
-                    )
-                    df_filtered = df_filtered.dropna(subset=["price"])
-                    df_filtered = df_filtered[
-                        df_filtered["price"] > 1e-6
-                    ]  # Remove zero/neg prices
+                        # --- RESTORED CLEANING LOGIC ---
+                        if not df_filtered.empty:
+                            # Keep only the price column and rename to 'price'
+                            df_cleaned = df_filtered[[price_col]].copy()
+                            df_cleaned.rename(columns={price_col: "price"}, inplace=True)
+                            
+                            # Ensure numeric and drop NaNs
+                            df_cleaned["price"] = pd.to_numeric(df_cleaned["price"], errors="coerce")
+                            df_cleaned.dropna(subset=["price"], inplace=True)
+                            
+                            # Remove zero/negative prices
+                            df_cleaned = df_cleaned[df_cleaned["price"] > 1e-6]
 
-                    if not df_filtered.empty:
-                        historical_data[symbol] = df_filtered.sort_index()
+                            if not df_cleaned.empty:
+                                historical_data[symbol] = df_cleaned.sort_index()
+                            else:
+                                # If empty after cleaning, it's effectively missing valid data
+                                # We retry if we have no valid data.
+                                missing_symbols_in_batch.append(symbol)
+                        else:
+                             # Empty after date filter
+                             pass
 
-                except Exception as e_sym:
-                    logging.warning(
-                        f"  Hist Fetch Helper ERROR processing symbol {symbol} within batch: {e_sym}"
-                    )
+                    except Exception as e_sym:
+                        logging.warning(
+                            f"  Hist Fetch Helper ERROR processing symbol {symbol} within batch: {e_sym}"
+                        )
+                        missing_symbols_in_batch.append(symbol)
+
+            # --- Retry Missing Symbols Individually ---
+            if missing_symbols_in_batch:
+                logging.info(f"  Hist Fetch Helper: Retrying {len(missing_symbols_in_batch)} missing symbols individually...")
+                for symbol in missing_symbols_in_batch:
+                    try:
+                        # Individual fetch
+                        data_ind = yf.download(
+                            tickers=symbol,
+                            start=yf_start_date,
+                            end=yf_end_date,
+                            progress=False,
+                            auto_adjust=True,
+                            actions=False,
+                            timeout=timeout_seconds,
+                        )
+                        
+                        if not data_ind.empty:
+                             # Process individual result
+                             # Single ticker download usually returns flat DF with 'Close', 'Open' etc.
+                             df_ind = None
+                             if "Close" in data_ind.columns:
+                                 df_ind = data_ind
+                             elif len(data_ind.columns) == 1:
+                                 df_ind = data_ind.rename(columns={data_ind.columns[0]: "Close"})
+                             else:
+                                 logging.warning(f"  Hist Fetch Helper WARN: Individual retry for {symbol} returned unexpected columns: {data_ind.columns}")
+                                 continue
+                                 
+                             # Ensure index
+                             if not isinstance(df_ind.index, pd.DatetimeIndex):
+                                 df_ind.index = pd.to_datetime(df_ind.index)
+                                 
+                             # Filter
+                             mask = (df_ind.index.date >= start_date) & (df_ind.index.date <= end_date)
+                             df_filtered = df_ind.loc[mask]
+                             
+                             # --- RESTORED CLEANING LOGIC FOR RETRY ---
+                             if not df_filtered.empty:
+                                 price_col = "Close" if "Close" in df_filtered.columns else df_filtered.columns[0]
+                                 df_cleaned = df_filtered[[price_col]].copy()
+                                 df_cleaned.rename(columns={price_col: "price"}, inplace=True)
+                                 
+                                 df_cleaned["price"] = pd.to_numeric(df_cleaned["price"], errors="coerce")
+                                 df_cleaned.dropna(subset=["price"], inplace=True)
+                                 df_cleaned = df_cleaned[df_cleaned["price"] > 1e-6]
+                                 
+                                 if not df_cleaned.empty:
+                                     historical_data[symbol] = df_cleaned.sort_index()
+                                     logging.info(f"  Hist Fetch Helper: Individual retry SUCCESS for {symbol}.")
+                                 else:
+                                     logging.warning(f"  Hist Fetch Helper WARN: Individual retry for {symbol} returned no valid price data.")
+                             else:
+                                 logging.warning(f"  Hist Fetch Helper WARN: Individual retry for {symbol} returned no data in range.")
+                        else:
+                             logging.warning(f"  Hist Fetch Helper WARN: Individual retry for {symbol} returned empty DataFrame.")
+                             
+                    except Exception as e_retry:
+                        logging.warning(f"  Hist Fetch Helper WARN: Individual retry failed for {symbol}: {e_retry}")
 
         logging.info(
             f"Hist Fetch Helper: Finished fetching ({len(historical_data)} symbols successful)."
@@ -1663,7 +1752,8 @@ class MarketDataProvider:
                     # Check if data is stale
                     df = historical_prices_yf_adjusted[s]
                     if not df.empty:
-                        last_date = df.index.max().date()
+                        last_val = df.index.max()
+                        last_date = last_val.date() if hasattr(last_val, 'date') else last_val
                         if last_date < end_date:
                             symbols_needing_incremental_fetch.append((s, last_date))
             

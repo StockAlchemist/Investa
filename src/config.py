@@ -32,6 +32,7 @@ LOGGING_LEVEL = logging.WARNING  # Default logging level for the application
 
 # --- Application Name (used by QStandardPaths if it doesn't infer from bundle) ---
 APP_NAME = "Investa"  # Used by db_utils.py for fallback folder if QStandardPaths fails
+ORG_NAME = "StockAlchemist"  # Used for cache path consistency
 
 # --- Debugging Flags ---
 HISTORICAL_DEBUG_USD_CONVERSION = False
@@ -55,11 +56,11 @@ DEFAULT_CURRENT_CACHE_FILE_PATH = (
 YFINANCE_INDEX_TICKER_MAP = {".DJI": "^DJI", "IXIC": "^IXIC", ".INX": "^GSPC"}
 DEFAULT_INDEX_QUERY_SYMBOLS = list(YFINANCE_INDEX_TICKER_MAP.keys())
 
-SYMBOL_MAP_TO_YFINANCE = {}
-# {
-# "BRK.B": "BRK-B",  # Example: Map internal "BRK.B" to YF "BRK-B"
-# "SET:ADVANC": "ADVANC.BK" # Example for Thai stock
-# }
+SYMBOL_MAP_TO_YFINANCE = {
+    "BRK.B": "BRK-B",
+    "BECL.BK": "BEM.BK",  # BECL merged into BEM
+    "NOK.BK": "NOK.BK",   # Verify if valid, or maybe delisted
+}
 
 YFINANCE_EXCLUDED_SYMBOLS = {}
 # {"VTSAX", "VTIAX"} # Example: Mutual funds often don't have good YF data
@@ -389,6 +390,15 @@ CHART_DPI = 95  # Dots per inch for charts
 
 INDICES_FOR_HEADER = [".DJI", "IXIC", ".INX"]  # Indices to display in the header bar
 CSV_DATE_FORMAT = "%b %d, %Y"  # Date format used in CSV files (e.g., "Jan 01, 2023")
+
+INDEX_DISPLAY_NAMES = {
+    ".DJI": "Dow",
+    "IXIC": "Nasdaq",
+    ".INX": "S&P 500",
+    "^DJI": "Dow",
+    "^IXIC": "Nasdaq",
+    "^GSPC": "S&P 500"
+}
 
 # --- Default Settings ---
 DEFAULT_CURRENCY = "USD"
