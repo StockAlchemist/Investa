@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = 'http://192.168.1.122:8000/api';
 
 export interface PortfolioSummary {
     metrics: {

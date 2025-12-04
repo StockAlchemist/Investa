@@ -127,7 +127,10 @@ export default function Home() {
     <main className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-20">
       <header className="bg-white dark:bg-slate-900 shadow-sm sticky top-0 z-50 border-b border-slate-200 dark:border-slate-800 opacity-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">Investa</h1>
+          <div className="flex items-center space-x-3">
+            <img src="/logo.png" alt="Investa Logo" className="h-10 w-auto" />
+            <h1 className="text-xl font-bold text-gray-900 dark:text-white">Investa</h1>
+          </div>
           <div className="flex items-center space-x-4">
             {summary?.metrics?.indices && Object.values(summary.metrics.indices).map((index: any) => (
               <div key={index.name} className="hidden md:flex items-center space-x-2 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-3 py-1.5 rounded-md">

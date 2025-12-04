@@ -27,110 +27,115 @@ _MANUAL_OVERRIDES: Dict[str, Any] = {}
 _USER_SYMBOL_MAP: Dict[str, str] = {}
 _USER_EXCLUDED_SYMBOLS: Set[str] = set()
 _ACCOUNT_CURRENCY_MAP: Dict[str, str] = {}
-_DB_PATH: str = ""
+_DB_MTIME: float = 0.0
 
 def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str], Set[str], Dict[str, str], str]:
     """
     Loads transaction data from the database.
-    Uses a simple in-memory cache.
+    Checks for file modification to auto-reload.
     """
-    global _TRANSACTIONS_CACHE, _IGNORED_INDICES, _IGNORED_REASONS, _MANUAL_OVERRIDES, _USER_SYMBOL_MAP, _USER_EXCLUDED_SYMBOLS, _ACCOUNT_CURRENCY_MAP, _DB_PATH
+    global _TRANSACTIONS_CACHE, _IGNORED_INDICES, _IGNORED_REASONS, _MANUAL_OVERRIDES, _USER_SYMBOL_MAP, _USER_EXCLUDED_SYMBOLS, _ACCOUNT_CURRENCY_MAP, _DB_PATH, _DB_MTIME
     
-    # Simple cache invalidation could be added here (e.g. check file mtime), 
-    # but for now we'll load once per server restart or if explicitly cleared.
-    if _TRANSACTIONS_CACHE is not None:
-        # Return order MUST match api.py unpacking:
-        # df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, original_csv_path
-        return _TRANSACTIONS_CACHE, _MANUAL_OVERRIDES, _USER_SYMBOL_MAP, _USER_EXCLUDED_SYMBOLS, _ACCOUNT_CURRENCY_MAP, _DB_PATH
-
-    # Use my_transactions.db in the project root if it exists, otherwise fallback to db_utils default
+    # Determine DB path first to check mtime
     db_path = os.path.join(project_root, "my_transactions.db")
     if not os.path.exists(db_path):
-        logging.warning(f"my_transactions.db not found in {project_root}, falling back to db_utils default.")
+        # Fallback
         db_path = get_database_path(DB_FILENAME)
     
-    logging.info(f"Loading transactions from: {db_path}")
+    # Check if file exists and get mtime
+    current_mtime = 0.0
+    if os.path.exists(db_path):
+        current_mtime = os.path.getmtime(db_path)
     
-    # Try to load gui_config.json for account_currency_map and other settings
-    account_currency_map = {"SET": "THB"} # Default
-    default_currency = config.DEFAULT_CURRENCY
-    
-    # Initialize with defaults from config.py
-    user_symbol_map = config.SYMBOL_MAP_TO_YFINANCE.copy()
-    user_excluded_symbols = set(config.YFINANCE_EXCLUDED_SYMBOLS.copy())
-
-    config_path = os.path.join(project_root, "gui_config.json")
-    if os.path.exists(config_path):
-        try:
-            with open(config_path, "r") as f:
-                gui_config = json.load(f)
-                if "account_currency_map" in gui_config:
-                    account_currency_map.update(gui_config["account_currency_map"])
-                if "user_symbol_map" in gui_config:
-                    user_symbol_map.update(gui_config["user_symbol_map"])
-                if "user_excluded_symbols" in gui_config:
-                     user_excluded_symbols.update(set(gui_config["user_excluded_symbols"]))
-        except Exception as e:
-            logging.warning(f"Could not load gui_config.json: {e}")
-
-    # Load manual_overrides.json if it exists
-    manual_overrides = {}
-    overrides_path = os.path.join(project_root, "manual_overrides.json")
-    if os.path.exists(overrides_path):
-        try:
-            with open(overrides_path, "r") as f:
-                manual_overrides = json.load(f)
-            logging.info(f"Loaded manual overrides from {overrides_path}")
-        except Exception as e:
-            logging.warning(f"Could not load manual_overrides.json: {e}")
-
-    # Merge user_excluded_symbols from manual_overrides if present
-    if "user_excluded_symbols" in manual_overrides:
-        loaded_excluded = manual_overrides.get("user_excluded_symbols", [])
-        if isinstance(loaded_excluded, list):
-            clean_excluded = {s.upper().strip() for s in loaded_excluded if isinstance(s, str)}
-            user_excluded_symbols.update(clean_excluded)
-            logging.info(f"Loaded {len(clean_excluded)} excluded symbols from manual_overrides.json")
-
-    # Merge user_symbol_map from manual_overrides if present
-    if "user_symbol_map" in manual_overrides:
-        loaded_map = manual_overrides.get("user_symbol_map", {})
-        if isinstance(loaded_map, dict):
-            user_symbol_map.update(loaded_map)
-            logging.info(f"Loaded {len(loaded_map)} symbol mappings from manual_overrides.json")
-
-    # We use the existing data_loader logic which expects a file path (CSV or DB)
-    # load_and_clean_transactions handles DB loading if the path ends in .db
-    try:
-        # Check if it's a DB path
-        is_db = db_path.lower().endswith((".db", ".sqlite", ".sqlite3"))
+    # Reload if cache is empty OR file has changed
+    if _TRANSACTIONS_CACHE is None or current_mtime != _DB_MTIME:
+        if _TRANSACTIONS_CACHE is not None:
+            logging.info(f"Database file changed (mtime {_DB_MTIME} -> {current_mtime}). Reloading...")
         
-        df, _, ignored_indices, ignored_reasons, _, _, _ = load_and_clean_transactions(
-            source_path=db_path,
-            account_currency_map=account_currency_map,
-            default_currency=default_currency,
-            is_db_source=is_db
-        )
-        _TRANSACTIONS_CACHE = df
-        _IGNORED_INDICES = ignored_indices
-        _IGNORED_REASONS = ignored_reasons
-        _MANUAL_OVERRIDES = manual_overrides
-        _USER_SYMBOL_MAP = user_symbol_map
-        _USER_EXCLUDED_SYMBOLS = user_excluded_symbols
-        _ACCOUNT_CURRENCY_MAP = account_currency_map
-        _DB_PATH = db_path
+        logging.info(f"Loading transactions from: {db_path}")
         
-        logging.info(f"Loaded {len(df)} transactions.")
-        # Return order MUST match api.py unpacking:
-        # df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, original_csv_path
-        return df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, db_path
-    except Exception as e:
-        logging.error(f"Error loading transactions: {e}", exc_info=True)
-        # Return empty/default values on error
-        return pd.DataFrame(), {}, {}, set(), {}, ""
+        # Try to load gui_config.json for account_currency_map and other settings
+        account_currency_map = {"SET": "THB"} # Default
+        default_currency = config.DEFAULT_CURRENCY
+        
+        # Initialize with defaults from config.py
+        user_symbol_map = config.SYMBOL_MAP_TO_YFINANCE.copy()
+        user_excluded_symbols = set(config.YFINANCE_EXCLUDED_SYMBOLS.copy())
+
+        config_path = os.path.join(project_root, "gui_config.json")
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r") as f:
+                    gui_config = json.load(f)
+                    if "account_currency_map" in gui_config:
+                        account_currency_map.update(gui_config["account_currency_map"])
+                    if "user_symbol_map" in gui_config:
+                        user_symbol_map.update(gui_config["user_symbol_map"])
+                    if "user_excluded_symbols" in gui_config:
+                        user_excluded_symbols.update(set(gui_config["user_excluded_symbols"]))
+            except Exception as e:
+                logging.warning(f"Could not load gui_config.json: {e}")
+
+        # Load manual_overrides.json if it exists
+        manual_overrides = {}
+        overrides_path = os.path.join(project_root, "manual_overrides.json")
+        if os.path.exists(overrides_path):
+            try:
+                with open(overrides_path, "r") as f:
+                    manual_overrides = json.load(f)
+                logging.info(f"Loaded manual overrides from {overrides_path}")
+            except Exception as e:
+                logging.warning(f"Could not load manual_overrides.json: {e}")
+
+        # Merge user_excluded_symbols from manual_overrides if present
+        if "user_excluded_symbols" in manual_overrides:
+            loaded_excluded = manual_overrides.get("user_excluded_symbols", [])
+            if isinstance(loaded_excluded, list):
+                clean_excluded = {s.upper().strip() for s in loaded_excluded if isinstance(s, str)}
+                user_excluded_symbols.update(clean_excluded)
+                logging.info(f"Loaded {len(clean_excluded)} excluded symbols from manual_overrides.json")
+
+        # Merge user_symbol_map from manual_overrides if present
+        if "user_symbol_map" in manual_overrides:
+            loaded_map = manual_overrides.get("user_symbol_map", {})
+            if isinstance(loaded_map, dict):
+                user_symbol_map.update(loaded_map)
+                logging.info(f"Loaded {len(loaded_map)} symbol mappings from manual_overrides.json")
+
+        # We use the existing data_loader logic which expects a file path (CSV or DB)
+        # load_and_clean_transactions handles DB loading if the path ends in .db
+        try:
+            # Check if it's a DB path
+            is_db = db_path.lower().endswith((".db", ".sqlite", ".sqlite3"))
+            
+            df, _, ignored_indices, ignored_reasons, _, _, _ = load_and_clean_transactions(
+                source_path=db_path,
+                account_currency_map=account_currency_map,
+                default_currency=default_currency,
+                is_db_source=is_db
+            )
+            _TRANSACTIONS_CACHE = df
+            _IGNORED_INDICES = ignored_indices
+            _IGNORED_REASONS = ignored_reasons
+            _MANUAL_OVERRIDES = manual_overrides
+            _USER_SYMBOL_MAP = user_symbol_map
+            _USER_EXCLUDED_SYMBOLS = user_excluded_symbols
+            _ACCOUNT_CURRENCY_MAP = account_currency_map
+            _DB_PATH = db_path
+            _DB_MTIME = current_mtime
+            
+            logging.info(f"Loaded {len(df)} transactions.")
+        except Exception as e:
+            logging.error(f"Error loading transactions: {e}", exc_info=True)
+            # Return empty/default values on error, but don't crash
+            return pd.DataFrame(), {}, {}, set(), {}, ""
+
+    # Return cached data
+    return _TRANSACTIONS_CACHE, _MANUAL_OVERRIDES, _USER_SYMBOL_MAP, _USER_EXCLUDED_SYMBOLS, _ACCOUNT_CURRENCY_MAP, _DB_PATH
 
 def reload_data():
     """Forces a reload of the transaction data."""
-    global _TRANSACTIONS_CACHE
+    global _TRANSACTIONS_CACHE, _DB_MTIME
     _TRANSACTIONS_CACHE = None
+    _DB_MTIME = 0.0
     get_transaction_data()

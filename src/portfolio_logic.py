@@ -2815,7 +2815,7 @@ def _calculate_daily_metrics_worker(
     account_currency_map: Dict[str, str],
     default_currency: str,
     manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]],  # ADDED
-    benchmark_symbols_yf: List[str],
+    # benchmark_symbols_yf removed
     # --- ADD MAPPINGS and METHOD --- # type: ignore
     symbol_to_id: Dict[str, int],
     id_to_symbol: Dict[int, str],
@@ -2965,16 +2965,8 @@ def _calculate_daily_metrics_worker(
                 internal_to_yf_map=internal_to_yf_map,
             )
 
-        benchmark_prices = {}
+        # Benchmark processing moved to main process
         bench_lookup_failed = False
-        for bm_symbol in benchmark_symbols_yf:
-            price = get_historical_price(
-                bm_symbol, eval_date, historical_prices_yf_adjusted
-            )
-            bench_price = float(price) if pd.notna(price) else np.nan
-            benchmark_prices[f"{bm_symbol} Price"] = bench_price
-            if pd.isna(bench_price):
-                bench_lookup_failed = True
 
         result_row = {
             "Date": eval_date,
@@ -2984,7 +2976,7 @@ def _calculate_daily_metrics_worker(
             "flow_lookup_failed": flow_lookup_failed,
             "bench_lookup_failed": bench_lookup_failed,
         }
-        result_row.update(benchmark_prices)
+        # result_row.update(benchmark_prices) # Removed
         return result_row
     except Exception as e:
         logging.critical(
@@ -2992,8 +2984,7 @@ def _calculate_daily_metrics_worker(
         )
         logging.exception("Worker Traceback:")
         failed_row = {"Date": eval_date, "value": np.nan, "net_flow": np.nan}
-        for bm_symbol in benchmark_symbols_yf:
-            failed_row[f"{bm_symbol} Price"] = np.nan
+        # Benchmark columns removed from failure row
         failed_row["value_lookup_failed"] = True
         failed_row["flow_lookup_failed"] = True
         failed_row["bench_lookup_failed"] = True
@@ -3290,7 +3281,7 @@ def _prepare_historical_inputs(
     }  # Ensure type
     symbols_to_fetch_yf_portfolio = sorted(list(set(symbols_to_fetch_yf_portfolio)))
     symbols_for_stocks_and_benchmarks_yf = sorted(
-        list(set(symbols_to_fetch_yf_portfolio + benchmark_symbols_yf))
+        list(set(symbols_to_fetch_yf_portfolio)) # Benchmarks removed
     )
 
     all_currencies_in_tx_effective = set(
@@ -3367,7 +3358,7 @@ def _prepare_historical_inputs(
             f"DAILY_RES_{current_hist_version}::"
             f"{start_date.isoformat()}::{end_date.isoformat()}::"
             f"{tx_file_hash_component}::"
-            f"{'_'.join(sorted(benchmark_symbols_yf))}::{display_currency}::"
+            f"{display_currency}::"  # Removed benchmarks from key
             f"{acc_map_str}::{default_currency}::"
             f"{included_accounts_str}::{excluded_accounts_str}::"
             f"{user_map_str}::{user_excluded_str}::"  # Added user settings
@@ -3434,7 +3425,7 @@ def _load_or_calculate_daily_results(
     internal_to_yf_map: Dict[str, str],
     account_currency_map: Dict[str, str],
     default_currency: str,
-    clean_benchmark_symbols_yf: List[str],
+    # clean_benchmark_symbols_yf removed
     # --- MOVED MAPPINGS HERE ---
     symbol_to_id: Dict[str, int],
     id_to_symbol: Dict[int, str],
@@ -3953,8 +3944,18 @@ def _load_or_calculate_daily_results(
                 if not isinstance(daily_df, pd.DataFrame):
                     raise ValueError("Loaded Feather cache is not a DataFrame.")
 
-                # Feather usually preserves index type, but check just in case
-                if not isinstance(daily_df.index, pd.DatetimeIndex):
+                # Handle index restoration
+                if "Date" in daily_df.columns:
+                    daily_df["Date"] = pd.to_datetime(daily_df["Date"])
+                    daily_df.set_index("Date", inplace=True)
+                elif not isinstance(daily_df.index, pd.DatetimeIndex):
+                    # Fallback: try to convert index if it looks like dates (unlikely for feather if reset)
+                    # But if we didn't reset index on save, feather might have saved it if supported.
+                    # If it's RangeIndex, this is dangerous, so we log warning.
+                    if isinstance(daily_df.index, pd.RangeIndex):
+                         logging.warning("Loaded Feather cache has RangeIndex and no Date column. Cache might be invalid.")
+                         raise ValueError("Invalid cache structure (missing Date index/column)")
+                    
                     daily_df.index = pd.to_datetime(daily_df.index, errors="coerce")
                     daily_df = daily_df[pd.notnull(daily_df.index)]
 
@@ -4025,11 +4026,12 @@ def _load_or_calculate_daily_results(
         )
         calc_start_date = max(start_date, first_tx_date)
         calc_end_date = end_date
-        market_day_source_symbol = (
-            "SPY"
-            if "SPY" in historical_prices_yf_adjusted
-            else (clean_benchmark_symbols_yf[0] if clean_benchmark_symbols_yf else None)
-        )
+        market_day_source_symbol = "SPY"
+        if "SPY" not in historical_prices_yf_adjusted:
+            if historical_prices_yf_adjusted:
+                market_day_source_symbol = next(iter(historical_prices_yf_adjusted.keys()))
+            else:
+                market_day_source_symbol = None
         market_days_index = pd.Index([], dtype="object")
         logging.debug(
             f"[_load_or_calculate_daily_results] Attempting to use '{market_day_source_symbol}' for market days."
@@ -4115,7 +4117,7 @@ def _load_or_calculate_daily_results(
             account_currency_map=account_currency_map,
             default_currency=default_currency,
             manual_overrides_dict=manual_overrides_dict,
-            benchmark_symbols_yf=clean_benchmark_symbols_yf,
+            # benchmark_symbols_yf removed
             symbol_to_id=symbol_to_id,
             id_to_symbol=id_to_symbol,
             account_to_id=account_to_id,
@@ -4231,11 +4233,8 @@ def _load_or_calculate_daily_results(
             daily_df["Date"] = pd.to_datetime(daily_df["Date"])
             daily_df.set_index("Date", inplace=True)
             daily_df.sort_index(inplace=True)
-            cols_to_numeric = ["value", "net_flow"] + [
-                f"{bm} Price"
-                for bm in clean_benchmark_symbols_yf
-                if f"{bm} Price" in daily_df.columns
-            ]
+            cols_to_numeric = ["value", "net_flow"]
+            # Benchmarks removed from here, added later in main function
             for col in cols_to_numeric:
                 daily_df[col] = pd.to_numeric(daily_df[col], errors="coerce")
             initial_rows_calc = len(daily_df)
@@ -4341,7 +4340,7 @@ def _load_or_calculate_daily_results(
                 # --- END ADDED ---
 
                 # --- CHANGE: Save directly using to_feather ---
-                daily_df.to_feather(daily_results_cache_file)
+                daily_df.reset_index().to_feather(daily_results_cache_file)
                 # --- END CHANGE ---
             except Exception as e_save_cache:
                 logging.warning(
@@ -5079,7 +5078,6 @@ def calculate_historical_performance(
             account_currency_map=account_currency_map,
             default_currency=default_currency,
             manual_overrides_dict=manual_overrides_dict,
-            clean_benchmark_symbols_yf=clean_benchmark_symbols_yf,
             symbol_to_id=symbol_to_id,
             id_to_symbol=id_to_symbol,  # Pass mappings
             account_to_id=account_to_id,
@@ -5118,6 +5116,40 @@ def calculate_historical_performance(
         has_errors = True
     elif "WARN" in status_update_daily.upper():
         has_warnings = True
+
+    # --- NEW: Fetch and Merge Benchmark Data (Optimized) ---
+    # We do this AFTER getting the portfolio daily_df (cached or calc'd)
+    # so that benchmark changes don't invalidate portfolio cache.
+    if not daily_df.empty and clean_benchmark_symbols_yf:
+        logging.info(f"Fetching historical data for {len(clean_benchmark_symbols_yf)} benchmarks...")
+        # Use the same market_provider instance
+        bench_prices_adj, _ = market_provider.get_historical_data(
+            symbols_yf=clean_benchmark_symbols_yf,
+            start_date=full_start_date,
+            end_date=fetch_end_date,
+            use_cache=True,
+            # We don't pass a monolithic cache_key here, allowing per-symbol caching
+        )
+        
+        if bench_prices_adj:
+            for bm in clean_benchmark_symbols_yf:
+                if bm in bench_prices_adj:
+                    bm_df = bench_prices_adj[bm]
+                    if bm_df is not None and not bm_df.empty and 'price' in bm_df.columns:
+                        bm_series = bm_df['price'].copy()
+                        bm_series.name = f"{bm} Price"
+                        # Ensure index is datetime for merging
+                        if not isinstance(bm_series.index, pd.DatetimeIndex):
+                            bm_series.index = pd.to_datetime(bm_series.index)
+                        
+                        # Merge into daily_df
+                        # We use left join to keep daily_df structure
+                        daily_df = daily_df.join(bm_series, how='left')
+                    else:
+                        logging.warning(f"No price data found for benchmark {bm}")
+                        daily_df[f"{bm} Price"] = np.nan
+                else:
+                    daily_df[f"{bm} Price"] = np.nan
 
     # --- FIX: Filter DataFrame by requested date range BEFORE gain calc ---
     # This ensures accumulated gains start at 0% (1.0 factor) for the requested period.

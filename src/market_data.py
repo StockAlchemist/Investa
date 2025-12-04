@@ -1791,6 +1791,13 @@ class MarketDataProvider:
                             if s in delta_data and not delta_data[s].empty:
                                 old_df = historical_prices_yf_adjusted[s]
                                 new_df = delta_data[s]
+                                
+                                # Ensure indices are DatetimeIndex to avoid mixed type comparison errors
+                                if not isinstance(old_df.index, pd.DatetimeIndex):
+                                    old_df.index = pd.to_datetime(old_df.index)
+                                if not isinstance(new_df.index, pd.DatetimeIndex):
+                                    new_df.index = pd.to_datetime(new_df.index)
+
                                 # Concatenate and drop duplicates just in case
                                 merged_df = pd.concat([old_df, new_df])
                                 merged_df = merged_df[~merged_df.index.duplicated(keep='last')]
