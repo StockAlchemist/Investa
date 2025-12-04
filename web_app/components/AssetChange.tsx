@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { AssetChangeData } from '../lib/api';
 
 interface AssetChangeProps {
@@ -103,9 +103,16 @@ export default function AssetChange({ data, currency }: AssetChangeProps) {
                                 <Bar
                                     key={key}
                                     dataKey={key}
-                                    fill={COLORS[index % COLORS.length]}
                                     name={key.replace(` ${targetSuffix}`, '')}
-                                />
+                                    fill={viewMode === 'percent' ? COLORS[index % COLORS.length] : undefined}
+                                >
+                                    {viewMode === 'value' && displayData.map((entry, i) => (
+                                        <Cell
+                                            key={`cell-${i}`}
+                                            fill={entry[key] >= 0 ? '#10b981' : '#e11d48'}
+                                        />
+                                    ))}
+                                </Bar>
                             ))}
                         </BarChart>
                     </ResponsiveContainer>
