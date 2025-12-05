@@ -77,27 +77,37 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
                 logging.warning(f"Could not load gui_config.json: {e}")
 
         # Load manual_overrides.json if it exists
-        manual_overrides = {}
+        manual_overrides = {} # The specific dict for portfolio_logic (Symbol -> Data)
+        full_overrides_json = {} # The full JSON for config extraction
+        
         overrides_path = os.path.join(project_root, "manual_overrides.json")
         if os.path.exists(overrides_path):
             try:
                 with open(overrides_path, "r") as f:
-                    manual_overrides = json.load(f)
+                    full_overrides_json = json.load(f)
+                    
+                    # portfolio_logic expects the dict to be Symbol -> OverrideData
+                    # So we extract 'manual_price_overrides' if it exists, or use the whole dict if it's the old format
+                    if "manual_price_overrides" in full_overrides_json:
+                        manual_overrides = full_overrides_json["manual_price_overrides"]
+                    else:
+                        manual_overrides = full_overrides_json
+                        
                 logging.info(f"Loaded manual overrides from {overrides_path}")
             except Exception as e:
                 logging.warning(f"Could not load manual_overrides.json: {e}")
 
-        # Merge user_excluded_symbols from manual_overrides if present
-        if "user_excluded_symbols" in manual_overrides:
-            loaded_excluded = manual_overrides.get("user_excluded_symbols", [])
+        # Merge user_excluded_symbols from FULL JSON if present
+        if "user_excluded_symbols" in full_overrides_json:
+            loaded_excluded = full_overrides_json.get("user_excluded_symbols", [])
             if isinstance(loaded_excluded, list):
                 clean_excluded = {s.upper().strip() for s in loaded_excluded if isinstance(s, str)}
                 user_excluded_symbols.update(clean_excluded)
                 logging.info(f"Loaded {len(clean_excluded)} excluded symbols from manual_overrides.json")
 
-        # Merge user_symbol_map from manual_overrides if present
-        if "user_symbol_map" in manual_overrides:
-            loaded_map = manual_overrides.get("user_symbol_map", {})
+        # Merge user_symbol_map from FULL JSON if present
+        if "user_symbol_map" in full_overrides_json:
+            loaded_map = full_overrides_json.get("user_symbol_map", {})
             if isinstance(loaded_map, dict):
                 user_symbol_map.update(loaded_map)
                 logging.info(f"Loaded {len(loaded_map)} symbol mappings from manual_overrides.json")

@@ -15,7 +15,8 @@ const MetricCard = ({
     vertical = false,
     valueClassName = 'text-2xl',
     containerClassName = '',
-    isHero = false
+    isHero = false,
+    subValueClassName = ''
 }: any) => (
     <div className={`
         relative overflow-hidden rounded-2xl p-5 transition-all duration-300
@@ -37,7 +38,7 @@ const MetricCard = ({
             </h3>
             {subValue && (
                 <span className={`
-                    ${valueClassName} font-semibold
+                    ${subValueClassName || valueClassName} font-semibold
                     ${subValue >= 0
                         ? 'text-emerald-600 dark:text-emerald-400'
                         : 'text-rose-600 dark:text-rose-400'
@@ -91,7 +92,7 @@ export default function Dashboard({ summary }: DashboardProps) {
                 <MetricCard
                     title="Total Portfolio Value"
                     value={m.market_value}
-                    valueClassName="text-5xl"
+                    valueClassName="text-4xl"
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                 />
@@ -103,7 +104,8 @@ export default function Dashboard({ summary }: DashboardProps) {
                     value={dayGL}
                     subValue={dayGLPct}
                     colorClass={dayGLColor}
-                    valueClassName="text-5xl"
+                    valueClassName="text-4xl"
+                    subValueClassName="text-2xl"
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                 />

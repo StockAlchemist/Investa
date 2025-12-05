@@ -98,7 +98,7 @@ export default function AssetChange({ data, currency }: AssetChangeProps) {
                                 formatter={(value: number) => [formatValue(value), '']}
                                 labelStyle={{ color: '#374151' }}
                             />
-                            <Legend />
+                            {viewMode === 'percent' && <Legend />}
                             {keysToPlot.map((key, index) => (
                                 <Bar
                                     key={key}
