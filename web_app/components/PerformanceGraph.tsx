@@ -14,6 +14,7 @@ import {
 import PeriodSelector from './PeriodSelector';
 import BenchmarkSelector from './BenchmarkSelector';
 import { fetchHistory, PerformanceData } from '../lib/api';
+import { formatCurrency } from '../lib/utils';
 
 interface PerformanceGraphProps {
     currency: string;
@@ -92,7 +93,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                         <p key={index} className="text-sm font-medium" style={{ color: entry.color }}>
                             {entry.name}: {view === 'return'
                                 ? `${entry.value > 0 ? '+' : ''}${entry.value.toFixed(2)}%`
-                                : `${new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).format(entry.value)}`
+                                : formatCurrency(entry.value, currency)
                             }
                         </p>
                     ))}

@@ -14,6 +14,7 @@ import Allocation from '@/components/Allocation';
 import AssetChange from '@/components/AssetChange';
 import CapitalGains from '@/components/CapitalGains';
 import DividendComponent from '@/components/Dividend';
+import Settings from '@/components/Settings';
 
 export default function Home() {
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
@@ -93,7 +94,7 @@ export default function Home() {
       case 'performance':
         return (
           <>
-            {summary && <Dashboard summary={summary} />}
+            {summary && <Dashboard summary={summary} currency={currency} />}
             <PerformanceGraph
               currency={currency}
               accounts={selectedAccounts}
@@ -113,6 +114,8 @@ export default function Home() {
         return <CapitalGains data={capitalGainsData} currency={currency} />;
       case 'dividend':
         return <DividendComponent data={dividendData} currency={currency} expectedDividends={summary?.metrics?.est_annual_income_display} />;
+      case 'settings':
+        return <Settings />;
       default:
         return (
           <div className="p-8 text-center text-gray-500 dark:text-gray-400">
@@ -180,7 +183,7 @@ export default function Home() {
           <span className="text-xl">📊</span>
           <span className="mt-1">Markets</span>
         </div>
-        <div className="flex flex-col items-center">
+        <div className="flex flex-col items-center cursor-pointer hover:text-blue-600 dark:hover:text-blue-400" onClick={() => setActiveTab('settings')}>
           <span className="text-xl">⚙️</span>
           <span className="mt-1">Settings</span>
         </div>

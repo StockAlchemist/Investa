@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { CapitalGain } from '../lib/api';
+import { formatCurrency } from '../lib/utils';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 
 interface CapitalGainsProps {
@@ -63,9 +64,6 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
         setSortConfig({ key, direction });
     };
 
-    const formatCurrency = (val: number) => {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).format(val);
-    };
 
     const [visibleRows, setVisibleRows] = useState(10);
 
@@ -86,19 +84,19 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                 <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border border-gray-200 dark:border-gray-700">
                     <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Realized Gain</h3>
                     <p className={`text-2xl font-bold ${totalRealizedGain >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                        {formatCurrency(totalRealizedGain)}
+                        {formatCurrency(totalRealizedGain, currency)}
                     </p>
                 </div>
                 <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border border-gray-200 dark:border-gray-700">
                     <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Proceeds</h3>
                     <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                        {formatCurrency(totalProceeds)}
+                        {formatCurrency(totalProceeds, currency)}
                     </p>
                 </div>
                 <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border border-gray-200 dark:border-gray-700">
                     <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Cost Basis</h3>
                     <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                        {formatCurrency(totalCostBasis)}
+                        {formatCurrency(totalCostBasis, currency)}
                     </p>
                 </div>
             </div>
@@ -113,7 +111,7 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                             <XAxis dataKey="year" tick={{ fontSize: 12 }} />
                             <YAxis tickFormatter={(val) => new Intl.NumberFormat('en-US', { notation: "compact", compactDisplay: "short" }).format(val)} />
                             <Tooltip
-                                formatter={(value: number) => [formatCurrency(value), 'Realized Gain']}
+                                formatter={(value: number) => [formatCurrency(value, currency), 'Realized Gain']}
                                 labelStyle={{ color: '#374151' }}
                             />
                             <Bar dataKey="gain" fill="#10B981" name="Realized Gain" />
@@ -153,9 +151,15 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{item.Account}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{item.Type}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{item.Quantity}</td>
-                                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${(item['Realized Gain (Display)'] || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500 dark:text-gray-300">
+                                        {formatCurrency(item["Total Proceeds (Display)"] || 0, currency)}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500 dark:text-gray-300">
+                                        {formatCurrency(item["Total Cost Basis (Display)"] || 0, currency)}
+                                    </td>
+                                    <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-medium ${(item['Realized Gain (Display)'] || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
                                         }`}>
-                                        {formatCurrency(item['Realized Gain (Display)'] || 0)}
+                                        {formatCurrency(item['Realized Gain (Display)'] || 0, currency)}
                                     </td>
                                 </tr>
                             ))}

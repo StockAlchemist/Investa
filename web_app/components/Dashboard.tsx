@@ -1,8 +1,10 @@
 import React from 'react';
 import { PortfolioSummary } from '../lib/api';
+import { formatCurrency } from '../lib/utils';
 
 interface DashboardProps {
     summary: PortfolioSummary;
+    currency: string;
 }
 
 const MetricCard = ({
@@ -16,7 +18,8 @@ const MetricCard = ({
     valueClassName = 'text-2xl',
     containerClassName = '',
     isHero = false,
-    subValueClassName = ''
+    subValueClassName = '',
+    currency = 'USD' // Add currency prop to MetricCard
 }: any) => (
     <div className={`
         relative overflow-hidden rounded-2xl p-5 transition-all duration-300
@@ -34,7 +37,7 @@ const MetricCard = ({
 
         <div className={`mt-2 flex items-baseline gap-2 flex-wrap relative z-10`}>
             <h3 className={`font-extrabold tracking-tight ${valueClassName} ${colorClass || 'text-slate-900 dark:text-white'}`}>
-                {value !== null && value !== undefined ? (isCurrency ? `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : value) : '-'}
+                {value !== null && value !== undefined ? (isCurrency ? formatCurrency(value, currency) : value) : '-'}
             </h3>
             {subValue && (
                 <span className={`
@@ -51,7 +54,7 @@ const MetricCard = ({
     </div>
 );
 
-export default function Dashboard({ summary }: DashboardProps) {
+export default function Dashboard({ summary, currency }: DashboardProps) {
     const m = summary?.metrics;
     const am = summary?.account_metrics;
 
@@ -95,6 +98,7 @@ export default function Dashboard({ summary }: DashboardProps) {
                     valueClassName="text-4xl"
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
+                    currency={currency}
                 />
             </div>
 
@@ -108,6 +112,7 @@ export default function Dashboard({ summary }: DashboardProps) {
                     subValueClassName="text-2xl"
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
+                    currency={currency}
                 />
             </div>
 
@@ -115,6 +120,7 @@ export default function Dashboard({ summary }: DashboardProps) {
                 title="Total Return"
                 value={totalGain}
                 colorClass={totalReturnColor}
+                currency={currency}
             />
 
             <MetricCard
@@ -128,6 +134,7 @@ export default function Dashboard({ summary }: DashboardProps) {
                 title="Unrealized G/L"
                 value={unrealizedGL}
                 colorClass={unrealizedGLColor}
+                currency={currency}
             />
 
             <MetricCard
@@ -141,21 +148,25 @@ export default function Dashboard({ summary }: DashboardProps) {
                 title="Realized Gain"
                 value={realizedGain}
                 colorClass={realizedGainColor}
+                currency={currency}
             />
 
             <MetricCard
                 title="Cash Balance"
                 value={cashBalance}
+                currency={currency}
             />
 
             <MetricCard
                 title="YTD Dividends"
                 value={m.dividends}
+                currency={currency}
             />
 
             <MetricCard
                 title="Fees"
                 value={m.commissions}
+                currency={currency}
             />
 
         </div>

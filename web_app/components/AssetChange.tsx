@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { formatCurrency } from '../lib/utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { AssetChangeData } from '../lib/api';
 
@@ -27,7 +28,27 @@ export default function AssetChange({ data, currency }: AssetChangeProps) {
         if (viewMode === 'percent') {
             return `${val.toFixed(2)}%`;
         }
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).format(val);
+        return formatCurrency(val, currency);
+    };
+
+    // Custom Tooltip component
+    const CustomTooltip = ({ active, payload, label }: any) => {
+        if (active && payload && payload.length) {
+            return (
+                <div className="p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow-md">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white mb-1">{label}</p>
+                    {payload.map((entry: any, index: number) => (
+                        <p key={`item-${index}`} className="text-sm font-medium" style={{ color: entry.color }}>
+                            {entry.name}: {viewMode === 'percent'
+                                ? `${entry.value > 0 ? '+' : ''}${entry.value.toFixed(2)}%`
+                                : formatCurrency(entry.value, currency)
+                            }
+                        </p>
+                    ))}
+                </div>
+            );
+        }
+        return null;
     };
 
     const renderSection = (config: typeof PERIOD_CONFIGS[0]) => {

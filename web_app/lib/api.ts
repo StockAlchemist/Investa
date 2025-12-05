@@ -191,3 +191,15 @@ export async function fetchDividends(
     if (!res.ok) throw new Error('Failed to fetch dividends');
     return res.json();
 }
+export interface Settings {
+    manual_overrides: Record<string, any>;
+    user_symbol_map: Record<string, string>;
+    user_excluded_symbols: string[];
+    account_currency_map: Record<string, string>;
+}
+
+export async function fetchSettings(): Promise<Settings> {
+    const res = await fetch(`${API_BASE_URL}/settings`);
+    if (!res.ok) throw new Error('Failed to fetch settings');
+    return res.json();
+}

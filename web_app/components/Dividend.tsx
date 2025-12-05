@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import type { Dividend } from '../lib/api';
+import { formatCurrency } from '../lib/utils';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 
 interface DividendProps {
@@ -62,10 +63,6 @@ export default function Dividend({ data, currency, expectedDividends }: Dividend
         setSortConfig({ key, direction });
     };
 
-    const formatCurrency = (val: number) => {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).format(val);
-    };
-
     const [visibleRows, setVisibleRows] = useState(10);
 
     const visibleData = sortedData.slice(0, visibleRows);
@@ -85,14 +82,14 @@ export default function Dividend({ data, currency, expectedDividends }: Dividend
                 <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border border-gray-200 dark:border-gray-700">
                     <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Dividends</h3>
                     <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-                        {formatCurrency(totalDividends)}
+                        {formatCurrency(totalDividends, currency)}
                     </p>
                 </div>
                 {expectedDividends !== undefined && (
                     <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border border-gray-200 dark:border-gray-700">
                         <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Expected Dividends (Next 12M)</h3>
                         <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                            {formatCurrency(expectedDividends)}
+                            {formatCurrency(expectedDividends, currency)}
                         </p>
                     </div>
                 )}
@@ -108,7 +105,7 @@ export default function Dividend({ data, currency, expectedDividends }: Dividend
                             <XAxis dataKey="year" tick={{ fontSize: 12 }} />
                             <YAxis tickFormatter={(val) => new Intl.NumberFormat('en-US', { notation: "compact", compactDisplay: "short" }).format(val)} />
                             <Tooltip
-                                formatter={(value: number) => [formatCurrency(value), 'Dividend Amount']}
+                                formatter={(value: number) => [formatCurrency(value, currency), 'Dividend Amount']}
                                 labelStyle={{ color: '#374151' }}
                             />
                             <Bar dataKey="amount" fill="#3B82F6" name="Dividend Amount" />
@@ -146,8 +143,8 @@ export default function Dividend({ data, currency, expectedDividends }: Dividend
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">{item.Date}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{item.Symbol}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{item.Account}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600 dark:text-green-400">
-                                        {formatCurrency(item['DividendAmountDisplayCurrency'] || 0)}
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500 dark:text-gray-300">
+                                        {formatCurrency(item['DividendAmountDisplayCurrency'] || 0, currency)}
                                     </td>
                                 </tr>
                             ))}

@@ -592,3 +592,29 @@ async def get_dividends(
     except Exception as e:
         logging.error(f"Error getting dividends: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+@router.get("/settings")
+async def get_settings(
+    data: tuple = Depends(get_transaction_data)
+):
+    """
+    Returns the current application configuration settings.
+    """
+    (
+        _,
+        manual_overrides,
+        user_symbol_map,
+        user_excluded_symbols,
+        account_currency_map,
+        _
+    ) = data
+
+    try:
+        return {
+            "manual_overrides": manual_overrides,
+            "user_symbol_map": user_symbol_map,
+            "user_excluded_symbols": list(user_excluded_symbols),
+            "account_currency_map": account_currency_map
+        }
+    except Exception as e:
+        logging.error(f"Error getting settings: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
