@@ -294,7 +294,7 @@ QFrame#ControlsFrame {
     background-color: #252525; /* Slightly lighter than header */
     border-bottom: 1px solid #444444; /* DARK_COLOR_BORDER */
 }
-QFrame#SummaryAndGraphsFrame, QFrame#ContentFrame, QFrame#BarChartsFrame {
+QFrame#SummaryAndGraphsFrame, QFrame#ContentFrame, QFrame#BarChartsFrame, QFrame#CgSummaryFrame {
     background-color: #1e1e1e; /* DARK_COLOR_BG_DARK */
 }
 

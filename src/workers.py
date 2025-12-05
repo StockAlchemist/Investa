@@ -380,18 +380,52 @@ class PortfolioCalculatorWorker(QRunnable):
             # --- 5. Extract Realized Capital Gains History ---
             # logging.info("WORKER: Extracting realized capital gains history...")
             try:
+                # Fetch current FX rates for fallback
+                required_currencies = set()
+                if self.portfolio_kwargs.get("account_currency_map"):
+                    required_currencies.update(self.portfolio_kwargs["account_currency_map"].values())
+                if self.portfolio_kwargs.get("display_currency"):
+                    required_currencies.add(self.portfolio_kwargs["display_currency"])
+                if self.portfolio_kwargs.get("default_currency"):
+                    required_currencies.add(self.portfolio_kwargs["default_currency"])
+                
+                # --- ADDED: Scan transactions for ALL used currencies ---
+                # This ensures we have rates even for currencies not in the current account map (e.g. historical/closed)
+                all_tx_df = self.portfolio_kwargs.get("all_transactions_df_cleaned")
+                if isinstance(all_tx_df, pd.DataFrame) and "Local Currency" in all_tx_df.columns:
+                    unique_tx_currencies = all_tx_df["Local Currency"].dropna().unique()
+                    # Clean and add valid 3-letter codes
+                    for curr in unique_tx_currencies:
+                        if isinstance(curr, str) and len(curr.strip()) == 3:
+                            required_currencies.add(curr.strip().upper())
+                # -------------------------------------------------------
+
+                # Fetch FX rates (we don't need stock quotes here, so pass empty list)
+                # get_current_quotes returns: results, fx_rates_vs_usd, fx_prev_close_vs_usd, has_errors, has_warnings
+                _, current_fx_rates_vs_usd, _, _, _ = self.market_data_provider.get_current_quotes(
+                    internal_stock_symbols=[],
+                    required_currencies=required_currencies,
+                    user_symbol_map=self.user_symbol_map,
+                    user_excluded_symbols=self.user_excluded_symbols
+                )
+
                 # Ensure hist_fx is available (from historical calc)
                 # and other necessary args from portfolio_kwargs
                 capital_gains_history_df = extract_realized_capital_gains_history(
-                    all_transactions_df=self.portfolio_kwargs.get(
-                        "all_transactions_df_cleaned"
-                    ),
+                    all_transactions_df=all_tx_df,
                     display_currency=self.portfolio_kwargs.get("display_currency"),
                     historical_fx_yf=hist_fx,  # Use h_fx from historical performance part
                     default_currency=self.portfolio_kwargs.get("default_currency"),
                     shortable_symbols=config.SHORTABLE_SYMBOLS,  # Import from config
                     include_accounts=self.portfolio_kwargs.get("include_accounts"),
+                    current_fx_rates_vs_usd=current_fx_rates_vs_usd, # ADDED
                 )
+                
+                # --- DEBUG LOGGING ---
+                total_gain_worker = capital_gains_history_df["Realized Gain (Display)"].sum()
+                logging.info(f"WORKER: Capital Gains Tab Total Calculation: {total_gain_worker:,.2f}")
+                # ---------------------
+
                 logging.info(
                     f"WORKER: Capital gains history extracted ({len(capital_gains_history_df)} records)."
                 )

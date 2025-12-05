@@ -145,7 +145,14 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
 
 def reload_data():
     """Forces a reload of the transaction data."""
-    global _TRANSACTIONS_CACHE, _DB_MTIME
+    global _TRANSACTIONS_CACHE, _DB_MTIME, _IGNORED_INDICES, _IGNORED_REASONS, _MANUAL_OVERRIDES, _USER_SYMBOL_MAP, _USER_EXCLUDED_SYMBOLS, _ACCOUNT_CURRENCY_MAP
     _TRANSACTIONS_CACHE = None
     _DB_MTIME = 0.0
+    _IGNORED_INDICES = set()
+    _IGNORED_REASONS = {}
+    _MANUAL_OVERRIDES = {}
+    _USER_SYMBOL_MAP = {}
+    _USER_EXCLUDED_SYMBOLS = set()
+    _ACCOUNT_CURRENCY_MAP = {}
+    logging.info("Transaction data cache cleared.")
     get_transaction_data()

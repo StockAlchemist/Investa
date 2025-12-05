@@ -15,7 +15,6 @@ const TABS = [
     { id: 'intraday', label: 'Intraday' },
     { id: 'rebalancing', label: 'Rebalancing' },
     { id: 'analysis', label: 'Analysis' },
-    { id: 'settings', label: 'Settings' },
 ];
 
 export default function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {

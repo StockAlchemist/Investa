@@ -142,6 +142,7 @@ try:
         _process_transactions_to_holdings,
         _build_summary_rows,
         _calculate_aggregate_metrics,
+        extract_realized_capital_gains_history,
     )
 
     ANALYZER_FUNCTIONS_AVAILABLE = True
@@ -186,6 +187,7 @@ def calculate_portfolio_summary(
     # They are not easily passable via a generic **kwargs if those helpers are called directly.
     default_currency: str = DEFAULT_CURRENCY,
     account_currency_map: Optional[Dict[str, str]] = None,
+    market_provider: Optional[Any] = None,  # Added for dependency injection
 ) -> Tuple[
     Optional[Dict[str, Any]],
     Optional[pd.DataFrame],
@@ -478,8 +480,10 @@ def calculate_portfolio_summary(
         unique_dates = sorted(transactions_df_filtered["Date"].dt.date.unique())
 
         # Collect all relevant currencies for historical FX fetching
+        # FIX: Use all_transactions_df_cleaned instead of transactions_df_filtered to ensure
+        # we get currencies for ALL accounts, even excluded ones (needed for FIFO calc of transfers).
         currencies_for_hist_fx_fetch = set(
-            transactions_df_filtered["Local Currency"].unique()
+            all_transactions_df_cleaned["Local Currency"].unique()
         )
         currencies_for_hist_fx_fetch.add(display_currency)
         currencies_for_hist_fx_fetch.add(
@@ -496,16 +500,19 @@ def calculate_portfolio_summary(
             and len(str(c).strip()) == 3
         }
 
-        min_tx_date = transactions_df_filtered["Date"].min().date()
+        min_tx_date = all_transactions_df_cleaned["Date"].min().date()
         fx_pairs_to_fetch_hist = [
             f"{lc.upper()}=X"
             for lc in cleaned_currencies_for_hist_fx  # Use the cleaned and expanded set
             if lc and lc.upper() != "USD" and pd.notna(lc) and str(lc).strip() != ""
         ]
 
-        market_provider_for_hist_fx = MarketDataProvider(
-            current_cache_file=cache_file_path
-        )  # Use same cache config
+        if market_provider:
+            market_provider_for_hist_fx = market_provider
+        else:
+            market_provider_for_hist_fx = MarketDataProvider(
+                current_cache_file=cache_file_path
+            )  # Use same cache config
 
         # Fetch historical FX rates (local_curr vs USD)
         # report_date is datetime.now().date()
@@ -686,9 +693,20 @@ def calculate_portfolio_summary(
 
     # --- 5. Fetch Current Market Data ---
     all_stock_symbols_internal = list(set(key[0] for key in holdings.keys()))
+    # 2. Determine required currencies
     required_currencies: Set[str] = set([display_currency, default_currency])
     for data in holdings.values():
         required_currencies.add(data.get("local_currency", default_currency))
+    
+    # --- ADDED: Scan all transactions for used currencies ---
+    # This ensures we have rates even for currencies not in the current account map (e.g. historical/closed)
+    if isinstance(all_transactions_df_cleaned, pd.DataFrame) and "Local Currency" in all_transactions_df_cleaned.columns:
+        unique_tx_currencies = all_transactions_df_cleaned["Local Currency"].dropna().unique()
+        for curr in unique_tx_currencies:
+            if isinstance(curr, str) and len(curr.strip()) == 3:
+                required_currencies.add(curr.strip().upper())
+    # -------------------------------------------------------
+
     required_currencies.discard(None)  # type: ignore
     # --- ADDED: More robust cleaning for required_currencies ---
     cleaned_required_currencies = {
@@ -701,7 +719,8 @@ def calculate_portfolio_summary(
     }
     required_currencies = cleaned_required_currencies
 
-    market_provider = MarketDataProvider(current_cache_file=cache_file_path)
+    if market_provider is None:
+        market_provider = MarketDataProvider(current_cache_file=cache_file_path)
     current_stock_data_internal, current_fx_rates_vs_usd, current_fx_prev_close_vs_usd, err_fetch, warn_fetch = (
         market_provider.get_current_quotes(
             internal_stock_symbols=all_stock_symbols_internal,
@@ -719,27 +738,110 @@ def calculate_portfolio_summary(
 
     # If fetch failed critically, we might not be able to proceed meaningfully.
     if has_errors and "Fetch Failed Critically" in status_parts:
-        msg = "Error: Price/FX fetch failed critically via MarketDataProvider. Cannot build summary."
-        logging.error(f"FATAL: {msg}")
-        final_status_prefix = "Finished with Errors"
-        final_status = f"{final_status_prefix} ({filter_desc})" + (
-            f" [{'; '.join(status_parts)}]" if status_parts else ""
-        )
-        return (
-            get_default_metrics_dict(
-                display_currency,
-                report_date,
-                available_accounts_for_errors,
-                is_empty_data_case=False,
-            ),  # MODIFIED
-            None,  # summary_df_final
-            None,  # account_level_metrics
-            combined_ignored_indices,
-            combined_ignored_reasons,
-            final_status,
-        )
+        msg = "Error: Price/FX fetch failed critically via MarketDataProvider. Proceeding with partial data/fallbacks."
+        logging.error(f"WARNING: {msg}") # Downgrade to warning for execution flow
+        # final_status_prefix = "Finished with Errors"
+        # final_status = f"{final_status_prefix} ({filter_desc})" + (
+        #     f" [{'; '.join(status_parts)}]" if status_parts else ""
+        # )
+        # return (
+        #     get_default_metrics_dict(
+        #         display_currency,
+        #         report_date,
+        #         available_accounts_for_errors,
+        #         is_empty_data_case=False,
+        #     ),  # MODIFIED
+        #     None,  # summary_df_final
+        #     None,  # account_level_metrics
+        #     combined_ignored_indices,
+        #     combined_ignored_reasons,
+        #     final_status,
+        # )
+        pass # Continue execution
+
+    print(f"DEBUG: Passed fetch check. has_errors={has_errors}")
 
     # --- 6. Build Detailed Summary Rows ---
+    # --- ADDED: Calculate Realized Gains using FIFO (Capital Gains Logic) ---
+    # This ensures consistency between Dashboard and Capital Gains tab.
+    # We calculate it separately and then override the values in 'holdings'.
+    fifo_realized_gains_df = pd.DataFrame()
+    try:
+        logging.info("Calculating FIFO Realized Gains for Dashboard consistency...")
+        fifo_realized_gains_df = extract_realized_capital_gains_history(
+            all_transactions_df=all_transactions_df_cleaned,
+            display_currency=display_currency,
+            historical_fx_yf=historical_fx_data_usd_based,
+            default_currency=default_currency,
+            shortable_symbols=SHORTABLE_SYMBOLS,
+            stock_quantity_close_tolerance=STOCK_QUANTITY_CLOSE_TOLERANCE,
+            include_accounts=include_accounts,
+            current_fx_rates_vs_usd=current_fx_rates_vs_usd,  # Pass current rates for fallback
+        )
+
+        # --- DEBUG LOGGING ---
+        logging.info(f"FIFO DF Shape: {fifo_realized_gains_df.shape}")
+        if not fifo_realized_gains_df.empty:
+            if "Realized Gain (Display)" in fifo_realized_gains_df.columns:
+                nans_disp = fifo_realized_gains_df["Realized Gain (Display)"].isna().sum()
+                logging.info(f"NaNs in Realized Gain (Display): {nans_disp}")
+        # ---------------------
+
+
+        # Aggregate FIFO gains by (Symbol, Account)
+        if not fifo_realized_gains_df.empty:
+            fifo_gains_agg = (
+                fifo_realized_gains_df.groupby(["Symbol", "Account"])[
+                    ["Realized Gain (Display)", "Realized Gain (Local)"]
+                ]
+                .sum()
+                .to_dict(orient="index")
+            )
+
+            # Override realized gains in holdings
+            for (sym, acct), holding_data in holdings.items():
+                # Normalize key for lookup (Symbol, Account) are already standardized in holdings keys
+                # but let's be safe with the lookup key from the dataframe aggregation
+                lookup_key = (str(sym).upper().strip(), str(acct).upper().strip())
+                
+                if lookup_key in fifo_gains_agg:
+                    fifo_gain_display = fifo_gains_agg[lookup_key].get("Realized Gain (Display)", 0.0)
+                    fifo_gain_local = fifo_gains_agg[lookup_key].get("Realized Gain (Local)", 0.0)
+                    
+                    # Update the holding data
+                    holding_data["realized_gain_display"] = fifo_gain_display
+                    holding_data["realized_gain_local"] = fifo_gain_local
+                    
+                    logging.debug(f"Overrode realized gain for {sym}/{acct} with FIFO value: {fifo_gain_display}")
+                else:
+                    # If no FIFO record found, it implies 0 realized gain (or no sales)
+                    # However, for Shortable symbols, FIFO might be 0 because it doesn't handle shorts yet.
+                    # In that case, we should fallback to AvgCost (keep existing value) rather than zeroing it out.
+                    is_shortable = sym in SHORTABLE_SYMBOLS
+                    is_cash = sym == CASH_SYMBOL_CSV or sym == "$CASH"
+                    
+                    avg_cost_gain = holding_data.get("realized_gain_display", 0.0)
+                    
+                    if abs(avg_cost_gain) > 1e-9:
+                        if is_shortable:
+                            logging.info(f"FIFO calc found no gain for shortable {sym}/{acct}, but AvgCost had {avg_cost_gain}. Keeping AvgCost (FIFO likely lacks short support).")
+                            # Do NOT override with 0. Keep existing AvgCost value.
+                            continue 
+                        elif is_cash:
+                             logging.debug(f"FIFO calc found no gain for Cash {sym}/{acct}. Setting to 0 for consistency with Capital Gains tab.")
+                             # Proceed to set to 0
+                        else:
+                             logging.warning(f"FIFO calc found no gain for {sym}/{acct}, but AvgCost had {avg_cost_gain}. Setting to 0 for consistency.")
+                    
+                    holding_data["realized_gain_display"] = 0.0
+                    holding_data["realized_gain_local"] = 0.0
+
+    except Exception as e_fifo:
+        logging.error(f"Error calculating FIFO realized gains for Dashboard: {e_fifo}")
+        logging.error(traceback.format_exc())
+        # Fallback: Do nothing, keep Average Cost values (better than crashing)
+    # --- END ADDED ---
+
     manual_prices_for_build_rows = {}
     if manual_overrides_effective:
         for symbol_key, override_values_dict in manual_overrides_effective.items():
@@ -1017,6 +1119,61 @@ def calculate_portfolio_summary(
             has_errors = True
         if warn_agg:
             has_warnings = True
+
+        # --- ADDED: Override Aggregate Realized Gains with FIFO Totals ---
+        # This ensures the "Realized Gain" card matches the Capital Gains tab,
+        # even if the table hides closed positions (which have realized gains/losses).
+        if not fifo_realized_gains_df.empty:
+            try:
+                # Filter out user_excluded_symbols from the FIFO sum to match Capital Gains tab
+                # --- MODIFIED: Do NOT filter excluded symbols. User wants them included. ---
+                fifo_df_for_sum = fifo_realized_gains_df
+                # if user_excluded_symbols:
+                #     fifo_df_for_sum = fifo_realized_gains_df[
+                #         ~fifo_realized_gains_df["Symbol"].isin(user_excluded_symbols)
+                #     ]
+
+                # 1. Overall Override
+                total_fifo_gain = fifo_df_for_sum["Realized Gain (Display)"].sum()
+                
+                # Update realized gain
+                old_realized = overall_summary_metrics.get("realized_gain", 0.0)
+                overall_summary_metrics["realized_gain"] = total_fifo_gain
+                overall_summary_metrics["total_realized_gain_display"] = total_fifo_gain # Ensure consistency if key exists
+                
+                # Update Total Gain (Realized + Unrealized + Div - Comm)
+                # Re-calculate to ensure consistency
+                unrealized = overall_summary_metrics.get("unrealized_gain", 0.0)
+                dividends = overall_summary_metrics.get("dividends", 0.0)
+                commissions = overall_summary_metrics.get("commissions", 0.0)
+                
+                new_total_gain = total_fifo_gain + unrealized + dividends - commissions
+                overall_summary_metrics["total_gain"] = new_total_gain
+                
+                logging.info(f"Overrode Dashboard Total Realized Gain: {old_realized} -> {total_fifo_gain} (FIFO, Excl. Filtered)")
+
+                # 2. Account-Level Override
+                fifo_gains_by_account = fifo_df_for_sum.groupby("Account")["Realized Gain (Display)"].sum().to_dict()
+                
+                for acct, metrics in account_level_metrics.items():
+                    # Normalize account name if needed, but usually matches
+                    if acct in fifo_gains_by_account:
+                        acct_fifo_gain = fifo_gains_by_account[acct]
+                        
+                        old_acct_realized = metrics.get("total_realized_gain_display", 0.0)
+                        metrics["total_realized_gain_display"] = acct_fifo_gain
+                        
+                        # Update Total Gain for account
+                        acct_unrealized = metrics.get("total_unrealized_gain_display", 0.0)
+                        acct_dividends = metrics.get("total_dividends_display", 0.0)
+                        acct_commissions = metrics.get("total_commissions_display", 0.0)
+                        
+                        metrics["total_gain_display"] = acct_fifo_gain + acct_unrealized + acct_dividends - acct_commissions
+                        
+                        logging.debug(f"Overrode Account {acct} Realized Gain: {old_acct_realized} -> {acct_fifo_gain}")
+                        
+            except Exception as e_override:
+                logging.error(f"Error overriding aggregate realized gains with FIFO: {e_override}")
 
         # Price source warnings check (as before)
         price_source_warnings = False

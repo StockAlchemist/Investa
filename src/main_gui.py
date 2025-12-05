@@ -7218,6 +7218,63 @@ The CSV file should contain the following columns (header names must match exact
         cg_controls_layout.addStretch()
         cg_main_layout.addLayout(cg_controls_layout)
 
+        # --- Capital Gains Summary Cards ---
+        self.cg_summary_frame = QFrame()
+        self.cg_summary_frame.setObjectName("CgSummaryFrame")
+        cg_summary_layout = QHBoxLayout(self.cg_summary_frame)
+        cg_summary_layout.setContentsMargins(10, 10, 10, 10)
+        cg_summary_layout.setSpacing(40) # Increased spacing for better separation
+
+        # Helper to create a card (just labels now)
+        def create_summary_card(title, object_name):
+            # Use a layout for the pair
+            layout = QVBoxLayout()
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(5)
+            
+            title_label = QLabel(title)
+            # Use SummaryLabel style from QSS (inherits font size etc)
+            title_label.setObjectName("SummaryLabel") 
+            title_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            
+            value_label = QLabel("Loading...")
+            value_label.setObjectName(object_name)
+            # Use SummaryValue style from QSS
+            # We can set the object name to SummaryValue for default style, 
+            # but we need specific IDs for updating. 
+            # So we will style these specific IDs in code or rely on generic QLabel styling + manual font updates if needed.
+            # Actually, let's reuse the create_summary_item logic's styling approach manually here
+            # or just set a class property if Qt supported it.
+            # For now, let's stick to manual styling consistent with create_summary_item
+            
+            # Match create_summary_item styling
+            font = QFont(self.app_font if hasattr(self, "app_font") else QFont())
+            font.setPointSize(10) # Base size
+            title_label.setFont(font)
+            title_label.setStyleSheet("color: palette(text); font-weight: normal;") # Ensure color matches theme
+
+            val_font = QFont(self.app_font if hasattr(self, "app_font") else QFont())
+            val_font.setPointSize(14) # Larger for value
+            val_font.setBold(True)
+            value_label.setFont(val_font)
+            value_label.setStyleSheet("color: palette(text);") # Default color
+
+            layout.addWidget(title_label)
+            layout.addWidget(value_label)
+            return layout, value_label
+
+        # Create cards
+        self.cg_card_gain_layout, self.cg_card_gain_value = create_summary_card("Total Realized Gain", "CgTotalGainValue")
+        self.cg_card_proceeds_layout, self.cg_card_proceeds_value = create_summary_card("Total Proceeds", "CgTotalProceedsValue")
+        self.cg_card_cost_layout, self.cg_card_cost_value = create_summary_card("Total Cost Basis", "CgTotalCostValue")
+
+        cg_summary_layout.addLayout(self.cg_card_gain_layout)
+        cg_summary_layout.addLayout(self.cg_card_proceeds_layout)
+        cg_summary_layout.addLayout(self.cg_card_cost_layout)
+        cg_summary_layout.addStretch() # Push everything to the left
+
+        cg_main_layout.addWidget(self.cg_summary_frame)
+
         # --- Chart Area ---
         self.cg_bar_fig = Figure(figsize=(7, 3), dpi=CHART_DPI)  # Adjust size as needed
         self.cg_bar_ax = self.cg_bar_fig.add_subplot(111)
@@ -15127,6 +15184,51 @@ The CSV file should contain the following columns (header names must match exact
         self._update_capital_gains_bar_chart()
         # _update_capital_gains_summary_table will be called by _update_capital_gains_bar_chart
         self._update_capital_gains_table()
+        self._update_capital_gains_summary_cards()
+
+    def _update_capital_gains_summary_cards(self):
+        """Updates the Capital Gains summary cards with total values."""
+        if (
+            not hasattr(self, "capital_gains_history_data")
+            or self.capital_gains_history_data.empty
+        ):
+            self.cg_card_gain_value.setText("N/A")
+            self.cg_card_proceeds_value.setText("N/A")
+            self.cg_card_cost_value.setText("N/A")
+            return
+
+        try:
+            df = self.capital_gains_history_data
+            total_gain = df["Realized Gain (Display)"].sum()
+            total_proceeds = df["Total Proceeds (Display)"].sum()
+            total_cost = df["Total Cost Basis (Display)"].sum()
+            
+            currency_symbol = self._get_currency_symbol()
+            
+            # Helper to format
+            def format_val(val):
+                return f"{currency_symbol}{val:,.2f}"
+            
+            self.cg_card_gain_value.setText(format_val(total_gain))
+            self.cg_card_proceeds_value.setText(format_val(total_proceeds))
+            self.cg_card_cost_value.setText(format_val(total_cost))
+            
+            # Color code the gain
+            # We need to maintain the font size/weight when setting stylesheet for color
+            base_style = "font-weight: bold;" 
+            # Note: Font size is set via QFont in init, but stylesheet might override if not careful.
+            # Let's be explicit in stylesheet to be safe, matching init.
+            
+            if total_gain >= 0:
+                self.cg_card_gain_value.setStyleSheet(f"color: {COLOR_GAIN}; {base_style}")
+            else:
+                self.cg_card_gain_value.setStyleSheet(f"color: {COLOR_LOSS}; {base_style}")
+                
+        except Exception as e:
+            logging.error(f"Error updating capital gains summary cards: {e}")
+            self.cg_card_gain_value.setText("Error")
+            self.cg_card_proceeds_value.setText("Error")
+            self.cg_card_cost_value.setText("Error")
 
     def _update_correlation_matrix_display(self):
         """Updates the Correlation Matrix display."""
@@ -15341,7 +15443,7 @@ The CSV file should contain the following columns (header names must match exact
                 transform=ax.transAxes,
                 color=COLOR_TEXT_SECONDARY,
             )
-            ax.set_title("Realized Capital Gains", fontsize=9, weight="bold")
+            # ax.set_title("Realized Capital Gains", fontsize=9, weight="bold")
             canvas.draw()
             self._update_capital_gains_summary_table(
                 pd.Series(dtype=float)
@@ -15363,7 +15465,7 @@ The CSV file should contain the following columns (header names must match exact
                 transform=ax.transAxes,
                 color=COLOR_TEXT_SECONDARY,
             )
-            ax.set_title("Realized Capital Gains", fontsize=9, weight="bold")
+            # ax.set_title("Realized Capital Gains", fontsize=9, weight="bold")
             canvas.draw()
             self._update_capital_gains_summary_table(
                 pd.Series(dtype=float)
@@ -15489,11 +15591,11 @@ The CSV file should contain the following columns (header names must match exact
             else pd.Series(dtype=float)
         )
         scope_display_label = self._get_scope_label_for_charts()
-        ax.set_title(
-            f"{scope_display_label} - Realized Capital Gains ({display_currency_symbol})",
-            fontsize=9,
-            weight="bold",
-        )
+        # ax.set_title(
+        #     f"{scope_display_label} - Realized Capital Gains ({display_currency_symbol})",
+        #     fontsize=9,
+        #     weight="bold",
+        # )
         ax.set_xlabel("")  # Clear x-axis label
         ax.set_ylabel(f"Total Gain/Loss ({display_currency_symbol})", fontsize=8)
         ax.spines["top"].set_visible(False)

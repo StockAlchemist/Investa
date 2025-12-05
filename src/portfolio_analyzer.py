@@ -2087,6 +2087,7 @@ def extract_realized_capital_gains_history(
     shortable_symbols: Set[str],
     stock_quantity_close_tolerance: float = STOCK_QUANTITY_CLOSE_TOLERANCE,
     include_accounts: Optional[List[str]] = None,
+    current_fx_rates_vs_usd: Optional[Dict[str, float]] = None,  # ADDED: For fallback
 ) -> pd.DataFrame:
     """
     Calculates realized capital gains from transactions using FIFO accounting for long positions.
@@ -2356,6 +2357,27 @@ def extract_realized_capital_gains_history(
                 realized_gain_display = (
                     total_proceeds_display - total_cost_basis_display_for_this_sale
                 )
+            
+            # --- FALLBACK LOGIC FOR REALIZED GAIN DISPLAY ---
+            if pd.isna(realized_gain_display) and pd.notna(realized_gain_local):
+                # Try to use current FX rate as fallback
+                if current_fx_rates_vs_usd:
+                    try:
+                        fallback_rate = get_conversion_rate(
+                            local_curr, display_currency, current_fx_rates_vs_usd
+                        )
+                        if pd.notna(fallback_rate):
+                            realized_gain_display = realized_gain_local * fallback_rate
+                            logging.debug(f"CG Fallback: Used current FX rate {fallback_rate} for {symbol} gain.")
+                        elif local_curr == display_currency:
+                             realized_gain_display = realized_gain_local
+                    except Exception:
+                         pass
+                
+                # If still NaN and currencies match, assume 1:1
+                if pd.isna(realized_gain_display) and local_curr == display_currency:
+                    realized_gain_display = realized_gain_local
+            # --- END FALLBACK ---
 
             # Record the realized gain
             quantity_actually_sold_from_lots = qty - qty_to_sell_remaining
