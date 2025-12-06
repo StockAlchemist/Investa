@@ -81,6 +81,9 @@ except ImportError:
         "yf_portfolio_hist_raw_adjusted"  # Keep as prefix for basename construction
     )
 
+INVALID_SYMBOLS_CACHE_FILE = "invalid_symbols_cache.json"
+INVALID_SYMBOLS_DURATION = 24 * 60 * 60  # 24 hours in seconds
+
 # --- Import helpers from finutils.py ---
 try:
     # map_to_yf_symbol is used within get_current_quotes
@@ -1160,6 +1163,31 @@ class MarketDataProvider:
 
         return results
 
+    def _get_invalid_symbols_cache_path(self) -> str:
+        """Returns the full path to the invalid symbols cache file."""
+        return os.path.join(self._get_historical_cache_dir(), INVALID_SYMBOLS_CACHE_FILE)
+
+    def _load_invalid_symbols_cache(self) -> Dict[str, float]:
+        """Loads the map of invalid symbols and their discovery timestamp."""
+        path = self._get_invalid_symbols_cache_path()
+        if not os.path.exists(path):
+            return {}
+        try:
+            with open(path, "r") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logging.warning(f"Error loading invalid symbols cache: {e}")
+            return {}
+
+    def _save_invalid_symbols_cache(self, invalid_map: Dict[str, float]):
+        """Saves the map of invalid symbols."""
+        path = self._get_invalid_symbols_cache_path()
+        try:
+            with open(path, "w") as f:
+                json.dump(invalid_map, f)
+        except OSError as e:
+            logging.warning(f"Error saving invalid symbols cache: {e}")
+
     @profile
     def _fetch_yf_historical_data(
         self, symbols_yf: List[str], start_date: date, end_date: date
@@ -1179,6 +1207,35 @@ class MarketDataProvider:
         logging.info(
             f"Hist Fetch Helper: Fetching historical data (auto-adjusted) for {len(symbols_yf)} symbols ({start_date} to {end_date})..."
         )
+
+        # --- OPTIMIZATION: Filter out known invalid symbols ---
+        invalid_cache = self._load_invalid_symbols_cache()
+        now_ts = time.time()
+        symbols_to_fetch = []
+        filtered_count = 0
+        cache_needs_update = False
+        
+        for s in symbols_yf:
+            if s in invalid_cache:
+                timestamp = invalid_cache[s]
+                if now_ts - timestamp < INVALID_SYMBOLS_DURATION:
+                    filtered_count += 1
+                    continue  # Skip this symbol
+                else:
+                    # Expired, retry fetching
+                    del invalid_cache[s]
+                    cache_needs_update = True
+            symbols_to_fetch.append(s)
+
+        if cache_needs_update:
+            self._save_invalid_symbols_cache(invalid_cache)
+
+        if filtered_count > 0:
+            logging.info(f"Hist Fetch Helper: Skipped {filtered_count} known invalid/delisted symbols (cache active).")
+        
+        symbols_yf = symbols_to_fetch # Update the list to process
+        # --- END OPTIMIZATION ---
+
         yf_end_date = max(start_date, end_date) + timedelta(days=1)
         yf_start_date = min(start_date, end_date)
         fetch_batch_size = 50  # Process symbols in batches to be friendlier to the API
@@ -1369,13 +1426,24 @@ class MarketDataProvider:
                                      logging.info(f"  Hist Fetch Helper: Individual retry SUCCESS for {symbol}.")
                                  else:
                                      logging.warning(f"  Hist Fetch Helper WARN: Individual retry for {symbol} returned no valid price data.")
+                                     invalid_cache[symbol] = now_ts
+                                     cache_needs_update = True
                              else:
                                  logging.warning(f"  Hist Fetch Helper WARN: Individual retry for {symbol} returned no data in range.")
+                                 invalid_cache[symbol] = now_ts
+                                 cache_needs_update = True
                         else:
                              logging.warning(f"  Hist Fetch Helper WARN: Individual retry for {symbol} returned empty DataFrame.")
+                             invalid_cache[symbol] = now_ts
+                             cache_needs_update = True
                              
                     except Exception as e_retry:
                         logging.warning(f"  Hist Fetch Helper WARN: Individual retry failed for {symbol}: {e_retry}")
+                        invalid_cache[symbol] = now_ts
+                        cache_needs_update = True
+
+        if cache_needs_update:
+            self._save_invalid_symbols_cache(invalid_cache)
 
         logging.info(
             f"Hist Fetch Helper: Finished fetching ({len(historical_data)} symbols successful)."
@@ -1846,15 +1914,23 @@ class MarketDataProvider:
         # --- 4. Final Check and Return ---
         # Check if any requested symbol is still missing
         if symbols_yf:  # Only check if symbols were actually requested
-            if any(
-                s not in historical_prices_yf_adjusted
-                or historical_prices_yf_adjusted[s].empty
-                for s in symbols_yf  # Check against originally requested symbols_yf
-            ):
-                logging.error(  # Changed to error
-                    "Hist Prices ERROR: Data missing for some requested stock/benchmark symbols after cache/fetch."
+            missing_valid_symbols = []
+            invalid_cache = self._load_invalid_symbols_cache()
+            
+            for s in symbols_yf:
+                if s not in historical_prices_yf_adjusted or historical_prices_yf_adjusted[s].empty:
+                    # Only consider it a failure if it's NOT a known invalid symbol
+                    if s not in invalid_cache:
+                        missing_valid_symbols.append(s)
+            
+            if missing_valid_symbols:
+                logging.error(
+                    f"Hist Prices ERROR: Data missing for {len(missing_valid_symbols)} requested symbols after cache/fetch: {', '.join(missing_valid_symbols)}"
                 )
-                fetch_failed = True  # SET THE FLAG
+                fetch_failed = True  # SET THE FLAG only if valid symbols missed
+            elif any(s not in historical_prices_yf_adjusted for s in symbols_yf):
+                 # Log warning for known invalid
+                 logging.warning("Hist Prices WARN: Some requested symbols were missing but found in invalid cache. Proceeding.")
         return (
             historical_prices_yf_adjusted,
             fetch_failed,

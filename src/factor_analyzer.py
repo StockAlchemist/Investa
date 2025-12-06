@@ -44,7 +44,7 @@ def _fetch_factor_data(
         spy_col_name = benchmark_data.columns[
             0
         ]  # Assume the first column is the benchmark
-        spy_returns = benchmark_data[spy_col_name].pct_change().dropna()
+        spy_returns = benchmark_data[spy_col_name].pct_change(fill_method=None).dropna()
         spy_returns.name = "Mkt-RF"
         logging.info(
             f"Using pre-loaded benchmark data for SPY from column '{spy_col_name}'."

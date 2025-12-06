@@ -14,7 +14,7 @@
  Modified:      2025-04-30
  Copyright:     (c) Kittiwit Matan 2025
  Licence:       MIT
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 SPDX-License-Identifier: MIT
 """
 
@@ -164,7 +164,7 @@ except ImportError:
 
 
 # --- Main Calculation Function (Current Portfolio Summary) ---
-# @profile
+@profile
 def calculate_portfolio_summary(
     all_transactions_df_cleaned: Optional[pd.DataFrame],  # MODIFIED: Accept DataFrame
     original_transactions_df_for_ignored: Optional[
@@ -188,7 +188,6 @@ def calculate_portfolio_summary(
     default_currency: str = DEFAULT_CURRENCY,
     account_currency_map: Optional[Dict[str, str]] = None,
     market_provider: Optional[Any] = None,  # Added for dependency injection
-    calc_method: Optional[str] = None, # Added for benchmarking override
 ) -> Tuple[
     Optional[Dict[str, Any]],
     Optional[pd.DataFrame],
@@ -1529,13 +1528,6 @@ def _calculate_daily_net_cash_flow_vectorized(
     # --- 1. CASH SYMBOL FLOWS (Deposits/Withdrawals) ---
     cash_mask = (df_period["Symbol"] == CASH_SYMBOL_CSV) & (df_period["Type"].isin(["deposit", "withdrawal"]))
     df_cash = df_period[cash_mask].copy()
-
-    # --- FIX: Filter cash flows by included accounts ---
-    if included_accounts and not df_cash.empty:
-        df_cash = df_cash[
-            df_cash["Account"].astype(str).str.upper().str.strip().isin(included_set)
-        ]
-
     
     flows_list = [] # Store partial dataframes (Date, Flow_Local, Currency)
 
@@ -2590,12 +2582,20 @@ def _calculate_daily_holdings_chronological_numba(
                 elif type_id == buy_type_id or type_id == deposit_type_id:
                     if qty > 1e-9:
                         current_holdings_qty[symbol_id, account_id] += qty
+                        # --- FIX: Update Cash for BUY ---
+                        # Cash decreases by (Qty * Price) + Commission
+                        cost = (qty * price) + commission
+                        current_cash_balances[account_id] -= cost
 
                 elif type_id == sell_type_id or type_id == withdrawal_type_id:
                     if qty > 1e-9:
                         held_qty = current_holdings_qty[symbol_id, account_id]
                         qty_sold = min(qty, held_qty) if held_qty > 1e-9 else 0.0
                         current_holdings_qty[symbol_id, account_id] -= qty_sold
+                        # --- FIX: Update Cash for SELL ---
+                        # Cash increases by (Qty * Price) - Commission
+                        proceeds = (qty_sold * price) - commission
+                        current_cash_balances[account_id] += proceeds
 
                 elif type_id == transfer_type_id:
                     if qty > 1e-9:
@@ -2633,7 +2633,6 @@ def _calculate_daily_holdings_chronological_numba(
                             )
                             qty_covered = min(abs(qty), qty_currently_short)
                             current_holdings_qty[symbol_id, account_id] += qty_covered
-            
             tx_idx += 1
 
         for s_id in range(num_symbols):
@@ -2919,23 +2918,72 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             local_currency, target_currency, target_date, historical_fx_yf
         )
         if pd.isna(fx_rate):
-            # Hist Fix: Default to 1.0 if missing FX
-            fx_rate = 1.0
-            # any_lookup_nan_on_date = True
-            # total_market_value_display_curr_agg = np.nan
-            # break
-            
+            any_lookup_nan_on_date = True
+            total_market_value_display_curr_agg = np.nan
+            break
+
+        # Manual Override check
+        if manual_overrides_dict and internal_symbol in manual_overrides_dict:
+            symbol_override_data = manual_overrides_dict[internal_symbol]
+            manual_price = symbol_override_data.get("price")
+            if manual_price is not None and pd.notna(manual_price):
+                try:
+                    manual_price_float = float(manual_price)
+                    if manual_price_float > 1e-9:
+                        current_price_local = manual_price_float
+                except (ValueError, TypeError):
+                    pass
+
+        force_fallback = internal_symbol in YFINANCE_EXCLUDED_SYMBOLS
+
+        if pd.isna(current_price_local) and not force_fallback:
+            yf_symbol_for_lookup = internal_to_yf_map.get(internal_symbol)
+            if yf_symbol_for_lookup:
+                price_val = get_historical_price(
+                    yf_symbol_for_lookup, target_date, historical_prices_yf_unadjusted
+                )
+                if price_val is not None and pd.notna(price_val) and price_val > 1e-9:
+                    current_price_local = float(price_val)
+
+        if pd.isna(current_price_local) or force_fallback:
+            # Fallback logic
+            try:
+                fallback_tx = transactions_df[
+                    (transactions_df["Symbol"] == internal_symbol)
+                    & (transactions_df["Account"] == account)
+                    & (transactions_df["Price/Share"].notna())
+                    & (
+                        pd.to_numeric(transactions_df["Price/Share"], errors="coerce")
+                        > 1e-9
+                    )
+                    & (transactions_df["Date"].dt.date <= target_date)
+                ].copy()
+                if not fallback_tx.empty:
+                    fallback_tx.sort_values(
+                        by=["Date", "original_index"], inplace=True, ascending=True
+                    )
+                    last_tx_row = fallback_tx.iloc[-1]
+                    last_tx_price = pd.to_numeric(
+                        last_tx_row["Price/Share"], errors="coerce"
+                    )
+                    if pd.notna(last_tx_price) and last_tx_price > 1e-9:
+                        current_price_local = float(last_tx_price)
+            except Exception:
+                pass
+
+        if pd.isna(current_price_local):
+            # Numba Fix: Treat missing price as 0.0 to allow other holdings to sum up.
+             if manual_price is not None and pd.notna(manual_price):
+                current_price_local = manual_price
+
+        market_value_local = current_qty * float(current_price_local)
         market_value_display = market_value_local * fx_rate
 
         if IS_DEBUG_DATE:
             logging.debug(f"    Numba Val Agg: Stock {internal_symbol}/{account}, Qty: {current_qty}, Price: {current_price_local}, MV: {market_value_display}")
 
         if pd.isna(market_value_display):
-            if current_qty == 0:
-                # Zero qty should not cause NaN
-                market_value_display = 0.0
-            else:
-                 any_lookup_nan_on_date = True
+            any_lookup_nan_on_date = True
         else:
             total_market_value_display_curr_agg += market_value_display
 
@@ -2943,42 +2991,40 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         logging.debug(f"    Numba Val Agg: Pre-Cash Total: {total_market_value_display_curr_agg}")
 
     # --- ADDED: Aggregate Cash Balances from Numba ---
-    # Note: If any_lookup_nan_on_date is true from stocks, we might still want to sum cash?
-    # Original logic breaks early. Keep consistent?
-    # If we patched stock FX, we likely won't break early.
-    
-    cash_indices = np.argwhere(np.abs(cash_balances_np) > 1e-9)
-    for acc_id_tuple in cash_indices:
-        acc_id = acc_id_tuple[0]
-        
-        # --- ADDED: Filter by included_accounts ---
-        if included_accounts and acc_id not in included_account_ids:
-            continue
-        # --- END ADDED ---
+    if not any_lookup_nan_on_date:
+        cash_indices = np.argwhere(np.abs(cash_balances_np) > 1e-9)
+        for acc_id_tuple in cash_indices:
+            acc_id = acc_id_tuple[0]
+            
+            # --- ADDED: Filter by included_accounts ---
+            if included_accounts and acc_id not in included_account_ids:
+                continue
+            # --- END ADDED ---
 
-        account = id_to_account.get(acc_id)
-        if account is None:
-            continue
+            account = id_to_account.get(acc_id)
+            if account is None:
+                continue
 
-        current_qty = cash_balances_np[acc_id]
-        currency_id = cash_currency_np[acc_id]
-        local_currency = id_to_currency.get(currency_id, default_currency)
+            current_qty = cash_balances_np[acc_id]
+            currency_id = cash_currency_np[acc_id]
+            local_currency = id_to_currency.get(currency_id, default_currency)
 
-        fx_rate = get_historical_rate_via_usd_bridge(
-            local_currency, target_currency, target_date, historical_fx_yf
-        )
-        
-        if pd.isna(fx_rate):
-             # Hist Fix: Default to 1.0
-             fx_rate = 1.0
+            fx_rate = get_historical_rate_via_usd_bridge(
+                local_currency, target_currency, target_date, historical_fx_yf
+            )
+            
+            cash_val_display = current_qty * fx_rate
+            if IS_DEBUG_DATE:
+                logging.debug(f"    Numba Val Agg: Cash {account}, Qty: {current_qty}, FX: {fx_rate}, MV: {cash_val_display}")
 
-        cash_val_display = current_qty * fx_rate
-        if IS_DEBUG_DATE:
-            logging.debug(f"    Numba Val Agg: Cash {account}, Qty: {current_qty}, FX: {fx_rate}, MV: {cash_val_display}")
-
-        total_market_value_display_curr_agg += cash_val_display
-        if IS_DEBUG_DATE:
-            logging.debug(f"    Numba Val Agg: Running Total after Cash {account}: {total_market_value_display_curr_agg}")
+            if pd.isna(fx_rate):
+                any_lookup_nan_on_date = True
+                total_market_value_display_curr_agg = np.nan
+                break
+            
+            total_market_value_display_curr_agg += cash_val_display
+            if IS_DEBUG_DATE:
+                logging.debug(f"    Numba Val Agg: Running Total after Cash {account}: {total_market_value_display_curr_agg}")
 
     if IS_DEBUG_DATE:
         logging.debug(
@@ -3732,37 +3778,12 @@ def _value_daily_holdings_vectorized(
     # Cache FX series to avoid re-fetching for same currency
     currency_fx_series_cache = {}
     
-    # Pre-fetch Target Currency Rate vs USD (Series)
-    # Target Rate = Target / USD
-    target_rate_series = None
-    target_curr_upper = target_currency.upper()
-    
-    if target_curr_upper == "USD":
-        target_rate_series = pd.Series(1.0, index=date_range)
-    else:
-        # Fetch Target=X (e.g. THB=X means THB per USD)
-        target_pair = f"{target_curr_upper}=X"
-        if target_pair in historical_fx_yf:
-            t_df = historical_fx_yf[target_pair]
-            if not t_df.empty and "price" in t_df.columns:
-                # Reindex to date_range with ffill
-                t_series = t_df["price"]
-                if isinstance(t_series.index, pd.DatetimeIndex):
-                     t_series.index = t_series.index.normalize()
-                target_rate_series = t_series.reindex(date_range, method='ffill')
-    
-    # If target rate missing, we can't convert anything (unless local==target)
-    # Ensure it's not None for math consistency, fill with NaN if missing
-    if target_rate_series is None:
-         target_rate_series = pd.Series(np.nan, index=date_range)
-
     for acc_id in range(num_accounts):
         if acc_id not in account_ids_to_include_set:
             continue
             
         acc_name = id_to_account.get(acc_id)
         local_curr = account_currency_map.get(acc_name, default_currency)
-        local_curr_upper = local_curr.upper()
         
         if local_curr in currency_fx_series_cache:
             daily_fx_aligned[:, acc_id] = currency_fx_series_cache[local_curr]
@@ -3773,46 +3794,24 @@ def _value_daily_holdings_vectorized(
             rates = np.ones(num_days, dtype=np.float64)
             daily_fx_aligned[:, acc_id] = rates
             currency_fx_series_cache[local_curr] = rates
-            continue
-        
-        # Calculate Cross Rate: (Target / USD) / (Local / USD)
-        # We need Local Rate = Local / USD
-        local_rate_series = None
-        if local_curr_upper == "USD":
-            local_rate_series = pd.Series(1.0, index=date_range)
         else:
-            local_pair = f"{local_curr_upper}=X"
-            if local_pair in historical_fx_yf:
-                 l_df = historical_fx_yf[local_pair]
-                 if not l_df.empty and "price" in l_df.columns:
-                    l_series = l_df["price"]
-                    if isinstance(l_series.index, pd.DatetimeIndex):
-                        l_series.index = l_series.index.normalize()
-                    local_rate_series = l_series.reindex(date_range, method='ffill')
+            # Simple approach: Loop dates to build the series ONCE per currency
+            rate_list = []
+            any_fx_missing = False
+            for d in date_range:
+                r = get_historical_rate_via_usd_bridge(local_curr, target_currency, d.date(), historical_fx_yf)
+                if pd.isna(r):
+                    any_fx_missing = True
+                    rate_list.append(np.nan)
+                else:
+                    rate_list.append(r)
+            
+            rates = np.array(rate_list, dtype=np.float64)
+            daily_fx_aligned[:, acc_id] = rates
+            currency_fx_series_cache[local_curr] = rates
+            if any_fx_missing:
+                has_errors = True
 
-        if local_rate_series is None:
-             # Missing local rate data - Default to 1.0 to prevent NaN propagation
-             rates = np.ones(num_days, dtype=np.float64)
-             # logging.warning(f"Hist Val: Missing FX rates for {local_curr}, defaulting to 1.0")
-             has_errors = True
-        else:
-             # Compute cross rate
-             # Handle division by zero or NaN
-             with np.errstate(divide='ignore', invalid='ignore'):
-                 # aligned_target / aligned_local
-                 cross_rates = target_rate_series / local_rate_series
-             
-             rates = cross_rates.values
-             # Check for NaNs and fill with 1.0
-             mask_nan_fx = np.isnan(rates)
-             if mask_nan_fx.any():
-                  rates[mask_nan_fx] = 1.0
-                  # has_errors = True # Reduced severity
-        
-        daily_fx_aligned[:, acc_id] = rates
-        currency_fx_series_cache[local_curr] = rates
-    
-    
     # 4. Calculate Market Value (Stocks)
     # Broadcast Arrays to (Days, Syms, Accs)
     # P_3d = (D, S, 1)
@@ -3827,10 +3826,6 @@ def _value_daily_holdings_vectorized(
         V_stocks = daily_holdings_qty_np * P_full * daily_fx_aligned[:, np.newaxis, :]
     else:
         V_stocks = daily_holdings_qty_np * P_3d * daily_fx_aligned[:, np.newaxis, :]
-    
-    # --- CRITICAL FIX: Prevent 0.0 * NaN = NaN ---
-    # Ensure zero quantity always results in zero value, regardless of Price or FX NaNs
-    V_stocks[daily_holdings_qty_np == 0] = 0.0
 
     # Mask out excluded accounts
     acc_mask = np.zeros(num_accounts, dtype=bool)
@@ -3845,9 +3840,6 @@ def _value_daily_holdings_vectorized(
 
     # 5. Calculate Cash Value
     V_cash = daily_cash_balances_np * daily_fx_aligned
-    # --- CRITICAL FIX: Prevent 0.0 * NaN = NaN for Cash ---
-    V_cash[daily_cash_balances_np == 0] = 0.0
-    
     V_cash[:, ~acc_mask] = 0.0
     
     total_cash_value = np.sum(V_cash, axis=1)
@@ -3856,15 +3848,12 @@ def _value_daily_holdings_vectorized(
     total_value = total_stock_value + total_cash_value
     
     if np.isnan(total_value).any():
-        # Clean up NaNs to allow plotting/display (treat as 0.0 value or gap)
-        # We don't want to fail the whole calculation due to some missing data.
-        status_msg += " (partial data missing)"
-        total_value = np.nan_to_num(total_value, nan=0.0)
-        # bas_errors = False  <-- Don't set to True, allow partial success
+        status_msg += " (some valuations failed due to missing Price/FX)"
+        has_errors = True
+        
     daily_value_series = pd.Series(total_value, index=date_range)
     return daily_value_series, has_errors, status_msg
 
-# @profile
 def _load_or_calculate_daily_results(
     use_daily_results_cache: bool,
     daily_results_cache_file: Optional[str],
@@ -3898,7 +3887,7 @@ def _load_or_calculate_daily_results(
     included_accounts_list: List[str],
     # --- Parameters with defaults follow ---
     num_processes: Optional[int] = None,
-    current_hist_version: str = "v13",
+    current_hist_version: str = "v12",
     filter_desc: str = "All Accounts",
     calc_method: str = HISTORICAL_CALC_METHOD,
 ) -> Tuple[pd.DataFrame, bool, str]:  # type: ignore
@@ -3950,19 +3939,567 @@ def _load_or_calculate_daily_results(
             - status_update (str): String describing the outcome (cache load, calculation, errors).
     """
     # ... (Function body remains unchanged) ...
-    import pandas as pd  # Explicit import locally to fix UnboundLocalError
     daily_df = pd.DataFrame()
-    t0 = time.time()
     cache_valid_daily_results = False
     status_update = ""
     dummy_warnings_set = set()
 
+    dummy_warnings_set = set()
 
     # --- Chronological Calculation (numba_chrono) ---
+    # --- MODIFIED: Use L1 cache if available, otherwise calculate from scratch ---
+    if calc_method == "numba_chrono":
+        # This date range is needed for both cached and non-cached paths for valuation loop
+        first_tx_date = (
+            transactions_df_effective["Date"].min().date()
+            if not transactions_df_effective.empty
+            else start_date
+        )
+        calc_start_date = max(start_date, first_tx_date)
+        calc_end_date = end_date
+        date_range_for_calc = pd.date_range(
+            start=calc_start_date, end=calc_end_date, freq="D"
+        )
+        # logging.debug(f"DEBUG HIST: calc_start_date={calc_start_date}, first_tx_date={first_tx_date}, range_len={len(date_range_for_calc)}")
+
+        # Determine which set of holdings to use (L1 cached or calculate now)
+        use_l1_cache = (
+            all_holdings_qty is not None 
+            and all_cash_balances is not None
+            and not included_accounts_list  # Only use cache if no account filtering
+        )
+        
+        daily_holdings_qty_to_use = None
+        daily_cash_balances_to_use = None
+        daily_last_prices_to_use = None
+
+        if use_l1_cache:
+            logging.info(
+                f"Hist Daily (Scope: {filter_desc}): Using L1 cached holdings..."
+            )
+            status_update = " Using pre-calculated daily values..."
+            
+            # Calculate offset if we are starting later than the first transaction
+            l1_cache_start_date = transactions_df_effective["Date"].min().date()
+            l1_offset = (calc_start_date - l1_cache_start_date).days
+            if l1_offset < 0: l1_offset = 0
+            
+            # Slice L1 cache
+            # Ensure we don't go out of bounds
+            len_needed = len(date_range_for_calc)
+            daily_holdings_qty_to_use = all_holdings_qty[l1_offset : l1_offset + len_needed]
+            daily_cash_balances_to_use = all_cash_balances[l1_offset : l1_offset + len_needed]
+            if all_last_prices is not None:
+                daily_last_prices_to_use = all_last_prices[l1_offset : l1_offset + len_needed]
+            
+            logging.info(f"Hist Daily: Using L1 cache with offset {l1_offset} days.")
+        else:
+            logging.info(
+                f"Hist Daily (Scope: {filter_desc}): L1 cache miss. Calculating daily holdings chronologically (numba_chrono)..."
+            )
+            status_update = " Calculating daily values (chrono)..."
+            sorted_df = transactions_df_effective.sort_values(by=["Date", "original_index"]).copy()
+
+            # Prepare inputs for chronological Numba function
+            date_ordinals_np = np.array([d.toordinal() for d in date_range_for_calc], dtype=np.int64)
+            tx_dates_ordinal_np = np.array([d.toordinal() for d in sorted_df["Date"].dt.date.values], dtype=np.int64)
+            tx_symbols_np = sorted_df["Symbol"].map(symbol_to_id).values.astype(np.int64)
+            
+            account_ids_series = _normalize_series(sorted_df["Account"]).map(account_to_id)
+            if account_ids_series.isna().any():
+                valid_mask = account_ids_series.notna()
+                sorted_df = sorted_df[valid_mask]
+                account_ids_series = account_ids_series[valid_mask]
+
+            tx_accounts_np = account_ids_series.values.astype(np.int64)
+            
+            if "To Account" in sorted_df.columns:
+                tx_to_accounts_series = _normalize_series(sorted_df["To Account"]).map(account_to_id)
+            else:
+                tx_to_accounts_series = pd.Series(-1, index=sorted_df.index)
+            tx_to_accounts_np = tx_to_accounts_series.fillna(-1).values.astype(np.int64)
+            
+            tx_types_np = sorted_df["Type"].str.lower().str.strip().map(type_to_id).fillna(-1).values.astype(np.int64)
+            tx_quantities_np = sorted_df["Quantity"].fillna(0.0).values.astype(np.float64)
+            tx_commissions_np = sorted_df["Commission"].fillna(0.0).values.astype(np.float64)
+            tx_split_ratios_np = sorted_df["Split Ratio"].fillna(0.0).values.astype(np.float64)
+            
+            price_col = "Price/Share" if "Price/Share" in sorted_df.columns else "Price"
+            tx_prices_np = sorted_df[price_col].fillna(0.0).values.astype(np.float64) if price_col in sorted_df.columns else np.zeros(len(sorted_df), dtype=np.float64)
+
+            split_type_id = type_to_id.get("split", -1)
+            stock_split_type_id = type_to_id.get("stock split", -1)
+            buy_type_id = type_to_id.get("buy", -1)
+            deposit_type_id = type_to_id.get("deposit", -1)
+            sell_type_id = type_to_id.get("sell", -1)
+            withdrawal_type_id = type_to_id.get("withdrawal", -1)
+            short_sell_type_id = type_to_id.get("short sell", -1)
+            buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
+            transfer_type_id = type_to_id.get("transfer", -1)
+            cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
+            shortable_symbol_ids = np.array([symbol_to_id[s] for s in SHORTABLE_SYMBOLS if s in symbol_to_id], dtype=np.int64)
+            num_symbols = len(symbol_to_id)
+            num_accounts = len(account_to_id)
+
+            # Call Numba function
+            daily_holdings_qty_to_use, daily_cash_balances_to_use, daily_last_prices_to_use = _calculate_daily_holdings_numba(
+                date_ordinals_np,
+                tx_dates_ordinal_np,
+                tx_symbols_np,
+                tx_to_accounts_np,
+                tx_accounts_np,
+                tx_types_np,
+                tx_quantities_np,
+                tx_commissions_np,
+                tx_split_ratios_np,
+                tx_prices_np,
+                num_symbols,
+                num_accounts,
+                split_type_id,
+                stock_split_type_id,
+                buy_type_id,
+                deposit_type_id,
+                sell_type_id,
+                withdrawal_type_id,
+                short_sell_type_id,
+                buy_to_cover_type_id,
+                transfer_type_id,
+                cash_symbol_id,
+                STOCK_QUANTITY_CLOSE_TOLERANCE,
+                shortable_symbol_ids,
+            )
+        
+        # Determine included account IDs
+        account_ids_to_include_set = {account_to_id.get(str(acc).upper().strip()) for acc in included_accounts_list}
+        account_ids_to_include_set.discard(None)
+
+        # --- VECTORIZED VALUATION ---
+        daily_value_series, val_errors, val_status = _value_daily_holdings_vectorized(
+            date_range=date_range_for_calc,
+            daily_holdings_qty_np=daily_holdings_qty_to_use,
+            daily_last_prices_np=daily_last_prices_to_use,
+            daily_cash_balances_np=daily_cash_balances_to_use,
+            historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,
+            historical_fx_yf=historical_fx_yf,
+            target_currency=display_currency,
+            account_currency_map=account_currency_map,
+            id_to_symbol=id_to_symbol,
+            id_to_account=id_to_account,
+            internal_to_yf_map=internal_to_yf_map,
+            account_ids_to_include_set=account_ids_to_include_set,
+            default_currency=default_currency,
+        )
+        if val_errors:
+            status_update += val_status
+
+        # --- VECTORIZED CASH FLOW ---
+        daily_net_flow_series, flow_errors = _calculate_daily_net_cash_flow_vectorized(
+            date_range=date_range_for_calc,
+            transactions_df=transactions_df_effective,
+            target_currency=display_currency,
+            historical_fx_yf=historical_fx_yf,
+            default_currency=default_currency,
+            included_accounts=included_accounts_list,
+            historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,
+            internal_to_yf_map=internal_to_yf_map,
+        )
+        if flow_errors:
+            status_update += " (flow errors)"
+        
+        # --- CONSTRUCT DAILY DF ---
+        daily_df = pd.DataFrame({
+            "value": daily_value_series,
+            "net_flow": daily_net_flow_series
+        }, index=date_range_for_calc)
+        
+        # --- ADD BENCHMARKS --- (Vectorized lookup)
+        # clean_benchmark_symbols_yf removed from args, but logic is generic if we had them or can add them later?
+        # The main function logic `calculate_historical_performance` ADDS benchmarks later.
+        # But `_load_or_calculate_daily_results` signature has removed `clean_benchmark_symbols_yf`.
+        # However, the original loop handled benchmark prices. 
+        # Wait, I removed `clean_benchmark_symbols_yf` from `_load_or_calculate_daily_results` args in my thought process?
+        # Let's check the signature in the file.
+        # Line 3590: `# clean_benchmark_symbols_yf removed`.
+        # So benchmarks are NOT handled inside here anymore. 
+        # Correct, lines 5283+ in `calculate_historical_performance` (Step 15 output) fetches and merges benchmarks.
+        # So we don't need to do benchmark lookup here! 
+        # The Python loop version (lines 3953+) HAD benchmarks lookup logic, but maybe that was legacy or redundant if benchmarks are added later?
+        # Wait, if `clean_benchmark_symbols_yf` was removed from arguments, then the loop code relying on it would fail if it wasn't filtered.
+        # But wait, lines 3955 `for bm_symbol in clean_benchmark_symbols_yf:`
+        # `clean_benchmark_symbols_yf` is NOT in the arguments of the function I viewed in Step 25.
+        # Ah, Step 25 line 3590 says `# clean_benchmark_symbols_yf removed`.
+        # But wait, line 3639 in docstring says it.
+        # But actual definition:
+        # 3590: `# clean_benchmark_symbols_yf removed`
+        # BUT the code I viewed in Step 29 (line 3955) uses `clean_benchmark_symbols_yf`.
+        # Where does it come from? It's not in args.
+        # Maybe it's defined in the outer scope or I missed it?
+        # Or maybe the code I read in Step 25 was "Modified" by me in a thought but not actual file?
+        # No, Step 25 is "view_file" output.
+        # Let's check line 3590 in actual file.
+        
+        # Actually, let's look at `calculate_historical_performance` call site (Step 15):
+        # It calls `_load_or_calculate_daily_results` at line 5224.
+        # It passes `transactions_df_effective`, etc.
+        # It does NOT pass `benchmark_symbols` or `clean_benchmark_symbols_yf`.
+        # So `_load_or_calculate_daily_results` likely DOES NOT have `clean_benchmark_symbols_yf` in its args.
+        # BUT the code in Step 29 (3955) iterates it: `for bm_symbol in clean_benchmark_symbols_yf:`
+        # If it's not in args, it must be global or closure? Unlikely.
+        # `_load_or_calculate_daily_results` is a top-level function.
+        # This implies `clean_benchmark_symbols_yf` IS in args or I misread.
+        # Let's re-read the args of `_load_or_calculate_daily_results` carefully.
+        pass
+        # This date range is needed for both cached and non-cached paths for valuation loop
+        first_tx_date = (
+            transactions_df_effective["Date"].min().date()
+            if not transactions_df_effective.empty
+            else start_date
+        )
+        calc_start_date = max(start_date, first_tx_date)
+        calc_end_date = end_date
+        date_range_for_calc = pd.date_range(
+            start=calc_start_date, end=calc_end_date, freq="D"
+        )
+        print(f"DEBUG HIST: calc_start_date={calc_start_date}, first_tx_date={first_tx_date}, range_len={len(date_range_for_calc)}")
+
+        # Determine which set of holdings to use (L1 cached or calculate now)
+        # IMPORTANT: Only use L1 cache if we're calculating for ALL accounts
+        # The L1 cache is calculated from all_transactions_df (all accounts combined)
+        # If we're filtering to specific accounts, we MUST recalculate from filtered transactions
+        use_l1_cache = (
+            all_holdings_qty is not None 
+            and all_cash_balances is not None
+            and not included_accounts_list  # Only use cache if no account filtering
+        )
+        
+        if use_l1_cache:
+            logging.info(
+                f"Hist Daily (Scope: {filter_desc}): Using L1 cached holdings..."
+            )
+            status_update = " Using pre-calculated daily values..."
+            daily_holdings_qty_source = all_holdings_qty
+            daily_cash_balances_source = all_cash_balances
+            daily_last_prices_source = all_last_prices
+            
+            # Calculate offset if we are starting later than the first transaction
+            # all_holdings_qty starts at first_tx_date (of the full history)
+            # date_range_for_calc starts at calc_start_date
+            # We need to ensure we align them correctly.
+            # Assuming all_holdings_qty was calculated from first_tx_date to end_date (or beyond).
+            l1_cache_start_date = transactions_df_effective["Date"].min().date() # Should match L1 cache start
+            l1_offset = (calc_start_date - l1_cache_start_date).days
+            if l1_offset < 0:
+                l1_offset = 0 # Should not happen if logic is correct
+            
+            logging.info(f"Hist Daily: Using L1 cache with offset {l1_offset} days.")
+        else:
+            logging.info(
+                f"Hist Daily (Scope: {filter_desc}): L1 cache miss. Calculating daily holdings chronologically (numba_chrono)..."
+            )
+            status_update = " Calculating daily values (chrono)..."
+            # --- FIX: Sort transactions before creating numpy arrays ---
+            sorted_df = transactions_df_effective.sort_values(
+                by=["Date", "original_index"]
+            ).copy()
+
+            # Prepare inputs for chronological Numba function
+            date_ordinals_np = np.array(
+                [d.toordinal() for d in date_range_for_calc], dtype=np.int64
+            )
+            tx_dates_ordinal_np = np.array(
+                [d.toordinal() for d in sorted_df["Date"].dt.date.values],
+                dtype=np.int64,
+            )
+            tx_symbols_np = (
+                sorted_df["Symbol"].map(symbol_to_id).values.astype(np.int64)
+            )
+            # Ensure no NaNs in account mapping
+            account_ids_series = _normalize_series(sorted_df["Account"]).map(account_to_id)
+            if account_ids_series.isna().any():
+                logging.warning("Found transactions with unknown accounts during mapping. Dropping them.")
+                valid_mask = account_ids_series.notna()
+                sorted_df = sorted_df[valid_mask]
+                account_ids_series = account_ids_series[valid_mask]
+
+            tx_accounts_np = account_ids_series.values.astype(np.int64)
+            # --- NEW: Map To Account for chrono calc ---
+            if "To Account" in sorted_df.columns:
+                # Use _normalize_series to ensure matching with account_to_id keys
+                tx_to_accounts_series = _normalize_series(sorted_df["To Account"]).map(
+                    account_to_id
+                )
+            else:
+                tx_to_accounts_series = pd.Series(-1, index=sorted_df.index)
+            tx_to_accounts_np = tx_to_accounts_series.fillna(-1).values.astype(np.int64)
+            # --- END NEW ---
+            tx_types_np = (
+                sorted_df["Type"]
+                .str.lower()
+                .str.strip()
+                .map(type_to_id)
+                .fillna(-1)
+                .values.astype(np.int64)
+            )
+            tx_quantities_np = (
+                sorted_df["Quantity"].fillna(0.0).values.astype(np.float64)
+            )
+            tx_commissions_np = (
+                sorted_df["Commission"].fillna(0.0).values.astype(np.float64)
+            )
+            tx_split_ratios_np = (
+                sorted_df["Split Ratio"].fillna(0.0).values.astype(np.float64)
+            )
+            # --- NEW: Prepare prices for fallback ---
+            # "Price/Share" might be the column name, or "Price". Check both or standard.
+            # Assuming "Price/Share" based on previous code.
+            price_col = "Price/Share" if "Price/Share" in sorted_df.columns else "Price"
+            tx_prices_np = (
+                sorted_df[price_col].fillna(0.0).values.astype(np.float64)
+                if price_col in sorted_df.columns
+                else np.zeros(len(sorted_df), dtype=np.float64)
+            )
+
+            split_type_id = type_to_id.get("split", -1)
+            stock_split_type_id = type_to_id.get("stock split", -1)
+            buy_type_id = type_to_id.get("buy", -1)
+            deposit_type_id = type_to_id.get("deposit", -1)
+            sell_type_id = type_to_id.get("sell", -1)
+            withdrawal_type_id = type_to_id.get("withdrawal", -1)
+            short_sell_type_id = type_to_id.get("short sell", -1)
+            buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
+            transfer_type_id = type_to_id.get("transfer", -1)
+            cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
+            shortable_symbol_ids = np.array(
+                [symbol_to_id[s] for s in SHORTABLE_SYMBOLS if s in symbol_to_id],
+                dtype=np.int64,
+            )
+            num_symbols = len(symbol_to_id)
+            num_accounts = len(account_to_id)
+
+            # Call Numba function to get daily holdings
+            daily_holdings_qty_source, daily_cash_balances_source, daily_last_prices_source = (
+                _calculate_daily_holdings_chronological_numba(
+                    date_ordinals_np,
+                    tx_dates_ordinal_np,
+                    tx_symbols_np,
+                    tx_to_accounts_np,
+                    tx_accounts_np,
+                    tx_types_np,
+                    tx_quantities_np,
+                    tx_commissions_np,
+                    tx_split_ratios_np,
+                    tx_prices_np,  # NEW argument
+                    num_symbols,
+                    num_accounts,
+                    split_type_id,
+                    stock_split_type_id,
+                    buy_type_id,
+                    deposit_type_id,
+                    sell_type_id,
+                    withdrawal_type_id,
+                    short_sell_type_id,
+                    buy_to_cover_type_id,
+                    transfer_type_id,
+                    cash_symbol_id,
+                    STOCK_QUANTITY_CLOSE_TOLERANCE,
+                    shortable_symbol_ids,
+                )
+            )
+
+        # Get the set of account IDs to include in the valuation
+        # account_to_id keys are normalized (uppercase, stripped)
+        account_ids_to_include_set = {  # type: ignore
+            account_to_id.get(str(acc).upper().strip()) for acc in included_accounts_list
+        }
+        account_ids_to_include_set.discard(None)
+
+        # 3. Python valuation loop
+        @profile
+        def _value_daily_holdings_in_python():
+            daily_results_list = []
+            any_lookup_failed_overall = False
+            for day_idx, eval_date in enumerate(date_range_for_calc.date):
+                total_market_value_day = 0.0
+                day_lookup_failed = False
+
+                # Value stocks
+                stock_indices = np.argwhere(
+                    np.abs(daily_holdings_qty_source[day_idx]) > 1e-9
+                )
+                for sym_id, acc_id in stock_indices:
+                    # Filter by selected accounts
+                    if acc_id not in account_ids_to_include_set:
+                        continue
+
+                    internal_symbol = id_to_symbol.get(sym_id)
+                    if internal_symbol is None or internal_symbol == CASH_SYMBOL_CSV:
+                        continue
+
+                    qty = 0.0
+                    if use_l1_cache:
+                        if day_idx + l1_offset < len(daily_holdings_qty_source):
+                            qty = daily_holdings_qty_source[day_idx + l1_offset, sym_id, acc_id]
+                    else:
+                        qty = daily_holdings_qty_source[day_idx, sym_id, acc_id]
+                    local_currency = account_currency_map.get(
+                        id_to_account.get(acc_id), default_currency
+                    )
+                    yf_symbol = internal_to_yf_map.get(internal_symbol)
+
+                    price_local = np.nan
+                    if yf_symbol:
+                        price_val = get_historical_price(
+                            yf_symbol, eval_date, historical_prices_yf_unadjusted
+                        )
+                        if price_val is not None and pd.notna(price_val):
+                            price_local = float(price_val)
+
+                    if pd.isna(price_local):
+                        # --- NEW: Fallback to last transaction price ---
+                        if daily_last_prices_source is not None:
+                            # Use offset for L1 cache
+                            idx_to_use = day_idx
+                            if use_l1_cache:
+                                idx_to_use = day_idx + l1_offset
+                            
+                            if idx_to_use < len(daily_last_prices_source):
+                                last_price = daily_last_prices_source[idx_to_use, sym_id, acc_id]
+                                if last_price > 1e-9:
+                                    price_local = last_price
+                        
+                        if pd.isna(price_local):
+                            day_lookup_failed = True
+                            break
+
+                    fx_rate = get_historical_rate_via_usd_bridge(
+                        local_currency, display_currency, eval_date, historical_fx_yf
+                    )
+                    if pd.isna(fx_rate):
+                        day_lookup_failed = True
+                        break
+
+                    if pd.isna(fx_rate):
+                        day_lookup_failed = True
+                        break
+
+                    total_market_value_day += qty * price_local * fx_rate
+
+                if day_lookup_failed:
+                    any_lookup_failed_overall = True
+                    total_market_value_day = np.nan
+
+                # Value cash
+                if not day_lookup_failed:
+                    # Determine correct index for cash balances
+                    cash_idx = day_idx
+                    if use_l1_cache:
+                        cash_idx = day_idx + l1_offset
+
+                    if cash_idx < len(daily_cash_balances_source):
+                        for acc_id, cash_balance in enumerate(
+                            daily_cash_balances_source[cash_idx]
+                        ):
+                            if abs(cash_balance) > 1e-9:  # type: ignore
+                                # --- NEW: Filter by selected accounts ---
+                                if acc_id not in account_ids_to_include_set:
+                                    continue
+                                local_currency = account_currency_map.get(
+                                    id_to_account.get(acc_id), default_currency
+                                )
+                                fx_rate = get_historical_rate_via_usd_bridge(
+                                    local_currency,
+                                    display_currency,
+                                    eval_date,
+                                    historical_fx_yf,
+                                )
+                                if pd.isna(fx_rate):
+                                    day_lookup_failed = True
+                                    any_lookup_failed_overall = True
+                                    total_market_value_day = np.nan
+                                    break
+                                total_market_value_day += cash_balance * fx_rate
+
+                # Get net flow and benchmarks
+                net_cash_flow, flow_lookup_failed = _calculate_daily_net_cash_flow(
+                    eval_date,
+                    transactions_df_effective,
+                    display_currency,
+                    historical_fx_yf,
+                    account_currency_map,
+                    default_currency,
+                    dummy_warnings_set,
+                    included_accounts_list,  # Pass included_accounts_list
+                    historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,
+                    internal_to_yf_map=internal_to_yf_map,
+                )
+
+                benchmark_prices = {}
+                bench_lookup_failed = False
+                for bm_symbol in clean_benchmark_symbols_yf:
+                    price = get_historical_price(
+                        bm_symbol, eval_date, historical_prices_yf_adjusted
+                    )
+                    bench_price = float(price) if pd.notna(price) else np.nan
+                    benchmark_prices[f"{bm_symbol} Price"] = bench_price
+                    if pd.isna(bench_price):
+                        bench_lookup_failed = True
+
+                result_row = {
+                    "Date": eval_date,
+                    "value": total_market_value_day,
+                    "net_flow": net_cash_flow,
+                    "value_lookup_failed": day_lookup_failed,
+                    "flow_lookup_failed": flow_lookup_failed,
+                    "bench_lookup_failed": bench_lookup_failed,
+                }
+                result_row.update(benchmark_prices)
+                daily_results_list.append(result_row)
+            
+            # Unify variable name for return
+            any_lookup_failed = any_lookup_failed_overall
+            
+            return daily_results_list, any_lookup_failed_overall
+
+        # Call the valuation function
+        daily_results_list, any_lookup_failed = _value_daily_holdings_in_python()
+
+        if any_lookup_failed:
+            status_update += " (some lookups failed)."
+        
+        # --- Convert to DataFrame (Unified Return Path) ---
+        daily_df = pd.DataFrame(daily_results_list)
+        if not daily_df.empty:
+            daily_df["Date"] = pd.to_datetime(daily_df["Date"])
+            daily_df.set_index("Date", inplace=True)
+            daily_df.sort_index(inplace=True)
+            cols_to_numeric = ["value", "net_flow"] + [
+                f"{bm} Price"
+                for bm in clean_benchmark_symbols_yf
+                if f"{bm} Price" in daily_df.columns
+            ]
+            for col in cols_to_numeric:
+                daily_df[col] = pd.to_numeric(daily_df[col], errors="coerce")
+            
+            daily_df.dropna(subset=["value"], inplace=True)
+        
+        return daily_df, any_lookup_failed, status_update
+
+    # --- END of new chronological calculation block ---
+    else:  # Original parallel calculation
+        # ... (existing code with multiprocessing.Pool) ...
+        # ... (existing code with multiprocessing.Pool) ...
+        # The following is the original block, now under an `else`
+        status_update = " Calculating daily values..."
+        first_tx_date = (
+            transactions_df_effective["Date"].min().date()
+            if not transactions_df_effective.empty
+            else start_date
+        )
+
+    # --- ADDED: Log input date range ---
     logging.debug(
         f"[_load_or_calculate_daily_results] Received date range: {start_date} to {end_date}"
     )
-    t1_setup = time.time()
     # --- END ADDED ---
 
     # --- ADDED: Define metadata filename ---
@@ -4056,11 +4593,6 @@ def _load_or_calculate_daily_results(
                 if "Date" in daily_df.columns:
                     daily_df["Date"] = pd.to_datetime(daily_df["Date"])
                     daily_df.set_index("Date", inplace=True)
-                elif "index" in daily_df.columns:
-                    # Fallback: 'reset_index' might have named it 'index' if original name was None
-                    daily_df.rename(columns={"index": "Date"}, inplace=True)
-                    daily_df["Date"] = pd.to_datetime(daily_df["Date"])
-                    daily_df.set_index("Date", inplace=True)
                 elif not isinstance(daily_df.index, pd.DatetimeIndex):
                     # Fallback: try to convert index if it looks like dates (unlikely for feather if reset)
                     # But if we didn't reset index on save, feather might have saved it if supported.
@@ -4131,486 +4663,289 @@ def _load_or_calculate_daily_results(
         )
 
     if not cache_valid_daily_results:
-        if calc_method == "numba_chrono":
-            # This date range is needed for both cached and non-cached paths for valuation loop
-            first_tx_date = (
-                transactions_df_effective["Date"].min().date()
-                if not transactions_df_effective.empty
-                else start_date
-            )
-            calc_start_date = max(start_date, first_tx_date)
-            calc_end_date = end_date
-            date_range_for_calc = pd.date_range(
-                start=calc_start_date, end=calc_end_date, freq="D"
-            )
-            # logging.debug(f"DEBUG HIST: calc_start_date={calc_start_date}, first_tx_date={first_tx_date}, range_len={len(date_range_for_calc)}")
-
-            # Determine which set of holdings to use (L1 cached or calculate now)
-            use_l1_cache = (
-                all_holdings_qty is not None 
-                and all_cash_balances is not None
-                and not included_accounts_list  # Only use cache if no account filtering
-            )
-        
-            daily_holdings_qty_to_use = None
-            daily_cash_balances_to_use = None
-            daily_last_prices_to_use = None
-
-            if use_l1_cache:
-                logging.info(
-                    f"Hist Daily (Scope: {filter_desc}): Using L1 cached holdings..."
-                )
-                status_update = " Using pre-calculated daily values..."
-            
-                # Calculate offset if we are starting later than the first transaction
-                l1_cache_start_date = transactions_df_effective["Date"].min().date()
-                l1_offset = (calc_start_date - l1_cache_start_date).days
-                if l1_offset < 0: l1_offset = 0
-            
-                # Slice L1 cache
-                # Ensure we don't go out of bounds
-                len_needed = len(date_range_for_calc)
-                daily_holdings_qty_to_use = all_holdings_qty[l1_offset : l1_offset + len_needed]
-                daily_cash_balances_to_use = all_cash_balances[l1_offset : l1_offset + len_needed]
-                if all_last_prices is not None:
-                    daily_last_prices_to_use = all_last_prices[l1_offset : l1_offset + len_needed]
-            
-                logging.info(f"Hist Daily: Using L1 cache with offset {l1_offset} days.")
+        status_update = " Calculating daily values..."
+        first_tx_date = (
+            transactions_df_effective["Date"].min().date()
+            if not transactions_df_effective.empty
+            else start_date
+        )
+        calc_start_date = max(start_date, first_tx_date)
+        calc_end_date = end_date
+        market_day_source_symbol = "SPY"
+        if "SPY" not in historical_prices_yf_adjusted:
+            if historical_prices_yf_adjusted:
+                market_day_source_symbol = next(iter(historical_prices_yf_adjusted.keys()))
             else:
-                logging.info(
-                    f"Hist Daily (Scope: {filter_desc}): L1 cache miss. Calculating daily holdings chronologically (numba_chrono)..."
-                )
-                status_update = " Calculating daily values (chrono)..."
-                status_update = " Calculating daily values (chrono)..."
-                sorted_df = transactions_df_effective.sort_values(by=["Date", "original_index"]).copy()
-
-                # Prepare inputs for chronological Numba function
-                date_ordinals_np = np.array([d.toordinal() for d in date_range_for_calc], dtype=np.int64)
-                tx_dates_ordinal_np = np.array([d.toordinal() for d in sorted_df["Date"].dt.date.values], dtype=np.int64)
-                tx_symbols_np = sorted_df["Symbol"].map(symbol_to_id).values.astype(np.int64)
-            
-                account_ids_series = _normalize_series(sorted_df["Account"]).map(account_to_id)
-                if account_ids_series.isna().any():
-                    valid_mask = account_ids_series.notna()
-                    sorted_df = sorted_df[valid_mask]
-                    account_ids_series = account_ids_series[valid_mask]
-
-                tx_accounts_np = account_ids_series.values.astype(np.int64)
-            
-                if "To Account" in sorted_df.columns:
-                    tx_to_accounts_series = _normalize_series(sorted_df["To Account"]).map(account_to_id)
-                else:
-                    tx_to_accounts_series = pd.Series(-1, index=sorted_df.index)
-                tx_to_accounts_np = tx_to_accounts_series.fillna(-1).values.astype(np.int64)
-            
-                tx_types_np = sorted_df["Type"].str.lower().str.strip().map(type_to_id).fillna(-1).values.astype(np.int64)
-                tx_quantities_np = sorted_df["Quantity"].fillna(0.0).values.astype(np.float64)
-                tx_commissions_np = sorted_df["Commission"].fillna(0.0).values.astype(np.float64)
-                tx_split_ratios_np = sorted_df["Split Ratio"].fillna(0.0).values.astype(np.float64)
-            
-                price_col = "Price/Share" if "Price/Share" in sorted_df.columns else "Price"
-                tx_prices_np = sorted_df[price_col].fillna(0.0).values.astype(np.float64) if price_col in sorted_df.columns else np.zeros(len(sorted_df), dtype=np.float64)
-
-                split_type_id = type_to_id.get("split", -1)
-                stock_split_type_id = type_to_id.get("stock split", -1)
-                buy_type_id = type_to_id.get("buy", -1)
-                deposit_type_id = type_to_id.get("deposit", -1)
-                sell_type_id = type_to_id.get("sell", -1)
-                withdrawal_type_id = type_to_id.get("withdrawal", -1)
-                short_sell_type_id = type_to_id.get("short sell", -1)
-                buy_to_cover_type_id = type_to_id.get("buy to cover", -1)
-                transfer_type_id = type_to_id.get("transfer", -1)
-                cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
-
-                shortable_symbol_ids = np.array([symbol_to_id[s] for s in SHORTABLE_SYMBOLS if s in symbol_to_id], dtype=np.int64)
-                num_symbols = len(symbol_to_id)
-                num_accounts = len(account_to_id)
-
-                num_accounts = len(account_to_id)
-            
-                # Call Numba function
-                daily_holdings_qty_to_use, daily_cash_balances_to_use, daily_last_prices_to_use = _calculate_daily_holdings_chronological_numba(
-                    date_ordinals_np,
-                    tx_dates_ordinal_np,
-                    tx_symbols_np,
-                    tx_to_accounts_np, # DEST
-                    tx_accounts_np,    # SOURCE
-                    tx_types_np,
-                    tx_quantities_np,
-                    tx_commissions_np,
-                    tx_split_ratios_np,
-                    tx_prices_np,
-                    num_symbols,
-                    num_accounts,
-                    split_type_id,
-                    stock_split_type_id,
-                    buy_type_id,
-                    deposit_type_id,
-                    sell_type_id,
-                    withdrawal_type_id,
-                    short_sell_type_id,
-                    buy_to_cover_type_id,
-                    transfer_type_id,
-                    cash_symbol_id,
-                    STOCK_QUANTITY_CLOSE_TOLERANCE,
-                    shortable_symbol_ids,
-                )
-                
-        
-            # Determine included account IDs
-            if included_accounts_list:
-                account_ids_to_include_set = {account_to_id.get(str(acc).upper().strip()) for acc in included_accounts_list}
-                account_ids_to_include_set.discard(None)
-            else:
-                # Include ALL accounts if list is empty (Global Scope)
-                account_ids_to_include_set = set(account_to_id.values())
-
-            # --- VECTORIZED VALUATION ---
-            daily_value_series, val_errors, val_status = _value_daily_holdings_vectorized(
-                date_range=date_range_for_calc,
-                daily_holdings_qty_np=daily_holdings_qty_to_use,
-                daily_last_prices_np=daily_last_prices_to_use,
-                daily_cash_balances_np=daily_cash_balances_to_use,
-                historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,
-                historical_fx_yf=historical_fx_yf,
-                target_currency=display_currency,
-                account_currency_map=account_currency_map,
-                id_to_symbol=id_to_symbol,
-                id_to_account=id_to_account,
-                internal_to_yf_map=internal_to_yf_map,
-                account_ids_to_include_set=account_ids_to_include_set,
-                default_currency=default_currency,
-            )
-            if val_errors:
-                status_update += val_status
-
-            # --- VECTORIZED CASH FLOW ---
-            daily_net_flow_series, flow_errors = _calculate_daily_net_cash_flow_vectorized(
-                date_range=date_range_for_calc,
-                transactions_df=transactions_df_effective,
-                target_currency=display_currency,
-                historical_fx_yf=historical_fx_yf,
-                default_currency=default_currency,
-                included_accounts=included_accounts_list,
-                historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,
-                internal_to_yf_map=internal_to_yf_map,
-            )
-            if flow_errors:
-                status_update += " (flow errors)"
-        
-            # --- CONSTRUCT DAILY DF ---
-            daily_df = pd.DataFrame({
-                "value": daily_value_series,
-                "net_flow": daily_net_flow_series
-            }, index=date_range_for_calc)
-        if daily_df.empty:
-            status_update = " Calculating daily values..."
-            first_tx_date = (
-                transactions_df_effective["Date"].min().date()
-                if not transactions_df_effective.empty
-                else start_date
-            )
-            calc_start_date = max(start_date, first_tx_date)
-            calc_end_date = end_date
-            market_day_source_symbol = "SPY"
-            if "SPY" not in historical_prices_yf_adjusted:
-                if historical_prices_yf_adjusted:
-                    market_day_source_symbol = next(iter(historical_prices_yf_adjusted.keys()))
-                else:
-                    market_day_source_symbol = None
-            market_days_index = pd.Index([], dtype="object")
-            logging.debug(
-                f"[_load_or_calculate_daily_results] Attempting to use '{market_day_source_symbol}' for market days."
-            )  # ADDED LOG
-            if (
-                market_day_source_symbol
-                and market_day_source_symbol in historical_prices_yf_adjusted
-            ):
-                bench_df = historical_prices_yf_adjusted[market_day_source_symbol]
-                if not bench_df.empty and isinstance(
-                    bench_df.index, (pd.DatetimeIndex, pd.Index)
-                ):  # ADDED: Check if index is valid before conversion
-                    try:
-                        # Ensure index is datetime first
-                        datetime_index = pd.to_datetime(bench_df.index, errors="coerce")
-                        valid_datetime_index = datetime_index.dropna()
-                        if not valid_datetime_index.empty:
-                            market_days_index = pd.Index(
-                                valid_datetime_index.date
-                            ).unique()  # Get unique dates
-                            logging.debug(
-                                f"  Successfully created market_days_index from '{market_day_source_symbol}' ({len(market_days_index)} days)."
-                            )  # ADDED LOG
-                        else:
-                            logging.warning(
-                                f"  Benchmark '{market_day_source_symbol}' index could not be converted to valid datetimes."
-                            )  # ADDED LOG
-                    except Exception as e_idx:
-                        logging.warning(
-                            f"WARN: Failed converting benchmark index for market days: {e_idx}"
-                        )
-                else:  # ADDED: Log if benchmark df is empty or has bad index
-                    logging.warning(
-                        f"  Benchmark df '{market_day_source_symbol}' is empty or has invalid index type."
-                    )
-            if market_days_index.empty:
-                logging.warning(
-                    f"Hist WARN (Scope: {filter_desc}): No market days found. Using business day range."
-                )
-                all_dates_to_process = pd.date_range(
-                    start=calc_start_date, end=calc_end_date, freq="B"
-                ).date.tolist()
-            else:
-                # Filter the market days index by the calculation start/end dates
-                all_dates_to_process = market_days_index[
-                    (market_days_index >= calc_start_date)
-                    & (market_days_index <= calc_end_date)
-                ].tolist()
-                # ADDED: Log the result of filtering market days
-                logging.debug(
-                    f"  Filtered market days index to range {calc_start_date} - {calc_end_date}. Found {len(all_dates_to_process)} dates."
-                )
-                # --- END ADDED ---
-
-            if not all_dates_to_process:
-                logging.error(
-                    f"Hist ERROR (Scope: {filter_desc}): No calculation dates found in range {calc_start_date} to {calc_end_date}."
-                )
-                return pd.DataFrame(), False, status_update + " No calculation dates found."
-            logging.info(
-                f"Hist Daily (Scope: {filter_desc}): Determined {len(all_dates_to_process)} calculation dates from {min(all_dates_to_process)} to {max(all_dates_to_process)}"
-            )
-            # --- ADDED: Log the determined calculation dates ---
-            if all_dates_to_process:  # FIX: Correct indentation
-                logging.debug(
-                    f"  First 5 calc dates: {all_dates_to_process[:5]}, Last 5 calc dates: {all_dates_to_process[-5:]}"
-                )  # FIX: Correct indentation
-            # --- END ADDED ---
-            logging.info(
-                f"Hist Daily (Scope: {filter_desc}): Calculating {len(all_dates_to_process)} daily metrics parallel..."
-            )
-
-            # Prepare arguments for parallel processing
-            # Note: We must pass all arguments required by _calculate_daily_metrics_worker
-            worker_partial = partial(
-                _calculate_daily_metrics_worker,
-                transactions_df=transactions_df_effective,
-                historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,
-                historical_prices_yf_adjusted=historical_prices_yf_adjusted,
-                historical_fx_yf=historical_fx_yf,
-                target_currency=display_currency,
-                internal_to_yf_map=internal_to_yf_map,
-                account_currency_map=account_currency_map,
-                default_currency=default_currency,
-                manual_overrides_dict=manual_overrides_dict,
-                # benchmark_symbols_yf removed
-                symbol_to_id=symbol_to_id,
-                id_to_symbol=id_to_symbol,
-                account_to_id=account_to_id,
-                id_to_account=id_to_account,
-                type_to_id=type_to_id,
-                currency_to_id=currency_to_id,
-                id_to_currency=id_to_currency,
-                calc_method=HISTORICAL_CALC_METHOD,  # Pass method from config
-                included_accounts=included_accounts_list,  # Pass included_accounts_list
-            )
-            daily_results_list = []
-            pool_start_time = time.time()
-            if num_processes is None:
+                market_day_source_symbol = None
+        market_days_index = pd.Index([], dtype="object")
+        logging.debug(
+            f"[_load_or_calculate_daily_results] Attempting to use '{market_day_source_symbol}' for market days."
+        )  # ADDED LOG
+        if (
+            market_day_source_symbol
+            and market_day_source_symbol in historical_prices_yf_adjusted
+        ):
+            bench_df = historical_prices_yf_adjusted[market_day_source_symbol]
+            if not bench_df.empty and isinstance(
+                bench_df.index, (pd.DatetimeIndex, pd.Index)
+            ):  # ADDED: Check if index is valid before conversion
                 try:
-                    num_processes = max(1, os.cpu_count() - 1)
-                except NotImplementedError:
-                    num_processes = 1
-            num_processes = max(1, num_processes)
-
-            try:
-                chunksize = max(1, len(all_dates_to_process) // (num_processes * 4))
-            
-                # --- ADDED: Progress Reporting ---
-                total_dates = len(all_dates_to_process)
-                last_reported_percent = -1
-
-                # Define helper to consume results (avoids code duplication)
-                def consume_results(iterator):
-                    nonlocal last_reported_percent
-                    for i, result in enumerate(iterator):
-                        if i % 100 == 0 and i > 0:
-                            logging.info(
-                                f"  Processed {i}/{len(all_dates_to_process)} days..."
-                            )
-                        if result:
-                            daily_results_list.append(result)
-
-                        # --- Emit progress signal ---
-                        if worker_signals and hasattr(worker_signals, "progress"):
-                            try:
-                                percent_done = int(((i + 1) / total_dates) * 100)
-                                if (
-                                    percent_done > last_reported_percent
-                                ):  # Avoid emitting too often
-                                    worker_signals.progress.emit(percent_done)
-                                    last_reported_percent = percent_done
-                            except Exception as e_prog:
-                                logging.warning(
-                                    f"Warning: Failed to emit progress: {e_prog}"
-                                )
-                    logging.info(
-                        f"  Finished processing all {len(all_dates_to_process)} days."
+                    # Ensure index is datetime first
+                    datetime_index = pd.to_datetime(bench_df.index, errors="coerce")
+                    valid_datetime_index = datetime_index.dropna()
+                    if not valid_datetime_index.empty:
+                        market_days_index = pd.Index(
+                            valid_datetime_index.date
+                        ).unique()  # Get unique dates
+                        logging.debug(
+                            f"  Successfully created market_days_index from '{market_day_source_symbol}' ({len(market_days_index)} days)."
+                        )  # ADDED LOG
+                    else:
+                        logging.warning(
+                            f"  Benchmark '{market_day_source_symbol}' index could not be converted to valid datetimes."
+                        )  # ADDED LOG
+                except Exception as e_idx:
+                    logging.warning(
+                        f"WARN: Failed converting benchmark index for market days: {e_idx}"
                     )
+            else:  # ADDED: Log if benchmark df is empty or has bad index
+                logging.warning(
+                    f"  Benchmark df '{market_day_source_symbol}' is empty or has invalid index type."
+                )
+        if market_days_index.empty:
+            logging.warning(
+                f"Hist WARN (Scope: {filter_desc}): No market days found. Using business day range."
+            )
+            all_dates_to_process = pd.date_range(
+                start=calc_start_date, end=calc_end_date, freq="B"
+            ).date.tolist()
+        else:
+            # Filter the market days index by the calculation start/end dates
+            all_dates_to_process = market_days_index[
+                (market_days_index >= calc_start_date)
+                & (market_days_index <= calc_end_date)
+            ].tolist()
+            # ADDED: Log the result of filtering market days
+            logging.debug(
+                f"  Filtered market days index to range {calc_start_date} - {calc_end_date}. Found {len(all_dates_to_process)} dates."
+            )
+            # --- END ADDED ---
 
-                if num_processes == 1:
-                    # Run synchronously in the main process
-                    results_iterator = map(worker_partial, all_dates_to_process)
-                    consume_results(results_iterator)
-                else:
-                    with multiprocessing.Pool(processes=num_processes) as pool:
-                        results_iterator = pool.imap_unordered(
-                            worker_partial, all_dates_to_process, chunksize=chunksize
+        if not all_dates_to_process:
+            logging.error(
+                f"Hist ERROR (Scope: {filter_desc}): No calculation dates found in range {calc_start_date} to {calc_end_date}."
+            )
+            return pd.DataFrame(), False, status_update + " No calculation dates found."
+        logging.info(
+            f"Hist Daily (Scope: {filter_desc}): Determined {len(all_dates_to_process)} calculation dates from {min(all_dates_to_process)} to {max(all_dates_to_process)}"
+        )
+        # --- ADDED: Log the determined calculation dates ---
+        if all_dates_to_process:  # FIX: Correct indentation
+            logging.debug(
+                f"  First 5 calc dates: {all_dates_to_process[:5]}, Last 5 calc dates: {all_dates_to_process[-5:]}"
+            )  # FIX: Correct indentation
+        # --- END ADDED ---
+        logging.info(
+            f"Hist Daily (Scope: {filter_desc}): Calculating {len(all_dates_to_process)} daily metrics parallel..."
+        )
+
+        # Prepare arguments for parallel processing
+        # Note: We must pass all arguments required by _calculate_daily_metrics_worker
+        worker_partial = partial(
+            _calculate_daily_metrics_worker,
+            transactions_df=transactions_df_effective,
+            historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,
+            historical_prices_yf_adjusted=historical_prices_yf_adjusted,
+            historical_fx_yf=historical_fx_yf,
+            target_currency=display_currency,
+            internal_to_yf_map=internal_to_yf_map,
+            account_currency_map=account_currency_map,
+            default_currency=default_currency,
+            manual_overrides_dict=manual_overrides_dict,
+            # benchmark_symbols_yf removed
+            symbol_to_id=symbol_to_id,
+            id_to_symbol=id_to_symbol,
+            account_to_id=account_to_id,
+            id_to_account=id_to_account,
+            type_to_id=type_to_id,
+            currency_to_id=currency_to_id,
+            id_to_currency=id_to_currency,
+            calc_method=HISTORICAL_CALC_METHOD,  # Pass method from config
+            included_accounts=included_accounts_list,  # Pass included_accounts_list
+        )
+        daily_results_list = []
+        pool_start_time = time.time()
+        if num_processes is None:
+            try:
+                num_processes = max(1, os.cpu_count() - 1)
+            except NotImplementedError:
+                num_processes = 1
+        num_processes = max(1, num_processes)
+
+        try:
+            chunksize = max(1, len(all_dates_to_process) // (num_processes * 4))
+            
+            # --- ADDED: Progress Reporting ---
+            total_dates = len(all_dates_to_process)
+            last_reported_percent = -1
+
+            # Define helper to consume results (avoids code duplication)
+            def consume_results(iterator):
+                nonlocal last_reported_percent
+                for i, result in enumerate(iterator):
+                    if i % 100 == 0 and i > 0:
+                        logging.info(
+                            f"  Processed {i}/{len(all_dates_to_process)} days..."
                         )
-                        consume_results(results_iterator)
-            except Exception as e_pool:
-                logging.error(
-                    f"Hist CRITICAL (Scope: {filter_desc}): Pool failed: {e_pool}"
-                )
-                traceback.print_exc()
-                return pd.DataFrame(), False, status_update + " Multiprocessing failed."
-            finally:
-                pool_end_time = time.time()
+                    if result:
+                        daily_results_list.append(result)
+
+                    # --- Emit progress signal ---
+                    if worker_signals and hasattr(worker_signals, "progress"):
+                        try:
+                            percent_done = int(((i + 1) / total_dates) * 100)
+                            if (
+                                percent_done > last_reported_percent
+                            ):  # Avoid emitting too often
+                                worker_signals.progress.emit(percent_done)
+                                last_reported_percent = percent_done
+                        except Exception as e_prog:
+                            logging.warning(
+                                f"Warning: Failed to emit progress: {e_prog}"
+                            )
                 logging.info(
-                    f"Hist Daily (Scope: {filter_desc}): Pool finished. Received {len(daily_results_list)} results total."
-                )
-                # --- ADDED: Log sample results ---
-                if daily_results_list:
-                    logging.debug(f"  Sample result [0]: {daily_results_list[0]}")
-                    if len(daily_results_list) > 1:  # FIX: Use > instead of &gt;
-                        logging.debug(f"  Sample result [-1]: {daily_results_list[-1]}")
-                # --- END ADDED ---
-                # FIX: Correct indentation for this log message
-                logging.info(
-                    f"Hist Daily (Scope: {filter_desc}): Pool finished in {pool_end_time - pool_start_time:.2f}s."
+                    f"  Finished processing all {len(all_dates_to_process)} days."
                 )
 
-            successful_results = [
-                r for r in daily_results_list if not r.get("worker_error", False)
-            ]
-            failed_count = len(all_dates_to_process) - len(successful_results)
-            if failed_count > 0:
-                status_update += f" ({failed_count} dates failed in worker)."
-                # Log first failure
-                for r in daily_results_list:
-                    if r.get("worker_error", False):
-                        logging.error(f"Worker Error Sample: {r.get('error_message', 'Unknown Error')}")
-                        break
-            if not successful_results:
-                # --- ADDED: Log why results are empty ---
-                logging.error(
-                    f"Hist ERROR (Scope: {filter_desc}): No successful results from workers. daily_results_list size: {len(daily_results_list)}"
-                )
-                # --- END ADDED ---
+            if num_processes == 1:
+                # Run synchronously in the main process
+                results_iterator = map(worker_partial, all_dates_to_process)
+                consume_results(results_iterator)
+            else:
+                with multiprocessing.Pool(processes=num_processes) as pool:
+                    results_iterator = pool.imap_unordered(
+                        worker_partial, all_dates_to_process, chunksize=chunksize
+                    )
+                    consume_results(results_iterator)
+        except Exception as e_pool:
+            logging.error(
+                f"Hist CRITICAL (Scope: {filter_desc}): Pool failed: {e_pool}"
+            )
+            traceback.print_exc()
+            return pd.DataFrame(), False, status_update + " Multiprocessing failed."
+        finally:
+            pool_end_time = time.time()
+            logging.info(
+                f"Hist Daily (Scope: {filter_desc}): Pool finished. Received {len(daily_results_list)} results total."
+            )
+            # --- ADDED: Log sample results ---
+            if daily_results_list:
+                logging.debug(f"  Sample result [0]: {daily_results_list[0]}")
+                if len(daily_results_list) > 1:  # FIX: Use > instead of &gt;
+                    logging.debug(f"  Sample result [-1]: {daily_results_list[-1]}")
+            # --- END ADDED ---
+            # FIX: Correct indentation for this log message
+            logging.info(
+                f"Hist Daily (Scope: {filter_desc}): Pool finished in {pool_end_time - pool_start_time:.2f}s."
+            )
 
+        successful_results = [
+            r for r in daily_results_list if not r.get("worker_error", False)
+        ]
+        failed_count = len(all_dates_to_process) - len(successful_results)
+        if failed_count > 0:
+            status_update += f" ({failed_count} dates failed in worker)."
+            # Log first failure
+            for r in daily_results_list:
+                if r.get("worker_error", False):
+                    logging.error(f"Worker Error Sample: {r.get('error_message', 'Unknown Error')}")
+                    break
+        if not successful_results:
+            # --- ADDED: Log why results are empty ---
+            logging.error(
+                f"Hist ERROR (Scope: {filter_desc}): No successful results from workers. daily_results_list size: {len(daily_results_list)}"
+            )
+            # --- END ADDED ---
+
+            return (
+                pd.DataFrame(),
+                False,
+                status_update + " All daily calculations failed in worker.",
+            )
+
+        try:
+            daily_df = pd.DataFrame(successful_results)
+            daily_df["Date"] = pd.to_datetime(daily_df["Date"])
+            daily_df.set_index("Date", inplace=True)
+            daily_df.sort_index(inplace=True)
+            cols_to_numeric = ["value", "net_flow"]
+            # Benchmarks removed from here, added later in main function
+            for col in cols_to_numeric:
+                daily_df[col] = pd.to_numeric(daily_df[col], errors="coerce")
+            initial_rows_calc = len(daily_df)
+            
+            # Drop rows where 'value' is NaN (failed lookup)
+            daily_df.dropna(subset=["value"], inplace=True)
+            rows_dropped = initial_rows_calc - len(daily_df)
+            if rows_dropped > 0:
+                status_update += (
+                    f" ({rows_dropped} rows dropped post-calc due to NaN value)."
+                )
+            if daily_df.empty:
                 return (
                     pd.DataFrame(),
                     False,
-                    status_update + " All daily calculations failed in worker.",
+                    status_update + " All rows dropped due to NaN portfolio value.",
                 )
 
-            try:
-                daily_df = pd.DataFrame(successful_results)
-                daily_df["Date"] = pd.to_datetime(daily_df["Date"])
-                daily_df.set_index("Date", inplace=True)
-                daily_df.sort_index(inplace=True)
-                cols_to_numeric = ["value", "net_flow"]
-                # Benchmarks removed from here, added later in main function
-                for col in cols_to_numeric:
-                    daily_df[col] = pd.to_numeric(daily_df[col], errors="coerce")
-                initial_rows_calc = len(daily_df)
+            previous_value = daily_df["value"].shift(1)
+            net_flow_filled = daily_df["net_flow"].fillna(0.0)
+            daily_df["daily_gain"] = (
+                daily_df["value"] - previous_value - net_flow_filled
+            )
+            daily_df["daily_return"] = np.nan
+            daily_df["daily_return"] = np.nan
             
-                # Drop rows where 'value' is NaN (failed lookup)
-                daily_df.dropna(subset=["value"], inplace=True)
-                rows_dropped = initial_rows_calc - len(daily_df)
-                if rows_dropped > 0:
-                    status_update += (
-                        f" ({rows_dropped} rows dropped post-calc due to NaN value)."
-                    )
-                if daily_df.empty:
-                    return (
-                        pd.DataFrame(),
-                        False,
-                        status_update + " All rows dropped due to NaN portfolio value.",
-                    )
-
-            except Exception as e_proc_res:
-                 logging.error(
-                    f"Hist ERROR (Scope: {filter_desc}): Post-processing failed: {e_proc_res}"
-                 )
-                 traceback.print_exc()
-                 return pd.DataFrame(), False, status_update + " Error processing results."
-
-    # --- SHARED: Derived Metrics (Gain/Return) ---
-    # Runs for both Numba and Python paths, provided daily_df is not empty.
-    # Runs regardless of whether data was calculated or loaded from cache.
-    if not daily_df.empty:
-        # Check if derived cols missing (e.g. from Numba path or stale cache)
-        # Or force recalculation if we suspect stale cache
-        if "daily_gain" not in daily_df.columns or "daily_return" not in daily_df.columns:
-            try:
-                previous_value = daily_df["value"].shift(1)
-                net_flow_filled = daily_df["net_flow"].fillna(0.0)
-                daily_df["daily_gain"] = (
-                    daily_df["value"] - previous_value - net_flow_filled
-                )
-                daily_df["daily_return"] = np.nan
+            # FIX: Adjusted Denominator for TWR
+            # Treat positive net flows (Deposits) as Start-of-Day (participating in gain)
+            # Treat negative net flows (Withdrawals) as End-of-Day (capital was at risk)
+            # Denom = PrevValue + max(0, NetFlow)
+            adjusted_prev_value = previous_value + net_flow_filled.clip(lower=0.0)
             
-                # FIX: Adjusted Denominator for TWR
-                # Treat positive net flows (Deposits) as Start-of-Day (participating in gain)
-                # Treat negative net flows (Withdrawals) as End-of-Day (capital was at risk)
-                # Denom = PrevValue + max(0, NetFlow)
-                adjusted_prev_value = previous_value + net_flow_filled.clip(lower=0.0)
-            
-                valid_denom_mask = adjusted_prev_value.notna() & (
-                    abs(adjusted_prev_value) > 1e-9
+            valid_denom_mask = adjusted_prev_value.notna() & (
+                abs(adjusted_prev_value) > 1e-9
+            )
+            daily_df.loc[valid_denom_mask, "daily_return"] = (
+                daily_df.loc[valid_denom_mask, "daily_gain"]
+                / adjusted_prev_value.loc[valid_denom_mask]
+            )
+            zero_gain_mask = daily_df["daily_gain"].notna() & (
+                abs(daily_df["daily_gain"]) < 1e-9
+            )
+            zero_prev_value_mask = previous_value.notna() & (
+                abs(previous_value) <= 1e-9
+            )
+            daily_df.loc[zero_gain_mask & zero_prev_value_mask, "daily_return"] = 0.0
+            if not daily_df.empty:
+                first_idx = daily_df.index[0]
+                daily_df.loc[first_idx, "daily_gain"] = np.nan
+                daily_df.loc[first_idx, "daily_return"] = np.nan
+            if (
+                "daily_gain" not in daily_df.columns
+                or "daily_return" not in daily_df.columns
+            ):
+                return (
+                    pd.DataFrame(),
+                    False,
+                    status_update + " Failed calc daily gain/return.",
                 )
-                daily_df.loc[valid_denom_mask, "daily_return"] = (
-                    daily_df.loc[valid_denom_mask, "daily_gain"]
-                    / adjusted_prev_value.loc[valid_denom_mask]
-                )
-
-                # --- DEBUG: Log potential TWR anomalies ---
-                anomalies = daily_df[
-                    (daily_df["value"] < 1.0) & 
-                    (daily_df["net_flow"] > 1000.0) & 
-                    (daily_df["daily_return"] < -0.99)
-                ]
-                if not anomalies.empty:
-                    logging.warning("CRITICAL TWR ANOMALY DETECTED: Deposits made but Portfolio Value is Zero.")
-                    logging.warning(anomalies[["value", "net_flow", "daily_return"]].head().to_string())
-                zero_gain_mask = daily_df["daily_gain"].notna() & (
-                    abs(daily_df["daily_gain"]) < 1e-9
-                )
-                zero_prev_value_mask = previous_value.notna() & (
-                    abs(previous_value) <= 1e-9
-                )
-                daily_df.loc[zero_gain_mask & zero_prev_value_mask, "daily_return"] = 0.0
-                if not daily_df.empty:
-                    first_idx = daily_df.index[0]
-                    daily_df.loc[first_idx, "daily_gain"] = np.nan
-                    daily_df.loc[first_idx, "daily_return"] = np.nan
-                
-                # Validation
-                if (
-                    "daily_gain" not in daily_df.columns
-                    or "daily_return" not in daily_df.columns
-                ):
-                        logging.error("Failed to calculate derived daily metrics.")
-                        
-                # Don't fail the whole thing, but log error
-            except Exception as e_deriv:
-                logging.error(f"Error calculating derived metrics: {e_deriv}")
-    # --- END SHARED ---
-
-    # --- SAVE CACHE (Only if calculated new) ---
-    if not cache_valid_daily_results:
-        status_update += f" {len(daily_df)} days calculated."
+            status_update += f" {len(daily_df)} days calculated."
+        except Exception as e_df_create:
+            logging.error(
+                f"Hist CRITICAL (Scope: {filter_desc}): Failed create/process daily DF from results: {e_df_create}"
+            )
+            traceback.print_exc()
+            return pd.DataFrame(), False, status_update + " Error processing results."
 
         if (
             use_daily_results_cache
@@ -4619,14 +4954,14 @@ def _load_or_calculate_daily_results(
             and not daily_df.empty
         ):
             logging.info(
-                f"Hist Daily (Scope: {filter_desc}): Saving daily results to cache: {daily_results_cache_file}"
+                f"Hist Daily (Scope: {filter_desc}): Saving daily results to cache: {daily_results_cache_file} and {metadata_cache_file}"
             )
             try:
                 cache_dir = os.path.dirname(daily_results_cache_file)
                 if cache_dir:
                     os.makedirs(cache_dir, exist_ok=True)
 
-                # --- Save metadata file ---
+                # --- ADDED: Save metadata file ---
                 try:
                     # Only get mtime if transactions_csv_file is a valid, existing file path
                     if (
@@ -4647,10 +4982,11 @@ def _load_or_calculate_daily_results(
                 }
                 with open(metadata_cache_file, "w") as f_meta:
                     json.dump(metadata_content, f_meta, indent=2)
+                # --- END ADDED ---
 
-                # --- Save directly using to_feather ---
-                daily_df.index.name = "Date"
+                # --- CHANGE: Save directly using to_feather ---
                 daily_df.reset_index().to_feather(daily_results_cache_file)
+                # --- END CHANGE ---
             except Exception as e_save_cache:
                 logging.warning(
                     f"Hist WARN (Scope: {filter_desc}): Error writing daily cache: {e_save_cache}"
@@ -4676,7 +5012,7 @@ def _get_or_calculate_all_daily_holdings(
     ).hexdigest()
     # Version bump for cache key
     cache_key = (
-        f"ALL_HOLDINGS_v1.7_{tx_hash}_{start_date.isoformat()}_{end_date.isoformat()}"
+        f"ALL_HOLDINGS_v1.3_{tx_hash}_{start_date.isoformat()}_{end_date.isoformat()}"
     )
 
     cache_dir_base = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
@@ -4686,7 +5022,7 @@ def _get_or_calculate_all_daily_holdings(
         )
         return None, None, None
 
-    holdings_cache_dir = os.path.join(cache_dir_base, "all_holdings_cache_new")
+    holdings_cache_dir = os.path.join(cache_dir_base, "all_holdings_cache")
     os.makedirs(holdings_cache_dir, exist_ok=True)
 
     key_file = os.path.join(holdings_cache_dir, f"{cache_key}.key")
@@ -4729,24 +5065,12 @@ def _get_or_calculate_all_daily_holdings(
         sorted_tx_df["Symbol"].map(symbol_to_id).fillna(-1).values.astype(np.int64)
     )
     tx_accounts_np = (
-        sorted_tx_df["Account"]
-        .astype(str)
-        .str.upper()
-        .str.strip()
-        .map(account_to_id)
-        .fillna(-1)
-        .values.astype(np.int64)
+        sorted_tx_df["Account"].map(account_to_id).fillna(-1).values.astype(np.int64)
     )
 
     # --- ADDED: Map 'To Account' for transfers ---
     if "To Account" in sorted_tx_df.columns:
-        tx_to_accounts_series = (
-            sorted_tx_df["To Account"]
-            .astype(str)
-            .str.upper()
-            .str.strip()
-            .map(account_to_id)
-        )
+        tx_to_accounts_series = sorted_tx_df["To Account"].map(account_to_id)
     else:
         tx_to_accounts_series = pd.Series(-1, index=sorted_tx_df.index)
     tx_to_accounts_np = tx_to_accounts_series.fillna(-1).values.astype(np.int64)
@@ -4784,7 +5108,6 @@ def _get_or_calculate_all_daily_holdings(
     transfer_type_id = type_to_id.get("transfer", -1)  # ADDED
     cash_symbol_id = symbol_to_id.get(CASH_SYMBOL_CSV, -1)
 
-
     shortable_symbol_ids = np.array(
         [symbol_to_id[s] for s in SHORTABLE_SYMBOLS if s in symbol_to_id],
         dtype=np.int64,
@@ -4797,8 +5120,8 @@ def _get_or_calculate_all_daily_holdings(
             date_ordinals_np,
             tx_dates_ordinal_np,
             tx_symbols_np,
-            tx_to_accounts_np, # DEST (Arg 4)
-            tx_accounts_np,    # SOURCE (Arg 5)
+            tx_to_accounts_np,
+            tx_accounts_np,
             tx_types_np,
             tx_quantities_np,
             tx_commissions_np,
@@ -5135,7 +5458,6 @@ def calculate_historical_performance(
     # ADDED: original_csv_file_path for daily_results_cache_key hash generation
     # This is needed because we no longer pass the CSV path directly to this function for loading
     original_csv_file_path: Optional[str] = None,
-    calc_method: Optional[str] = None, # ADDED for benchmarking
 ) -> Tuple[
     pd.DataFrame,  # daily_df
     Dict[str, pd.DataFrame],  # historical_prices_yf_adjusted
@@ -5144,12 +5466,11 @@ def calculate_historical_performance(
     # pd.DataFrame, # key_ratios_df - Ratios are not calculated here
     # Dict[str, Any] # current_valuation_ratios - Ratios are not calculated here
 ]:
-    CURRENT_HIST_VERSION = "v1.9.10_REVERT_FILTER"  # Bump version due to changes (e.g. Numba, cache key)
+    CURRENT_HIST_VERSION = "v1.2"  # Bump version due to changes (e.g. Numba, cache key)
     start_time_hist = time.time()
     has_errors = False
     has_warnings = False
     status_parts = []
-
     processed_warnings = set()
 
     # --- NEW: Generate Mappings for ALL transactions at the start ---
@@ -5420,7 +5741,7 @@ def calculate_historical_performance(
             num_processes=num_processes,
             current_hist_version=CURRENT_HIST_VERSION,
             filter_desc=filter_desc,
-            calc_method=calc_method or HISTORICAL_CALC_METHOD,
+            calc_method=HISTORICAL_CALC_METHOD,
         )
     )
     # DEBUG
@@ -5502,6 +5823,7 @@ def calculate_historical_performance(
                         bench_daily_returns_iter = (
                             bench_prices_no_na_iter.pct_change()
                             .reindex(daily_df.index)
+                            .ffill()
                             .fillna(0.0)
                         )
                         gain_factors_bench_iter = 1 + bench_daily_returns_iter

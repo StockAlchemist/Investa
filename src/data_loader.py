@@ -596,9 +596,20 @@ def load_and_clean_transactions(
                 df[col]
                 .astype(str)
                 .str.strip()
-                .replace("nan", "", regex=False)
                 .replace("None", "", regex=False)
             )
+
+    # --- Normalize Cash Symbol ---
+    if "Symbol" in df.columns:
+        # 1. explicit "Cash" or "USD" -> $CASH
+        df.loc[df["Symbol"].str.upper().isin(["CASH", "USD"]), "Symbol"] = CASH_SYMBOL_CSV
+        
+        # 2. Deposit/Withdrawal with empty symbol -> $CASH
+        if "Type" in df.columns:
+            df.loc[
+                (df["Type"].str.lower().isin(["deposit", "withdrawal"])) & (df["Symbol"] == ""), 
+                "Symbol"
+            ] = CASH_SYMBOL_CSV
 
     # --- Local Currency Assignment (crucial) ---
     if (

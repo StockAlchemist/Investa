@@ -13708,7 +13708,7 @@ The CSV file should contain the following columns (header names must match exact
                     price_col = f"{yf_ticker} Price"
                     if price_col in daily_df.columns:
                         daily_returns_df[f"{yf_ticker} D-Return"] = (
-                            daily_df[price_col].pct_change() * 100.0
+                            daily_df[price_col].pct_change(fill_method=None) * 100.0
                         )
                 self.periodic_returns_data["D"] = daily_returns_df
 
@@ -13743,25 +13743,36 @@ The CSV file should contain the following columns (header names must match exact
                         f"Re-normalizing accumulated gain columns: {gain_cols}"
                     )
                     for col in gain_cols:
-                        # Find the first valid (non-NaN) value in the series to use as the base factor
+                        # Find the first valid (non-NaN and non-zero) value in the series to use as the base factor
                         series_for_norm = filtered_by_date_df[col].dropna()
+                        # Filter out zeros effectively
+                        series_for_norm = series_for_norm[abs(series_for_norm) > 1e-9]
+
                         if not series_for_norm.empty:
                             start_factor = series_for_norm.iloc[0]
-                            if pd.notna(start_factor) and abs(start_factor) > 1e-9:
-                                # Divide the whole column by the start_factor to re-base it to 1.0
-                                filtered_by_date_df[col] = (
-                                    filtered_by_date_df[col] / start_factor
-                                )
-                                logging.debug(
-                                    f"  Normalized '{col}' using start factor: {start_factor:.4f}"
-                                )
-                            else:
-                                # If start_factor is 0 or NaN, the series is invalid for this period.
-                                filtered_by_date_df[col] = np.nan
-                                logging.warning(
-                                    f"  Could not normalize '{col}', start factor was zero or NaN."
-                                )
+                            # start_factor is guaranteed non-zero by the filter above
+                            # Divide the whole column by the start_factor to re-base it to 1.0
+                            filtered_by_date_df[col] = (
+                                filtered_by_date_df[col] / start_factor
+                            )
+                            logging.debug(
+                                f"  Normalized '{col}' using start factor: {start_factor:.4f}"
+                            )
                         else:
+                            # If there are no valid values (all NaNs or Zeros), we can't normalize.
+                            # We leave it as is (likely zeros or NaNs) or set to NaN if strictly required.
+                            # If it was all zeros, dividing by ? is impossible. 0 is fine.
+                            logging.debug(
+                                f"  No valid non-zero data to normalize for '{col}' in selected range."
+                            )
+                            # If we strictly want to hide invalid data:
+                            if filtered_by_date_df[col].dropna().empty:
+                                 # It was all NaNs
+                                 pass
+                            else:
+                                 # It was all Zeros (or NaNs)
+                                 # Normalized 0 is 0. So leaving it is fine.
+                                 pass
                             # If there are no valid values in the filtered range, the column is all NaN.
                             logging.debug(
                                 f"  No data to normalize for '{col}' in the selected range."
@@ -14140,6 +14151,18 @@ The CSV file should contain the following columns (header names must match exact
             )
 
             returns_df = self.periodic_returns_data.get(interval_key)
+
+            # --- FILTER: Remove weekends for daily interval (Returns Graph) ---
+            if interval_key == "D" and returns_df is not None and not returns_df.empty:
+                if isinstance(returns_df.index, pd.DatetimeIndex):
+                    returns_df = returns_df[returns_df.index.dayofweek < 5]
+                else:
+                    try:
+                        temp_index = pd.to_datetime(returns_df.index)
+                        returns_df = returns_df[temp_index.dayofweek < 5]
+                    except Exception:
+                        pass
+            # --- END FILTER ---
 
             # --- ADDED: Log the DataFrame being used ---
             logging.debug(f"Plotting interval '{interval_key}':")
@@ -14617,6 +14640,17 @@ The CSV file should contain the following columns (header names must match exact
         plot_data = (
             value_change_df[[portfolio_value_change_col_name]].tail(num_periods).copy()
         )
+        # --- FILTER: Remove weekends for daily interval (Graph) ---
+        if interval_key == "D" and not plot_data.empty:
+             if isinstance(plot_data.index, pd.DatetimeIndex):
+                 plot_data = plot_data[plot_data.index.dayofweek < 5]
+             else:
+                 try:
+                     temp_index = pd.to_datetime(plot_data.index)
+                     plot_data = plot_data[temp_index.dayofweek < 5]
+                 except Exception:
+                     pass # Ignore filtering errors
+        # --- END FILTER ---
 
         if plot_data.empty:
             ax.text(
@@ -14771,6 +14805,20 @@ The CSV file should contain the following columns (header names must match exact
         else:
             table_model.updateData(pd.DataFrame())
             return
+
+        # --- FILTER: Remove weekends for daily interval ---
+        if interval_key == "D" and not df_for_table.empty:
+            if isinstance(df_for_table.index, pd.DatetimeIndex):
+                 # Filter out Saturday(5) and Sunday(6)
+                 df_for_table = df_for_table[df_for_table.index.dayofweek < 5]
+            else:
+                 # Try to convert to datetime
+                 try:
+                     temp_index = pd.to_datetime(df_for_table.index)
+                     df_for_table = df_for_table[temp_index.dayofweek < 5]
+                 except Exception as e_date_filt:
+                     logging.warning(f"Could not filter weekends for PVC daily table: {e_date_filt}")
+        # --- END FILTER ---
 
         # Step 1: Reset index to move DatetimeIndex to a column
         # The name of the column that holds the original index/DB ID
