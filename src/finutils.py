@@ -817,27 +817,48 @@ def get_historical_price(
     """
     if symbol_key not in prices_dict or prices_dict[symbol_key].empty:
         return None
+    
+    # Avoid modifying the original DataFrame in prices_dict (it might be shared)
     df = prices_dict[symbol_key]
+
     try:
-        if not all(isinstance(idx, date) for idx in df.index):
-            df.index = pd.to_datetime(df.index).date
-        if not isinstance(target_date, date):
-            return None  # Return None on invalid target date type
+        # Optimization: Use asof for efficient lookup
+        # If not sorted, sort into a NEW object (do not modify inplace)
         if not df.index.is_monotonic_increasing:
-            df.sort_index(inplace=True)
-        combined_index = df.index.union([target_date])
-        df_reindexed = df.reindex(combined_index, method="ffill")
-        price = df_reindexed.loc[target_date]["price"]
-        if pd.isna(price) and target_date < df.index.min():
-            return None
+             df = df.sort_index()
+        
+        # Try asof with original target_date
+        try:
+             res = df.asof(target_date)
+        except (TypeError, ValueError):
+             # Fallback: Try converting to Timestamp
+             ts_target = pd.Timestamp(target_date)
+             
+             # Handle Timezone if index is tz-aware
+             if isinstance(df.index, pd.DatetimeIndex) and df.index.tz is not None:
+                 if ts_target.tz is None:
+                     ts_target = ts_target.tz_localize(df.index.tz)
+             
+             res = df.asof(ts_target)
+
+        # Extract price from result
+        price = None
+        if isinstance(res, pd.Series):
+             price = res.get('price')
+        elif isinstance(res, pd.DataFrame): 
+             # Duplicate index case
+             if not res.empty:
+                 price = res['price'].iloc[-1]
+        elif pd.notna(res):
+             # Scalar result? (DF asof returns Series/DF usually)
+             pass 
+
         return float(price) if pd.notna(price) else None
-    except KeyError:
-        return None
+
     except Exception as e:
-        logging.error(
-            f"ERROR getting historical price for {symbol_key} on {target_date}: {e}"
-        )
+        # logging.error(f"ERROR getting historical price for {symbol_key} on {target_date}: {e}")
         return None
+
 
 
 def get_historical_rate_via_usd_bridge(
