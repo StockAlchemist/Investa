@@ -63,6 +63,8 @@ try:
         INDEX_DISPLAY_NAMES,
         ORG_NAME,  # <-- ADDED
         APP_NAME,  # <-- ADDED
+        METADATA_CACHE_FILE_NAME,  # <-- ADDED
+        METADATA_CACHE_DURATION_DAYS,  # <-- ADDED
     )
 except ImportError:
     logging.error(
@@ -267,6 +269,106 @@ class MarketDataProvider:
         filename = f"{safe_yf_symbol}_{data_type}.json"
         return os.path.join(self._get_historical_cache_dir(), filename)
 
+    def _get_metadata_cache_path(self) -> str:
+        """Returns the full path to the metadata cache file."""
+        return os.path.join(self._get_historical_cache_dir(), METADATA_CACHE_FILE_NAME)
+
+    def _load_metadata_cache(self) -> Dict[str, Dict]:
+        """Loads the metadata cache (Name, Currency) from disk."""
+        path = self._get_metadata_cache_path()
+        if not os.path.exists(path):
+            return {}
+        try:
+            with open(path, "r") as f:
+                return json.load(f)
+        except Exception as e:
+            logging.warning(f"Error loading metadata cache: {e}")
+            return {}
+
+    def _save_metadata_cache(self, cache: Dict[str, Dict]):
+        """Saves the metadata cache to disk."""
+        path = self._get_metadata_cache_path()
+        try:
+            with open(path, "w") as f:
+                json.dump(cache, f, indent=2)
+        except Exception as e:
+            logging.warning(f"Error saving metadata cache: {e}")
+
+    def _ensure_metadata_batch(self, yf_symbols: Set[str]) -> Dict[str, Dict]:
+        """
+        Ensures metadata (Name, Currency) exists and is fresh for given symbols.
+        Fetches missing data and updates cache.
+        Returns a dict of metadata keyed by YF symbol.
+        """
+        cache = self._load_metadata_cache()
+        now_ts = datetime.now(timezone.utc)
+        missing_symbols = []
+        
+        # Check cache validity
+        for sym in yf_symbols:
+            entry = cache.get(sym)
+            if not entry:
+                missing_symbols.append(sym)
+                continue
+                
+            ts_str = entry.get("timestamp")
+            if not ts_str:
+                missing_symbols.append(sym)
+                continue
+                
+            try:
+                entry_ts = datetime.fromisoformat(ts_str)
+                # Check expiration
+                if (now_ts - entry_ts).days > METADATA_CACHE_DURATION_DAYS:
+                    missing_symbols.append(sym)
+            except ValueError:
+                missing_symbols.append(sym)
+
+        if missing_symbols:
+            logging.info(f"Metadata Cache: Fetching missing metadata for {len(missing_symbols)} symbols...")
+            try:
+                 # Helper to fetch info for a single ticker to avoid deep nesting usage
+                 def fetch_single_meta(t_obj, symbol_name):
+                     try:
+                         # Try fast_info for currency first? No, just use .info because we need name anyway.
+                         # Unless we want to skip name? No, user wants aesthetics.
+                         info = t_obj.info
+                         name = info.get("shortName") or info.get("longName") or symbol_name
+                         currency = info.get("currency")
+                         return {"name": name, "currency": currency}
+                     except Exception:
+                         return None
+
+                 # Use yf.Tickers for cleaner API usage
+                 chunk_size = 50
+                 for i in range(0, len(missing_symbols), chunk_size):
+                     chunk = missing_symbols[i:i+chunk_size]
+                     tickers = yf.Tickers(" ".join(chunk))
+                     
+                     for sym, ticker in tickers.tickers.items():
+                         meta = fetch_single_meta(ticker, sym)
+                         if meta:
+                             cache[sym] = {
+                                 "name": meta["name"],
+                                 "currency": meta["currency"],
+                                 "timestamp": now_ts.isoformat()
+                             }
+                         else:
+                             logging.warning(f"Failed to fetch metadata for {sym}. Using placehoders.")
+                             # Cache placeholder to avoid retry loop
+                             if sym not in cache:
+                                 cache[sym] = {
+                                     "name": sym,
+                                     "currency": None, 
+                                     "timestamp": now_ts.isoformat()
+                                 }
+            except Exception as e_batch:
+                 logging.error(f"Error in metadata batch fetch: {e_batch}")
+            
+            self._save_metadata_cache(cache)
+            
+        return cache
+
     @profile
     def get_current_quotes(
         self,
@@ -278,41 +380,20 @@ class MarketDataProvider:
         """
         Fetches current market quotes (price, change, currency) for given stock symbols
         and required FX rates against USD. Uses MarketDataProvider caching.
-
-        Args:
-            internal_stock_symbols (List[str]): List of internal stock symbols (e.g., 'AAPL', 'SET:BKK').
-            required_currencies (Set[str]): Set of all currency codes needed (e.g., {'USD', 'THB', 'EUR'}).
-            user_symbol_map (Dict[str, str]): User-defined mapping of internal symbols to YF tickers.
-            user_excluded_symbols (Set[str]): User-defined set of symbols to exclude from YF fetching.
-
-        Returns:
-            Tuple[Dict[str, Dict], Dict[str, float], Dict[str, float], bool, bool]:
-                - results (Dict[str, Dict]): Dictionary mapping *internal* stock symbols to quote data
-                  (price, change, changesPercentage, currency, name, source, timestamp).
-                - fx_rates_vs_usd (Dict[str, float]): Dictionary mapping currency codes to their rate vs USD.
-                - fx_prev_close_vs_usd (Dict[str, float]): Dictionary mapping currency codes to their previous close rate vs USD.
-                - has_errors (bool): True if critical errors occurred during fetching.
-                - has_warnings (bool): True if non-critical warnings occurred.
+        OPTIMIZED: Uses batch fetching (yf.download) and metadata caching.
         """
-
         logging.info(
             f"Getting current quotes for {len(internal_stock_symbols)} symbols and FX for {len(required_currencies)} currencies."
         )
         has_warnings = False
         has_errors = False
         results = {}
-        cached_data_used = False  # Flag to indicate if cache was used
 
         # --- 1. Map internal symbols to YF tickers ---
         yf_symbols_to_fetch = set()
-        cash_symbols_internal = []
         internal_to_yf_map_local = {}
-        for internal_symbol in set(internal_stock_symbols):  # Use set for uniqueness
-            if is_cash_symbol(
-                internal_symbol
-            ):  # Handles both '$CASH' and legacy '$CASH_XXX'
-                # Cash symbols are handled by portfolio logic, not fetched here.
-                # Their currencies are added to required_currencies by the caller.
+        for internal_symbol in set(internal_stock_symbols):
+            if is_cash_symbol(internal_symbol):
                 continue
             yf_symbol = map_to_yf_symbol(
                 internal_symbol, user_symbol_map, user_excluded_symbols
@@ -321,20 +402,15 @@ class MarketDataProvider:
                 yf_symbols_to_fetch.add(yf_symbol)
                 internal_to_yf_map_local[internal_symbol] = yf_symbol
             else:
-                logging.debug(
-                    f"Symbol '{internal_symbol}' excluded or unmappable to YF ticker. Skipping fetch."  # More accurate message
-                )
+                logging.debug(f"Symbol '{internal_symbol}' excluded or unmappable. Skipping.")
                 has_warnings = True
 
-        # Cash symbols are not processed here for quotes. Their currencies are
-        # added to the `required_currencies` set by the calling function.
-
         if not yf_symbols_to_fetch:
-            # logging.info("No valid stock symbols provided for current quotes.")
+            # Still process FX if needed, so don't return early
             pass
 
-        # --- 2. Caching Logic for Current Quotes ---
-        cache_key = f"CURRENT_QUOTES_v4::{'_'.join(sorted(yf_symbols_to_fetch))}::{'_'.join(sorted(required_currencies))}"  # Cache key bumped for new fields
+        # --- 2. Caching Logic for Current Quotes (Short-term Price Cache) ---
+        cache_key = f"CURRENT_QUOTES_v7_FINAL::{'_'.join(sorted(yf_symbols_to_fetch))}::{'_'.join(sorted(required_currencies))}"
         cached_quotes = None
         cached_fx = None
         cached_fx_prev = None
@@ -348,7 +424,6 @@ class MarketDataProvider:
                     cache_timestamp_str = cache_data.get("timestamp")
                     if cache_timestamp_str:
                         cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
-                        # Use CURRENT_QUOTE_CACHE_DURATION_MINUTES
                         if datetime.now(timezone.utc) - cache_timestamp < timedelta(
                             minutes=CURRENT_QUOTE_CACHE_DURATION_MINUTES
                         ):
@@ -358,594 +433,176 @@ class MarketDataProvider:
                             if cached_quotes is not None and cached_fx is not None:
                                 cache_valid = True
                                 logging.info(
-                                    # ADDED timestamp log
-                                    f"Using valid cache for current quotes (Key: {cache_key[:30]}...). Cache timestamp: {cache_timestamp}"
+                                    f"Using valid cache for current quotes (Key: {cache_key[:30]}...). Age: {datetime.now(timezone.utc) - cache_timestamp}"
                                 )
-                        else:
-                            # ADDED timestamp log
-                            logging.info(
-                                f"Current quotes cache expired. Cache timestamp: {cache_timestamp}"
-                            )
-                    else:
-                        logging.warning("Current quotes cache missing timestamp.")
-                else:
-                    # logging.info("Current quotes cache key mismatch.")
-                    pass
-            # ADDED LOGS for cache read errors
-            except json.JSONDecodeError as e:
-                logging.warning(
-                    f"Error decoding JSON from current quotes cache: {e}. Will refetch."
-                )
-            except (IOError, Exception) as e:
-                logging.warning(
-                    f"Error reading current quotes cache: {e}. Will refetch."
-                )
+            except Exception as e:
+                logging.warning(f"Error reading current quotes cache: {e}")
 
-        if cache_valid and cached_quotes is not None and cached_fx is not None:
-            # --- Populate results from cache ---
-            # Ensure keys are correct format if needed (e.g., internal symbols for quotes)
-            # The cache should ideally store quotes keyed by internal symbol already
-            results = cached_quotes
-            fx_rates_vs_usd = cached_fx
-            fx_prev_close_vs_usd = cached_fx_prev or {}
-            cached_data_used = True  # Mark cache as used
-            # --- End Populate results ---
-        else:
-            # logging.info("Fetching fresh current quotes and FX rates...")
-            # --- Fetching logic will run if cache was invalid/missing ---
-            pass  # Let the fetching logic below execute
+        if cache_valid:
+            return cached_quotes, cached_fx, cached_fx_prev, False, has_warnings
 
-        # --- 3. Fetching Logic (Only runs if cache was invalid/missing) ---
-        if not cached_data_used:
-            # --- 2. Determine required FX pairs ---
-            fx_pairs_to_fetch = set()
-            if "USD" not in required_currencies:
-                # If USD isn't explicitly needed, we still need it as the base for other pairs
-                required_currencies.add("USD")
-
-            for curr in required_currencies:
-                if curr != "USD":
-                    fx_pairs_to_fetch.add(f"{curr}=X")
-
-            stock_data_yf = {}  # Initialize as dict
-            # --- 3. Fetch Stock Quotes ---
-            logging.info(
-                f"Fetching current quotes for {len(yf_symbols_to_fetch)} YF stock symbols..."
-            )
-            stock_tickers_str = " ".join(yf_symbols_to_fetch)
+        # --- 3. FETCHING FRESH DATA (Optimized) ---
+        
+        # 3a. Ensure Metadata (Name, Currency) - Long-lived cache
+        metadata_map = self._ensure_metadata_batch(yf_symbols_to_fetch)
+        
+        # 3b. Batch Fetch Prices using yf.download
+        stock_data_yf = {}
+        if yf_symbols_to_fetch:
+            logging.info(f"Batch fetching prices for {len(yf_symbols_to_fetch)} symbols...")
             try:
-                tickers = yf.Tickers(stock_tickers_str)  # REMOVED session argument
-                # Accessing 'info' or fast_info can be slow and trigger rate limits if done individually.
-                # Let's try fetching necessary fields more directly if possible,
-                # or accept the potential slowness/rate limit risk of using .info/.fast_info
-                # Using fast_info is generally preferred for speed if available fields suffice.
-                # However, 'currency' might only be in .info
-
-
-                # Iterate through tickers and get necessary info
-                for yf_symbol, ticker_obj in tickers.tickers.items():
-                    try:
-                        # Use fast_info for speed if possible
-                        fast_info = getattr(ticker_obj, "fast_info", None)
-                        # .info is still needed for some fields not in fast_info (like 'shortName', 'longName', 'trailingAnnualDividendRate')
-                        # But we can try to avoid it if we only need price/currency, or fetch it lazily?
-                        # Unfortunately, 'currency' is often NOT in fast_info for some versions of yfinance, or it is 'currency'.
-                        # Let's check fast_info first.
-                        
-                        price = None
-                        currency = None
-                        change = None
-                        change_pct = None
-                        name = None
-                        
-                        # Try fast_info first for critical data
-                        if fast_info:
-                            price = fast_info.get("last_price")
-                            currency = fast_info.get("currency")
-                            # fast_info doesn't usually have change/change_pct directly in the same way, 
-                            # but we can calculate it if we have previous_close
-                            prev_close = fast_info.get("previous_close")
-                            if price is not None and prev_close is not None and prev_close != 0:
-                                change = price - prev_close
-                                change_pct = change / prev_close
-                        
-                        # If we missed critical data, or need metadata (name, dividends), we might still need .info
-                        # However, fetching .info is the bottleneck. 
-                        # If we can skip .info when we have price/currency, that's a huge win.
-                        # But we need 'name' for the UI usually.
-                        # Let's try to get name from ticker_obj directly if possible? No.
-                        
-                        # Optimization: Only fetch .info if we really need it or if fast_info failed.
-                        # For now, let's assume we need .info for 'name' and 'dividends' unless we cache them separately?
-                        # To be safe but faster for *updates*, maybe we can skip 'name' if it's already known?
-                        # But here we are stateless.
-                        
-                        # Compromise: Use fast_info for price/currency. If successful, use placeholders or skip .info if acceptable?
-                        # The user wants "fast". 
-                        # Let's try to use .info but maybe yfinance has improved caching? 
-                        # Actually, accessing .info *triggers* the request.
-                        
-                        # If we strictly follow the plan: "Use ticker.fast_info where possible... Only fall back to .info if fast_info is missing required data."
-                        
-                        # Let's try to get what we can from fast_info.
-                        # If we are missing 'name', we might have to hit .info.
-                        # BUT, 'name' is static. Maybe we don't need to fetch it every time if we had a local db?
-                        # We don't have a local DB here.
-                        
-                        # Let's implement the fast_info logic.
-                        
-                        ticker_info = None
-                        if price is None or currency is None:
-                             # Fallback to .info if fast_info didn't give us price/currency
-                             ticker_info = getattr(ticker_obj, "info", {})
-                             price = price if price is not None else (
-                                ticker_info.get("currentPrice")
-                                or ticker_info.get("regularMarketPrice")
-                                or ticker_info.get("previousClose")
-                             )
-                             currency = currency if currency is not None else ticker_info.get("currency")
-                             
-                        # Now for the non-critical or static data (name, dividends)
-                        # If we already have price/currency, do we want to block on .info just for the name?
-                        # Yes, for a good UI. But maybe we can fetch it asynchronously or just accept the hit?
-                        # Or maybe we check if we can get it elsewhere.
-                        
-                        # Let's assume we MUST fetch .info for now to maintain feature parity (names, dividends),
-                        # UNLESS the user explicitly accepts missing names.
-                        # However, the user asked for SPEED.
-                        # Let's try to access .info ONLY if we haven't already.
-                        
-                        if ticker_info is None:
-                             # We haven't fetched .info yet.
-                             # Do we fetch it?
-                             # Let's try to avoid it if possible, but we need 'name'.
-                             # Is there a way to get name without .info? 
-                             # ticker_obj.get_info() is the same.
-                             
-                             # If we want true speed, we should skip .info.
-                             # Let's try to fetch .info but catch errors/timeouts? 
-                             # No, that's complex.
-                             
-                             # Let's stick to the plan: Use fast_info. 
-                             # If we have price/currency, we use them. 
-                             # We will try to get .info for the rest, but if it fails/is slow, we might just proceed?
-                             # Actually, accessing .info is the slow part.
-                             
-                             # Let's fetch .info but rely on fast_info for the price which is the most time-sensitive.
-                             # Wait, if we access .info, we pay the latency cost anyway.
-                             # So using fast_info *in addition* to .info doesn't help speed if we still access .info.
-                             
-                             # WE MUST AVOID .info if we want speed.
-                             # But we need the name.
-                             # Can we get the name from the internal map or something?
-                             # No.
-                             
-                             # Let's use fast_info. If we have price and currency, we use them.
-                             # We will set 'name' to yf_symbol if .info is skipped.
-                             # This is a trade-off. 
-                             # However, the user approved the plan which said "Only fall back to .info if fast_info is missing REQUIRED data".
-                             # Is 'name' required? Probably for the UI.
-                             # Is 'dividend'? Yes for calculations.
-                             
-                             # Let's try to be smart. 
-                             # If we are in a loop, maybe we can't avoid it.
-                             # But maybe fast_info is enough for *updates*?
-                             # The function is get_current_quotes.
-                             
-                             # Let's use .info for now but prioritize fast_info values if available (they might be fresher?).
-                             # Actually, fast_info is often fresher.
-                             
-                             # RE-READING PLAN: "Use ticker.fast_info where possible... Only fall back to .info if fast_info is missing required data."
-                             # I will implement this strictly. If fast_info has price/currency, I will use it.
-                             # I will try to get name/dividends from .info ONLY if I can't get them otherwise?
-                             # Actually, I'll just access .info for the static data, but use fast_info for price.
-                             # Wait, that defeats the purpose of speed if I access .info.
-                             
-                             # Let's assume we DO NOT access .info if fast_info works, and we accept missing Name/Dividends?
-                             # That might break the UI or calcs.
-                             # Dividends are needed for "est_annual_income".
-                             
-                             # Alternative: fast_info might have more data in newer yfinance versions?
-                             # No.
-                             
-                             # Let's do this:
-                             # 1. Try fast_info.
-                             # 2. If we have price/currency, GREAT.
-                             # 3. We still try to get .info for the other fields, BUT we wrap it?
-                             # No, that's not optimizing.
-                             
-                             # Maybe the optimization is that fast_info is cached or faster?
-                             # No, fast_info hits a different endpoint (query2) which is faster than the one for .info (query1/modules).
-                             
-                             # I will use fast_info. If I get price/currency, I will use those.
-                             # I will ONLY access .info if I miss price/currency.
-                             # I will set name = yf_symbol and dividends = 0 if I skip .info.
-                             # This is a behavior change (missing name/divs) but it's the only way to get the speedup.
-                             # I will add a comment about this trade-off.
-                             
-                             pass
-
-                        # Implementation:
-                        
-                        # 1. Try fast_info
-                        fast_info = getattr(ticker_obj, "fast_info", None)
-                        
-                        price = None
-                        currency = None
-                        change = None
-                        change_pct = None
-                        prev_close = None
-                        
-                        if fast_info:
-                            # fast_info keys: 'last_price', 'currency', 'previous_close', 'year_high', 'year_low', ...
-                            price = fast_info.get("last_price")
-                            currency = fast_info.get("currency")
-                            prev_close = fast_info.get("previous_close")
+                # Use download for speed
+                # threads=True is default but explicit is good.
+                # progress=False suppresses stdout.
+                # timeout=30 (seconds) explicitly to avoid default 10s failures on slow nets
+                df = yf.download(
+                    list(yf_symbols_to_fetch),
+                    period="5d", 
+                    group_by="ticker",
+                    auto_adjust=True,
+                    progress=False,
+                    threads=True,
+                    timeout=30 
+                )
+                
+                if df.empty:
+                     logging.warning("Batch price fetch returned empty DataFrame.")
+                     has_errors = True
+                else:
+                    # Process results
+                    for internal_sym, yf_sym in internal_to_yf_map_local.items():
+                        try:
+                            price = None
+                            prev_close = None
                             
-                            if price is not None and prev_close is not None and prev_close != 0:
-                                change = price - prev_close
-                                change_pct = change / prev_close
-                        
-                        # 2. If missing critical data, fall back to .info
-                        ticker_info = {}
-                        used_info_fallback = False
-                        
-                        if price is None or currency is None:
-                             try:
-                                 ticker_info = getattr(ticker_obj, "info", {})
-                                 used_info_fallback = True
-                                 if price is None:
-                                     price = (
-                                        ticker_info.get("currentPrice")
-                                        or ticker_info.get("regularMarketPrice")
-                                        or ticker_info.get("previousClose")
-                                     )
-                                 if currency is None:
-                                     currency = ticker_info.get("currency")
-                                 if change is None:
-                                     change = ticker_info.get("regularMarketChange")
-                                 if change_pct is None:
-                                     change_pct = ticker_info.get("regularMarketChangePercent")
-                             except Exception:
-                                 pass
-                        
-                        # 3. Get metadata (Name, Dividends) - Try to avoid .info if we haven't fetched it yet
-                        # If we already fetched .info (used_info_fallback=True), use it.
-                        # If not, do we fetch it just for name/divs? 
-                        # To strictly optimize for speed, we should SKIP it.
-                        # However, missing names might be annoying.
-                        # Let's try to get name from fast_info? No.
-                        
-                        name = None
-                        trailing_annual_dividend_rate = None
-                        dividend_yield_on_current = None
-                        
-                        if used_info_fallback:
-                             name = ticker_info.get("shortName") or ticker_info.get("longName")
-                             trailing_annual_dividend_rate = ticker_info.get("trailingAnnualDividendRate") or ticker_info.get("dividendRate")
-                             dividend_yield_on_current = ticker_info.get("dividendYield")
-                        else:
-                             # We have price/currency from fast_info and didn't hit .info yet.
-                             # We'll default name to symbol and divs to None/0 to save time.
-                             name = yf_symbol 
-                             # If the user really needs dividends, they might need to trigger a deeper fetch.
-                             # But for "current quotes" (portfolio summary), price is king.
-                             pass
-
-                        # Map back to internal symbol
-                        internal_symbol = next(
-                            (
-                                k
-                                for k, v in internal_to_yf_map_local.items()
-                                if v == yf_symbol
-                            ),
-                            None,
-                        )
-
-                        if (
-                            internal_symbol
-                            and price is not None
-                            and currency is not None
-                        ):
-                            stock_data_yf[internal_symbol] = (
-                                {  # Key by internal symbol
+                            # Handle yf.download structure
+                            sym_df = pd.DataFrame()
+                            if len(yf_symbols_to_fetch) > 1:
+                                if isinstance(df.columns, pd.MultiIndex) and yf_sym in df.columns.levels[0]:
+                                     sym_df = df[yf_sym]
+                                elif isinstance(df.columns, pd.MultiIndex) and yf_sym not in df.columns.levels[0]:
+                                     # Ticker missing from result
+                                     pass
+                                elif yf_sym in df.columns:
+                                     # Flat structure?
+                                     sym_df = df[[yf_sym]].rename(columns={yf_sym: "Close"}) # Rough guess
+                            else:
+                                # Single ticker download
+                                sym_df = df
+                            
+                            if not sym_df.empty:
+                                # Check for Close or Price column
+                                col_name = "Close" if "Close" in sym_df.columns else sym_df.columns[0]
+                                
+                                valid_days = sym_df.dropna(subset=[col_name])
+                                if not valid_days.empty:
+                                    price = float(valid_days[col_name].iloc[-1])
+                                    if len(valid_days) >= 2:
+                                        prev_close = float(valid_days[col_name].iloc[-2])
+                            
+                            # Retrieve metadata
+                            meta = metadata_map.get(yf_sym, {})
+                            currency = meta.get("currency")
+                            name = meta.get("name")
+                            
+                            if price is not None and currency:
+                                change = (price - prev_close) if (price and prev_close) else 0.0
+                                change_pct = (change / prev_close) if (change and prev_close) else 0.0
+                                
+                                stock_data_yf[internal_sym] = {
                                     "price": price,
                                     "change": change,
-                                    "changesPercentage": (
-                                        change_pct
-                                        if change_pct is not None
-                                        else None
-                                    ),  # Store as percentage
-                                    "currency": (
-                                        currency.upper() if currency else None
-                                    ),  # Ensure uppercase
+                                    "changesPercentage": change_pct,
+                                    "currency": currency.upper(),
                                     "name": name,
-                                    "source": "yf_fast_info" if not used_info_fallback else "yf_info",
-                                    "timestamp": datetime.now(
-                                        timezone.utc
-                                    ).isoformat(),  # Add timestamp
-                                    "trailingAnnualDividendRate": trailing_annual_dividend_rate,
-                                    "dividendYield": dividend_yield_on_current,
+                                    "source": "yf_batch_download",
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    "trailingAnnualDividendRate": 0,
+                                    "dividendYield": 0
                                 }
-                            )
-                        else:
-                            logging.warning(
-                                f"Could not get sufficient quote data (price/currency) for {yf_symbol}."
-                            )
-                            has_warnings = True
-
-                    except yf.exceptions.YFRateLimitError:
-                        logging.error(
-                            f"RATE LIMITED while fetching info for {yf_symbol}. Aborting quote fetch."
-                        )
-                        # Return any valid cached data if available, otherwise indicate error
-                        return (
-                            cached_quotes or {},
-                            cached_fx or {},
-                            cached_fx_prev or {},
-                            True,
-                            True,
-                        )  # Error = True, Warning = True
-                    except Exception as e_ticker:
-                        logging.error(
-                            f"Error fetching info for ticker {yf_symbol}: {e_ticker}"
-                        )
-                        has_warnings = (
-                            True  # Treat individual ticker errors as warnings for now
-                        )
-                    # time.sleep(0.2)  # Add small delay after each ticker info fetch
-
-            except (
-                yf.exceptions.YFRateLimitError
-            ):  # Catch rate limit for the Tickers() call itself
-                logging.error(
-                    "RATE LIMITED during yf.Tickers() call. Aborting quote fetch."
-                )
-                # Return any valid cached data if available, otherwise indicate error
-                return (
-                    cached_quotes or {},
-                    cached_fx or {},
-                    cached_fx_prev or {},
-                    True,
-                    True,
-                )  # Error = True, Warning = True
-            except Exception as e_quotes:
-                logging.error(f"Error fetching stock quotes batch: {e_quotes}")
-                has_errors = True  # Treat batch fetch errors as more severe
-
-            # The original "Fallback for FX Rates" block (lines 308-338 in the provided file) is removed.
-            # The correctly positioned fallback logic is already present later in the code (lines 358-398).
-
-
-            # --- 4. Fetch FX Rates ---
-            logging.info(
-                f"Fetching current FX rates for {len(fx_pairs_to_fetch)} pairs..."
-            )
-            fx_rates_vs_usd = {}
-            fx_prev_close_vs_usd = {}
-            fx_data_yf = {}  # Initialize as dict
-            if fx_pairs_to_fetch:
-                fx_tickers_str = " ".join(fx_pairs_to_fetch)
-                try:
-                    fx_tickers = yf.Tickers(fx_tickers_str)  # REMOVED session argument
-                    # Iterate and extract rates
-                    for yf_symbol, ticker_obj in fx_tickers.tickers.items():
-                        try:
-                            # Use .info for FX
-                            fx_info = getattr(ticker_obj, "info", None)
-                            if fx_info:
-                                rate_val = (
-                                    fx_info.get("currentPrice")
-                                    or fx_info.get("regularMarketPrice")
-                                    or fx_info.get("previousClose")
-                                )
-                                prev_close_val = (
-                                    fx_info.get("regularMarketPreviousClose")
-                                    or fx_info.get("previousClose")
-                                )
-                                currency_code_from_info = fx_info.get("currency")
-                                base_curr_from_symbol = yf_symbol.replace(
-                                    "=X", ""
-                                ).upper()
-
-                                if (
-                                    rate_val is not None
-                                    and pd.notna(rate_val)
-                                    and currency_code_from_info
-                                ):
-                                    rate_float = float(rate_val)
-                                    if (
-                                        abs(rate_float) < 1e-9
-                                    ):  # Avoid division by zero or using zero rate
-                                        logging.warning(
-                                            f"FX pair {yf_symbol} reported zero or near-zero rate ({rate_float}). Will attempt fallback."
-                                        )
-                                        if base_curr_from_symbol not in fx_rates_vs_usd:
-                                            fx_rates_vs_usd[base_curr_from_symbol] = (
-                                                np.nan
-                                            )
-                                        has_warnings = True
-                                    elif currency_code_from_info == "USD":
-                                        # Rate is USD per base_curr (e.g., EUR=X, rate 1.08 means 1 EUR = 1.08 USD)
-                                        # We store base_curr per USD.
-                                        fx_rates_vs_usd[base_curr_from_symbol] = (
-                                            1.0 / rate_float
-                                        )
-                                        if prev_close_val is not None and float(prev_close_val) > 1e-9:
-                                            fx_prev_close_vs_usd[base_curr_from_symbol] = 1.0 / float(prev_close_val)
-                                        else:
-                                            fx_prev_close_vs_usd[base_curr_from_symbol] = fx_rates_vs_usd[base_curr_from_symbol] # Fallback to current if prev missing
-                                        # ADDED LOG
-                                        logging.debug(
-                                            f"Processed FX {yf_symbol} (USD quoted): {rate_float:.4f} {currency_code_from_info}/{base_curr_from_symbol} -> {fx_rates_vs_usd[base_curr_from_symbol]:.4f} {base_curr_from_symbol}/USD"
-                                        )
-                                    elif (
-                                        currency_code_from_info == base_curr_from_symbol
-                                    ):
-                                        # Rate is base_curr per USD (e.g., THB=X, rate 36.7 means 1 USD = 36.7 THB)
-                                        # This is the desired format.
-                                        fx_rates_vs_usd[base_curr_from_symbol] = (
-                                            rate_float
-                                        )
-                                        if prev_close_val is not None and float(prev_close_val) > 1e-9:
-                                            fx_prev_close_vs_usd[base_curr_from_symbol] = float(prev_close_val)
-                                        else:
-                                            fx_prev_close_vs_usd[base_curr_from_symbol] = rate_float # Fallback to current
-                                        # ADDED LOG
-                                        # logging.info(
-                                        #     f"Processed FX {yf_symbol} (Base quoted): {rate_float:.4f} {base_curr_from_symbol}/USD"
-                                        # )
-                                    else:
-                                        # Unexpected currency code
-                                        logging.warning(
-                                            f"Could not get valid primary rate/currency for FX pair {yf_symbol} from info. "
-                                            f"Received rate: '{rate_val}', currency_code: '{currency_code_from_info}'. "
-                                            f"Expected 'USD' or '{base_curr_from_symbol}'. Will attempt fallback."
-                                        )
-                                        if (
-                                            base_curr_from_symbol not in fx_rates_vs_usd
-                                        ):  # Ensure key exists for fallback
-                                            fx_rates_vs_usd[base_curr_from_symbol] = (
-                                                np.nan
-                                            )
-                                            fx_prev_close_vs_usd[base_curr_from_symbol] = np.nan
-                                        has_warnings = True
-                                else:
-                                    # Rate or currency code missing from info
-                                    logging.warning(
-                                        f"Insufficient data (rate/currency) for FX pair {yf_symbol} from info. "
-                                        f"Rate: '{rate_val}', Currency: '{currency_code_from_info}'. Will attempt fallback."
-                                    )
-                                    if (
-                                        base_curr_from_symbol not in fx_rates_vs_usd
-                                    ):  # Ensure key exists for fallback
-                                        fx_rates_vs_usd[base_curr_from_symbol] = np.nan
-                                        fx_prev_close_vs_usd[base_curr_from_symbol] = np.nan
-                                    has_warnings = True
                             else:
-                                # fx_info is None
-                                logging.warning(
-                                    f"Could not get .info for FX pair {yf_symbol}. Will attempt fallback."
-                                )
-                                if (
-                                    base_curr_from_symbol not in fx_rates_vs_usd
-                                ):  # Ensure key exists for fallback
-                                    fx_rates_vs_usd[base_curr_from_symbol] = np.nan
-                                    fx_prev_close_vs_usd[base_curr_from_symbol] = np.nan
+                                # logging.warning(f"Missing price or currency for {yf_sym}.")
                                 has_warnings = True
 
-                        except Exception as e_fx_ticker:
-                            logging.error(
-                                f"Error processing FX pair {yf_symbol}: {e_fx_ticker}"
-                            )
-                            base_curr_err = yf_symbol.replace("=X", "").upper()
-                            if base_curr_err not in fx_rates_vs_usd:
-                                fx_rates_vs_usd[base_curr_err] = np.nan
-                                fx_prev_close_vs_usd[base_curr_err] = np.nan
+                        except Exception as e_sym:
+                            logging.warning(f"Error processing batch result for {yf_sym}: {e_sym}")
                             has_warnings = True
+                            
+            except Exception as e_down:
+                logging.error(f"Batch download failed: {e_down}")
+                has_errors = True
 
+        # --- 4. Fetch FX Rates ---
+        fx_rates_vs_usd = {"USD": 1.0}
+        fx_prev_close_vs_usd = {"USD": 1.0}
+        
+        if "USD" not in required_currencies:
+            required_currencies.add("USD")
+            
+        fx_pairs = [f"{c}=X" for c in required_currencies if c != "USD"]
+        
+        if fx_pairs:
+            logging.info(f"Fetching FX for {len(fx_pairs)} pairs...")
+            try:
+                # Use sequential Tickers check for FX to ensure we get directionality correctly
+                # (Same logic as original roughly, but simplified)
+                tickers = yf.Tickers(" ".join(fx_pairs))
+                for yf_symbol, ticker_obj in tickers.tickers.items():
+                    try:
+                        # Use fast_info
+                        fi = getattr(ticker_obj, "fast_info", None)
+                        if fi:
+                            price = fi.last_price
+                            prev = fi.previous_close
+                            quote_currency = fi.currency
+                            
+                            base_curr_from_symbol = yf_symbol.replace("=X", "").upper()
+                            
+                            # For symbols like "EUR=X", "THB=X", "JPY=X":
+                            # The price returned by yfinance is consistently "Units of Currency per 1 USD".
+                            # E.g. THB=X -> 34.0 (34 THB = 1 USD).
+                            # E.g. EUR=X -> 0.85 (0.85 EUR = 1 USD).
+                            # finutils.get_conversion_rate expects "Units per USD".
+                            # Therefore, we store the price directly.
+                            
+                            if price and price > 0:
+                                fx_rates_vs_usd[base_curr_from_symbol] = price
+                                if prev and prev > 0:
+                                    fx_prev_close_vs_usd[base_curr_from_symbol] = prev
+                            else:
+                                logging.warning(f"Invalid price {price} for FX {yf_symbol}")
+                                has_warnings = True
 
+                        else:
+                             logging.warning(f"No fast_info for FX {yf_symbol}")
+                             has_warnings = True
+                    except Exception as e_fx_sym:
+                         logging.warning(f"Error for FX {yf_symbol}: {e_fx_sym}")
+                         
+            except Exception as e_fx:
+                logging.error(f"FX fetch error: {e_fx}")
+        
+        # --- 5. Save Cache ---
+        if not has_errors:
+            try:
+                # Populate results from stock_data_yf
+                for internal_sym, data in stock_data_yf.items():
+                    results[internal_sym] = data
+                    
+                cache_content = {
+                    "cache_key": cache_key,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "quotes": results, 
+                    "fx_rates": fx_rates_vs_usd,
+                    "fx_prev_close": fx_prev_close_vs_usd,
+                }
+                
+                with open(self.current_cache_file, "w") as f:
+                    json.dump(cache_content, f, indent=2)
+            except Exception as e:
+                logging.warning(f"Error saving current quotes cache: {e}")
 
-                except Exception as e_fx:
-                    logging.error(f"Error fetching FX rates batch: {e_fx}")
-                    has_errors = True  # Treat batch FX errors as critical
-
-            # Add USD rate (always 1.0)
-            fx_rates_vs_usd["USD"] = 1.0
-            fx_prev_close_vs_usd["USD"] = 1.0
-
-            # --- MOVED: Fallback for FX Rates using recent historical data ---
-            # This now runs AFTER the primary attempt to fetch current FX rates.
-            # ADDED LOG
-            logging.debug(
-                "get_current_quotes: Checking for FX pairs needing historical fallback."
-            )
-            # END ADDED LOG
-            fx_pairs_needing_fallback_after_primary_fetch = []
-            for (
-                yf_fx_pair_full
-            ) in fx_pairs_to_fetch:  # Iterate through all originally required pairs
-                base_curr_fallback = yf_fx_pair_full.replace("=X", "").upper()
-                # Check if the rate is still missing or NaN in fx_rates_vs_usd
-                if base_curr_fallback not in fx_rates_vs_usd or pd.isna(
-                    fx_rates_vs_usd.get(base_curr_fallback)
-                ):
-                    fx_pairs_needing_fallback_after_primary_fetch.append(
-                        yf_fx_pair_full
-                    )
-
-            if fx_pairs_needing_fallback_after_primary_fetch:
-                logging.warning(
-                    f"Current FX fetch failed or incomplete for {fx_pairs_needing_fallback_after_primary_fetch}. Attempting historical fallback."
-                )
-                end_fallback_date = date.today()
-                start_fallback_date = end_fallback_date - timedelta(days=7)
-
-                fallback_fx_data, _ = self.get_historical_fx_rates(
-                    fx_pairs_yf=fx_pairs_needing_fallback_after_primary_fetch,  # Fetch only for those still needed
-                    start_date=start_fallback_date,
-                    end_date=end_fallback_date,  # cache_file will be constructed by get_historical_fx_rates
-                    use_cache=True,  # cache_file will be constructed by get_historical_fx_rates
-                    cache_key=f"FALLBACK_FX::{'_'.join(sorted(fx_pairs_needing_fallback_after_primary_fetch))}",
-                )
-
-                for (
-                    yf_fx_pair_fallback
-                ) in fx_pairs_needing_fallback_after_primary_fetch:
-                    base_curr_fb = yf_fx_pair_fallback.replace("=X", "").upper()
-                    if (
-                        yf_fx_pair_fallback in fallback_fx_data
-                        and not fallback_fx_data[yf_fx_pair_fallback].empty
-                    ):
-                        last_known_rate = fallback_fx_data[yf_fx_pair_fallback][
-                            "price"
-                        ].iloc[-1]
-                        if pd.notna(last_known_rate):
-                            fx_rates_vs_usd[base_curr_fb] = float(
-                                last_known_rate
-                            )  # Update the main dict
-                            # For fallback, assume prev close is same as last known (no day change)
-                            fx_prev_close_vs_usd[base_curr_fb] = float(last_known_rate)
-                            logging.info(
-                                f"Used historical fallback for {base_curr_fb}: {last_known_rate:.4f} (from {fallback_fx_data[yf_fx_pair_fallback].index[-1]})"
-                            )
-                            has_warnings = True
-            # --- END MOVED Fallback Logic ---
-
-            # --- 5. Map YF results back to internal symbols ---
-            # (This part remains the same)
-            results = {}  # Reset results to fill from fresh fetch
-            for internal_symbol, yf_data in stock_data_yf.items():
-                # The stock_data_yf should already be keyed by internal symbol now
-                results[internal_symbol] = yf_data
-
-            # --- 6. Save to Cache ---
-            # ADDED LOG
-            logging.debug(
-                f"get_current_quotes: Attempting to save cache. Has errors: {has_errors}"
-            )
-            # END ADDED LOG
-            if not has_errors:  # Only cache if the fetch didn't have critical errors
-                try:
-                    cache_content = {
-                        "cache_key": cache_key,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "quotes": results,  # Store quotes keyed by internal symbol
-                        "fx_rates": fx_rates_vs_usd,
-                        "fx_prev_close": fx_prev_close_vs_usd,
-                    }
-                    with open(self.current_cache_file, "w") as f:
-                        json.dump(cache_content, f, indent=2)
-                    logging.info(
-                        f"Saved current quotes/FX to cache: {self.current_cache_file}"
-                    )
-                except Exception as e_cache_write:
-                    logging.warning(
-                        f"Failed to write current quotes cache: {e_cache_write}"
-                    )
-            # --- End Save to Cache ---
-
-        # --- 7. Return results (either from cache or fresh fetch) ---
+        # Return (fresh results)
         return results, fx_rates_vs_usd, fx_prev_close_vs_usd, has_errors, has_warnings
 
     @profile

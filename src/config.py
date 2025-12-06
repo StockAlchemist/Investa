@@ -25,6 +25,8 @@ DAILY_RESULTS_CACHE_PATH_PREFIX = (
 YFINANCE_CACHE_DURATION_HOURS = 24
 FUNDAMENTALS_CACHE_DURATION_HOURS = 24 * 30 * 3  # Cache fundamentals for 3 months
 CURRENT_QUOTE_CACHE_DURATION_MINUTES = 1  # For current stock/index quotes (prices, fx)
+METADATA_CACHE_FILE_NAME = "yf_metadata_cache.json"  # Long-lived cache for static data (Name, Currency)
+METADATA_CACHE_DURATION_DAYS = 30
 
 # --- Logging Configuration ---
 # This level is a default; main_gui.py might override it for its own logging.
