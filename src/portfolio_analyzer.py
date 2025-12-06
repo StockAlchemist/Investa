@@ -1417,24 +1417,46 @@ def _calculate_aggregate_metrics(
                     )
                     has_warnings = True
 
+            # --- ADDED: Account-level FX Gain/Loss ---
+            acc_fx_gain_loss_display = safe_sum(
+                account_full_df, f"FX Gain/Loss ({display_currency})"
+            )
+            metrics_entry["fx_gain_loss_display"] = acc_fx_gain_loss_display
+            
+            acc_cost_basis_display_for_fx_pct = safe_sum(
+                account_full_df, f"Cost Basis ({display_currency})"
+            )
+            metrics_entry["fx_gain_loss_pct"] = (
+                (acc_fx_gain_loss_display / acc_cost_basis_display_for_fx_pct) * 100
+                if abs(acc_cost_basis_display_for_fx_pct) > 1e-9
+                else np.nan
+            )
+            # --- END ADDED ---
+
+            # FIX: Include FX Gain/Loss in Market Value to match Desktop and ensure Value = Cost + Gain
             metrics_entry["total_market_value_display"] = safe_sum(
                 account_full_df, f"Market Value ({display_currency})"
-            )
+            ) + acc_fx_gain_loss_display
+            
             metrics_entry["total_realized_gain_display"] = safe_sum(
                 account_full_df, f"Realized Gain ({display_currency})"
             )
+            # FIX: Include FX Gain/Loss in Unrealized Gain to match Desktop
             metrics_entry["total_unrealized_gain_display"] = safe_sum(
                 account_full_df, f"Unreal. Gain ({display_currency})"
-            )
+            ) + acc_fx_gain_loss_display 
+
             metrics_entry["total_dividends_display"] = safe_sum(
                 account_full_df, f"Dividends ({display_currency})"
             )
             metrics_entry["total_commissions_display"] = safe_sum(
                 account_full_df, f"Commissions ({display_currency})"
             )
+            # FIX: Include FX Gain/Loss in Total Gain to match Desktop
             metrics_entry["total_gain_display"] = safe_sum(
                 account_full_df, f"Total Gain ({display_currency})"
-            )
+            ) + acc_fx_gain_loss_display
+            
             # Cash is now part of the main holdings, so total_cash_display is not needed here.
             # It can be derived from the main market value if needed, but it's not a primary metric for an account.
             metrics_entry["total_cash_display"] = 0.0
@@ -1480,21 +1502,6 @@ def _calculate_aggregate_metrics(
                     )
                 elif abs(acc_total_day_change_display) < 1e-9:
                     metrics_entry["total_day_change_percent"] = 0.0
-
-            # --- ADDED: Account-level FX Gain/Loss ---
-            acc_fx_gain_loss_display = safe_sum(
-                account_full_df, f"FX Gain/Loss ({display_currency})"
-            )
-            metrics_entry["fx_gain_loss_display"] = acc_fx_gain_loss_display
-            acc_cost_basis_display_for_fx_pct = safe_sum(
-                account_full_df, f"Cost Basis ({display_currency})"
-            )
-            metrics_entry["fx_gain_loss_pct"] = (
-                (acc_fx_gain_loss_display / acc_cost_basis_display_for_fx_pct) * 100
-                if abs(acc_cost_basis_display_for_fx_pct) > 1e-9
-                else np.nan
-            )
-            # --- END ADDED ---
 
         except Exception as e_acc_agg:
             logging.exception(f"Error aggregating metrics for account '{account}'")
@@ -1568,8 +1575,14 @@ def _calculate_aggregate_metrics(
         if col not in df_for_overall_summary.columns:
             logging.warning(f"Warning: Column '{col}' missing for overall aggregation.")
             has_warnings = True
+    
+    # --- ADDED: Overall FX Gain/Loss ---
+    overall_fx_gain_loss_display = safe_sum(df_for_overall_summary, fx_gain_loss_col)
+    # --- END ADDED ---
 
-    overall_market_value_display = safe_sum(df_for_overall_summary, mkt_val_col)
+    # FIX: Include FX Gain/Loss in Overall Market Value to match Desktop and ensure Value = Cost + Gain
+    overall_market_value_display = safe_sum(df_for_overall_summary, mkt_val_col) + overall_fx_gain_loss_display
+    
     held_mask = pd.Series(False, index=df_for_overall_summary.index)
     if (
         "Quantity" in df_for_overall_summary.columns
@@ -1580,11 +1593,16 @@ def _calculate_aggregate_metrics(
         if held_mask.any()
         else 0.0
     )
-    overall_unrealized_gain_display = safe_sum(df_for_overall_summary, unreal_gain_col)
+    # FIX: Include FX Gain/Loss in Overall Unrealized Gain
+    overall_unrealized_gain_display = safe_sum(df_for_overall_summary, unreal_gain_col) + overall_fx_gain_loss_display
+    
     overall_realized_gain_display_agg = safe_sum(df_for_overall_summary, real_gain_col)
     overall_dividends_display_agg = safe_sum(df_for_overall_summary, divs_col)
     overall_commissions_display_agg = safe_sum(df_for_overall_summary, comm_col)
-    overall_total_gain_display = safe_sum(df_for_overall_summary, total_gain_col)
+    
+    # FIX: Include FX Gain/Loss in Overall Total Gain
+    overall_total_gain_display = safe_sum(df_for_overall_summary, total_gain_col) + overall_fx_gain_loss_display
+    
     overall_total_cost_invested_display = safe_sum(
         df_for_overall_summary, cost_invest_col
     )
@@ -1597,9 +1615,6 @@ def _calculate_aggregate_metrics(
     overall_day_change_display = safe_sum(df_for_overall_summary, day_change_col)
     overall_prev_close_mv_display = np.nan
 
-    # --- ADDED: Overall FX Gain/Loss ---
-    overall_fx_gain_loss_display = safe_sum(df_for_overall_summary, fx_gain_loss_col)
-    # --- END ADDED ---
 
     # --- ADDED: Overall Estimated Annual Income ---
     est_ann_income_col = f"Est. Ann. Income ({display_currency})"

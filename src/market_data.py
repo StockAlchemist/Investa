@@ -158,7 +158,13 @@ class MarketDataProvider:
                 QStandardPaths.CacheLocation
             )
             if cache_dir_base:
-                app_cache_dir = cache_dir_base  # Use the path directly
+                # --- FIX: Ensure consistent path structure (Org/App) ---
+                expected_suffix = os.path.join(ORG_NAME, APP_NAME)
+                if not cache_dir_base.endswith(expected_suffix):
+                     app_cache_dir = os.path.join(cache_dir_base, ORG_NAME, APP_NAME)
+                else:
+                     app_cache_dir = cache_dir_base
+                
                 os.makedirs(app_cache_dir, exist_ok=True)
                 self.current_cache_file = os.path.join(
                     app_cache_dir, current_cache_file
@@ -172,7 +178,13 @@ class MarketDataProvider:
                 QStandardPaths.CacheLocation
             )
             if cache_dir_base:
-                app_cache_dir = cache_dir_base
+                # --- FIX: Ensure consistent path structure (Org/App) ---
+                expected_suffix = os.path.join(ORG_NAME, APP_NAME)
+                if not cache_dir_base.endswith(expected_suffix):
+                     app_cache_dir = os.path.join(cache_dir_base, ORG_NAME, APP_NAME)
+                else:
+                     app_cache_dir = cache_dir_base
+
                 os.makedirs(app_cache_dir, exist_ok=True)
                 self.current_cache_file = os.path.join(
                     app_cache_dir, DEFAULT_CURRENT_CACHE_FILE_PATH

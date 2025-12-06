@@ -768,6 +768,9 @@ def calculate_portfolio_summary(
     fifo_realized_gains_df = pd.DataFrame()
     try:
         logging.info("Calculating FIFO Realized Gains for Dashboard consistency...")
+        
+
+
         fifo_realized_gains_df = extract_realized_capital_gains_history(
             all_transactions_df=all_transactions_df_cleaned,
             display_currency=display_currency,
@@ -778,6 +781,8 @@ def calculate_portfolio_summary(
             include_accounts=include_accounts,
             current_fx_rates_vs_usd=current_fx_rates_vs_usd,  # Pass current rates for fallback
         )
+        
+
 
         # --- DEBUG LOGGING ---
         logging.info(f"FIFO DF Shape: {fifo_realized_gains_df.shape}")
