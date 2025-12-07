@@ -19,13 +19,16 @@ SPDX-License-Identifier: MIT
 """
 
 # --- START OF MODIFIED portfolio_logic.py ---
-import pandas as pd
-from datetime import datetime, date, timedelta, UTC
+import sys
 import os
-import json
+import math # Added math import
+from datetime import datetime, date, timedelta
+from typing import List, Dict, Tuple, Optional, Set, Any, Union
+print("DEBUG: LOADING PORTFOLIO_LOGIC", flush=True)
+
+import pandas as pd
 import numpy as np
-from scipy import optimize
-from typing import List, Tuple, Dict, Optional, Any, Set
+import logging
 import traceback
 from collections import defaultdict  # Still needed for historical parts
 import time
@@ -142,6 +145,8 @@ try:
         _process_transactions_to_holdings,
         _build_summary_rows,
         _calculate_aggregate_metrics,
+        calculate_periodic_returns,
+        calculate_correlation_matrix,
         extract_realized_capital_gains_history,
     )
 
@@ -1105,8 +1110,8 @@ def calculate_portfolio_summary(
                 full_summary_df=full_summary_df,
                 display_currency=display_currency,
                 report_date=report_date,
-                include_accounts=include_accounts,  # <-- Pass the filter list
-                all_available_accounts=available_accounts_for_errors,  # <-- Pass all accounts for context
+                include_accounts=include_accounts,
+                all_available_accounts=available_accounts_for_errors,
             )
         )
         # Ensure types before assignment

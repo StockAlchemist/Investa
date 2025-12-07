@@ -39,7 +39,16 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
     # --- 1. Load Configuration First ---
     # We need to know the DB path from config if it exists
     gui_config = {}
+    
+    # Define system config path (Mac specific for now, matching main_gui.py logic)
+    home_dir = os.path.expanduser("~")
+    # Constants should match config.py/main_gui.py logic
+    ORG_NAME = "StockAlchemist"
+    APP_NAME = "Investa"
+    system_config_path = os.path.join(home_dir, "Library", "Application Support", ORG_NAME, APP_NAME, "gui_config.json")
+    
     config_paths_to_try = [
+        system_config_path,  # Priority 1: System/User path (used by Desktop App)
         os.path.join(project_root, "gui_config.json"),
         os.path.join(src_dir, "gui_config.json"),
         os.path.join(src_dir, "Investa", "gui_config.json"),
@@ -69,6 +78,19 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
         user_symbol_map.update(gui_config["user_symbol_map"])
     if "user_excluded_symbols" in gui_config:
         user_excluded_symbols.update(set(gui_config["user_excluded_symbols"]))
+    
+    # --- ADDED: Load manual overrides from gui_config ---
+    # The desktop app saves overrides in 'manual_price_overrides' (legacy) or 'manual_overrides_dict'
+    manual_overrides_from_config = {}
+    if "manual_overrides_dict" in gui_config:
+        manual_overrides_from_config = gui_config["manual_overrides_dict"]
+    elif "manual_price_overrides" in gui_config:
+        manual_overrides_from_config = gui_config["manual_price_overrides"]
+        
+    # Also manual_overrides.json might exist, we'll merge them later, but config takes precedence if desired?
+    # Usually gui_config is the most up to date from the app.
+    # We will initialize _MANUAL_OVERRIDES with this, and then merge legacy file if needed.
+    # ----------------------------------------------------
 
     # --- 2. Determine DB Path ---
     db_path = None
@@ -124,6 +146,12 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
                 logging.info(f"Loaded manual overrides from {overrides_path}")
             except Exception as e:
                 logging.warning(f"Could not load manual_overrides.json: {e}")
+        
+        # --- ADDED: Merge config overrides (Priority) ---
+        if manual_overrides_from_config:
+            logging.info(f"Merging {len(manual_overrides_from_config)} overrides from gui_config.json")
+            manual_overrides.update(manual_overrides_from_config)
+        # ------------------------------------------------
         
         # Merge overrides (as before)
         if "user_excluded_symbols" in full_overrides_json:

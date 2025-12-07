@@ -1,8 +1,10 @@
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Dict, Any, Optional
 import pandas as pd
 import logging
+from datetime import datetime, date # Added this import
+
+print("DEBUG: LOADING API MODULE", flush=True) # Added this line
 
 from server.dependencies import get_transaction_data
 from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
@@ -148,11 +150,16 @@ async def get_portfolio_summary(
         return {"error": "No transaction data available"}
 
     try:
+        # Calculate portfolio summary
+        import sys
+
         (
-            overall_metrics,
+            overall_summary_metrics,
             summary_df,
-            account_metrics,
-            _, _, _
+            account_level_metrics,
+            combined_ignored_indices,
+            combined_ignored_reasons,
+            final_status,
         ) = calculate_portfolio_summary(
             all_transactions_df_cleaned=df,
             original_transactions_df_for_ignored=df,
@@ -163,7 +170,9 @@ async def get_portfolio_summary(
             manual_overrides_dict=manual_overrides,
             user_symbol_map=user_symbol_map,
             user_excluded_symbols=user_excluded_symbols,
-            include_accounts=accounts
+            include_accounts=accounts,
+            account_currency_map=account_currency_map,
+            default_currency=config.DEFAULT_CURRENCY
         )
 
         # --- Calculate Annualized TWR ---
@@ -213,21 +222,21 @@ async def get_portfolio_summary(
         except Exception as e_twr:
             logging.warning(f"Failed to calculate Annualized TWR: {e_twr}")
 
-        if overall_metrics:
-            overall_metrics["annualized_twr"] = annualized_twr
+        if overall_summary_metrics:
+            overall_summary_metrics["annualized_twr"] = annualized_twr
 
             # --- Fetch Market Indices ---
             try:
                 mdp = MarketDataProvider()
                 indices_data = mdp.get_index_quotes(config.INDICES_FOR_HEADER)
-                overall_metrics["indices"] = indices_data
+                overall_summary_metrics["indices"] = indices_data
             except Exception as e_indices:
                 logging.warning(f"Failed to fetch market indices: {e_indices}")
 
         
         response_data = {
-            "metrics": overall_metrics,
-            "account_metrics": account_metrics
+            "metrics": overall_summary_metrics,
+            "account_metrics": account_level_metrics
         }
         return clean_nans(response_data)
     except Exception as e:

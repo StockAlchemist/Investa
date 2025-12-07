@@ -1421,177 +1421,184 @@ class MarketDataProvider:
         start_date: date,
         end_date: date,
         use_cache: bool = True,
-        cache_key: Optional[str] = None,  # Key for validation (used for manifest)
-        cache_file: Optional[
-            str
-        ] = None,  # This parameter is now mostly for API consistency, path derived internally
+        cache_key: Optional[str] = None,  # Kept for API compatibility, but logic relies on individual files
+        cache_file: Optional[str] = None,  # Not directly used
     ) -> Tuple[Dict[str, pd.DataFrame], bool]:
         """Loads/fetches ADJUSTED historical price data using cache.
 
-        Uses a directory-based cache with a manifest file.
+        Refactored to check individual symbol files regardless of a global cache key.
+        This maximizes cache reuse (e.g. if adding 1 new symbol to a list of 10 already cached).
 
-        (Replaces parts of _load_or_fetch_raw_historical_data related to price fetching)
         Args:
             symbols_yf (List[str]): List of YF stock/benchmark tickers required.
             start_date (date): Start date for historical data.
             end_date (date): End date for historical data.
             use_cache (bool): Flag to enable reading/writing the raw data cache.
-            cache_key (str): Cache validation key for the manifest.
-            cache_file (str, optional): Not directly used for path, for API consistency.
+            cache_key (str): Optional key, mainly for logging/manifest updates.
+            cache_file (str): Legacy/unused.
 
         Returns:
             Tuple containing:
-            - historical_prices_yf_adjusted (Dict[str, pd.DataFrame]): Dictionary mapping YF tickers
-                to DataFrames containing adjusted historical prices (indexed by date).
+            - historical_prices_yf_adjusted (Dict[str, pd.DataFrame]): Dictionary mapping tickers to DataFrames.
             - fetch_failed (bool): True if fetching/loading critical data failed.
         """
         historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}
-        cache_is_valid_and_complete = False
         fetch_failed = False
-        manifest_path = self._get_historical_manifest_path()  # For logging
+        
+        symbols_needing_full_fetch = []
+        symbols_needing_incremental_fetch = []
 
-        # --- 1. Try Loading Cache ---
-        if use_cache and cache_key:
-            loaded_data, manifest_ok = self._load_historical_manifest_and_data(
-                expected_cache_key=cache_key,
-                symbols_to_load=symbols_yf,
-                data_type="price",
-            )
-            if manifest_ok:  # Manifest key matched and all symbols loaded
-                historical_prices_yf_adjusted = loaded_data
-                cache_is_valid_and_complete = True
-                logging.info(
-                    f"Hist Prices: Successfully loaded all {len(symbols_yf)} price series from individual cache files via manifest."
-                )
-            else:  # Manifest key mismatch, or not all symbols found/loaded
-                historical_prices_yf_adjusted = (
-                    loaded_data  # Use partially loaded data if any
-                )
-                logging.info(
-                    f"Hist Prices: Manifest not fully valid or cache incomplete. Loaded {len(loaded_data)} symbols. Will fetch missing."
-                )
-        else:
-            logging.info(
-                "Hist Prices: Cache not used or cache_key not provided. Will fetch all."
-            )
-
-        # --- 2. Fetch Missing Data if Cache Invalid/Incomplete ---
-        if not cache_is_valid_and_complete:
-            # logging.info("Hist Prices: Checking for missing or stale data...")
-            
-            symbols_needing_full_fetch = []
-            symbols_needing_incremental_fetch = []
-            
-            for s in symbols_yf:
-                if s not in historical_prices_yf_adjusted or historical_prices_yf_adjusted[s].empty:
-                    symbols_needing_full_fetch.append(s)
-                else:
-                    # Check if data is stale
-                    df = historical_prices_yf_adjusted[s]
-                    if not df.empty:
-                        last_val = df.index.max()
-                        last_date = last_val.date() if hasattr(last_val, 'date') else last_val
-                        if last_date < end_date:
-                            symbols_needing_incremental_fetch.append((s, last_date))
-            
-            # 2a. Full Fetch for completely missing symbols
-            if symbols_needing_full_fetch:
-                logging.info(
-                    f"Hist Prices: Full fetch required for {len(symbols_needing_full_fetch)} symbols..."
-                )
-                fetched_data = self._fetch_yf_historical_data(
-                    symbols_needing_full_fetch, start_date, end_date
-                )
-                historical_prices_yf_adjusted.update(fetched_data)
-            
-            # 2b. Incremental Fetch for stale symbols
-            if symbols_needing_incremental_fetch:
-                logging.info(
-                    f"Hist Prices: Incremental fetch required for {len(symbols_needing_incremental_fetch)} symbols..."
-                )
-                # Group by last_date to batch fetch
-                from collections import defaultdict
-                by_last_date = defaultdict(list)
-                for s, last_d in symbols_needing_incremental_fetch:
-                    by_last_date[last_d].append(s)
+        # --- 1. Try Loading Individual Cache Files ---
+        if use_cache:
+            logging.info(f"Hist Prices: Checking local cache for {len(symbols_yf)} symbols...")
+            for yf_symbol in symbols_yf:
+                symbol_file_path = self._get_historical_symbol_data_path(yf_symbol, data_type="price")
                 
-                for last_d, syms in by_last_date.items():
-                    fetch_start = last_d + timedelta(days=1)
-                    if fetch_start <= end_date:
-                        # logging.info(f"  Fetching delta from {fetch_start} for {len(syms)} symbols...")
-                        delta_data = self._fetch_yf_historical_data(
-                            syms, fetch_start, end_date
-                        )
+                # Check if file exists
+                if os.path.exists(symbol_file_path):
+                    try:
+                        # Load data
+                        with open(symbol_file_path, "r", encoding="utf-8") as sf:
+                            symbol_data_json_str = sf.read()
                         
-                        # Merge delta with existing
-                        for s in syms:
-                            if s in delta_data and not delta_data[s].empty:
-                                old_df = historical_prices_yf_adjusted[s]
-                                new_df = delta_data[s]
+                        df_symbol = self._deserialize_single_historical_df(symbol_data_json_str)
+                        
+                        if not df_symbol.empty:
+                            # Check data coverage
+                            first_avail = df_symbol.index.min()
+                            last_avail = df_symbol.index.max()
+                            if hasattr(first_avail, 'date'): first_avail = first_avail.date()
+                            if hasattr(last_avail, 'date'): last_avail = last_avail.date()
+                            
+                            # Determine if we have enough coverage
+                            # We generally care more about the END date coverage (up to now).
+                            # If start date is earlier than cache, we technically need to backfill, 
+                            # but YF doesn't support easy "prepend" without potentially refetching everything or complex merging.
+                            # For simplified logic: if we have data up to (end_date - 1 day) or later, we consider it "fresh enough" for that end.
+                            # Or strictly: fetch incremental if last_avail < end_date.
+
+                            # Check for staleness at the HEAD (new data needed)
+                            if last_avail < end_date:
+                                # We have data, but it's old. Use what we have, but mark for update.
+                                historical_prices_yf_adjusted[yf_symbol] = df_symbol
+                                symbols_needing_incremental_fetch.append((yf_symbol, last_avail))
+                            else:
+                                # Cache is good for the recent side.
+                                # Optional: Check start date. If we need 2020 but cache starts 2021, we might need full fetch/prepend.
+                                # For simplicity in this optimization phase, we assume historical start dates rarely retreat significantly 
+                                # or that the user accepts the cached start. 
+                                # Use full fetch if gap is huge? Let's assume re-fetch if start_date is significantly earlier (< 30 days gap ok?)
+                                # Actually, safest is: if start_date < first_avail, we basically need the older history. 
+                                # yfinance is best at "fetch X to Y". Merging 'older' data is tricky with splits. 
+                                # Strategy: If we need older data, just re-fetch full to be safe on splits/adjustments.
+                                if start_date < first_avail:
+                                    # logging.info(f"  Gap at start for {yf_symbol}: Need {start_date}, have {first_avail}. Marking for full fetch.")
+                                    # Don't add to historical_prices_yf_adjusted, so it goes to full fetch
+                                    symbols_needing_full_fetch.append(yf_symbol)
+                                else:
+                                    historical_prices_yf_adjusted[yf_symbol] = df_symbol
+                        else:
+                             # File empty?
+                             symbols_needing_full_fetch.append(yf_symbol)
+                    except Exception as e_load:
+                        logging.warning(f"  Error loading cache for {yf_symbol}: {e_load}. Will re-fetch.")
+                        symbols_needing_full_fetch.append(yf_symbol)
+                else:
+                    # File missing
+                    symbols_needing_full_fetch.append(yf_symbol)
+        else:
+            symbols_needing_full_fetch = list(symbols_yf)
+
+        # --- 2. Perform Fetches ---
+        
+        # 2a. Incremental Fetch (Append new days)
+        if symbols_needing_incremental_fetch:
+            logging.info(f"Hist Prices: Incremental fetch needed for {len(symbols_needing_incremental_fetch)} symbols...")
+            from collections import defaultdict
+            by_last_date = defaultdict(list)
+            for s, last_d in symbols_needing_incremental_fetch:
+                by_last_date[last_d].append(s)
+            
+            for last_d, syms in by_last_date.items():
+                fetch_start = last_d + timedelta(days=1)
+                if fetch_start <= end_date:
+                    delta_data = self._fetch_yf_historical_data(syms, fetch_start, end_date)
+                    
+                    # Merge
+                    for s in syms:
+                        if s in delta_data and not delta_data[s].empty:
+                            old_df = historical_prices_yf_adjusted[s]
+                            new_df = delta_data[s]
+                            # Ensure index types match
+                            if not isinstance(old_df.index, pd.DatetimeIndex): old_df.index = pd.to_datetime(old_df.index)
+                            if not isinstance(new_df.index, pd.DatetimeIndex): new_df.index = pd.to_datetime(new_df.index)
                                 
-                                # Ensure indices are DatetimeIndex to avoid mixed type comparison errors
-                                if not isinstance(old_df.index, pd.DatetimeIndex):
-                                    old_df.index = pd.to_datetime(old_df.index)
-                                if not isinstance(new_df.index, pd.DatetimeIndex):
-                                    new_df.index = pd.to_datetime(new_df.index)
+                            merged_df = pd.concat([old_df, new_df])
+                            merged_df = merged_df[~merged_df.index.duplicated(keep='last')]
+                            merged_df.sort_index(inplace=True)
+                            historical_prices_yf_adjusted[s] = merged_df
+        
+        # 2b. Full Fetch (Missing or needing earlier start)
+        # Also clean up list to assume any symbol not already in 'historical_prices_yf_adjusted' needs full fetch
+        # (Though our logic above populated 'symbols_needing_full_fetch' explicitly)
+        if symbols_needing_full_fetch:
+             logging.info(f"Hist Prices: Full/Gap fetch needed for {len(symbols_needing_full_fetch)} symbols...")
+             fetched_data = self._fetch_yf_historical_data(symbols_needing_full_fetch, start_date, end_date)
+             historical_prices_yf_adjusted.update(fetched_data)
+        
+        logging.info(f"Hist Prices: Data available for {len(historical_prices_yf_adjusted)}/{len(symbols_yf)} symbols.")
 
-                                # Concatenate and drop duplicates just in case
-                                merged_df = pd.concat([old_df, new_df])
-                                merged_df = merged_df[~merged_df.index.duplicated(keep='last')]
-                                merged_df.sort_index(inplace=True)
-                                historical_prices_yf_adjusted[s] = merged_df
-
-            logging.info(
-                f"Hist Prices: Fetch/Update completed. Total series in memory: {len(historical_prices_yf_adjusted)}."
-            )
-
-            # --- Validation after fetch ---
-            final_symbols_missing = [
-                s
-                for s in symbols_yf
-                if s not in historical_prices_yf_adjusted
-                or historical_prices_yf_adjusted[s].empty
-            ]
-            if final_symbols_missing:
-                logging.warning(
-                    f"Hist Prices WARN: Failed to fetch/load adjusted prices for: {', '.join(final_symbols_missing)}"
-                )
-                # Don't mark fetch_failed=True here, let caller decide if missing stock is critical
-
-            # --- 3. Update Cache if Fetch Occurred and Cache Enabled ---
-            if use_cache and cache_key:
-                # The new _save_historical_data_and_manifest will handle merging/updating the manifest correctly
-                # without needing existing_other_type_data_from_manifest passed here.
+        # --- 3. Save Updates to Cache ---
+        if use_cache:
+            # We save everything we have in memory for the requested symbols.
+            # This refreshes the timestamp on the manifest and updates files.
+            # Only save if we actually fetched new data or merged data - 
+            # ideally we check dirty flags, but for now safe to save.
+            # actually, writing to disk every time might be slow? 
+            # _save_historical_data_and_manifest writes ALL passed data to disk.
+            # Optimization: Only save modified data?
+            # Current structure expects us to pass the map.
+            # Let's pass it all, OS file caching helps. Or we could optimize _save... later.
+            
+            # Map for manifest update (legacy)
+            if cache_key:
                 self._save_historical_data_and_manifest(
                     cache_key_to_save=cache_key,
-                    data_to_save_map=historical_prices_yf_adjusted,  # Save all currently held price data
-                    data_type="price",
+                    data_to_save_map=historical_prices_yf_adjusted,
+                    data_type="price"
                 )
+            else:
+                 # Even without a key, we should save the individual files!
+                 # The _save_... method updates manifest. If no key, maybe skip manifest but save files?
+                 # Depending on implementation. But simpler: reuse logic with a dummy key or skip manifest if None.
+                 # Let's iterate and save files directly if strictly no key, but usually cache_key is provided by caller.
+                 if not cache_key:
+                     # Just save files manually to ensure persistence
+                     self._save_files_only(historical_prices_yf_adjusted, "price")
 
-        # --- 4. Final Check and Return ---
-        # Check if any requested symbol is still missing
-        if symbols_yf:  # Only check if symbols were actually requested
-            missing_valid_symbols = []
-            invalid_cache = self._load_invalid_symbols_cache()
-            
-            for s in symbols_yf:
-                if s not in historical_prices_yf_adjusted or historical_prices_yf_adjusted[s].empty:
-                    # Only consider it a failure if it's NOT a known invalid symbol
-                    if s not in invalid_cache:
-                        missing_valid_symbols.append(s)
-            
-            if missing_valid_symbols:
-                logging.error(
-                    f"Hist Prices ERROR: Data missing for {len(missing_valid_symbols)} requested symbols after cache/fetch: {', '.join(missing_valid_symbols)}"
-                )
-                fetch_failed = True  # SET THE FLAG only if valid symbols missed
-            elif any(s not in historical_prices_yf_adjusted for s in symbols_yf):
-                 # Log warning for known invalid
-                 logging.warning("Hist Prices WARN: Some requested symbols were missing but found in invalid cache. Proceeding.")
-        return (
-            historical_prices_yf_adjusted,
-            fetch_failed,
-        )  # fetch_failed is currently always False here
+        # --- 4. Final Validation ---
+        invalid_cache = self._load_invalid_symbols_cache()
+        missing_valid_symbols = []
+        for s in symbols_yf:
+            if s not in historical_prices_yf_adjusted or historical_prices_yf_adjusted[s].empty:
+                if s not in invalid_cache:
+                    missing_valid_symbols.append(s)
+        
+        if missing_valid_symbols:
+            logging.error(f"Hist Prices ERROR: Missing data for: {', '.join(missing_valid_symbols)}")
+            fetch_failed = True
+
+        return historical_prices_yf_adjusted, fetch_failed
+
+    def _save_files_only(self, data_map, data_type):
+        """Helper to save just file content without manifest update (if needed)."""
+        for sym, df in data_map.items():
+             if df.empty: continue
+             path = self._get_historical_symbol_data_path(sym, data_type)
+             try:
+                 df.to_json(path, orient="split", date_format="iso")
+             except Exception as e:
+                 logging.error(f"Error saving file for {sym}: {e}")
 
     @profile
     def get_historical_fx_rates(
@@ -1601,160 +1608,105 @@ class MarketDataProvider:
         end_date: date,
         use_cache: bool = True,
         cache_key: Optional[str] = None,  # Key for validation (used for manifest)
-        cache_file: Optional[
-            str
-        ] = None,  # Not directly used for path, for API consistency
+        cache_file: Optional[str] = None,  # Not directly used
     ) -> Tuple[Dict[str, pd.DataFrame], bool]:
         """Loads/fetches historical FX rates (vs USD) using cache.
-
-        Uses a directory-based cache with a manifest file.
-        (Note: FX data is often stored in the same raw data cache file as prices).
-
-        Args:
-            fx_pairs_yf (List[str]): List of YF FX tickers (e.g., 'JPY=X') required.
-            start_date (date): Start date for historical data.
-            end_date (date): End date for historical data.
-            use_cache (bool): Flag to enable reading/writing the raw data cache.
-            cache_key (str): Cache validation key for the manifest.
-            cache_file (str, optional): Not directly used for path, for API consistency.
-
-        Returns:
-            Tuple containing:
-            - historical_fx_yf (Dict[str, pd.DataFrame]): Dictionary mapping YF FX pair tickers
-                to DataFrames containing historical rates vs USD (indexed by date).
-            - fetch_failed (bool): True if fetching/loading ANY required FX rate failed.
+        
+        Refactored to check individual symbol files regardless of a global cache key.
         """
         historical_fx_yf: Dict[str, pd.DataFrame] = {}
-        cache_is_valid_and_complete = False
         fetch_failed = False
-        manifest_path = self._get_historical_manifest_path()  # For logging
+        
+        fx_needing_full_fetch = []
+        fx_needing_incremental_fetch = []
 
-        # --- 1. Try Loading Cache ---
-        if use_cache and cache_key:
-            loaded_data, manifest_ok = self._load_historical_manifest_and_data(
-                expected_cache_key=cache_key,
-                symbols_to_load=fx_pairs_yf,
-                data_type="fx",
-            )
-            if manifest_ok:  # Manifest key matched and all symbols loaded
-                historical_fx_yf = loaded_data
-                cache_is_valid_and_complete = True
-                logging.info(
-                    f"Hist FX: Successfully loaded all {len(fx_pairs_yf)} FX series from individual cache files via manifest."
-                )
-            else:  # Manifest key mismatch, or not all symbols found/loaded
-                historical_fx_yf = loaded_data  # Use partially loaded data if any
-                logging.info(
-                    f"Hist FX: Manifest not fully valid or cache incomplete. Loaded {len(loaded_data)} FX series. Will fetch missing."
-                )
-        else:
-            logging.info(
-                "Hist FX: Cache not used or cache_key not provided. Will fetch all."
-            )
-
-        # --- 2. Fetch Missing Data if Needed ---
-        if not cache_is_valid_and_complete:
-            # logging.info("Hist FX: Checking for missing or stale data...")
-            
-            fx_needing_full_fetch = []
-            fx_needing_incremental_fetch = []
-            
-            for s in fx_pairs_yf:
-                if s not in historical_fx_yf or historical_fx_yf[s].empty:
-                    fx_needing_full_fetch.append(s)
-                else:
-                    # Check if data is stale
-                    df = historical_fx_yf[s]
-                    if not df.empty:
-                        last_date = df.index.max().date()
-                        if last_date < end_date:
-                            fx_needing_incremental_fetch.append((s, last_date))
-
-            # 2a. Full Fetch
-            if fx_needing_full_fetch:
-                logging.info(
-                    f"Hist FX: Full fetch required for {len(fx_needing_full_fetch)} FX pairs..."
-                )
-                fetched_fx_data = self._fetch_yf_historical_data(
-                    fx_needing_full_fetch, start_date, end_date
-                )
-                historical_fx_yf.update(fetched_fx_data)
-
-            # 2b. Incremental Fetch
-            if fx_needing_incremental_fetch:
-                logging.info(
-                    f"Hist FX: Incremental fetch required for {len(fx_needing_incremental_fetch)} FX pairs..."
-                )
-                from collections import defaultdict
-                by_last_date = defaultdict(list)
-                for s, last_d in fx_needing_incremental_fetch:
-                    by_last_date[last_d].append(s)
+        # --- 1. Load from cache files ---
+        if use_cache:
+            logging.info(f"Hist FX: Checking local cache for {len(fx_pairs_yf)} pairs...")
+            for pair in fx_pairs_yf:
+                symbol_file_path = self._get_historical_symbol_data_path(pair, data_type="fx")
                 
-                for last_d, syms in by_last_date.items():
-                    fetch_start = last_d + timedelta(days=1)
-                    if fetch_start <= end_date:
-                        # logging.info(f"  Fetching FX delta from {fetch_start} for {len(syms)} pairs...")
-                        delta_data = self._fetch_yf_historical_data(
-                            syms, fetch_start, end_date
-                        )
+                if os.path.exists(symbol_file_path):
+                    try:
+                        with open(symbol_file_path, "r", encoding="utf-8") as sf:
+                            symbol_data_json_str = sf.read()
                         
-                        # Merge delta
-                        for s in syms:
-                            if s in delta_data and not delta_data[s].empty:
-                                old_df = historical_fx_yf[s]
-                                new_df = delta_data[s]
-                                merged_df = pd.concat([old_df, new_df])
-                                merged_df = merged_df[~merged_df.index.duplicated(keep='last')]
-                                merged_df.sort_index(inplace=True)
-                                historical_fx_yf[s] = merged_df
+                        df_idx = self._deserialize_single_historical_df(symbol_data_json_str)
+                        
+                        if not df_idx.empty:
+                            first_avail = df_idx.index.min()
+                            last_avail = df_idx.index.max()
+                            if hasattr(first_avail, 'date'): first_avail = first_avail.date()
+                            if hasattr(last_avail, 'date'): last_avail = last_avail.date()
+                            
+                            if last_avail < end_date:
+                                historical_fx_yf[pair] = df_idx
+                                fx_needing_incremental_fetch.append((pair, last_avail))
+                            else:
+                                if start_date < first_avail:
+                                    # Need older data -> full fetch
+                                    fx_needing_full_fetch.append(pair)
+                                else:
+                                    historical_fx_yf[pair] = df_idx
+                        else:
+                             fx_needing_full_fetch.append(pair)
+                    except Exception as e:
+                        logging.warning(f"Error loading FX cache for {pair}: {e}")
+                        fx_needing_full_fetch.append(pair)
+                else:
+                    fx_needing_full_fetch.append(pair)
+        else:
+            fx_needing_full_fetch = list(fx_pairs_yf)
 
-            logging.info(
-                f"Hist FX: Fetch/Update completed. Total FX series in memory: {len(historical_fx_yf)}."
-            )
+        # --- 2. Fetches ---
+        
+        # 2a. Incremental
+        if fx_needing_incremental_fetch:
+            # Group by date
+            from collections import defaultdict
+            by_last_date = defaultdict(list)
+            for s, last_d in fx_needing_incremental_fetch:
+                by_last_date[last_d].append(s)
+            
+            for last_d, syms in by_last_date.items():
+                fetch_start = last_d + timedelta(days=1)
+                if fetch_start <= end_date:
+                    delta_data = self._fetch_yf_historical_data(syms, fetch_start, end_date)
+                    for s in syms:
+                        if s in delta_data and not delta_data[s].empty:
+                            old_df = historical_fx_yf[s]
+                            new_df = delta_data[s]
+                            if not isinstance(old_df.index, pd.DatetimeIndex): old_df.index = pd.to_datetime(old_df.index)
+                            if not isinstance(new_df.index, pd.DatetimeIndex): new_df.index = pd.to_datetime(new_df.index)
+                            merged = pd.concat([old_df, new_df])
+                            merged = merged[~merged.index.duplicated(keep='last')]
+                            merged.sort_index(inplace=True)
+                            historical_fx_yf[s] = merged
 
-            # --- Validation after fetch ---
-            final_fx_missing_after_fetch = [
-                p
-                for p in fx_pairs_yf  # Check against requested
-                if p not in historical_fx_yf or historical_fx_yf[p].empty
-            ]
-            if final_fx_missing_after_fetch:
-                logging.error(  # Log as error because fetch failed for required pairs
-                    f"Hist FX ERROR: Failed to fetch required FX rates for: {', '.join(final_fx_missing_after_fetch)}"
-                )
-                fetch_failed = True  # Missing ANY required FX is critical
-            else:
-                logging.info(
-                    "Hist FX: All required FX pairs present."
-                )
-
-            # --- 3. Save to Cache (Manifest) ---
-            if use_cache and cache_key:
-                # We save ALL currently available FX data for the requested keys
-                # This includes what was loaded + what was fetched.
-                data_to_save = {
-                    k: v for k, v in historical_fx_yf.items() if k in fx_pairs_yf
-                }
+        # 2b. Full
+        if fx_needing_full_fetch:
+             logging.info(f"Hist FX: Full fetch needed for {len(fx_needing_full_fetch)} pairs...")
+             fetched_fx = self._fetch_yf_historical_data(fx_needing_full_fetch, start_date, end_date)
+             historical_fx_yf.update(fetched_fx)
+             
+        # --- 3. Save ---
+        if use_cache:
+            if cache_key:
+                data_to_save = {k: v for k, v in historical_fx_yf.items() if k in fx_pairs_yf}
                 self._save_historical_data_and_manifest(
                     cache_key_to_save=cache_key,
                     data_to_save_map=data_to_save,
-                    data_type="fx",
+                    data_type="fx"
                 )
+            else:
+                 # Check if we should save manually without key
+                 data_to_save = {k: v for k, v in historical_fx_yf.items() if k in fx_pairs_yf}
+                 self._save_files_only(data_to_save, "fx")
 
-
-
-
-        # --- 5. Final Check and Return ---
-        # Check again if critical data is missing (redundant if fetch_failed already True, but safe)
-        if fx_pairs_yf:  # Only if FX pairs were requested
-            if any(
-                p not in historical_fx_yf or historical_fx_yf[p].empty
-                for p in fx_pairs_yf  # Check against originally requested fx_pairs_yf
-            ):
-                logging.error(
-                    "Hist FX ERROR: Critical FX data missing after final check for some requested pairs."
-                )
-                fetch_failed = True  # SET THE FLAG
+        # --- 4. Validation ---
+        if fx_pairs_yf and any(p not in historical_fx_yf or historical_fx_yf[p].empty for p in fx_pairs_yf):
+             logging.error("Hist FX ERROR: Critical FX data missing.")
+             fetch_failed = True
 
         return historical_fx_yf, fetch_failed
 

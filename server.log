@@ -1,279 +1,32 @@
-INFO:     Will watch for changes in these directories: ['/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa']
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [90652] using StatReload
 DEBUG: Executing main.py from /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server/main.py
 DEBUG: CWD is /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa
 DEBUG: sys.path is ['/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/research/magcalc/pyMagCalc', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python312.zip', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/lib-dynload', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages']
-INFO:     Started server process [90868]
+DEBUG: LOADING API MODULE
+DEBUG: LOADING PORTFOLIO_LOGIC
+DEBUG: LOADED PORTFOLIO_ANALYZER
+INFO:     Will watch for changes in these directories: ['/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [46018] using StatReload
+DEBUG: Executing main.py from /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server/main.py
+DEBUG: CWD is /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa
+DEBUG: sys.path is ['/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/research/magcalc/pyMagCalc', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python312.zip', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/lib-dynload', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages']
+DEBUG: LOADING API MODULE
+DEBUG: LOADING PORTFOLIO_LOGIC
+DEBUG: LOADED PORTFOLIO_ANALYZER
+INFO:     Started server process [46225]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 DEBUG: Executing main.py from /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server/main.py
 DEBUG: CWD is /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa
 DEBUG: sys.path is ['/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/research/magcalc/pyMagCalc', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python312.zip', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/lib-dynload', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages']
-DEBUG: Executing main.py from /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server/main.py
-DEBUG: CWD is /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa
-DEBUG: sys.path is ['/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/research/magcalc/pyMagCalc', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python312.zip', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/lib-dynload', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages']
-INFO:     192.168.1.123:59649 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
-INFO:     192.168.1.123:59650 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+INFO:     192.168.1.107:59042 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+WARNING:root:Hist Prep WARN: Could not generate daily results cache key/filename: name 'json' is not defined.
+INFO:     192.168.1.107:59041 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+WARNING:root:Hist Prep WARN: Could not generate daily results cache key/filename: name 'json' is not defined.
 DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-05, end=2025-12-05
-INFO:     192.168.1.123:59649 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+DEBUG API: History Date Range: start=2024-12-07, end=2025-12-07
+INFO:     192.168.1.107:59041 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+WARNING:root:Hist Prep WARN: Could not generate daily results cache key/filename: name 'json' is not defined.
 DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-05, end=2025-12-05
-INFO:     192.168.1.123:59650 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
-INFO:     192.168.1.123:59651 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
-INFO:     192.168.1.123:59652 - "GET /api/capital_gains?currency=USD HTTP/1.1" 200 OK
-INFO:     192.168.1.123:59661 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
-INFO:     192.168.1.123:59662 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-05, end=2025-12-05
-INFO:     192.168.1.123:59662 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-05, end=2025-12-05
-INFO:     192.168.1.123:59661 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
-INFO:     192.168.1.123:59662 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
-INFO:     192.168.1.123:59661 - "GET /api/capital_gains?currency=USD HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-05, end=2025-12-05
-INFO:     192.168.1.123:59664 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
-INFO:     192.168.1.123:59666 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
-INFO:     192.168.1.123:59665 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-05, end=2025-12-05
-INFO:     192.168.1.123:59667 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-05, end=2025-12-05
-INFO:     192.168.1.123:59666 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-05, end=2025-12-05
-INFO:     192.168.1.123:59664 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
-WARNING:  StatReload detected changes in 'src/main_gui.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [90868]
-INFO:     Started server process [91204]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'src/main_gui.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [91204]
-INFO:     Started server process [91229]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'src/main_gui.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [91229]
-INFO:     Started server process [91621]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'src/main_gui.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [91621]
-INFO:     Started server process [91630]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'src/main_gui.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [91630]
-INFO:     Started server process [91904]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'src/main_gui.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [91904]
-INFO:     Started server process [91927]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'debug_discrepancy_v2.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [91927]
-INFO:     Started server process [92365]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-DEBUG: Executing main.py from /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server/main.py
-DEBUG: CWD is /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa
-DEBUG: sys.path is ['/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/research/magcalc/pyMagCalc', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python312.zip', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/lib-dynload', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages']
-DEBUG: Executing main.py from /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server/main.py
-DEBUG: CWD is /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa
-DEBUG: sys.path is ['/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/research/magcalc/pyMagCalc', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python312.zip', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/lib-dynload', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages']
-INFO:     192.168.1.123:59696 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
-INFO:     192.168.1.123:59697 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-05, end=2025-12-05
-INFO:     192.168.1.123:59696 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-05, end=2025-12-05
-INFO:     192.168.1.123:59697 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
-WARNING:  StatReload detected changes in 'debug_discrepancy_v2.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [92365]
-INFO:     Started server process [92641]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'debug_discrepancy_v2.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [92641]
-INFO:     Started server process [93060]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'debug_discrepancy_v2.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [93060]
-INFO:     Started server process [93348]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'debug_discrepancy_v2.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [93348]
-INFO:     Started server process [93608]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'debug_discrepancy_v2.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [93608]
-INFO:     Started server process [93915]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'debug_discrepancy_v2.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [93915]
-INFO:     Started server process [94204]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'debug_discrepancy_v2.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [94204]
-INFO:     Started server process [94477]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'debug_discrepancy_v2.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [94477]
-INFO:     Started server process [94759]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'debug_discrepancy_v2.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [94759]
-INFO:     Started server process [95044]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'debug_discrepancy_v2.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [95044]
-INFO:     Started server process [95316]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'debug_discrepancy_v2.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [95316]
-INFO:     Started server process [95579]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'debug_discrepancy_v2.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [95579]
-INFO:     Started server process [95861]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'debug_discrepancy_v2.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [95861]
-INFO:     Started server process [96120]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'debug_discrepancy_v2.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [96120]
-INFO:     Started server process [96395]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'debug_discrepancy_v2.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [96395]
-INFO:     Started server process [96658]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'debug_discrepancy_v2.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [96658]
-INFO:     Started server process [97044]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'debug_discrepancy_v2.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [97044]
-INFO:     Started server process [97335]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'debug_discrepancy_v2.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [97335]
-INFO:     Started server process [97593]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'src/portfolio_logic.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [97593]
-INFO:     Started server process [97890]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-WARNING:  StatReload detected changes in 'src/portfolio_logic.py'. Reloading...
-INFO:     Shutting down
-INFO:     Waiting for application shutdown.
-INFO:     Application shutdown complete.
-INFO:     Finished server process [97890]
-INFO:     Started server process [98187]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
+DEBUG API: History Date Range: start=2024-12-07, end=2025-12-07
+INFO:     192.168.1.107:59171 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
