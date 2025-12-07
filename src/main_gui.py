@@ -183,58 +183,83 @@ from PySide6.QtGui import (
 )
 from PySide6.QtPrintSupport import QPrinter
 
-import matplotlib
-matplotlib.use("QtAgg")
-import matplotlib.pyplot as plt
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_qtagg import (
-    NavigationToolbar2QT as NavigationToolbar,
-    FigureCanvasQTAgg as FigureCanvas,
-)
-import matplotlib.dates as mdates
-import matplotlib.ticker as mtick
+# --- Matplotlib Lazy Loading Setup ---
+plt = None
+Figure = None
+FigureCanvas = None
+NavigationToolbar = None
+mdates = None
+mtick = None
+mplcursors = None
+MPLCURSORS_AVAILABLE = False
+_MATPLOTLIB_INITIALIZED = False
 
-# --- Matplotlib Font Configuration ---
-try:
-    # --- TRY THESE FONTS ---
-    # font_name = "Thonburi"       # Good choice for macOS Thai support
-    font_name = "DejaVu Sans"  # Excellent cross-platform choice if installed
-    # font_name = "Helvetica Neue"  # Try if available
-    # font_name = "Lucida Grande"  # Try if available
-    # font_name = "Arial Unicode MS" # Best coverage if installed
-    # font_name = "Arial"          # Original (causes warning)
+def _ensure_matplotlib():
+    global plt, Figure, FigureCanvas, NavigationToolbar, mdates, mtick, mplcursors, MPLCURSORS_AVAILABLE, _MATPLOTLIB_INITIALIZED
+    
+    if _MATPLOTLIB_INITIALIZED:
+        return
 
-    # Try setting the default font
-    plt.rcParams.update({"font.family": font_name})
-    # Update other rcParams as before
-    plt.rcParams.update(
-        {
-            "font.size": 8,
-            "axes.labelcolor": "#333333",
-            "xtick.color": "#666666",
-            "ytick.color": "#666666",
-            "text.color": "#333333",
-        }
-    )
-    logging.debug(
-        f"Matplotlib default font configured to: {plt.rcParams['font.family']}"
-    )
+    try:
+        import matplotlib
+        matplotlib.use("QtAgg")
+        import matplotlib.pyplot as p
+        plt = p
+        from matplotlib.figure import Figure as F
+        Figure = F
+        from matplotlib.backends.backend_qtagg import (
+            NavigationToolbar2QT as NT,
+            FigureCanvasQTAgg as FC,
+        )
+        NavigationToolbar = NT
+        FigureCanvas = FC
+        import matplotlib.dates as md
+        mdates = md
+        import matplotlib.ticker as mt
+        mtick = mt
+        
+        # --- Matplotlib Font Configuration ---
+        # --- TRY THESE FONTS ---
+        # font_name = "Thonburi"       # Good choice for macOS Thai support
+        font_name = "DejaVu Sans"  # Excellent cross-platform choice if installed
+        # font_name = "Helvetica Neue"  # Try if available
+        # font_name = "Lucida Grande"  # Try if available
+        # font_name = "Arial Unicode MS" # Best coverage if installed
+        # font_name = "Arial"          # Original (causes warning)
 
-except Exception as e:
-    logging.warning(f"Warning: Could not configure Matplotlib font: {e}")
+        # Try setting the default font
+        plt.rcParams.update({"font.family": font_name})
+        # Update other rcParams as before
+        plt.rcParams.update(
+            {
+                "font.size": 8,
+                "axes.labelcolor": "#333333",
+                "xtick.color": "#666666",
+                "ytick.color": "#666666",
+                "text.color": "#333333",
+            }
+        )
+        logging.debug(
+            f"Matplotlib default font configured to: {plt.rcParams['font.family']}"
+        )
+        
+    except ImportError as e:
+        logging.critical(f"CRITICAL: Failed to import matplotlib: {e}")
+    except Exception as e:
+         logging.warning(f"Warning: Could not configure Matplotlib font: {e}")
 
-try:
-    import mplcursors
+    try:
+        import mplcursors as mpc
+        mplcursors = mpc
+        MPLCURSORS_AVAILABLE = True
+    except ImportError:
+        logging.warning(
+            "Warning: mplcursors library not found. Hover tooltips on graphs will be disabled."
+        )
+        MPLCURSORS_AVAILABLE = False
+        
+    _MATPLOTLIB_INITIALIZED = True
 
-    MPLCURSORS_AVAILABLE = True
-except ImportError:
-    logging.warning(
-        "Warning: mplcursors library not found. Hover tooltips on graphs will be disabled."
-    )
-# logging.info("         Install it using: pip install mplcursors")
-    MPLCURSORS_AVAILABLE = False
-
-import matplotlib.dates as mdates  # Needed for date formatting in tooltips
 
 from config import (
     DEBOUNCE_INTERVAL_MS,
@@ -2544,8 +2569,13 @@ The CSV file should contain the following columns (header names must match exact
         )  # Only relevant if CSV was imported
 
         logging.debug("--- PortfolioApp __init__: Before UI Structure/Widgets Init ---")
+        
+        # Ensure heavy GUI libs are loaded before widget creation
+        _ensure_matplotlib()
+        
         self._init_ui_structure()
         logging.debug("--- PortfolioApp __init__: After _init_ui_structure ---")
+        
         self._init_ui_widgets()
         logging.debug("--- PortfolioApp __init__: After _init_ui_widgets ---")
         self._init_menu_bar()

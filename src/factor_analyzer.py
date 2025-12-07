@@ -16,9 +16,11 @@ SPDX-License-Identifier: MIT
 
 import pandas as pd
 import numpy as np
-import statsmodels.api as sm
+import numpy as np
+# import statsmodels.api as sm # Lazy loaded
+sm = None
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 from market_data import MarketDataProvider
 
@@ -90,7 +92,7 @@ def run_factor_regression(
     portfolio_returns: pd.Series,
     model_name: str = "Fama-French 3-Factor",
     benchmark_data: Optional[pd.DataFrame] = None,
-) -> Optional[sm.regression.linear_model.RegressionResultsWrapper]:
+) -> Optional[Any]:
     """
     Performs factor regression (e.g., Fama-French 3-Factor or Carhart 4-Factor)
     on portfolio excess returns.
@@ -106,6 +108,16 @@ def run_factor_regression(
         The regression results object, or None if regression fails.
     """
     logging.info(f"Running {model_name} regression.")
+    
+    # Lazy load statsmodels
+    global sm
+    if sm is None:
+        try:
+             import statsmodels.api as _sm
+             sm = _sm
+        except ImportError:
+             logging.error("statsmodels not installed. Cannot run factor regression.")
+             return None
 
     if portfolio_returns.empty:
         logging.warning(

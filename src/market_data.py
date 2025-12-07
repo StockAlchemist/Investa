@@ -25,28 +25,39 @@ except ImportError:
 from PySide6.QtCore import QStandardPaths  # For standard directory locations
 
 # --- Finance API Import ---
-try:
-    import yfinance as yf
+# Lazy load yfinance to improve startup time
+yf = None
+YFINANCE_AVAILABLE = None
 
-    YFINANCE_AVAILABLE = True
-except ImportError:
-    logging.warning(
-        "Warning: yfinance library not found in market_data.py. Market data fetching will fail."
-    )
-    YFINANCE_AVAILABLE = False
+def _ensure_yfinance():
+    global yf, YFINANCE_AVAILABLE
+    if YFINANCE_AVAILABLE is not None:
+        return YFINANCE_AVAILABLE
 
-    # Define dummy yf object if needed for type hinting or structure
-    class DummyYFinance:
-        def Tickers(self, *args, **kwargs):
-            raise ImportError("yfinance not installed")
+    try:
+        import yfinance as _yf
+        yf = _yf
+        YFINANCE_AVAILABLE = True
+    except ImportError:
+        logging.warning(
+            "Warning: yfinance library not found. Market data fetching will fail."
+        )
+        YFINANCE_AVAILABLE = False
+        
+        # Define dummy yf object if needed for type hinting or structure
+        class DummyYFinance:
+            def Tickers(self, *args, **kwargs):
+                raise ImportError("yfinance not installed")
 
-        def download(self, *args, **kwargs):
-            raise ImportError("yfinance not installed")
+            def download(self, *args, **kwargs):
+                raise ImportError("yfinance not installed")
 
-        def Ticker(self, *args, **kwargs):
-            raise ImportError("yfinance not installed")
-
-    yf = DummyYFinance()
+            def Ticker(self, *args, **kwargs):
+                raise ImportError("yfinance not installed")
+        
+        yf = DummyYFinance()
+    
+    return YFINANCE_AVAILABLE
 
 # --- Import constants from config.py ---
 try:
@@ -304,6 +315,11 @@ class MarketDataProvider:
         now_ts = datetime.now(timezone.utc)
         missing_symbols = []
         
+        # Ensure yfinance is loaded
+        _ensure_yfinance()
+        if not YFINANCE_AVAILABLE:
+            return cache
+        
         # Check cache validity
         for sym in yf_symbols:
             entry = cache.get(sym)
@@ -383,8 +399,14 @@ class MarketDataProvider:
         OPTIMIZED: Uses batch fetching (yf.download) and metadata caching.
         """
         logging.info(
-            f"Getting current quotes for {len(internal_stock_symbols)} symbols and FX for {len(required_currencies)} currencies."
+            f"Getting current quotes for {len(internal_stock_symbols)} symbols and FX for {len(required_currencies)} symbols."
         )
+        
+        # Ensure yfinance is available
+        _ensure_yfinance()
+        if not YFINANCE_AVAILABLE:
+            return {}, {}, {}, True, True # Treat as error
+
         has_warnings = False
         has_errors = False
         results = {}
@@ -625,6 +647,12 @@ class MarketDataProvider:
         logging.info(
             f"Fetching current quotes for {len(index_symbols)} index symbols..."
         )
+        
+        # Ensure yfinance is available
+        _ensure_yfinance()
+        if not YFINANCE_AVAILABLE:
+             return {}
+
         results = {}
         cached_data_used = False
         cache_valid = False
@@ -853,6 +881,7 @@ class MarketDataProvider:
         Internal helper to fetch historical 'Close' data (adjusted) using yfinance.download.
         (Replaces fetch_yf_historical)
         """
+        _ensure_yfinance()
         if not YFINANCE_AVAILABLE:
             logging.error("Error: yfinance not available for historical fetch.")
             return {}

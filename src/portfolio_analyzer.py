@@ -1,4 +1,4 @@
-print("DEBUG: LOADED PORTFOLIO_ANALYZER", flush=True)
+
 # -*- coding: utf-8 -*-
 """
 -------------------------------------------------------------------------------
