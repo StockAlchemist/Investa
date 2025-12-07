@@ -738,9 +738,11 @@ def calculate_portfolio_summary(
     if err_fetch:  # If get_current_quotes signals a critical error
         has_errors = True  # Treat critical fetch error as overall error
         status_parts.append("Fetch Failed Critically")
+    
     if warn_fetch:
         has_warnings = True
         status_parts.append("Fetch Warnings")
+
 
     # If fetch failed critically, we might not be able to proceed meaningfully.
     if has_errors and "Fetch Failed Critically" in status_parts:

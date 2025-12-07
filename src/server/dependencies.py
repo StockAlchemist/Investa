@@ -65,6 +65,8 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
                 break
             except Exception as e:
                 logging.warning(f"Found gui_config.json at {cp} but failed to load: {e}")
+        else:
+             logging.info(f"Config path does not exist: {cp}")
 
     # Extract settings
     account_currency_map = {"SET": "THB"}
@@ -131,21 +133,37 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
         logging.info(f"Loading transactions from: {db_path}")
         
         # Load manual_overrides.json if it exists
+        # Priority: Look in the same directory where gui_config.json was found
         manual_overrides = {} 
         full_overrides_json = {} 
         
-        overrides_path = os.path.join(project_root, "manual_overrides.json")
-        if os.path.exists(overrides_path):
-            try:
-                with open(overrides_path, "r") as f:
-                    full_overrides_json = json.load(f)
-                    if "manual_price_overrides" in full_overrides_json:
-                        manual_overrides = full_overrides_json["manual_price_overrides"]
-                    else:
-                        manual_overrides = full_overrides_json
-                logging.info(f"Loaded manual overrides from {overrides_path}")
-            except Exception as e:
-                logging.warning(f"Could not load manual_overrides.json: {e}")
+        overrides_paths_to_try = []
+        if config_loaded_path:
+            config_dir = os.path.dirname(config_loaded_path)
+            overrides_paths_to_try.append(os.path.join(config_dir, "manual_overrides.json"))
+        
+        # Also check project root as fallback
+        overrides_paths_to_try.append(os.path.join(project_root, "manual_overrides.json"))
+        
+        loaded_overrides_path = None
+        for op in overrides_paths_to_try:
+            if os.path.exists(op):
+                try:
+                    with open(op, "r") as f:
+                        full_overrides_json = json.load(f)
+                        if "manual_price_overrides" in full_overrides_json:
+                            manual_overrides = full_overrides_json["manual_price_overrides"]
+                        else:
+                            # It might be the old format or just the dict itself (less likely for full file)
+                            # But based on file inspection, it has "manual_price_overrides" key.
+                            # Start with empty if key not found but file matches structure
+                            pass
+                    
+                    logging.info(f"Loaded manual overrides from {op}")
+                    loaded_overrides_path = op
+                    break
+                except Exception as e:
+                    logging.warning(f"Found overrides at {op} but failed to load: {e}")
         
         # --- ADDED: Merge config overrides (Priority) ---
         if manual_overrides_from_config:

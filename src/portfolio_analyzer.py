@@ -1435,18 +1435,18 @@ def _calculate_aggregate_metrics(
             )
             # --- END ADDED ---
 
-            # FIX: Include FX Gain/Loss in Market Value to match Desktop and ensure Value = Cost + Gain
+            # FIX: EXCLUDE FX Gain/Loss from Market Value (It is already intrinsic in Price * FX conversion)
             metrics_entry["total_market_value_display"] = safe_sum(
                 account_full_df, f"Market Value ({display_currency})"
-            ) + acc_fx_gain_loss_display
+            )
             
             metrics_entry["total_realized_gain_display"] = safe_sum(
                 account_full_df, f"Realized Gain ({display_currency})"
             )
-            # FIX: Include FX Gain/Loss in Unrealized Gain to match Desktop
+            # FIX: EXCLUDE FX Gain/Loss from Unrealized Gain (Intrinsic)
             metrics_entry["total_unrealized_gain_display"] = safe_sum(
                 account_full_df, f"Unreal. Gain ({display_currency})"
-            ) + acc_fx_gain_loss_display 
+            )
 
             metrics_entry["total_dividends_display"] = safe_sum(
                 account_full_df, f"Dividends ({display_currency})"
@@ -1454,10 +1454,10 @@ def _calculate_aggregate_metrics(
             metrics_entry["total_commissions_display"] = safe_sum(
                 account_full_df, f"Commissions ({display_currency})"
             )
-            # FIX: Include FX Gain/Loss in Total Gain to match Desktop
+            # FIX: EXCLUDE FX Gain/Loss from Total Gain (Intrinsic)
             metrics_entry["total_gain_display"] = safe_sum(
                 account_full_df, f"Total Gain ({display_currency})"
-            ) + acc_fx_gain_loss_display
+            )
             
             # Cash is now part of the main holdings, so total_cash_display is not needed here.
             # It can be derived from the main market value if needed, but it's not a primary metric for an account.
@@ -1582,15 +1582,9 @@ def _calculate_aggregate_metrics(
     overall_fx_gain_loss_display = safe_sum(df_for_overall_summary, fx_gain_loss_col)
     # --- END ADDED ---
 
-    # FIX: Include FX Gain/Loss in Overall Market Value.
-    # NOTE: Discrepancy investigation revealed that Desktop App value (1.707M) approx equals
-    #       Server Value (1.702M) + FX Gain (5.5k).
-    #       Server Value (1.702M) = Sum(MktVal at HistoricRate) + FX Gain.
-    #       To match Desktop, we effectively add FX Gain again (or Desktop Sum uses CurrentRate + FX).
-    #       Aligning with Desktop Baseline.
+    # FIX: EXCLUDE FX Gain/Loss from Overall Market Value (Intrinsic)
     raw_sum_mkt = safe_sum(df_for_overall_summary, mkt_val_col)
-    # Double-counting FX to match Desktop's apparent logic
-    overall_market_value_display = raw_sum_mkt + (2 * overall_fx_gain_loss_display)
+    overall_market_value_display = raw_sum_mkt
     
     held_mask = pd.Series(False, index=df_for_overall_summary.index)
     if (
@@ -1602,15 +1596,15 @@ def _calculate_aggregate_metrics(
         if held_mask.any()
         else 0.0
     )
-    # FIX: Include FX Gain/Loss in Overall Unrealized Gain
-    overall_unrealized_gain_display = safe_sum(df_for_overall_summary, unreal_gain_col) + overall_fx_gain_loss_display
+    # FIX: EXCLUDE FX Gain/Loss from Overall Unrealized Gain (Intrinsic)
+    overall_unrealized_gain_display = safe_sum(df_for_overall_summary, unreal_gain_col)
     
     overall_realized_gain_display_agg = safe_sum(df_for_overall_summary, real_gain_col)
     overall_dividends_display_agg = safe_sum(df_for_overall_summary, divs_col)
     overall_commissions_display_agg = safe_sum(df_for_overall_summary, comm_col)
     
-    # FIX: Include FX Gain/Loss in Overall Total Gain
-    overall_total_gain_display = safe_sum(df_for_overall_summary, total_gain_col) + overall_fx_gain_loss_display
+    # FIX: EXCLUDE FX Gain/Loss from Overall Total Gain (Intrinsic)
+    overall_total_gain_display = safe_sum(df_for_overall_summary, total_gain_col)
     
     overall_total_cost_invested_display = safe_sum(
         df_for_overall_summary, cost_invest_col

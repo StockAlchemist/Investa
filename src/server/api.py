@@ -153,26 +153,31 @@ async def get_portfolio_summary(
         # Calculate portfolio summary
         import sys
 
+        # Instantiate MDP to ensure consistent data access
+        mdp = MarketDataProvider()
+        
         (
             overall_summary_metrics,
             summary_df,
             account_level_metrics,
             combined_ignored_indices,
             combined_ignored_reasons,
-            final_status,
+            status_msg
         ) = calculate_portfolio_summary(
             all_transactions_df_cleaned=df,
             original_transactions_df_for_ignored=df,
             ignored_indices_from_load=set(),
             ignored_reasons_from_load={},
+            fmp_api_key=getattr(config, "FMP_API_KEY", None),
             display_currency=currency,
-            show_closed_positions=False,
+            show_closed_positions=True,
             manual_overrides_dict=manual_overrides,
             user_symbol_map=user_symbol_map,
             user_excluded_symbols=user_excluded_symbols,
             include_accounts=accounts,
             account_currency_map=account_currency_map,
-            default_currency=config.DEFAULT_CURRENCY
+            default_currency=config.DEFAULT_CURRENCY,
+            market_provider=mdp
         )
 
         # --- Calculate Annualized TWR ---
