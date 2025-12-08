@@ -385,6 +385,108 @@ class MarketDataProvider:
             
         return cache
 
+    def _get_fundamentals_cache_path(self) -> str:
+        """Returns the full path to the aggregate fundamentals cache file."""
+        return os.path.join(self.fundamentals_cache_dir, "fundamentals_aggregate.json")
+
+    def _load_fundamentals_cache(self) -> Dict[str, Dict]:
+        """Loads the aggregate fundamentals cache from disk."""
+        path = self._get_fundamentals_cache_path()
+        if not os.path.exists(path):
+            return {}
+        try:
+            with open(path, "r") as f:
+                return json.load(f)
+        except Exception as e:
+            logging.warning(f"Error loading fundamentals cache: {e}")
+            return {}
+
+    def _save_fundamentals_cache(self, cache: Dict[str, Dict]):
+        """Saves the aggregate fundamentals cache to disk."""
+        path = self._get_fundamentals_cache_path()
+        try:
+            with open(path, "w") as f:
+                json.dump(cache, f, indent=2, cls=NpEncoder)
+        except Exception as e:
+            logging.warning(f"Error saving fundamentals cache: {e}")
+
+    def get_fundamental_data_batch(self, yf_symbols: Set[str]) -> Dict[str, Dict]:
+        """
+        Fetches fundamental data (specifically dividend info) for the given symbols.
+        Uses caching to avoid slow fetching.
+        """
+        cache = self._load_fundamentals_cache()
+        now_ts = datetime.now(timezone.utc)
+        missing_symbols = []
+        
+        # Ensure yfinance is loaded
+        _ensure_yfinance()
+        if not YFINANCE_AVAILABLE:
+            return cache  # Return whatever is in cache if yf unavailable
+
+        # Check cache validity
+        for sym in yf_symbols:
+            entry = cache.get(sym)
+            if not entry:
+                missing_symbols.append(sym)
+                continue
+            
+            ts_str = entry.get("timestamp")
+            if not ts_str:
+                missing_symbols.append(sym)
+                continue
+            
+            try:
+                entry_ts = datetime.fromisoformat(ts_str)
+                # Cache valid for 24 hours (fundamentals don't change often)
+                if (now_ts - entry_ts).days >= 1: # 1 day expiration
+                     missing_symbols.append(sym)
+            except ValueError:
+                missing_symbols.append(sym)
+        
+        if missing_symbols:
+            logging.info(f"Fundamentals: Fetching missing data for {len(missing_symbols)} symbols...")
+            try:
+                chunk_size = 50
+                for i in range(0, len(missing_symbols), chunk_size):
+                    chunk = missing_symbols[i:i+chunk_size]
+                    
+                    # Using yf.Tickers to get info
+                    # Note: yf.Tickers(list).tickers returns a dict of Ticker objects
+                    # Accessing .info properties usually triggers the fetch
+                    tickers = yf.Tickers(" ".join(chunk))
+                    
+                    # Force fetch by accessing info
+                    for sym, ticker in tickers.tickers.items():
+                        try:
+                            info = ticker.info
+                            
+                            # Extract dividend data
+                            # dividendRate is annual dividend in currency
+                            # dividendYield is percentage (e.g. 0.05 for 5%)
+                            div_rate = info.get("dividendRate", 0.0)
+                            div_yield = info.get("dividendYield", 0.0)
+                            
+                            cache[sym] = {
+                                "trailingAnnualDividendRate": div_rate if div_rate else 0.0,
+                                "dividendYield": div_yield if div_yield else 0.0,
+                                "timestamp": now_ts.isoformat()
+                            }
+                        except Exception as e_tick:
+                            logging.warning(f"Error fetching fundamentals for {sym}: {e_tick}")
+                            # Cache failure to avoid retry loop for this run? 
+                            # Maybe not, transient errors exist. 
+                            # But if persistent, it slows down startup.
+                            # Let's verify if we should cache 'zero' or nothing.
+                            # If we don't cache, we retry next time.
+                            pass
+                            
+            except Exception as e_batch:
+                logging.error(f"Error in fundamentals batch fetch: {e_batch}")
+            
+            self._save_fundamentals_cache(cache)
+            
+        return cache
     @profile
     def get_current_quotes(
         self,
@@ -468,7 +570,10 @@ class MarketDataProvider:
         # 3a. Ensure Metadata (Name, Currency) - Long-lived cache
         metadata_map = self._ensure_metadata_batch(yf_symbols_to_fetch)
         
-        # 3b. Batch Fetch Prices using yf.download
+        # 3c. Fetch Fundamentals (Dividends) - Cached
+        fundamentals_map = self.get_fundamental_data_batch(yf_symbols_to_fetch)
+
+        # 3b. Batch Fetch Prices using yf.download (Existing Logic)
         stock_data_yf = {}
         if yf_symbols_to_fetch:
             logging.info(f"Batch fetching prices for {len(yf_symbols_to_fetch)} symbols...")
@@ -527,6 +632,9 @@ class MarketDataProvider:
                             currency = meta.get("currency")
                             name = meta.get("name")
                             
+                            # Retrieve fundamentals
+                            fund = fundamentals_map.get(yf_sym, {})
+                            
                             if price is not None and currency:
                                 change = (price - prev_close) if (price and prev_close) else 0.0
                                 change_pct = (change / prev_close) if (change and prev_close) else 0.0
@@ -539,8 +647,8 @@ class MarketDataProvider:
                                     "name": name,
                                     "source": "yf_batch_download",
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
-                                    "trailingAnnualDividendRate": 0,
-                                    "dividendYield": 0
+                                    "trailingAnnualDividendRate": fund.get("trailingAnnualDividendRate", 0),
+                                    "dividendYield": fund.get("dividendYield", 0)
                                 }
                             else:
                                 # logging.warning(f"Missing price or currency for {yf_sym}.")
