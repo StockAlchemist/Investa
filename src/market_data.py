@@ -637,7 +637,7 @@ class MarketDataProvider:
                             
                             if price is not None and currency:
                                 change = (price - prev_close) if (price and prev_close) else 0.0
-                                change_pct = (change / prev_close) if (change and prev_close) else 0.0
+                                change_pct = ((change / prev_close) * 100.0) if (change and prev_close) else 0.0
                                 
                                 stock_data_yf[internal_sym] = {
                                     "price": price,
