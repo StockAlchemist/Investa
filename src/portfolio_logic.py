@@ -1240,12 +1240,14 @@ def calculate_portfolio_summary(
     if overall_summary_metrics is None:
         overall_summary_metrics = {}  # Ensure it's a dict
     # Use all_transactions_df_cleaned for available accounts, as it's the full dataset for this run
-    overall_summary_metrics["_available_accounts"] = (
-        sorted(list(all_transactions_df_cleaned["Account"].unique()))
-        if all_transactions_df_cleaned is not None
-        and "Account" in all_transactions_df_cleaned.columns
-        else []
-    )
+    unique_available_accounts = set()
+    if all_transactions_df_cleaned is not None:
+        if "Account" in all_transactions_df_cleaned.columns:
+            unique_available_accounts.update(all_transactions_df_cleaned["Account"].dropna().unique())
+        if "To Account" in all_transactions_df_cleaned.columns:
+            unique_available_accounts.update(all_transactions_df_cleaned["To Account"].dropna().unique())
+    
+    overall_summary_metrics["_available_accounts"] = sorted(list(unique_available_accounts))
     if display_currency != default_currency and current_fx_rates_vs_usd:
         rate_to_display = get_conversion_rate(
             default_currency, display_currency, current_fx_rates_vs_usd

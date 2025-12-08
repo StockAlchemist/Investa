@@ -6897,11 +6897,13 @@ The CSV file should contain the following columns (header names must match exact
         # Filter by Account (column name in DB is "Account")
         if account_filter_text and "Account" in df_to_display.columns:
             try:
-                df_to_display = df_to_display[
-                    df_to_display["Account"]
-                    .astype(str)
-                    .str.contains(account_filter_text, case=False, na=False)
-                ]
+                # Check if account matches 'Account' OR 'To Account' column
+                mask_account = df_to_display["Account"].astype(str).str.contains(account_filter_text, case=False, na=False)
+                if "To Account" in df_to_display.columns:
+                     mask_to_account = df_to_display["To Account"].astype(str).str.contains(account_filter_text, case=False, na=False)
+                     mask_account = mask_account | mask_to_account
+                
+                df_to_display = df_to_display[mask_account]
             except Exception as e:
                 logging.warning(f"Error applying account filter: {e}")
 
@@ -6980,11 +6982,14 @@ The CSV file should contain the following columns (header names must match exact
     def add_new_transaction_db(self):
         """Opens the AddTransactionDialog to add a new transaction to the database."""
         # Get available accounts and symbols from the current data for dialog autocompletion
-        accounts_for_dialog = (
-            sorted(list(self._current_data_df["Account"].unique()))
-            if "Account" in self._current_data_df.columns
-            else []
-        )
+        # Combine accounts from both 'Account' and 'To Account' columns
+        unique_accounts = set()
+        if "Account" in self._current_data_df.columns:
+            unique_accounts.update(self._current_data_df["Account"].dropna().unique())
+        if "To Account" in self._current_data_df.columns:
+            unique_accounts.update(self._current_data_df["To Account"].dropna().unique())
+        
+        accounts_for_dialog = sorted(list(unique_accounts))
         symbols_for_dialog = (
             sorted(list(self._current_data_df["Symbol"].unique()))
             if "Symbol" in self._current_data_df.columns
@@ -7083,11 +7088,14 @@ The CSV file should contain the following columns (header names must match exact
             # Local Currency is not directly part of AddTransactionDialog fields, it's derived by PortfolioApp
         }
 
-        accounts_for_dialog = (
-            sorted(list(self._current_data_df["Account"].unique()))
-            if "Account" in self._current_data_df.columns
-            else []
-        )
+        # Combine accounts from both 'Account' and 'To Account' columns
+        unique_accounts = set()
+        if "Account" in self._current_data_df.columns:
+            unique_accounts.update(self._current_data_df["Account"].dropna().unique())
+        if "To Account" in self._current_data_df.columns:
+            unique_accounts.update(self._current_data_df["To Account"].dropna().unique())
+
+        accounts_for_dialog = sorted(list(unique_accounts))
 
         edit_dialog = AddTransactionDialog(
             existing_accounts=accounts_for_dialog,
@@ -8380,12 +8388,17 @@ The CSV file should contain the following columns (header names must match exact
             self._first_data_load_complete = True
 
         # --- Update available accounts and selection based on DB data ---
-        if "Account" in self.all_transactions_df_cleaned_for_logic.columns:
-            self.available_accounts = sorted(
-                list(self.all_transactions_df_cleaned_for_logic["Account"].unique())
-            )
-        else:
-            self.available_accounts = []
+        # Combine accounts from both 'Account' and 'To Account' columns
+        unique_accounts = set()
+        has_account_col = "Account" in self.all_transactions_df_cleaned_for_logic.columns
+        if has_account_col:
+            unique_accounts.update(self.all_transactions_df_cleaned_for_logic["Account"].dropna().unique())
+        if "To Account" in self.all_transactions_df_cleaned_for_logic.columns:
+            unique_accounts.update(self.all_transactions_df_cleaned_for_logic["To Account"].dropna().unique())
+        
+        self.available_accounts = sorted(list(unique_accounts))
+        
+        if not has_account_col:
             logging.warning(
                 "No 'Account' column in data loaded from DB. Account filtering may not be available."
             )
@@ -11196,6 +11209,7 @@ The CSV file should contain the following columns (header names must match exact
                 data_for_db_update["To Account"] = (
                     new_data_dict_from_dialog_pytypes.get("To Account")
                 )
+                logging.info(f"Edit Transaction: Setting 'To Account' to '{data_for_db_update['To Account']}' for ID {transaction_id}")
                 # --- BUG FIX: Ensure date is passed for the deposit part of the transfer ---
                 # When a transfer is edited, the corresponding deposit record for the 'To Account'
                 # needs to be updated with the same date. The update_transaction_in_db function
@@ -15916,7 +15930,13 @@ The CSV file should contain the following columns (header names must match exact
             if (
                 success and temp_df is not None and "Account" in temp_df.columns
             ):  # Keep the rest of the logic
-                accounts_for_dialog = sorted(list(temp_df["Account"].unique()))
+                # Combine accounts from both 'Account' and 'To Account' columns
+                unique_accounts = set()
+                if "Account" in temp_df.columns:
+                    unique_accounts.update(temp_df["Account"].dropna().unique())
+                if "To Account" in temp_df.columns:
+                    unique_accounts.update(temp_df["To Account"].dropna().unique())
+                accounts_for_dialog = sorted(list(unique_accounts))
                 self.available_accounts = accounts_for_dialog  # Update app's list
             elif not success:
                 QMessageBox.warning(

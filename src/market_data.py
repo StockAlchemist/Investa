@@ -1668,12 +1668,16 @@ class MarketDataProvider:
                             if hasattr(first_avail, 'date'): first_avail = first_avail.date()
                             if hasattr(last_avail, 'date'): last_avail = last_avail.date()
                             
+                            
                             if last_avail < end_date:
                                 historical_fx_yf[pair] = df_idx
                                 fx_needing_incremental_fetch.append((pair, last_avail))
                             else:
                                 if start_date < first_avail:
                                     # Need older data -> full fetch
+                                    # MODIFIED: Keep the partial cache as fallback in case fetch fails
+                                    historical_fx_yf[pair] = df_idx
+                                    logging.info(f"  Hist FX: Found partial cache for {pair} (starts {first_avail}, need {start_date}). Will try full fetch, but keeping cache as fallback.")
                                     fx_needing_full_fetch.append(pair)
                                 else:
                                     historical_fx_yf[pair] = df_idx
@@ -1733,8 +1737,9 @@ class MarketDataProvider:
                  self._save_files_only(data_to_save, "fx")
 
         # --- 4. Validation ---
-        if fx_pairs_yf and any(p not in historical_fx_yf or historical_fx_yf[p].empty for p in fx_pairs_yf):
-             logging.error("Hist FX ERROR: Critical FX data missing.")
+        missing_fx = [p for p in fx_pairs_yf if p not in historical_fx_yf or historical_fx_yf[p].empty]
+        if missing_fx:
+             logging.error(f"Hist FX ERROR: Critical FX data missing for: {', '.join(missing_fx)}")
              fetch_failed = True
 
         return historical_fx_yf, fetch_failed
