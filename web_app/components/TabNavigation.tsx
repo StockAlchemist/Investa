@@ -12,9 +12,6 @@ const TABS = [
     { id: 'asset_change', label: 'Asset Change' },
     { id: 'capital_gains', label: 'Cap. Gains' },
     { id: 'dividend', label: 'Dividend' },
-    { id: 'intraday', label: 'Intraday' },
-    { id: 'rebalancing', label: 'Rebalancing' },
-    { id: 'analysis', label: 'Analysis' },
 ];
 
 export default function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
