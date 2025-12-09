@@ -117,6 +117,11 @@ COLUMN_MAPPING_CSV_TO_INTERNAL: Dict[str, str] = {
     "Investment Account": "Account",
     "Split Ratio (new shares per old share)": "Split Ratio",
     # "Note": "Note", # Already covered
+    # Transfer / To Account mappings
+    "Transfer To": "To Account",
+    "To Account": "To Account",
+    "Destination Account": "To Account",
+    "Destination": "To Account",
     # Add other common variations as needed
     "Transaction Date": "Date",
     "Ticker": "Symbol",
