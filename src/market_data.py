@@ -1032,6 +1032,24 @@ class MarketDataProvider:
 
         yf_end_date = max(start_date, end_date) + timedelta(days=1)
         yf_start_date = min(start_date, end_date)
+
+        # --- FIX: Prevent fetching future dates which causes YFPricesMissingError ---
+        # If the requested start date is today or in the future, yfinance might error 
+        # because the "day" hasn't happened yet in the market's timezone.
+        # Historical data implies "past" data. Real-time is handled elsewhere.
+        today = date.today()
+        if yf_start_date >= today:
+             logging.info(f"Hist Fetch Helper: Request start date {yf_start_date} is >= today ({today}). Skipping historical fetch to avoid yfinance errors.")
+             return {}
+        
+        # Clamp end date to today (exclusive in yfinance means up to yesterday) 
+        # if we are not asking for today's data (which we shouldn't be here).
+        # Actually, if we ask for end=tomorrow, yfinance tries to get today.
+        # If today isn't effectively over or started, it might be an issue.
+        # Safer to clamp end to 'today' (fetching UP TO yesterday) for strict history.
+        if yf_end_date > today:
+             yf_end_date = today
+        # --- END FIX ---
         fetch_batch_size = 50  # Process symbols in batches to be friendlier to the API
 
         # --- ADDED: Retry logic parameters for increased network robustness ---
