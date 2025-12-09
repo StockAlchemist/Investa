@@ -3759,7 +3759,7 @@ def _value_daily_holdings_vectorized(
                 t_series = t_df["price"]
                 if isinstance(t_series.index, pd.DatetimeIndex):
                      t_series.index = t_series.index.normalize()
-                target_rate_series = t_series.reindex(date_range, method='ffill')
+                target_rate_series = t_series.reindex(date_range, method='ffill').bfill()
     
     # If target rate missing, we can't convert anything (unless local==target)
     # Ensure it's not None for math consistency, fill with NaN if missing
@@ -3798,7 +3798,7 @@ def _value_daily_holdings_vectorized(
                     l_series = l_df["price"]
                     if isinstance(l_series.index, pd.DatetimeIndex):
                         l_series.index = l_series.index.normalize()
-                    local_rate_series = l_series.reindex(date_range, method='ffill')
+                    local_rate_series = l_series.reindex(date_range, method='ffill').bfill()
 
         if local_rate_series is None:
              # Missing local rate data - Default to 1.0 to prevent NaN propagation

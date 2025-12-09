@@ -816,10 +816,13 @@ def get_historical_price(
                          the first available price point, or an error occurs during lookup.
     """
     if symbol_key not in prices_dict or prices_dict[symbol_key].empty:
+        # logging.debug(f"get_historical_price: {symbol_key} missing or empty.")
         return None
     
     # Avoid modifying the original DataFrame in prices_dict (it might be shared)
     df = prices_dict[symbol_key]
+    
+    # DEBUG: Trace THB calls - REMOVED
 
     try:
         # Optimization: Use asof for efficient lookup
@@ -853,10 +856,22 @@ def get_historical_price(
              # Scalar result? (DF asof returns Series/DF usually)
              pass 
 
+        if price is None or pd.isna(price):
+             # Check if target_date is before the start of the data (Backfill Strategy)
+             first_date = df.index[0].date() if isinstance(df.index, pd.DatetimeIndex) else df.index[0]
+             if isinstance(first_date, datetime): first_date = first_date.date()
+             
+             # If target date is before first data point, use the first available price
+             if target_date < first_date:
+                 backfill_price = df['price'].iloc[0] # Assumes sorted (ensured above)
+                 if pd.notna(backfill_price):
+                     # logging.warning(f"Backfilling {symbol_key} for {target_date} using first available price from {first_date}: {backfill_price}")
+                     return float(backfill_price)
+
         return float(price) if pd.notna(price) else None
 
     except Exception as e:
-        # logging.error(f"ERROR getting historical price for {symbol_key} on {target_date}: {e}")
+        logging.error(f"ERROR getting historical price for {symbol_key} on {target_date}: {e}")
         return None
 
 
