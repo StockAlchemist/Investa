@@ -845,7 +845,8 @@ def calculate_portfolio_summary(
                              logging.debug(f"FIFO calc found no gain for Cash {sym}/{acct}. Setting to 0 for consistency with Capital Gains tab.")
                              # Proceed to set to 0
                         else:
-                             logging.warning(f"FIFO calc found no gain for {sym}/{acct}, but AvgCost had {avg_cost_gain}. Setting to 0 for consistency.")
+                             logging.warning(f"FIFO calc found no gain for {sym}/{acct}, but AvgCost had {avg_cost_gain}. Keeping AvgCost (FIFO may have failed due to missing data).")
+                             continue
                     
                     holding_data["realized_gain_display"] = 0.0
                     holding_data["realized_gain_local"] = 0.0
@@ -1570,9 +1571,9 @@ def _calculate_daily_net_cash_flow_vectorized(
     # --- 2. ASSET TRANSFERS (In/Out) ---
     if included_accounts:
         # Transfers are flows if they cross the boundary of "included_accounts".
-        trans_mask = (df_period["Type"] == "transfer") & (df_period["Symbol"] != CASH_SYMBOL_CSV)
+        trans_mask = (df_period["Type"].str.lower().str.strip() == "transfer") & (df_period["Symbol"] != CASH_SYMBOL_CSV)
         df_trans = df_period[trans_mask].copy()
-        
+                
         if not df_trans.empty:
             # Determine direction multiplier
             src_in = df_trans["Account"].astype(str).str.upper().str.strip().isin(included_set)
@@ -1584,7 +1585,7 @@ def _calculate_daily_net_cash_flow_vectorized(
             multiplier = pd.Series(0.0, index=df_trans.index)
             multiplier[src_in & ~dest_in] = -1.0
             multiplier[~src_in & dest_in] = 1.0
-            
+                        
             # Filter only relevant transfers
             relevant_trans = df_trans[multiplier != 0.0].copy()
             multiplier = multiplier[multiplier != 0.0]
@@ -1593,9 +1594,10 @@ def _calculate_daily_net_cash_flow_vectorized(
                 # Calculate Value: Qty * Price
                 qty = pd.to_numeric(relevant_trans["Quantity"], errors="coerce").fillna(0.0).abs()
                 price = pd.to_numeric(relevant_trans["Price/Share"], errors="coerce").fillna(0.0)
-                
+                                
                 # FALLBACK PRICE LOOKUP (Vectorized-ish)
                 missing_price_mask = (price <= 1e-9)
+                
                 if missing_price_mask.any():
                     relevant_trans_missing = relevant_trans[missing_price_mask]
                     unique_syms = relevant_trans_missing["Symbol"].unique()
@@ -1606,8 +1608,20 @@ def _calculate_daily_net_cash_flow_vectorized(
                              price_series = historical_prices_yf_unadjusted[yf_sym]["price"]
                              sym_mask = relevant_trans_missing["Symbol"] == sym
                              needed_dates = relevant_trans_missing.loc[sym_mask, "Date"]
-                             # Lookups
-                             found_prices = price_series.reindex(needed_dates).values
+                             # Lookups - distinct fix: use asof to get last available price for off-market days
+                             # Ensure price_series is sorted
+                             if not price_series.index.is_monotonic_increasing:
+                                 price_series = price_series.sort_index()
+                                 
+                             # Fix 2: Ensure index is proper DatetimeIndex (sometimes it's object-dtype with dates)
+                             if not isinstance(price_series.index, pd.DatetimeIndex):
+                                 price_series.index = pd.to_datetime(price_series.index)
+                             
+                             # Fix: Ensure needed_dates are Timestamps to match price_series index
+                             # Explicitly cast to datetime64[ns] to avoid object-dtype issues (which cause TypeError in asof)
+                             needed_dates_ts = pd.to_datetime(needed_dates).astype("datetime64[ns]")
+                             
+                             found_prices = price_series.asof(needed_dates_ts).values
                              # Update
                              idxs_to_update = relevant_trans_missing.loc[sym_mask].index
                              price.loc[idxs_to_update] = pd.Series(found_prices, index=idxs_to_update).fillna(0.0)
