@@ -620,6 +620,43 @@ Here are some general tips and common troubleshooting steps, reflecting Investa'
   * **"File not found" for Database on Startup:**
     * The app will prompt you to locate your `.db` file or create a new one. The path is stored in `gui_config.json`.
 
+## Part 13: The Investa Web Dashboard
+
+Investa now includes a modern Web Dashboard that allows you to view your portfolio from any device on your local network (e.g., your smartphone, tablet, or another computer).
+
+### Getting Started with the Web App
+
+1.  **Start the Backend Server:**
+    Open a terminal in the project root and run:
+    ```bash
+    python src/server/main.py
+    ```
+    This starts the API server on port 8000.
+
+2.  **Start the Frontend:**
+    Open a second terminal window, navigate to the `web_app` directory, and run:
+    ```bash
+    cd web_app
+    npm run dev
+    ```
+    This starts the web interface on port 3000.
+
+3.  **Accessing the Dashboard:**
+    *   **Local Machine:** Open your browser and go to `http://localhost:3000`.
+    *   **Remote Device:** Find the IP address of your computer running Investa (e.g., `192.168.1.15`). On your mobile device connected to the same Wi-Fi, go to `http://192.168.1.15:3000`.
+
+### Features
+
+The Web Dashboard mirrors many of the key features of the desktop application:
+
+*   **Dashboard Summary:** View your Net Value, Daily P&L, Total Return, and key metrics at a glance.
+*   **Performance Graph:** Interactive charts for TWR and Portfolio Value.
+*   **Holdings:** A sorted list of your current positions.
+*   **Transactions Log:** View your history of trades and cash movements.
+*   **Asset Allocation & Analysis:** Visual breakdowns of your portfolio.
+
+*Note: Currently, the Web Dashboard is primarily for **viewing** and **analyzing** your data. For heavy transaction management (bulk imports, editing past records), we recommend using the Desktop Application.*
+
 ---
 
 That's the grand tour of Investa! It's a powerful tool designed to give you deep insights into your investments. Take your time, ensure your data is accurate, and explore all the features to make the most of your portfolio analysis. Happy investing!

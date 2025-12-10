@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Investa is a desktop application designed to help you track, analyze, and visualize your investment portfolio. It uses a local SQLite database to store transaction data, fetches current market prices, and provides a comprehensive overview of your holdings, performance, and historical trends.
+Investa is a comprehensive portfolio management solution offering both a feature-rich **Desktop Application** and a modern **Web Dashboard**. It helps you track, analyze, and visualize your investment portfolio using a local SQLite database for complete data privacy. It fetches current market prices and provides a comprehensive overview of your holdings, performance, and historical trends.
 
 ## Features
 
@@ -53,6 +53,10 @@ Investa is a desktop application designed to help you track, analyze, and visual
 * **CSV Format Help & Standardization:**
   * In-app guide explains the recommended CSV format for importing transactions.
   * Utility to standardize CSV headers to the application's preferred internal format before import.
+* **Web Dashboard (New):**
+  * **Modern Interface:** Experience your portfolio in a sleek, responsive web interface built with Next.js and Tailwind CSS.
+  * **Remote Access:** Access your portfolio from any device on your local network (e.g., mobile, tablet).
+  * **Core Features:** View Summary, Holdings, Performance Graphs, Transactions, Asset Allocation, and Dividends.
 * **Numba Optimization:** Leverages Numba to accelerate computationally intensive historical portfolio value calculations, providing faster chart loading and analysis.
 
 ## Getting Started Tutorial
@@ -75,6 +79,8 @@ For a step-by-step guide on how to set up and use Investa, please see our detail
 * **Financial Calculations:** SciPy, Numba
 * **Market Data:** yfinance
 * **Charting:** Matplotlib (embedded in PySide6), mplcursors (for interactive tooltips)
+* **Web App Backend:** FastAPI, Uvicorn
+* **Web App Frontend:** Next.js, React, Tailwind CSS, Recharts
 * **Concurrency:** QThreadPool, QRunnable, multiprocessing
 
 ## Installation
@@ -105,6 +111,15 @@ This project requires Python 3.8 or higher.
 
     ```bash
     pip install -r requirements.txt
+    ```
+
+4. **Install Web App Dependencies (Node.js required)**
+    If you plan to use the Web Dashboard:
+
+    ```bash
+    cd web_app
+    npm install
+    cd ..
     ```
 
 ## Configuration
@@ -188,22 +203,38 @@ For detailed examples and specific requirements for each transaction type, pleas
 1. **Launch the Application**
     After installing dependencies, run the main script from the project's root directory:
 
+1. **Run the Desktop Application**
+    From the project root:
     ```bash
     python src/main_gui.py
     ```
 
-2. **Initial Setup (First Launch)**
+2. **Run the Web Dashboard**
+    The Web App requires two components running simultaneously:
+
+    *   **Start the Backend API:**
+        ```bash
+        python src/server/main.py
+        ```
+    *   **Start the Frontend:**
+        Open a new terminal window:
+        ```bash
+        cd web_app
+        npm run dev
+        ```
+    *   **Access:** Open your browser and go to `http://localhost:3000`.
+
+3. **Initial Setup (First Launch)**
     * You will be prompted to create a new SQLite database (`.db`) or open an existing one. This file will store all your transaction data.
     * The application will remember the location of your database for future sessions.
 
-3. **Populate Your Data**
-    * **Add Manually:** Use the `Transactions` menu to add, edit, or delete individual records (Buy, Sell, Dividend, etc.).
-    * **Import from CSV:** Use `File > Import Transactions from CSV...` to bulk-import your history. Refer to the "Input Data Format" section or the in-app help for formatting details.
+4. **Populate Your Data**
+    * **Add Manually:** Use the `Transactions` menu (Desktop) or `Add Transaction` (Web - if enabled) to add records.
+    * **Import from CSV:** Use `File > Import Transactions from CSV...` (Desktop) to bulk-import your history.
 
-4. **Analyze Your Portfolio**
-    * Click **Refresh All (F5)** to fetch the latest market data and recalculate all portfolio metrics.
-    * Use the dashboard controls to filter by account, change display currency, and adjust chart settings.
-    * Interact with tables and charts to explore your data in detail.
+5. **Analyze Your Portfolio**
+    * Desktop: Click **Refresh All (F5)**.
+    * Web: Refresh the page or use the refresh button.
 
 For a more comprehensive guide, please see our detailed tutorial: ➡️ **Investa User Tutorial**
 
