@@ -330,8 +330,8 @@ from portfolio_logic import (
     CASH_SYMBOL_CSV,
     calculate_historical_performance,
 )
-from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series
-
+from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series, calculate_max_drawdown, calculate_volatility, calculate_sharpe_ratio, calculate_sortino_ratio
+from factor_analyzer import run_factor_regression
 from market_data import MarketDataProvider
 from finutils import (
     map_to_yf_symbol,
@@ -7997,38 +7997,177 @@ The CSV file should contain the following columns (header names must match exact
         """Initializes the Factor Analysis sub-tab."""
         logging.debug("Initializing Factor Analysis tab.")
         factor_layout = QVBoxLayout(self.factor_analysis_tab)
+        # Reduce margins to maximize space
+        factor_layout.setContentsMargins(5, 5, 5, 5)
         self.factor_analysis_tab.setLayout(factor_layout)
 
+        # --- 1. Explanation Area (Collapsible-like GroupBox) ---
+        explanation_group = QGroupBox("Understanding Factor Analysis")
+        explanation_layout = QVBoxLayout()
         explanation_label = QLabel(
-            """<p>The <b>Factor Analysis</b> tab performs a regression analysis to explain your portfolio's returns based on its exposure to various market factors. Common factors include:</p>
+            """<p>The <b>Factor Analysis</b> tab performs a regression to explain portfolio returns using market factors:</p>
             <ul>
-            <li><b>Market Risk Premium (Mkt-RF):</b> Measures sensitivity to the overall stock market. A beta > 1 suggests higher volatility than the market.</li>
-            <li><b>Small Minus Big (SMB):</b> Captures exposure to small-capitalization stocks versus large-capitalization stocks. Positive SMB indicates a tilt towards small-cap.</li>
-            <li><b>High Minus Low (HML):</b> Represents exposure to value stocks (high book-to-market ratio) versus growth stocks (low book-to-market ratio). Positive HML indicates a value tilt.</li>
-            <li><b>Up Minus Down (UMD / Momentum):</b> Reflects exposure to stocks with recent strong performance (momentum). Positive UMD indicates a preference for recent winners.</li>
+            <li><b>Mkt-RF:</b> Sensitivity to the overall stock market.</li>
+            <li><b>SMB:</b> Exposure to Small-Cap (vs Large-Cap).</li>
+            <li><b>HML:</b> Exposure to Value (vs Growth).</li>
+            <li><b>UMD:</b> Exposure to Momentum (Recent Winners).</li>
             </ul>
-            <p><b>What is calculated:</b> The analysis estimates <b>Factor Betas</b> (coefficients indicating your portfolio's sensitivity to each factor), <b>R-squared</b> (the proportion of your portfolio's return variance explained by these factors), and <b>P-values</b> (statistical significance of each factor's influence).</p>
-            <p><b>Why it's useful:</b> This helps identify the primary drivers of your portfolio's performance, uncover unintended factor exposures, and refine your investment strategy to align with specific risk premiums.</p>"""
+            <p><i>Click 'Run Analysis' to estimate Factor Betas and R-squared.</i></p>"""
         )
         explanation_label.setWordWrap(True)
-        explanation_label.setObjectName("ExplanationLabel")  # For potential styling
-        factor_layout.addWidget(explanation_label)
+        explanation_layout.addWidget(explanation_label)
+        explanation_group.setLayout(explanation_layout)
+        factor_layout.addWidget(explanation_group)
 
+        # --- 2. Controls Area ---
         controls_layout = QHBoxLayout()
         controls_layout.addWidget(QLabel("Factor Model:"))
         self.factor_model_combo = QComboBox()
         self.factor_model_combo.addItems(["Fama-French 3-Factor", "Carhart 4-Factor"])
         controls_layout.addWidget(self.factor_model_combo)
         self.run_factor_analysis_button = QPushButton("Run Analysis")
+        self.run_factor_analysis_button.clicked.connect(self._run_factor_analysis)
         controls_layout.addWidget(self.run_factor_analysis_button)
         controls_layout.addStretch(1)
         factor_layout.addLayout(controls_layout)
 
+        # --- 3. Main Content Area (Splitter for Chart & Results) ---
+        splitter = QSplitter(Qt.Vertical)
+        
+        # Chart Canvas
+        self.factor_fig = Figure(figsize=(8, 8), dpi=CHART_DPI)
+        self.factor_canvas = FigureCanvas(self.factor_fig)
+        self.factor_canvas.setObjectName("FactorCanvas")
+        # Ensure canvas expands and has a minimum size
+        self.factor_canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.factor_canvas.setMinimumHeight(400) # Increased minimum height
+        splitter.addWidget(self.factor_canvas)
+
+        # Results Text
         self.factor_analysis_results_text = QTextEdit()
         self.factor_analysis_results_text.setReadOnly(True)
-        factor_layout.addWidget(self.factor_analysis_results_text)
+        self.factor_analysis_results_text.setPlaceholderText("Analysis results will appear here...")
+        self.factor_analysis_results_text.setMinimumHeight(100) # Minimum height for text
+        splitter.addWidget(self.factor_analysis_results_text)
+
+        # Set initial splitter sizes (70% chart, 30% text)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 1)
+
+        # Ensure splitter itself expands
+        splitter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        factor_layout.addWidget(splitter, 1) # Give all remaining space to the splitter
 
         logging.debug("Factor Analysis tab initialized.")
+
+    def _run_factor_analysis(self):
+        """Runs the factor analysis regression and updates the UI."""
+        if not hasattr(self, "portfolio_daily_returns") or self.portfolio_daily_returns.empty:
+            QMessageBox.warning(self, "No Data", "Please load data and ensure portfolio returns are calculated first.")
+            return
+
+        model_name = self.factor_model_combo.currentText()
+        logging.info(f"Running Factor Analysis with model: {model_name}")
+        
+        self.set_status("Running Factor Analysis...")
+        self.run_factor_analysis_button.setEnabled(False)
+        self.run_factor_analysis_button.setText("Running...")
+        QApplication.processEvents() # Force UI update
+
+        try:
+            # We need to pass benchmark data if available to avoid re-fetching SPY if possible
+            # Check if we have 'SPY' in our historical data
+            benchmark_data = None
+            # logic to extract benchmark data if it exists in self.historical_data_cache or similar
+            # For now, let run_factor_regression handle fetching/using its internal logic.
+            
+            results = run_factor_regression(
+                self.portfolio_daily_returns,
+                model_name=model_name
+            )
+
+            if results is None:
+                self.factor_analysis_results_text.setText("Regression failed. See logs for details (likely insufficient data or API error).")
+                return
+
+            # Update Text Results
+            self.factor_analysis_results_text.setText(results.summary().as_text())
+            
+            # --- Update Charts ---
+            self.factor_fig.clear()
+            
+            # 1. Bar Chart of Betas
+            # params includes Intercept (Alpha) and factors
+            params = results.params
+            bse = results.bse # Standard errors
+            
+            ax_betas = self.factor_fig.add_subplot(211) # Top half
+            # Exclude Intercept (Alpha) from the beta bar chart usually, or keep it distinct?
+            # Alpha is return, Betas are sensitivity. Scale is different. 
+            # Often better to show Betas. Alpha is shown in text.
+            betas = params.drop("const") if "const" in params else params
+            errors = bse.drop("const") if "const" in bse else bse
+            
+            # Colors for bars
+            colors = [self.QCOLOR_ACCENT_THEMED.name()] * len(betas)
+            
+            betas.plot(kind='bar', ax=ax_betas, yerr=errors, capsize=4, color=colors, rot=0)
+            ax_betas.set_title(f"Factor Betas ({model_name})")
+            ax_betas.set_ylabel("Beta Coefficient")
+            ax_betas.axhline(0, color='black', linewidth=0.8)
+            ax_betas.grid(axis='y', linestyle='--', alpha=0.7)
+            
+            # 2. Scatter Plot (Model Fit) - Actual vs Predicted or Factor exposure
+            # A common visual is Portfolio Excess Return vs Market Excess Return (Mkt-RF)
+            # This visualizes the primary beta.
+            ax_scatter = self.factor_fig.add_subplot(212)
+            
+            # We need the data used in regression to plot points. 
+            # results.model.exog contains the inputs (Factors)
+            # results.model.endog contains the target (Portfolio Excess Returns)
+            
+            # Extract Mkt-RF (usually index 1 if const is 0)
+            exog_names = results.model.exog_names
+            if "Mkt-RF" in exog_names:
+                mkt_rf_idx = exog_names.index("Mkt-RF")
+                mkt_rf_data = results.model.exog[:, mkt_rf_idx]
+                portfolio_excess = results.model.endog
+                
+                ax_scatter.scatter(mkt_rf_data, portfolio_excess, alpha=0.6, label="Monthly Returns")
+                
+                # Plot regression line for Mkt-RF
+                # partial regression plot or just simple univariable line? 
+                # Let's plot the "Market Line" which is just slope = Beta_Mkt
+                beta_mkt = params["Mkt-RF"]
+                alpha = params["const"] if "const" in params else 0
+                
+                # Generate x range
+                x_range = np.linspace(min(mkt_rf_data), max(mkt_rf_data), 100)
+                y_pred_mkt = alpha + beta_mkt * x_range
+                
+                ax_scatter.plot(x_range, y_pred_mkt, color='red', linewidth=2, label=f"Beta: {beta_mkt:.2f}")
+                
+                ax_scatter.set_title("Portfolio Excess Returns vs. Market (Mkt-RF)")
+                ax_scatter.set_xlabel("Market Excess Return")
+                ax_scatter.set_ylabel("Portfolio Excess Return")
+                ax_scatter.legend()
+                ax_scatter.grid(True, linestyle='--', alpha=0.6)
+            else:
+                 ax_scatter.text(0.5, 0.5, "Mkt-RF factor not found for scatter plot.", ha='center')
+
+            self.factor_fig.tight_layout()
+            self.factor_canvas.draw()
+            
+            self.set_status(f"Factor Analysis complete ({model_name}).")
+
+        except Exception as e:
+            logging.error(f"Error in _run_factor_analysis: {e}")
+            self.factor_analysis_results_text.setText(f"Error running analysis:\n{e}")
+            QMessageBox.critical(self, "Analysis Error", f"An error occurred:\n{e}")
+        finally:
+            self.run_factor_analysis_button.setEnabled(True)
+            self.run_factor_analysis_button.setText("Run Analysis")
 
     def _init_scenario_analysis_tab(self):
         """Initializes the Scenario Analysis sub-tab."""

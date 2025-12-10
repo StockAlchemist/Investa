@@ -1002,6 +1002,12 @@ class MarketDataProvider:
             f"Hist Fetch Helper: Fetching historical data (auto-adjusted) for {len(symbols_yf)} symbols ({start_date} to {end_date})..."
         )
 
+        # Ensure start_date and end_date are date objects for downstream comparisons
+        if isinstance(start_date, pd.Timestamp):
+            start_date = start_date.date()
+        if isinstance(end_date, pd.Timestamp):
+            end_date = end_date.date()
+
         # --- OPTIMIZATION: Filter out known invalid symbols ---
         invalid_cache = self._load_invalid_symbols_cache()
         now_ts = time.time()
@@ -1032,6 +1038,12 @@ class MarketDataProvider:
 
         yf_end_date = max(start_date, end_date) + timedelta(days=1)
         yf_start_date = min(start_date, end_date)
+
+        # Ensure we are working with date objects for comparison
+        if isinstance(yf_start_date, pd.Timestamp):
+            yf_start_date = yf_start_date.date()
+        if isinstance(yf_end_date, pd.Timestamp):
+            yf_end_date = yf_end_date.date()
 
         # --- FIX: Prevent fetching future dates which causes YFPricesMissingError ---
         # If the requested start date is today or in the future, yfinance might error 
@@ -1586,17 +1598,28 @@ class MarketDataProvider:
 
         Args:
             symbols_yf (List[str]): List of YF stock/benchmark tickers required.
-            start_date (date): Start date for historical data.
-            end_date (date): End date for historical data.
-            use_cache (bool): Flag to enable reading/writing the raw data cache.
-            cache_key (str): Optional key, mainly for logging/manifest updates.
-            cache_file (str): Legacy/unused.
+            start_date (date): Start date for data (inclusive).
+            end_date (date): End date for data (inclusive/exclusive depending on usage, but typically inclusive).
+            use_cache (bool, optional): Whether to attempt loading from cache. Defaults to True.
+            cache_key (Optional[str], optional): Legacy cache key. Defaults to None.
+            cache_file (Optional[str], optional): Legacy cache file. Defaults to None.
 
         Returns:
-            Tuple containing:
-            - historical_prices_yf_adjusted (Dict[str, pd.DataFrame]): Dictionary mapping tickers to DataFrames.
-            - fetch_failed (bool): True if fetching/loading critical data failed.
+            Tuple[Dict[str, pd.DataFrame], bool]:
+                - historical_data (Dict): Map of yf_symbol -> DataFrame.
+                - all_fresh (bool): True if all requested data was retrieved successfully.
         """
+        # Ensure start_date and end_date are date objects
+        if isinstance(start_date, pd.Timestamp):
+            start_date = start_date.date()
+        if isinstance(end_date, pd.Timestamp):
+            end_date = end_date.date()
+            
+        logging.info(
+            f"Hist Prices: Fetching historical data for {len(symbols_yf)} symbols ({start_date} to {end_date})..."
+        )
+
+
         historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}
         fetch_failed = False
         
@@ -1791,8 +1814,12 @@ class MarketDataProvider:
                         if not df_idx.empty:
                             first_avail = df_idx.index.min()
                             last_avail = df_idx.index.max()
-                            if hasattr(first_avail, 'date'): first_avail = first_avail.date()
-                            if hasattr(last_avail, 'date'): last_avail = last_avail.date()
+                            
+                            # Ensure validation uses date vs date
+                            if isinstance(first_avail, pd.Timestamp):
+                                first_avail = first_avail.date()
+                            if isinstance(last_avail, pd.Timestamp):
+                                last_avail = last_avail.date()
                             
                             
                             if last_avail < end_date:

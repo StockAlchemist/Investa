@@ -32,52 +32,101 @@ def _fetch_factor_data(
     benchmark_data: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """
-    Fetches historical factor data.
-    This implementation uses SPY returns as a proxy for Mkt-RF.
+    Fetches historical factor data using ETF proxies.
+    
+    Proxies:
+    - Mkt-RF: SPY (S&P 500)
+    - SMB: IWM (Russell 2000 - Small Cap) - SPY (Large Cap)
+    - HML: VTV (Value) - VUG (Growth)
+    - UMD: MTUM (Momentum) - SPY (Market)
+    - RF: Treasuries (Using ^TNX or similar, but for simplicity/reliability we'll use a constant or fetch a bond ETF like SHV for now, or just 0 as it's often small daily). 
+      Actually, Fama-French uses risk-free rate. We'll use a small constant for daily RF or 0 to approximate 'Market' as pure SPY return for now to keep it simple and robust, or better:
+      Use ^IRX (13 week treasury bill) if available, else 0.
+      For this implementation, we will use a simplified assumption:
+         RF = 0 (for daily excess returns, this is often acceptable for rough estimation).
+         Mkt-RF ~ SPY (Assuming beta=1 to market).
     """
     logging.info(
         f"Fetching {model_name} factor data from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
     )
 
+    # Define proxies
+    tickers = ["SPY", "IWM", "VTV", "VUG"]
+    if model_name == "Carhart 4-Factor":
+        tickers.append("MTUM")
+    
+    # We might already have SPY in benchmark_data
     spy_returns = None
-
     if benchmark_data is not None and not benchmark_data.empty:
-        # benchmark_data is expected to have a column with benchmark prices
-        spy_col_name = benchmark_data.columns[
-            0
-        ]  # Assume the first column is the benchmark
-        spy_returns = benchmark_data[spy_col_name].pct_change(fill_method=None).dropna()
-        spy_returns.name = "Mkt-RF"
-        logging.info(
-            f"Using pre-loaded benchmark data for SPY from column '{spy_col_name}'."
-        )
+        # Check if we can identify SPY column
+        # existing logic...
+        pass 
+    
+    # Fetch all needed tickers
+    market_provider = MarketDataProvider()
+    
+    # Check what we need to fetch
+    tickers_to_fetch = [t for t in tickers] 
+    
+    # If we have benchmark_data (likely SPY), we might skip SPY, but for consistency let's just fetch all to ensure alignment
+    # Or rely on yfinance caching.
+    
+    data_dict, _ = market_provider.get_historical_data(tickers_to_fetch, start_date, end_date)
+    
+    # Process returns
+    returns_df = pd.DataFrame()
+    
+    for ticker in tickers_to_fetch:
+        if ticker in data_dict and not data_dict[ticker].empty:
+             # Calculate daily returns
+             returns_df[ticker] = data_dict[ticker]['price'].pct_change()
+        else:
+            logging.error(f"Could not fetch data for {ticker}. Factor analysis may be inaccurate.")
+            
+    returns_df.dropna(inplace=True)
+    
+    if returns_df.empty:
+        logging.error("No factor data available after fetching.")
+        return pd.DataFrame()
 
-    if spy_returns is None:
-        logging.info(
-            "Pre-loaded benchmark data for SPY not found or invalid. Fetching from yfinance."
-        )
-        market_provider = MarketDataProvider()
-        spy_data, _ = market_provider.get_historical_data(["SPY"], start_date, end_date)
+    # Construct Factors
+    factor_df = pd.DataFrame(index=returns_df.index)
+    
+    # Mkt-RF (Proxy: SPY)
+    if "SPY" in returns_df.columns:
+        factor_df["Mkt-RF"] = returns_df["SPY"]
+    else:
+        # Fallback if SPY failed but others worked? Unlikely but handle it
+        loading.error("SPY data missing for Mkt-RF.")
+        return pd.DataFrame()
 
-        if "SPY" not in spy_data or spy_data["SPY"].empty:
-            logging.error("Could not fetch SPY data for market factor.")
-            return pd.DataFrame()
+    # SMB (Small Minus Big): IWM - SPY
+    if "IWM" in returns_df.columns:
+        factor_df["SMB"] = returns_df["IWM"] - returns_df["SPY"]
+    else:
+        factor_df["SMB"] = 0.0
 
-        spy_returns = spy_data["SPY"]["price"].pct_change().dropna()
-        spy_returns.name = "Mkt-RF"
-
-    # Create a dataframe with the same index as spy_returns
-    factor_df = pd.DataFrame(index=spy_returns.index)
-    factor_df["Mkt-RF"] = spy_returns
-    # Use random data for other factors to avoid multicollinearity
-    factor_df["SMB"] = np.random.normal(0.001, 0.01, len(spy_returns.index))
-    factor_df["HML"] = np.random.normal(0.001, 0.01, len(spy_returns.index))
+    # HML (High Minus Low): VTV - VUG
+    if "VTV" in returns_df.columns and "VUG" in returns_df.columns:
+        factor_df["HML"] = returns_df["VTV"] - returns_df["VUG"]
+    else:
+        factor_df["HML"] = 0.0
+        
+    # UMD (Momentum): MTUM - SPY (Excess return of momentum over market)
+    # Standard UMD is Winners - Losers. MTUM is a long-only momentum ETF.
+    # So MTUM - SPY is a reasonable proxy for "Momentum Factor Exposure".
+    if model_name == "Carhart 4-Factor":
+        if "MTUM" in returns_df.columns:
+            factor_df["UMD"] = returns_df["MTUM"] - returns_df["SPY"]
+        else:
+            factor_df["UMD"] = 0.0
+            
+    # Risk Free Rate
+    # For now, we assume 0 for daily simplification or could fetch ^IRX
+    # Let's stick to 0 to avoid another network call dependent failure point
     factor_df["RF"] = 0.0
 
-    if model_name == "Carhart 4-Factor":
-        factor_df["UMD"] = np.random.normal(0.001, 0.01, len(spy_returns.index))
-
-    # Ensure index is DatetimeIndex (sometimes it comes back as generic Index)
+    # Ensure index is DatetimeIndex (as market_data might return generic Index)
     if not isinstance(factor_df.index, pd.DatetimeIndex):
         try:
             factor_df.index = pd.to_datetime(factor_df.index)
@@ -86,6 +135,7 @@ def _fetch_factor_data(
             return pd.DataFrame()
 
     return factor_df
+
 
 
 def run_factor_regression(
