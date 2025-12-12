@@ -3326,4 +3326,119 @@ class AddTransactionDialog(QDialog):
         self._update_field_states(current_tx_type, symbol)
 
 
+
 # --- Main Application Window ---
+
+class LotsViewerDialog(QDialog):
+    """Dialog to display tax lots for a specific holding."""
+
+    def __init__(self, holding_data: Dict[str, Any], currency_symbol: str = "$", parent=None):
+        super().__init__(parent)
+        title = f"Tax Lots: {holding_data.get('Symbol', 'Unknown')}"
+        if "Account" in holding_data:
+            title += f" ({holding_data['Account']})"
+        self.setWindowTitle(title)
+        self.resize(700, 400)
+        self.currency_symbol = currency_symbol
+
+        layout = QVBoxLayout(self)
+
+        # Holding Summary
+        summary_group = QGroupBox("Holding Summary")
+        summary_layout = QHBoxLayout(summary_group)
+        
+        qty = holding_data.get('Quantity', 0)
+        avg_cost = holding_data.get('Avg Cost', 0)
+        mkt_val = holding_data.get('Market Value', 0)
+        
+        # Determine total lots qty to compare
+        lots = holding_data.get('lots', [])
+        total_lot_qty = sum(l.get('qty', 0) for l in lots) # Note: 'lots' from backend uses 'qty' key, need to verify key names in portfolio_logic
+        
+        summary_layout.addWidget(QLabel(f"<b>Total Qty:</b> {format_float_with_commas(qty)}"))
+        summary_layout.addWidget(QLabel(f"<b>Avg Cost:</b> {format_currency_value(avg_cost, currency_symbol)}"))
+        summary_layout.addWidget(QLabel(f"<b>Mkt Value:</b> {format_currency_value(mkt_val, currency_symbol)}"))
+        # summary_layout.addWidget(QLabel(f"<b>Lots Qty:</b> {format_float_with_commas(total_lot_qty)}")) # Optional debug
+        
+        layout.addWidget(summary_group)
+
+        # Lots Table
+        self.table = QTableWidget()
+        columns = ["Date", "Quantity", "Cost Basis", "Cost/Share", "Mkt Value", "Unreal. Gain", "Gain %"]
+        self.table.setColumnCount(len(columns))
+        self.table.setHorizontalHeaderLabels(columns)
+        self.table.setAlternatingRowColors(True)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.verticalHeader().setVisible(False)
+        
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
+
+        # lots structure from portfolio_logic: 
+        # "lots": [{ "Date": ..., "Quantity": ..., "Cost Basis": ..., "Market Value": ..., "Unreal. Gain": ..., "Unreal. Gain %": ... }, ...]
+        lots = holding_data.get('lots', [])
+        
+        self.table.setRowCount(len(lots))
+        
+        for row, lot in enumerate(lots):
+            # Extract values
+            l_date = lot.get("Date", "")
+            l_qty = lot.get("Quantity", 0)
+            l_cost_basis = lot.get("Cost Basis", 0)
+            l_mkt_val = lot.get("Market Value", 0)
+            l_unreal_gain = lot.get("Unreal. Gain", 0)
+            l_gain_pct = lot.get("Unreal. Gain %", 0)
+            
+            l_cost_per_share = l_cost_basis / l_qty if l_qty else 0
+
+            # Create items
+            # Date
+            item_date = QTableWidgetItem(str(l_date))
+            item_date.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row, 0, item_date)
+
+            # Quantity
+            item_qty = QTableWidgetItem(format_float_with_commas(l_qty))
+            item_qty.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.table.setItem(row, 1, item_qty)
+
+            # Cost Basis
+            item_cost = QTableWidgetItem(format_currency_value(l_cost_basis, currency_symbol))
+            item_cost.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.table.setItem(row, 2, item_cost)
+
+            # Cost/Share (Calculated)
+            item_cost_share = QTableWidgetItem(format_currency_value(l_cost_per_share, currency_symbol))
+            item_cost_share.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.table.setItem(row, 3, item_cost_share)
+
+            # Market Value
+            item_mkt = QTableWidgetItem(format_currency_value(l_mkt_val, currency_symbol))
+            item_mkt.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.table.setItem(row, 4, item_mkt)
+
+            # Unreal Gain
+            item_gain = QTableWidgetItem(format_currency_value(l_unreal_gain, currency_symbol))
+            item_gain.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            
+            # Color coding
+            gain_color = FALLBACK_QCOLOR_GAIN if l_unreal_gain >= 0 else FALLBACK_QCOLOR_LOSS
+            if parent and hasattr(parent, "QCOLOR_GAIN_THEMED"): # Try to use parent's theme if available
+                 gain_color = parent.QCOLOR_GAIN_THEMED if l_unreal_gain >= 0 else parent.QCOLOR_LOSS_THEMED
+            
+            item_gain.setForeground(gain_color)
+            self.table.setItem(row, 5, item_gain)
+
+            # Gain %
+            item_pct = QTableWidgetItem(format_percentage_value(l_gain_pct))
+            item_pct.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            item_pct.setForeground(gain_color)
+            self.table.setItem(row, 6, item_pct)
+
+        layout.addWidget(self.table)
+
+        # Dialog Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Close)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)

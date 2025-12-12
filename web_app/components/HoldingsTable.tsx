@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Holding } from '../lib/api';
+import { Holding, Lot } from '../lib/api';
 
 interface HoldingsTableProps {
     holdings: Holding[];
@@ -50,6 +50,7 @@ interface SortConfig {
 
 export default function HoldingsTable({ holdings, currency }: HoldingsTableProps) {
     const [visibleColumns, setVisibleColumns] = useState<string[]>(DEFAULT_VISIBLE_COLUMNS);
+    const [showLots, setShowLots] = useState(false);
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'Mkt Val', direction: 'desc' });
     const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
     const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
@@ -87,6 +88,23 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
         // Fallback: search for key starting with prefix
         const foundKey = Object.keys(holding).find(k => k.startsWith(prefix));
         return foundKey ? holding[foundKey] : null;
+    };
+
+    const getLotValue = (lot: Lot, header: string) => {
+        if (header === 'Quantity') return lot.Quantity;
+        if (header === 'Cost Basis' || header === 'Total Buy Cost') return lot['Cost Basis'];
+        if (header === 'Mkt Val') return lot['Market Value'];
+        if (header === 'Unreal. G/L') return lot['Unreal. Gain'];
+        if (header === 'Unreal. G/L %') return lot['Unreal. Gain %'];
+        // Calculated fields
+        if ((header === 'Price' || header === 'Avg Cost') && lot.Quantity) return lot['Cost Basis'] / lot.Quantity;
+
+        // Show Date in the first visible text column (usually Symbol or Account)
+        // We will default to showing it in the "Symbol" column if present, else Account.
+        if (header === 'Symbol') return `Lot: ${lot.Date}`;
+        if (header === 'Account' && !visibleColumns.includes('Symbol')) return `Lot: ${lot.Date}`;
+
+        return null;
     };
 
     const handleSort = (header: string) => {
@@ -210,6 +228,17 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                         Columns
                     </button>
 
+                    <button
+                        onClick={() => setShowLots(!showLots)}
+                        className={`ml-2 px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 
+                            ${showLots
+                                ? 'bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-900 dark:text-indigo-200 dark:border-indigo-700'
+                                : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600'
+                            }`}
+                    >
+                        {showLots ? 'Hide Lots' : 'Show Lots'}
+                    </button>
+
                     {isColumnMenuOpen && (
                         <div className="absolute right-0 z-50 mt-2 w-56 origin-top-right bg-white dark:bg-gray-800 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto">
                             <div className="py-1">
@@ -257,16 +286,32 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                     </thead>
                     <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                         {visibleHoldings.map((holding, idx) => (
-                            <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
-                                {visibleColumns.map(header => {
-                                    const val = getValue(holding, header);
-                                    return (
-                                        <td key={header} className={`px-6 py-4 whitespace-nowrap text-sm text-right ${getCellClass(val, header)} ${header === 'Symbol' || header === 'Account' ? 'text-gray-900 dark:text-white font-medium' : 'text-gray-500 dark:text-gray-300'}`}>
-                                            {formatValue(val, header)}
-                                        </td>
-                                    );
-                                })}
-                            </tr>
+                            <React.Fragment key={`${holding.Symbol}-${idx}`}>
+                                <tr className="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+                                    {visibleColumns.map(header => {
+                                        const val = getValue(holding, header);
+                                        return (
+                                            <td key={header} className={`px-6 py-4 whitespace-nowrap text-sm text-right ${getCellClass(val, header)} ${header === 'Symbol' || header === 'Account' ? 'text-gray-900 dark:text-white font-medium' : 'text-gray-500 dark:text-gray-300'}`}>
+                                                {formatValue(val, header)}
+                                            </td>
+                                        );
+                                    })}
+                                </tr>
+                                {showLots && holding.lots && holding.lots.length > 0 && (
+                                    holding.lots.map((lot, lotIdx) => (
+                                        <tr key={`${holding.Symbol}-lot-${lotIdx}`} className="bg-gray-50/50 dark:bg-gray-800/30">
+                                            {visibleColumns.map(header => {
+                                                const val = getLotValue(lot, header);
+                                                return (
+                                                    <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-t border-gray-100 dark:border-gray-700 ${getCellClass(val, header)} ${header === 'Symbol' ? 'pl-10 text-gray-500 italic' : ''}`}>
+                                                        {formatValue(val, header)}
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    ))
+                                )}
+                            </React.Fragment>
                         ))}
                     </tbody>
                 </table>

@@ -315,6 +315,7 @@ from dialogs import (
     SymbolChartDialog,
     ManualPriceDialog,
     AddTransactionDialog,
+    LotsViewerDialog, # Added
 )
 from workers import (
     WorkerSignals,
@@ -9135,7 +9136,57 @@ The CSV file should contain the following columns (header names must match exact
             menu.addAction(fundamentals_action)
         # --- END ADD ---
 
+        # --- ADDED: View Tax Lots ---
+        if not is_cash_symbol(symbol):
+            menu.addSeparator()
+            lots_action = QAction(f"View Tax Lots for {symbol}", self)
+            lots_action.triggered.connect(lambda: self.view_tax_lots(symbol, account))
+            menu.addAction(lots_action)
+        # ----------------------------
+
         menu.exec(global_pos)
+
+
+    def view_tax_lots(self, symbol, account):
+        """Opens the LotsViewerDialog for the selected holding."""
+        if not hasattr(self, "holdings_dict_raw") or not self.holdings_dict_raw:
+            QMessageBox.warning(self, "No Data", "No lots data available/loaded.")
+            return
+
+        # Normalized lookup key
+        key = (str(symbol).upper().strip(), str(account).upper().strip())
+        logging.info(f"VIEW_LOTS: Lookup key: {key}")
+        logging.info(f"VIEW_LOTS: Total holdings in dict: {len(self.holdings_dict_raw) if hasattr(self, 'holdings_dict_raw') and self.holdings_dict_raw else 0}")
+        
+        holding_data = self.holdings_dict_raw.get(key)
+
+        # Fallback logic if direct key fails (e.g. casing diffs)
+        if not holding_data:
+            for k, v in self.holdings_dict_raw.items():
+                # k is (sym, acct) tuple
+                if (
+                    str(k[0]).upper().strip() == key[0]
+                    and str(k[1]).upper().strip() == key[1]
+                ):
+                    holding_data = v
+                    break
+
+        if not holding_data or "lots" not in holding_data or not holding_data["lots"]:
+            QMessageBox.information(
+                self,
+                "No Lots",
+                f"No tax lots found for {symbol} in {account}.\n(May be using Average Cost basis or data is missing)",
+            )
+            return
+
+        currency_symbol = self._get_currency_symbol()
+
+        try:
+            dialog = LotsViewerDialog(holding_data, currency_symbol, self)
+            dialog.exec()
+        except Exception as e:
+            logging.error(f"Error opening LotsViewerDialog: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"Failed to open Lots Viewer: {e}")
 
     def _connect_signals(self):
         """Connects signals from UI widgets (buttons, combos, etc.) to their slots."""
@@ -13685,6 +13736,7 @@ The CSV file should contain the following columns (header names must match exact
         self,
         summary_metrics,
         holdings_df,
+        holdings_dict_raw, # <-- ADDED
         account_metrics,
         index_quotes,
         full_historical_data_df,
@@ -13703,8 +13755,6 @@ The CSV file should contain the following columns (header names must match exact
         This orchestrator method now contains the logic to store, process, and
         prepare all data before triggering the final UI component updates.
         """
-        # logging.info("HANDLE_RESULTS: Orchestrator entered.")  # Changed to INFO for visibility
-
         try:
             # --- Part 1: Store Worker Data ---
             # logging.info("HANDLE_RESULTS: Storing worker data...")
@@ -13730,6 +13780,7 @@ The CSV file should contain the following columns (header names must match exact
             self.holdings_data = (
                 holdings_df if holdings_df is not None else pd.DataFrame()
             )
+            self.holdings_dict_raw = holdings_dict_raw if holdings_dict_raw is not None else {} # <-- ADDED
 
             # --- ADDED: Calculate '% of Total' column ---
             if not self.holdings_data.empty:

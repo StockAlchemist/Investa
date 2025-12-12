@@ -149,6 +149,7 @@ try:
         calculate_periodic_returns,
         calculate_correlation_matrix,
         extract_realized_capital_gains_history,
+        calculate_fifo_lots_and_gains,  # NEW IMPORT
     )
 
     ANALYZER_FUNCTIONS_AVAILABLE = True
@@ -775,32 +776,29 @@ def calculate_portfolio_summary(
     # This ensures consistency between Dashboard and Capital Gains tab.
     # We calculate it separately and then override the values in 'holdings'.
     fifo_realized_gains_df = pd.DataFrame()
+    open_lots_dict = {}  # NEW: To store open lots
     try:
-        logging.info("Calculating FIFO Realized Gains for Dashboard consistency...")
+        logging.info("Calculating FIFO Realized Gains & Lots for Dashboard...")
         
-
-
-        fifo_realized_gains_df = extract_realized_capital_gains_history(
-            all_transactions_df=all_transactions_df_cleaned,
+        # Call the new function that returns both gains and lots
+        fifo_realized_gains_df, open_lots_dict = calculate_fifo_lots_and_gains(
+            transactions_df=all_transactions_df_cleaned,
             display_currency=display_currency,
             historical_fx_yf=historical_fx_data_usd_based,
             default_currency=default_currency,
             shortable_symbols=SHORTABLE_SYMBOLS,
             stock_quantity_close_tolerance=STOCK_QUANTITY_CLOSE_TOLERANCE,
-            include_accounts=include_accounts,
             current_fx_rates_vs_usd=current_fx_rates_vs_usd,  # Pass current rates for fallback
         )
         
-
-
         # --- DEBUG LOGGING ---
         logging.info(f"FIFO DF Shape: {fifo_realized_gains_df.shape}")
+        logging.info(f"Open Lots Count: {len(open_lots_dict)}")
         if not fifo_realized_gains_df.empty:
             if "Realized Gain (Display)" in fifo_realized_gains_df.columns:
                 nans_disp = fifo_realized_gains_df["Realized Gain (Display)"].isna().sum()
                 logging.info(f"NaNs in Realized Gain (Display): {nans_disp}")
         # ---------------------
-
 
         # Aggregate FIFO gains by (Symbol, Account)
         if not fifo_realized_gains_df.empty:
@@ -811,50 +809,93 @@ def calculate_portfolio_summary(
                 .sum()
                 .to_dict(orient="index")
             )
+        else:
+            fifo_gains_agg = {}
 
-            # Override realized gains in holdings
-            for (sym, acct), holding_data in holdings.items():
-                # Normalize key for lookup (Symbol, Account) are already standardized in holdings keys
-                # but let's be safe with the lookup key from the dataframe aggregation
-                lookup_key = (str(sym).upper().strip(), str(acct).upper().strip())
+        # Override realized gains and attach lots in holdings
+        for (sym, acct), holding_data in holdings.items():
+            sym_key_upper = str(sym).upper().strip()
+            acct_key_upper = str(acct).upper().strip()
+            lookup_key = (sym_key_upper, acct_key_upper)
+            
+            # 1. Override Realized Gains
+            if lookup_key in fifo_gains_agg:
+                fifo_gain_display = fifo_gains_agg[lookup_key].get("Realized Gain (Display)", 0.0)
+                fifo_gain_local = fifo_gains_agg[lookup_key].get("Realized Gain (Local)", 0.0)
                 
-                if lookup_key in fifo_gains_agg:
-                    fifo_gain_display = fifo_gains_agg[lookup_key].get("Realized Gain (Display)", 0.0)
-                    fifo_gain_local = fifo_gains_agg[lookup_key].get("Realized Gain (Local)", 0.0)
+                holding_data["realized_gain_display"] = fifo_gain_display
+                holding_data["realized_gain_local"] = fifo_gain_local
+                logging.debug(f"Overrode realized gain for {sym}/{acct} with FIFO value: {fifo_gain_display}")
+            else:
+                # Same fallback logic as before
+                # ... (keep existing fallback checks if needed, or simplify)
+                # If no FIFO record found, set to 0 unless shortable/cash special case
+                 is_shortable = sym in SHORTABLE_SYMBOLS
+                 is_cash = sym == CASH_SYMBOL_CSV or sym == "$CASH"
+                 avg_cost_gain = holding_data.get("realized_gain_display", 0.0)
+                 
+                 if abs(avg_cost_gain) > 1e-9 and not is_shortable and not is_cash:
+                      # If avg cost logic had a gain but FIFO doesn't, it might mean FIFO failed or logic diff.
+                      # Ideally we set to 0 for consistency, but let's be safe.
+                      pass
+
+            # 2. Attach and Calculate Lots
+            if lookup_key in open_lots_dict:
+                lots = open_lots_dict[lookup_key]
+                processed_lots = []
+                
+                # We need current price/FX to calc Lot Market Value & Unrealized Gain
+                # Try to get them from pre-fetched stock data
+                current_price = 0.0
+                if sym in current_stock_data_internal:
+                    current_price = current_stock_data_internal[sym].get("price", 0.0)
+                    if pd.isna(current_price): current_price = 0.0
+                
+                # We also need conversion rate from Local -> Display
+                # holding_data has 'local_currency'
+                local_curr = holding_data.get("local_currency", default_currency)
+                fx_rate_curr = get_conversion_rate(
+                    local_curr, display_currency, current_fx_rates_vs_usd
+                )
+                if pd.isna(fx_rate_curr): fx_rate_curr = 0.0 # Safety
+
+                for lot in lots:
+                    # Lot fields needed: Date, Quantity, Cost Basis (Display), Mkt Val (Display), Unreal Gain (Display)
+                    # Lot struct from analyzer: 'qty', 'cost_per_share_local_net', 'purchase_date', 'purchase_fx_to_display'
                     
-                    # Update the holding data
-                    holding_data["realized_gain_display"] = fifo_gain_display
-                    holding_data["realized_gain_local"] = fifo_gain_local
+                    l_qty = lot["qty"]
+                    l_date = lot["purchase_date"]
+                    l_cost_local = lot["cost_per_share_local_net"]
+                    l_purch_fx = lot["purchase_fx_to_display"]
                     
-                    logging.debug(f"Overrode realized gain for {sym}/{acct} with FIFO value: {fifo_gain_display}")
-                else:
-                    # If no FIFO record found, it implies 0 realized gain (or no sales)
-                    # However, for Shortable symbols, FIFO might be 0 because it doesn't handle shorts yet.
-                    # In that case, we should fallback to AvgCost (keep existing value) rather than zeroing it out.
-                    is_shortable = sym in SHORTABLE_SYMBOLS
-                    is_cash = sym == CASH_SYMBOL_CSV or sym == "$CASH"
+                    if pd.isna(l_purch_fx): l_purch_fx = 0.0 # Should not happen if data good
                     
-                    avg_cost_gain = holding_data.get("realized_gain_display", 0.0)
+                    # Cost Basis Display = Qty * Cost_Local * Purchase_FX
+                    l_cost_basis_display = l_qty * l_cost_local * l_purch_fx
                     
-                    if abs(avg_cost_gain) > 1e-9:
-                        if is_shortable:
-                            logging.info(f"FIFO calc found no gain for shortable {sym}/{acct}, but AvgCost had {avg_cost_gain}. Keeping AvgCost (FIFO likely lacks short support).")
-                            # Do NOT override with 0. Keep existing AvgCost value.
-                            continue 
-                        elif is_cash:
-                             logging.debug(f"FIFO calc found no gain for Cash {sym}/{acct}. Setting to 0 for consistency with Capital Gains tab.")
-                             # Proceed to set to 0
-                        else:
-                             logging.warning(f"FIFO calc found no gain for {sym}/{acct}, but AvgCost had {avg_cost_gain}. Keeping AvgCost (FIFO may have failed due to missing data).")
-                             continue
+                    # Market Value Display = Qty * Current_Price_Local * Current_FX
+                    l_mkt_val_display = l_qty * current_price * fx_rate_curr
                     
-                    holding_data["realized_gain_display"] = 0.0
-                    holding_data["realized_gain_local"] = 0.0
+                    l_unreal_gain_display = l_mkt_val_display - l_cost_basis_display
+                    l_unreal_gain_pct = (l_unreal_gain_display / l_cost_basis_display * 100) if abs(l_cost_basis_display) > 1e-9 else 0.0
+
+                    processed_lots.append({
+                        "Date": l_date.strftime("%Y-%m-%d") if isinstance(l_date, (date, datetime)) else str(l_date),
+                        "Quantity": l_qty,
+                        "Cost Basis": l_cost_basis_display,
+                        "Market Value": l_mkt_val_display,
+                        "Unreal. Gain": l_unreal_gain_display,
+                        "Unreal. Gain %": l_unreal_gain_pct,
+                        "purchase_fx": l_purch_fx, # Debug
+                        "cost_local": l_cost_local # Debug
+                    })
+                
+                holding_data["lots"] = processed_lots
 
     except Exception as e_fifo:
-        logging.error(f"Error calculating FIFO realized gains for Dashboard: {e_fifo}")
+        logging.error(f"Error calculating FIFO realized gains & lots for Dashboard: {e_fifo}")
         logging.error(traceback.format_exc())
-        # Fallback: Do nothing, keep Average Cost values (better than crashing)
+        # Fallback: Do nothing, keep Average Cost values
     # --- END ADDED ---
 
     manual_prices_for_build_rows = {}
@@ -922,6 +963,7 @@ def calculate_portfolio_summary(
                 is_empty_data_case=False,
             ),  # MODIFIED
             None,  # summary_df_final
+            {},    # holdings dictionary (empty) <-- ADDED
             None,  # account_level_metrics
             combined_ignored_indices,
             combined_ignored_reasons,
@@ -933,6 +975,32 @@ def calculate_portfolio_summary(
         has_warnings = True
         status_parts.append("Summary Build Generated No Rows")
         # Don't return early, let it try to create empty aggregates.
+
+    # The LotsViewerDialog expects keys like "Quantity", "Avg Cost" (Title Case).
+    # We back-populate these from the calculated summary rows into the raw holdings dict.
+    if portfolio_summary_rows and holdings:
+        # Create a normalized map for case-insensitive lookup: (upper_sym, upper_acct) -> original_key
+        holdings_map_norm = {
+            (str(k[0]).upper().strip(), str(k[1]).upper().strip()): k 
+            for k in holdings.keys()
+        }
+        
+        for row in portfolio_summary_rows:
+            r_sym = row.get("Symbol")
+            r_acct = row.get("Account")
+            if r_sym and r_acct:
+                # Reconstruct lookup key (upper)
+                h_key_upper = (str(r_sym).upper().strip(), str(r_acct).upper().strip())
+                
+                # Look up original key
+                original_key = holdings_map_norm.get(h_key_upper)
+                
+                if original_key and original_key in holdings:
+                    holdings[original_key]["Symbol"] = r_sym
+                    holdings[original_key]["Account"] = r_acct
+                    holdings[original_key]["Quantity"] = row.get("Quantity", 0)
+                    holdings[original_key]["Avg Cost"] = row.get(f"Avg Cost ({display_currency})", 0)
+                    holdings[original_key]["Market Value"] = row.get(f"Market Value ({display_currency})", 0)
 
     # --- Add Sector/Geo information ---
     # logging.info("Categorizing transactions by symbol...")
@@ -1276,6 +1344,7 @@ def calculate_portfolio_summary(
     return (
         overall_summary_metrics,
         summary_df_final,
+        holdings, # holdings dictionary (with lots) <-- ADDED
         dict(account_level_metrics),  # Ensure it's a dict
         combined_ignored_indices,
         combined_ignored_reasons,

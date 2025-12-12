@@ -2096,24 +2096,23 @@ def extract_dividend_history(
     return df_dividends
 
 
-@profile
-def extract_realized_capital_gains_history(
-    all_transactions_df: pd.DataFrame,
+def calculate_fifo_lots_and_gains(
+    transactions_df: pd.DataFrame,
     display_currency: str,
     historical_fx_yf: Dict[str, pd.DataFrame],
     default_currency: str,
     shortable_symbols: Set[str],
     stock_quantity_close_tolerance: float = STOCK_QUANTITY_CLOSE_TOLERANCE,
-    include_accounts: Optional[List[str]] = None,
-    current_fx_rates_vs_usd: Optional[Dict[str, float]] = None,  # ADDED: For fallback
-) -> pd.DataFrame:
+    current_fx_rates_vs_usd: Optional[Dict[str, float]] = None,
+) -> Tuple[pd.DataFrame, Dict[Tuple[str, str], List[Dict[str, Any]]]]:
     """
-    Calculates realized capital gains from transactions using FIFO accounting for long positions.
+    Core FIFO calculation logic.
+    Returns:
+        - realized_gains_df (pd.DataFrame): The history of realized gains.
+        - open_lots (Dict): Dictionary of currently held open lots.
+             Key: (Symbol, Account)
+             Value: List of Lot Dicts
     """
-    logging.info(
-        f"Extracting realized capital gains history for display in {display_currency}..."
-    )
-
     output_columns = [
         "Date",
         "Symbol",
@@ -2132,22 +2131,18 @@ def extract_realized_capital_gains_history(
         "original_tx_id",
     ]
 
-    if not isinstance(all_transactions_df, pd.DataFrame) or all_transactions_df.empty:
-        logging.warning("Capital gains: Input transactions DataFrame is empty.")
-        return pd.DataFrame(columns=output_columns)
-
-    # --- FIX: DO NOT FILTER ACCOUNTS HERE ---
-    # We must process ALL accounts to track cost basis moving between them via transfers.
-    transactions_to_process = all_transactions_df.copy()
-
-    # Ensure transactions are sorted chronologically
-    transactions_to_process.sort_values(by=["Date", "original_index"], inplace=True)
-
     # Dictionary to store purchase lots: (symbol, account) -> list of lots
     holdings_long: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
     realized_gains_records: List[Dict[str, Any]] = []
 
-    for _, row in transactions_to_process.iterrows():
+    # Ensure transactions are sorted chronologically
+    # Note: We assume transactions_df is already a copy if needed, but safe to sort in place if it's passed as such.
+    # To be safe within this function, we operate on the passed df directly if the caller prepared it,
+    # or iterate. The caller is responsible for filtering out unwanted rows if any,
+    # BUT this function does the main type/symbol filtering.
+    
+    # We iterate the DataFrame.
+    for _, row in transactions_df.iterrows():
         try:
             tx_date_dt = row["Date"]
             if pd.isna(tx_date_dt):
@@ -2156,7 +2151,7 @@ def extract_realized_capital_gains_history(
 
             symbol = str(row["Symbol"]).upper().strip()
             account = str(row["Account"]).upper().strip()
-            tx_type = str(row["Type"]).lower().strip()  # type is case-insensitive
+            tx_type = str(row["Type"]).lower().strip()
             local_curr_raw = row.get("Local Currency")
             local_curr = str(
                 local_curr_raw
@@ -2183,7 +2178,7 @@ def extract_realized_capital_gains_history(
             original_tx_id_current_row = row.get("original_index")
 
         except Exception as e_parse:
-            logging.warning(f"Error parsing basic data for CG row: {e_parse}")
+            logging.warning(f"Error parsing basic data for FIFO row: {e_parse}")
             continue
 
         holding_key = (symbol, account)
@@ -2196,70 +2191,48 @@ def extract_realized_capital_gains_history(
         ]:
             continue
 
-        # --- ADDED: Handle Transfers to move Tax Lots ---
+        # --- Handle Transfers ---
         if tx_type == "transfer":
             to_account = str(row.get("To Account", "")).upper().strip()
             if not to_account:
-                # If no destination, it's just a removal (like a withdrawal of stock)
-                # We clear the lots but record no gain/loss? Or just skip?
-                # For now, skip if data invalid.
                 continue
 
             dest_holding_key = (symbol, to_account)
-
-            # We need to move 'qty' from source to dest.
-            # We take from the OLDEST lots first (FIFO transfer).
-
             qty_to_transfer_remaining = qty
             source_lots = holdings_long[holding_key]
             remaining_source_lots = []
             lots_to_add_to_dest = []
 
             if not source_lots:
-                logging.warning(
-                    f"Transfer Warning: Tried to transfer {qty} of {symbol} from {account}, but source has no lots."
+                logging.debug(
+                    f"Transfer Info: Transfer {qty} of {symbol} from {account} with no lots tracked (maybe short or data gap)."
                 )
                 continue
 
             for lot in source_lots:
                 if qty_to_transfer_remaining <= stock_quantity_close_tolerance:
-                    remaining_source_lots.append(lot)  # Lot is untouched
+                    remaining_source_lots.append(lot)
                     continue
 
-                # Calculate amount to take from this lot
                 qty_taken_from_lot = min(qty_to_transfer_remaining, lot["qty"])
 
-                # Create a new lot for the destination
-                # We MUST preserve original purchase date and cost for accurate Capital Gains later
-                # Note: The cost_per_share_local_net is preserved.
-                # If currency changes between accounts, this logic assumes 1:1 or handled elsewhere.
                 moved_lot = lot.copy()
                 moved_lot["qty"] = qty_taken_from_lot
-                # Update ID to trace back to original buy even after transfer
-                # moved_lot["original_tx_id"] = lot["original_tx_id"]
                 lots_to_add_to_dest.append(moved_lot)
 
-                # Update the current lot in source
                 lot["qty"] -= qty_taken_from_lot
                 qty_to_transfer_remaining -= qty_taken_from_lot
 
-                # If the source lot still has shares, keep it
                 if lot["qty"] > stock_quantity_close_tolerance:
                     remaining_source_lots.append(lot)
 
-            # Update Source Account Lots
             holdings_long[holding_key] = remaining_source_lots
-
-            # Update Destination Account Lots
-            # We assume the destination simply adds these lots.
-            # Ideally, we sort by purchase date to maintain FIFO integrity across the whole account.
             holdings_long[dest_holding_key].extend(lots_to_add_to_dest)
+            # Sort by original purchase date/id to maintain FIFO at destination
             holdings_long[dest_holding_key].sort(
                 key=lambda x: (x["purchase_date"], x.get("original_tx_id", 0))
             )
-
-            continue  # Done with transfer
-        # --- END ADDED ---
+            continue
 
         if tx_type in ["split", "stock split"]:
             if pd.notna(split_ratio) and split_ratio > 0:
@@ -2275,7 +2248,6 @@ def extract_realized_capital_gains_history(
         if pd.isna(qty) or qty <= 1e-9:
             continue
 
-        # Get FX rate
         fx_rate_to_display_current_tx = get_historical_rate_via_usd_bridge(
             local_curr, display_currency, tx_date, historical_fx_yf
         )
@@ -2301,20 +2273,12 @@ def extract_realized_capital_gains_history(
                 continue
 
             qty_to_sell_remaining = qty
-            # Proceeds: (Qty * Price) - Comm
             total_proceeds_local_for_this_sale = (qty * price_local) - commission_local
-
             total_cost_basis_local_for_this_sale = 0.0
             total_cost_basis_display_for_this_sale = 0.0
 
             lots_for_holding = holdings_long[holding_key]
             temp_lots_after_sale = []
-
-            if not lots_for_holding:
-                # Warn but continue (result is 100% gain, cost basis 0)
-                logging.warning(
-                    f"CG: Sell {symbol}/{account} {qty} on {tx_date} with no lots."
-                )
 
             for lot in lots_for_holding:
                 if qty_to_sell_remaining <= stock_quantity_close_tolerance:
@@ -2376,9 +2340,8 @@ def extract_realized_capital_gains_history(
                     total_proceeds_display - total_cost_basis_display_for_this_sale
                 )
             
-            # --- FALLBACK LOGIC FOR REALIZED GAIN DISPLAY ---
+            # Fallback logic for display gain
             if pd.isna(realized_gain_display) and pd.notna(realized_gain_local):
-                # Try to use current FX rate as fallback
                 if current_fx_rates_vs_usd:
                     try:
                         fallback_rate = get_conversion_rate(
@@ -2386,22 +2349,11 @@ def extract_realized_capital_gains_history(
                         )
                         if pd.notna(fallback_rate):
                             realized_gain_display = realized_gain_local * fallback_rate
-                            logging.debug(f"CG Fallback: Used current FX rate {fallback_rate} for {symbol} gain.")
-                        elif local_curr == display_currency:
-                             realized_gain_display = realized_gain_local
                     except Exception:
-                         pass
-                
-                # If still NaN and currencies match, assume 1:1
+                        pass
                 if pd.isna(realized_gain_display) and local_curr == display_currency:
                     realized_gain_display = realized_gain_local
-            # --- END FALLBACK ---
 
-            # Record the realized gain
-            quantity_actually_sold_from_lots = qty - qty_to_sell_remaining
-
-            # Even if we sold "more than we had" (short/data error), we record the transaction
-            # so it appears in the report, albeit with potentially 0 cost basis.
             realized_gains_records.append(
                 {
                     "Date": tx_date,
@@ -2423,17 +2375,69 @@ def extract_realized_capital_gains_history(
             )
 
     if not realized_gains_records:
-        return pd.DataFrame(columns=output_columns)
+        return pd.DataFrame(columns=output_columns), dict(holdings_long)
 
     df_gains = pd.DataFrame(realized_gains_records, columns=output_columns)
     df_gains.sort_values(by=["Date", "Symbol", "Account"], inplace=True)
+    
+    return df_gains, dict(holdings_long)
 
-    # --- CRITICAL: Filter accounts at the end after all lots have been tracked ---
+
+@profile
+def extract_realized_capital_gains_history(
+    all_transactions_df: pd.DataFrame,
+    display_currency: str,
+    historical_fx_yf: Dict[str, pd.DataFrame],
+    default_currency: str,
+    shortable_symbols: Set[str],
+    stock_quantity_close_tolerance: float = STOCK_QUANTITY_CLOSE_TOLERANCE,
+    include_accounts: Optional[List[str]] = None,
+    current_fx_rates_vs_usd: Optional[Dict[str, float]] = None,
+) -> pd.DataFrame:
+    """
+    Calculates realized capital gains from transactions using FIFO accounting for long positions.
+    Wrapper around calculate_fifo_lots_and_gains.
+    """
+    logging.info(
+        f"Extracting realized capital gains history for display in {display_currency}..."
+    )
+
+    if not isinstance(all_transactions_df, pd.DataFrame) or all_transactions_df.empty:
+        logging.warning("Capital gains: Input transactions DataFrame is empty.")
+        # Return empty DF with correct columns (logic inside calc fn handles this but we need empty input handling)
+        return pd.DataFrame(
+             columns=[
+                "Date", "Symbol", "Account", "Type", "Quantity", 
+                "Avg Sale Price (Local)", "Total Proceeds (Local)", 
+                "Total Cost Basis (Local)", "Realized Gain (Local)", 
+                "Sale/Cover FX Rate", "Total Proceeds (Display)", 
+                "Total Cost Basis (Display)", "Realized Gain (Display)", 
+                "LocalCurrency", "original_tx_id"
+            ]
+        )
+
+    # 1. Prepare transactions (filtering logic moved here to keep wrapper clean or passed down)
+    # The original logic filtered AFTER calculation. We will follow that for compatibility.
+    # But we MUST process ALL accounts for the calculation itself.
+    transactions_to_process = all_transactions_df.copy()
+    transactions_to_process.sort_values(by=["Date", "original_index"], inplace=True)
+
+    # 2. Call core logic
+    df_gains, _ = calculate_fifo_lots_and_gains(
+        transactions_df=transactions_to_process,
+        display_currency=display_currency,
+        historical_fx_yf=historical_fx_yf,
+        default_currency=default_currency,
+        shortable_symbols=shortable_symbols,
+        stock_quantity_close_tolerance=stock_quantity_close_tolerance,
+        current_fx_rates_vs_usd=current_fx_rates_vs_usd,
+    )
+
+    # 3. Filter accounts (User View Filter)
     if include_accounts and isinstance(include_accounts, list):
-        # Normalize filter to match internal uppercase account names
         include_accounts_upper = [str(acc).upper().strip() for acc in include_accounts]
-        df_gains = df_gains[df_gains["Account"].isin(include_accounts_upper)]
-    # --- END ---
+        if not df_gains.empty:
+             df_gains = df_gains[df_gains["Account"].isin(include_accounts_upper)]
 
     logging.info(f"Extracted {len(df_gains)} realized capital gains records.")
     return df_gains

@@ -42,8 +42,9 @@ class WorkerSignals(QObject):
     result = Signal(
         dict,
         pd.DataFrame,
-        dict,
-        dict,
+        object, # holdings_dict (raw with lots)
+        dict, # account_metrics
+        dict, # index_quotes
         pd.DataFrame,
         dict,
         dict,
@@ -130,6 +131,7 @@ class PortfolioCalculatorWorker(QRunnable):
         """Executes the calculations and emits results or errors."""
         portfolio_summary_metrics = {}
         holdings_df = pd.DataFrame()
+        holdings_dict = {} # <-- ADDED
         # Removed ignored_df placeholder
         account_metrics = {}
         index_quotes = {}
@@ -177,6 +179,7 @@ class PortfolioCalculatorWorker(QRunnable):
                 (
                     p_summary,
                     p_holdings,
+                    p_holdings_dict, # <-- ADDED
                     p_account,
                     p_ignored_idx,
                     p_ignored_rsn,
@@ -184,6 +187,7 @@ class PortfolioCalculatorWorker(QRunnable):
                 ) = self.portfolio_fn(*self.portfolio_args, **portfolio_fn_kwargs)
                 portfolio_summary_metrics = p_summary if p_summary is not None else {}
                 holdings_df = p_holdings if p_holdings is not None else pd.DataFrame()
+                holdings_dict = p_holdings_dict if p_holdings_dict is not None else {} # <-- ADDED
                 account_metrics = p_account if p_account is not None else {}
                 combined_ignored_indices = (
                     p_ignored_idx if p_ignored_idx is not None else set()
@@ -213,7 +217,9 @@ class PortfolioCalculatorWorker(QRunnable):
                 traceback.print_exc()
                 portfolio_status = f"Error in Port. Calc: {port_e}"
                 portfolio_summary_metrics = {}
+                portfolio_summary_metrics = {}
                 holdings_df = pd.DataFrame()
+                holdings_dict = {} # <-- ADDED
                 account_metrics = {}
                 combined_ignored_indices = set()
                 combined_ignored_reasons = {}
@@ -792,9 +798,11 @@ class PortfolioCalculatorWorker(QRunnable):
 
             # MODIFIED: Emit result only if no critical errors in sub-parts
             if not (portfolio_had_error or historical_had_error):
+
                 self.signals.result.emit(
                     portfolio_summary_metrics,
                     holdings_df,  # EMIT ACTUAL DATA
+                    holdings_dict, # EMIT RAW HOLDINGS DICT <-- ADDED
                     account_metrics,
                     index_quotes,
                     full_historical_data_df,  # EMIT ACTUAL DATA
@@ -826,6 +834,7 @@ class PortfolioCalculatorWorker(QRunnable):
             self.signals.result.emit(
                 {},  # portfolio_summary_metrics
                 pd.DataFrame(),  # holdings_df
+                {},  # holdings_dict (raw with lots) <-- ADDED
                 {},  # account_metrics
                 {},  # index_quotes
                 pd.DataFrame(),  # full_historical_data_df

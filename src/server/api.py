@@ -159,6 +159,7 @@ async def get_portfolio_summary(
         (
             overall_summary_metrics,
             summary_df,
+            _, # Unpack holdings dict
             account_level_metrics,
             combined_ignored_indices,
             combined_ignored_reasons,
@@ -273,6 +274,7 @@ async def get_holdings(
         (
             _,
             summary_df,
+            holdings_dict, # Unpack holdings dict
             _,
             _, _, _
         ) = calculate_portfolio_summary(
@@ -297,6 +299,26 @@ async def get_holdings(
         
         # We need to make sure we return a clean list of dicts
         records = summary_df.to_dict(orient="records")
+        
+        # --- Merge 'lots' from holdings_dict into records ---
+        if holdings_dict:
+             for record in records:
+                 sym = record.get("Symbol")
+                 acct = record.get("Account")
+                 if sym and acct:
+                     key = (str(sym), str(acct))
+                     # Try exact match first
+                     if key in holdings_dict:
+                         record["lots"] = holdings_dict[key].get("lots", [])
+                     else:
+                         # Fallback for case sensitivity or formatting issues
+                         # This might be slow but safe
+                        for h_key, h_data in holdings_dict.items():
+                             if str(h_key[0]).lower() == str(sym).lower() and str(h_key[1]).lower() == str(acct).lower():
+                                 record["lots"] = h_data.get("lots", [])
+                                 break
+        # ----------------------------------------------------
+
         return clean_nans(records)
         
     except Exception as e:

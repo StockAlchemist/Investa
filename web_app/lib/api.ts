@@ -26,6 +26,16 @@ export interface PortfolioSummary {
     account_metrics: Record<string, any> | null;
 }
 
+export interface Lot {
+    Date: string;
+    Quantity: number;
+    "Cost Basis": number;
+    "Market Value": number;
+    "Unreal. Gain": number;
+    "Unreal. Gain %": number;
+    [key: string]: any;
+}
+
 export interface Holding {
     Symbol: string;
     Quantity: number;
@@ -40,6 +50,7 @@ export interface Holding {
     quoteType?: string;
     // Keys are dynamic based on currency, e.g., "Market Value (USD)"
     [key: string]: any;
+    lots?: Lot[];
 }
 
 export interface Transaction {
