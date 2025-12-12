@@ -5,10 +5,15 @@ import pandas as pd
 import numpy as np
 from datetime import date
 import os
+import sys # Added for sys.path modification
 
 # --- Get the directory of the current test file ---
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
+TESTsrc_dir = os.path.abspath(os.path.join(TEST_DIR, "..", "src"))
 SAMPLE_CSV_PATH = os.path.join(TEST_DIR, "sample_transactions.csv")
+
+# Add src directory to sys.path for importing modules
+sys.path.insert(0, TESTsrc_dir)
 
 # --- Import functions from the MODIFIED portfolio_logic.py ---
 # Make sure portfolio_logic.py is importable (e.g., in the parent directory or PYTHONPATH)
@@ -101,7 +106,7 @@ def test_calculate_portfolio_summary_basic(
     assert loaded_tx_df is not None, "Test setup: Failed to load sample transactions"
 
     # --- Call the function under test ---
-    summary_metrics, holdings_df, account_metrics, ignored_idx, ignored_rsn, status = (
+    summary_metrics, holdings_df, _, account_metrics, ignored_idx, ignored_rsn, status = (
         calculate_portfolio_summary(
             all_transactions_df_cleaned=loaded_tx_df,
             original_transactions_df_for_ignored=loaded_orig_df,
@@ -183,7 +188,7 @@ def test_calculate_portfolio_summary_transfers(
     ignored_indices = set()
     ignored_reasons = {}
     
-    summary_metrics, holdings_df, _, _, _, status = calculate_portfolio_summary(
+    summary_metrics, holdings_df, _, _, _, _, status = calculate_portfolio_summary(
         all_transactions_df_cleaned=df,
         original_transactions_df_for_ignored=df,
         ignored_indices_from_load=ignored_indices,
@@ -228,7 +233,7 @@ def test_calculate_portfolio_summary_filtering(
     df = pd.DataFrame(data)
     
     # Filter for Acc1
-    summary_metrics, holdings_df, _, _, _, _ = calculate_portfolio_summary(
+    summary_metrics, holdings_df, _, _, _, _, _ = calculate_portfolio_summary(
         all_transactions_df_cleaned=df,
         original_transactions_df_for_ignored=df,
         ignored_indices_from_load=set(),
@@ -243,7 +248,7 @@ def test_calculate_portfolio_summary_filtering(
     assert holdings_df.iloc[0]["Symbol"] == "AAPL"
     
     # Filter for Acc2
-    summary_metrics, holdings_df, _, _, _, _ = calculate_portfolio_summary(
+    summary_metrics, holdings_df, _, _, _, _, _ = calculate_portfolio_summary(
         all_transactions_df_cleaned=df,
         original_transactions_df_for_ignored=df,
         ignored_indices_from_load=set(),

@@ -8,7 +8,7 @@ import os
 
 # --- Add src directory to sys.path for module import ---
 # This ensures that the test runner can find the 'config' module.
-src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 # --- End Path Addition ---

@@ -3001,7 +3001,6 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             
         # --- NEW: Fallback to last transaction price ---
         if pd.isna(current_price_local):
-            last_price = last_prices_np[symbol_id, account_id]
             if last_price > 1e-9:
                 current_price_local = last_price
 
@@ -3018,6 +3017,9 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             # total_market_value_display_curr_agg = np.nan
             # break
             
+        # Calculate local market value
+        market_value_local = current_qty * current_price_local
+        
         market_value_display = market_value_local * fx_rate
 
         if IS_DEBUG_DATE:
