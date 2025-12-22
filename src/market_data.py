@@ -1057,10 +1057,37 @@ class MarketDataProvider:
         # Clamp end date to today (exclusive in yfinance means up to yesterday) 
         # if we are not asking for today's data (which we shouldn't be here).
         # Actually, if we ask for end=tomorrow, yfinance tries to get today.
-        # If today isn't effectively over or started, it might be an issue.
+        # If today isn't effectively over or started, it thinks we want today.
         # Safer to clamp end to 'today' (fetching UP TO yesterday) for strict history.
         if yf_end_date > today:
              yf_end_date = today
+        # --- END FIX ---
+
+        # --- FIX: Check for business days to avoid YFPricesMissingError on weekends ---
+        # This check happens AFTER clamping to today, to ensure we don't try to fetch
+        # ranges that become Saturday-Sunday after clamping.
+        try:
+             # Hybrid approach: Numpy first, then Python fallback
+             bus_days = -1
+             try:
+                 d1 = np.datetime64(yf_start_date)
+                 d2 = np.datetime64(yf_end_date)
+                 bus_days = np.busday_count(d1, d2)
+             except Exception:
+                 # Fallback to pure python
+                 bus_days = 0
+                 curr = yf_start_date
+                 while curr < yf_end_date:
+                     if curr.weekday() < 5: # 0-4 are Mon-Fri
+                         bus_days += 1
+                     curr += timedelta(days=1)
+             
+             if bus_days == 0:
+                 logging.info(f"Hist Fetch Helper: Skipping fetch for {yf_start_date} to {yf_end_date} (0 business days). This prevents yfinance errors.")
+                 return {} # Return empty dict, do not fetch
+                 
+        except Exception as e_bus:
+             logging.warning(f"Hist Fetch Helper: Error in business day check: {e_bus}. Find logic fallthrough.")
         # --- END FIX ---
         fetch_batch_size = 50  # Process symbols in batches to be friendlier to the API
 

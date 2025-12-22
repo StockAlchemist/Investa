@@ -505,7 +505,13 @@ class PortfolioCalculatorWorker(QRunnable):
                     # unique_stock_symbols is already populated with all symbols from transactions, so we do nothing.
                 elif not holdings_df.empty and "Symbol" in holdings_df.columns:
                     # This is the normal case: filter transaction symbols by what's currently held.
-                    currently_held_symbols = holdings_df["Symbol"].unique().tolist()
+                    # --- FIX: Ensure we only include assets with actual value (exclude closed positions with 0 value) ---
+                    active_holdings = holdings_df
+                    if "Market Value" in holdings_df.columns:
+                         active_holdings = holdings_df[holdings_df["Market Value"] > 0.01]
+                    
+                    currently_held_symbols = active_holdings["Symbol"].unique().tolist()
+                    # --------------------------------------------------------------------------------------------------
                     unique_stock_symbols = [
                         sym
                         for sym in unique_stock_symbols
@@ -515,10 +521,13 @@ class PortfolioCalculatorWorker(QRunnable):
                         f"WORKER: Unique stock symbols filtered by current holdings: {unique_stock_symbols}"
                     )
                 else:
-                    # This will now only trigger if holdings_df is empty for the "All Accounts" view, which is correct.
-                    logging.warning(
-                        "WORKER: Holdings DataFrame is empty or missing 'Symbol' column. Cannot filter for currently held stocks."
+                    # Case: Holdings empty (e.g. all cash) and NOT a closed account view (i.e. viewing "All Accounts" or active account).
+                    # We should NOT fetch all historical symbols here, as it's irrelevant for the current portfolio correlation.
+                    # This prevents fetching old/delisted stocks (e.g. PLTR, AAPL sold long ago) when they are not held.
+                    logging.info(
+                        "WORKER: Holdings DataFrame is empty (or no stocks held). Skipping correlation matrix calculation for historical symbols."
                     )
+                    unique_stock_symbols = [] # Clear the list to skip fetching
                 # --- END MODIFICATION ---
 
                 # If we have stock symbols, proceed with mapping and fetching.

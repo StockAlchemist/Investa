@@ -3619,9 +3619,59 @@ def _prepare_historical_inputs(
         }
 
     # Symbols for stocks (from effective/filtered transactions)
-    all_symbols_internal_effective = list(
-        set(transactions_df_effective["Symbol"].unique())
-    )
+    # --- OPTIMIZATION: Only fetch symbols relevant to the requested period ---
+    # 1. Include symbols with ANY transactions within the requested date range
+    mask_in_range = (transactions_df_effective["Date"].dt.date >= start_date) & \
+                    (transactions_df_effective["Date"].dt.date <= end_date)
+    symbols_active_in_range = set(transactions_df_effective[mask_in_range]["Symbol"].unique())
+    
+    # 2. Include symbols that were held AT the start_date (history before start_date)
+    # We filter by checking if the last transaction BEFORE start_date resulted in a non-zero position.
+    # To keep it efficient, we check if the max Date before start_date is not a "full exit" 
+    # (though that's hard to tell without calculating quantity).
+    # Safer fallback: if there are any transactions before start_date, check if they were already fully sold.
+    # For now, a conservative but effective filter: include if max(Date) >= start_date
+    # OR if we have ANY transactions before and we want to be sure.
+    # Actually, the most robust way is to just assume anything in transactions_df_effective 
+    # is relevant UNLESS its last transaction was long before start_date.
+    
+    all_symbols_internal_effective = []
+    potential_symbols = transactions_df_effective["Symbol"].unique()
+    for sym in potential_symbols:
+        # If any trade in range, definitely include
+        if sym in symbols_active_in_range:
+            all_symbols_internal_effective.append(sym)
+            continue
+            
+        # If all trades were before start_date, check if it was likely closed
+        sym_tx = transactions_df_effective[transactions_df_effective["Symbol"] == sym]
+        last_tx_date = sym_tx["Date"].max().date()
+        
+        if last_tx_date < start_date:
+            # It was last traded before the start of our chart/analysis.
+            # Was it closed? We can do a quick sum of quantity to check.
+            # (buy/buy-v2/etc are +, sell/sell-v2 are -)
+            try:
+                # Basic quantity check to see if position was closed
+                # Note: this doesn't handle splits perfectly but usually good enough to distinguish 0 vs non-0
+                qty_sum = 0.0
+                for _, row in sym_tx.iterrows():
+                    t_type = str(row.get("Type", "")).lower()
+                    t_qty = float(row.get("Quantity", 0))
+                    if "buy" in t_type or "in" in t_type or "split" in t_type: # Conservative
+                        qty_sum += t_qty
+                    elif "sell" in t_type or "out" in t_type:
+                        qty_sum -= t_qty
+                
+                if abs(qty_sum) > 1e-5: # Still held at start_date
+                    all_symbols_internal_effective.append(sym)
+            except Exception:
+                # Fallback: include if we can't determine
+                all_symbols_internal_effective.append(sym)
+        else:
+            # Should be covered by symbols_active_in_range, but for safety:
+            all_symbols_internal_effective.append(sym)
+    # -------------------------------------------------------------------------
     symbols_to_fetch_yf_portfolio = []
     internal_to_yf_map: Dict[str, str] = {}  # Ensure type
     for internal_sym in all_symbols_internal_effective:
