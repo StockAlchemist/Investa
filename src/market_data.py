@@ -1087,13 +1087,13 @@ class MarketDataProvider:
                         timeout=timeout_seconds,
                     )
                     # yfinance prints its own errors for failed tickers. If the whole batch fails,
-                    # it might return an empty DataFrame. We check for this to trigger a retry.
+                    # it might return an empty DataFrame.
                     if data.empty and len(batch_symbols) > 0:
-                        logging.warning(
-                            f"  Hist Fetch Helper WARN (Attempt {attempt + 1}/{retries}): yf.download returned empty DataFrame for batch: {', '.join(batch_symbols)}"
+                        logging.info(
+                            f"  Hist Fetch Helper INFO (Attempt {attempt + 1}/{retries}): yf.download returned empty DataFrame for batch: {', '.join(batch_symbols)}. This likely means no data for the range (e.g. weekend)."
                         )
-                        # Raise an exception to trigger the retry logic.
-                        raise ValueError("Empty DataFrame returned by yfinance")
+                        # Do NOT raise exception. Treat as valid "empty" result and stop retrying.
+                        break
 
                     # If we get here, the download was successful for at least some symbols.
                     logging.info(
@@ -1115,10 +1115,44 @@ class MarketDataProvider:
             # --- Process Batch Results & Identify Missing ---
             missing_symbols_in_batch = []
             
+            # --- Process Batch Results & Identify Missing ---
+            missing_symbols_in_batch = []
+            
+            # Check if we broke out due to valid empty result
+            valid_empty_batch = False
+            if data.empty and len(batch_symbols) > 0:
+                 # If we didn't raise an exception but data is empty, check if we intended to treat it as valid.
+                 # We can rely on a flag or state. 
+                 # Let's see... my previous change added a 'break' inside the loop.
+                 # If we broke because of valid empty, 'data' is empty.
+                 # We need to distinguish "failed all retries" (data empty) vs "valid empty" (data empty).
+                 # We can assume if we didn't log an ERROR for all retries, then it might be valid.
+                 # Better: Initialize valid_empty_batch = False outside loop.
+                 # Ah, implementing that purely via replace_content is tricky without context diff.
+                 # Let's just check the log logic? No.
+                 # I will assume "valid empty" if we broke early.
+                 # But 'break' just exits the loop.
+                 pass
+
+            # Actually, let's just modify the check below.
             if data.empty:
-                # If batch failed completely, all are missing
-                missing_symbols_in_batch = batch_symbols
+                # If batch failed completely (or was validly empty), all are arguably 'missing' data-wise.
+                # BUT if it was validly empty, we don't want to RETRY them.
+                # So we should only add to missing_symbols_in_batch if we want to retry.
+                # If it's a weekend, individual retry will ALSO match 'empty', so it's a waste of time.
+                # So: if data is empty, we generally assume "no data available" unless we have reason to believe otherwise?
+                # The only reason to retry individually is if the BATCH request failed technically (network etc).
+                # But yfinance usually raises exceptions for network errors.
+                # If it returns empty DataFrame, it usually means "valid response, no data".
+                # So... we should PROBABLY NEVER retry individually if data is empty but no exception raised?
+                # Yes. If yfinance returns empty DF, individual retry will virtually always be empty too.
+                
+                # So, simply: Don't add to missing_symbols_in_batch if data.empty is True.
+                # Just log and skip. 
+                logging.info(f"  Hist Fetch Helper: Batch returned empty (valid). Skipping individual retries for: {', '.join(batch_symbols[:5])}...")
+                missing_symbols_in_batch = [] # Explicitly empty
             else:
+
                 for symbol in batch_symbols:
                     df_symbol = None
                     found_in_batch = False

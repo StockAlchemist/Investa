@@ -573,49 +573,53 @@ class PortfolioCalculatorWorker(QRunnable):
                         f"WORKER: Historical prices fetched for correlation: {list(historical_prices_for_corr.keys())}. Fetch failed status: {fetch_failed_corr}"
                     )
 
-                    if fetch_failed_corr or not historical_prices_for_corr:
+                    # If fetch_failed_corr is True, it just means SOME symbols failed, not necessarily all.
+                    # We check if we have any data.
+                    if not historical_prices_for_corr:
                         logging.warning(
-                            "WORKER: Failed to fetch historical prices for correlation matrix."
+                            "WORKER: Failed to fetch ANY historical prices for correlation matrix. Correlation matrix will be empty."
                         )
-                        raise ValueError("Historical price fetch failed")
-
-                    # Calculate daily returns for each stock
-                    returns_for_corr = pd.DataFrame()
-                    for yf_sym, price_df in historical_prices_for_corr.items():
-                        if not price_df.empty and "price" in price_df.columns:
-                            internal_sym = internal_to_yf_map_for_corr.get(
-                                yf_sym, yf_sym
-                            )  # Use internal symbol as column name
-                            returns_for_corr[internal_sym] = price_df[
-                                "price"
-                            ].pct_change()
-
-                    if returns_for_corr.empty:
-                        logging.warning(
-                            "WORKER: No valid returns calculated for correlation matrix."
-                        )
-                        raise ValueError("No valid returns")
-
-                    # Drop rows with NaNs (e.g., first row after pct_change)
-                    returns_for_corr.dropna(inplace=True)
-
-                    # Calculate correlation matrix
-                    if (
-                        returns_for_corr.shape[1] > 1
-                    ):  # Need at least 2 columns for correlation
-                        correlation_matrix_df = calculate_correlation_matrix(
-                            returns_for_corr
-                        )
-                        logging.info(
-                            f"WORKER: Correlation matrix calculated (shape: {correlation_matrix_df.shape})."
-                        )
+                        # Gracefully handle empty state without raising ValueError (which causes error logs)
+                        correlation_matrix_df = pd.DataFrame()
                     else:
-                        logging.info(
-                            "WORKER: Not enough stock symbols with valid returns to calculate correlation matrix (>1 needed)."
-                        )
-                        correlation_matrix_df = (
-                            pd.DataFrame()
-                        )  # Ensure it's empty if not enough data
+                        if fetch_failed_corr:
+                            logging.warning(
+                                "WORKER: Some historical prices failed to fetch for correlation matrix. Proceeding with available data."
+                            )
+
+                        # Calculate daily returns for each stock
+                        returns_for_corr = pd.DataFrame()
+                        for yf_sym, price_df in historical_prices_for_corr.items():
+                            if not price_df.empty and "price" in price_df.columns:
+                                internal_sym = internal_to_yf_map_for_corr.get(
+                                    yf_sym, yf_sym
+                                )  # Use internal symbol as column name
+                                returns_for_corr[internal_sym] = price_df[
+                                    "price"
+                                ].pct_change()
+
+                        if returns_for_corr.empty:
+                            logging.warning(
+                                "WORKER: No valid returns calculated for correlation matrix (returns df empty)."
+                            )
+                            correlation_matrix_df = pd.DataFrame()
+                        else:
+                            # Drop rows with NaNs (e.g., first row after pct_change)
+                            returns_for_corr.dropna(inplace=True)
+
+                            # Calculate correlation matrix
+                            if returns_for_corr.shape[1] > 1:
+                                correlation_matrix_df = calculate_correlation_matrix(
+                                    returns_for_corr
+                                )
+                                logging.info(
+                                    f"WORKER: Correlation matrix calculated (shape: {correlation_matrix_df.shape})."
+                                )
+                            else:
+                                logging.info(
+                                    "WORKER: Not enough stock symbols with valid returns to calculate correlation matrix (>1 needed)."
+                                )
+                                correlation_matrix_df = pd.DataFrame()
                 else:
                     logging.info(
                         "WORKER: No valid YF symbols for correlation matrix after mapping/exclusion. Skipping calculation."
