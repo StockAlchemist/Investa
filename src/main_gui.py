@@ -384,6 +384,9 @@ from db_utils import (
     load_all_transactions_from_db,
 )
 
+# --- ADDED: ConfigManager import ---
+from config_manager import ConfigManager
+
 # --- ADDED: Import financial_ratios and set availability flag ---
 try:
     from financial_ratios import (
@@ -575,19 +578,17 @@ class PortfolioApp(QMainWindow, UiHelpersMixin):
                 return np.nan  # Or some other appropriate value
 
     def load_config(self):
-        """
-        Loads application configuration from a JSON file (gui_config.json).
+        """Loads configuration via ConfigManager and synchronizes attributes."""
+        self.config_manager.load_gui_config()
+        self.config = self.config_manager.gui_config
+        self.DB_FILE_PATH = self.config.get("transactions_file")
+        self.column_visibility = self.config.get("column_visibility", {})
+        self.account_currency_map = self.config.get("account_currency_map", {})
+        self.default_currency = self.config.get("default_currency", "USD")
+        return self.config
 
-        Loads settings like the database file path, display currency, selected
-        accounts, graph parameters, and column visibility. Uses default values if
-        the file doesn't exist or if specific settings are missing or invalid.
-        Performs validation on loaded values. `self.DB_FILE_PATH` is updated here.
-
-        Returns:
-            dict: The loaded (and potentially validated/defaulted) configuration dictionary.
-        """
-        # Default DB path determined by db_utils.get_database_path()
-        default_db_path = get_database_path(DB_FILENAME)
+    def _unused_old_load_config(self):
+        """Old implementation preserved for backup during refactor (Phase 1)."""
         default_csv_fallback_path = DEFAULT_CSV  # For migration prompt if DB is empty
 
         default_display_currency = "USD"
@@ -2375,10 +2376,9 @@ The CSV file should contain the following columns (header names must match exact
 
         try:
             app_data_path = config.get_app_data_dir()
-            self.CONFIG_FILE = os.path.join(app_data_path, "gui_config.json")
-            self.MANUAL_OVERRIDES_FILE = os.path.join(
-                app_data_path, MANUAL_OVERRIDES_FILENAME
-            )
+            self.config_manager = ConfigManager(app_data_path)
+            self.CONFIG_FILE = self.config_manager.CONFIG_FILE
+            self.MANUAL_OVERRIDES_FILE = self.config_manager.MANUAL_OVERRIDES_FILE
         except Exception as e_path_init:
             logging.exception(
                 f"CRITICAL ERROR during config/manual file path initialization: {e_path_init}"
@@ -3257,14 +3257,16 @@ The CSV file should contain the following columns (header names must match exact
         manage_groups_action.triggered.connect(self.manage_account_groups)
         menu.addAction(manage_groups_action)
 
-    def _load_manual_overrides(self):  # No longer returns, sets instance attributes
-        """Loads manual overrides, symbol map, and excluded symbols from MANUAL_OVERRIDES_FILE.
-        Handles migration from old price-only format if necessary for price overrides.
-        """
-        # Initialize with defaults from config.py
-        self.manual_overrides_dict = {}  # For prices, sectors, etc.
-        self.user_symbol_map_config = config.SYMBOL_MAP_TO_YFINANCE.copy()
-        self.user_excluded_symbols_config = set(config.YFINANCE_EXCLUDED_SYMBOLS.copy())
+    def _load_manual_overrides(self):
+        """Loads manual overrides via ConfigManager and synchronizes attributes."""
+        self.config_manager.load_manual_overrides()
+        ov = self.config_manager.manual_overrides
+        self.manual_overrides_dict = ov.get("manual_price_overrides", {})
+        self.user_symbol_map_config = ov.get("user_symbol_map", {})
+        self.user_excluded_symbols_config = set(ov.get("user_excluded_symbols", []))
+
+    def _unused_old_load_manual_overrides(self):
+        """Old implementation preserved during refactor."""
 
         # Try loading new format first
         if os.path.exists(self.MANUAL_OVERRIDES_FILE):
@@ -3402,60 +3404,18 @@ The CSV file should contain the following columns (header names must match exact
             f"Overrides: {len(self.manual_overrides_dict)}, Map: {len(self.user_symbol_map_config)}, Excluded: {len(self.user_excluded_symbols_config)}"
         )
 
-    def _save_manual_overrides_to_json(
-        self,
-    ) -> bool:  # Renamed from _save_manual_prices_to_json
-        """Saves all manual settings (prices, symbol map, exclusions) to MANUAL_OVERRIDES_FILE."""
-        if (
-            not hasattr(self, "manual_overrides_dict")
-            or not hasattr(self, "user_symbol_map_config")
-            or not hasattr(self, "user_excluded_symbols_config")
-        ):
-            logging.error("Cannot save symbol settings, dictionary attributes missing.")
-            return False
-
-        overrides_file_path = self.MANUAL_OVERRIDES_FILE
-        # logging.info(f"Saving symbol settings to: {overrides_file_path}")
-
-        data_to_save = {
-            "manual_price_overrides": dict(sorted(self.manual_overrides_dict.items())),
-            "user_symbol_map": dict(sorted(self.user_symbol_map_config.items())),
-            "user_excluded_symbols": sorted(
-                list(self.user_excluded_symbols_config)
-            ),  # Save set as sorted list
+    def _save_manual_overrides_to_json(self) -> bool:
+        """Saves manual overrides via ConfigManager."""
+        data = {
+            "manual_price_overrides": self.manual_overrides_dict,
+            "user_symbol_map": self.user_symbol_map_config,
+            "user_excluded_symbols": list(self.user_excluded_symbols_config)
         }
+        return self.config_manager.save_manual_overrides(data)
 
-        try:
-            overrides_dir = os.path.dirname(overrides_file_path)
-            if overrides_dir:
-                os.makedirs(overrides_dir, exist_ok=True)
-
-            with open(overrides_file_path, "w", encoding="utf-8") as f:
-                json.dump(data_to_save, f, indent=4, ensure_ascii=False)
-            # logging.info("Symbol settings saved successfully.")
-            return True
-        except TypeError as e:
-            logging.error(f"TypeError writing symbol settings JSON: {e}")
-            QMessageBox.critical(
-                self, "Save Error", f"Data error saving symbol settings:\n{e}"
-            )
-            return False
-        except IOError as e:
-            logging.error(f"IOError writing symbol settings JSON: {e}")
-            QMessageBox.critical(
-                self,
-                "Save Error",
-                f"Could not write to file:\n{overrides_file_path}\n{e}",
-            )
-            return False
-        except Exception as e:
-            logging.exception("Unexpected error writing symbol settings JSON")
-            QMessageBox.critical(
-                self,
-                "Save Error",
-                f"An unexpected error occurred saving symbol settings:\n{e}",
-            )
-            return False
+    def _unused_old_save_manual_overrides(self):
+        """Old implementation preserved during refactor."""
+        pass
 
     def _apply_row_visibility_for_grouping(self):
         """Hides or shows data rows based on the group's expansion state."""
@@ -4366,207 +4326,7 @@ The CSV file should contain the following columns (header names must match exact
             else:
                 logging.info("Symbol settings unchanged.")
 
-    def _load_manual_overrides(self):  # No longer returns, sets instance attributes
-        """Loads manual overrides, symbol map, and excluded symbols from MANUAL_OVERRIDES_FILE.
-        Handles migration from old price-only format if necessary for price overrides.
-        """
-        # Initialize with defaults from config.py
-        # These will be overwritten if data is found in the JSON file.
-        self.manual_overrides_dict = {}  # For prices, sectors, etc.
-        self.user_symbol_map_config = config.SYMBOL_MAP_TO_YFINANCE.copy()
-        self.user_excluded_symbols_config = set(config.YFINANCE_EXCLUDED_SYMBOLS.copy())
-
-        if os.path.exists(self.MANUAL_OVERRIDES_FILE):
-            try:
-                with open(self.MANUAL_OVERRIDES_FILE, "r", encoding="utf-8") as f:
-                    loaded_data = json.load(f)
-
-                if isinstance(loaded_data, dict):
-                    # Load manual price overrides (existing logic)
-                    price_overrides_loaded = loaded_data.get(
-                        "manual_price_overrides", {}
-                    )
-                    if isinstance(price_overrides_loaded, dict):
-                        valid_price_overrides: Dict[str, Dict[str, Any]] = {}
-                        # ... (validation logic for price_overrides_loaded as before) ...
-                        for key, value_dict in price_overrides_loaded.items():
-                            if isinstance(key, str) and isinstance(value_dict, dict):
-                                entry: Dict[str, Any] = {}
-                                price = value_dict.get("price")
-                                if (
-                                    price is not None
-                                    and isinstance(price, (int, float))
-                                    and price > 0
-                                ):
-                                    entry["price"] = float(price)
-                                entry["asset_type"] = str(
-                                    value_dict.get("asset_type", "")
-                                ).strip()
-                                entry["sector"] = str(
-                                    value_dict.get("sector", "")
-                                ).strip()
-                                entry["geography"] = str(
-                                    value_dict.get("geography", "")
-                                ).strip()
-                                entry["industry"] = str(
-                                    value_dict.get("industry", "")
-                                ).strip()
-                                valid_price_overrides[key.upper().strip()] = entry
-                        self.manual_overrides_dict = valid_price_overrides
-                        logging.info(
-                            f"Loaded {len(self.manual_overrides_dict)} manual price overrides."
-                        )
-                    else:
-                        logging.warning(
-                            "Manual price overrides in JSON is not a dictionary. Using defaults for prices."
-                        )
-
-                    # Load user symbol map
-                    user_map_loaded = loaded_data.get(
-                        "user_symbol_map", None
-                    )  # Default to None to distinguish from empty dict
-                    if isinstance(user_map_loaded, dict):
-                        self.user_symbol_map_config = {
-                            k.upper().strip(): v.upper().strip()
-                            for k, v in user_map_loaded.items()
-                        }
-                        logging.info(
-                            f"Loaded {len(self.user_symbol_map_config)} user symbol mappings from JSON."
-                        )
-                    elif (
-                        user_map_loaded is None
-                    ):  # Key not present, keep default from config
-                        logging.info(
-                            "No 'user_symbol_map' key in JSON, using defaults from config.py."
-                        )
-                    else:  # Invalid type
-                        logging.warning(
-                            "User symbol map in JSON is not a valid dictionary. Using defaults from config.py."
-                        )
-
-                    # Load user excluded symbols
-                    user_excluded_loaded = loaded_data.get(
-                        "user_excluded_symbols", None
-                    )  # Default to None
-                    if isinstance(user_excluded_loaded, list):
-                        self.user_excluded_symbols_config = {
-                            s.upper().strip()
-                            for s in user_excluded_loaded
-                            if isinstance(s, str)
-                        }
-                        logging.info(
-                            f"Loaded {len(self.user_excluded_symbols_config)} user excluded symbols from JSON."
-                        )
-                    elif (
-                        user_excluded_loaded is None
-                    ):  # Key not present, keep default from config
-                        logging.info(
-                            "No 'user_excluded_symbols' key in JSON, using defaults from config.py."
-                        )
-                    else:  # Invalid type
-                        logging.warning(
-                            "User excluded symbols in JSON is not a valid list. Using defaults from config.py."
-                        )
-
-                # --- Migration from old format (if new format load failed or file was old format) ---
-                elif isinstance(loaded_data, dict) and all(
-                    isinstance(v, (int, float)) for v in loaded_data.values()
-                ):
-                    logging.info("Attempting to migrate old manual price format...")
-                    migrated_prices: Dict[str, Dict[str, Any]] = {}
-                    for key, price_val in loaded_data.items():
-                        if (
-                            isinstance(key, str)
-                            and isinstance(price_val, (int, float))
-                            and price_val > 0
-                        ):
-                            migrated_prices[key.upper().strip()] = {
-                                "price": float(price_val)
-                            }
-                    if migrated_prices:
-                        self.manual_overrides_dict = (
-                            migrated_prices  # Only overrides prices
-                        )
-                        # user_symbol_map_config and user_excluded_symbols_config retain their defaults from config.py
-                        logging.info(
-                            f"Migrated {len(migrated_prices)} entries from old price format. Other settings use defaults."
-                        )
-                        self._save_manual_overrides_to_json()  # Save in new format immediately
-                else:
-                    logging.warning(
-                        f"Content of {self.MANUAL_OVERRIDES_FILE} is not a recognized dictionary format. Using defaults for all settings."
-                    )
-            except json.JSONDecodeError as e:
-                logging.error(
-                    f"Error decoding JSON from {self.MANUAL_OVERRIDES_FILE}: {e}. Using defaults for all settings."
-                )
-            except Exception as e:
-                logging.error(
-                    f"Error reading {self.MANUAL_OVERRIDES_FILE}: {e}. Using defaults for all settings."
-                )
-        else:  # File does not exist
-            logging.info(
-                f"{self.MANUAL_OVERRIDES_FILE} not found. Using default symbol settings from config.py."
-            )
-        # Log final state after load/default
-        logging.info(
-            f"Final loaded settings: Overrides={len(self.manual_overrides_dict)}, Map={len(self.user_symbol_map_config)}, Excluded={len(self.user_excluded_symbols_config)}"
-        )
-
-    def _save_manual_overrides_to_json(
-        self,
-    ) -> bool:  # Renamed from _save_manual_prices_to_json
-        """Saves all manual settings (prices, symbol map, exclusions) to MANUAL_OVERRIDES_FILE."""
-        if (
-            not hasattr(self, "manual_overrides_dict")
-            or not hasattr(self, "user_symbol_map_config")
-            or not hasattr(self, "user_excluded_symbols_config")
-        ):
-            logging.error("Cannot save symbol settings, dictionary attributes missing.")
-            return False
-
-        overrides_file_path = self.MANUAL_OVERRIDES_FILE
-        logging.info(f"Saving symbol settings to: {overrides_file_path}")
-
-        data_to_save = {
-            "manual_price_overrides": dict(sorted(self.manual_overrides_dict.items())),
-            "user_symbol_map": dict(sorted(self.user_symbol_map_config.items())),
-            "user_excluded_symbols": sorted(
-                list(self.user_excluded_symbols_config)
-            ),  # Save set as sorted list
-        }
-
-        try:
-            overrides_dir = os.path.dirname(overrides_file_path)
-            if overrides_dir:
-                os.makedirs(overrides_dir, exist_ok=True)
-
-            with open(overrides_file_path, "w", encoding="utf-8") as f:
-                json.dump(data_to_save, f, indent=4, ensure_ascii=False)
-            logging.info("Symbol settings saved successfully.")
-            return True
-        except TypeError as e:
-            logging.error(f"TypeError writing symbol settings JSON: {e}")
-            QMessageBox.critical(
-                self, "Save Error", f"Data error saving symbol settings:\n{e}"
-            )
-            return False
-        except IOError as e:
-            logging.error(f"IOError writing symbol settings JSON: {e}")
-            QMessageBox.critical(
-                self,
-                "Save Error",
-                f"Could not write to file:\n{overrides_file_path}\n{e}",
-            )
-            return False
-        except Exception as e:
-            logging.exception("Unexpected error writing symbol settings JSON")
-            QMessageBox.critical(
-                self,
-                "Save Error",
-                f"An unexpected error occurred saving symbol settings:\n{e}",
-            )
-            return False
+    # Removed redundant _load_manual_overrides and _save_manual_overrides_to_json
 
     # --- Helper to create summary items (moved from initUI) ---
     def create_summary_item(self, label_text, is_large=False, has_percentage=False):
@@ -4753,160 +4513,61 @@ The CSV file should contain the following columns (header names must match exact
         # --- END MODIFICATION ---
 
     def save_config(self):
-        """Saves the current application configuration to gui_config.json."""
-        if not self.CONFIG_FILE:  # Should have been set in __init__
-            logging.error("Cannot save config: CONFIG_FILE path is not set.")
-            QMessageBox.critical(
-                self,
-                "Config Error",
-                "Cannot save settings: Configuration file path is not defined.",
-            )
-            return
+        """Saves current config via ConfigManager, restoring all UI sync points."""
+        if not hasattr(self, "config") or self.config is None:
+            self.config = {}
 
-        # Ensure self.config is a dict, even if it was somehow cleared
-        if not isinstance(self.config, dict):
-            logging.warning(
-                "self.config was not a dict during save_config. Reinitializing."
-            )
-            self.config = (
-                {}
-            )  # Reinitialize to avoid error, though this indicates a prior issue.
-
-        self.config["transactions_file"] = self.DB_FILE_PATH  # Store DB path
-        # transactions_file_csv_fallback is already in self.config if it was set during load
-        # or if a CSV was opened and then a new DB created/opened.
-        self.config["last_csv_import_path"] = self.config.get(
-            "last_csv_import_path", os.getcwd()
-        )
-        self.config["last_csv_export_path"] = self.config.get(
-            "last_csv_export_path", os.getcwd()
-        )
-        self.config["last_excel_export_path"] = self.config.get(
-            "last_excel_export_path", os.getcwd()
-        )
-        self.config["last_image_export_path"] = self.config.get(
-            "last_image_export_path", os.getcwd()
-        )
-
-        self.config.pop("fmp_api_key", None)  # Ensure API key is not saved
-
+        # Basic Dashboard Settings
         if hasattr(self, "currency_combo"):
             self.config["display_currency"] = self.currency_combo.currentText()
-        # else: use existing value in self.config or default (handled by load_config next time)
-
         if hasattr(self, "show_closed_check"):
             self.config["show_closed"] = self.show_closed_check.isChecked()
-
         if hasattr(self, "group_by_sector_check"):
             self.config["group_by_sector"] = self.group_by_sector_check.isChecked()
 
-        if hasattr(self, "selected_accounts") and isinstance(
-            self.selected_accounts, list
-        ):
-            if (
-                hasattr(self, "available_accounts")
-                and self.available_accounts
-                and len(self.selected_accounts) == len(self.available_accounts)
-            ):
+        # Account Selection
+        if hasattr(self, "selected_accounts") and isinstance(self.selected_accounts, list):
+            if hasattr(self, "available_accounts") and self.available_accounts and len(self.selected_accounts) == len(self.available_accounts):
                 self.config["selected_accounts"] = []  # Empty list means "All"
             else:
                 self.config["selected_accounts"] = self.selected_accounts
-        # else: keep existing self.config["selected_accounts"]
 
-        # account_currency_map and default_currency are already in self.config, updated by dialogs
-        # Ensure they exist from defaults if somehow missing
-        self.config["account_currency_map"] = self.config.get(
-            "account_currency_map", {"SET": "THB"}
-        )
-        self.config["default_currency"] = self.config.get(
-            "default_currency",
-            config.DEFAULT_CURRENCY if hasattr(config, "DEFAULT_CURRENCY") else "USD",
-        )
-
-        self.config["load_on_startup"] = self.config.get("load_on_startup", True)
-
+        # Graph Settings
         if hasattr(self, "graph_start_date_edit"):
-            self.config["graph_start_date"] = (
-                self.graph_start_date_edit.date().toString("yyyy-MM-dd")
-            )
+            self.config["graph_start_date"] = self.graph_start_date_edit.date().toString("yyyy-MM-dd")
         if hasattr(self, "graph_end_date_edit"):
-            self.config["graph_end_date"] = self.graph_end_date_edit.date().toString(
-                "yyyy-MM-dd"
-            )
+            self.config["graph_end_date"] = self.graph_end_date_edit.date().toString("yyyy-MM-dd")
         if hasattr(self, "graph_interval_combo"):
             self.config["graph_interval"] = self.graph_interval_combo.currentText()
-
-        # --- ADDED: Save Performance Graph Tab Index ---
         if hasattr(self, "perf_graphs_tab_widget"):
             self.config["perf_graph_tab_index"] = self.perf_graphs_tab_widget.currentIndex()
-        # --- END ADDED ---
-
-        if hasattr(self, "selected_benchmarks") and isinstance(
-            self.selected_benchmarks, list
-        ):
+        if hasattr(self, "selected_benchmarks") and isinstance(self.selected_benchmarks, list):
             self.config["graph_benchmarks"] = self.selected_benchmarks
-        # else: keep existing self.config["graph_benchmarks"]
 
-        if hasattr(self, "column_visibility"):  # Should always exist after __init__
+        # Table & Column State
+        if hasattr(self, "column_visibility"):
             self.config["column_visibility"] = self.column_visibility
-
-        # --- ADDED: Save header state ---
         if hasattr(self, "table_view"):
             header_state = self.table_view.horizontalHeader().saveState()
-            self.config["holdings_table_header_state"] = (
-                header_state.toHex().data().decode()
-            )
-        # --- END ADDED ---
+            self.config["holdings_table_header_state"] = header_state.toHex().data().decode()
 
-        # Ensure the current theme is saved
+        # Theme & Formatting
         if hasattr(self, "current_theme"):
             self.config["theme"] = self.current_theme
-        else:  # Fallback if current_theme attribute somehow missing
-            self.config["theme"] = self.config.get(
-                "theme", "light"
-            )  # Get existing or default
 
-        # Save bar chart periods
+        # Periods & Dividends
         if hasattr(self, "annual_periods_spinbox"):
             self.config["bar_periods_annual"] = self.annual_periods_spinbox.value()
         if hasattr(self, "monthly_periods_spinbox"):
             self.config["bar_periods_monthly"] = self.monthly_periods_spinbox.value()
-        # Save PVC tab spinbox values
         if hasattr(self, "weekly_periods_spinbox"):
             self.config["bar_periods_weekly"] = self.weekly_periods_spinbox.value()
-
-        # Save dividend history settings
         if hasattr(self, "dividend_period_combo"):
-            self.config["dividend_agg_period"] = (
-                self.dividend_period_combo.currentText()
-            )
+            self.config["dividend_agg_period"] = self.dividend_period_combo.currentText()
         if hasattr(self, "dividend_periods_spinbox"):
-            self.config["dividend_periods_to_show"] = (
-                self.dividend_periods_spinbox.value()
-            )
+            self.config["dividend_periods_to_show"] = self.dividend_periods_spinbox.value()
 
-        # Save rebalancing targets from the table
-        if hasattr(self, "target_allocation_table"):
-            rebalancing_targets = {}
-            for i in range(self.target_allocation_table.rowCount()):
-                symbol_item = self.target_allocation_table.item(i, 0)
-                target_pct_item = self.target_allocation_table.item(i, 4)
-                if symbol_item and target_pct_item:
-                    symbol = symbol_item.text()
-                    try:
-                        target_pct = float(target_pct_item.text().replace("%", ""))
-                        rebalancing_targets[symbol] = target_pct
-                    except (ValueError, AttributeError):
-                        logging.warning(
-                            f"Could not parse target % for '{symbol}' while saving config."
-                        )
-            self.config["rebalancing_targets"] = rebalancing_targets
-
-        # Save PVC tab spinbox values
-        if hasattr(self, "pvc_annual_graph_spinbox"):
-            self.config["pvc_annual_periods"] = self.pvc_annual_graph_spinbox.value()
-        if hasattr(self, "pvc_monthly_graph_spinbox"):
-            self.config["pvc_monthly_periods"] = self.pvc_monthly_graph_spinbox.value()
+        # PVC/Scenario Analysis
         if hasattr(self, "pvc_annual_graph_spinbox"):
             self.config["pvc_annual_periods"] = self.pvc_annual_graph_spinbox.value()
         if hasattr(self, "pvc_monthly_graph_spinbox"):
@@ -4916,29 +4577,34 @@ The CSV file should contain the following columns (header names must match exact
         if hasattr(self, "pvc_daily_graph_spinbox"):
             self.config["pvc_daily_periods"] = self.pvc_daily_graph_spinbox.value()
 
-        # Also save the default spinbox values (these are loaded by load_config if key exists)
-        # self.config["dividend_chart_default_periods_annual"] = self.config.get("dividend_chart_default_periods_annual", 10)
-        # self.config["dividend_chart_default_periods_quarterly"] = self.config.get("dividend_chart_default_periods_quarterly", 12)
-        # self.config["dividend_chart_default_periods_monthly"] = self.config.get("dividend_chart_default_periods_monthly", 24)
+        # Rebalancing
+        if hasattr(self, "target_allocation_table"):
+            targets = {}
+            for i in range(self.target_allocation_table.rowCount()):
+                sym_item = self.target_allocation_table.item(i, 0)
+                pct_item = self.target_allocation_table.item(i, 4)
+                if sym_item and pct_item:
+                    try:
+                        targets[sym_item.text()] = float(pct_item.text().replace("%", ""))
+                    except: pass
+            self.config["rebalancing_targets"] = targets
 
-        try:
-            # Ensure directory for CONFIG_FILE exists
-            config_dir = os.path.dirname(self.CONFIG_FILE)
-            if (
-                config_dir
-            ):  # Check if dirname returned anything (it should for absolute paths)
-                os.makedirs(config_dir, exist_ok=True)
+        self.config["transactions_file"] = self.DB_FILE_PATH
+        self.config_manager.save_gui_config(self.config)
 
-            with open(self.CONFIG_FILE, "w") as f:
-                json.dump(self.config, f, indent=4)
-            logging.info(f"Config saved to {self.CONFIG_FILE}")
-        except Exception as e:
-            logging.error(
-                f"Error saving config to {self.CONFIG_FILE}: {e}", exc_info=True
+    def _unused_old_save_config(self):
+        """Old implementation preserved during refactor."""
+        pass
+
+        if hasattr(self, "graph_start_date_edit"):
+            self.config["graph_start_date"] = (
+                self.graph_start_date_edit.date().toString("yyyy-MM-dd")
             )
-            QMessageBox.warning(
-                self, "Config Save Error", f"Could not save settings:\n{e}"
+        if hasattr(self, "graph_end_date_edit"):
+            self.config["graph_end_date"] = self.graph_end_date_edit.date().toString(
+                "yyyy-MM-dd"
             )
+
 
     def _apply_initial_styles_and_updates(self):
         """Applies styles and initial UI states after widgets are created."""
