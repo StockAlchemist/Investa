@@ -55,6 +55,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
     const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
     const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
     const columnMenuRef = useRef<HTMLDivElement>(null);
+    const [visibleRows, setVisibleRows] = useState(10);
 
     // Close column menu when clicking outside
     useEffect(() => {
@@ -68,10 +69,6 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
             document.removeEventListener("mousedown", handleClickOutside);
         };
     }, []);
-
-    if (!holdings || holdings.length === 0) {
-        return <div className="p-4 text-center text-gray-500">No holdings found.</div>;
-    }
 
     // Helper to get value from holding object handling currency suffix
     const getValue = (holding: Holding, header: string) => {
@@ -115,6 +112,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
     };
 
     const sortedHoldings = useMemo(() => {
+        if (!holdings) return [];
         return [...holdings].sort((a, b) => {
             const valA = getValue(a, sortConfig.key);
             const valB = getValue(b, sortConfig.key);
@@ -131,6 +129,10 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
             return sortConfig.direction === 'asc' ? (valA - valB) : (valB - valA);
         });
     }, [holdings, sortConfig, currency]);
+
+    if (!holdings || holdings.length === 0) {
+        return <div className="p-4 text-center text-gray-500">No holdings found.</div>;
+    }
 
     const toggleColumn = (header: string) => {
         setVisibleColumns(current =>
@@ -196,8 +198,6 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
         }
         return '';
     };
-
-    const [visibleRows, setVisibleRows] = useState(10);
 
     const visibleHoldings = sortedHoldings.slice(0, visibleRows);
 

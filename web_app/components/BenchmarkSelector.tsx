@@ -54,7 +54,7 @@ export default function BenchmarkSelector({ selectedBenchmarks, onBenchmarkChang
             </button>
 
             {isOpen && (
-                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 z-50">
+                <div className="absolute left-0 md:right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 z-50">
                     <div className="p-2 space-y-1">
                         {BENCHMARKS.map((benchmark) => (
                             <label key={benchmark} className="flex items-center space-x-2 px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer">

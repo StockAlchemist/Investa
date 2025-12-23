@@ -166,6 +166,7 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
             <MetricCard
                 title="Fees"
                 value={m.commissions}
+                colorClass="text-rose-600 dark:text-rose-400"
                 currency={currency}
             />
 

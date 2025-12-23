@@ -455,6 +455,9 @@ async def get_history(
                 # We fill initial NaN from pct_change with 0.0 so first day is 1.0.
                 daily_df[b_ticker] = (1 + daily_rets).cumprod()
 
+        # Prepare reverse mapping for display names
+        ticker_to_name = {v: k for k, v in config.BENCHMARK_MAPPING.items()}
+
         # Format for frontend
         result = []
         # daily_df index is Date
@@ -471,10 +474,10 @@ async def get_history(
 
             # Add benchmark data
             for b_ticker in mapped_benchmarks:
-                # We now expect b_ticker column to exist with TWR values
                 if b_ticker in daily_df.columns:
                      b_val = row.get(b_ticker)
-                     item[b_ticker] = (b_val - 1) * 100 if pd.notnull(b_val) else 0.0
+                     display_name = ticker_to_name.get(b_ticker, b_ticker)
+                     item[display_name] = (b_val - 1) * 100 if pd.notnull(b_val) else 0.0
                 
             result.append(item)
             

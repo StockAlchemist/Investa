@@ -8,7 +8,6 @@ interface TransactionsTableProps {
 export default function TransactionsTable({ transactions }: TransactionsTableProps) {
     const [symbolFilter, setSymbolFilter] = useState('');
     const [accountFilter, setAccountFilter] = useState('');
-
     const [visibleRows, setVisibleRows] = useState(10);
 
     if (!transactions || transactions.length === 0) {
@@ -121,7 +120,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                                 <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-gray-200">
                                     {tx.Commission ? tx.Commission.toFixed(2) : '-'}
                                 </td>
-                                <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-200">{tx.Account}</td>
+                                <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-200 whitespace-nowrap">{tx.Account}</td>
                                 <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-gray-200">{tx["Split Ratio"] || '-'}</td>
                                 <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs" title={tx.Note}>{tx.Note || '-'}</td>
                                 <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-200">{tx["Local Currency"]}</td>

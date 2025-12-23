@@ -30,61 +30,100 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState('performance');
   const [benchmarks, setBenchmarks] = useState<string[]>([]);
 
+  // Effect for core summary data - triggered by currency or account changes
   useEffect(() => {
-    async function loadData() {
+    async function loadSummary() {
       try {
         setLoading(true);
-
-        // 1. Fetch fast data (Summary & Holdings) first
-        const promises: Promise<any>[] = [];
-        promises.push(fetchSummary(currency, selectedAccounts));
-
-        if (activeTab === 'performance' || activeTab === 'allocation') {
-          promises.push(fetchHoldings(currency, selectedAccounts));
-        } else if (activeTab === 'transactions') {
-          promises.push(fetchTransactions(selectedAccounts));
-        } else if (activeTab === 'asset_change') {
-          promises.push(fetchAssetChange(currency, selectedAccounts, benchmarks));
-        } else if (activeTab === 'capital_gains') {
-          promises.push(fetchCapitalGains(currency, selectedAccounts));
-        } else if (activeTab === 'dividend') {
-          promises.push(fetchDividends(currency, selectedAccounts));
-        }
-
-        const results = await Promise.all(promises);
-        const summaryData = results[0];
+        const summaryData = await fetchSummary(currency, selectedAccounts);
         setSummary(summaryData);
 
-        if (activeTab === 'performance' || activeTab === 'allocation') {
-          setHoldings(results[1]);
-        } else if (activeTab === 'transactions') {
-          setTransactions(results[1]);
-        } else if (activeTab === 'asset_change') {
-          setAssetChangeData(results[1]);
-        } else if (activeTab === 'capital_gains') {
-          setCapitalGainsData(results[1]);
-        } else if (activeTab === 'dividend') {
-          setDividendData(results[1]);
-        }
-
-        // Update available accounts if needed
         if (summaryData?.metrics?._available_accounts && availableAccounts.length === 0) {
           setAvailableAccounts(summaryData.metrics._available_accounts);
         }
-
-        // Stop main loading spinner here so user sees the dashboard
         setLoading(false);
-
-
-
       } catch (error) {
-        console.error('Error loading data:', error);
+        console.error('Error loading summary:', error);
         setLoading(false);
       }
     }
+    loadSummary();
+  }, [selectedAccounts, currency]);
 
-    loadData();
-  }, [selectedAccounts, currency, activeTab, benchmarks]); // Reload when any of these change
+  // Effect for Holdings (Performance & Allocation tabs)
+  useEffect(() => {
+    if (activeTab === 'performance' || activeTab === 'allocation') {
+      async function loadHoldings() {
+        try {
+          const data = await fetchHoldings(currency, selectedAccounts);
+          setHoldings(data);
+        } catch (error) {
+          console.error('Error loading holdings:', error);
+        }
+      }
+      loadHoldings();
+    }
+  }, [selectedAccounts, currency, activeTab]);
+
+  // Effect for Transactions
+  useEffect(() => {
+    if (activeTab === 'transactions') {
+      async function loadTransactions() {
+        try {
+          const data = await fetchTransactions(selectedAccounts);
+          setTransactions(data);
+        } catch (error) {
+          console.error('Error loading transactions:', error);
+        }
+      }
+      loadTransactions();
+    }
+  }, [selectedAccounts, activeTab]);
+
+  // Effect for Capital Gains
+  useEffect(() => {
+    if (activeTab === 'capital_gains') {
+      async function loadCapitalGains() {
+        try {
+          const data = await fetchCapitalGains(currency, selectedAccounts);
+          setCapitalGainsData(data);
+        } catch (error) {
+          console.error('Error loading capital gains:', error);
+        }
+      }
+      loadCapitalGains();
+    }
+  }, [selectedAccounts, currency, activeTab]);
+
+  // Effect for Dividends
+  useEffect(() => {
+    if (activeTab === 'dividend') {
+      async function loadDividends() {
+        try {
+          const data = await fetchDividends(currency, selectedAccounts);
+          setDividendData(data);
+        } catch (error) {
+          console.error('Error loading dividends:', error);
+        }
+      }
+      loadDividends();
+    }
+  }, [selectedAccounts, currency, activeTab]);
+
+  // Effect for benchmark-dependent data (Asset Change)
+  useEffect(() => {
+    if (activeTab === 'asset_change') {
+      async function loadAssetChange() {
+        try {
+          const data = await fetchAssetChange(currency, selectedAccounts, benchmarks);
+          setAssetChangeData(data);
+        } catch (error) {
+          console.error('Error loading asset change data:', error);
+        }
+      }
+      loadAssetChange();
+    }
+  }, [selectedAccounts, currency, activeTab, benchmarks]);
 
   // Initial load to get accounts if we don't have them? 
   // The useEffect above handles it.

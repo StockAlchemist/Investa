@@ -10,22 +10,11 @@ interface CapitalGainsProps {
 
 export default function CapitalGains({ data, currency }: CapitalGainsProps) {
     const [sortConfig, setSortConfig] = useState<{ key: keyof CapitalGain; direction: 'ascending' | 'descending' } | null>({ key: 'Date', direction: 'descending' });
-
-    if (!data) {
-        return <div className="p-4 text-center text-gray-500">Loading capital gains data...</div>;
-    }
-
-    if (data.length === 0) {
-        return <div className="p-4 text-center text-gray-500">No realized capital gains found for the selected criteria.</div>;
-    }
-
-    // --- Calculations ---
-    const totalRealizedGain = data.reduce((sum, item) => sum + (item['Realized Gain (Display)'] || 0), 0);
-    const totalProceeds = data.reduce((sum, item) => sum + (item['Total Proceeds (Display)'] || 0), 0);
-    const totalCostBasis = data.reduce((sum, item) => sum + (item['Total Cost Basis (Display)'] || 0), 0);
+    const [visibleRows, setVisibleRows] = useState(10);
 
     // Group by Year for Chart
     const gainsByYear = useMemo(() => {
+        if (!data) return [];
         const groups: Record<string, number> = {};
         data.forEach(item => {
             const year = item.Date.substring(0, 4);
@@ -38,6 +27,7 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
 
     // Sorting
     const sortedData = useMemo(() => {
+        if (!data) return [];
         let sortableItems = [...data];
         if (sortConfig !== null) {
             sortableItems.sort((a, b) => {
@@ -56,6 +46,19 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
         return sortableItems;
     }, [data, sortConfig]);
 
+    if (!data) {
+        return <div className="p-4 text-center text-gray-500">Loading capital gains data...</div>;
+    }
+
+    if (data.length === 0) {
+        return <div className="p-4 text-center text-gray-500">No realized capital gains found for the selected criteria.</div>;
+    }
+
+    // --- Calculations ---
+    const totalRealizedGain = data.reduce((sum, item) => sum + (item['Realized Gain (Display)'] || 0), 0);
+    const totalProceeds = data.reduce((sum, item) => sum + (item['Total Proceeds (Display)'] || 0), 0);
+    const totalCostBasis = data.reduce((sum, item) => sum + (item['Total Cost Basis (Display)'] || 0), 0);
+
     const requestSort = (key: keyof CapitalGain) => {
         let direction: 'ascending' | 'descending' = 'ascending';
         if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
@@ -63,9 +66,6 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
         }
         setSortConfig({ key, direction });
     };
-
-
-    const [visibleRows, setVisibleRows] = useState(10);
 
     const visibleData = sortedData.slice(0, visibleRows);
 

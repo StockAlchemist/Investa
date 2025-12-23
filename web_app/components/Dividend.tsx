@@ -11,20 +11,11 @@ interface DividendProps {
 
 export default function Dividend({ data, currency, expectedDividends }: DividendProps) {
     const [sortConfig, setSortConfig] = useState<{ key: keyof Dividend; direction: 'ascending' | 'descending' } | null>({ key: 'Date', direction: 'descending' });
-
-    if (!data) {
-        return <div className="p-4 text-center text-gray-500">Loading dividend data...</div>;
-    }
-
-    if (data.length === 0) {
-        return <div className="p-4 text-center text-gray-500">No dividend history found for the selected criteria.</div>;
-    }
-
-    // --- Calculations ---
-    const totalDividends = data.reduce((sum, item) => sum + (item['DividendAmountDisplayCurrency'] || 0), 0);
+    const [visibleRows, setVisibleRows] = useState(10);
 
     // Group by Year for Chart
     const dividendsByYear = useMemo(() => {
+        if (!data) return [];
         const groups: Record<string, number> = {};
         data.forEach(item => {
             const year = item.Date.substring(0, 4);
@@ -37,6 +28,7 @@ export default function Dividend({ data, currency, expectedDividends }: Dividend
 
     // Sorting
     const sortedData = useMemo(() => {
+        if (!data) return [];
         let sortableItems = [...data];
         if (sortConfig !== null) {
             sortableItems.sort((a, b) => {
@@ -55,6 +47,17 @@ export default function Dividend({ data, currency, expectedDividends }: Dividend
         return sortableItems;
     }, [data, sortConfig]);
 
+    if (!data) {
+        return <div className="p-4 text-center text-gray-500">Loading dividend data...</div>;
+    }
+
+    if (data.length === 0) {
+        return <div className="p-4 text-center text-gray-500">No dividend history found for the selected criteria.</div>;
+    }
+
+    // --- Calculations ---
+    const totalDividends = data.reduce((sum, item) => sum + (item['DividendAmountDisplayCurrency'] || 0), 0);
+
     const requestSort = (key: keyof Dividend) => {
         let direction: 'ascending' | 'descending' = 'ascending';
         if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
@@ -62,8 +65,6 @@ export default function Dividend({ data, currency, expectedDividends }: Dividend
         }
         setSortConfig({ key, direction });
     };
-
-    const [visibleRows, setVisibleRows] = useState(10);
 
     const visibleData = sortedData.slice(0, visibleRows);
 
