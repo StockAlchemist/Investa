@@ -29,7 +29,8 @@ import AttributionChart from '@/components/AttributionChart';
 import DividendCalendar from '@/components/DividendCalendar';
 import Settings from '@/components/Settings';
 import CommandPalette from '@/components/CommandPalette';
-import ThemeToggle from '@/components/ThemeToggle';
+
+import { useTheme } from 'next-themes';
 
 export default function Home() {
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
@@ -189,6 +190,13 @@ export default function Home() {
     }
   };
 
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-20">
       <CommandPalette
@@ -200,7 +208,18 @@ export default function Home() {
       <header className="bg-white dark:bg-slate-900 shadow-sm sticky top-0 z-50 border-b border-slate-200 dark:border-slate-800 opacity-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
           <div className="flex items-center space-x-3">
-            <img src="/logo.png" alt="Investa Logo" className="h-10 w-auto" />
+            {/* Light Theme Logo */}
+            <img
+              src="/logo.png"
+              alt="Investa Logo"
+              className="h-10 w-auto dark:hidden"
+            />
+            {/* Dark Theme Logo */}
+            <img
+              src="/logo-dark.png"
+              alt="Investa Logo"
+              className="h-10 w-auto hidden dark:block"
+            />
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
               Investa
               <span className="hidden md:inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-500/10 dark:bg-gray-800 dark:text-gray-400 dark:ring-gray-700">
@@ -224,7 +243,6 @@ export default function Home() {
               </div>
             )}
             <CurrencySelector currentCurrency={currency} onChange={setCurrency} />
-            <ThemeToggle />
           </div>
         </div>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -266,6 +284,6 @@ export default function Home() {
           <span className="mt-1">Settings</span>
         </div>
       </div>
-    </main>
+    </main >
   );
 }
