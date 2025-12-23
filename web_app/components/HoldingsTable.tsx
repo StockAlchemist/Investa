@@ -258,26 +258,27 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
 
     return (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 mt-4 overflow-hidden">
-            <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
-                <div className="flex items-center gap-4">
+            <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-start">
                     <h2 className="text-lg font-bold text-gray-900 dark:text-white">Holdings</h2>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
-                        Showing {visibleHoldings.length} of {sortedHoldings.length} holdings
+                        Showing {visibleHoldings.length} of {sortedHoldings.length}
                     </div>
                 </div>
 
                 {/* Column Selector */}
-                <div className="relative" ref={columnMenuRef}>
+                {/* Column Selector */}
+                <div className="relative flex flex-wrap gap-2 w-full md:w-auto" ref={columnMenuRef}>
                     <button
                         onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)}
-                        className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600"
+                        className="flex-1 md:flex-none px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600 text-center"
                     >
                         Columns
                     </button>
 
                     <button
                         onClick={() => setShowLots(!showLots)}
-                        className={`ml-2 px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 
+                        className={`flex-1 md:flex-none px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 text-center
                             ${showLots
                                 ? 'bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-900 dark:text-indigo-200 dark:border-indigo-700'
                                 : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600'
@@ -288,7 +289,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
 
                     <button
                         onClick={() => exportToCSV(holdings, 'holdings.csv')}
-                        className="ml-2 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600"
+                        className="flex-1 md:flex-none px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600 text-center"
                     >
                         Export CSV
                     </button>
@@ -415,6 +416,31 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                                 </span>
                             </div>
                         </div>
+
+                        {/* Mobile Lots View */}
+                        {showLots && holding.lots && holding.lots.length > 0 && (
+                            <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
+                                <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">Tax Lots</h4>
+                                <div className="space-y-2">
+                                    {holding.lots.map((lot, lotIdx) => (
+                                        <div key={`mobile-lot-${lotIdx}`} className="bg-gray-50 dark:bg-gray-700/30 p-2 rounded text-xs">
+                                            <div className="flex justify-between items-center mb-1">
+                                                <span className="font-medium text-gray-700 dark:text-gray-300">
+                                                    {formatValue(getLotValue(lot, "Symbol"), "Symbol")}
+                                                </span>
+                                                <span className={`font-medium ${getCellClass(getLotValue(lot, "Total G/L"), "Total G/L")}`}>
+                                                    {formatValue(getLotValue(lot, "Total G/L"), "Total G/L")}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between text-gray-500 dark:text-gray-400">
+                                                <span>Qty: {formatValue(getLotValue(lot, "Quantity"), "Quantity")}</span>
+                                                <span>Cost: {formatValue(getLotValue(lot, "Cost Basis"), "Cost Basis")}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>

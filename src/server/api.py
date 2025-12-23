@@ -885,24 +885,52 @@ async def get_dividend_calendar(
             if yf_sym:
                 yf_symbols.add(yf_sym)
         
+        # ------------------------------------------------------------------
         # We need to fetch Ticker.calendar for each symbol
-        # This is slow, so we should probably cache it or handle it carefully.
-        # For now, let's fetch it for the current holdings.
         import yfinance as yf
         calendar_events = []
         
-        # Note: In a production app, we'd want a more robust way to fetch this in batch.
-        # yfinance doesn't support batch fetching for .calendar easily.
+        stock_data_map = {} # To cache correct symbol casing if needed
+        # Create map of symbol -> quantity
+        symbol_quantity_map = {}
+        for r in rows:
+            if r["Symbol"] != "Total" and not r.get("is_total"):
+                 symbol_quantity_map[r["Symbol"]] = r["Quantity"]
+
+        # ...
+        
         for sym in yf_symbols:
             try:
                 t = yf.Ticker(sym)
                 cal = t.calendar
                 if cal and 'Dividend Date' in cal:
+                    # Calculate estimated total payment
+                    # dividendRate is Annual. lastDividendValue is usually the single payment amount.
+                    per_share_amt = t.info.get('lastDividendValue', 0)
+                    if per_share_amt is None or per_share_amt == 0:
+                        # Fallback: estimate from annual rate (assuming quarterly)
+                        # This is a rough fallback
+                        # print(f"DEBUG: {sym} lastDividendValue missing, using dividendRate/4")
+                        per_share_amt = t.info.get('dividendRate', 0) / 4.0
+                    
+                    # Find quantity
+                    qty = 0
+                    # Reconstruct map
+                    yf_to_orig = {}
+                    for s in symbols:
+                        mapped = map_to_yf_symbol(s, user_symbol_map, user_excluded_symbols)
+                        if mapped:
+                            yf_to_orig[mapped] = s
+                    
+                    orig_sym = yf_to_orig.get(sym)
+                    if orig_sym:
+                        qty = symbol_quantity_map.get(orig_sym, 0)
+
                     calendar_events.append({
-                        "symbol": sym,
+                        "symbol": orig_sym if orig_sym else sym,
                         "dividend_date": str(cal['Dividend Date']),
                         "ex_dividend_date": str(cal.get('Ex-Dividend Date', '')),
-                        "amount": t.info.get('dividendRate', 0)
+                        "amount": (per_share_amt if per_share_amt else 0) * qty
                     })
             except Exception as e_cal:
                 logging.warning(f"Failed to fetch calendar for {sym}: {e_cal}")

@@ -217,7 +217,7 @@ export default function Home() {
             {/* Dark Theme Logo */}
             <img
               src="/logo-dark.png"
-              alt="Investa Logo"
+              alt="Investa"
               className="h-10 w-auto hidden dark:block"
             />
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">

@@ -147,7 +147,11 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
     }, [items, mounted]);
 
     const sensors = useSensors(
-        useSensor(PointerSensor),
+        useSensor(PointerSensor, {
+            activationConstraint: {
+                distance: 8,
+            },
+        }),
         useSensor(KeyboardSensor, {
             coordinateGetter: sortableKeyboardCoordinates,
         })
@@ -282,8 +286,8 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
                 <button
                     onClick={() => setIsCustomizing(!isCustomizing)}
                     className={`text-xs font-medium px-3 py-1 rounded transition-colors ${isCustomizing
-                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-                            : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                        : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
                         }`}
                 >
                     {isCustomizing ? 'Done Customizing' : 'Customize Dashboard'}

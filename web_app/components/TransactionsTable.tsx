@@ -33,9 +33,9 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
 
     return (
         <div className="space-y-4">
-            <div className="flex flex-col gap-3">
-                <div className="flex flex-row gap-2">
-                    <div className="relative flex-1 min-w-0">
+            <div className="flex flex-col gap-4">
+                <div className="flex flex-col md:flex-row gap-2">
+                    <div className="relative flex-1">
                         <input
                             type="text"
                             placeholder="Filter Symbol..."
@@ -52,7 +52,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                             </button>
                         )}
                     </div>
-                    <div className="relative flex-1 min-w-0">
+                    <div className="relative flex-1">
                         <input
                             type="text"
                             placeholder="Filter Account..."
@@ -70,19 +70,21 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                         )}
                     </div>
                 </div>
-                <div className="flex justify-between items-center">
-                    <button
-                        onClick={() => { setSymbolFilter(''); setAccountFilter(''); }}
-                        className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm font-medium"
-                    >
-                        Reset Filters
-                    </button>
-                    <button
-                        onClick={() => exportToCSV(filteredTransactions, 'transactions.csv')}
-                        className="px-4 py-2 bg-white border border-gray-300 dark:bg-gray-700 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors text-sm font-medium"
-                    >
-                        Export CSV
-                    </button>
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                        <button
+                            onClick={() => { setSymbolFilter(''); setAccountFilter(''); }}
+                            className="flex-1 md:flex-none px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm font-medium text-center"
+                        >
+                            Reset Filters
+                        </button>
+                        <button
+                            onClick={() => exportToCSV(filteredTransactions, 'transactions.csv')}
+                            className="flex-1 md:flex-none px-4 py-2 bg-white border border-gray-300 dark:bg-gray-700 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors text-sm font-medium text-center"
+                        >
+                            Export CSV
+                        </button>
+                    </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
                         Showing {visibleTransactions.length} of {filteredTransactions.length} transactions
                     </div>
