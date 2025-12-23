@@ -15,7 +15,10 @@ SPDX-License-Identifier: MIT
 """
 
 import logging
+import os
+import platform
 from datetime import date
+from typing import Optional
 
 # --- Cache Configuration ---
 HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = "yf_portfolio_hist_raw_adjusted"
@@ -35,6 +38,60 @@ LOGGING_LEVEL = logging.WARNING  # Default logging level for the application
 # --- Application Name (used by QStandardPaths if it doesn't infer from bundle) ---
 APP_NAME = "Investa"  # Used by db_utils.py for fallback folder if QStandardPaths fails
 ORG_NAME = "StockAlchemist"  # Used for cache path consistency
+
+
+def get_app_data_dir() -> str:
+    """
+    Returns the centralized application data directory.
+    - macOS: Standard AppDataLocation (~/Library/Application Support/StockAlchemist/Investa)
+    - Linux: Consolidated hidden folder in home (~/.investa)
+    - Windows: Standard AppDataLocation (~/AppData/Roaming/StockAlchemist/Investa)
+    """
+    try:
+        from PySide6.QtCore import QStandardPaths
+        pyside_available = True
+    except ImportError:
+        pyside_available = False
+
+    system = platform.system()
+
+    # Priority 1: Consolidated Linux behavior
+    if system == "Linux":
+        home = os.path.expanduser("~")
+        linux_path = os.path.join(home, f".{APP_NAME.lower()}")
+        try:
+            os.makedirs(linux_path, exist_ok=True)
+            return linux_path
+        except Exception:
+            pass  # Fallthrough to standard logic if mkdir fails
+
+    # Priority 2: Standard OS-specific logic via PySide if available
+    if pyside_available:
+        path = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
+        if not path:
+            path = QStandardPaths.writableLocation(QStandardPaths.AppConfigLocation)
+
+        if path:
+            # If QStandardPaths didn't include the app name (common in scripts), append it manually
+            expected_suffix = os.path.join(ORG_NAME, APP_NAME)
+            if APP_NAME not in path:
+                path = os.path.join(path, expected_suffix)
+            
+            try:
+                os.makedirs(path, exist_ok=True)
+                return path
+            except Exception:
+                pass
+
+    # Priority 3: Cross-platform fallback based on HOME
+    home = os.path.expanduser("~")
+    fallback_path = os.path.join(home, f".{APP_NAME.lower()}")
+    try:
+        os.makedirs(fallback_path, exist_ok=True)
+        return fallback_path
+    except Exception:
+        # Final fallback: current working directory
+        return os.getcwd()
 
 # --- Debugging Flags ---
 HISTORICAL_DEBUG_USD_CONVERSION = False

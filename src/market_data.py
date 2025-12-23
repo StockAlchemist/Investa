@@ -23,6 +23,7 @@ except ImportError:
 
 # --- END ADDED ---
 from PySide6.QtCore import QStandardPaths  # For standard directory locations
+import config
 
 # --- Finance API Import ---
 # Lazy load yfinance to improve startup time
@@ -167,98 +168,35 @@ class MarketDataProvider:
             {}
         )  # Store recently fetched historical FX
 
-        # Construct full path for current_cache_file if not absolute
-        # Assuming QStandardPaths.CacheLocation gives an app-specific dir like ~/Library/Caches/Investa
-        if current_cache_file and not os.path.isabs(current_cache_file):
-            cache_dir_base = QStandardPaths.writableLocation(
-                QStandardPaths.CacheLocation
-            )
-            if cache_dir_base:
-                # --- FIX: Ensure consistent path structure (Org/App) ---
-                expected_suffix = os.path.join(ORG_NAME, APP_NAME)
-                if not cache_dir_base.endswith(expected_suffix):
-                     app_cache_dir = os.path.join(cache_dir_base, ORG_NAME, APP_NAME)
-                else:
-                     app_cache_dir = cache_dir_base
-                
-                os.makedirs(app_cache_dir, exist_ok=True)
-                self.current_cache_file = os.path.join(
-                    app_cache_dir, current_cache_file
-                )
-            else:  # Fallback
-                self.current_cache_file = current_cache_file  # Relative path
-        elif current_cache_file:  # Already an absolute path
-            self.current_cache_file = current_cache_file
-        else:  # Default construction if None (e.g., "portfolio_cache_yf.json")
-            cache_dir_base = QStandardPaths.writableLocation(
-                QStandardPaths.CacheLocation
-            )
-            if cache_dir_base:
-                # --- FIX: Ensure consistent path structure (Org/App) ---
-                expected_suffix = os.path.join(ORG_NAME, APP_NAME)
-                if not cache_dir_base.endswith(expected_suffix):
-                     app_cache_dir = os.path.join(cache_dir_base, ORG_NAME, APP_NAME)
-                else:
-                     app_cache_dir = cache_dir_base
+        # Get centralized app data directory
+        app_data_dir = config.get_app_data_dir()
 
-                os.makedirs(app_cache_dir, exist_ok=True)
-                self.current_cache_file = os.path.join(
-                    app_cache_dir, DEFAULT_CURRENT_CACHE_FILE_PATH
-                )  # Use default filename
-            else:
-                self.current_cache_file = (
-                    DEFAULT_CURRENT_CACHE_FILE_PATH  # Relative path fallback
-                )
+        # Construct full path for current_cache_file
+        if current_cache_file is None:
+            current_cache_file = config.DEFAULT_CURRENT_CACHE_FILE_PATH
+
+        if os.path.isabs(current_cache_file):
+            self.current_cache_file = current_cache_file
+        else:
+            self.current_cache_file = os.path.join(app_data_dir, current_cache_file)
 
         # Construct full path for fundamentals_cache_dir
-        if fundamentals_cache_dir and not os.path.isabs(fundamentals_cache_dir):
-            cache_dir_base_fund = QStandardPaths.writableLocation(
-                QStandardPaths.CacheLocation
-            )
-            if cache_dir_base_fund:
-                app_cache_dir_fund = cache_dir_base_fund
-                # Join the base cache dir with the specified fundamentals dir name
-                self.fundamentals_cache_dir = os.path.join(
-                    app_cache_dir_fund, fundamentals_cache_dir
-                )
-            else:
-                # Fallback to relative path if standard location not found
-                self.fundamentals_cache_dir = fundamentals_cache_dir
-        elif fundamentals_cache_dir:  # Already absolute
+        if os.path.isabs(fundamentals_cache_dir):
             self.fundamentals_cache_dir = fundamentals_cache_dir
-        else:  # Should not happen if default is provided
-            self.fundamentals_cache_dir = (
-                "fundamentals_cache"  # Fallback directory name
+        else:
+            self.fundamentals_cache_dir = os.path.join(
+                app_data_dir, fundamentals_cache_dir
             )
 
-        # Ensure the fundamentals cache directory exists
+        # Ensure directory exists
         os.makedirs(self.fundamentals_cache_dir, exist_ok=True)
 
         # logging.info("MarketDataProvider initialized.")
 
     def _get_historical_cache_dir(self) -> str:
         """Constructs and returns the full path to the historical data cache subdirectory."""
-        cache_dir_base = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
-        
-        # --- FIX: Ensure consistent path structure (Org/App) ---
-        # QStandardPaths returns generic root if QApplication name/org not set (e.g. in FastAPI).
-        # We manually append them if missing to match Desktop App behavior.
-        if cache_dir_base:
-            # Check if path already ends with Org/App (Desktop App case)
-            expected_suffix = os.path.join(ORG_NAME, APP_NAME)
-            if not cache_dir_base.endswith(expected_suffix):
-                # Web App case: Append Org/App manually
-                app_specific_cache_dir = os.path.join(cache_dir_base, ORG_NAME, APP_NAME)
-            else:
-                # Desktop App case: Already correct
-                app_specific_cache_dir = cache_dir_base
-            
-            hist_dir = os.path.join(
-                app_specific_cache_dir, self.hist_data_cache_dir_name
-            )
-        else:  # Fallback
-            hist_dir = self.hist_data_cache_dir_name  # Relative path
-            
+        app_data_dir = config.get_app_data_dir()
+        hist_dir = os.path.join(app_data_dir, self.hist_data_cache_dir_name)
         os.makedirs(hist_dir, exist_ok=True)
         return hist_dir
 

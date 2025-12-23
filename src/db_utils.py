@@ -22,20 +22,7 @@ import logging
 from typing import Optional, Dict, Any, Tuple, Union, List
 import pandas as pd
 import traceback
-
-# --- MODIFIED: Removed problematic global flag ---
-# DATA_LOADER_AVAILABLE = () # <-- REMOVE THIS LINE
-
-try:
-    from PySide6.QtCore import QStandardPaths
-
-    PYSIDE_AVAILABLE = True
-except ImportError:
-    logging.warning(
-        "PySide6.QtCore.QStandardPaths not found in db_utils.py. Database path will be relative."
-    )
-    QStandardPaths = None
-    PYSIDE_AVAILABLE = False
+import config
 
 DB_FILENAME = "investa_transactions.db"
 DB_SCHEMA_VERSION = 2
@@ -43,55 +30,11 @@ DB_SCHEMA_VERSION = 2
 
 def get_database_path(db_filename: str = DB_FILENAME) -> str:
     """
-    Determines the full path for the SQLite database file.
-    Uses QStandardPaths.AppDataLocation if PySide6 is available and successful,
-    otherwise defaults to a subdirectory in the user's home directory,
-    and finally to the current working directory as a last resort.
-
-    Args:
-        db_filename (str): The name of the database file.
-
-    Returns:
-        str: The absolute path to the database file.
+    Determines the full path for the SQLite database file using the
+    centralized application data directory.
     """
-    preferred_path = None
-    if PYSIDE_AVAILABLE and QStandardPaths:
-        app_data_dir = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
-        if not app_data_dir:
-            app_data_dir = QStandardPaths.writableLocation(
-                QStandardPaths.AppConfigLocation
-            )
-
-        if app_data_dir:
-            try:
-                os.makedirs(app_data_dir, exist_ok=True)
-                preferred_path = os.path.join(app_data_dir, db_filename)
-            except Exception as e:
-                logging.error(f"Could not create directory {app_data_dir}: {e}")
-        else:
-            logging.warning(
-                "QStandardPaths.AppDataLocation/AppConfigLocation returned empty. Trying user home directory."
-            )
-
-    if not preferred_path:
-        try:
-            app_name_for_folder = "InvestaApp"
-            home_dir = os.path.expanduser("~")
-            fallback_app_dir = os.path.join(home_dir, f".{app_name_for_folder.lower()}")
-            os.makedirs(fallback_app_dir, exist_ok=True)
-            preferred_path = os.path.join(fallback_app_dir, db_filename)
-        except Exception as e:
-            logging.warning(
-                f"Could not determine or create user home directory path '{fallback_app_dir}': {e}"
-            )
-
-    if not preferred_path:
-        preferred_path = os.path.join(os.getcwd(), db_filename)
-        logging.warning(
-            "Could not determine standard application data path or user home path. Using current working directory for DB."
-        )
-
-    return preferred_path
+    app_data_dir = config.get_app_data_dir()
+    return os.path.join(app_data_dir, db_filename)
 
 
 def get_db_connection(db_path: Optional[str] = None) -> Optional[sqlite3.Connection]:

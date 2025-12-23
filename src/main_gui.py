@@ -2374,39 +2374,11 @@ The CSV file should contain the following columns (header names must match exact
         )
 
         try:
-            app_data_path = QStandardPaths.writableLocation(
-                QStandardPaths.AppDataLocation
+            app_data_path = config.get_app_data_dir()
+            self.CONFIG_FILE = os.path.join(app_data_path, "gui_config.json")
+            self.MANUAL_OVERRIDES_FILE = os.path.join(
+                app_data_path, MANUAL_OVERRIDES_FILENAME
             )
-            if (
-                not app_data_path
-            ):  # Fallback if AppDataLocation (often includes AppName) is empty
-                app_config_path = QStandardPaths.writableLocation(
-                    QStandardPaths.AppConfigLocation
-                )
-                if app_config_path:  # AppConfigLocation might also be app-specific
-                    app_data_path = app_config_path
-                else:  # Further fallback to user's home if both standard paths fail
-                    logging.warning(
-                        "QStandardPaths AppDataLocation and AppConfigLocation failed. Using user home directory."
-                    )
-                    # For home dir, we might want to explicitly create an app-named subfolder
-                    home_dir = os.path.expanduser("~")
-                    app_data_path = os.path.join(
-                        home_dir, f".{config.APP_NAME.lower()}"
-                    )  # e.g., ~/.investa
-
-            if app_data_path:
-                os.makedirs(app_data_path, exist_ok=True)  # Ensure directory exists
-                self.CONFIG_FILE = os.path.join(app_data_path, "gui_config.json")
-                self.MANUAL_OVERRIDES_FILE = os.path.join(
-                    app_data_path, MANUAL_OVERRIDES_FILENAME
-                )
-            else:  # Last resort if all path finding fails (should be rare)
-                logging.error(
-                    "CRITICAL: Could not determine a writable application data directory. Using current working directory for config/overrides."
-                )
-                self.CONFIG_FILE = "gui_config.json"
-                self.MANUAL_OVERRIDES_FILE = MANUAL_OVERRIDES_FILENAME
         except Exception as e_path_init:
             logging.exception(
                 f"CRITICAL ERROR during config/manual file path initialization: {e_path_init}"
