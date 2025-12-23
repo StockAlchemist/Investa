@@ -235,19 +235,31 @@ def _process_numba_core(
                         
                         cost_transferred = current_state[1] * proportion
                         cost_transferred_hist = current_state[10] * proportion
+                        invested_transferred = current_state[7] * proportion
+                        cumulative_transferred = current_state[8] * proportion
+                        buy_cost_transferred = current_state[9] * proportion
                         
                         current_state[0] -= qty
                         current_state[1] -= cost_transferred
                         current_state[10] -= cost_transferred_hist
+                        current_state[7] -= invested_transferred
+                        current_state[8] -= cumulative_transferred
+                        current_state[9] -= buy_cost_transferred
                         
                         if abs(current_state[0]) < stock_qty_tol:
                             current_state[0] = 0.0
                             current_state[1] = 0.0
                             current_state[10] = 0.0
+                            current_state[7] = 0.0
+                            current_state[8] = 0.0
+                            current_state[9] = 0.0
                             
                         to_state[0] += qty
                         to_state[1] += cost_transferred
                         to_state[10] += cost_transferred_hist
+                        to_state[7] += invested_transferred
+                        to_state[8] += cumulative_transferred
+                        to_state[9] += buy_cost_transferred
                         
                         transfer_costs[i] = cost_transferred / qty
             continue
@@ -1012,7 +1024,52 @@ def _build_summary_rows(
                 report_date=report_date,  # The date of the final value
             )
             if cf_dates and cf_values:
-                stock_irr = calculate_irr(cf_dates, cf_values)
+                # Ensure all dates are datetime.date objects to prevent TypeErrors
+                # caused by string vs date comparison or calculate_irr validation.
+                for i in range(len(cf_dates)):
+                    d = cf_dates[i]
+                    if isinstance(d, str):
+                        try:
+                            cf_dates[i] = datetime.strptime(d, "%Y-%m-%d").date()
+                        except ValueError:
+                            # Try ISO format or just keep as is if parse fails (will likely fail later)
+                             pass
+                    elif isinstance(d, datetime):
+                        cf_dates[i] = d.date()
+                
+                # --- NEW: Suppress Annualized IRR for short duration (< 1 year) ---
+                # Check actual holding duration including transfers (via Lots)
+                earliest_lot_date = None
+                if "lots" in data and data["lots"]:
+                    # Sort lots just in case, though usually sorted
+                    sorted_lots = sorted(data["lots"], key=lambda x: x["Date"])
+                    earliest_lot_date_str = sorted_lots[0]["Date"]
+                    try:
+                        earliest_lot_date = datetime.strptime(str(earliest_lot_date_str), "%Y-%m-%d").date()
+                    except (ValueError, TypeError):
+                        # Fallback or log if date parsing fails
+                        earliest_lot_date = None
+
+                # Determine effective start date (use lot date if older than first flow date)
+                effective_start_date = cf_dates[0]
+                if earliest_lot_date and earliest_lot_date < effective_start_date:
+                    # If lot date is older, it implies we have history before this account (e.g. transfer)
+                    # We shift the start date of the calculation to the lot date to capture true duration.
+                    effective_start_date = earliest_lot_date
+                    # Modify the cash flow stream: Move the initial flow (Transfer In) to the Lot Date
+                    # This approximates the original buy.
+                    # Note: We must ensure dates remain sorted. Since earliest_lot_date < cf_dates[0],
+                    # and cf_dates is sorted, replacing index 0 keeps it sorted.
+                    cf_dates[0] = earliest_lot_date
+
+                duration_days = (cf_dates[-1] - cf_dates[0]).days
+                
+                if duration_days >= 365:
+                    stock_irr = calculate_irr(cf_dates, cf_values)
+                else:
+                    # Still suppress if true duration is < 1 year
+                    # logging.debug(f"IRR suppressed for {symbol}/{account}: Duration {duration_days} days < 365 days.")
+                    stock_irr = np.nan
         except Exception as e_irr:
             logging.warning(
                 f"Warning: IRR calculation failed for {symbol}/{account}: {e_irr}",
@@ -1310,6 +1367,21 @@ def _build_summary_rows(
             }
         )
     # --- End Cash Loop ---
+
+    # --- NEW: Calculate % of Total for all rows ---
+    total_mv_display = sum(
+        row.get(f"Market Value ({display_currency})", 0.0) 
+        for row in portfolio_summary_rows 
+        if pd.notna(row.get(f"Market Value ({display_currency})"))
+    )
+    
+    for row in portfolio_summary_rows:
+        mv = row.get(f"Market Value ({display_currency})", 0.0)
+        if pd.notna(mv) and abs(total_mv_display) > 1e-9:
+            row["pct_of_total"] = (mv / total_mv_display) * 100.0
+        else:
+            row["pct_of_total"] = 0.0
+    # --- END NEW ---
 
     return (
         portfolio_summary_rows,

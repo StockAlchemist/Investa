@@ -128,14 +128,63 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                         Showing {visibleData.length} of {sortedData.length} transactions
                     </div>
                 </div>
-                <div className="overflow-x-auto">
+                {/* Mobile Card View */}
+                <div className="md:hidden space-y-4 p-4">
+                    {visibleData.map((item, index) => (
+                        <div key={`mobile-${index}`} className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-100 dark:border-gray-700 shadow-sm">
+                            <div className="flex justify-between items-start mb-2">
+                                <div>
+                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">{item.Symbol}</h3>
+                                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                                        {item.Date} • {item.Account}
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <div className={`text-lg font-bold ${(item['Realized Gain (Display)'] || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                        {formatCurrency(item['Realized Gain (Display)'] || 0, currency)}
+                                    </div>
+                                    <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                        {item.Type}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                                <div className="flex justify-between">
+                                    <span className="text-gray-500 dark:text-gray-400">Qty:</span>
+                                    <span className="text-gray-900 dark:text-gray-200 font-medium">{item.Quantity}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-gray-500 dark:text-gray-400">Proceeds:</span>
+                                    <span className="text-gray-900 dark:text-gray-200 font-medium whitespace-nowrap">
+                                        {formatCurrency(item["Total Proceeds (Display)"] || 0, currency)}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between col-span-2">
+                                    <span className="text-gray-500 dark:text-gray-400">Cost Basis:</span>
+                                    <span className="text-gray-900 dark:text-gray-200 font-medium whitespace-nowrap">
+                                        {formatCurrency(item["Total Cost Basis (Display)"] || 0, currency)}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Desktop Table View */}
+                <div className="hidden md:block overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                         <thead className="bg-gray-50 dark:bg-gray-700">
                             <tr>
-                                {['Date', 'Symbol', 'Account', 'Type', 'Quantity', 'Realized Gain (Display)'].map((header) => (
+                                {['Date', 'Symbol', 'Account', 'Type', 'Quantity', 'Proceeds', 'Cost Basis', 'Realized Gain'].map((header) => (
                                     <th
                                         key={header}
-                                        onClick={() => requestSort(header as keyof CapitalGain)}
+                                        onClick={() => requestSort(
+                                            header === 'Realized Gain' ? 'Realized Gain (Display)' as any :
+                                                header === 'Proceeds' ? 'Total Proceeds (Display)' as any :
+                                                    header === 'Cost Basis' ? 'Total Cost Basis (Display)' as any :
+                                                        header as any
+                                        )}
                                         className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
                                     >
                                         {header}

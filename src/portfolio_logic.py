@@ -1305,7 +1305,18 @@ def calculate_portfolio_summary(
     else:  # show_closed_positions is True
         summary_df_final = summary_df_unfiltered
 
-    # --- Add Metadata to Overall Summary ---
+    # --- 9. Calculate % of Total ---
+    if not summary_df_final.empty and overall_summary_metrics:
+        total_mkt_val = overall_summary_metrics.get("market_value", 0.0)
+        mkt_val_col = f"Market Value ({display_currency})"
+        
+        if total_mkt_val and abs(total_mkt_val) > 1e-9 and mkt_val_col in summary_df_final.columns:
+            # Calculate % using the market value of each holding vs total portfolio market value
+            summary_df_final["pct_of_total"] = (summary_df_final[mkt_val_col] / total_mkt_val) * 100.0
+        else:
+            summary_df_final["pct_of_total"] = 0.0
+
+    # --- 10. Add Metadata to Overall Summary ---
     if overall_summary_metrics is None:
         overall_summary_metrics = {}  # Ensure it's a dict
     # Use all_transactions_df_cleaned for available accounts, as it's the full dataset for this run

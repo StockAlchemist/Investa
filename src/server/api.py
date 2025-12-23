@@ -676,7 +676,7 @@ async def get_settings(
     Returns the current application configuration settings.
     """
     (
-        _,
+        df,
         manual_overrides,
         user_symbol_map,
         user_excluded_symbols,
@@ -685,8 +685,33 @@ async def get_settings(
     ) = data
 
     try:
+        # Build a mapping of Symbol -> Local Currency from transactions
+        symbol_to_currency = {}
+        if not df.empty:
+            # Get unique symbol/currency pairs from transactions
+            symbol_curr_df = df[['Symbol', 'Local Currency']].drop_duplicates()
+            symbol_to_currency = dict(zip(symbol_curr_df['Symbol'], symbol_curr_df['Local Currency']))
+
+        # Enrich manual_overrides with currency info
+        enriched_overrides = {}
+        for symbol, override_data in manual_overrides.items():
+            symbol_upper = symbol.upper()
+            currency = symbol_to_currency.get(symbol_upper)
+            
+            # If not found in transactions, try to derive from symbol suffix or use default
+            if not currency:
+                if symbol_upper.endswith(".BK") or ":BKK" in symbol_upper:
+                    currency = "THB"
+                else:
+                    currency = "USD" # Default to USD
+            
+            # Create a copy and add currency
+            enriched_data = override_data.copy() if isinstance(override_data, dict) else {"price": override_data}
+            enriched_data["currency"] = currency
+            enriched_overrides[symbol_upper] = enriched_data
+
         return {
-            "manual_overrides": manual_overrides,
+            "manual_overrides": enriched_overrides,
             "user_symbol_map": user_symbol_map,
             "user_excluded_symbols": list(user_excluded_symbols),
             "account_currency_map": account_currency_map
@@ -785,13 +810,25 @@ async def get_attribution(
             sector_data[sector]["gain"] += gain
             sector_data[sector]["value"] += value
             
-            stock_data.append({
-                "symbol": symbol,
-                "name": row.get("Name"),
-                "gain": gain,
-                "value": value,
-                "sector": sector
-            })
+            # --- AGGREGATION LOGIC ---
+            # Group by symbol to combine duplicates across accounts
+            found = False
+            for prev_item in stock_data:
+                if prev_item["symbol"] == symbol:
+                     prev_item["gain"] += gain
+                     prev_item["value"] += value
+                     found = True
+                     break
+            
+            if not found:
+                 stock_data.append({
+                    "symbol": symbol,
+                    "name": row.get("Name"),
+                    "gain": gain,
+                    "value": value,
+                    "sector": sector
+                })
+
 
         # Format sector output
         sector_attribution = []

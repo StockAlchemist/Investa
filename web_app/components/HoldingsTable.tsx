@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { exportToCSV } from '../lib/export';
 import { Holding, Lot } from '../lib/api';
@@ -56,7 +58,51 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
     const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
     const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
     const columnMenuRef = useRef<HTMLDivElement>(null);
+    const isLoaded = useRef(false);
     const [visibleRows, setVisibleRows] = useState(10);
+
+    // Initialize columns and sort from localStorage
+    useEffect(() => {
+        const savedColumns = localStorage.getItem('investa_holdings_columns');
+        if (savedColumns) {
+            try {
+                const parsed = JSON.parse(savedColumns);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    setVisibleColumns(parsed);
+                }
+            } catch (e) {
+                console.error("Failed to parse saved columns", e);
+            }
+        }
+
+        const savedSort = localStorage.getItem('investa_holdings_sort');
+        if (savedSort) {
+            try {
+                const parsed = JSON.parse(savedSort);
+                if (parsed.key && parsed.direction) {
+                    setSortConfig(parsed);
+                }
+            } catch (e) {
+                console.error("Failed to parse saved sort config", e);
+            }
+        }
+
+        isLoaded.current = true;
+    }, []);
+
+    // Persist columns to localStorage on change
+    useEffect(() => {
+        if (!isLoaded.current) return;
+        if (visibleColumns && visibleColumns.length > 0) {
+            localStorage.setItem('investa_holdings_columns', JSON.stringify(visibleColumns));
+        }
+    }, [visibleColumns]);
+
+    // Persist sort to localStorage on change
+    useEffect(() => {
+        if (!isLoaded.current) return;
+        localStorage.setItem('investa_holdings_sort', JSON.stringify(sortConfig));
+    }, [sortConfig]);
 
     // Close column menu when clicking outside
     useEffect(() => {
@@ -194,7 +240,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
 
     const getCellClass = (val: any, header: string) => {
         if (typeof val !== 'number') return '';
-        if (['Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Real. G/L', 'Total G/L', 'Total Ret %', 'FX G/L', 'FX G/L %'].includes(header)) {
+        if (['Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Real. G/L', 'Total G/L', 'Total Ret %', 'FX G/L', 'FX G/L %', 'IRR (%)'].includes(header)) {
             return val >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium';
         }
         return '';

@@ -88,23 +88,30 @@ export default function Settings() {
                         <p className="text-sm text-gray-500 italic">No manual overrides set.</p>
                     ) : (
                         <ul className="divide-y divide-gray-200 dark:divide-gray-700 border dark:border-gray-700 rounded-md">
-                            {Object.entries(overrides).map(([symbol, data]: [string, any]) => (
-                                <li key={symbol} className="p-3 flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-700">
-                                    <div>
-                                        <span className="font-bold text-gray-900 dark:text-white mr-2">{symbol}</span>
-                                        <span className="text-sm text-gray-500 dark:text-gray-400">
-                                            Current Override: <span className="font-mono text-gray-800 dark:text-gray-200">${data.price}</span>
-                                            {data.updated_at && <span className="ml-2 text-xs">({new Date(data.updated_at).toLocaleDateString()})</span>}
-                                        </span>
-                                    </div>
-                                    <button
-                                        onClick={() => handleDeleteOverride(symbol)}
-                                        className="text-red-600 hover:text-red-800 text-sm font-medium px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
-                                    >
-                                        Remove
-                                    </button>
-                                </li>
-                            ))}
+                            {Object.entries(overrides).map(([symbol, data]: [string, any]) => {
+                                const currencySymbol = data.currency === 'THB' ? '฿' : '$';
+                                return (
+                                    <li key={symbol} className="p-3 flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-700">
+                                        <div>
+                                            <span className="font-bold text-gray-900 dark:text-white mr-2">{symbol}</span>
+                                            <span className="text-sm text-gray-500 dark:text-gray-400">
+                                                Current Override: <span className="font-mono text-gray-800 dark:text-gray-200">
+                                                    {data.price !== null && data.price !== undefined
+                                                        ? `${currencySymbol}${data.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`
+                                                        : 'N/A'}
+                                                </span>
+                                                {data.updated_at && <span className="ml-2 text-xs">({new Date(data.updated_at).toLocaleDateString()})</span>}
+                                            </span>
+                                        </div>
+                                        <button
+                                            onClick={() => handleDeleteOverride(symbol)}
+                                            className="text-red-600 hover:text-red-800 text-sm font-medium px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+                                        >
+                                            Remove
+                                        </button>
+                                    </li>
+                                );
+                            })}
                         </ul>
                     )}
                 </div>
