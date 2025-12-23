@@ -214,3 +214,92 @@ export async function fetchSettings(): Promise<Settings> {
     if (!res.ok) throw new Error('Failed to fetch settings');
     return res.json();
 }
+
+export interface RiskMetrics {
+    'Max Drawdown'?: number;
+    'Volatility (Ann.)'?: number;
+    'Sharpe Ratio'?: number;
+    'Sortino Ratio'?: number;
+}
+
+export async function fetchRiskMetrics(currency: string = 'USD', accounts?: string[]): Promise<RiskMetrics> {
+    const params = new URLSearchParams({ currency });
+    if (accounts) {
+        accounts.forEach(acc => params.append('accounts', acc));
+    }
+    const res = await fetch(`${API_BASE_URL}/risk_metrics?${params.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch risk metrics');
+    return res.json();
+}
+
+export interface AttributionData {
+    sectors: {
+        sector: string;
+        gain: number;
+        value: number;
+        contribution: number;
+    }[];
+    stocks: {
+        symbol: string;
+        name: string;
+        gain: number;
+        value: number;
+        sector: string;
+    }[];
+    total_gain: number;
+}
+
+export async function fetchAttribution(currency: string = 'USD', accounts?: string[]): Promise<AttributionData> {
+    const params = new URLSearchParams({ currency });
+    if (accounts) {
+        accounts.forEach(acc => params.append('accounts', acc));
+    }
+    const res = await fetch(`${API_BASE_URL}/attribution?${params.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch attribution');
+    return res.json();
+}
+
+export interface DividendEvent {
+    symbol: string;
+    dividend_date: string;
+    ex_dividend_date: string;
+    amount: number;
+}
+
+export async function fetchDividendCalendar(accounts?: string[]): Promise<DividendEvent[]> {
+    const params = new URLSearchParams();
+    if (accounts) {
+        accounts.forEach(acc => params.append('accounts', acc));
+    }
+    const res = await fetch(`${API_BASE_URL}/dividend_calendar?${params.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch dividend calendar');
+    return res.json();
+}
+
+export async function saveManualOverride(symbol: string, price: number | null): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/settings/manual_overrides`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ symbol, price }),
+    });
+    if (!response.ok) {
+        throw new Error(`Failed to save manual override: ${response.statusText}`);
+    }
+    return response.json();
+}
+
+export async function triggerRefresh(secret: string): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/webhook/refresh`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ secret }),
+    });
+    if (!response.ok) {
+        throw new Error(`Failed to trigger refresh: ${response.statusText}`);
+    }
+    return response.json();
+}

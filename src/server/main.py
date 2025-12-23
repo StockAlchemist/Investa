@@ -26,10 +26,15 @@ logging.basicConfig(
 app = FastAPI(title="Investa API", description="Backend for Investa PWA")
 
 # Configure CORS to allow requests from the frontend (likely localhost:3000)
+# Configure CORS to allow requests from the frontend
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "*", # Allow all for local network testing (iPhone)
+    "http://localhost:5173", # Vite default
+    "http://127.0.0.1:5173",
+    "http://100.66.59.98:3000", # User's Tailscale/Network IP
+    "http://100.66.59.98:5173",
+    "http://muon.tail33e9df.ts.net:3000", # Possible hostname
 ]
 
 app.add_middleware(

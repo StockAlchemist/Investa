@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Dict, Any, Optional
+from collections import defaultdict
 import pandas as pd
 import logging
+import os
 from datetime import datetime, date # Added this import
 
 print("DEBUG: LOADING API MODULE", flush=True) # Added this line
@@ -9,7 +11,10 @@ print("DEBUG: LOADING API MODULE", flush=True) # Added this line
 from server.dependencies import get_transaction_data
 from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
 from portfolio_analyzer import calculate_periodic_returns, extract_realized_capital_gains_history, extract_dividend_history
-from market_data import MarketDataProvider
+from market_data import MarketDataProvider, map_to_yf_symbol
+
+from risk_metrics import calculate_all_risk_metrics
+import config
 
 router = APIRouter()
 
@@ -128,6 +133,58 @@ def clean_nans(obj):
         return [clean_nans(v) for v in obj]
     return obj
 
+async def _calculate_portfolio_summary_internal(
+    currency: str = "USD",
+    include_accounts: Optional[List[str]] = None,
+    show_closed_positions: bool = True,
+    data: tuple = None
+) -> Dict[str, Any]:
+    """Internal helper to calculate portfolio summary data."""
+    (
+        df,
+        manual_overrides,
+        user_symbol_map,
+        user_excluded_symbols,
+        account_currency_map,
+        _
+    ) = data
+
+    if df.empty:
+        return {"metrics": {}, "rows": []}
+
+    mdp = MarketDataProvider()
+    (
+        overall_summary_metrics,
+        summary_df,
+        holdings_dict,  # Unpack holdings dict
+        account_level_metrics,
+        _,
+        _,
+        _
+    ) = calculate_portfolio_summary(
+        all_transactions_df_cleaned=df,
+        original_transactions_df_for_ignored=df,
+        ignored_indices_from_load=set(),
+        ignored_reasons_from_load={},
+        fmp_api_key=getattr(config, "FMP_API_KEY", None),
+        display_currency=currency,
+        show_closed_positions=show_closed_positions,
+        manual_overrides_dict=manual_overrides,
+        user_symbol_map=user_symbol_map,
+        user_excluded_symbols=user_excluded_symbols,
+        include_accounts=include_accounts,
+        account_currency_map=account_currency_map,
+        default_currency=config.DEFAULT_CURRENCY,
+        market_provider=mdp
+    )
+
+    return {
+        "metrics": overall_summary_metrics,
+        "summary_df": summary_df,
+        "holdings_dict": holdings_dict,
+        "account_metrics": account_level_metrics
+    }
+
 @router.get("/summary")
 async def get_portfolio_summary(
     currency: str = "USD",
@@ -150,47 +207,25 @@ async def get_portfolio_summary(
         return {"error": "No transaction data available"}
 
     try:
-        # Calculate portfolio summary
-        import sys
-
-        # Instantiate MDP to ensure consistent data access
-        mdp = MarketDataProvider()
-        
-        (
-            overall_summary_metrics,
-            summary_df,
-            _, # Unpack holdings dict
-            account_level_metrics,
-            combined_ignored_indices,
-            combined_ignored_reasons,
-            status_msg
-        ) = calculate_portfolio_summary(
-            all_transactions_df_cleaned=df,
-            original_transactions_df_for_ignored=df,
-            ignored_indices_from_load=set(),
-            ignored_reasons_from_load={},
-            fmp_api_key=getattr(config, "FMP_API_KEY", None),
-            display_currency=currency,
-            show_closed_positions=True,
-            manual_overrides_dict=manual_overrides,
-            user_symbol_map=user_symbol_map,
-            user_excluded_symbols=user_excluded_symbols,
+        # Calculate portfolio summary using helper
+        summary_data = await _calculate_portfolio_summary_internal(
+            currency=currency,
             include_accounts=accounts,
-            account_currency_map=account_currency_map,
-            default_currency=config.DEFAULT_CURRENCY,
-            market_provider=mdp
+            data=data
         )
+        
+        overall_summary_metrics = summary_data["metrics"]
+        account_level_metrics = summary_data["account_metrics"]
 
         # --- Calculate Annualized TWR ---
         annualized_twr = None
-        try:
-            # Determine date range for "all" time
-            if not df.empty:
+        if not df.empty:
+            try:
+                # Determine date range for "all" time
                 min_date = df["Date"].min().date()
                 max_date = date.today()
                 
                 # Fetch full history to calculate TWR over the entire period
-                # Note: calculate_historical_performance requires start_date, end_date, etc.
                 daily_df, _, _, _ = calculate_historical_performance(
                     all_transactions_df_cleaned=df,
                     original_transactions_df_for_ignored=df,
@@ -225,8 +260,8 @@ async def get_portfolio_summary(
                             # Annualize: (Total_Factor)^(365.25 / Days) - 1
                             annualized_factor = final_twr_factor ** (365.25 / days)
                             annualized_twr = (annualized_factor - 1) * 100.0
-        except Exception as e_twr:
-            logging.warning(f"Failed to calculate Annualized TWR: {e_twr}")
+            except Exception as e_twr:
+                logging.warning(f"Failed to calculate Annualized TWR: {e_twr}")
 
         if overall_summary_metrics:
             overall_summary_metrics["annualized_twr"] = annualized_twr
@@ -271,27 +306,29 @@ async def get_holdings(
         return []
 
     try:
-        (
-            _,
-            summary_df,
-            holdings_dict, # Unpack holdings dict
-            _,
-            _, _, _
-        ) = calculate_portfolio_summary(
-            all_transactions_df_cleaned=df,
-            original_transactions_df_for_ignored=df,
-            ignored_indices_from_load=set(),
-            ignored_reasons_from_load={},
-            display_currency=currency,
-            show_closed_positions=False,
-            manual_overrides_dict=manual_overrides,
-            user_symbol_map=user_symbol_map,
-            user_excluded_symbols=user_excluded_symbols,
-            include_accounts=accounts
+        # Use helper but with show_closed_positions=False (though internal helper uses True, 
+        # but calculate_portfolio_summary in logic handles it in summary_df_final)
+        # Wait, the internal helper currently uses True. Let's fix that or pass it.
+        
+        summary_data = await _calculate_portfolio_summary_internal(
+            currency=currency,
+            include_accounts=accounts,
+            show_closed_positions=False, # Don't show closed in holdings
+            data=data
         )
+        
+        summary_df = summary_data.get("summary_df")
+        holdings_dict = summary_data.get("holdings_dict")
         
         if summary_df is None or summary_df.empty:
             return []
+
+        # Filter closed positions if needed (the logic in portfolio_logic already does it for summary_df_final 
+        # if show_closed_positions is False, but here we might want to be explicit or match behavior)
+        # Actually calculate_portfolio_summary returns summary_df_final which is filtered.
+        # But my helper currently uses show_closed_positions=True.
+        
+        # I'll update the helper to accept show_closed_positions.
 
         # Convert DataFrame to list of dicts
         # Handle NaNs
@@ -656,4 +693,314 @@ async def get_settings(
         }
     except Exception as e:
         logging.error(f"Error getting settings: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+@router.get("/risk_metrics")
+async def get_risk_metrics(
+    currency: str = "USD",
+    accounts: Optional[List[str]] = Query(None),
+    data: tuple = Depends(get_transaction_data)
+):
+    """
+    Returns portfolio risk metrics (Sharpe, Volatility, Max Drawdown).
+    """
+    df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, _ = data
+    if df.empty:
+        return {}
+
+    try:
+        # Calculate daily history to get the total portfolio value series
+        daily_df, _, _, _ = calculate_historical_performance(
+            all_transactions_df_cleaned=df,
+            original_transactions_df_for_ignored=df,
+            ignored_indices_from_load=set(),
+            ignored_reasons_from_load={},
+            start_date=date(2000, 1, 1),
+            end_date=date.today(),
+            display_currency=currency,
+            manual_overrides_dict=manual_overrides,
+            user_symbol_map=user_symbol_map,
+            user_excluded_symbols=user_excluded_symbols,
+            include_accounts=accounts,
+            benchmark_symbols_yf=[], # Add empty benchmarks for risk metrics
+            account_currency_map=account_currency_map,
+            default_currency=config.DEFAULT_CURRENCY,
+            interval="D"
+        )
+        
+        if daily_df is None or "Portfolio Value" not in daily_df.columns:
+            return {}
+
+        portfolio_values = daily_df["Portfolio Value"]
+        metrics = calculate_all_risk_metrics(portfolio_values)
+        return metrics
+    except Exception as e:
+        logging.error(f"Error calculating risk metrics: {e}")
+        return {"error": str(e)}
+
+@router.get("/attribution")
+async def get_attribution(
+    currency: str = "USD",
+    accounts: Optional[List[str]] = Query(None),
+    data: tuple = Depends(get_transaction_data)
+):
+    """
+    Returns performance attribution by sector and stock.
+    """
+    df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, _ = data
+    if df.empty:
+        return {}
+
+    try:
+        # Get current summary rows which contain gains and sector info
+        summary_data = await _calculate_portfolio_summary_internal(
+            currency=currency,
+            include_accounts=accounts,
+            data=data
+        )
+        
+        summary_df = summary_data.get("summary_df")
+        if summary_df is None or summary_df.empty:
+            return {"sectors": [], "stocks": []}
+        
+        rows = summary_df.to_dict(orient="records")
+
+        # Sector Attribution
+        sector_data = defaultdict(lambda: {"gain": 0.0, "value": 0.0})
+        stock_data = []
+
+        total_gain = 0.0
+        for row in rows:
+            symbol = row.get("Symbol")
+            if symbol == "Total" or row.get("is_total"):
+                continue
+            
+            gain_col = f"Total Gain ({currency})"
+            value_col = f"Market Value ({currency})"
+            
+            gain = row.get(gain_col, 0.0)
+            value = row.get(value_col, 0.0)
+            sector = row.get("Sector") or "Unknown"
+            
+            total_gain += gain
+            sector_data[sector]["gain"] += gain
+            sector_data[sector]["value"] += value
+            
+            stock_data.append({
+                "symbol": symbol,
+                "name": row.get("Name"),
+                "gain": gain,
+                "value": value,
+                "sector": sector
+            })
+
+        # Format sector output
+        sector_attribution = []
+        for sector, d in sector_data.items():
+            sector_attribution.append({
+                "sector": sector,
+                "gain": d["gain"],
+                "value": d["value"],
+                "contribution": (d["gain"] / total_gain if total_gain != 0 else 0)
+            })
+
+        # Sort by contribution
+        sector_attribution.sort(key=lambda x: abs(x["contribution"]), reverse=True)
+        stock_data.sort(key=lambda x: abs(x["gain"]), reverse=True)
+
+        return {
+            "sectors": sector_attribution,
+            "stocks": stock_data[:10], # Top 10 contributors/detractors
+            "total_gain": total_gain
+        }
+    except Exception as e:
+        logging.error(f"Error calculating attribution: {e}")
+        return {"error": str(e)}
+
+@router.get("/dividend_calendar")
+async def get_dividend_calendar(
+    accounts: Optional[List[str]] = Query(None),
+    data: tuple = Depends(get_transaction_data)
+):
+    """
+    Returns upcoming dividend events for the portfolio.
+    """
+    df, _, user_symbol_map, user_excluded_symbols, _, _ = data
+    if df.empty:
+        return []
+
+    try:
+        # Get current holdings symbols
+        summary_data = await _calculate_portfolio_summary_internal(include_accounts=accounts, show_closed_positions=False, data=data)
+        summary_df = summary_data.get("summary_df")
+        if summary_df is None or summary_df.empty:
+             return []
+        rows = summary_df.to_dict(orient="records")
+        symbols = [r["Symbol"] for r in rows if r["Symbol"] != "Total" and not r.get("is_total")]
+        
+        if not symbols:
+            return []
+
+        # Use MarketDataProvider to get dividend info
+        provider = MarketDataProvider()
+        yf_symbols = set()
+        for s in symbols:
+            yf_sym = map_to_yf_symbol(s, user_symbol_map, user_excluded_symbols)
+            if yf_sym:
+                yf_symbols.add(yf_sym)
+        
+        # We need to fetch Ticker.calendar for each symbol
+        # This is slow, so we should probably cache it or handle it carefully.
+        # For now, let's fetch it for the current holdings.
+        import yfinance as yf
+        calendar_events = []
+        
+        # Note: In a production app, we'd want a more robust way to fetch this in batch.
+        # yfinance doesn't support batch fetching for .calendar easily.
+        for sym in yf_symbols:
+            try:
+                t = yf.Ticker(sym)
+                cal = t.calendar
+                if cal and 'Dividend Date' in cal:
+                    calendar_events.append({
+                        "symbol": sym,
+                        "dividend_date": str(cal['Dividend Date']),
+                        "ex_dividend_date": str(cal.get('Ex-Dividend Date', '')),
+                        "amount": t.info.get('dividendRate', 0)
+                    })
+            except Exception as e_cal:
+                logging.warning(f"Failed to fetch calendar for {sym}: {e_cal}")
+
+        return calendar_events
+    except Exception as e:
+        logging.error(f"Error fetching dividend calendar: {e}")
+        return {"error": str(e)}
+
+# --- Phase 5: Settings & Webhook Endpoints ---
+
+from server.dependencies import get_config_manager, reload_data
+from config_manager import ConfigManager
+from pydantic import BaseModel
+
+class ManualOverrideRequest(BaseModel):
+    symbol: str
+    price: Optional[float] = None
+    # Add other fields as needed for future (sector, etc.)
+
+@router.post("/settings/manual_overrides")
+async def update_manual_override(
+    override: ManualOverrideRequest,
+    config_manager: ConfigManager = Depends(get_config_manager)
+):
+    """
+    Updates or removes a manual price override for a symbol.
+    If price is None, removes the override.
+    """
+    try:
+        # Load latest overrides
+        config_manager.load_manual_overrides()
+        
+        symbol_upper = override.symbol.strip().upper()
+        current_overrides = config_manager.manual_overrides.get("manual_price_overrides", {})
+        
+        if override.price is not None:
+            # Add/Update
+            # We preserve existing extra fields if any (like date), or create new dict
+            existing_entry = current_overrides.get(symbol_upper, {})
+            # If strictly setting price, update it.
+            # Use 'manual' as source hint
+            existing_entry["price"] = override.price
+            existing_entry["source"] = "User Manual Override"
+            existing_entry["updated_at"] = datetime.now().isoformat()
+            
+            # Ensure price is valid positive number or 0
+            if override.price < 0:
+                 raise HTTPException(status_code=400, detail="Price must be non-negative.")
+
+            current_overrides[symbol_upper] = existing_entry
+        else:
+            # Remove override if it exists
+            if symbol_upper in current_overrides:
+                del current_overrides[symbol_upper]
+        
+        config_manager.manual_overrides["manual_price_overrides"] = current_overrides
+        success = config_manager.save_manual_overrides()
+        
+        if not success:
+             raise HTTPException(status_code=500, detail="Failed to save manual overrides file.")
+
+        # --- Legacy Clean-up: Also remove from gui_config if present to avoid conflicts ---
+        # Because dependencies.py merges them, we must ensure it's gone from legacy config too.
+        gui_config_changed = False
+        gc = config_manager.gui_config
+        
+        # Check both possible legacy keys
+        for key in ["manual_price_overrides", "manual_overrides_dict"]:
+            if key in gc and isinstance(gc[key], dict):
+                if symbol_upper in gc[key]:
+                    del gc[key][symbol_upper]
+                    gui_config_changed = True
+        
+        # Also if we are Adding, we might want to Add to legacy? 
+        # No, let's strictly migrate to JSON. But we must ensure Legacy doesn't overwrite.
+        # If we Add to JSON, dependencies.py (with my previous fix) will Update Legacy with JSON.
+        # So JSON wins for Add/Update.
+        # But for Delete, JSON just lacks the key, so Legacy wins.
+        # So we MUST delete from Legacy.
+        
+        if gui_config_changed:
+             config_manager.save_gui_config()
+             logging.info(f"Removed {symbol_upper} from legacy gui_config.")
+        # -------------------------------------------------------------------------------
+
+        # Force reload of data so next request uses new override
+        reload_data()
+        
+        return {"status": "success", "message": f"Override for {symbol_upper} updated."}
+
+    except Exception as e:
+        logging.error(f"Error updating manual override: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+class WebhookRefreshRequest(BaseModel):
+    secret: str
+
+@router.post("/webhook/refresh")
+async def webhook_refresh(
+    request: WebhookRefreshRequest
+):
+    """
+    Webhook to trigger a market data refresh (cache invalidation).
+    Requires a shared secret.
+    """
+    # Simple hardcoded check for now, or load from env/config
+    # For personal local app, a default simple secret is acceptable if not exposed to internet
+    # Ideally should be in config.py or env var.
+    EXPECTED_SECRET = os.environ.get("INVESTA_WEBHOOK_SECRET", "investa_refresh_secret_123")
+    
+    if request.secret.strip() != EXPECTED_SECRET:
+        logging.warning(f"Webhook Secret Mismatch. Input: '{request.secret}' != Expected: (hidden)")
+        raise HTTPException(status_code=403, detail="Invalid secret")
+
+    try:
+        # 1. Invalidate Market Cache
+        # The cache file is typically DEFAULT_CURRENT_CACHE_FILE_PATH
+        # We can either delete it or rely on MarketDataProvider to manage it.
+        # Safest is to delete the file.
+        
+        app_data_dir = config.get_app_data_dir()
+        cache_path = os.path.join(app_data_dir, config.DEFAULT_CURRENT_CACHE_FILE_PATH)
+        
+        if os.path.exists(cache_path):
+            os.remove(cache_path)
+            logging.info(f"Webhook: Deleted market data cache at {cache_path}")
+        else:
+             logging.info("Webhook: Cache file not found (already clean).")
+             
+        # 2. Reload internal transaction cache
+        reload_data()
+        
+        return {"status": "success", "message": "Market data cache invalidated and data reloaded."}
+        
+    except Exception as e:
+        logging.error(f"Error in webhook refresh: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

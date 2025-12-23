@@ -7,9 +7,10 @@ interface DividendProps {
     data: Dividend[] | null;
     currency: string;
     expectedDividends?: number;
+    children?: React.ReactNode;
 }
 
-export default function Dividend({ data, currency, expectedDividends }: DividendProps) {
+export default function Dividend({ data, currency, expectedDividends, children }: DividendProps) {
     const [sortConfig, setSortConfig] = useState<{ key: keyof Dividend; direction: 'ascending' | 'descending' } | null>({ key: 'Date', direction: 'descending' });
     const [visibleRows, setVisibleRows] = useState(10);
 
@@ -96,6 +97,9 @@ export default function Dividend({ data, currency, expectedDividends }: Dividend
                 )}
             </div>
 
+            {/* Injected Content (e.g. Dividend Calendar) */}
+            {children}
+
             {/* Annual Dividends Chart */}
             <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border border-gray-200 dark:border-gray-700">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Annual Dividends</h3>
@@ -123,7 +127,8 @@ export default function Dividend({ data, currency, expectedDividends }: Dividend
                         Showing {visibleData.length} of {sortedData.length} transactions
                     </div>
                 </div>
-                <div className="overflow-x-auto">
+                {/* Desktop Table View */}
+                <div className="hidden md:block overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                         <thead className="bg-gray-50 dark:bg-gray-700">
                             <tr>
@@ -151,6 +156,25 @@ export default function Dividend({ data, currency, expectedDividends }: Dividend
                             ))}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Mobile Card View */}
+                <div className="block md:hidden space-y-4 p-4">
+                    {visibleData.map((item, index) => (
+                        <div key={`mobile-div-${index}`} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                            <div className="flex justify-between items-start mb-2">
+                                <div>
+                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">{item.Symbol}</h3>
+                                    <div className="text-xs text-gray-500 dark:text-gray-400">{item.Date} • {item.Account}</div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-lg font-bold text-green-600 dark:text-green-400">
+                                        {formatCurrency(item['DividendAmountDisplayCurrency'] || 0, currency)}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
                 </div>
                 {visibleRows < sortedData.length && (
                     <div className="flex justify-center gap-4 p-4 border-t border-gray-200 dark:border-gray-700">

@@ -61,7 +61,7 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
             </button>
 
             {isOpen && (
-                <div className="absolute z-20 top-full left-0 right-0 mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg overflow-hidden max-h-80 overflow-y-auto">
+                <div className="absolute z-20 top-full left-0 min-w-full w-max mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg overflow-hidden max-h-80 overflow-y-auto">
                     <div
                         onClick={handleSelectAll}
                         className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-100 dark:border-gray-700"
@@ -69,7 +69,7 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                         <div className={`w-5 h-5 rounded border flex items-center justify-center mr-3 ${isAllSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300 dark:border-gray-600'}`}>
                             {isAllSelected && <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                         </div>
-                        <span className="text-gray-900 dark:text-white font-medium">All Accounts</span>
+                        <span className="text-gray-900 dark:text-white font-medium whitespace-nowrap">All Accounts</span>
                     </div>
 
                     {availableAccounts.map(acc => {
@@ -83,7 +83,7 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                                 <div className={`w-5 h-5 rounded border flex items-center justify-center mr-3 ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300 dark:border-gray-600'}`}>
                                     {isSelected && <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                                 </div>
-                                <span className="text-gray-700 dark:text-gray-200">{acc}</span>
+                                <span className="text-gray-700 dark:text-gray-200 whitespace-nowrap">{acc}</span>
                             </div>
                         );
                     })}

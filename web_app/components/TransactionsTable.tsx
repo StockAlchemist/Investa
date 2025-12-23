@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { exportToCSV } from '../lib/export';
 import { Transaction } from '../lib/api';
 
 interface TransactionsTableProps {
@@ -76,13 +77,20 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                     >
                         Reset Filters
                     </button>
+                    <button
+                        onClick={() => exportToCSV(filteredTransactions, 'transactions.csv')}
+                        className="px-4 py-2 bg-white border border-gray-300 dark:bg-gray-700 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors text-sm font-medium"
+                    >
+                        Export CSV
+                    </button>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
                         Showing {visibleTransactions.length} of {filteredTransactions.length} transactions
                     </div>
                 </div>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
                 <table className="min-w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
                     <thead className="bg-gray-50 dark:bg-gray-700">
                         <tr>
@@ -128,6 +136,56 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                         ))}
                     </tbody>
                 </table>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="block md:hidden space-y-4">
+                {visibleTransactions.map((tx, index) => (
+                    <div key={`mobile-tx-${index}`} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 shadow-sm">
+                        <div className="flex justify-between items-start mb-2">
+                            <div>
+                                <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${tx.Type.toUpperCase() === 'BUY' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
+                                    tx.Type.toUpperCase() === 'SELL' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' :
+                                        'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                                    }`}>
+                                    {tx.Type}
+                                </span>
+                                <h3 className="text-lg font-bold text-gray-900 dark:text-white mt-1">{tx.Symbol}</h3>
+                            </div>
+                            <div className="text-right">
+                                <div className="text-sm font-medium text-gray-900 dark:text-gray-200">
+                                    {tx.Date ? tx.Date.split('T')[0] : '-'}
+                                </div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">{tx.Account}</div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-y-2 text-sm mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                            <div className="text-gray-500 dark:text-gray-400">Quantity</div>
+                            <div className="text-right font-medium text-gray-900 dark:text-gray-200">{tx.Quantity}</div>
+
+                            <div className="text-gray-500 dark:text-gray-400">Price</div>
+                            <div className="text-right font-medium text-gray-900 dark:text-gray-200">{tx["Price/Share"]?.toFixed(2)}</div>
+
+                            <div className="text-gray-500 dark:text-gray-400">Amount</div>
+                            <div className="text-right font-bold text-gray-900 dark:text-gray-200">
+                                {tx["Total Amount"] ? Math.abs(tx["Total Amount"]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'} {tx["Local Currency"]}
+                            </div>
+
+                            {tx.Commission > 0 && (
+                                <>
+                                    <div className="text-gray-500 dark:text-gray-400">Commission</div>
+                                    <div className="text-right text-gray-500 dark:text-gray-400">{tx.Commission.toFixed(2)}</div>
+                                </>
+                            )}
+                        </div>
+                        {tx.Note && (
+                            <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 italic">
+                                {tx.Note}
+                            </div>
+                        )}
+                    </div>
+                ))}
             </div>
 
             {visibleRows < filteredTransactions.length && (

@@ -289,7 +289,9 @@ class MarketDataProvider:
                          info = t_obj.info
                          name = info.get("shortName") or info.get("longName") or symbol_name
                          currency = info.get("currency")
-                         return {"name": name, "currency": currency}
+                         sector = info.get("sector")
+                         industry = info.get("industry")
+                         return {"name": name, "currency": currency, "sector": sector, "industry": industry}
                      except Exception:
                          return None
 
@@ -305,6 +307,8 @@ class MarketDataProvider:
                              cache[sym] = {
                                  "name": meta["name"],
                                  "currency": meta["currency"],
+                                 "sector": meta.get("sector"),
+                                 "industry": meta.get("industry"),
                                  "timestamp": now_ts.isoformat()
                              }
                          else:
@@ -314,6 +318,8 @@ class MarketDataProvider:
                                  cache[sym] = {
                                      "name": sym,
                                      "currency": None, 
+                                     "sector": None,
+                                     "industry": None,
                                      "timestamp": now_ts.isoformat()
                                  }
             except Exception as e_batch:

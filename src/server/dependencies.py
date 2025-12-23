@@ -141,6 +141,9 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
         if config_loaded_path:
             config_dir = os.path.dirname(config_loaded_path)
             overrides_paths_to_try.append(os.path.join(config_dir, "manual_overrides.json"))
+
+        # Always check the standard app data directory (where ConfigManager likely writes)
+        overrides_paths_to_try.append(os.path.join(config.get_app_data_dir(), "manual_overrides.json"))
         
         # Also check project root as fallback
         overrides_paths_to_try.append(os.path.join(project_root, "manual_overrides.json"))
@@ -165,13 +168,18 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
                 except Exception as e:
                     logging.warning(f"Found overrides at {op} but failed to load: {e}")
         
-        # --- ADDED: Merge config overrides (Priority) ---
-        if manual_overrides_from_config:
-            logging.info(f"Merging {len(manual_overrides_from_config)} overrides from gui_config.json")
-            manual_overrides.update(manual_overrides_from_config)
+        # --- CHANGED: JSON overrides take precedence if the file was loaded ---
+        # Default is from config, but JSON file is the modern authority
+        final_manual_overrides = manual_overrides_from_config.copy()
+        
+        if loaded_overrides_path:
+             logging.info(f"Using overrides from {loaded_overrides_path} as authoritative source.")
+             # If JSON file exists, it is the authority. It replaces legacy entirely for overrides.
+             final_manual_overrides = manual_overrides
+        
         # ------------------------------------------------
         
-        # Merge overrides (as before)
+        # Merge other collections from JSON if present
         if "user_excluded_symbols" in full_overrides_json:
             loaded_excluded = full_overrides_json.get("user_excluded_symbols", [])
             if isinstance(loaded_excluded, list):
@@ -192,7 +200,7 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
             _TRANSACTIONS_CACHE = df
             _IGNORED_INDICES = ignored_indices
             _IGNORED_REASONS = ignored_reasons
-            _MANUAL_OVERRIDES = manual_overrides
+            _MANUAL_OVERRIDES = final_manual_overrides # FIX: Use final_manual_overrides here
             _USER_SYMBOL_MAP = user_symbol_map
             _USER_EXCLUDED_SYMBOLS = user_excluded_symbols
             _ACCOUNT_CURRENCY_MAP = account_currency_map
@@ -220,3 +228,18 @@ def reload_data():
     _ACCOUNT_CURRENCY_MAP = {}
     logging.info("Transaction data cache cleared.")
     get_transaction_data()
+
+from config_manager import ConfigManager
+
+def get_config_manager() -> ConfigManager:
+    """Dependency that provides a ConfigManager instance."""
+    # Use centralized path logic from config.py via get_app_data_dir()
+    app_data_dir = config.get_app_data_dir()
+    return ConfigManager(app_data_dir)
+
+def reload_config():
+    """Forces a reload of global configuration cache."""
+    # This is a placeholder if we need to reload global vars derived from config
+    # Currently get_transaction_data handles its own reloading of config files on each call if needed/logic allows
+    # But for immediate effect of overrides, we might need to clear _TRANSACTIONS_CACHE
+    reload_data() 

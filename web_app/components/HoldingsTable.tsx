@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { exportToCSV } from '../lib/export';
 import { Holding, Lot } from '../lib/api';
 
 interface HoldingsTableProps {
@@ -239,6 +240,13 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                         {showLots ? 'Hide Lots' : 'Show Lots'}
                     </button>
 
+                    <button
+                        onClick={() => exportToCSV(holdings, 'holdings.csv')}
+                        className="ml-2 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600"
+                    >
+                        Export CSV
+                    </button>
+
                     {isColumnMenuOpen && (
                         <div className="absolute right-0 z-50 mt-2 w-56 origin-top-right bg-white dark:bg-gray-800 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto">
                             <div className="py-1">
@@ -259,7 +267,8 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                 </div>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                     <thead className="bg-gray-50 dark:bg-gray-900">
                         <tr>
@@ -315,6 +324,53 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                         ))}
                     </tbody>
                 </table>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="block md:hidden space-y-4 p-4">
+                {visibleHoldings.map((holding, idx) => (
+                    <div key={`mobile-${holding.Symbol}-${idx}`} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                        <div className="flex justify-between items-start mb-2">
+                            <div>
+                                <h3 className="text-lg font-bold text-gray-900 dark:text-white">{holding.Symbol}</h3>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">{holding.Account}</p>
+                            </div>
+                            <div className="text-right">
+                                <div className="text-lg font-bold text-gray-900 dark:text-white">
+                                    {formatValue(getValue(holding, "Mkt Val"), "Mkt Val")}
+                                </div>
+                                <div className={`text-sm ${getCellClass(getValue(holding, "Day Chg %"), "Day Chg %")}`}>
+                                    {formatValue(getValue(holding, "Day Chg %"), "Day Chg %")}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                            <div className="flex justify-between">
+                                <span className="text-gray-500 dark:text-gray-400">Qty:</span>
+                                <span className="text-gray-900 dark:text-gray-200 font-medium">{formatValue(getValue(holding, "Quantity"), "Quantity")}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-gray-500 dark:text-gray-400">Price:</span>
+                                <span className="text-gray-900 dark:text-gray-200 font-medium">{formatValue(getValue(holding, "Price"), "Price")}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-gray-500 dark:text-gray-400">Avg Cost:</span>
+                                <span className="text-gray-900 dark:text-gray-200 font-medium">{formatValue(getValue(holding, "Avg Cost"), "Avg Cost")}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-gray-500 dark:text-gray-400">Div Yield:</span>
+                                <span className="text-gray-900 dark:text-gray-200 font-medium">{formatValue(getValue(holding, "Yield (Mkt) %"), "Yield (Mkt) %")}</span>
+                            </div>
+                            <div className="flex justify-between col-span-2 bg-gray-50 dark:bg-gray-700/50 p-2 rounded">
+                                <span className="text-gray-500 dark:text-gray-400">Total Return:</span>
+                                <span className={`font-medium ${getCellClass(getValue(holding, "Total G/L"), "Total G/L")}`}>
+                                    {formatValue(getValue(holding, "Total G/L"), "Total G/L")} ({formatValue(getValue(holding, "Total Ret %"), "Total Ret %")})
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                ))}
             </div>
             {visibleRows < sortedHoldings.length && (
                 <div className="flex justify-center gap-4 p-4 border-t border-gray-200 dark:border-gray-700">
