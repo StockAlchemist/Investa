@@ -65,6 +65,7 @@ export interface Holding {
 }
 
 export interface Transaction {
+    id?: number;
     Date: string;
     Account: string;
     Symbol: string;
@@ -76,6 +77,7 @@ export interface Transaction {
     "Local Currency": string;
     "Split Ratio"?: number;
     Note?: string;
+    "To Account"?: string;
     [key: string]: any;
 }
 
@@ -114,6 +116,44 @@ export async function fetchTransactions(accounts?: string[]): Promise<Transactio
     const res = await fetch(`${API_BASE_URL}/transactions?${params.toString()}`);
     if (!res.ok) throw new Error('Failed to fetch transactions');
     return res.json();
+}
+
+export async function addTransaction(transaction: Transaction): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/transactions`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(transaction),
+    });
+    if (!response.ok) {
+        throw new Error(`Failed to add transaction: ${response.statusText}`);
+    }
+    return response.json();
+}
+
+export async function updateTransaction(id: number, transaction: Transaction): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/transactions/${id}`, {
+        method: "PUT",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(transaction),
+    });
+    if (!response.ok) {
+        throw new Error(`Failed to update transaction: ${response.statusText}`);
+    }
+    return response.json();
+}
+
+export async function deleteTransaction(id: number): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/transactions/${id}`, {
+        method: "DELETE",
+    });
+    if (!response.ok) {
+        throw new Error(`Failed to delete transaction: ${response.statusText}`);
+    }
+    return response.json();
 }
 
 export async function fetchHistory(

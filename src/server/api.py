@@ -12,10 +12,12 @@ from server.dependencies import get_transaction_data, get_config_manager, reload
 from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
 from portfolio_analyzer import calculate_periodic_returns, extract_realized_capital_gains_history, extract_dividend_history
 from market_data import MarketDataProvider, map_to_yf_symbol
+from db_utils import add_transaction_to_db, update_transaction_in_db, delete_transaction_from_db, get_database_path, get_db_connection
+
 
 from risk_metrics import calculate_all_risk_metrics
 import config
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 router = APIRouter()
 
@@ -392,12 +394,149 @@ async def get_transactions(
 
         # Handle NaNs and convert to list of dicts
         df = df.where(pd.notnull(df), None)
+        
+        # Ensure we include the ID in the response if it's in the index or a column
+        if "original_index" in df.columns:
+             # Make sure original_index is available as 'id' for the frontend
+             df["id"] = df["original_index"]
+        elif df.index.name == "original_index" or "original_index" in df.index.names:
+             df["id"] = df.index.get_level_values("original_index")
+        
         records = df.to_dict(orient="records")
         return clean_nans(records)
         
     except Exception as e:
         logging.error(f"Error getting transactions: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+class TransactionInput(BaseModel):
+    Date: str
+    Type: str
+    Symbol: str
+    Quantity: float
+    Price_Share: float = Field(0.0, alias="Price/Share")
+    Total_Amount: Optional[float] = Field(None, alias="Total Amount")
+    Commission: float = 0.0
+    Account: str
+    Split_Ratio: Optional[float] = Field(None, alias="Split Ratio")
+    Note: Optional[str] = None
+    Local_Currency: str = Field(..., alias="Local Currency")
+    To_Account: Optional[str] = Field(None, alias="To Account")
+    
+    class Config:
+        populate_by_name = True
+
+@router.post("/transactions")
+async def create_transaction(
+    transaction: TransactionInput,
+    data: tuple = Depends(get_transaction_data)
+):
+    """
+    Creates a new transaction.
+    """
+    try:
+        _, _, _, _, _, db_path = data
+        conn = get_db_connection(db_path)
+        if not conn:
+            raise HTTPException(status_code=500, detail="Database connection failed")
+            
+        # Convert Pydantic model to dict with correct keys for DB
+        tx_data = transaction.dict(by_alias=True)
+        
+        # Explicitly handle Price/Share alias if Pydantic didn't cover it fully or for safety
+        if "Price_Share" in tx_data:
+             tx_data["Price/Share"] = tx_data.pop("Price_Share")
+        if "Total_Amount" in tx_data:
+             tx_data["Total Amount"] = tx_data.pop("Total_Amount")
+        if "Local_Currency" in tx_data:
+             tx_data["Local Currency"] = tx_data.pop("Local_Currency")
+        if "To_Account" in tx_data:
+             tx_data["To Account"] = tx_data.pop("To_Account")
+        if "Split_Ratio" in tx_data:
+             tx_data["Split Ratio"] = tx_data.pop("Split_Ratio")
+
+        success, new_id = add_transaction_to_db(conn, tx_data)
+        conn.close()
+        
+        if success:
+            reload_data() # Refresh cache
+            return {"status": "success", "id": new_id, "message": "Transaction added"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to add transaction to database")
+            
+    except Exception as e:
+        logging.error(f"Error adding transaction: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/transactions/{transaction_id}")
+async def update_transaction(
+    transaction_id: int,
+    transaction: TransactionInput,
+    data: tuple = Depends(get_transaction_data)
+):
+    """
+    Updates an existing transaction.
+    """
+    try:
+        _, _, _, _, _, db_path = data
+        conn = get_db_connection(db_path)
+        if not conn:
+             raise HTTPException(status_code=500, detail="Database connection failed")
+
+        tx_data = transaction.dict(by_alias=True)
+        
+        # Handle Aliases
+        if "Price_Share" in tx_data:
+             tx_data["Price/Share"] = tx_data.pop("Price_Share")
+        if "Total_Amount" in tx_data:
+             tx_data["Total Amount"] = tx_data.pop("Total_Amount")
+        if "Local_Currency" in tx_data:
+             tx_data["Local Currency"] = tx_data.pop("Local_Currency")
+        if "To_Account" in tx_data:
+             tx_data["To Account"] = tx_data.pop("To_Account")
+        if "Split_Ratio" in tx_data:
+             tx_data["Split Ratio"] = tx_data.pop("Split_Ratio")
+
+        success = update_transaction_in_db(conn, transaction_id, tx_data)
+        conn.close()
+        
+        if success:
+            reload_data()
+            return {"status": "success", "message": "Transaction updated"}
+        else:
+            raise HTTPException(status_code=404, detail="Transaction not found or update failed")
+
+    except Exception as e:
+        logging.error(f"Error updating transaction: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/transactions/{transaction_id}")
+async def delete_transaction(
+    transaction_id: int,
+    data: tuple = Depends(get_transaction_data)
+):
+    """
+    Deletes a transaction.
+    """
+    try:
+        _, _, _, _, _, db_path = data
+        conn = get_db_connection(db_path)
+        if not conn:
+             raise HTTPException(status_code=500, detail="Database connection failed")
+             
+        success = delete_transaction_from_db(conn, transaction_id)
+        conn.close()
+        
+        if success:
+            reload_data()
+            return {"status": "success", "message": "Transaction deleted"}
+        else:
+            raise HTTPException(status_code=404, detail="Transaction not found or delete failed")
+
+    except Exception as e:
+        logging.error(f"Error deleting transaction: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/history")
 async def get_history(

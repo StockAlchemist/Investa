@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { exportToCSV } from '../lib/export';
-import { Transaction } from '../lib/api';
+import { Transaction, addTransaction, updateTransaction, deleteTransaction } from '../lib/api';
+import TransactionModal from './TransactionModal';
 
 interface TransactionsTableProps {
     transactions: Transaction[];
@@ -10,6 +12,56 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
     const [symbolFilter, setSymbolFilter] = useState('');
     const [accountFilter, setAccountFilter] = useState('');
     const [visibleRows, setVisibleRows] = useState(10);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
+    const [currentTransaction, setCurrentTransaction] = useState<Transaction | null>(null);
+
+    const queryClient = useQueryClient();
+
+    const handleAdd = () => {
+        setModalMode('add');
+        setCurrentTransaction(null);
+        setIsModalOpen(true);
+    };
+
+    const handleEdit = (tx: Transaction) => {
+        setModalMode('edit');
+        setCurrentTransaction(tx);
+        setIsModalOpen(true);
+    };
+
+    const handleDelete = async (tx: Transaction) => {
+        if (!tx.id) {
+            alert("Cannot delete transaction without ID");
+            return;
+        }
+        if (window.confirm(`Are you sure you want to delete transaction ${tx.Symbol} on ${tx.Date}?`)) {
+            try {
+                await deleteTransaction(tx.id);
+                // Invalidate queries to refresh data
+                queryClient.invalidateQueries();
+            } catch (error) {
+                console.error("Failed to delete transaction:", error);
+                alert("Failed to delete transaction");
+            }
+        }
+    };
+
+    const handleModalSubmit = async (transaction: Transaction) => {
+        try {
+            if (modalMode === 'add') {
+                await addTransaction(transaction);
+            } else {
+                if (!transaction.id) throw new Error("Transaction ID missing for update");
+                await updateTransaction(transaction.id, transaction);
+            }
+            // Invalidate queries to refresh data
+            queryClient.invalidateQueries();
+        } catch (error) {
+            console.error("Failed to save transaction:", error);
+            throw error; // Re-throw to be handled by modal
+        }
+    };
 
     if (!transactions || transactions.length === 0) {
         return <div className="p-4 text-center text-gray-500">No transactions found.</div>;
@@ -31,8 +83,44 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
         setVisibleRows(filteredTransactions.length);
     };
 
+    // Calculate Account -> Currency Map from existing transactions
+    // Also extract unique accounts and symbols for suggestions
+    const accountCurrencyMap: Record<string, string> = {};
+    const uniqueAccounts = new Set<string>();
+    const uniqueSymbols = new Set<string>();
+
+    if (transactions) {
+        transactions.forEach(tx => {
+            if (tx.Account) {
+                uniqueAccounts.add(tx.Account);
+                if (tx["Local Currency"]) {
+                    accountCurrencyMap[tx.Account] = tx["Local Currency"];
+                }
+            }
+            if (tx.Symbol) {
+                uniqueSymbols.add(tx.Symbol);
+            }
+        });
+    }
+
+    const existingAccounts = Array.from(uniqueAccounts).sort();
+    const existingSymbols = Array.from(uniqueSymbols).sort();
+
     return (
         <div className="space-y-4">
+
+
+            <TransactionModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onSubmit={handleModalSubmit}
+                initialData={currentTransaction}
+                mode={modalMode}
+                accountCurrencyMap={accountCurrencyMap}
+                existingAccounts={existingAccounts}
+                existingSymbols={existingSymbols}
+            />
+
             <div className="flex flex-col gap-4">
                 <div className="flex flex-col md:flex-row gap-2">
                     <div className="relative flex-1">
@@ -73,6 +161,12 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="flex flex-wrap gap-2 w-full md:w-auto">
                         <button
+                            onClick={handleAdd}
+                            className="flex-1 md:flex-none px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                        >
+                            <span>+</span> Add Transaction
+                        </button>
+                        <button
                             onClick={() => { setSymbolFilter(''); setAccountFilter(''); }}
                             className="flex-1 md:flex-none px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm font-medium text-center"
                         >
@@ -107,6 +201,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                             <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Split Ratio</th>
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Note</th>
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Currency</th>
+                            <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -134,6 +229,20 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                                 <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-gray-200">{tx["Split Ratio"] || '-'}</td>
                                 <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs" title={tx.Note}>{tx.Note || '-'}</td>
                                 <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-200">{tx["Local Currency"]}</td>
+                                <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-gray-200 whitespace-nowrap">
+                                    <button
+                                        onClick={() => handleEdit(tx)}
+                                        className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 mr-2"
+                                    >
+                                        Edit
+                                    </button>
+                                    <button
+                                        onClick={() => handleDelete(tx)}
+                                        className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                                    >
+                                        Delete
+                                    </button>
+                                </td>
                             </tr>
                         ))}
                     </tbody>
@@ -186,26 +295,42 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                                 {tx.Note}
                             </div>
                         )}
+                        <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
+                            <button
+                                onClick={() => handleEdit(tx)}
+                                className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                            >
+                                Edit
+                            </button>
+                            <button
+                                onClick={() => handleDelete(tx)}
+                                className="text-sm font-medium text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                            >
+                                Delete
+                            </button>
+                        </div>
                     </div>
                 ))}
             </div>
 
-            {visibleRows < filteredTransactions.length && (
-                <div className="flex justify-center gap-4 mt-4">
-                    <button
-                        onClick={handleShowMore}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
-                    >
-                        Show More
-                    </button>
-                    <button
-                        onClick={handleShowAll}
-                        className="px-4 py-2 bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors text-sm font-medium"
-                    >
-                        Show All
-                    </button>
-                </div>
-            )}
-        </div>
+            {
+                visibleRows < filteredTransactions.length && (
+                    <div className="flex justify-center gap-4 mt-4">
+                        <button
+                            onClick={handleShowMore}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
+                        >
+                            Show More
+                        </button>
+                        <button
+                            onClick={handleShowAll}
+                            className="px-4 py-2 bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors text-sm font-medium"
+                        >
+                            Show All
+                        </button>
+                    </div>
+                )
+            }
+        </div >
     );
 }
