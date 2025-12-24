@@ -1,23 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { PortfolioSummary } from '../lib/api';
 import { formatCurrency } from '../lib/utils';
-import {
-    DndContext,
-    closestCenter,
-    KeyboardSensor,
-    PointerSensor,
-    useSensor,
-    useSensors,
-    DragEndEvent
-} from '@dnd-kit/core';
-import {
-    arrayMove,
-    SortableContext,
-    sortableKeyboardCoordinates,
-    rectSortingStrategy,
-    useSortable
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 
 interface DashboardProps {
     summary: PortfolioSummary;
@@ -71,35 +54,6 @@ const MetricCard = ({
     </div>
 );
 
-// Sortable Item Wrapper
-function SortableMetricItem({ id, colSpan, children, isCustomizing }: any) {
-    const {
-        attributes,
-        listeners,
-        setNodeRef,
-        transform,
-        transition,
-    } = useSortable({ id });
-
-    const style = {
-        transform: CSS.Transform.toString(transform),
-        transition,
-    };
-
-    return (
-        <div
-            ref={setNodeRef}
-            style={style}
-            className={`${colSpan} ${isCustomizing ? 'cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-blue-500 rounded-2xl' : ''}`}
-            {...(isCustomizing ? { ...attributes, ...listeners } : {})}
-        >
-            {/* Overlay to intercept clicks when customizing */}
-            {isCustomizing && <div className="absolute inset-0 z-20 bg-transparent" />}
-            {children}
-        </div>
-    );
-}
-
 const DEFAULT_ITEMS = [
     { id: 'portfolioValue', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
     { id: 'dayGL', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
@@ -116,59 +70,6 @@ const DEFAULT_ITEMS = [
 export default function Dashboard({ summary, currency }: DashboardProps) {
     const m = summary?.metrics;
     const am = summary?.account_metrics;
-
-    // State
-    const [isCustomizing, setIsCustomizing] = useState(false);
-    const [items, setItems] = useState(DEFAULT_ITEMS);
-    const [mounted, setMounted] = useState(false);
-
-    // Load saved order on mount
-    useEffect(() => {
-        setMounted(true);
-        const savedOrder = localStorage.getItem('dashboard-order');
-        if (savedOrder) {
-            try {
-                const parsedOrder = JSON.parse(savedOrder);
-                // Validate parsedOrder contains valid IDs
-                if (Array.isArray(parsedOrder) && parsedOrder.length === DEFAULT_ITEMS.length) {
-                    setItems(parsedOrder);
-                }
-            } catch (e) {
-                console.error("Failed to parse saved dashboard order", e);
-            }
-        }
-    }, []);
-
-    // Save order when changed
-    useEffect(() => {
-        if (mounted) {
-            localStorage.setItem('dashboard-order', JSON.stringify(items));
-        }
-    }, [items, mounted]);
-
-    const sensors = useSensors(
-        useSensor(PointerSensor, {
-            activationConstraint: {
-                distance: 8,
-            },
-        }),
-        useSensor(KeyboardSensor, {
-            coordinateGetter: sortableKeyboardCoordinates,
-        })
-    );
-
-    const handleDragEnd = (event: DragEndEvent) => {
-        const { active, over } = event;
-
-        if (over && active.id !== over.id) {
-            setItems((items) => {
-                const oldIndex = items.findIndex((item) => item.id === active.id);
-                const newIndex = items.findIndex((item) => item.id === over.id);
-
-                return arrayMove(items, oldIndex, newIndex);
-            });
-        }
-    };
 
     if (!m) {
         return (
@@ -197,7 +98,7 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
     const totalReturnColor = totalGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
     const realizedGainColor = realizedGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
 
-    // Render helper
+    // Render helper same as before
     const renderContent = (id: string) => {
         switch (id) {
             case 'portfolioValue':
@@ -282,41 +183,13 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
 
     return (
         <div className="mb-10">
-            <div className="flex justify-end mb-2">
-                <button
-                    onClick={() => setIsCustomizing(!isCustomizing)}
-                    className={`text-xs font-medium px-3 py-1 rounded transition-colors ${isCustomizing
-                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-                        : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
-                        }`}
-                >
-                    {isCustomizing ? 'Done Customizing' : 'Customize Dashboard'}
-                </button>
-            </div>
-
-            <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={handleDragEnd}
-            >
-                <SortableContext
-                    items={items.map(i => i.id)}
-                    strategy={rectSortingStrategy}
-                >
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        {items.map((item) => (
-                            <SortableMetricItem
-                                key={item.id}
-                                id={item.id}
-                                colSpan={item.colSpan}
-                                isCustomizing={isCustomizing}
-                            >
-                                {renderContent(item.id)}
-                            </SortableMetricItem>
-                        ))}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {DEFAULT_ITEMS.map((item) => (
+                    <div key={item.id} className={item.colSpan}>
+                        {renderContent(item.id)}
                     </div>
-                </SortableContext>
-            </DndContext>
+                ))}
+            </div>
         </div>
     );
 }

@@ -782,7 +782,7 @@ def calculate_portfolio_summary(
         
         # Call the new function that returns both gains and lots
         fifo_realized_gains_df, open_lots_dict = calculate_fifo_lots_and_gains(
-            transactions_df=all_transactions_df_cleaned,
+            transactions_df=transactions_df_filtered,
             display_currency=display_currency,
             historical_fx_yf=historical_fx_data_usd_based,
             default_currency=default_currency,
