@@ -112,7 +112,7 @@ class ConfigManager:
                     if isinstance(price_overrides, dict):
                         self.manual_overrides["manual_price_overrides"] = {
                             k.upper().strip(): v for k, v in price_overrides.items()
-                            if isinstance(v, dict)
+                            if isinstance(v, (dict, int, float))
                         }
                     
                     # Handle symbol map

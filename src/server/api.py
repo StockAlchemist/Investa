@@ -19,6 +19,11 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
+current_file_path = os.path.abspath(__file__)
+src_server_dir = os.path.dirname(current_file_path)
+src_dir = os.path.dirname(src_server_dir)
+project_root = os.path.dirname(src_dir)
+
 # ... (existing code)
 
 @router.get("/asset_change")
@@ -735,11 +740,8 @@ async def update_settings(
     Updates the application settings (manual overrides, symbol map, exclude list).
     """
     try:
-        # Load existing overrides to merge or overwrite?
-        # The design says "Symbol Setting window" so we probably send the full state for that section
-        # or separate updates. Let's assume we send the full state for the modified section or merge partials.
-        # ConfigManager.save_manual_overrides replaces the entire dictionary in the file.
-        # So we should probably read, update, and save.
+        # RELOAD DATA FROM DISK to ensure we have the latest state before merging updates
+        config_manager.load_manual_overrides()
         
         current_overrides = config_manager.manual_overrides
         
@@ -773,8 +775,22 @@ async def update_settings(
         if settings.user_excluded_symbols is not None:
             current_overrides["user_excluded_symbols"] = sorted(list(set(settings.user_excluded_symbols)))
             
-        # Save
+        # Save to AppData
         if config_manager.save_manual_overrides(current_overrides):
+            
+            # --- Added: Mirror save to Project Root if file exists ---
+            # This ensures the user's "source of truth" in their workspace stays in sync
+            project_overrides_file = os.path.join(project_root, "manual_overrides.json")
+            if os.path.exists(project_overrides_file):
+                try:
+                    import json
+                    with open(project_overrides_file, "w", encoding="utf-8") as f:
+                        json.dump(current_overrides, f, indent=4, ensure_ascii=False)
+                    logging.info(f"Mirrored settings update to {project_overrides_file}")
+                except Exception as e:
+                    logging.warning(f"Failed to mirror settings to project file: {e}")
+            # ---------------------------------------------------------
+
             # Reload data to apply changes (clear cache)
             reload_data()
             return {"status": "success", "message": "Settings updated and data reloaded"}

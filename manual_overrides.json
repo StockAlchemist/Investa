@@ -1,104 +1,77 @@
 {
     "manual_price_overrides": {
         "ES-GQG": {
-            "price": 20.9319,
-            "asset_type": "ETF",
-            "sector": "US Stocks",
+            "price": 22.703,
+            "asset_type": "MUTUALFUND",
+            "sector": "Exchange-Traded Fund",
             "geography": "United States",
-            "industry": "US Stocks"
+            "industry": "Broad Market - US"
         },
         "SCBCHA-SSF": {
-            "price": 7.9889,
+            "price": 9.5193,
             "asset_type": "ETF",
-            "sector": "China Stocks ETF",
+            "sector": "Exchange-Traded Fund",
             "geography": "China",
-            "industry": "China Stocks"
+            "industry": "Broad Market - Emerging Markets"
         },
         "SCBRCTECH": {
-            "price": 5.2242,
+            "price": 6.264,
             "asset_type": "ETF",
-            "sector": "China Tech ETF",
+            "sector": "Exchange-Traded Fund",
             "geography": "China",
-            "industry": "China Stocks"
+            "industry": "Broad Market - Emerging Markets"
         },
         "SCBRMS&P500": {
-            "price": 18.5554,
+            "price": 20.8542,
             "asset_type": "ETF",
-            "sector": "US S&P 500 ETF",
+            "sector": "Exchange-Traded Fund",
             "geography": "United States",
-            "industry": "US Stocks"
+            "industry": "Broad Market - US"
+        },
+        "VHT": {
+            "price": 0,
+            "asset_type": "ETF",
+            "sector": "Healthcare",
+            "geography": "United States",
+            "industry": "Sector - Healthcare"
+        },
+        "SCHG": {
+            "price": 0,
+            "asset_type": "ETF",
+            "sector": "Exchange-Traded Fund",
+            "geography": "United States",
+            "industry": "Broad Market - US"
         },
         "VTI": {
+            "price": 0,
             "asset_type": "ETF",
-            "sector": "US Total Index ETF",
+            "sector": "Exchange-Traded Fund",
             "geography": "United States",
-            "industry": "US Stocks"
+            "industry": "Broad Market - US"
         }
     },
     "user_symbol_map": {
-        "AAPL": "AAPL",
+        "BRK.B": "BRK-B",
+        "BECL.BK": "BEM.BK",
+        "NOK.BK": "NOK.BK",
         "AAV:BKK": "AAV.BK",
-        "ADRE": "ADRE",
-        "AGG": "AGG",
         "AMARIN:BKK": "AMARIN.BK",
-        "AMZN": "AMZN",
         "AOT:BKK": "AOT.BK",
-        "ASML": "ASML",
-        "AXP": "AXP",
-        "BAC": "BAC",
         "BANPU:BKK": "BANPU.BK",
         "BBL:BKK": "BBL.BK",
-        "BBW": "BBW",
         "BECL:BKK": "BECL.BK",
         "BEM:BKK": "BEM.BK",
-        "BHP": "BHP",
-        "BLV": "BLV",
-        "BND": "BND",
-        "BRK.B": "BRK-B",
-        "C": "C",
         "CPALL:BKK": "CPALL.BK",
         "CPF:BKK": "CPF.BK",
-        "CVX": "CVX",
-        "DAL": "DAL",
-        "DIA": "DIA",
-        "DPZ": "DPZ",
-        "EFA": "EFA",
-        "EPP": "EPP",
         "GENCO:BKK": "GENCO.BK",
-        "GOOG": "GOOG",
-        "GOOGL": "GOOGL",
-        "GS": "GS",
-        "IBM": "IBM",
-        "IWM": "IWM",
-        "JNJ": "JNJ",
-        "KHC": "KHC",
-        "KO": "KO",
-        "LQD": "LQD",
         "MBK:BKK": "MBK.BK",
-        "MSFT": "MSFT",
-        "NKE": "NKE",
-        "NLY": "NLY",
         "NOK:BKK": "NOK.BK",
-        "NVDA": "NVDA",
-        "PLTR": "PLTR",
         "PTT:BKK": "PTT.BK",
-        "QQQ": "QQQ",
-        "QSR": "QSR",
         "SCC:BKK": "SCC.BK",
-        "SPY": "SPY",
         "TCAP:BKK": "TCAP.BK",
         "THAI:BKK": "THAI.BK",
-        "TLT": "TLT",
         "TRUE:BKK": "TRUE.BK",
-        "VDE": "VDE",
-        "VGK": "VGK",
-        "VT": "VT",
-        "VTI": "VTI",
-        "VWO": "VWO",
-        "VZ": "VZ",
-        "XLE": "XLE",
-        "ZEN:BKK": "ZEN.BK",
-        "^GSPC": "^GSPC"
+        "ZEN:BKK": "ZEN.BK"
     },
     "user_excluded_symbols": [
         "AAUKY",

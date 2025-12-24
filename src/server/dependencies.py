@@ -28,13 +28,15 @@ _USER_SYMBOL_MAP: Dict[str, str] = {}
 _USER_EXCLUDED_SYMBOLS: Set[str] = set()
 _ACCOUNT_CURRENCY_MAP: Dict[str, str] = {}
 _DB_MTIME: float = 0.0
+_OVERRIDES_PATH: Optional[str] = None
+_OVERRIDES_MTIME: float = 0.0
 
 def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str], Set[str], Dict[str, str], str]:
     """
     Loads transaction data from the database.
     Checks for file modification to auto-reload.
     """
-    global _TRANSACTIONS_CACHE, _IGNORED_INDICES, _IGNORED_REASONS, _MANUAL_OVERRIDES, _USER_SYMBOL_MAP, _USER_EXCLUDED_SYMBOLS, _ACCOUNT_CURRENCY_MAP, _DB_PATH, _DB_MTIME
+    global _TRANSACTIONS_CACHE, _IGNORED_INDICES, _IGNORED_REASONS, _MANUAL_OVERRIDES, _USER_SYMBOL_MAP, _USER_EXCLUDED_SYMBOLS, _ACCOUNT_CURRENCY_MAP, _DB_PATH, _DB_MTIME, _OVERRIDES_PATH, _OVERRIDES_MTIME
     
     # --- 1. Load Configuration First ---
     # We need to know the DB path from config if it exists
@@ -109,16 +111,25 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
         db_path = get_database_path(DB_FILENAME)
         logging.info(f"Using db_utils fallback DB: {db_path}")
     
-    # Check modification time
+    # Check modification time for DB
     current_mtime = 0.0
     if os.path.exists(db_path):
         current_mtime = os.path.getmtime(db_path)
     
+    # Check modification time for Overrides
+    overrides_changed = False
+    if _OVERRIDES_PATH and os.path.exists(_OVERRIDES_PATH):
+        current_overrides_mtime = os.path.getmtime(_OVERRIDES_PATH)
+        if current_overrides_mtime != _OVERRIDES_MTIME:
+            overrides_changed = True
+            logging.info(f"Overrides file changed. Reloading. (Old MTime: {_OVERRIDES_MTIME}, New: {current_overrides_mtime})")
+
     # Reload if cache is empty OR file has changed OR DB path changed
     # (Note: _DB_PATH tracking handles path changes)
-    if _TRANSACTIONS_CACHE is None or current_mtime != _DB_MTIME or db_path != _DB_PATH:
+    if _TRANSACTIONS_CACHE is None or current_mtime != _DB_MTIME or db_path != _DB_PATH or overrides_changed:
         if _TRANSACTIONS_CACHE is not None:
             reason = "mtime changed" if current_mtime != _DB_MTIME else "db_path changed"
+            if overrides_changed: reason = "overrides changed"
             logging.info(f"Reloading transactions ({reason}). New path: {db_path}")
         
         logging.info(f"Loading transactions from: {db_path}")
@@ -166,6 +177,8 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
         
         if loaded_overrides_path:
              logging.info(f"Using overrides from {loaded_overrides_path}.")
+             _OVERRIDES_PATH = loaded_overrides_path
+             _OVERRIDES_MTIME = os.path.getmtime(loaded_overrides_path)
         
         # ------------------------------------------------
         

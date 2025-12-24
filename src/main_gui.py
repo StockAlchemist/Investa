@@ -2145,19 +2145,8 @@ The CSV file should contain the following columns (header names must match exact
                 # logging.info("Symbol settings unchanged.")
                 pass
 
-    def _save_manual_overrides_to_json(
-        self,
-    ) -> bool:  # Renamed from _save_manual_prices_to_json
-        """Saves all manual settings (prices, symbol map, exclusions) to MANUAL_OVERRIDES_FILE."""
-        if (
-            not hasattr(self, "manual_overrides_dict")
-            or not hasattr(self, "user_symbol_map_config")
-            or not hasattr(self, "user_excluded_symbols_config")
-        ):
-            logging.error("Cannot save symbol settings, dictionary attributes missing.")
-            return False
+    # Duplicate method removed
 
-        overrides_file_path = self.MANUAL_OVERRIDES_FILE
         # logging.info(f"Saving symbol settings to: {overrides_file_path}")
 
         data_to_save = {
@@ -3405,11 +3394,30 @@ The CSV file should contain the following columns (header names must match exact
         )
 
     def _save_manual_overrides_to_json(self) -> bool:
-        """Saves manual overrides via ConfigManager."""
+        """Saves manual overrides via ConfigManager, merging with existing disk data."""
+        # Load existing data from disk to prevent overwriting external changes
+        existing_data = self.config_manager.load_manual_overrides()
+        
+        # Merge current in-memory state into existing data
+        # Note: This favors the GUI's current state for keys that exist in both,
+        # but preserves keys (e.g. excluded symbols) that might have been added externally
+        # if the GUI's list doesn't explicitly exclude them (which is tricky with lists).
+        # For lists like excluded_symbols, we'll take a union to be safe against data loss.
+        
+        merged_overrides = existing_data.get("manual_price_overrides", {})
+        merged_overrides.update(self.manual_overrides_dict)
+        
+        merged_map = existing_data.get("user_symbol_map", {})
+        merged_map.update(self.user_symbol_map_config)
+        
+        existing_excluded = set(existing_data.get("user_excluded_symbols", []))
+        current_excluded = set(self.user_excluded_symbols_config)
+        merged_excluded = sorted(list(existing_excluded.union(current_excluded)))
+
         data = {
-            "manual_price_overrides": self.manual_overrides_dict,
-            "user_symbol_map": self.user_symbol_map_config,
-            "user_excluded_symbols": list(self.user_excluded_symbols_config)
+            "manual_price_overrides": merged_overrides,
+            "user_symbol_map": merged_map,
+            "user_excluded_symbols": merged_excluded
         }
         return self.config_manager.save_manual_overrides(data)
 
