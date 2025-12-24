@@ -1032,19 +1032,33 @@ async def get_attribution(
             sector_data[sector]["value"] += value
             
             # --- AGGREGATION LOGIC ---
-            # Group by symbol to combine duplicates across accounts
+            # Group by Name if available to merge tickers (e.g. GOOG/GOOGL), otherwise by symbol
+            name = row.get("Name")
             found = False
             for prev_item in stock_data:
-                if prev_item["symbol"] == symbol:
+                # Check for match by Name (if valid) OR Symbol
+                # match if names are identical strings (and not None/empty)
+                name_match = (name and prev_item.get("name") and name == prev_item.get("name"))
+                symbol_match = (prev_item["symbol"] == symbol)
+
+                if name_match or symbol_match:
                      prev_item["gain"] += gain
                      prev_item["value"] += value
+                     
+                     # If it was a name match but different symbol, merge the symbol string
+                     if not symbol_match:
+                         # Split existing symbols to check for uniqueness
+                         existing_syms = [s.strip() for s in prev_item["symbol"].split(",")]
+                         if symbol not in existing_syms:
+                             prev_item["symbol"] += f", {symbol}"
+                     
                      found = True
                      break
             
             if not found:
                  stock_data.append({
                     "symbol": symbol,
-                    "name": row.get("Name"),
+                    "name": name,
                     "gain": gain,
                     "value": value,
                     "sector": sector
