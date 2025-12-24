@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { fetchSettings, updateSettings, triggerRefresh, Settings as SettingsType, ManualOverride, ManualOverrideData } from '../lib/api';
+import { fetchSettings, updateSettings, triggerRefresh, fetchHoldings, Settings as SettingsType, ManualOverride, ManualOverrideData } from '../lib/api';
+import { COUNTRIES, ALL_INDUSTRIES, SECTOR_INDUSTRY_MAP } from '../lib/constants';
 
 type Tab = 'overrides' | 'mapping' | 'excluded';
 
@@ -59,6 +60,9 @@ export default function Settings() {
 
     const [excludeSymbol, setExcludeSymbol] = useState('');
 
+    // Dynamic lists based on portfolio data
+    const [portfolioCountries, setPortfolioCountries] = useState<string[]>([]);
+
     useEffect(() => {
         loadSettings();
     }, []);
@@ -66,8 +70,23 @@ export default function Settings() {
     const loadSettings = async () => {
         try {
             setLoading(true);
-            const data = await fetchSettings();
+            const [data, holdings] = await Promise.all([
+                fetchSettings(),
+                fetchHoldings()
+            ]);
+
             setSettings(data);
+
+            // Extract unique used countries from holdings
+            const usedCountries = new Set<string>();
+            holdings.forEach(h => {
+                // Ensure Country exists and is not empty or "N/A"
+                if (h.Country && h.Country !== 'N/A') {
+                    usedCountries.add(h.Country);
+                }
+            });
+            setPortfolioCountries(Array.from(usedCountries).sort());
+
             setError(null);
         } catch (err) {
             setError('Failed to load settings');
@@ -97,42 +116,7 @@ export default function Settings() {
         const newOverrides: Record<string, ManualOverride> = { ...currentOverrides };
 
         const newData: ManualOverrideData = {
-            price: price !== null ? price : 0, // specific requirement: price is number in interface. If null, maybe keep 0 or handle logic upstream? 
-            // The API interface ManualOverrideData defines price as number. 
-            // But python backend allows None for price if just updating metadata? 
-            // In API.ts: price: number; 
-            // Ideally we should change API.ts to number | null, but let's see. 
-            // If I look at the python code (not shown here but inferred), it likely handles it.
-            // However, to satisfy TS interface, let's look at API.ts again.
-            // API.ts line 217: price: number;
-            // I should probably update API.ts too if I want clean types, or just cast it. 
-            // For now, let's use a workaround or check if I can update API.ts.
-            // The plan didn't explicitly say update API.ts but it implied handling null.
-            // Let's cast for now to avoid breaking changes if not strictly needed, 
-            // OR better, send what the backend expects. 
-            // If price is missing, we probably shouldn't mistakenly set it to 0 if it was previously set.
-            // But this is a "set override" action. 
-            // Let's assume sending null is okay and cast as any to bypass strict TS if needed, or change TS.
-            // Let's check api.ts content again. it says price: number.
-            // I'll stick to the plan: "Update payload construction to handle optional price".
-
-            // Wait, if I set price to 0, it might be interpreted as actual 0.
-            // If the user wants to ONLY set metadata, they probably don't want to override price to 0.
-            // But the current backend `ManualOverrideData` requires a price.
-            // PROPOSITION: logic in `addOverride` should fetch existing override if any, to preserve price?
-            // Or if price is empty, maybe we shouldn't include `price` key if backend supports partial updates?
-            // The backend likely replaces the struct.
-
-            // Re-reading implementation plan: "If overridePrice is empty, use null or undefined".
-            // So I will try to use undefined/null.
-
-            price: (price !== null ? price : 0) as number, // Temporary cast. 
-            // If I send 0, it overrides. 
-            // Let's try to send undefined if price is null? 
-            // But `price` is mandatory in `ManualOverrideData`. 
-            // I will start by just allowing the save logic. 
-            // If I look at lines 389-400 of Settings.tsx, checking `data` type.
-
+            price: price !== null ? price : 0,
             asset_type: overrideAssetType || undefined,
             sector: overrideSector || undefined,
             geography: overrideGeo || undefined,
@@ -140,13 +124,7 @@ export default function Settings() {
         };
 
         // Handling the price=0 case if user meant "no price override".
-        // If price is null (from input), and we send 0, it might show as 0.00.
-        // Changing api.ts to `price: number | null` would be best. 
-        // But for this step, I will implement the logic as closely as possible to the request.
-
         if (price === null) {
-            // If price is not provided, we might want to preserve existing price if it exists?
-            // But existing override might be just a number. 
             const existing = currentOverrides[overrideSymbol.toUpperCase()];
             if (existing) {
                 if (typeof existing === 'number') {
@@ -291,7 +269,11 @@ export default function Settings() {
 
     const overrides = settings?.manual_overrides || {};
     const symbolMap = settings?.user_symbol_map || {};
-    const excluded = settings?.user_excluded_symbols || [];
+    // Sort excluded symbols alphabetically
+    const excluded = (settings?.user_excluded_symbols || []).slice().sort((a, b) => a.localeCompare(b));
+
+    // Construct Geography Options: Portfolio Countries first, then ALL countries
+    const availableCountries = COUNTRIES.filter(c => !portfolioCountries.includes(c));
 
     return (
         <div className="space-y-8 pb-20 max-w-6xl mx-auto">
@@ -353,7 +335,7 @@ export default function Settings() {
                                             value={overrideSymbol}
                                             onChange={(e) => setOverrideSymbol(e.target.value.toUpperCase())}
                                             placeholder="e.g. AAPL"
-                                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                            className="w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
                                         />
                                     </div>
                                     <div className="col-span-1">
@@ -364,7 +346,7 @@ export default function Settings() {
                                             value={overridePrice}
                                             onChange={(e) => setOverridePrice(e.target.value)}
                                             placeholder="0.00"
-                                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                            className="w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
                                         />
                                     </div>
                                     <div className="col-span-1">
@@ -372,7 +354,7 @@ export default function Settings() {
                                         <select
                                             value={overrideAssetType}
                                             onChange={(e) => setOverrideAssetType(e.target.value)}
-                                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                            className="w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
                                         >
                                             {ASSET_TYPES.map(t => <option key={t} value={t}>{t || "Select..."}</option>)}
                                         </select>
@@ -382,30 +364,49 @@ export default function Settings() {
                                         <select
                                             value={overrideSector}
                                             onChange={(e) => setOverrideSector(e.target.value)}
-                                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                            className="w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
                                         >
                                             {SECTORS.map(s => <option key={s} value={s}>{s || "Select..."}</option>)}
                                         </select>
                                     </div>
                                     <div className="col-span-1">
                                         <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Geography</label>
-                                        <input
-                                            type="text"
+                                        <select
                                             value={overrideGeo}
                                             onChange={(e) => setOverrideGeo(e.target.value)}
-                                            placeholder="Country"
-                                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
-                                        />
+                                            className="w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                        >
+                                            <option value="">Select...</option>
+
+                                            {/* Portfolio Countries Section */}
+                                            {portfolioCountries.length > 0 && (
+                                                <optgroup label="In Portfolio">
+                                                    {portfolioCountries.map(c => (
+                                                        <option key={c} value={c}>{c}</option>
+                                                    ))}
+                                                </optgroup>
+                                            )}
+
+                                            {/* All Countries Section */}
+                                            <optgroup label="All Countries">
+                                                {availableCountries.map(c => (
+                                                    <option key={c} value={c}>{c}</option>
+                                                ))}
+                                            </optgroup>
+                                        </select>
                                     </div>
                                     <div className="col-span-1">
                                         <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Industry</label>
-                                        <input
-                                            type="text"
+                                        <select
                                             value={overrideIndustry}
                                             onChange={(e) => setOverrideIndustry(e.target.value)}
-                                            placeholder="Industry"
-                                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
-                                        />
+                                            className="w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                        >
+                                            <option value="">Select...</option>
+                                            {ALL_INDUSTRIES.map(i => (
+                                                <option key={i} value={i}>{i}</option>
+                                            ))}
+                                        </select>
                                     </div>
                                 </div>
                                 <div className="flex justify-end mt-2">
@@ -440,39 +441,41 @@ export default function Settings() {
                                                 </td>
                                             </tr>
                                         ) : (
-                                            Object.entries(overrides).map(([symbol, data]) => {
-                                                const isObj = typeof data !== 'number';
-                                                const price = isObj ? (data as ManualOverrideData).price : (data as number);
-                                                const assetType = isObj ? (data as ManualOverrideData).asset_type : '';
-                                                const sector = isObj ? (data as ManualOverrideData).sector : '';
-                                                const geo = isObj ? (data as ManualOverrideData).geography : '';
-                                                const industry = isObj ? (data as ManualOverrideData).industry : '';
-                                                const currency = isObj ? (data as ManualOverrideData).currency : 'USD';
+                                            Object.entries(overrides)
+                                                .sort((a, b) => a[0].localeCompare(b[0]))
+                                                .map(([symbol, data]) => {
+                                                    const isObj = typeof data !== 'number';
+                                                    const price = isObj ? (data as ManualOverrideData).price : (data as number);
+                                                    const assetType = isObj ? (data as ManualOverrideData).asset_type : '';
+                                                    const sector = isObj ? (data as ManualOverrideData).sector : '';
+                                                    const geo = isObj ? (data as ManualOverrideData).geography : '';
+                                                    const industry = isObj ? (data as ManualOverrideData).industry : '';
+                                                    const currency = isObj ? (data as ManualOverrideData).currency : 'USD';
 
-                                                return (
-                                                    <tr key={symbol} className="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
-                                                        <td className="px-4 py-4 whitespace-nowrap font-medium text-gray-900 dark:text-white">{symbol}</td>
-                                                        <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300 font-mono">
-                                                            {price === 0
-                                                                ? <span className="text-gray-400">-</span>
-                                                                : `${currency === 'THB' ? '฿' : '$'}${price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`
-                                                            }
-                                                        </td>
-                                                        <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300">{assetType || '-'}</td>
-                                                        <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300">{sector || '-'}</td>
-                                                        <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300">{geo || '-'}</td>
-                                                        <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300">{industry || '-'}</td>
-                                                        <td className="px-4 py-4 whitespace-nowrap text-right font-medium">
-                                                            <button
-                                                                onClick={() => removeOverride(symbol)}
-                                                                className="text-red-600 hover:text-red-900 dark:hover:text-red-400 bg-red-50 dark:bg-transparent px-3 py-1 rounded hover:bg-red-100 transition-colors"
-                                                            >
-                                                                Remove
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })
+                                                    return (
+                                                        <tr key={symbol} className="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+                                                            <td className="px-4 py-4 whitespace-nowrap font-medium text-gray-900 dark:text-white">{symbol}</td>
+                                                            <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300 font-mono">
+                                                                {price === 0
+                                                                    ? <span className="text-gray-400">-</span>
+                                                                    : `${currency === 'THB' ? '฿' : '$'}${price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`
+                                                                }
+                                                            </td>
+                                                            <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300">{assetType || '-'}</td>
+                                                            <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300">{sector || '-'}</td>
+                                                            <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300">{geo || '-'}</td>
+                                                            <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300">{industry || '-'}</td>
+                                                            <td className="px-4 py-4 whitespace-nowrap text-right font-medium">
+                                                                <button
+                                                                    onClick={() => removeOverride(symbol)}
+                                                                    className="text-red-600 hover:text-red-900 dark:hover:text-red-400 bg-red-50 dark:bg-transparent px-3 py-1 rounded hover:bg-red-100 transition-colors"
+                                                                >
+                                                                    Remove
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })
                                         )}
                                     </tbody>
                                 </table>
@@ -494,7 +497,7 @@ export default function Settings() {
                                         value={mapFrom}
                                         onChange={(e) => setMapFrom(e.target.value.toUpperCase())}
                                         placeholder="e.g. MY-FUND"
-                                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                        className="w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
                                     />
                                 </div>
                                 <div className="flex items-center justify-center pt-6">
@@ -507,7 +510,7 @@ export default function Settings() {
                                         value={mapTo}
                                         onChange={(e) => setMapTo(e.target.value.toUpperCase())}
                                         placeholder="e.g. VTSAX"
-                                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                        className="w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
                                     />
                                 </div>
                                 <div className="flex items-end">
@@ -539,21 +542,23 @@ export default function Settings() {
                                                 </td>
                                             </tr>
                                         ) : (
-                                            Object.entries(symbolMap).map(([from, to]: [string, string]) => (
-                                                <tr key={from} className="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{from}</td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-center text-gray-400">→</td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-mono bg-gray-50 dark:bg-gray-900 px-2 rounded w-min">{to}</td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                        <button
-                                                            onClick={() => removeMapping(from)}
-                                                            className="text-red-600 hover:text-red-900 dark:hover:text-red-400 bg-red-50 dark:bg-transparent px-3 py-1 rounded hover:bg-red-100 transition-colors"
-                                                        >
-                                                            Remove
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))
+                                            Object.entries(symbolMap)
+                                                .sort((a, b) => a[0].localeCompare(b[0]))
+                                                .map(([from, to]: [string, string]) => (
+                                                    <tr key={from} className="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{from}</td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-center text-gray-400">→</td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-mono bg-gray-50 dark:bg-gray-900 px-2 rounded w-min">{to}</td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                            <button
+                                                                onClick={() => removeMapping(from)}
+                                                                className="text-red-600 hover:text-red-900 dark:hover:text-red-400 bg-red-50 dark:bg-transparent px-3 py-1 rounded hover:bg-red-100 transition-colors"
+                                                            >
+                                                                Remove
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))
                                         )}
                                     </tbody>
                                 </table>
@@ -575,7 +580,7 @@ export default function Settings() {
                                         value={excludeSymbol}
                                         onChange={(e) => setExcludeSymbol(e.target.value.toUpperCase())}
                                         placeholder="e.g. TEST-SYM"
-                                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                        className="w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
                                     />
                                 </div>
                                 <div className="flex items-end">

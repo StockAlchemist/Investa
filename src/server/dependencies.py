@@ -68,30 +68,21 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
         else:
              logging.info(f"Config path does not exist: {cp}")
 
-    # Extract settings
+    # --- 1b. Defaults from config.py ---
     account_currency_map = {"SET": "THB"}
     default_currency = config.DEFAULT_CURRENCY
     user_symbol_map = config.SYMBOL_MAP_TO_YFINANCE.copy()
     user_excluded_symbols = set(config.YFINANCE_EXCLUDED_SYMBOLS.copy())
     
+    # Merge account_currency_map from gui_config (legacy support, or keep it there if desired)
+    # The request was specifically about symbol mapping and excluded symbols.
     if "account_currency_map" in gui_config:
-        account_currency_map.update(gui_config["account_currency_map"])
-    if "user_symbol_map" in gui_config:
-        user_symbol_map.update(gui_config["user_symbol_map"])
-    if "user_excluded_symbols" in gui_config:
-        user_excluded_symbols.update(set(gui_config["user_excluded_symbols"]))
+         account_currency_map.update(gui_config["account_currency_map"])
+
+    # --- CHANGED: Do NOT load symbol map or exclusions from gui_config ---
+    # These are now consolidated in manual_overrides.json.
+    # We deliberately skip reading them from gui_config to avoid confusion/duplication.
     
-    # --- ADDED: Load manual overrides from gui_config ---
-    # The desktop app saves overrides in 'manual_price_overrides' (legacy) or 'manual_overrides_dict'
-    manual_overrides_from_config = {}
-    if "manual_overrides_dict" in gui_config:
-        manual_overrides_from_config = gui_config["manual_overrides_dict"]
-    elif "manual_price_overrides" in gui_config:
-        manual_overrides_from_config = gui_config["manual_price_overrides"]
-        
-    # Also manual_overrides.json might exist, we'll merge them later, but config takes precedence if desired?
-    # Usually gui_config is the most up to date from the app.
-    # We will initialize _MANUAL_OVERRIDES with this, and then merge legacy file if needed.
     # ----------------------------------------------------
 
     # --- 2. Determine DB Path ---
@@ -168,14 +159,13 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
                 except Exception as e:
                     logging.warning(f"Found overrides at {op} but failed to load: {e}")
         
-        # --- CHANGED: JSON overrides take precedence if the file was loaded ---
-        # Default is from config, but JSON file is the modern authority
-        final_manual_overrides = manual_overrides_from_config.copy()
+        # --- CHANGED: JSON overrides are the ONLY authority ---
+        # We no longer merge from config.
+        # Initialize defaults from explicit JSON load or empty dict
+        final_manual_overrides = manual_overrides
         
         if loaded_overrides_path:
-             logging.info(f"Using overrides from {loaded_overrides_path} as authoritative source.")
-             # If JSON file exists, it is the authority. It replaces legacy entirely for overrides.
-             final_manual_overrides = manual_overrides
+             logging.info(f"Using overrides from {loaded_overrides_path}.")
         
         # ------------------------------------------------
         
