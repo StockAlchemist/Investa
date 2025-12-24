@@ -8,13 +8,14 @@ from datetime import datetime, date # Added this import
 
 print("DEBUG: LOADING API MODULE", flush=True) # Added this line
 
-from server.dependencies import get_transaction_data
+from server.dependencies import get_transaction_data, get_config_manager, reload_data
 from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
 from portfolio_analyzer import calculate_periodic_returns, extract_realized_capital_gains_history, extract_dividend_history
 from market_data import MarketDataProvider, map_to_yf_symbol
 
 from risk_metrics import calculate_all_risk_metrics
 import config
+from pydantic import BaseModel
 
 router = APIRouter()
 
@@ -719,6 +720,71 @@ async def get_settings(
     except Exception as e:
         logging.error(f"Error getting settings: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+class SettingsUpdate(BaseModel):
+    manual_price_overrides: Optional[Dict[str, Any]] = None
+    user_symbol_map: Optional[Dict[str, str]] = None
+    user_excluded_symbols: Optional[List[str]] = None
+
+@router.post("/settings/update")
+async def update_settings(
+    settings: SettingsUpdate,
+    config_manager = Depends(get_config_manager)
+):
+    """
+    Updates the application settings (manual overrides, symbol map, exclude list).
+    """
+    try:
+        # Load existing overrides to merge or overwrite?
+        # The design says "Symbol Setting window" so we probably send the full state for that section
+        # or separate updates. Let's assume we send the full state for the modified section or merge partials.
+        # ConfigManager.save_manual_overrides replaces the entire dictionary in the file.
+        # So we should probably read, update, and save.
+        
+        current_overrides = config_manager.manual_overrides
+        
+        # Update Manual Price Overrides
+        if settings.manual_price_overrides is not None:
+             # If sending a full dict, replace. If we want partial update, we need logic.
+             # Let's assume the UI sends the FULL set of overrides for that category usually,
+             # OR we implement partial update logic.
+             # Given "add option... consistency", usually these UIs show a list and you save.
+             # For safety with concurrent edits (unlikely here), let's just merge specific keys if provided,
+             # BUT simpler is to let frontend manage the state and send the full dict for that section.
+             # However, ConfigManager.save_manual_overrides expects the FULL structure of all 3 categories
+             # passed as one dict, OR it updates `self.manual_overrides` with the dict passed.
+             
+             # Let's see ConfigManager.save_manual_overrides:
+             # if overrides_data is not None: self.manual_overrides = overrides_data
+             
+             # So we need to construct the full new state.
+             
+             new_price_overrides = current_overrides.get("manual_price_overrides", {}).copy()
+             # We can't just merge if the user DELETED something.
+             # So if the user sends `manual_price_overrides` we should probably treat it as the "new state" for that key,
+             # i.e. REPLACE the `manual_price_overrides` section, but keep others.
+             new_price_overrides = settings.manual_price_overrides
+             
+             current_overrides["manual_price_overrides"] = new_price_overrides
+
+        if settings.user_symbol_map is not None:
+            current_overrides["user_symbol_map"] = settings.user_symbol_map
+            
+        if settings.user_excluded_symbols is not None:
+            current_overrides["user_excluded_symbols"] = sorted(list(set(settings.user_excluded_symbols)))
+            
+        # Save
+        if config_manager.save_manual_overrides(current_overrides):
+            # Reload data to apply changes (clear cache)
+            reload_data()
+            return {"status": "success", "message": "Settings updated and data reloaded"}
+        else:
+             raise HTTPException(status_code=500, detail="Failed to save settings to file")
+
+    except Exception as e:
+        logging.error(f"Error updating settings: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/risk_metrics")
 async def get_risk_metrics(
     currency: str = "USD",

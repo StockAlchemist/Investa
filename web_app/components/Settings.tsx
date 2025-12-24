@@ -1,19 +1,63 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { fetchSettings, saveManualOverride, triggerRefresh, Settings as SettingsType } from '../lib/api';
+import { fetchSettings, updateSettings, triggerRefresh, Settings as SettingsType, ManualOverride, ManualOverrideData } from '../lib/api';
+
+type Tab = 'overrides' | 'mapping' | 'excluded';
+
+// --- Constants (Mirrored from config.py) ---
+const ASSET_TYPES = [
+    "",
+    "STOCK",
+    "ETF",
+    "MUTUALFUND",
+    "CURRENCY",
+    "INDEX",
+    "FUTURE",
+    "OPTION",
+    "CRYPTOCURRENCY",
+    "Other",
+];
+
+const SECTORS = [
+    "",
+    "Other",
+    "Basic Materials",
+    "Communication Services",
+    "Consumer Cyclical",
+    "Consumer Defensive",
+    "Energy",
+    "Financial Services",
+    "Healthcare",
+    "Industrials",
+    "Real Estate",
+    "Technology",
+    "Utilities",
+    "Exchange-Traded Fund",
+];
 
 export default function Settings() {
     const [settings, setSettings] = useState<SettingsType | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState<Tab>('overrides');
+
+    // Webhook state
     const [refreshSecret, setRefreshSecret] = useState('');
     const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
 
-    // Manual Override Form State
+    // Form states
     const [overrideSymbol, setOverrideSymbol] = useState('');
     const [overridePrice, setOverridePrice] = useState('');
+    const [overrideAssetType, setOverrideAssetType] = useState('');
+    const [overrideSector, setOverrideSector] = useState('');
+    const [overrideGeo, setOverrideGeo] = useState('');
+    const [overrideIndustry, setOverrideIndustry] = useState('');
+
+    const [mapFrom, setMapFrom] = useState('');
+    const [mapTo, setMapTo] = useState('');
+
+    const [excludeSymbol, setExcludeSymbol] = useState('');
 
     useEffect(() => {
         loadSettings();
@@ -33,28 +77,149 @@ export default function Settings() {
         }
     };
 
-    const handleManualOverrideSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!overrideSymbol || !overridePrice) return;
+    // --- Actions ---
+
+    const addOverride = async () => {
+        if (!settings || !overrideSymbol || !overridePrice) return;
+
+        const price = parseFloat(overridePrice);
+        if (isNaN(price)) return;
+
+        const currentOverrides = settings.manual_overrides || {};
+
+        // Reconstruct the full dictionary in the format the API expects
+        // API expects Record<string, ManualOverride>
+        const newOverrides: Record<string, ManualOverride> = { ...currentOverrides };
+
+        const newData: ManualOverrideData = {
+            price: price,
+            asset_type: overrideAssetType || undefined,
+            sector: overrideSector || undefined,
+            geography: overrideGeo || undefined,
+            industry: overrideIndustry || undefined
+        };
+
+        // If all metadata is empty, we could just save the number, but for consistency with new feature
+        // we'll save the object if any field (even just price) is set to a specific struct.
+        // Actually to support metadata we MUST save as object.
+        newOverrides[overrideSymbol.toUpperCase()] = newData;
+
+        // Strip the extra 'currency' field from existing items if we are re-sending them?
+        // The API returns enriched items with 'currency'. We shouldn't send that back ideally, 
+        // or the backend should ignore it. The backend currently ignores fields it doesn't know in the dict copy?
+        // Wait, backend logic was: `enriched_data = override_data.copy()... enriched_data["currency"] = ...`
+        // So 'currency' is not in the file. If we send it back, it will be saved to the file if we don't clean it.
+        // We should explicitly clean 'currency' before sending.
+
+        const cleanedOverrides: Record<string, ManualOverride> = {};
+        Object.entries(newOverrides).forEach(([k, v]) => {
+            if (typeof v === 'number') {
+                cleanedOverrides[k] = v;
+            } else {
+                const { ...rest } = v;
+                if ('currency' in rest) delete rest.currency;
+                cleanedOverrides[k] = rest;
+            }
+        });
 
         try {
-            await saveManualOverride(overrideSymbol, parseFloat(overridePrice));
+            await updateSettings({ manual_price_overrides: cleanedOverrides });
+
+            // Reset form
             setOverrideSymbol('');
             setOverridePrice('');
-            await loadSettings(); // Reload to show new override
+            setOverrideAssetType('');
+            setOverrideSector('');
+            setOverrideGeo('');
+            setOverrideIndustry('');
+
+            await loadSettings();
         } catch (err) {
-            console.error(err);
             alert('Failed to save override');
         }
     };
 
-    const handleDeleteOverride = async (symbol: string) => {
+    const removeOverride = async (symbol: string) => {
+        if (!settings) return;
+        const currentOverrides = settings.manual_overrides || {};
+        const cleanedOverrides: Record<string, ManualOverride> = {};
+
+        Object.entries(currentOverrides).forEach(([k, v]) => {
+            if (k !== symbol) {
+                if (typeof v === 'number') {
+                    cleanedOverrides[k] = v;
+                } else {
+                    const { ...rest } = v;
+                    if ('currency' in rest) delete rest.currency;
+                    cleanedOverrides[k] = rest;
+                }
+            }
+        });
+
         try {
-            await saveManualOverride(symbol, null);
+            await updateSettings({ manual_price_overrides: cleanedOverrides });
             await loadSettings();
         } catch (err) {
-            console.error(err);
-            alert('Failed to delete override');
+            alert('Failed to remove override');
+        }
+    };
+
+    const addMapping = async () => {
+        if (!settings || !mapFrom || !mapTo) return;
+
+        const currentMap = { ...settings.user_symbol_map };
+        currentMap[mapFrom.toUpperCase()] = mapTo.toUpperCase();
+
+        try {
+            await updateSettings({ user_symbol_map: currentMap });
+            setMapFrom('');
+            setMapTo('');
+            await loadSettings();
+        } catch (err) {
+            alert('Failed to save mapping');
+        }
+    };
+
+    const removeMapping = async (fromSymbol: string) => {
+        if (!settings) return;
+        const currentMap = { ...settings.user_symbol_map };
+        delete currentMap[fromSymbol];
+
+        try {
+            await updateSettings({ user_symbol_map: currentMap });
+            await loadSettings();
+        } catch (err) {
+            alert('Failed to remove mapping');
+        }
+    };
+
+    const addExcluded = async () => {
+        if (!settings || !excludeSymbol) return;
+
+        const currentList = [...(settings.user_excluded_symbols || [])];
+        const sym = excludeSymbol.toUpperCase();
+        if (!currentList.includes(sym)) {
+            currentList.push(sym);
+        }
+
+        try {
+            await updateSettings({ user_excluded_symbols: currentList });
+            setExcludeSymbol('');
+            await loadSettings();
+        } catch (err) {
+            alert('Failed to add excluded symbol');
+        }
+    };
+
+    const removeExcluded = async (symbol: string) => {
+        if (!settings) return;
+        const currentList = (settings.user_excluded_symbols || []).filter(s => s !== symbol);
+
+        try {
+            await updateSettings({ user_excluded_symbols: currentList });
+            await loadSettings();
+        } catch (err) {
+            alert('Failed to remove excluded symbol');
         }
     };
 
@@ -67,130 +232,362 @@ export default function Settings() {
         }
     }
 
-    if (loading) return <div className="p-4">Loading settings...</div>;
-    if (error) return <div className="p-4 text-red-500">{error}</div>;
+    if (loading) return <div className="p-12 text-center text-gray-500">Loading settings...</div>;
+    if (error) return <div className="p-12 text-center text-red-500">{error}</div>;
 
-    // matches API: settings.manual_overrides is the dictionary of overrides
     const overrides = settings?.manual_overrides || {};
+    const symbolMap = settings?.user_symbol_map || {};
+    const excluded = settings?.user_excluded_symbols || [];
 
     return (
-        <div className="space-y-6 pb-20">
-            <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-                <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Manual Price Overrides</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                    Manually set the price for specific symbols. This overrides the market data provider.
-                </p>
+        <div className="space-y-8 pb-20 max-w-6xl mx-auto">
 
-                {/* List Existing Overrides */}
-                <div className="mb-6">
-                    <h3 className="text-md font-medium text-gray-700 dark:text-gray-300 mb-2">Active Overrides</h3>
-                    {Object.keys(overrides).length === 0 ? (
-                        <p className="text-sm text-gray-500 italic">No manual overrides set.</p>
-                    ) : (
-                        <ul className="divide-y divide-gray-200 dark:divide-gray-700 border dark:border-gray-700 rounded-md">
-                            {Object.entries(overrides).map(([symbol, data]: [string, any]) => {
-                                const currencySymbol = data.currency === 'THB' ? '฿' : '$';
-                                return (
-                                    <li key={symbol} className="p-3 flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-700">
-                                        <div>
-                                            <span className="font-bold text-gray-900 dark:text-white mr-2">{symbol}</span>
-                                            <span className="text-sm text-gray-500 dark:text-gray-400">
-                                                Current Override: <span className="font-mono text-gray-800 dark:text-gray-200">
-                                                    {data.price !== null && data.price !== undefined
-                                                        ? `${currencySymbol}${data.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`
-                                                        : 'N/A'}
-                                                </span>
-                                                {data.updated_at && <span className="ml-2 text-xs">({new Date(data.updated_at).toLocaleDateString()})</span>}
-                                            </span>
-                                        </div>
-                                        <button
-                                            onClick={() => handleDeleteOverride(symbol)}
-                                            className="text-red-600 hover:text-red-800 text-sm font-medium px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
-                                        >
-                                            Remove
-                                        </button>
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    )}
+            {/* Symbol Settings Section */}
+            <div className="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Symbol Settings</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Manage price overrides, custom symbol mappings, and exclusions.
+                    </p>
                 </div>
 
-                {/* Add New Override Form */}
-                <form onSubmit={handleManualOverrideSubmit} className="flex gap-4 items-end bg-gray-50 dark:bg-gray-700/30 p-4 rounded-md border border-gray-200 dark:border-gray-600">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Symbol</label>
-                        <input
-                            type="text"
-                            value={overrideSymbol}
-                            onChange={(e) => setOverrideSymbol(e.target.value.toUpperCase())}
-                            placeholder="AAPL"
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Price</label>
-                        <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={overridePrice}
-                            onChange={(e) => setOverridePrice(e.target.value)}
-                            placeholder="150.00"
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2"
-                        />
-                    </div>
+                {/* Tabs */}
+                <div className="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
                     <button
-                        type="submit"
-                        disabled={!overrideSymbol || !overridePrice}
-                        className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={() => setActiveTab('overrides')}
+                        className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors ${activeTab === 'overrides'
+                            ? 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 border-t-2 border-indigo-600'
+                            : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                            }`}
                     >
-                        Set Override
+                        Manual Overrides
                     </button>
-                </form>
+                    <button
+                        onClick={() => setActiveTab('mapping')}
+                        className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors ${activeTab === 'mapping'
+                            ? 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 border-t-2 border-indigo-600'
+                            : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                            }`}
+                    >
+                        Symbol Mapping
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('excluded')}
+                        className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors ${activeTab === 'excluded'
+                            ? 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 border-t-2 border-indigo-600'
+                            : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                            }`}
+                    >
+                        Excluded Symbols
+                    </button>
+                </div>
+
+                <div className="p-6 min-h-[400px]">
+
+                    {/* Manual Price Overrides Tab */}
+                    {activeTab === 'overrides' && (
+                        <div>
+                            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+                                Set manual prices or metadata (Asset Type, Sector, etc.) to override automatic data.
+                            </p>
+                            <div className="flex flex-col gap-4 mb-6 bg-gray-50 dark:bg-gray-700/30 p-4 rounded-lg border border-gray-100 dark:border-gray-700">
+                                <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+                                    <div className="col-span-1">
+                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Symbol</label>
+                                        <input
+                                            type="text"
+                                            value={overrideSymbol}
+                                            onChange={(e) => setOverrideSymbol(e.target.value.toUpperCase())}
+                                            placeholder="e.g. AAPL"
+                                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                        />
+                                    </div>
+                                    <div className="col-span-1">
+                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Price</label>
+                                        <input
+                                            type="number"
+                                            step="0.0001"
+                                            value={overridePrice}
+                                            onChange={(e) => setOverridePrice(e.target.value)}
+                                            placeholder="0.00"
+                                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                        />
+                                    </div>
+                                    <div className="col-span-1">
+                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Asset Type</label>
+                                        <select
+                                            value={overrideAssetType}
+                                            onChange={(e) => setOverrideAssetType(e.target.value)}
+                                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                        >
+                                            {ASSET_TYPES.map(t => <option key={t} value={t}>{t || "Select..."}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="col-span-1">
+                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Sector</label>
+                                        <select
+                                            value={overrideSector}
+                                            onChange={(e) => setOverrideSector(e.target.value)}
+                                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                        >
+                                            {SECTORS.map(s => <option key={s} value={s}>{s || "Select..."}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="col-span-1">
+                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Geography</label>
+                                        <input
+                                            type="text"
+                                            value={overrideGeo}
+                                            onChange={(e) => setOverrideGeo(e.target.value)}
+                                            placeholder="Country"
+                                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                        />
+                                    </div>
+                                    <div className="col-span-1">
+                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Industry</label>
+                                        <input
+                                            type="text"
+                                            value={overrideIndustry}
+                                            onChange={(e) => setOverrideIndustry(e.target.value)}
+                                            placeholder="Industry"
+                                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="flex justify-end mt-2">
+                                    <button
+                                        onClick={addOverride}
+                                        disabled={!overrideSymbol || !overridePrice}
+                                        className="w-full md:w-auto px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Set Override
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
+                                    <thead className="bg-gray-50 dark:bg-gray-800">
+                                        <tr>
+                                            <th scope="col" className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Symbol</th>
+                                            <th scope="col" className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Price</th>
+                                            <th scope="col" className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Asset Type</th>
+                                            <th scope="col" className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Sector</th>
+                                            <th scope="col" className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Geography</th>
+                                            <th scope="col" className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Industry</th>
+                                            <th scope="col" className="px-4 py-3 text-right font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                        {Object.entries(overrides).length === 0 ? (
+                                            <tr>
+                                                <td colSpan={7} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400 italic">
+                                                    No manual overrides defined.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            Object.entries(overrides).map(([symbol, data]) => {
+                                                const isObj = typeof data !== 'number';
+                                                const price = isObj ? (data as ManualOverrideData).price : (data as number);
+                                                const assetType = isObj ? (data as ManualOverrideData).asset_type : '';
+                                                const sector = isObj ? (data as ManualOverrideData).sector : '';
+                                                const geo = isObj ? (data as ManualOverrideData).geography : '';
+                                                const industry = isObj ? (data as ManualOverrideData).industry : '';
+                                                const currency = isObj ? (data as ManualOverrideData).currency : 'USD';
+
+                                                return (
+                                                    <tr key={symbol} className="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+                                                        <td className="px-4 py-4 whitespace-nowrap font-medium text-gray-900 dark:text-white">{symbol}</td>
+                                                        <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300 font-mono">
+                                                            {currency === 'THB' ? '฿' : '$'}{price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                                                        </td>
+                                                        <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300">{assetType || '-'}</td>
+                                                        <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300">{sector || '-'}</td>
+                                                        <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300">{geo || '-'}</td>
+                                                        <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300">{industry || '-'}</td>
+                                                        <td className="px-4 py-4 whitespace-nowrap text-right font-medium">
+                                                            <button
+                                                                onClick={() => removeOverride(symbol)}
+                                                                className="text-red-600 hover:text-red-900 dark:hover:text-red-400 bg-red-50 dark:bg-transparent px-3 py-1 rounded hover:bg-red-100 transition-colors"
+                                                            >
+                                                                Remove
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Symbol Mapping Tab */}
+                    {activeTab === 'mapping' && (
+                        <div>
+                            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+                                Map standard symbols in your portfolio to specific Yahoo Finance tickers for data retrieval.
+                            </p>
+                            <div className="flex flex-col md:flex-row gap-4 mb-6 bg-gray-50 dark:bg-gray-700/30 p-4 rounded-lg border border-gray-100 dark:border-gray-700">
+                                <div className="flex-1">
+                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Portfolio Symbol</label>
+                                    <input
+                                        type="text"
+                                        value={mapFrom}
+                                        onChange={(e) => setMapFrom(e.target.value.toUpperCase())}
+                                        placeholder="e.g. MY-FUND"
+                                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                    />
+                                </div>
+                                <div className="flex items-center justify-center pt-6">
+                                    <span className="text-gray-400 font-bold">→</span>
+                                </div>
+                                <div className="flex-1">
+                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Yahoo Finance Symbol</label>
+                                    <input
+                                        type="text"
+                                        value={mapTo}
+                                        onChange={(e) => setMapTo(e.target.value.toUpperCase())}
+                                        placeholder="e.g. VTSAX"
+                                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                    />
+                                </div>
+                                <div className="flex items-end">
+                                    <button
+                                        onClick={addMapping}
+                                        disabled={!mapFrom || !mapTo}
+                                        className="w-full md:w-auto px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Add Mapping
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                    <thead className="bg-gray-50 dark:bg-gray-800">
+                                        <tr>
+                                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Portfolio Symbol</th>
+                                            <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Mapped To</th>
+                                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">YFinance Ticker</th>
+                                            <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                        {Object.entries(symbolMap).length === 0 ? (
+                                            <tr>
+                                                <td colSpan={4} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400 italic">
+                                                    No symbol mappings defined.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            Object.entries(symbolMap).map(([from, to]: [string, string]) => (
+                                                <tr key={from} className="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{from}</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-center text-gray-400">→</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-mono bg-gray-50 dark:bg-gray-900 px-2 rounded w-min">{to}</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                        <button
+                                                            onClick={() => removeMapping(from)}
+                                                            className="text-red-600 hover:text-red-900 dark:hover:text-red-400 bg-red-50 dark:bg-transparent px-3 py-1 rounded hover:bg-red-100 transition-colors"
+                                                        >
+                                                            Remove
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Excluded Symbols Tab */}
+                    {activeTab === 'excluded' && (
+                        <div>
+                            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+                                Symbols listed here will be ignored by the market data provider and analysis.
+                            </p>
+                            <div className="flex flex-col md:flex-row gap-4 mb-6 bg-gray-50 dark:bg-gray-700/30 p-4 rounded-lg border border-gray-100 dark:border-gray-700">
+                                <div className="flex-1">
+                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Symbol to Exclude</label>
+                                    <input
+                                        type="text"
+                                        value={excludeSymbol}
+                                        onChange={(e) => setExcludeSymbol(e.target.value.toUpperCase())}
+                                        placeholder="e.g. TEST-SYM"
+                                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                    />
+                                </div>
+                                <div className="flex items-end">
+                                    <button
+                                        onClick={addExcluded}
+                                        disabled={!excludeSymbol}
+                                        className="w-full md:w-auto px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Exclude Symbol
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="overflow-hidden bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                                {excluded.length === 0 ? (
+                                    <div className="p-8 text-center text-gray-500 dark:text-gray-400 italic">
+                                        No excluded symbols.
+                                    </div>
+                                ) : (
+                                    <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+                                        {excluded.map((sym, idx) => (
+                                            <li key={sym + idx} className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+                                                <span className="text-sm font-medium text-gray-900 dark:text-white">{sym}</span>
+                                                <button
+                                                    onClick={() => removeExcluded(sym)}
+                                                    className="text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 p-2 rounded-full transition-all"
+                                                    title="Remove from exclusion list"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                                    </svg>
+                                                </button>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
 
-            <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-                <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Webhook Integration</h2>
+            {/* Webhook Connection (Existing) */}
+            <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 border-l-4 border-indigo-500">
+                <h2 className="text-lg font-bold mb-4 text-gray-900 dark:text-white">Webhook Integration</h2>
                 <div className="space-y-4">
-                    <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-md">
-                        <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
-                            <strong>Endpoint:</strong> <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">POST /api/webhook/refresh</code>
-                        </p>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">
-                            Send a POST request with the following body to invalidate the cache and force a data refresh.
-                        </p>
-                        <pre className="mt-2 bg-gray-900 text-gray-100 p-3 rounded-md text-xs overflow-x-auto">
-                            {`{
-  "secret": "YOUR_WEBHOOK_SECRET"
-}`}
-                        </pre>
+                    <p className="text-sm text-gray-600 dark:text-gray-300">
+                        Trigger a data refresh externally (e.g., from a shortcut) using: <code className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-xs">POST /api/webhook/refresh</code>
+                    </p>
+                    <div className="flex gap-2 max-w-md">
+                        <input
+                            type="text"
+                            placeholder="Webhook Secret"
+                            value={refreshSecret}
+                            onChange={(e) => setRefreshSecret(e.target.value)}
+                            className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2"
+                        />
+                        <button
+                            onClick={handleRefresh}
+                            className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:hover:bg-gray-600"
+                        >
+                            Test
+                        </button>
                     </div>
-
-                    {/* Manual Test Tool */}
-                    <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Manual Test</h3>
-                        <div className="flex gap-2">
-                            <input
-                                type="text"
-                                placeholder="Enter Webhook Secret"
-                                value={refreshSecret}
-                                onChange={(e) => setRefreshSecret(e.target.value)}
-                                className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2"
-                            />
-                            <button
-                                onClick={handleRefresh}
-                                className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:hover:bg-gray-600"
-                            >
-                                Trigger Refresh
-                            </button>
-                        </div>
-                        {refreshStatus && (
-                            <p className={`mt-2 text-sm ${refreshStatus.startsWith('Error') ? 'text-red-600' : 'text-green-600'}`}>
-                                {refreshStatus}
-                            </p>
-                        )}
-                    </div>
+                    {refreshStatus && (
+                        <p className={`text-sm ${refreshStatus.startsWith('Error') ? 'text-red-600' : 'text-green-600'}`}>
+                            {refreshStatus}
+                        </p>
+                    )}
                 </div>
             </div>
         </div>

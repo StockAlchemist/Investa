@@ -213,8 +213,19 @@ export async function fetchDividends(
     if (!res.ok) throw new Error('Failed to fetch dividends');
     return res.json();
 }
+export interface ManualOverrideData {
+    price: number;
+    currency?: string;
+    asset_type?: string;
+    sector?: string;
+    geography?: string;
+    industry?: string;
+}
+
+export type ManualOverride = number | ManualOverrideData;
+
 export interface Settings {
-    manual_overrides: Record<string, any>;
+    manual_overrides: Record<string, ManualOverride>;
     user_symbol_map: Record<string, string>;
     user_excluded_symbols: string[];
     account_currency_map: Record<string, string>;
@@ -225,6 +236,27 @@ export async function fetchSettings(): Promise<Settings> {
     if (!res.ok) throw new Error('Failed to fetch settings');
     return res.json();
 }
+
+export interface SettingsUpdate {
+    manual_price_overrides?: Record<string, ManualOverride>;
+    user_symbol_map?: Record<string, string>;
+    user_excluded_symbols?: string[];
+}
+
+export async function updateSettings(settings: SettingsUpdate): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/settings/update`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(settings),
+    });
+    if (!response.ok) {
+        throw new Error(`Failed to update settings: ${response.statusText}`);
+    }
+    return response.json();
+}
+
 
 export interface RiskMetrics {
     'Max Drawdown'?: number;
