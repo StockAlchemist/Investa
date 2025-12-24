@@ -2,11 +2,9 @@ const getApiBaseUrl = () => {
     if (process.env.NEXT_PUBLIC_API_URL) {
         return process.env.NEXT_PUBLIC_API_URL;
     }
-    if (typeof window !== 'undefined') {
-        // Dynamically use the current hostname (e.g., 100.66.59.98) but port 8000
-        return `http://${window.location.hostname}:8000/api`;
-    }
-    return 'http://localhost:8000/api';
+    // Use relative path so Next.js rewrites can handle proxying to the backend
+    // which avoids CORS and allows access from different devices (Tailscale, etc)
+    return '/api';
 };
 
 const API_BASE_URL = getApiBaseUrl();
