@@ -1,6 +1,7 @@
 import React from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Holding } from '../lib/api';
+import { formatCurrency } from '../lib/utils';
 
 interface AllocationProps {
     holdings: Holding[];
@@ -65,7 +66,7 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
                             ))}
                         </Pie>
                         <Tooltip
-                            formatter={(value: number) => new Intl.NumberFormat(undefined, { style: 'currency', currency: currency }).format(value)}
+                            formatter={(value: number | undefined) => formatCurrency(value || 0, currency)}
                         />
                         <Legend layout="horizontal" align="center" verticalAlign="bottom" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
                     </PieChart>

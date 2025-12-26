@@ -387,7 +387,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                                     {formatValue(getValue(holding, "Mkt Val"), "Mkt Val")}
                                 </div>
                                 <div className={`text-sm ${getCellClass(getValue(holding, "Day Chg %"), "Day Chg %")}`}>
-                                    {formatValue(getValue(holding, "Day Chg %"), "Day Chg %")}
+                                    {formatValue(getValue(holding, "Day Chg"), "Day Chg")} ({formatValue(getValue(holding, "Day Chg %"), "Day Chg %")})
                                 </div>
                             </div>
                         </div>

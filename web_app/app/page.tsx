@@ -13,6 +13,7 @@ import {
   fetchAttribution,
   fetchDividendCalendar
 } from '@/lib/api';
+import { CURRENCY_SYMBOLS } from '@/lib/utils';
 import Dashboard from '@/components/Dashboard';
 import HoldingsTable from '@/components/HoldingsTable';
 import AccountSelector from '@/components/AccountSelector';
@@ -239,7 +240,7 @@ export default function Home() {
             ))}
             {summary?.metrics?.exchange_rate_to_display && (
               <div className="text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-3 py-1.5 rounded-md">
-                1 USD = {summary.metrics.exchange_rate_to_display.toFixed(2)} {currency}
+                $1 = {CURRENCY_SYMBOLS[currency] || currency}{summary.metrics.exchange_rate_to_display.toFixed(2)}
               </div>
             )}
             <CurrencySelector currentCurrency={currency} onChange={setCurrency} />
