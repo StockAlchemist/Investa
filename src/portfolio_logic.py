@@ -5636,7 +5636,7 @@ def calculate_historical_performance(
     if not daily_df.empty:
         ts_req_start = pd.Timestamp(start_date)
         ts_req_end = pd.Timestamp(end_date)
-        daily_df = daily_df[(daily_df.index >= ts_req_start) & (daily_df.index <= ts_req_end)]
+        daily_df = daily_df[(daily_df.index >= ts_req_start) & (daily_df.index <= ts_req_end)].copy()
     # --- END FIX ---
 
     if not daily_df.empty and "daily_return" in daily_df.columns:

@@ -659,8 +659,7 @@ async def get_history(
                 else:
                     mapped_benchmarks.append(b)
 
-        print(f"DEBUG API: History Request: period={period}, benchmarks={benchmarks}")
-        print(f"DEBUG API: History Date Range: start={start_date}, end={end_date}")
+
 
         # Call calculation logic
         daily_df, _, _, _ = calculate_historical_performance(
@@ -1195,7 +1194,11 @@ async def get_dividend_calendar(
         # Use MarketDataProvider to get dividend info
         provider = MarketDataProvider()
         yf_symbols = set()
+        from finutils import is_cash_symbol # Import here to avoid circular if top-level issues, though api imports finutils at top
+        
         for s in symbols:
+            if is_cash_symbol(s):
+                continue
             yf_sym = map_to_yf_symbol(s, user_symbol_map, user_excluded_symbols)
             if yf_sym:
                 yf_symbols.add(yf_sym)
