@@ -93,32 +93,11 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
         setFormData(prev => {
             const newData = { ...prev, [name]: val };
 
-            // Auto-calculate Total Amount if Price and Qty change for Buy/Sell
-            if ((name === 'Quantity' || name === 'Price/Share') && (newData.Type === 'Buy' || newData.Type === 'Sell')) {
+            // Auto-calculate Total Amount if Price and Qty change
+            if (name === 'Quantity' || name === 'Price/Share') {
                 const qty = name === 'Quantity' ? val : (prev.Quantity || 0);
                 const price = name === 'Price/Share' ? val : (prev['Price/Share'] || 0);
-
-                // Simple logic: Total = Qty * Price. 
-                // Note: Commission is usually separate or included depending on user pref, 
-                // but let's just do the raw product as a helper.
-                // For manually entered data, user might overwrite it.
-                // Only auto-update if Total Amount hasn't been manually touched? 
-                // Hard to track. Let's just suggest it if it's 0 or matches previous calc.
-                // Actually, simpler to leave it manual or provide a "Calculate" button.
-                // Or just auto-calc but allow override.
-
-                if (newData.Type === 'Buy') {
-                    // aggregated usually includes comm, but here we separate commission field.
-                    // Total Amount in DB usually means net cash impact? 
-                    // Let's stick to positive values for amount and let backend/logic handle sign if needed,
-                    // but DB usually stores signed or unsigned depending on convention. 
-                    // Looking at existing table, looks like "Total Amount" is signed in some views but displayed absolute.
-                    // DB schema says "Total Amount" REAL.
-                    // Let's just calc absolute value Qty * Price.
-                    newData['Total Amount'] = parseFloat((qty * price).toFixed(2));
-                } else if (newData.Type === 'Sell') {
-                    newData['Total Amount'] = parseFloat((qty * price).toFixed(2));
-                }
+                newData['Total Amount'] = parseFloat((qty * price).toFixed(2));
             }
             if (name === 'Account') {
                 // Auto-fill currency if account is known

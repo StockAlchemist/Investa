@@ -614,6 +614,12 @@ class PandasModel(QAbstractTableModel):
                             return f"{current_display_currency_symbol_for_check}{value_float:,.2f}"
                     # --- END MODIFICATION ---
 
+                    # --- ADDED: Specific handling for Split Ratio to hide 0 ---
+                    if "Split Ratio" in col_name:
+                         if abs(value_float) < 1e-9:
+                             return ""
+                    # --- END ADDED ---
+
                     # --- CORRECTED FALLBACK ---
                     # This is now the guaranteed fallback for any numeric type that wasn't
                     # a Quantity, Percentage, or specific Currency column.

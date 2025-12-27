@@ -226,7 +226,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                                     {tx.Commission ? tx.Commission.toFixed(2) : '-'}
                                 </td>
                                 <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-200 whitespace-nowrap">{tx.Account}</td>
-                                <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-gray-200">{tx["Split Ratio"] || '-'}</td>
+                                <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-gray-200">{tx["Split Ratio"] ? tx["Split Ratio"] : ''}</td>
                                 <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs" title={tx.Note}>{tx.Note || '-'}</td>
                                 <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-200">{tx["Local Currency"]}</td>
                                 <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-gray-200 whitespace-nowrap">
