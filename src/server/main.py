@@ -1,8 +1,6 @@
 import sys
 import os
-print(f"DEBUG: Executing main.py from {__file__}")
-print(f"DEBUG: CWD is {os.getcwd()}")
-print(f"DEBUG: sys.path is {sys.path}")
+
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

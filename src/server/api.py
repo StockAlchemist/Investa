@@ -6,7 +6,7 @@ import logging
 import os
 from datetime import datetime, date # Added this import
 
-print("DEBUG: LOADING API MODULE", flush=True) # Added this line
+
 
 from server.dependencies import get_transaction_data, get_config_manager, reload_data
 from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
