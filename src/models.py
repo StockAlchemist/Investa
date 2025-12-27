@@ -105,12 +105,16 @@ class PandasModel(QAbstractTableModel):
 
         Handles various roles:
         - Qt.DisplayRole: Returns the formatted text to display.
+          - Specific handling for 'Split Ratio': Returns "" if value is ~0.
+          - specific handling for Dates: Formats as YYYY-MM-DD.
+          - Financial formatting for specific columns (% and Currency).
         - Qt.TextAlignmentRole: Returns the alignment for the cell content.
-        - Qt.ForegroundRole: Returns the text color (e.g., green for gain, red for loss).
+        - Qt.ForegroundRole: Returns the text color (e.g., green for positive, red for negative).
+        - Qt.BackgroundRole: Returns the background color (e.g., alternating row colors).
 
         Args:
-            index (QModelIndex): The index of the cell for which data is requested.
-            role (Qt.ItemDataRole): The role for which data is requested.
+            index (QModelIndex): The index of the cell.
+            role (Qt.ItemDataRole): The role requested.
 
         Returns:
             Any: The requested data (e.g., str, QColor, Qt.AlignmentFlag) or None

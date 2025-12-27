@@ -200,28 +200,20 @@ For detailed examples and specific requirements for each transaction type, pleas
 
 ## Usage
 
-1. **Launch the Application**
-    After installing dependencies, run the main script from the project's root directory:
+1. **Run the Application (Recommended)**
+    Use the unified startup script to launch both the Desktop Backend and Web Dashboard:
 
-1. **Run the Desktop Application**
-    From the project root:
+    ```bash
+    ./start_investa.sh
+    ```
+    This single command handles everything, including starting the API server and the frontend.
+
+2. **Run Desktop App Only**
+    If you only need the desktop GUI:
+
     ```bash
     python src/main_gui.py
     ```
-
-2. **Run the Web Dashboard**
-    The Web App requires two components running simultaneously:
-
-    *   **Start the Backend API:**
-        ```bash
-        python src/server/main.py
-        ```
-    *   **Start the Frontend:**
-        Open a new terminal window:
-        ```bash
-        cd web_app
-        npm run dev
-        ```
     *   **Access:** Open your browser and go to `http://localhost:3000`.
 
 3. **Initial Setup (First Launch)**

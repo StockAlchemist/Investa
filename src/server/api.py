@@ -37,6 +37,15 @@ async def get_asset_change(
 ):
     """
     Returns periodic asset change data (Annual, Monthly, Weekly, Daily).
+
+    Args:
+        currency (str): The display currency (e.g., USD, THB).
+        accounts (List[str], optional): List of account names to include.
+        benchmarks (List[str], optional): List of benchmark names or symbols.
+        data (tuple): Dependency injection for transaction data.
+
+    Returns:
+        Dict[str, List[Dict]]: Dictionary mapping periods (Annual, etc.) to lists of asset change records.
     """
     (
         df,
@@ -201,6 +210,14 @@ async def get_portfolio_summary(
 ):
     """
     Returns the high-level portfolio summary (Total Value, G/L, etc.).
+
+    Args:
+        currency (str): The display currency.
+        accounts (List[str], optional): List of account names to filter by.
+        data (tuple): Dependency injection for transaction data.
+
+    Returns:
+        Dict[str, Any]: A dictionary containing 'metrics' (totals) and 'account_metrics' (per-account breakdowns).
     """
     (
         df,
@@ -300,6 +317,14 @@ async def get_holdings(
 ):
     """
     Returns the list of current holdings.
+
+    Args:
+        currency (str): The display currency.
+        accounts (List[str], optional): List of account names to filter by.
+        data (tuple): Dependency injection.
+
+    Returns:
+        List[Dict]: A list of holding records with calculated metrics.
     """
     (
         df,
@@ -377,6 +402,13 @@ async def get_transactions(
 ):
     """
     Returns the list of transactions, optionally filtered by account.
+
+    Args:
+        accounts (List[str], optional): List of account names.
+        data (tuple): Dependency injection.
+
+    Returns:
+        List[Dict]: A list of transaction records.
     """
     df, _, _, _, _, _ = data
     
@@ -433,6 +465,13 @@ async def create_transaction(
 ):
     """
     Creates a new transaction.
+
+    Args:
+        transaction (TransactionInput): The transaction data payload.
+        data (tuple): Dependency injection.
+
+    Returns:
+        Dict: Status message and the new transaction ID.
     """
     try:
         _, _, _, _, _, db_path = data
@@ -476,6 +515,14 @@ async def update_transaction(
 ):
     """
     Updates an existing transaction.
+
+    Args:
+        transaction_id (int): The ID of the transaction to update.
+        transaction (TransactionInput): The updated transaction data.
+        data (tuple): Dependency injection.
+
+    Returns:
+        Dict: Status message.
     """
     try:
         _, _, _, _, _, db_path = data
@@ -517,6 +564,13 @@ async def delete_transaction(
 ):
     """
     Deletes a transaction.
+
+    Args:
+        transaction_id (int): The ID of the transaction to delete.
+        data (tuple): Dependency injection.
+
+    Returns:
+        Dict: Status message.
     """
     try:
         _, _, _, _, _, db_path = data
@@ -548,6 +602,16 @@ async def get_history(
 ):
     """
     Returns historical portfolio performance (Value and TWR) and benchmarks.
+
+    Args:
+        currency (str): The display currency.
+        accounts (List[str], optional): List of account names.
+        period (str): Time period (e.g., '1y', 'ytd', 'all').
+        benchmarks (List[str], optional): List of benchmark symbols.
+        data (tuple): Dependency injection.
+
+    Returns:
+        List[Dict]: A list of daily records containing date, portfolio value, TWR, and benchmark performance.
     """
     (
         df,
@@ -677,6 +741,14 @@ async def get_capital_gains(
 ):
     """
     Returns the realized capital gains history.
+
+    Args:
+        currency (str): The display currency.
+        accounts (List[str], optional): List of account names.
+        data (tuple): Dependency injection.
+
+    Returns:
+        List[Dict]: A list of realized gain/loss records.
     """
     (
         df,
@@ -751,6 +823,14 @@ async def get_dividends(
 ):
     """
     Returns the dividend history.
+
+    Args:
+        currency (str): The display currency.
+        accounts (List[str], optional): List of account names.
+        data (tuple): Dependency injection.
+
+    Returns:
+        List[Dict]: A list of dividend records.
     """
     (
         df,

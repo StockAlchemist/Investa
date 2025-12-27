@@ -626,22 +626,16 @@ Investa now includes a modern Web Dashboard that allows you to view your portfol
 
 ### Getting Started with the Web App
 
-1.  **Start the Backend Server:**
-    Open a terminal in the project root and run:
+1.  **Start the Application:**
+    We've made this easy with a single script that launches both the backend and frontend for you. Open your terminal in the project root and run:
+    
     ```bash
-    python src/server/main.py
+    ./start_investa.sh
     ```
-    This starts the API server on port 8000.
+    
+    This command starts the API server (port 8000) and the web interface (port 3000) simultaneously. It will also print your machine's local network IP address (e.g., providing a Tailscale IP or local IP) for remote access.
 
-2.  **Start the Frontend:**
-    Open a second terminal window, navigate to the `web_app` directory, and run:
-    ```bash
-    cd web_app
-    npm run dev
-    ```
-    This starts the web interface on port 3000.
-
-3.  **Accessing the Dashboard:**
+2.  **Accessing the Dashboard:**
     *   **Local Machine:** Open your browser and go to `http://localhost:3000`.
     *   **Remote Device:** Find the IP address of your computer running Investa (e.g., `192.168.1.15`). On your mobile device connected to the same Wi-Fi, go to `http://192.168.1.15:3000`.
 
