@@ -87,8 +87,8 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
     const CustomTooltip = ({ active, payload, label }: any) => {
         if (active && payload && payload.length) {
             return (
-                <div className="bg-white dark:bg-gray-800 p-3 border border-gray-200 dark:border-gray-700 shadow-lg rounded-lg">
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">{new Date(label).toLocaleDateString()}</p>
+                <div className="bg-black/80 backdrop-blur-md p-3 border border-white/20 shadow-xl rounded-lg">
+                    <p className="text-sm text-gray-400 mb-1">{new Date(label).toLocaleDateString()}</p>
                     {payload.map((entry: any, index: number) => (
                         <p key={index} className="text-sm font-medium" style={{ color: entry.color }}>
                             {entry.name}: {view === 'return'
@@ -114,18 +114,18 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         : [];
 
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 mb-6">
+        <div className="bg-white/5 backdrop-blur-md rounded-xl p-4 shadow-sm border border-white/10 mb-6">
             <div className="flex flex-col space-y-4 mb-4">
                 <div className="flex justify-between items-center">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    <h3 className="text-lg font-semibold text-foreground">
                         {view === 'return' ? 'Time-Weighted Return' : 'Portfolio Value'}
                     </h3>
-                    <div className="flex space-x-2 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+                    <div className="flex space-x-2 bg-white/5 rounded-lg p-1 border border-white/5">
                         <button
                             onClick={() => setView('return')}
                             className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${view === 'return'
-                                ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
-                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                                ? 'bg-white/10 text-white shadow-sm'
+                                : 'text-muted-foreground hover:text-white hover:bg-white/5'
                                 }`}
                         >
                             Return %
@@ -133,8 +133,8 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                         <button
                             onClick={() => setView('value')}
                             className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${view === 'value'
-                                ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
-                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                                ? 'bg-white/10 text-white shadow-sm'
+                                : 'text-muted-foreground hover:text-white hover:bg-white/5'
                                 }`}
                         >
                             Value

@@ -63,6 +63,10 @@ export default function Settings() {
     // Dynamic lists based on portfolio data
     const [portfolioCountries, setPortfolioCountries] = useState<string[]>([]);
 
+    // Common input/select classes
+    const inputClassName = "w-full rounded-md border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 text-foreground shadow-sm focus:border-cyan-500 focus:ring-cyan-500 px-3 py-2 text-sm outline-none focus:ring-1";
+    const labelClassName = "block text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide";
+
     useEffect(() => {
         loadSettings();
     }, []);
@@ -279,39 +283,39 @@ export default function Settings() {
         <div className="space-y-8 pb-20 max-w-6xl mx-auto">
 
             {/* Symbol Settings Section */}
-            <div className="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Symbol Settings</h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            <div className="bg-black/5 dark:bg-white/5 backdrop-blur-md shadow-sm rounded-xl overflow-hidden border border-black/5 dark:border-white/10">
+                <div className="px-6 py-4 border-b border-black/5 dark:border-white/10">
+                    <h2 className="text-xl font-bold text-foreground">Symbol Settings</h2>
+                    <p className="text-sm text-muted-foreground mt-1">
                         Manage price overrides, custom symbol mappings, and exclusions.
                     </p>
                 </div>
 
                 {/* Tabs */}
-                <div className="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                <div className="flex border-b border-black/5 dark:border-white/10 bg-black/5 dark:bg-white/5">
                     <button
                         onClick={() => setActiveTab('overrides')}
-                        className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors ${activeTab === 'overrides'
-                            ? 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 border-t-2 border-indigo-600'
-                            : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                        className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors border-b-2 ${activeTab === 'overrides'
+                            ? 'border-cyan-500 text-cyan-500 dark:text-cyan-400'
+                            : 'border-transparent text-muted-foreground hover:text-foreground hover:border-black/20 dark:hover:border-white/20'
                             }`}
                     >
                         Manual Overrides
                     </button>
                     <button
                         onClick={() => setActiveTab('mapping')}
-                        className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors ${activeTab === 'mapping'
-                            ? 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 border-t-2 border-indigo-600'
-                            : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                        className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors border-b-2 ${activeTab === 'mapping'
+                            ? 'border-cyan-500 text-cyan-500 dark:text-cyan-400'
+                            : 'border-transparent text-muted-foreground hover:text-foreground hover:border-black/20 dark:hover:border-white/20'
                             }`}
                     >
                         Symbol Mapping
                     </button>
                     <button
                         onClick={() => setActiveTab('excluded')}
-                        className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors ${activeTab === 'excluded'
-                            ? 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 border-t-2 border-indigo-600'
-                            : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                        className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors border-b-2 ${activeTab === 'excluded'
+                            ? 'border-cyan-500 text-cyan-500 dark:text-cyan-400'
+                            : 'border-transparent text-muted-foreground hover:text-foreground hover:border-black/20 dark:hover:border-white/20'
                             }`}
                     >
                         Excluded Symbols
@@ -326,85 +330,85 @@ export default function Settings() {
                             <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
                                 Set manual prices or metadata (Asset Type, Sector, etc.) to override automatic data.
                             </p>
-                            <div className="flex flex-col gap-4 mb-6 bg-gray-50 dark:bg-gray-700/30 p-4 rounded-lg border border-gray-100 dark:border-gray-700">
+                            <div className="flex flex-col gap-4 mb-6 bg-black/5 dark:bg-white/5 p-4 rounded-lg border border-black/5 dark:border-white/10">
                                 <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                                     <div className="col-span-1">
-                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Symbol</label>
+                                        <label className={labelClassName}>Symbol</label>
                                         <input
                                             type="text"
                                             value={overrideSymbol}
                                             onChange={(e) => setOverrideSymbol(e.target.value.toUpperCase())}
                                             placeholder="e.g. AAPL"
-                                            className="w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                            className={inputClassName}
                                         />
                                     </div>
                                     <div className="col-span-1">
-                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Price</label>
+                                        <label className={labelClassName}>Price</label>
                                         <input
                                             type="number"
                                             step="0.0001"
                                             value={overridePrice}
                                             onChange={(e) => setOverridePrice(e.target.value)}
                                             placeholder="0.00"
-                                            className="w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                            className={inputClassName}
                                         />
                                     </div>
                                     <div className="col-span-1">
-                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Asset Type</label>
+                                        <label className={labelClassName}>Asset Type</label>
                                         <select
                                             value={overrideAssetType}
                                             onChange={(e) => setOverrideAssetType(e.target.value)}
-                                            className="w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                            className={inputClassName}
                                         >
-                                            {ASSET_TYPES.map(t => <option key={t} value={t}>{t || "Select..."}</option>)}
+                                            {ASSET_TYPES.map(t => <option key={t} value={t} className="bg-white dark:bg-black text-foreground">{t || "Select..."}</option>)}
                                         </select>
                                     </div>
                                     <div className="col-span-1">
-                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Sector</label>
+                                        <label className={labelClassName}>Sector</label>
                                         <select
                                             value={overrideSector}
                                             onChange={(e) => setOverrideSector(e.target.value)}
-                                            className="w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                            className={inputClassName}
                                         >
-                                            {SECTORS.map(s => <option key={s} value={s}>{s || "Select..."}</option>)}
+                                            {SECTORS.map(s => <option key={s} value={s} className="bg-white dark:bg-black text-foreground">{s || "Select..."}</option>)}
                                         </select>
                                     </div>
                                     <div className="col-span-1">
-                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Geography</label>
+                                        <label className={labelClassName}>Geography</label>
                                         <select
                                             value={overrideGeo}
                                             onChange={(e) => setOverrideGeo(e.target.value)}
-                                            className="w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                            className={inputClassName}
                                         >
-                                            <option value="">Select...</option>
+                                            <option value="" className="bg-white dark:bg-black text-foreground">Select...</option>
 
                                             {/* Portfolio Countries Section */}
                                             {portfolioCountries.length > 0 && (
-                                                <optgroup label="In Portfolio">
+                                                <optgroup label="In Portfolio" className="bg-white dark:bg-black text-foreground">
                                                     {portfolioCountries.map(c => (
-                                                        <option key={c} value={c}>{c}</option>
+                                                        <option key={c} value={c} className="bg-white dark:bg-black text-foreground">{c}</option>
                                                     ))}
                                                 </optgroup>
                                             )}
 
                                             {/* All Countries Section */}
-                                            <optgroup label="All Countries">
+                                            <optgroup label="All Countries" className="bg-white dark:bg-black text-foreground">
                                                 {availableCountries.map(c => (
-                                                    <option key={c} value={c}>{c}</option>
+                                                    <option key={c} value={c} className="bg-white dark:bg-black text-foreground">{c}</option>
                                                 ))}
                                             </optgroup>
                                         </select>
                                     </div>
                                     <div className="col-span-1">
-                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Industry</label>
+                                        <label className={labelClassName}>Industry</label>
                                         <select
                                             value={overrideIndustry}
                                             onChange={(e) => setOverrideIndustry(e.target.value)}
-                                            className="w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                            className={inputClassName}
                                         >
-                                            <option value="">Select...</option>
+                                            <option value="" className="bg-white dark:bg-black text-foreground">Select...</option>
                                             {ALL_INDUSTRIES.map(i => (
-                                                <option key={i} value={i}>{i}</option>
+                                                <option key={i} value={i} className="bg-white dark:bg-black text-foreground">{i}</option>
                                             ))}
                                         </select>
                                     </div>
@@ -413,7 +417,7 @@ export default function Settings() {
                                     <button
                                         onClick={addOverride}
                                         disabled={!overrideSymbol || (!overridePrice && !overrideAssetType && !overrideSector && !overrideGeo && !overrideIndustry)}
-                                        className="w-full md:w-auto px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                        className="w-full md:w-auto px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                     >
                                         Set Override
                                     </button>
@@ -421,22 +425,22 @@ export default function Settings() {
                             </div>
 
                             <div className="overflow-x-auto">
-                                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
-                                    <thead className="bg-gray-50 dark:bg-gray-800">
+                                <table className="min-w-full divide-y divide-black/5 dark:divide-white/10 text-sm">
+                                    <thead className="bg-black/5 dark:bg-white/5">
                                         <tr>
-                                            <th scope="col" className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Symbol</th>
-                                            <th scope="col" className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Price</th>
-                                            <th scope="col" className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Asset Type</th>
-                                            <th scope="col" className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Sector</th>
-                                            <th scope="col" className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Geography</th>
-                                            <th scope="col" className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Industry</th>
-                                            <th scope="col" className="px-4 py-3 text-right font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
+                                            <th scope="col" className="px-4 py-3 text-left font-medium text-muted-foreground uppercase tracking-wider">Symbol</th>
+                                            <th scope="col" className="px-4 py-3 text-left font-medium text-muted-foreground uppercase tracking-wider">Price</th>
+                                            <th scope="col" className="px-4 py-3 text-left font-medium text-muted-foreground uppercase tracking-wider">Asset Type</th>
+                                            <th scope="col" className="px-4 py-3 text-left font-medium text-muted-foreground uppercase tracking-wider">Sector</th>
+                                            <th scope="col" className="px-4 py-3 text-left font-medium text-muted-foreground uppercase tracking-wider">Geography</th>
+                                            <th scope="col" className="px-4 py-3 text-left font-medium text-muted-foreground uppercase tracking-wider">Industry</th>
+                                            <th scope="col" className="px-4 py-3 text-right font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                    <tbody className="divide-y divide-black/5 dark:divide-white/10">
                                         {Object.entries(overrides).length === 0 ? (
                                             <tr>
-                                                <td colSpan={7} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400 italic">
+                                                <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground italic">
                                                     No manual overrides defined.
                                                 </td>
                                             </tr>
@@ -453,22 +457,22 @@ export default function Settings() {
                                                     const currency = isObj ? (data as ManualOverrideData).currency : 'USD';
 
                                                     return (
-                                                        <tr key={symbol} className="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
-                                                            <td className="px-4 py-4 whitespace-nowrap font-medium text-gray-900 dark:text-white">{symbol}</td>
-                                                            <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300 font-mono">
+                                                        <tr key={symbol} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                                                            <td className="px-4 py-4 whitespace-nowrap font-medium text-foreground">{symbol}</td>
+                                                            <td className="px-4 py-4 whitespace-nowrap text-muted-foreground font-mono">
                                                                 {price === 0
-                                                                    ? <span className="text-gray-400">-</span>
+                                                                    ? <span className="text-muted-foreground">-</span>
                                                                     : `${currency === 'THB' ? '฿' : '$'}${price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`
                                                                 }
                                                             </td>
-                                                            <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300">{assetType || '-'}</td>
-                                                            <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300">{sector || '-'}</td>
-                                                            <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300">{geo || '-'}</td>
-                                                            <td className="px-4 py-4 whitespace-nowrap text-gray-500 dark:text-gray-300">{industry || '-'}</td>
+                                                            <td className="px-4 py-4 whitespace-nowrap text-muted-foreground">{assetType || '-'}</td>
+                                                            <td className="px-4 py-4 whitespace-nowrap text-muted-foreground">{sector || '-'}</td>
+                                                            <td className="px-4 py-4 whitespace-nowrap text-muted-foreground">{geo || '-'}</td>
+                                                            <td className="px-4 py-4 whitespace-nowrap text-muted-foreground">{industry || '-'}</td>
                                                             <td className="px-4 py-4 whitespace-nowrap text-right font-medium">
                                                                 <button
                                                                     onClick={() => removeOverride(symbol)}
-                                                                    className="text-red-600 hover:text-red-900 dark:hover:text-red-400 bg-red-50 dark:bg-transparent px-3 py-1 rounded hover:bg-red-100 transition-colors"
+                                                                    className="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 px-3 py-1 rounded transition-colors"
                                                                 >
                                                                     Remove
                                                                 </button>
@@ -486,38 +490,38 @@ export default function Settings() {
                     {/* Symbol Mapping Tab */}
                     {activeTab === 'mapping' && (
                         <div>
-                            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+                            <p className="mb-4 text-sm text-muted-foreground">
                                 Map standard symbols in your portfolio to specific Yahoo Finance tickers for data retrieval.
                             </p>
-                            <div className="flex flex-col md:flex-row gap-4 mb-6 bg-gray-50 dark:bg-gray-700/30 p-4 rounded-lg border border-gray-100 dark:border-gray-700">
+                            <div className="flex flex-col md:flex-row gap-4 mb-6 bg-black/5 dark:bg-white/5 p-4 rounded-lg border border-black/5 dark:border-white/10">
                                 <div className="flex-1">
-                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Portfolio Symbol</label>
+                                    <label className={labelClassName}>Portfolio Symbol</label>
                                     <input
                                         type="text"
                                         value={mapFrom}
                                         onChange={(e) => setMapFrom(e.target.value.toUpperCase())}
                                         placeholder="e.g. MY-FUND"
-                                        className="w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                        className={inputClassName}
                                     />
                                 </div>
                                 <div className="flex items-center justify-center pt-6">
-                                    <span className="text-gray-400 font-bold">→</span>
+                                    <span className="text-muted-foreground font-bold">→</span>
                                 </div>
                                 <div className="flex-1">
-                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Yahoo Finance Symbol</label>
+                                    <label className={labelClassName}>Yahoo Finance Symbol</label>
                                     <input
                                         type="text"
                                         value={mapTo}
                                         onChange={(e) => setMapTo(e.target.value.toUpperCase())}
                                         placeholder="e.g. VTSAX"
-                                        className="w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                        className={inputClassName}
                                     />
                                 </div>
                                 <div className="flex items-end">
                                     <button
                                         onClick={addMapping}
                                         disabled={!mapFrom || !mapTo}
-                                        className="w-full md:w-auto px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                        className="w-full md:w-auto px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                     >
                                         Add Mapping
                                     </button>
@@ -525,19 +529,19 @@ export default function Settings() {
                             </div>
 
                             <div className="overflow-x-auto">
-                                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                    <thead className="bg-gray-50 dark:bg-gray-800">
+                                <table className="min-w-full divide-y divide-black/5 dark:divide-white/10">
+                                    <thead className="bg-black/5 dark:bg-white/5">
                                         <tr>
-                                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Portfolio Symbol</th>
-                                            <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Mapped To</th>
-                                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">YFinance Ticker</th>
-                                            <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
+                                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Portfolio Symbol</th>
+                                            <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Mapped To</th>
+                                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">YFinance Ticker</th>
+                                            <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                    <tbody className="divide-y divide-black/5 dark:divide-white/10">
                                         {Object.entries(symbolMap).length === 0 ? (
                                             <tr>
-                                                <td colSpan={4} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400 italic">
+                                                <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground italic">
                                                     No symbol mappings defined.
                                                 </td>
                                             </tr>
@@ -545,14 +549,14 @@ export default function Settings() {
                                             Object.entries(symbolMap)
                                                 .sort((a, b) => a[0].localeCompare(b[0]))
                                                 .map(([from, to]: [string, string]) => (
-                                                    <tr key={from} className="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
-                                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{from}</td>
-                                                        <td className="px-6 py-4 whitespace-nowrap text-center text-gray-400">→</td>
-                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-mono bg-gray-50 dark:bg-gray-900 px-2 rounded w-min">{to}</td>
+                                                    <tr key={from} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">{from}</td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-center text-muted-foreground">→</td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground font-mono bg-black/5 dark:bg-white/5 px-2 rounded w-min">{to}</td>
                                                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                                             <button
                                                                 onClick={() => removeMapping(from)}
-                                                                className="text-red-600 hover:text-red-900 dark:hover:text-red-400 bg-red-50 dark:bg-transparent px-3 py-1 rounded hover:bg-red-100 transition-colors"
+                                                                className="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 px-3 py-1 rounded transition-colors"
                                                             >
                                                                 Remove
                                                             </button>
@@ -569,18 +573,18 @@ export default function Settings() {
                     {/* Excluded Symbols Tab */}
                     {activeTab === 'excluded' && (
                         <div>
-                            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+                            <p className="mb-4 text-sm text-muted-foreground">
                                 Symbols listed here will be ignored by the market data provider and analysis.
                             </p>
-                            <div className="flex flex-col md:flex-row gap-4 mb-6 bg-gray-50 dark:bg-gray-700/30 p-4 rounded-lg border border-gray-100 dark:border-gray-700">
+                            <div className="flex flex-col md:flex-row gap-4 mb-6 bg-black/5 dark:bg-white/5 p-4 rounded-lg border border-black/5 dark:border-white/10">
                                 <div className="flex-1">
-                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Symbol to Exclude</label>
+                                    <label className={labelClassName}>Symbol to Exclude</label>
                                     <input
                                         type="text"
                                         value={excludeSymbol}
                                         onChange={(e) => setExcludeSymbol(e.target.value.toUpperCase())}
                                         placeholder="e.g. TEST-SYM"
-                                        className="w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
+                                        className={inputClassName}
                                     />
                                 </div>
                                 <div className="flex items-end">
@@ -594,19 +598,19 @@ export default function Settings() {
                                 </div>
                             </div>
 
-                            <div className="overflow-hidden bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                            <div className="overflow-hidden bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-lg">
                                 {excluded.length === 0 ? (
-                                    <div className="p-8 text-center text-gray-500 dark:text-gray-400 italic">
+                                    <div className="p-8 text-center text-muted-foreground italic">
                                         No excluded symbols.
                                     </div>
                                 ) : (
-                                    <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+                                    <ul className="divide-y divide-black/5 dark:divide-white/10">
                                         {excluded.map((sym, idx) => (
-                                            <li key={sym + idx} className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
-                                                <span className="text-sm font-medium text-gray-900 dark:text-white">{sym}</span>
+                                            <li key={sym + idx} className="px-6 py-4 flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                                                <span className="text-sm font-medium text-foreground">{sym}</span>
                                                 <button
                                                     onClick={() => removeExcluded(sym)}
-                                                    className="text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 p-2 rounded-full transition-all"
+                                                    className="text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 p-2 rounded-full transition-all"
                                                     title="Remove from exclusion list"
                                                 >
                                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -624,11 +628,11 @@ export default function Settings() {
             </div>
 
             {/* Webhook Connection (Existing) */}
-            <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 border-l-4 border-indigo-500">
-                <h2 className="text-lg font-bold mb-4 text-gray-900 dark:text-white">Webhook Integration</h2>
+            <div className="bg-black/5 dark:bg-white/5 backdrop-blur-md shadow-sm rounded-xl p-6 border border-black/5 dark:border-white/10 border-l-4 border-l-cyan-500">
+                <h2 className="text-lg font-bold mb-4 text-foreground">Webhook Integration</h2>
                 <div className="space-y-4">
-                    <p className="text-sm text-gray-600 dark:text-gray-300">
-                        Trigger a data refresh externally (e.g., from a shortcut) using: <code className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-xs">POST /api/webhook/refresh</code>
+                    <p className="text-sm text-muted-foreground">
+                        Trigger a data refresh externally (e.g., from a shortcut) using: <code className="bg-black/10 dark:bg-white/10 px-2 py-1 rounded text-xs text-cyan-500 dark:text-cyan-400">POST /api/webhook/refresh</code>
                     </p>
                     <div className="flex gap-2 max-w-md">
                         <input
@@ -636,22 +640,22 @@ export default function Settings() {
                             placeholder="Webhook Secret"
                             value={refreshSecret}
                             onChange={(e) => setRefreshSecret(e.target.value)}
-                            className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2"
+                            className="flex-1 rounded-md border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 shadow-sm focus:border-cyan-500 focus:ring-cyan-500 sm:text-sm text-foreground px-3 py-2 outline-none focus:ring-1"
                         />
                         <button
                             onClick={handleRefresh}
-                            className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white dark:border-gray-600 dark:hover:bg-gray-600"
+                            className="px-4 py-2 border border-black/10 dark:border-white/10 rounded-md shadow-sm text-sm font-medium text-foreground bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors"
                         >
                             Test
                         </button>
                     </div>
                     {refreshStatus && (
-                        <p className={`text-sm ${refreshStatus.startsWith('Error') ? 'text-red-600' : 'text-green-600'}`}>
+                        <p className={`text-sm ${refreshStatus.startsWith('Error') ? 'text-rose-400' : 'text-emerald-400'}`}>
                             {refreshStatus}
                         </p>
                     )}
                 </div>
             </div>
-        </div>
+        </div >
     );
 }

@@ -15,13 +15,13 @@ interface RiskMetricsProps {
 export default function RiskMetrics({ metrics, isLoading }: RiskMetricsProps) {
     if (isLoading) {
         return (
-            <div className="bg-white dark:bg-zinc-900 rounded-xl p-6 shadow-sm border border-zinc-200 dark:border-zinc-800 animate-pulse">
-                <div className="h-6 w-32 bg-zinc-200 dark:bg-zinc-800 rounded mb-6"></div>
+            <div className="bg-white/5 backdrop-blur-md rounded-xl p-6 shadow-sm border border-white/10 animate-pulse">
+                <div className="h-6 w-32 bg-white/10 rounded mb-6"></div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {[1, 2, 3, 4].map((i) => (
                         <div key={i} className="space-y-2">
-                            <div className="h-4 w-20 bg-zinc-100 dark:bg-zinc-800 rounded"></div>
-                            <div className="h-8 w-16 bg-zinc-200 dark:bg-zinc-800 rounded"></div>
+                            <div className="h-4 w-20 bg-white/5 rounded"></div>
+                            <div className="h-8 w-16 bg-white/10 rounded"></div>
                         </div>
                     ))}
                 </div>
@@ -44,13 +44,13 @@ export default function RiskMetrics({ metrics, isLoading }: RiskMetricsProps) {
             label: 'Sharpe Ratio',
             value: formatNumber(metrics['Sharpe Ratio']),
             description: 'Risk-adjusted return',
-            color: metrics['Sharpe Ratio'] && metrics['Sharpe Ratio'] > 1 ? 'text-emerald-500' : 'text-zinc-500',
+            color: metrics['Sharpe Ratio'] && metrics['Sharpe Ratio'] > 1 ? 'text-emerald-500' : 'text-muted-foreground',
         },
         {
             label: 'Volatility',
             value: formatPercent(metrics['Volatility (Ann.)']),
             description: 'Annualized std dev',
-            color: 'text-zinc-500',
+            color: 'text-muted-foreground',
         },
         {
             label: 'Max Drawdown',
@@ -62,21 +62,21 @@ export default function RiskMetrics({ metrics, isLoading }: RiskMetricsProps) {
             label: 'Sortino Ratio',
             value: formatNumber(metrics['Sortino Ratio']),
             description: 'Downside risk-adjusted',
-            color: metrics['Sortino Ratio'] && metrics['Sortino Ratio'] > 1 ? 'text-emerald-500' : 'text-zinc-500',
+            color: metrics['Sortino Ratio'] && metrics['Sortino Ratio'] > 1 ? 'text-emerald-500' : 'text-muted-foreground',
         },
     ];
 
     return (
-        <div className="bg-white dark:bg-zinc-900 rounded-xl p-6 shadow-sm border border-zinc-200 dark:border-zinc-800">
-            <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400 mb-6 uppercase tracking-wider">Risk Analytics</h3>
+        <div className="bg-white/5 backdrop-blur-md rounded-xl p-6 shadow-sm border border-white/10">
+            <h3 className="text-sm font-medium text-muted-foreground mb-6 uppercase tracking-wider">Risk Analytics</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
                 {items.map((item) => (
                     <div key={item.label} className="group">
-                        <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">{item.label}</p>
+                        <p className="text-xs text-muted-foreground mb-1">{item.label}</p>
                         <p className={`text-2xl font-bold ${item.color} tracking-tight`}>
                             {item.value}
                         </p>
-                        <p className="text-[10px] text-zinc-400 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <p className="text-[10px] text-muted-foreground mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             {item.description}
                         </p>
                     </div>

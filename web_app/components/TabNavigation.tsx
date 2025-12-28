@@ -1,4 +1,5 @@
 import React from 'react';
+import { cn } from '@/lib/utils';
 
 interface TabNavigationProps {
     activeTab: string;
@@ -17,19 +18,18 @@ const TABS = [
 
 export default function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
     return (
-        <div className="w-full overflow-x-auto bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 no-scrollbar">
-            <div className="flex min-w-max">
+        <div className="w-full overflow-x-auto no-scrollbar py-4">
+            <div className="flex min-w-max p-1 bg-black/5 dark:bg-white/5 backdrop-blur-md border border-black/5 dark:border-white/10 rounded-xl">
                 {TABS.map((tab) => (
                     <button
                         key={tab.id}
                         onClick={() => onTabChange(tab.id)}
-                        className={`
-              py-3 px-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap
-              ${activeTab === tab.id
-                                ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                            }
-            `}
+                        className={cn(
+                            "py-2 px-4 text-sm font-medium rounded-lg transition-all whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-cyan-500",
+                            activeTab === tab.id
+                                ? "bg-black/10 dark:bg-white/10 text-foreground shadow-sm border border-black/5 dark:border-white/10"
+                                : "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                        )}
                     >
                         {tab.label}
                     </button>

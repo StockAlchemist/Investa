@@ -257,11 +257,11 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
     };
 
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 mt-4 overflow-hidden">
-            <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="bg-black/5 dark:bg-white/5 backdrop-blur-md border border-black/5 dark:border-white/10 rounded-xl shadow-sm mt-4 overflow-hidden scrollbar-thin scrollbar-thumb-black/10 dark:scrollbar-thumb-white/10 scrollbar-track-transparent">
+            <div className="p-4 border-b border-black/5 dark:border-white/5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-start">
-                    <h2 className="text-lg font-bold text-gray-900 dark:text-white">Holdings</h2>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                    <h2 className="text-lg font-bold text-foreground">Holdings</h2>
+                    <div className="text-sm text-muted-foreground">
                         Showing {visibleHoldings.length} of {sortedHoldings.length}
                     </div>
                 </div>
@@ -271,17 +271,17 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                 <div className="relative flex flex-wrap gap-2 w-full md:w-auto" ref={columnMenuRef}>
                     <button
                         onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)}
-                        className="flex-1 md:flex-none px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600 text-center"
+                        className="flex-1 md:flex-none px-3 py-1.5 text-sm font-medium text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-md shadow-sm hover:bg-black/10 dark:hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md"
                     >
                         Columns
                     </button>
 
                     <button
                         onClick={() => setShowLots(!showLots)}
-                        className={`flex-1 md:flex-none px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 text-center
+                        className={`flex-1 md:flex-none px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md
                             ${showLots
-                                ? 'bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-900 dark:text-indigo-200 dark:border-indigo-700'
-                                : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600'
+                                ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
+                                : 'text-foreground bg-black/5 dark:bg-white/5 border-black/5 dark:border-white/10 hover:bg-black/10 dark:hover:bg-white/10'
                             }`}
                     >
                         {showLots ? 'Hide Lots' : 'Show Lots'}
@@ -289,21 +289,21 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
 
                     <button
                         onClick={() => exportToCSV(holdings, 'holdings.csv')}
-                        className="flex-1 md:flex-none px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600 text-center"
+                        className="flex-1 md:flex-none px-3 py-1.5 text-sm font-medium text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-md shadow-sm hover:bg-black/10 dark:hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md"
                     >
                         Export CSV
                     </button>
 
                     {isColumnMenuOpen && (
-                        <div className="absolute right-0 z-50 mt-2 w-56 origin-top-right bg-white dark:bg-gray-800 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto">
+                        <div className="absolute right-0 z-50 mt-2 w-56 origin-top-right bg-white/95 dark:bg-zinc-900/95 border border-black/5 dark:border-white/10 rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
                             <div className="py-1">
                                 {Object.keys(COLUMN_DEFINITIONS).map(header => (
-                                    <label key={header} className="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
+                                    <label key={header} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer">
                                         <input
                                             type="checkbox"
                                             checked={visibleColumns.includes(header)}
                                             onChange={() => toggleColumn(header)}
-                                            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                                            className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-black/20 dark:border-white/20 rounded bg-black/5 dark:bg-white/5"
                                         />
                                         <span className="ml-2">{header}</span>
                                     </label>
@@ -316,8 +316,8 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
 
             {/* Desktop Table View */}
             <div className="hidden md:block overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                    <thead className="bg-gray-50 dark:bg-gray-900">
+                <table className="min-w-full divide-y divide-black/5 dark:divide-white/5">
+                    <thead className="bg-black/5 dark:bg-white/5">
                         <tr>
                             {visibleColumns.map(header => (
                                 <th
@@ -327,7 +327,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                                     onDragStart={(e) => handleDragStart(e, header)}
                                     onDragOver={handleDragOver}
                                     onDrop={(e) => handleDrop(e, header)}
-                                    className={`px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 select-none whitespace-nowrap ${draggedColumn === header ? 'opacity-50 bg-gray-100 dark:bg-gray-700' : ''}`}
+                                    className={`px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:bg-black/10 dark:hover:bg-white/10 select-none whitespace-nowrap ${draggedColumn === header ? 'opacity-50 bg-black/10 dark:bg-white/10' : ''}`}
                                     onClick={() => handleSort(header)}
                                 >
                                     <div className="flex items-center justify-end gap-1">
@@ -340,14 +340,14 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                             ))}
                         </tr>
                     </thead>
-                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    <tbody className="divide-y divide-black/5 dark:divide-white/5">
                         {visibleHoldings.map((holding, idx) => (
                             <React.Fragment key={`${holding.Symbol}-${idx}`}>
-                                <tr className="hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+                                <tr className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                                     {visibleColumns.map(header => {
                                         const val = getValue(holding, header);
                                         return (
-                                            <td key={header} className={`px-6 py-4 whitespace-nowrap text-sm text-right ${getCellClass(val, header)} ${header === 'Symbol' || header === 'Account' ? 'text-gray-900 dark:text-white font-medium' : 'text-gray-500 dark:text-gray-300'}`}>
+                                            <td key={header} className={`px-6 py-4 whitespace-nowrap text-sm text-right ${getCellClass(val, header)} ${header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
                                                 {formatValue(val, header)}
                                             </td>
                                         );
@@ -355,11 +355,11 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                                 </tr>
                                 {showLots && holding.lots && holding.lots.length > 0 && (
                                     holding.lots.map((lot, lotIdx) => (
-                                        <tr key={`${holding.Symbol}-lot-${lotIdx}`} className="bg-gray-50/50 dark:bg-gray-800/30">
+                                        <tr key={`${holding.Symbol}-lot-${lotIdx}`} className="bg-black/5 dark:bg-white/5">
                                             {visibleColumns.map(header => {
                                                 const val = getLotValue(lot, header);
                                                 return (
-                                                    <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-t border-gray-100 dark:border-gray-700 ${getCellClass(val, header)} ${header === 'Symbol' ? 'pl-10 text-gray-500 italic' : ''}`}>
+                                                    <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-t border-white/5 ${getCellClass(val, header)} ${header === 'Symbol' ? 'pl-10 text-muted-foreground italic' : ''}`}>
                                                         {formatValue(val, header)}
                                                     </td>
                                                 );
@@ -376,14 +376,14 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
             {/* Mobile Card View */}
             <div className="block md:hidden space-y-4 p-4">
                 {visibleHoldings.map((holding, idx) => (
-                    <div key={`mobile-${holding.Symbol}-${idx}`} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+                    <div key={`mobile-${holding.Symbol}-${idx}`} className="bg-black/5 dark:bg-white/5 rounded-lg border border-black/5 dark:border-white/10 shadow-sm p-4 backdrop-blur-md">
                         <div className="flex justify-between items-start mb-2">
                             <div>
-                                <h3 className="text-lg font-bold text-gray-900 dark:text-white">{holding.Symbol}</h3>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">{holding.Account}</p>
+                                <h3 className="text-lg font-bold text-foreground">{holding.Symbol}</h3>
+                                <p className="text-xs text-muted-foreground">{holding.Account}</p>
                             </div>
                             <div className="text-right">
-                                <div className="text-lg font-bold text-gray-900 dark:text-white">
+                                <div className="text-lg font-bold text-foreground">
                                     {formatValue(getValue(holding, "Mkt Val"), "Mkt Val")}
                                 </div>
                                 <div className={`text-sm ${getCellClass(getValue(holding, "Day Chg %"), "Day Chg %")}`}>
@@ -392,25 +392,25 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                        <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm mt-3 pt-3 border-t border-black/5 dark:border-white/10">
                             <div className="flex justify-between">
-                                <span className="text-gray-500 dark:text-gray-400">Qty:</span>
-                                <span className="text-gray-900 dark:text-gray-200 font-medium">{formatValue(getValue(holding, "Quantity"), "Quantity")}</span>
+                                <span className="text-muted-foreground">Qty:</span>
+                                <span className="text-foreground font-medium">{formatValue(getValue(holding, "Quantity"), "Quantity")}</span>
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-gray-500 dark:text-gray-400">Price:</span>
-                                <span className="text-gray-900 dark:text-gray-200 font-medium">{formatValue(getValue(holding, "Price"), "Price")}</span>
+                                <span className="text-muted-foreground">Price:</span>
+                                <span className="text-foreground font-medium">{formatValue(getValue(holding, "Price"), "Price")}</span>
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-gray-500 dark:text-gray-400">Avg Cost:</span>
-                                <span className="text-gray-900 dark:text-gray-200 font-medium">{formatValue(getValue(holding, "Avg Cost"), "Avg Cost")}</span>
+                                <span className="text-muted-foreground">Avg Cost:</span>
+                                <span className="text-foreground font-medium">{formatValue(getValue(holding, "Avg Cost"), "Avg Cost")}</span>
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-gray-500 dark:text-gray-400">Div Yield:</span>
-                                <span className="text-gray-900 dark:text-gray-200 font-medium">{formatValue(getValue(holding, "Yield (Mkt) %"), "Yield (Mkt) %")}</span>
+                                <span className="text-muted-foreground">Div Yield:</span>
+                                <span className="text-foreground font-medium">{formatValue(getValue(holding, "Yield (Mkt) %"), "Yield (Mkt) %")}</span>
                             </div>
-                            <div className="flex justify-between col-span-2 bg-gray-50 dark:bg-gray-700/50 p-2 rounded">
-                                <span className="text-gray-500 dark:text-gray-400">Total Return:</span>
+                            <div className="flex justify-between col-span-2 bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 p-2 rounded backdrop-blur-sm">
+                                <span className="text-muted-foreground">Total Return:</span>
                                 <span className={`font-medium ${getCellClass(getValue(holding, "Total G/L"), "Total G/L")}`}>
                                     {formatValue(getValue(holding, "Total G/L"), "Total G/L")} ({formatValue(getValue(holding, "Total Ret %"), "Total Ret %")})
                                 </span>
@@ -419,20 +419,20 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
 
                         {/* Mobile Lots View */}
                         {showLots && holding.lots && holding.lots.length > 0 && (
-                            <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
-                                <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">Tax Lots</h4>
+                            <div className="mt-4 pt-3 border-t border-black/5 dark:border-white/10">
+                                <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Tax Lots</h4>
                                 <div className="space-y-2">
                                     {holding.lots.map((lot, lotIdx) => (
-                                        <div key={`mobile-lot-${lotIdx}`} className="bg-gray-50 dark:bg-gray-700/30 p-2 rounded text-xs">
+                                        <div key={`mobile-lot-${lotIdx}`} className="bg-black/5 dark:bg-white/5 p-2 rounded text-xs border border-black/5 dark:border-white/5">
                                             <div className="flex justify-between items-center mb-1">
-                                                <span className="font-medium text-gray-700 dark:text-gray-300">
+                                                <span className="font-medium text-foreground">
                                                     {formatValue(getLotValue(lot, "Symbol"), "Symbol")}
                                                 </span>
                                                 <span className={`font-medium ${getCellClass(getLotValue(lot, "Total G/L"), "Total G/L")}`}>
                                                     {formatValue(getLotValue(lot, "Total G/L"), "Total G/L")}
                                                 </span>
                                             </div>
-                                            <div className="flex justify-between text-gray-500 dark:text-gray-400">
+                                            <div className="flex justify-between text-muted-foreground">
                                                 <span>Qty: {formatValue(getLotValue(lot, "Quantity"), "Quantity")}</span>
                                                 <span>Cost: {formatValue(getLotValue(lot, "Cost Basis"), "Cost Basis")}</span>
                                             </div>
@@ -445,16 +445,16 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                 ))}
             </div>
             {visibleRows < sortedHoldings.length && (
-                <div className="flex justify-center gap-4 p-4 border-t border-gray-200 dark:border-gray-700">
+                <div className="flex justify-center gap-4 p-4 border-t border-black/5 dark:border-white/10">
                     <button
                         onClick={handleShowMore}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
+                        className="px-4 py-2 bg-cyan-600 text-white rounded-md hover:bg-cyan-700 transition-colors text-sm font-medium"
                     >
                         Show More
                     </button>
                     <button
                         onClick={handleShowAll}
-                        className="px-4 py-2 bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors text-sm font-medium"
+                        className="px-4 py-2 bg-black/10 dark:bg-white/10 text-foreground rounded-md hover:bg-black/20 dark:hover:bg-white/20 transition-colors text-sm font-medium"
                     >
                         Show All
                     </button>

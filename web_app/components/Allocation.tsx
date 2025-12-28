@@ -47,8 +47,8 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
     const countryData = aggregateData('Country');
 
     const renderPieChart = (title: string, data: AggregatedData[]) => (
-        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border border-gray-200 dark:border-gray-700 flex flex-col h-[32rem]">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 text-center">{title}</h3>
+        <div className="bg-white/5 backdrop-blur-md p-4 rounded-xl shadow-sm border border-white/10 flex flex-col h-[32rem]">
+            <h3 className="text-lg font-semibold text-foreground mb-4 text-center">{title}</h3>
             <div className="flex-grow">
                 <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -66,6 +66,7 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
                             ))}
                         </Pie>
                         <Tooltip
+                            contentStyle={{ backgroundColor: 'rgba(0,0,0,0.8)', borderColor: 'rgba(255,255,255,0.1)', color: '#fff' }}
                             formatter={(value: number | undefined) => formatCurrency(value || 0, currency)}
                         />
                         <Legend layout="horizontal" align="center" verticalAlign="bottom" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />

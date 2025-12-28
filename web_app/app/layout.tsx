@@ -1,16 +1,9 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
+import Providers from "@/components/Providers";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Investa",
@@ -20,8 +13,6 @@ export const metadata: Metadata = {
   },
 };
 
-import Providers from "@/components/Providers";
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -29,10 +20,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-        suppressHydrationWarning={true}
-      >
+      <body className={`${inter.className} antialiased selection:bg-cyan-500/20 selection:text-cyan-500 min-h-screen bg-background text-foreground`}>
         <Providers>
           {children}
         </Providers>

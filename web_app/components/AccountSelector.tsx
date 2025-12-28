@@ -47,11 +47,11 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
         <div className="relative mb-4" ref={dropdownRef}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="w-full flex justify-between items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white px-4 py-3 rounded-xl shadow-sm hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+                className="flex justify-between w-full px-4 py-2 text-sm font-medium text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-lg shadow-sm hover:bg-black/10 dark:hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-xl transition-all"
             >
                 <span className="font-medium">{getLabel()}</span>
                 <svg
-                    className={`w-5 h-5 text-gray-500 transition-transform ${isOpen ? 'transform rotate-180' : ''}`}
+                    className={`w-5 h-5 text-muted-foreground transition-transform ${isOpen ? 'transform rotate-180' : ''}`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -61,32 +61,44 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
             </button>
 
             {isOpen && (
-                <div className="absolute z-20 top-full left-0 min-w-full w-max mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg overflow-hidden max-h-80 overflow-y-auto">
-                    <div
-                        onClick={handleSelectAll}
-                        className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-100 dark:border-gray-700"
-                    >
-                        <div className={`w-5 h-5 rounded border flex items-center justify-center mr-3 ${isAllSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300 dark:border-gray-600'}`}>
-                            {isAllSelected && <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                        </div>
-                        <span className="text-gray-900 dark:text-white font-medium whitespace-nowrap">All Accounts</span>
-                    </div>
+                <div className="absolute right-0 top-full mt-2 w-full origin-top-right bg-popover border border-border rounded-xl shadow-xl outline-none z-10 overflow-hidden">
+                    <div className="py-1 max-h-60 overflow-y-auto">
+                        <button
+                            onClick={handleSelectAll}
+                            className={`group flex items-center justify-between w-full px-4 py-3 text-sm font-medium ${isAllSelected
+                                ? 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400'
+                                : 'text-popover-foreground'
+                                } hover:bg-black/5 dark:hover:bg-white/10 transition-colors border-b border-black/5 dark:border-white/5`}
+                        >
+                            <span className="whitespace-nowrap">All Accounts</span>
+                            {isAllSelected && (
+                                <svg className="w-4 h-4 text-cyan-600 dark:text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                            )}
+                        </button>
 
-                    {availableAccounts.map(acc => {
-                        const isSelected = selectedAccounts.includes(acc);
-                        return (
-                            <div
-                                key={acc}
-                                onClick={() => toggleAccount(acc)}
-                                className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
-                            >
-                                <div className={`w-5 h-5 rounded border flex items-center justify-center mr-3 ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300 dark:border-gray-600'}`}>
-                                    {isSelected && <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                                </div>
-                                <span className="text-gray-700 dark:text-gray-200 whitespace-nowrap">{acc}</span>
-                            </div>
-                        );
-                    })}
+                        {availableAccounts.map((account) => {
+                            const isSelected = selectedAccounts.includes(account);
+                            return (
+                                <button
+                                    key={account}
+                                    onClick={() => toggleAccount(account)}
+                                    className={`group flex items-center justify-between w-full px-4 py-3 text-sm font-medium ${isSelected
+                                        ? 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400'
+                                        : 'text-popover-foreground'
+                                        } hover:bg-black/5 dark:hover:bg-white/10 transition-colors border-b border-black/5 dark:border-white/5 last:border-0`}
+                                >
+                                    <span className="whitespace-nowrap">{account}</span>
+                                    {isSelected && (
+                                        <svg className="w-4 h-4 text-cyan-600 dark:text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
             )}
         </div>

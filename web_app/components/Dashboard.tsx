@@ -1,7 +1,8 @@
 import React from 'react';
 import { PortfolioSummary } from '../lib/api';
-import { formatCurrency } from '../lib/utils';
-
+import { formatCurrency, cn } from '../lib/utils';
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 interface DashboardProps {
     summary: PortfolioSummary;
     currency: string;
@@ -21,37 +22,27 @@ const MetricCard = ({
     subValueClassName = '',
     currency = 'USD'
 }: any) => (
-    <div className={`
-        relative overflow-hidden rounded-2xl p-5 transition-all duration-300 h-full
-        ${isHero
-            ? 'bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-900 shadow-md hover:shadow-lg border border-slate-200 dark:border-slate-700'
-            : 'bg-white dark:bg-slate-800 shadow-sm hover:shadow border border-slate-100 dark:border-slate-700'
-        }
-        ${containerClassName}
-    `}>
-        {isHero && (
-            <div className="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-gradient-to-br from-slate-100 to-transparent dark:from-slate-700 rounded-full opacity-50 blur-2xl pointer-events-none"></div>
-        )}
+    <Card className={cn(
+        "h-full transition-all duration-300 relative overflow-hidden group",
+        "bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 border-black/5 dark:border-white/10",
+        containerClassName
+    )}>
 
-        <p className="text-sm font-medium text-slate-500 dark:text-slate-400 relative z-10">{title}</p>
+        <CardContent className="h-full flex flex-col justify-center p-6">
+            <p className="text-sm font-medium text-muted-foreground relative z-10 uppercase tracking-wider text-[10px]">{title}</p>
 
-        <div className={`mt-2 flex items-baseline gap-2 flex-wrap relative z-10`}>
-            <h3 className={`font-extrabold tracking-tight ${valueClassName} ${colorClass || 'text-slate-900 dark:text-white'}`}>
-                {value !== null && value !== undefined ? (isCurrency ? formatCurrency(value, currency) : value) : '-'}
-            </h3>
-            {subValue && (
-                <span className={`
-                    ${subValueClassName || valueClassName} font-semibold
-                    ${subValue >= 0
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-rose-600 dark:text-rose-400'
-                    }
-                `}>
-                    ({subValue > 0 ? '+' : ''}{subValue.toFixed(2)}%)
-                </span>
-            )}
-        </div>
-    </div>
+            <div className="mt-2 flex items-center gap-3 flex-wrap relative z-10">
+                <h3 className={cn("font-bold tracking-tight", colorClass || "text-foreground", valueClassName)}>
+                    {value !== null && value !== undefined ? (isCurrency ? formatCurrency(value, currency) : value) : '-'}
+                </h3>
+                {subValue && (
+                    <Badge variant={subValue >= 0 ? "success" : "destructive"} className={cn("text-xs font-semibold px-2 py-0.5", subValueClassName)}>
+                        {subValue > 0 ? '+' : ''}{subValue.toFixed(2)}%
+                    </Badge>
+                )}
+            </div>
+        </CardContent>
+    </Card>
 );
 
 const DEFAULT_ITEMS = [

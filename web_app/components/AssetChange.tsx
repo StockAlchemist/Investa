@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { formatCurrency } from '../lib/utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { AssetChangeData } from '../lib/api';
@@ -51,18 +51,18 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: any) =>
     });
 
     return (
-        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border border-gray-200 dark:border-gray-700 mb-6">
+        <div className="bg-white/5 backdrop-blur-md p-4 rounded-xl shadow-sm border border-white/10 mb-6">
             <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{config.title} ({viewMode === 'percent' ? '%' : currency})</h3>
+                <h3 className="text-lg font-semibold text-foreground">{config.title} ({viewMode === 'percent' ? '%' : currency})</h3>
                 <div className="flex items-center space-x-2">
-                    <label className="text-sm text-gray-500 dark:text-gray-400">Periods:</label>
+                    <label className="text-sm text-muted-foreground">Periods:</label>
                     <input
                         type="number"
                         min="1"
                         max="100"
                         value={numPeriods}
                         onChange={(e) => setNumPeriods(parseInt(e.target.value) || 1)}
-                        className="w-16 px-2 py-1 text-sm border border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        className="w-16 px-2 py-1 text-sm bg-black/20 border border-white/10 rounded text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
                     />
                 </div>
             </div>
@@ -71,27 +71,32 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: any) =>
             <div className="h-64 mb-6">
                 <ResponsiveContainer width="100%" height="100%">
                     <BarChart key={`${viewMode}-${config.key}`} data={displayData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
                         <XAxis
                             dataKey="Date"
-                            tick={{ fontSize: 10 }}
+                            tick={{ fontSize: 10, fill: '#9ca3af' }}
                             tickFormatter={(val) => val} // Dates are already strings
+                            axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
                         />
                         <YAxis
                             tickFormatter={(val) => viewMode === 'percent' ? `${val.toFixed(1)}%` : new Intl.NumberFormat('en-US', { notation: "compact", compactDisplay: "short" }).format(val)}
                             domain={['auto', 'auto']}
+                            tick={{ fill: '#9ca3af' }}
+                            axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
                         />
                         <Tooltip
-                            formatter={(value: number) => [formatValue(value), '']}
-                            labelStyle={{ color: '#374151' }}
+                            contentStyle={{ backgroundColor: 'rgba(0,0,0,0.8)', borderColor: 'rgba(255,255,255,0.1)', color: '#fff' }}
+                            formatter={(value: number | undefined) => [formatValue(value || 0), '']}
+                            cursor={{ fill: 'rgba(255,255,255,0.05)' }}
                         />
-                        {viewMode === 'percent' && <Legend />}
+                        {viewMode === 'percent' && <Legend wrapperStyle={{ color: '#9ca3af' }} />}
                         {keysToPlot.map((key, index) => (
                             <Bar
                                 key={key}
                                 dataKey={key}
                                 name={key.replace(` ${targetSuffix}`, '')}
                                 fill={viewMode === 'percent' ? COLORS[index % COLORS.length] : undefined}
+                                radius={[4, 4, 0, 0]}
                             >
                                 {viewMode === 'value' && displayData.map((entry: any, i: number) => (
                                     <Cell
@@ -112,7 +117,7 @@ export default function AssetChange({ data, currency }: AssetChangeProps) {
     const [viewMode, setViewMode] = useState<'percent' | 'value'>('percent');
 
     if (!data) {
-        return <div className="p-4 text-center text-gray-500">Loading asset change data...</div>;
+        return <div className="p-4 text-center text-muted-foreground">Loading asset change data...</div>;
     }
 
     const formatValue = (val: number) => {
@@ -122,38 +127,17 @@ export default function AssetChange({ data, currency }: AssetChangeProps) {
         return formatCurrency(val, currency);
     };
 
-    // Custom Tooltip component
-    const CustomTooltip = ({ active, payload, label }: any) => {
-        if (active && payload && payload.length) {
-            return (
-                <div className="p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow-md">
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white mb-1">{label}</p>
-                    {payload.map((entry: any, index: number) => (
-                        <p key={`item-${index}`} className="text-sm font-medium" style={{ color: entry.color }}>
-                            {entry.name}: {viewMode === 'percent'
-                                ? `${entry.value > 0 ? '+' : ''}${entry.value.toFixed(2)}%`
-                                : formatCurrency(entry.value, currency)
-                            }
-                        </p>
-                    ))}
-                </div>
-            );
-        }
-        return null;
-    };
-
-
     return (
         <div className="space-y-6">
             <div className="flex justify-end space-x-2 mb-4">
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 self-center">View:</span>
-                <div className="inline-flex rounded-md shadow-sm" role="group">
+                <span className="text-sm font-medium text-muted-foreground self-center">View:</span>
+                <div className="inline-flex rounded-lg shadow-sm bg-black/5 dark:bg-black/20 p-1 border border-black/5 dark:border-white/10">
                     <button
                         type="button"
                         onClick={() => setViewMode('percent')}
-                        className={`px-4 py-2 text-sm font-medium border rounded-l-lg ${viewMode === 'percent'
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-100 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:hover:bg-gray-600'
+                        className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'percent'
+                            ? 'bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 shadow-sm ring-1 ring-cyan-500/50'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
                             }`}
                     >
                         Percentage (%)
@@ -161,9 +145,9 @@ export default function AssetChange({ data, currency }: AssetChangeProps) {
                     <button
                         type="button"
                         onClick={() => setViewMode('value')}
-                        className={`px-4 py-2 text-sm font-medium border rounded-r-lg ${viewMode === 'value'
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-100 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:hover:bg-gray-600'
+                        className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'value'
+                            ? 'bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 shadow-sm ring-1 ring-cyan-500/50'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
                             }`}
                     >
                         Value ({currency})
