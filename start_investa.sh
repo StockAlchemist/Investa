@@ -1,8 +1,10 @@
 #!/bin/bash
 
-# start_investa.sh
 # Starts both the Backend Server and the Web App concurrently.
 # Automatically cleans up existing processes on ports 8000 and 3000.
+
+# Ensure we are running from the script's directory
+cd "$(dirname "$0")"
 
 # Function to kill all child processes on exit
 cleanup() {

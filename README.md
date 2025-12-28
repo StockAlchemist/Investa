@@ -208,12 +208,22 @@ For detailed examples and specific requirements for each transaction type, pleas
     ```
     This single command handles everything, including starting the API server and the frontend.
 
-2. **Run Desktop App Only**
+    **macOS Users:**
+    A double-clickable `Investa.app` is available in the root directory. You can simply double-click it to start the application (Terminal window will open to show logs).
+
+2. **Run Desktop App Only (Legacy)**
     If you only need the desktop GUI:
 
     ```bash
+    ./scripts/legacy_run_gui.sh
+    ```
+     *(Formerly `Investa` script)*
+    
+    Or directly with Python:
+    ```bash
     python src/main_gui.py
     ```
+    
     *   **Access:** Open your browser and go to `http://localhost:3000`.
 
 3. **Initial Setup (First Launch)**

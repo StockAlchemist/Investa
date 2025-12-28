@@ -1,0 +1,5 @@
+#!/bin/bash
+DIR=$(dirname "$0")
+PROJECT_ROOT=$(cd "$DIR/../../.." && pwd)
+# Launch the startup script in a new Terminal window
+open -a Terminal "$PROJECT_ROOT/start_investa.sh"
