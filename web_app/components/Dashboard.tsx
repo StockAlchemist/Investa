@@ -50,8 +50,7 @@ const DEFAULT_ITEMS = [
     { id: 'dayGL', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
     { id: 'totalReturn', colSpan: '' },
     { id: 'annualTWR', colSpan: '' },
-    { id: 'unrealizedGL', colSpan: '' },
-    { id: 'unrealizedGLPct', colSpan: '' },
+    { id: 'unrealizedGL', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
     { id: 'realizedGain', colSpan: '' },
     { id: 'cashBalance', colSpan: '' },
     { id: 'ytdDividends', colSpan: '' },
@@ -131,15 +130,13 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
                 return <MetricCard
                     title="Unrealized G/L"
                     value={unrealizedGL}
+                    subValue={unrealizedGLPct}
                     colorClass={unrealizedGLColor}
+                    valueClassName="text-4xl"
+                    subValueClassName="text-2xl"
+                    containerClassName="h-full flex flex-col justify-center"
+                    isHero={true}
                     currency={currency}
-                />;
-            case 'unrealizedGLPct':
-                return <MetricCard
-                    title="Unrealized G/L %"
-                    value={unrealizedGLPct !== undefined && unrealizedGLPct !== null ? `${unrealizedGLPct.toFixed(2)}%` : '-'}
-                    isCurrency={false}
-                    colorClass={unrealizedGLColor}
                 />;
             case 'realizedGain':
                 return <MetricCard

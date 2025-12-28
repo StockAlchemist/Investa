@@ -25,7 +25,8 @@ export function formatCurrency(value: number, currency: string = 'USD'): string 
 
     // Manual override for THB symbol
     if (currency === 'THB') {
-        return formatted.replace('THB', '฿');
+        // Check if there's a space that needs removing too (Intl sometimes adds NBSP or space)
+        return formatted.replace('THB', '฿').replace(/\s/g, '');
     }
 
     return formatted;

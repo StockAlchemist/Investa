@@ -114,18 +114,18 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         : [];
 
     return (
-        <div className="bg-white/5 backdrop-blur-md rounded-xl p-4 shadow-sm border border-white/10 mb-6">
+        <div className="bg-black/5 dark:bg-white/5 backdrop-blur-md rounded-xl p-4 shadow-sm border border-black/10 dark:border-white/10 mb-6">
             <div className="flex flex-col space-y-4 mb-4">
                 <div className="flex justify-between items-center">
                     <h3 className="text-lg font-semibold text-foreground">
                         {view === 'return' ? 'Time-Weighted Return' : 'Portfolio Value'}
                     </h3>
-                    <div className="flex space-x-2 bg-white/5 rounded-lg p-1 border border-white/5">
+                    <div className="flex space-x-2 bg-black/5 dark:bg-white/5 rounded-lg p-1 border border-black/5 dark:border-white/5">
                         <button
                             onClick={() => setView('return')}
                             className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${view === 'return'
-                                ? 'bg-white/10 text-white shadow-sm'
-                                : 'text-muted-foreground hover:text-white hover:bg-white/5'
+                                ? 'bg-black/10 dark:bg-white/10 text-foreground shadow-sm'
+                                : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
                                 }`}
                         >
                             Return %
@@ -133,8 +133,8 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                         <button
                             onClick={() => setView('value')}
                             className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${view === 'value'
-                                ? 'bg-white/10 text-white shadow-sm'
-                                : 'text-muted-foreground hover:text-white hover:bg-white/5'
+                                ? 'bg-black/10 dark:bg-white/10 text-foreground shadow-sm'
+                                : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
                                 }`}
                         >
                             Value

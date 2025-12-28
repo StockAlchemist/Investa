@@ -111,8 +111,9 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                             <XAxis dataKey="year" tick={{ fontSize: 12, fill: '#9ca3af' }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} />
                             <YAxis
                                 tickFormatter={(val) => new Intl.NumberFormat('en-US', { notation: "compact", compactDisplay: "short" }).format(val)}
-                                tick={{ fill: '#9ca3af' }}
+                                tick={{ fill: '#9ca3af', fontSize: 10 }}
                                 axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                                width={35}
                             />
                             <Tooltip
                                 formatter={(value: number | undefined) => [formatCurrency(value || 0, currency), 'Realized Gain']}

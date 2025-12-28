@@ -79,10 +79,11 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: any) =>
                             axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
                         />
                         <YAxis
-                            tickFormatter={(val) => viewMode === 'percent' ? `${val.toFixed(1)}%` : new Intl.NumberFormat('en-US', { notation: "compact", compactDisplay: "short" }).format(val)}
+                            tickFormatter={(val) => viewMode === 'percent' ? `${val.toFixed(0)}%` : new Intl.NumberFormat('en-US', { notation: "compact", compactDisplay: "short" }).format(val)}
                             domain={['auto', 'auto']}
-                            tick={{ fill: '#9ca3af' }}
+                            tick={{ fill: '#9ca3af', fontSize: 10 }}
                             axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                            width={35}
                         />
                         <Tooltip
                             contentStyle={{ backgroundColor: 'rgba(0,0,0,0.8)', borderColor: 'rgba(255,255,255,0.1)', color: '#fff' }}
