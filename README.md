@@ -31,6 +31,7 @@ Investa is a comprehensive portfolio management solution offering both a feature
   * **Categorical Breakdown:** View asset allocation by Asset Type (e.g., Stock, ETF, Cash), Sector (e.g., Technology, Healthcare), Geography (e.g., US, International), and Industry. (Note: Sector, Geography, and Industry breakdowns require fundamental data for symbols, fetched via Yahoo Finance, or manual overrides).
 * **Symbol Settings (Overrides, Mapping, Exclusions):**
   * **Manual Overrides:** For any symbol, manually set or adjust `price`, `asset_type`, `sector`, `geography`, and `industry`. This is crucial when API data is missing, incorrect, or when you need to define custom classifications.
+  * **Edit Functionality:** Directly edit existing override entries and mappings without needing to delete and re-add them.
   * **Symbol Mapping:** Define aliases or map alternative ticker symbols to a primary symbol (e.g., map "BRK.B" to "BRK-B") for consistent data fetching and display.
   * **Symbol Exclusions:** Specify symbols to be excluded from market data fetching or certain calculations.
   * All managed via `Settings > Symbol Settings...` and stored in `manual_overrides.json`.
@@ -55,6 +56,8 @@ Investa is a comprehensive portfolio management solution offering both a feature
   * Utility to standardize CSV headers to the application's preferred internal format before import.
 * **Web Dashboard (New):**
   * **Modern Interface:** Experience your portfolio in a sleek, responsive web interface built with Next.js and Tailwind CSS.
+  * **Mobile Optimized:** Dedicated mobile navigation bar with "Home", "Markets", and "Settings" tabs for easy access on small screens.
+  * **Markets Overview:** View live data for major indices (Dow, Nasdaq, S&P 500) directly from the mobile "Markets" tab.
   * **Remote Access:** Access your portfolio from any device on your local network (e.g., mobile, tablet).
   * **Core Features:** View Summary, Holdings, Performance Graphs, Transactions, Asset Allocation, and Dividends.
 * **Numba Optimization:** Leverages Numba to accelerate computationally intensive historical portfolio value calculations, providing faster chart loading and analysis.

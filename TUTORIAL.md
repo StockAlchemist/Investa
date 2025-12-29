@@ -524,7 +524,8 @@ Investa packs several additional features and settings to enhance your portfolio
     This powerful dialog is your go-to for managing how individual symbols are treated within Investa. It directly modifies the `manual_overrides.json` file.
   * **Manual Overrides Tab:**
     * If data fetched from Yahoo Finance for a symbol (like its current `price`, `asset_type`, `sector`, `geography`, or `industry`) is missing, incorrect, or you wish to use a custom value, you can set it here.
-    * Enter the `Symbol`, select the `Field to Override` (e.g., price, sector), and provide the `New Value`. Click "Add/Update Override".
+    * Enter the `Symbol`, select the `Field to Override` (e.g., price, sector), and provide the `New Value`. Click "Set Override".
+    * **Editing Overrides:** You can now see a table of your existing overrides. Click the "Edit" button next to any entry to populate the form fields with its current values, making it easy to adjust and update without starting from scratch.
     * This gives you fine-grained control over how your assets are classified and valued, which is especially useful for non-standard assets or correcting API data.
   * **Symbol Mapping Tab:**
     * Useful if a ticker symbol has changed or if you use an alternative symbol in your records (e.g., `BRK.B` vs. `BRK-B`).
@@ -645,6 +646,7 @@ The Web Dashboard mirrors many of the key features of the desktop application:
 
 *   **Dashboard Summary:** View your Net Value, Daily P&L, Total Return, and key metrics at a glance.
 *   **Performance Graph:** Interactive charts for TWR and Portfolio Value.
+*   **Markets Tab (Mobile):** Dedicated tab to track major market indices (Dow, Nasdaq, S&P 500) while on the go.
 *   **Holdings:** A sorted list of your current positions.
 *   **Transactions Log:** View your history of trades and cash movements.
 *   **Asset Allocation & Analysis:** Visual breakdowns of your portfolio.
