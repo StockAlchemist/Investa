@@ -5,12 +5,11 @@
  Purpose:       Core logic for portfolio calculations, data fetching, and analysis.
                 Handles transaction processing, current summary, and historical performance.
                 Uses MarketDataProvider for external market data.
-                *** MODIFIED: Current summary helpers moved to portfolio_analyzer.py ***
+
 
  Author:        Google Gemini
 
- Created:       26/04/2025
- Modified:      2025-04-30
+
  Copyright:     (c) Investa Contributors 2025
  Licence:       MIT
 --------------------------------------------------------------------------------

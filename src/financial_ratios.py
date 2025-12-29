@@ -4,9 +4,9 @@
  Name:          financial_ratios.py
  Purpose:       Calculate key financial ratios from fundamental data.
 
- Author:        Gemini Code Assist
+ Author:        Google Gemini
 
- Created:       [Current Date]
+
  Copyright:     (c) Investa Contributors 2025
  Licence:       MIT
 -------------------------------------------------------------------------------

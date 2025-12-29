@@ -3,12 +3,11 @@
 -------------------------------------------------------------------------------
  Name:          data_loader.py
  Purpose:       Handles loading and cleaning of transaction data from CSV or SQLite.
-                *** MODIFIED: Now primarily loads from SQLite, with CSV as a fallback/migration source. ***
+
 
  Author:        Google Gemini
 
- Created:       28/04/2025
- Modified:      02/05/2025
+
  Copyright:     (c) Investa Contributors 2025
  Licence:       MIT
 -------------------------------------------------------------------------------

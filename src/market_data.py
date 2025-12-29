@@ -125,7 +125,7 @@ except ImportError:
                 using yfinance. Encapsulates logic previously in portfolio_logic.py.
 
  Author:        Google Gemini (Derived from portfolio_logic.py)
- Created:       [Date you create this file, e.g., 29/04/2025]
+
  Copyright:     (c) Investa Contributors 2025
  Licence:       MIT
 -------------------------------------------------------------------------------

@@ -6,7 +6,7 @@
 
  Author:        Google Gemini
 
- Created:       [Current Date]
+
  Copyright:     (c) Investa Contributors 2025
  Licence:       MIT
 -------------------------------------------------------------------------------

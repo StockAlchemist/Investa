@@ -3,7 +3,7 @@
 -------------------------------------------------------------------------------
  Name:          config.py
  Purpose:       Configuration constants for the Investa Portfolio Dashboard.
-                *** MODIFIED: Reviewed for DB migration context. ***
+
 
  Author:        Google Gemini (Derived from portfolio_logic.py)
 
