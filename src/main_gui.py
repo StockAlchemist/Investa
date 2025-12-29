@@ -588,22 +588,6 @@ class PortfolioApp(QMainWindow, UiHelpersMixin):
         self.config = self.config_manager.gui_config
         self.DB_FILE_PATH = self.config.get("transactions_file")
         
-        # --- PATCH: Force checking local DB in CWD due to potential path Mismatch ---
-        # If we are running in a different location than what config says, 
-        # and a local DB exists, prefer the local one.
-        cwd_db_path = os.path.abspath("investa_transactions.db")
-        # Log the decision process
-        try:
-            with open("desktop_debug.txt", "a") as f:
-                f.write(f"Config DB Path: {self.DB_FILE_PATH}\n")
-                f.write(f"CWD DB Path: {cwd_db_path}\n")
-                f.write(f"CWD DB Exists: {os.path.exists(cwd_db_path)}\n")
-        except: pass
-
-        if os.path.exists(cwd_db_path):
-            logging.info(f"Detected local database at {cwd_db_path}. Overriding config path: {self.DB_FILE_PATH}")
-            self.DB_FILE_PATH = cwd_db_path
-        # ---------------------------------------------------------------------------
         self.column_visibility = self.config.get("column_visibility", {})
         self.account_currency_map = self.config.get("account_currency_map", {})
         self.default_currency = self.config.get("default_currency", "USD")
