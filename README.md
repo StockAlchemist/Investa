@@ -108,4 +108,4 @@ MIT License. See [LICENSE](LICENSE).
 
 ## Author
 
-* **Google Gemini 2.5**
+* **Google Gemini**

@@ -4,7 +4,7 @@
  Name:          factor_analyzer.py
  Purpose:       Contains functions for performing factor analysis on portfolio returns.
 
- Author:        Google Gemini 2.5
+ Author:        Google Gemini
 
  Created:       13/07/2025
  Copyright:     (c) Kittiwit Matan 2025

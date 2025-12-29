@@ -4,7 +4,7 @@
  Name:          risk_metrics.py
  Purpose:       Calculate portfolio risk metrics (Drawdown, Sharpe, Volatility).
 
- Author:        Google Gemini 2.5
+ Author:        Google Gemini
 
  Created:       [Current Date]
  Copyright:     (c) Kittiwit Matan 2025

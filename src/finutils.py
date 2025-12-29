@@ -6,7 +6,7 @@
                 Includes IRR/NPV calculations, currency conversion helpers,
                 cash flow generation, historical price lookups, and file hashing.
 
- Author:        Google Gemini 2.5 (Derived from portfolio_logic.py)
+ Author:        Google Gemini (Derived from portfolio_logic.py)
 
  Copyright:     (c) Kittiwit Matan 2025
  Licence:       MIT

@@ -7,7 +7,7 @@
                 holdings, cash balances, and summary metrics from transactions
                 and market data. (Refactored from portfolio_logic.py)
 
- Author:        Google Gemini 2.5 (Derived from portfolio_logic.py)
+ Author:        Google Gemini (Derived from portfolio_logic.py)
 
  Created:       29/04/2025
  Modified:      2025-04-30

@@ -5,7 +5,7 @@
  Purpose:       Handles loading and cleaning of transaction data from CSV or SQLite.
                 *** MODIFIED: Now primarily loads from SQLite, with CSV as a fallback/migration source. ***
 
- Author:        Google Gemini 2.5
+ Author:        Google Gemini
 
  Created:       28/04/2025
  Modified:      02/05/2025

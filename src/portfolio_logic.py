@@ -7,7 +7,7 @@
                 Uses MarketDataProvider for external market data.
                 *** MODIFIED: Current summary helpers moved to portfolio_analyzer.py ***
 
- Author:        Google Gemini 2.5
+ Author:        Google Gemini
 
  Created:       26/04/2025
  Modified:      2025-04-30
