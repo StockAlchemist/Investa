@@ -83,14 +83,14 @@ export default function Dividend({ data, currency, expectedDividends, children }
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-white/5 backdrop-blur-md p-4 rounded-xl shadow-sm border border-white/10">
                     <h3 className="text-sm font-medium text-muted-foreground">Total Dividends</h3>
-                    <p className="text-2xl font-bold text-emerald-500">
+                    <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
                         {formatCurrency(totalDividends, currency)}
                     </p>
                 </div>
                 {expectedDividends !== undefined && (
                     <div className="bg-white/5 backdrop-blur-md p-4 rounded-xl shadow-sm border border-white/10">
                         <h3 className="text-sm font-medium text-muted-foreground">Expected Dividends (Next 12M)</h3>
-                        <p className="text-2xl font-bold text-cyan-400">
+                        <p className="text-2xl font-bold text-cyan-600 dark:text-cyan-400">
                             {formatCurrency(expectedDividends, currency)}
                         </p>
                     </div>
@@ -115,9 +115,24 @@ export default function Dividend({ data, currency, expectedDividends, children }
                                 width={35}
                             />
                             <Tooltip
-                                formatter={(value: number | undefined) => [formatCurrency(value || 0, currency), 'Dividend Amount']}
-                                contentStyle={{ backgroundColor: 'rgba(0,0,0,0.8)', borderColor: 'rgba(255,255,255,0.1)', color: '#fff' }}
-                                cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                                content={({ active, payload, label }) => {
+                                    if (active && payload && payload.length) {
+                                        return (
+                                            <div className="bg-popover/95 backdrop-blur-sm border border-border p-3 rounded-lg shadow-xl">
+                                                <p className="font-medium text-foreground mb-1">{label}</p>
+                                                <div className="flex items-center gap-2 text-sm">
+                                                    <span className="w-2 h-2 rounded-full bg-blue-500" />
+                                                    <span className="text-muted-foreground">Dividend Amount:</span>
+                                                    <span className="font-medium text-blue-500">
+                                                        {formatCurrency(payload[0].value as number, currency)}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                }}
+                                cursor={{ fill: 'var(--glass-hover)' }}
                             />
                             <Bar dataKey="amount" fill="#3B82F6" name="Dividend Amount" radius={[4, 4, 0, 0]} />
                         </BarChart>

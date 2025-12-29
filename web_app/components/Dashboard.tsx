@@ -107,7 +107,7 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
                     subValue={dayGLPct}
                     colorClass={dayGLColor}
                     valueClassName="text-4xl"
-                    subValueClassName="text-2xl"
+                    subValueClassName={cn("text-2xl", dayGLPct >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white hover:bg-rose-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
@@ -133,7 +133,7 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
                     subValue={unrealizedGLPct}
                     colorClass={unrealizedGLColor}
                     valueClassName="text-4xl"
-                    subValueClassName="text-2xl"
+                    subValueClassName={cn("text-2xl", unrealizedGLPct >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}

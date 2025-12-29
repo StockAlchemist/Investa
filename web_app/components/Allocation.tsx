@@ -57,7 +57,7 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
                             cx="50%"
                             cy="35%"
                             labelLine={false}
-                            outerRadius={80}
+                            outerRadius={110}
                             fill="#8884d8"
                             dataKey="value"
                         >
@@ -66,8 +66,19 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
                             ))}
                         </Pie>
                         <Tooltip
-                            contentStyle={{ backgroundColor: 'rgba(0,0,0,0.8)', borderColor: 'rgba(255,255,255,0.1)', color: '#fff' }}
-                            formatter={(value: number | undefined) => formatCurrency(value || 0, currency)}
+                            content={({ active, payload }) => {
+                                if (active && payload && payload.length) {
+                                    return (
+                                        <div className="bg-popover/95 backdrop-blur-sm border border-border p-3 rounded-lg shadow-xl">
+                                            <p className="font-medium text-foreground">{payload[0].name}</p>
+                                            <p className="text-sm text-muted-foreground">
+                                                {formatCurrency(payload[0].value as number, currency)}
+                                            </p>
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            }}
                         />
                         <Legend layout="horizontal" align="center" verticalAlign="bottom" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
                     </PieChart>

@@ -23,6 +23,7 @@
   --input: #e4e4e7;
   --ring: #18181b;
   --radius: 0.5rem;
+  --glass-hover: rgba(0, 0, 0, 0.05);
 }
 
 .dark {
@@ -46,6 +47,7 @@
   --border: #1e293b;
   --input: #1e293b;
   --ring: #cbd5e1;
+  --glass-hover: rgba(255, 255, 255, 0.05);
 }
 
 @theme inline {

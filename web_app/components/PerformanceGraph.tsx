@@ -87,8 +87,8 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
     const CustomTooltip = ({ active, payload, label }: any) => {
         if (active && payload && payload.length) {
             return (
-                <div className="bg-black/80 backdrop-blur-md p-3 border border-white/20 shadow-xl rounded-lg">
-                    <p className="text-sm text-gray-400 mb-1">{new Date(label).toLocaleDateString()}</p>
+                <div className="bg-popover/95 backdrop-blur-sm p-3 border border-border shadow-xl rounded-lg">
+                    <p className="text-sm text-foreground mb-1">{new Date(label).toLocaleDateString()}</p>
                     {payload.map((entry: any, index: number) => (
                         <p key={index} className="text-sm font-medium" style={{ color: entry.color }}>
                             {entry.name}: {view === 'return'

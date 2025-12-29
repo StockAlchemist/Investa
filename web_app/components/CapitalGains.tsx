@@ -83,7 +83,7 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-white/5 backdrop-blur-md p-4 rounded-xl shadow-sm border border-white/10">
                     <h3 className="text-sm font-medium text-muted-foreground">Total Realized Gain</h3>
-                    <p className={`text-2xl font-bold ${totalRealizedGain >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                    <p className={`text-2xl font-bold ${totalRealizedGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                         {formatCurrency(totalRealizedGain, currency)}
                     </p>
                 </div>
@@ -116,9 +116,24 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                                 width={35}
                             />
                             <Tooltip
-                                formatter={(value: number | undefined) => [formatCurrency(value || 0, currency), 'Realized Gain']}
-                                contentStyle={{ backgroundColor: 'rgba(0,0,0,0.8)', borderColor: 'rgba(255,255,255,0.1)', color: '#fff' }}
-                                cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                                content={({ active, payload, label }) => {
+                                    if (active && payload && payload.length) {
+                                        return (
+                                            <div className="bg-popover/95 backdrop-blur-sm border border-border p-3 rounded-lg shadow-xl">
+                                                <p className="font-medium text-foreground mb-1">{label}</p>
+                                                <div className="flex items-center gap-2 text-sm">
+                                                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                                                    <span className="text-muted-foreground">Realized Gain:</span>
+                                                    <span className="font-medium text-emerald-500">
+                                                        {formatCurrency(payload[0].value as number, currency)}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                }}
+                                cursor={{ fill: 'var(--glass-hover)' }}
                             />
                             <Bar dataKey="gain" fill="#10B981" name="Realized Gain" radius={[4, 4, 0, 0]} />
                         </BarChart>

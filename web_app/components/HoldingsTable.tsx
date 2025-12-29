@@ -134,12 +134,29 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
         return foundKey ? holding[foundKey] : null;
     };
 
-    const getLotValue = (lot: Lot, header: string) => {
+    // In getLotValue
+    const getLotValue = (lot: Lot, header: string, holdingPrice?: number) => {
         if (header === 'Quantity') return lot.Quantity;
         if (header === 'Cost Basis' || header === 'Total Buy Cost') return lot['Cost Basis'];
-        if (header === 'Mkt Val') return lot['Market Value'];
-        if (header === 'Unreal. G/L') return lot['Unreal. Gain'];
-        if (header === 'Unreal. G/L %') return lot['Unreal. Gain %'];
+        if (header === 'Mkt Val') {
+            if (lot['Market Value']) return lot['Market Value'];
+            if (holdingPrice && lot.Quantity) return holdingPrice * lot.Quantity;
+            return null;
+        }
+        if (header === 'Unreal. G/L' || header === 'Total G/L') {
+            if (lot['Unreal. Gain']) return lot['Unreal. Gain'];
+            // Calculate if missing
+            const mktVal = lot['Market Value'] || (holdingPrice ? holdingPrice * lot.Quantity : 0);
+            if (mktVal && lot['Cost Basis']) return mktVal - lot['Cost Basis'];
+            return null;
+        }
+        if (header === 'Unreal. G/L %' || header === 'Total Ret %') {
+            if (lot['Unreal. Gain %']) return lot['Unreal. Gain %'];
+            // Calculate if missing
+            const mktVal = lot['Market Value'] || (holdingPrice ? holdingPrice * lot.Quantity : 0);
+            if (mktVal && lot['Cost Basis']) return ((mktVal - lot['Cost Basis']) / lot['Cost Basis']) * 100;
+            return null;
+        }
         // Calculated fields
         if ((header === 'Price' || header === 'Avg Cost') && lot.Quantity) return lot['Cost Basis'] / lot.Quantity;
 
@@ -357,7 +374,8 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                                     holding.lots.map((lot, lotIdx) => (
                                         <tr key={`${holding.Symbol}-lot-${lotIdx}`} className="bg-black/5 dark:bg-white/5">
                                             {visibleColumns.map(header => {
-                                                const val = getLotValue(lot, header);
+                                                const holdingPrice = getValue(holding, "Price") as number;
+                                                const val = getLotValue(lot, header, holdingPrice);
                                                 return (
                                                     <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-t border-white/5 ${getCellClass(val, header)} ${header === 'Symbol' ? 'pl-10 text-muted-foreground italic' : ''}`}>
                                                         {formatValue(val, header)}
@@ -422,22 +440,27 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                             <div className="mt-4 pt-3 border-t border-black/5 dark:border-white/10">
                                 <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Tax Lots</h4>
                                 <div className="space-y-2">
-                                    {holding.lots.map((lot, lotIdx) => (
-                                        <div key={`mobile-lot-${lotIdx}`} className="bg-black/5 dark:bg-white/5 p-2 rounded text-xs border border-black/5 dark:border-white/5">
-                                            <div className="flex justify-between items-center mb-1">
-                                                <span className="font-medium text-foreground">
-                                                    {formatValue(getLotValue(lot, "Symbol"), "Symbol")}
-                                                </span>
-                                                <span className={`font-medium ${getCellClass(getLotValue(lot, "Total G/L"), "Total G/L")}`}>
-                                                    {formatValue(getLotValue(lot, "Total G/L"), "Total G/L")}
-                                                </span>
+                                    {holding.lots.map((lot, lotIdx) => {
+                                        const holdingPrice = getValue(holding, "Price") as number;
+                                        const gain = getLotValue(lot, "Unreal. G/L", holdingPrice);
+                                        const gainPct = getLotValue(lot, "Unreal. G/L %", holdingPrice);
+                                        return (
+                                            <div key={`mobile-lot-${lotIdx}`} className="bg-black/5 dark:bg-white/5 p-2 rounded text-xs border border-black/5 dark:border-white/5">
+                                                <div className="flex justify-between items-center mb-1">
+                                                    <span className="font-medium text-foreground">
+                                                        {formatValue(getLotValue(lot, "Symbol"), "Symbol")}
+                                                    </span>
+                                                    <span className={`font-medium ${getCellClass(gain, "Unreal. G/L")}`}>
+                                                        {formatValue(gain, "Unreal. G/L")} ({formatValue(gainPct, "Unreal. G/L %")})
+                                                    </span>
+                                                </div>
+                                                <div className="flex justify-between text-muted-foreground">
+                                                    <span>Qty: {formatValue(getLotValue(lot, "Quantity"), "Quantity")}</span>
+                                                    <span>Cost: {formatValue(getLotValue(lot, "Cost Basis"), "Cost Basis")}</span>
+                                                </div>
                                             </div>
-                                            <div className="flex justify-between text-muted-foreground">
-                                                <span>Qty: {formatValue(getLotValue(lot, "Quantity"), "Quantity")}</span>
-                                                <span>Cost: {formatValue(getLotValue(lot, "Cost Basis"), "Cost Basis")}</span>
-                                            </div>
-                                        </div>
-                                    ))}
+                                        )
+                                    })}
                                 </div>
                             </div>
                         )}

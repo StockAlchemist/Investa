@@ -86,9 +86,26 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: any) =>
                             width={35}
                         />
                         <Tooltip
-                            contentStyle={{ backgroundColor: 'rgba(0,0,0,0.8)', borderColor: 'rgba(255,255,255,0.1)', color: '#fff' }}
-                            formatter={(value: number | undefined) => [formatValue(value || 0), '']}
-                            cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                            content={({ active, payload, label }) => {
+                                if (active && payload && payload.length) {
+                                    return (
+                                        <div className="bg-popover/95 backdrop-blur-sm border border-border p-3 rounded-lg shadow-xl">
+                                            <p className="font-medium text-foreground mb-1">{label}</p>
+                                            {payload.map((entry: any, index: number) => (
+                                                <div key={index} className="flex items-center gap-2 text-sm">
+                                                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
+                                                    <span className="text-muted-foreground">{entry.name}:</span>
+                                                    <span className="font-medium text-foreground">
+                                                        {formatValue(entry.value)}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            }}
+                            cursor={{ fill: 'var(--glass-hover)' }}
                         />
                         {viewMode === 'percent' && <Legend wrapperStyle={{ color: '#9ca3af' }} />}
                         {keysToPlot.map((key, index) => (
