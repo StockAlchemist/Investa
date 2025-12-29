@@ -11,7 +11,7 @@
 
  Created:       26/04/2025
  Modified:      2025-04-30
- Copyright:     (c) Kittiwit Matan 2025
+ Copyright:     (c) Investa Contributors 2025
  Licence:       MIT
 --------------------------------------------------------------------------------
 SPDX-License-Identifier: MIT

@@ -8,7 +8,7 @@
  Author:        Google Gemini
 
  Created:       02/05/2025
- Copyright:     (c) Kittiwit Matan 2025
+ Copyright:     (c) Investa Contributors 2025
  Licence:       MIT
 -------------------------------------------------------------------------------
 SPDX-License-Identifier: MIT

@@ -126,7 +126,7 @@ except ImportError:
 
  Author:        Google Gemini (Derived from portfolio_logic.py)
  Created:       [Date you create this file, e.g., 29/04/2025]
- Copyright:     (c) Kittiwit Matan 2025
+ Copyright:     (c) Investa Contributors 2025
  Licence:       MIT
 -------------------------------------------------------------------------------
 SPDX-License-Identifier: MIT
