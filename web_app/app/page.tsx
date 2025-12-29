@@ -175,7 +175,7 @@ export default function Home() {
                   <div key={index.name} className="flex items-center justify-between p-4 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10">
                     <span className="font-medium text-foreground text-lg">{index.name}</span>
                     <div className="flex flex-col items-end">
-                      <span className="text-foreground font-mono text-lg">{index.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span className="text-foreground font-medium text-lg">{index.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       <span className={`text-sm ${index.change >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
                         {index.change >= 0 ? "+" : ""}{index.change.toFixed(2)} ({index.changesPercentage.toFixed(2)}%)
                       </span>
