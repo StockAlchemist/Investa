@@ -19,7 +19,7 @@ const TABS = [
 export default function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
     return (
         <div className="w-full overflow-x-auto no-scrollbar py-2 -mx-1 px-1">
-            <div className="flex w-max p-1 bg-secondary/50 backdrop-blur-md border border-border rounded-xl">
+            <div className="flex w-max p-1 bg-black/5 dark:bg-black/20 backdrop-blur-md border border-border rounded-xl">
                 {TABS.map((tab) => (
                     <button
                         key={tab.id}
