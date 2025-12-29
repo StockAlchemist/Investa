@@ -26,9 +26,9 @@ For a step-by-step guide on setup, usage, and configuration, please see our deta
 
 ## Screenshots
 
-![Main Dashboard View](screenshots/Investa_screen_1.png)
-![Transaction Log](screenshots/Investa_screen_2.png)
-![Asset Allocation](screenshots/Investa_screen_3.png)
+![Main Dashboard View](docs/screenshots/Investa_screen_1.png)
+![Transaction Log](docs/screenshots/Investa_screen_2.png)
+![Asset Allocation](docs/screenshots/Investa_screen_3.png)
 
 ## Technology Stack
 
