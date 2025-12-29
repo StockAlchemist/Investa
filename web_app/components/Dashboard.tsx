@@ -29,7 +29,7 @@ const MetricCard = ({
     subValue,
     isCurrency = true,
     colorClass = '',
-    valueClassName = 'text-2xl sm:text-3xl',
+    valueClassName = 'text-xl sm:text-2xl',
     containerClassName = '',
     subValueClassName = '',
     currency = 'USD'
@@ -48,7 +48,7 @@ const MetricCard = ({
                     {value !== null && value !== undefined ? (isCurrency && typeof value === 'number' ? formatCurrency(value, currency) : value) : '-'}
                 </h3>
                 {subValue !== undefined && subValue !== null && (
-                    <Badge variant={subValue >= 0 ? "success" : "destructive"} className={cn("text-[10px] sm:text-xs font-semibold px-1.5 sm:px-2 py-0.5", subValueClassName)}>
+                    <Badge variant={subValue >= 0 ? "success" : "destructive"} className={cn("text-[9px] sm:text-[11px] font-bold px-1.5 sm:px-2 py-0.5", subValueClassName)}>
                         {subValue > 0 ? '+' : ''}{subValue.toFixed(2)}%
                     </Badge>
                 )}
@@ -112,7 +112,7 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
                 return <MetricCard
                     title="Total Portfolio Value"
                     value={m.market_value}
-                    valueClassName="text-2xl sm:text-4xl"
+                    valueClassName="text-3xl sm:text-5xl"
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
@@ -123,8 +123,8 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
                     value={dayGL}
                     subValue={dayGLPct}
                     colorClass={dayGLColor}
-                    valueClassName="text-2xl sm:text-4xl"
-                    subValueClassName={cn("text-lg sm:text-2xl", dayGLPct >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white hover:bg-rose-700 border-none")}
+                    valueClassName="text-2xl sm:text-3xl"
+                    subValueClassName={cn("text-base sm:text-xl", dayGLPct >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white hover:bg-rose-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
@@ -135,8 +135,8 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
                     value={totalGain}
                     subValue={m.total_return_pct}
                     colorClass={totalReturnColor}
-                    valueClassName="text-2xl sm:text-4xl"
-                    subValueClassName={cn("text-lg sm:text-2xl", (m.total_return_pct || 0) >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white hover:bg-rose-700 border-none")}
+                    valueClassName="text-2xl sm:text-3xl"
+                    subValueClassName={cn("text-base sm:text-xl", (m.total_return_pct || 0) >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white hover:bg-rose-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
@@ -154,8 +154,8 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
                     value={unrealizedGL}
                     subValue={unrealizedGLPct}
                     colorClass={unrealizedGLColor}
-                    valueClassName="text-2xl sm:text-4xl"
-                    subValueClassName={cn("text-lg sm:text-2xl", unrealizedGLPct >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white hover:bg-rose-700 border-none")}
+                    valueClassName="text-2xl sm:text-3xl"
+                    subValueClassName={cn("text-base sm:text-xl", unrealizedGLPct >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white hover:bg-rose-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
@@ -166,8 +166,8 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
                     value={fxGL}
                     subValue={fxGLPct}
                     colorClass={fxGLColor}
-                    valueClassName="text-2xl sm:text-4xl"
-                    subValueClassName={cn("text-lg sm:text-2xl", fxGLPct >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white hover:bg-rose-700 border-none")}
+                    valueClassName="text-2xl sm:text-3xl"
+                    subValueClassName={cn("text-base sm:text-xl", fxGLPct >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white hover:bg-rose-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
@@ -177,7 +177,7 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
                     title="Realized Gain"
                     value={realizedGain}
                     colorClass={realizedGainColor}
-                    valueClassName="text-2xl sm:text-4xl"
+                    valueClassName="text-2xl sm:text-3xl"
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
