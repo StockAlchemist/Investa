@@ -194,8 +194,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
                                     }`}
                             >
-                                <span className="hidden sm:inline">Return %</span>
-                                <span className="inline sm:hidden">Return</span>
+                                Return %
                             </button>
                             <button
                                 onClick={() => setView('value')}
@@ -213,8 +212,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
                                     }`}
                             >
-                                <span className="hidden sm:inline">Drawdown</span>
-                                <span className="inline sm:hidden">DD</span>
+                                Drawdown
                             </button>
                         </div>
                     </div>

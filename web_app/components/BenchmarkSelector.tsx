@@ -47,7 +47,7 @@ export default function BenchmarkSelector({ selectedBenchmarks, onBenchmarkChang
                 onClick={() => setIsOpen(!isOpen)}
                 className="flex items-center space-x-2 px-3 py-1 text-sm font-medium text-foreground bg-secondary border border-border rounded-md hover:bg-accent/10 transition-colors"
             >
-                <span>Benchmarks</span>
+                <span>Index</span>
                 <span className="bg-accent/20 text-xs px-1.5 py-0.5 rounded-full text-foreground">
                     {selectedBenchmarks.length}
                 </span>
