@@ -36,7 +36,7 @@ LOGGING_LEVEL = logging.WARNING  # Default logging level for the application
 
 # --- Application Name (used by QStandardPaths if it doesn't infer from bundle) ---
 APP_NAME = "Investa"  # Used by db_utils.py for fallback folder if QStandardPaths fails
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 ORG_NAME = "StockAlchemist"  # Used for cache path consistency
 
 
