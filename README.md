@@ -24,6 +24,15 @@ For a step-by-step guide on setup, usage, and configuration, please see our deta
 
 ➡️ **[Investa User Tutorial](TUTORIAL.md)**
 
+## Screenshots
+
+![Dashboard](docs/screenshots/screenshot_01.png)
+![Holdings](docs/screenshots/screenshot_02.png)
+![Transactions](docs/screenshots/screenshot_03.png)
+![Analysis](docs/screenshots/screenshot_04.png)
+![Performance](docs/screenshots/screenshot_05.png)
+![Mobile View](docs/screenshots/mobile_view.jpg)
+
 ## Technology Stack
 
 * **GUI:** PySide6 (Qt for Python)
