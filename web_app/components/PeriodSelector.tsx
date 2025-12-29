@@ -18,14 +18,14 @@ const PERIODS = [
 
 export default function PeriodSelector({ selectedPeriod, onPeriodChange }: PeriodSelectorProps) {
     return (
-        <div className="flex space-x-1 bg-black/5 dark:bg-white/5 backdrop-blur-md rounded-lg p-1 border border-black/10 dark:border-white/10">
+        <div className="flex space-x-1 bg-secondary backdrop-blur-md rounded-lg p-1 border border-border">
             {PERIODS.map((period) => (
                 <button
                     key={period.value}
                     onClick={() => onPeriodChange(period.value)}
-                    className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${selectedPeriod === period.value
-                        ? 'bg-black/10 dark:bg-white/10 text-foreground shadow-sm border border-black/5 dark:border-white/5'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
+                    className={`px-2.5 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-colors ${selectedPeriod === period.value
+                        ? 'bg-card text-foreground shadow-sm border border-border'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
                         }`}
                 >
                     {period.label}

@@ -45,10 +45,10 @@ export default function BenchmarkSelector({ selectedBenchmarks, onBenchmarkChang
         <div className="relative" ref={dropdownRef}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center space-x-2 px-3 py-1 text-sm font-medium text-foreground bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-md hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+                className="flex items-center space-x-2 px-3 py-1 text-sm font-medium text-foreground bg-secondary border border-border rounded-md hover:bg-accent/10 transition-colors"
             >
                 <span>Benchmarks</span>
-                <span className="bg-black/10 dark:bg-white/10 text-xs px-1.5 py-0.5 rounded-full text-foreground">
+                <span className="bg-accent/20 text-xs px-1.5 py-0.5 rounded-full text-foreground">
                     {selectedBenchmarks.length}
                 </span>
             </button>
@@ -57,12 +57,12 @@ export default function BenchmarkSelector({ selectedBenchmarks, onBenchmarkChang
                 <div className="absolute left-0 md:right-0 mt-2 w-56 bg-popover backdrop-blur-xl rounded-md shadow-2xl border border-border z-50">
                     <div className="p-2 space-y-1">
                         {BENCHMARKS.map((benchmark) => (
-                            <label key={benchmark} className="flex items-center space-x-2 px-2 py-1.5 hover:bg-black/5 dark:hover:bg-white/10 rounded cursor-pointer transition-colors">
+                            <label key={benchmark} className="flex items-center space-x-2 px-2 py-1.5 hover:bg-accent/10 rounded cursor-pointer transition-colors">
                                 <input
                                     type="checkbox"
                                     checked={selectedBenchmarks.includes(benchmark)}
                                     onChange={() => handleToggle(benchmark)}
-                                    className="rounded border-black/20 dark:border-white/20 bg-black/5 dark:bg-white/5 text-cyan-500 focus:ring-cyan-500"
+                                    className="rounded border-border bg-secondary text-cyan-500 focus:ring-cyan-500"
                                 />
                                 <span className="text-sm text-foreground">{benchmark}</span>
                             </label>

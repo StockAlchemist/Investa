@@ -177,28 +177,29 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                     )}
                 </div>
 
-                <div className="flex flex-col sm:flex-row justify-between gap-3">
-                    <div className="flex items-center gap-2 pb-1 sm:pb-0">
+                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                    <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto no-scrollbar pb-1">
                         <PeriodSelector selectedPeriod={period} onPeriodChange={setPeriod} />
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto pb-1">
                         {view === 'return' && (
                             <BenchmarkSelector selectedBenchmarks={benchmarks} onBenchmarkChange={onBenchmarksChange} />
                         )}
                         <div className="flex bg-secondary rounded-lg p-1 border border-border shrink-0">
                             <button
                                 onClick={() => setView('return')}
-                                className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${view === 'return'
+                                className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-colors ${view === 'return'
                                     ? 'bg-card text-foreground shadow-sm'
                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
                                     }`}
                             >
-                                Return %
+                                <span className="hidden sm:inline">Return %</span>
+                                <span className="inline sm:hidden">Return</span>
                             </button>
                             <button
                                 onClick={() => setView('value')}
-                                className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${view === 'value'
+                                className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-colors ${view === 'value'
                                     ? 'bg-card text-foreground shadow-sm'
                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
                                     }`}
@@ -207,12 +208,13 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                             </button>
                             <button
                                 onClick={() => setView('drawdown')}
-                                className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${view === 'drawdown'
+                                className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-colors ${view === 'drawdown'
                                     ? 'bg-card text-foreground shadow-sm'
                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
                                     }`}
                             >
-                                Drawdown
+                                <span className="hidden sm:inline">Drawdown</span>
+                                <span className="inline sm:hidden">DD</span>
                             </button>
                         </div>
                     </div>
