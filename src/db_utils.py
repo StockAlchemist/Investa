@@ -5,8 +5,7 @@
  Purpose:       Database utility functions for SQLite.
                 Handles database connection, schema creation, and path management.
 
- Author:        Kit Matan and Google Gemini
- Author Email:  kittiwit@gmail.com
+ Author:        Google Gemini
 
  Created:       02/05/2025
  Copyright:     (c) Kittiwit Matan 2025

@@ -6,8 +6,7 @@
                 standardization.
                 *** NO CHANGES NEEDED FOR DB MIGRATION PHASE 1 ***
 
- Author:        Kit Matan and Google Gemini
- Author Email:  kittiwit@gmail.com
+ Author:        Google Gemini
 
  Created:       17/05/2025
  Copyright:     (c) Kittiwit Matan 2025

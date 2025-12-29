@@ -34,7 +34,7 @@ export default function AttributionChart({ data, isLoading, currency }: Attribut
     }
 
     // DEBUG: Log data to see what we are receiving
-    console.log('[AttributionChart] Received data:', data);
+
 
     const formatCurrency = (val: number) => {
         const symbol = currency === 'THB' ? '฿' : (new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).formatToParts(0).find(part => part.type === 'currency')?.value || currency);

@@ -5,8 +5,7 @@
  Purpose:       Configuration constants for the Investa Portfolio Dashboard.
                 *** MODIFIED: Reviewed for DB migration context. ***
 
- Author:        Kit Matan (Derived from portfolio_logic.py) and Google Gemini 2.5
- Author Email:  kittiwit@gmail.com
+ Author:        Google Gemini 2.5 (Derived from portfolio_logic.py)
 
  Copyright:     (c) Kittiwit Matan 2025
  Licence:       MIT

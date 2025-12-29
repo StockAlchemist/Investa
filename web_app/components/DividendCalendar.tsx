@@ -23,7 +23,7 @@ export default function DividendCalendar({ events, isLoading }: DividendCalendar
     }
 
     // DEBUG: Log data
-    console.log('[DividendCalendar] Received events:', events);
+
 
     if (!events || !Array.isArray(events) || events.length === 0) {
         return (

@@ -5,8 +5,7 @@
  Purpose:       Main application window and GUI logic for Investa Portfolio Dashboard.
                 Handles UI elements, user interaction, background tasks, and visualization.
 
- Author:        Kit Matan and Google Gemini 2.5
- Author Email:  kittiwit@gmail.com
+ Author:        Google Gemini 2.5
 
  Created:       26/04/2025
  Copyright:     (c) Kittiwit Matan 2025
@@ -2118,7 +2117,7 @@ The CSV file should contain the following columns (header names must match exact
             "About Investa",
             "<b>Investa Portfolio Dashboard</b><br><br>"
             "Version: 0.3.0 (Features: Tx Edit/Delete, Ignored Log, Table Filter, Settings Edit)<br>"
-            "Author: Kit Matan<br>"
+            "Author: Google Gemini 2.5<br>"
             "License: MIT<br><br>"
             "Data provided by Yahoo Finance. Use at your own risk.",
         )
@@ -4329,7 +4328,7 @@ The CSV file should contain the following columns (header names must match exact
             "About Investa",
             "<b>Investa Portfolio Dashboard</b><br><br>"
             "Version: 0.3.0 (Features: Tx Edit/Delete, Ignored Log, Table Filter, Settings Edit)<br>"
-            "Author: Kit Matan<br>"
+            "Author: Google Gemini 2.5<br>"
             "License: MIT<br><br>"
             "Data provided by Yahoo Finance. Use at your own risk.",
         )
