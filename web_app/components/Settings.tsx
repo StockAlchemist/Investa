@@ -71,9 +71,9 @@ export default function Settings() {
         loadSettings();
     }, []);
 
-    const loadSettings = async () => {
+    const loadSettings = async (isRefreshing = false) => {
         try {
-            setLoading(true);
+            if (!isRefreshing) setLoading(true);
             const [data, holdings] = await Promise.all([
                 fetchSettings(),
                 fetchHoldings()
@@ -96,8 +96,31 @@ export default function Settings() {
             setError('Failed to load settings');
             console.error(err);
         } finally {
-            setLoading(false);
+            if (!isRefreshing) setLoading(false);
         }
+    };
+
+
+
+    const handleEdit = (symbol: string, data: ManualOverride) => {
+        setOverrideSymbol(symbol);
+
+        if (typeof data === 'number') {
+            setOverridePrice(data.toString());
+            setOverrideAssetType('');
+            setOverrideSector('');
+            setOverrideGeo('');
+            setOverrideIndustry('');
+        } else {
+            setOverridePrice(data.price ? data.price.toString() : '');
+            setOverrideAssetType(data.asset_type || '');
+            setOverrideSector(data.sector || '');
+            setOverrideGeo(data.geography || '');
+            setOverrideIndustry(data.industry || '');
+        }
+
+        // Scroll to top of settings container to show the form
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     // --- Actions ---
@@ -169,7 +192,7 @@ export default function Settings() {
             setOverrideGeo('');
             setOverrideIndustry('');
 
-            await loadSettings();
+            await loadSettings(true);
         } catch (err) {
             alert('Failed to save override');
         }
@@ -194,7 +217,7 @@ export default function Settings() {
 
         try {
             await updateSettings({ manual_price_overrides: cleanedOverrides });
-            await loadSettings();
+            await loadSettings(true);
         } catch (err) {
             alert('Failed to remove override');
         }
@@ -210,7 +233,7 @@ export default function Settings() {
             await updateSettings({ user_symbol_map: currentMap });
             setMapFrom('');
             setMapTo('');
-            await loadSettings();
+            await loadSettings(true);
         } catch (err) {
             alert('Failed to save mapping');
         }
@@ -223,7 +246,7 @@ export default function Settings() {
 
         try {
             await updateSettings({ user_symbol_map: currentMap });
-            await loadSettings();
+            await loadSettings(true);
         } catch (err) {
             alert('Failed to remove mapping');
         }
@@ -241,7 +264,7 @@ export default function Settings() {
         try {
             await updateSettings({ user_excluded_symbols: currentList });
             setExcludeSymbol('');
-            await loadSettings();
+            await loadSettings(true);
         } catch (err) {
             alert('Failed to add excluded symbol');
         }
@@ -253,7 +276,7 @@ export default function Settings() {
 
         try {
             await updateSettings({ user_excluded_symbols: currentList });
-            await loadSettings();
+            await loadSettings(true);
         } catch (err) {
             alert('Failed to remove excluded symbol');
         }
@@ -415,6 +438,7 @@ export default function Settings() {
                                 </div>
                                 <div className="flex justify-end mt-2">
                                     <button
+                                        type="button"
                                         onClick={addOverride}
                                         disabled={!overrideSymbol || (!overridePrice && !overrideAssetType && !overrideSector && !overrideGeo && !overrideIndustry)}
                                         className="w-full md:w-auto px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -471,6 +495,14 @@ export default function Settings() {
                                                             <td className="px-4 py-4 whitespace-nowrap text-muted-foreground">{industry || '-'}</td>
                                                             <td className="px-4 py-4 whitespace-nowrap text-right font-medium">
                                                                 <button
+                                                                    type="button"
+                                                                    onClick={() => handleEdit(symbol, data)}
+                                                                    className="text-cyan-500 hover:text-cyan-400 hover:bg-cyan-500/10 px-3 py-1 rounded transition-colors mr-2"
+                                                                >
+                                                                    Edit
+                                                                </button>
+                                                                <button
+                                                                    type="button"
                                                                     onClick={() => removeOverride(symbol)}
                                                                     className="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 px-3 py-1 rounded transition-colors"
                                                                 >
@@ -519,6 +551,7 @@ export default function Settings() {
                                 </div>
                                 <div className="flex items-end">
                                     <button
+                                        type="button"
                                         onClick={addMapping}
                                         disabled={!mapFrom || !mapTo}
                                         className="w-full md:w-auto px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -555,6 +588,7 @@ export default function Settings() {
                                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground font-mono bg-black/5 dark:bg-white/5 px-2 rounded w-min">{to}</td>
                                                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                                             <button
+                                                                type="button"
                                                                 onClick={() => removeMapping(from)}
                                                                 className="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 px-3 py-1 rounded transition-colors"
                                                             >
@@ -589,6 +623,7 @@ export default function Settings() {
                                 </div>
                                 <div className="flex items-end">
                                     <button
+                                        type="button"
                                         onClick={addExcluded}
                                         disabled={!excludeSymbol}
                                         className="w-full md:w-auto px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -609,6 +644,7 @@ export default function Settings() {
                                             <li key={sym + idx} className="px-6 py-4 flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                                                 <span className="text-sm font-medium text-foreground">{sym}</span>
                                                 <button
+                                                    type="button"
                                                     onClick={() => removeExcluded(sym)}
                                                     className="text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 p-2 rounded-full transition-all"
                                                     title="Remove from exclusion list"
@@ -643,6 +679,7 @@ export default function Settings() {
                             className="flex-1 rounded-md border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 shadow-sm focus:border-cyan-500 focus:ring-cyan-500 sm:text-sm text-foreground px-3 py-2 outline-none focus:ring-1"
                         />
                         <button
+                            type="button"
                             onClick={handleRefresh}
                             className="px-4 py-2 border border-black/10 dark:border-white/10 rounded-md shadow-sm text-sm font-medium text-foreground bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors"
                         >

@@ -163,6 +163,29 @@ export default function Home() {
         );
       case 'transactions':
         return <TransactionsTable transactions={transactions} />;
+      case 'markets':
+        return (
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold text-foreground">Market Indices</h2>
+            {!summary?.metrics?.indices ? (
+              <p className="text-muted-foreground">Market data unavailable.</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-4">
+                {Object.values(summary.metrics.indices).map((index: any) => (
+                  <div key={index.name} className="flex items-center justify-between p-4 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10">
+                    <span className="font-medium text-foreground text-lg">{index.name}</span>
+                    <div className="flex flex-col items-end">
+                      <span className="text-foreground font-mono text-lg">{index.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span className={`text-sm ${index.change >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                        {index.change >= 0 ? "+" : ""}{index.change.toFixed(2)} ({index.changesPercentage.toFixed(2)}%)
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
       case 'allocation':
         return <Allocation holdings={holdings} currency={currency} />;
       case 'asset_change':
@@ -270,16 +293,26 @@ export default function Home() {
       </div>
 
       {/* Bottom Nav (Visual only for now) */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-6 py-3 flex justify-between items-center text-xs text-gray-500 dark:text-gray-400 md:hidden">
-        <div className="flex flex-col items-center text-blue-600 dark:text-blue-400">
+      {/* Bottom Nav */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-6 py-3 flex justify-between items-center text-xs text-gray-500 dark:text-gray-400 md:hidden z-50">
+        <div
+          className={`flex flex-col items-center cursor-pointer transition-colors ${activeTab !== 'settings' && activeTab !== 'markets' ? 'text-cyan-600 dark:text-cyan-400' : 'hover:text-cyan-600 dark:hover:text-cyan-400'}`}
+          onClick={() => { setActiveTab('performance'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+        >
           <span className="text-xl">🏠</span>
           <span className="mt-1">Home</span>
         </div>
-        <div className="flex flex-col items-center">
+        <div
+          className={`flex flex-col items-center cursor-pointer transition-colors ${activeTab === 'markets' ? 'text-cyan-600 dark:text-cyan-400' : 'hover:text-cyan-600 dark:hover:text-cyan-400'}`}
+          onClick={() => { setActiveTab('markets'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+        >
           <span className="text-xl">📊</span>
           <span className="mt-1">Markets</span>
         </div>
-        <div className="flex flex-col items-center cursor-pointer hover:text-blue-600 dark:hover:text-blue-400" onClick={() => setActiveTab('settings')}>
+        <div
+          className={`flex flex-col items-center cursor-pointer transition-colors ${activeTab === 'settings' ? 'text-cyan-600 dark:text-cyan-400' : 'hover:text-cyan-600 dark:hover:text-cyan-400'}`}
+          onClick={() => { setActiveTab('settings'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+        >
           <span className="text-xl">⚙️</span>
           <span className="mt-1">Settings</span>
         </div>

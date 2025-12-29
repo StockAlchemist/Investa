@@ -1,7 +1,7 @@
 {
     "manual_price_overrides": {
         "ES-GQG": {
-            "price": 22.703,
+            "price": 22.8253,
             "asset_type": "MUTUALFUND",
             "sector": "Exchange-Traded Fund",
             "geography": "United States",
