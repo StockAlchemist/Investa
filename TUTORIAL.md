@@ -556,26 +556,21 @@ Investa packs several additional features and settings to enhance your portfolio
   * If you suspect your cached data is stale or corrupted, you can clear it via **Settings > Clear Cache Files...**. This will delete the cached market data, and Investa will fetch fresh data on the next "Refresh All".
 
 * **Configuration Persistence (`gui_config.json` & `manual_overrides.json`):**
-  * **`gui_config.json`:** Stores your UI preferences and operational settings:
-    * Path to the last used database file.
-    * Selected global display currency.
-    * List of active/selected investment accounts.
-    * Graph settings (date ranges, intervals, benchmarks).
-    * Column visibility preferences for tables.
-    * Your customized list of display currencies.
-  * **`manual_overrides.json`:** Stores all your symbol-specific settings:
-    * Manual overrides for price, asset type, sector, geography, industry.
-    * User-defined symbol mappings.
-    * List of excluded symbols.
-  * These files are located in the application data directory (see Part 1). You generally don't need to edit them manually, as settings are managed through the application's UI. Knowing their existence is useful for understanding how Investa remembers your preferences and for manual backups.
+  * **`gui_config.json`:** Stores your UI preferences and operational settings. This includes:
+      * Path to the currently loaded SQLite database file (`investa_transactions.db` or user-specified).
+      * Selected global display currency.
+      * List of active/selected investment accounts for filtering.
+      * Current graph settings (date ranges, intervals, selected benchmarks).
+      * Visibility status for columns in the main holdings table.
+      * User-defined list of currencies for quick selection in dropdowns.
+  * **`manual_overrides.json`:** Stores symbol-specific configurations and data overrides. This JSON file contains:
+      * **`manual_price_overrides`**: Manually set values for `price`, `asset_type`, `sector`, `geography`, and `industry` for specific symbols. Example: `{"AAPL": {"price": 175.00, "asset_type": "Stock", "sector": "Technology", "geography": "United States", "industry": "Consumer Electronics"}}`
+      * **`user_symbol_map`**: User-defined mappings from alternative ticker symbols to a primary symbol. Example: `{"BRK.B": "BRK-B", "MSFT.NE": "MSFT"}`
+      * **`excluded_symbols`**: A list of symbols to be excluded from market data fetching or certain calculations.
+  * These files are located in the application data directory. You generally don't need to edit them manually, as settings are managed through the application's UI.
 
 * **Application Data Directory:**
-    As mentioned in Part 1, this directory is vital. It holds:
-  * `investa_transactions.db` (your primary data)
-  * `gui_config.json`
-  * `manual_overrides.json`
-  * `cache/` (subfolder for cached market data)
-  * `csv_backups/` (subfolder for backups of CSVs made during import)
+    As mentioned in Part 1, this directory is vital. It holds your database, config files, cache, and CSV backups.
   * **macOS:** `~/Library/Application Support/StockAlchemist/Investa/`
   * **Windows:** `C:\Users\<YourUserName>\AppData\Local\StockAlchemist\Investa\`
   * **Linux:** `~/.local/share/StockAlchemist/Investa/`
@@ -598,28 +593,41 @@ Here are some general tips and common troubleshooting steps, reflecting Investa'
 * **Use the Status Bar:** The bottom of the Investa window often displays messages about current operations (e.g., "Fetching prices...", "Calculations complete...", "Database loaded"). This can give you an idea of what the application is doing, especially during longer operations.
 * **CSV Format Help (`Help > CSV Format Help...`):**
   * Even though the database is primary, this in-app guide is still very useful if you are preparing a CSV file for import. It details the expected headers and data for each transaction type.
-* **Troubleshooting Steps (Consult docs/README.md for more detail):**
-  * **Market Data Not Loading (Prices are 0 or NaN):**
-    * Check your internet connection.
-    * Verify symbol correctness (use `Settings > Symbol Settings...` for mapping if needed).
-    * Yahoo Finance might have temporary issues; try later.
-    * Check firewall/VPN.
-    * Ensure the symbol isn't in your exclusion list (`Settings > Symbol Settings...`).
-    * Consider clearing the cache (`Settings > Clear Cache Files...`) if data seems stuck.
+* **Troubleshooting Steps:**
+  * **Market Data Not Loading (e.g., prices show as 0 or NaN):**
+    * **Check Internet Connection:** Ensure you have an active internet connection. `yfinance` needs to fetch data online.
+    * **Symbol Validity:** Verify that the stock/ETF symbols in your transactions are correct and recognized by Yahoo Finance. Some symbols might have changed or been delisted. Use the `Settings > Symbol Settings...` to map old symbols to new ones if needed (e.g., `BRK.B` to `BRK-B`).
+    * **API Limits/Issues:** Yahoo Finance might occasionally have temporary issues or impose rate limits. Try refreshing data after some time.
+    * **Firewall/VPN:** Your firewall or VPN might be blocking requests to Yahoo Finance. Try temporarily disabling them to check.
+    * **Excluded Symbols:** Ensure the symbol is not in the exclusion list under `Settings > Symbol Settings...`.
+    * **Cache:** Try clearing the cache via `File > Clear Cache and Restart` (if available) or by manually deleting cache files from the application data directory.
+
   * **CSV Import Errors:**
-    * Strictly follow the format described in "Input Data Format (Transactions CSV)" in the README or use the "Standardize Headers" utility during import.
-    * Ensure CSV is UTF-8 encoded.
-  * **Data Inaccuracies (Cost Basis, Gains, TWR):**
-    * Meticulously review your transactions in the "Transaction Log" tab or "Manage Transactions" dialog.
-    * Ensure all cash flows (`$CASH` Deposits/Withdrawals) are accurately recorded.
-    * Verify stock splits and dividends.
-    * Check currency settings (global display and account-specific).
-    * Review any manual price overrides.
+    * **Incorrect Format:** Ensure your CSV file strictly follows the format described in Part 1 or use the "Standardize Headers" utility during import. Pay close attention to date formats, transaction types, and required fields like `Symbol`, `Quantity`, `Price/Share`.
+    * **Special Characters/Encoding:** Save your CSV as UTF-8 encoded. Unusual characters in notes or symbols might cause issues.
+    * **Large Files:** For very large CSV files, import in smaller chunks if possible.
+    * **Header Row:** Ensure your CSV has a header row that matches either the "Preferred (Cleaned)" or "Compatible (Verbose)" headers.
+
+  * **Data Inaccuracies (e.g., incorrect cost basis, gains, TWR):**
+    * **Transaction Data Entry:** Double-check all your transactions in the "Transaction Log" tab for accuracy. Errors in dates, quantities, prices, types (Buy/Sell/Dividend/Split), or fees will lead to miscalculations.
+    * **`$CASH` Transactions:** Ensure all cash movements (deposits, withdrawals, fees paid from cash, inter-account transfers) are correctly logged using the `$CASH` symbol as described. Missing cash flow data is a common source of TWR discrepancies.
+    * **Splits and Dividends:** Verify that stock splits are entered correctly with the right ratio and that all dividends (especially reinvested ones) are recorded.
+    * **Currency Settings:** Ensure your global display currency and account-specific currencies are set correctly.
+    * **Manual Overrides:** Check if any manual overrides for prices in `Settings > Symbol Settings...` are affecting calculations unexpectedly.
+
   * **Application Slowdown:**
-    * Very large databases can slow calculations.
-    * Initial market data fetch for many symbols can be slow (improves with caching).
-  * **"File not found" for Database on Startup:**
-    * The app will prompt you to locate your `.db` file or create a new one. The path is stored in `gui_config.json`.
+    * **Large Database:** A very large number of transactions over many years can slow down calculations.
+    * **Market Data Fetching:** Initial data fetch for many symbols can be slow. Subsequent loads should be faster due to caching.
+    * **Numba JIT Compilation:** The first time calculations are run (e.g., historical TWR), Numba compiles functions, which might take a moment. Subsequent runs are faster.
+
+  * **"File not found" error for database on startup:**
+    * This usually means the database file (`investa_transactions.db` or a custom-named one) that was last opened cannot be found at its previous location.
+    * The application will prompt you to either locate the existing `.db` file or create a new one.
+    * Ensure the path stored in `gui_config.json` under `database_path` is correct or select the correct file when prompted.
+
+  * **Error related to `matplotlib` or `PySide6` backend:**
+    * Ensure these libraries are correctly installed in your Python environment. Reinstalling them (`pip install --force-reinstall PySide6 matplotlib`) might help.
+    * Conflicts with other GUI libraries or incorrect environment setup can sometimes cause these. Using a clean virtual environment is recommended.
 
 ## Part 13: The Investa Web Dashboard
 
