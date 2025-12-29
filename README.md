@@ -26,12 +26,40 @@ For a step-by-step guide on setup, usage, and configuration, please see our deta
 
 ## Screenshots
 
-![Dashboard](docs/screenshots/screenshot_01.png)
-![Holdings](docs/screenshots/screenshot_02.png)
-![Transactions](docs/screenshots/screenshot_03.png)
-![Analysis](docs/screenshots/screenshot_04.png)
-![Performance](docs/screenshots/screenshot_05.png)
-![Mobile View](docs/screenshots/mobile_view.jpg)
+<div align="center">
+  <table>
+    <tr>
+      <td align="center">
+        <b>Dashboard</b><br>
+        <img src="docs/screenshots/screenshot_01.png" width="400">
+      </td>
+      <td align="center">
+        <b>Holdings</b><br>
+        <img src="docs/screenshots/screenshot_02.png" width="400">
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <b>Transactions</b><br>
+        <img src="docs/screenshots/screenshot_03.png" width="400">
+      </td>
+      <td align="center">
+        <b>Analysis</b><br>
+        <img src="docs/screenshots/screenshot_04.png" width="400">
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <b>Performance</b><br>
+        <img src="docs/screenshots/screenshot_05.png" width="400">
+      </td>
+      <td align="center">
+        <b>Mobile View</b><br>
+        <img src="docs/screenshots/mobile_view.jpg" height="400">
+      </td>
+    </tr>
+  </table>
+</div>
 
 ## Technology Stack
 
