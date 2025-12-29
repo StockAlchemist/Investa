@@ -30,27 +30,27 @@ For a step-by-step guide on setup, usage, and configuration, please see our deta
   <table>
     <tr>
       <td align="center">
-        <b>Dashboard</b><br>
+        <b>Dashboard Light Theme</b><br>
         <img src="docs/screenshots/screenshot_01.png" width="400">
       </td>
       <td align="center">
-        <b>Holdings</b><br>
+        <b>Holdings Dark Theme</b><br>
         <img src="docs/screenshots/screenshot_02.png" width="400">
       </td>
     </tr>
     <tr>
       <td align="center">
-        <b>Transactions</b><br>
+        <b>Allocation Light Theme</b><br>
         <img src="docs/screenshots/screenshot_03.png" width="400">
       </td>
       <td align="center">
-        <b>Analysis</b><br>
+        <b>Allocation Dark Theme</b><br>
         <img src="docs/screenshots/screenshot_04.png" width="400">
       </td>
     </tr>
     <tr>
       <td align="center">
-        <b>Performance</b><br>
+        <b>Desktop App</b><br>
         <img src="docs/screenshots/screenshot_05.png" width="400">
       </td>
       <td align="center">
