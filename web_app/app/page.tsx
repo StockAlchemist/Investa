@@ -214,9 +214,7 @@ export default function Home() {
           <div className="flex items-center gap-4">
             {/* Logo - Simplified for Modern Look */}
             <div className="flex items-center gap-3">
-              <div className="bg-gradient-to-tr from-cyan-500 to-blue-600 w-8 h-8 rounded-lg flex items-center justify-center shadow-lg shadow-cyan-500/20">
-                <span className="text-white font-bold text-lg">I</span>
-              </div>
+              <img src={mounted && resolvedTheme === 'dark' ? "/logo-dark.png" : "/logo.png"} alt="Investa Logo" className="w-8 h-8 rounded-lg shadow-lg shadow-cyan-500/20" />
               <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
                 Investa
                 <span className="hidden md:inline-flex items-center rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs font-medium text-muted-foreground">

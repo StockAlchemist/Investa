@@ -34,7 +34,7 @@ const COLORS = [
 ];
 
 export default function PerformanceGraph({ currency, accounts, benchmarks, onBenchmarksChange }: PerformanceGraphProps) {
-    const [view, setView] = useState<'return' | 'value'>('return');
+    const [view, setView] = useState<'return' | 'value' | 'drawdown'>('return');
     const [period, setPeriod] = useState('1y');
     const [data, setData] = useState<PerformanceData[]>([]);
     const [loading, setLoading] = useState(false);
@@ -74,7 +74,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
     };
 
     const formatYAxis = (tickItem: number) => {
-        if (view === 'return') {
+        if (view === 'return' || view === 'drawdown') {
             return `${tickItem.toFixed(1)}%`;
         } else {
             return new Intl.NumberFormat('en-US', {
@@ -91,7 +91,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                     <p className="text-sm text-foreground mb-1">{new Date(label).toLocaleDateString()}</p>
                     {payload.map((entry: any, index: number) => (
                         <p key={index} className="text-sm font-medium" style={{ color: entry.color }}>
-                            {entry.name}: {view === 'return'
+                            {entry.name}: {view === 'return' || view === 'drawdown'
                                 ? `${entry.value > 0 ? '+' : ''}${entry.value.toFixed(2)}%`
                                 : formatCurrency(entry.value, currency)
                             }
@@ -110,7 +110,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
     // We need to know which keys correspond to benchmarks.
     // A simple way is to look at keys in the first data point that are not 'date', 'value', 'twr'.
     const benchmarkKeys = data.length > 0
-        ? Object.keys(data[0]).filter(k => k !== 'date' && k !== 'value' && k !== 'twr')
+        ? Object.keys(data[0]).filter(k => k !== 'date' && k !== 'value' && k !== 'twr' && k !== 'drawdown')
         : [];
 
     return (
@@ -118,7 +118,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
             <div className="flex flex-col space-y-4 mb-4">
                 <div className="flex justify-between items-center">
                     <h3 className="text-lg font-semibold text-foreground">
-                        {view === 'return' ? 'Time-Weighted Return' : 'Portfolio Value'}
+                        {view === 'return' ? 'Time-Weighted Return' : view === 'value' ? 'Portfolio Value' : 'Drawdown'}
                     </h3>
                     <div className="flex space-x-2 bg-black/5 dark:bg-white/5 rounded-lg p-1 border border-black/5 dark:border-white/5">
                         <button
@@ -138,6 +138,15 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                 }`}
                         >
                             Value
+                        </button>
+                        <button
+                            onClick={() => setView('drawdown')}
+                            className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${view === 'drawdown'
+                                ? 'bg-black/10 dark:bg-white/10 text-foreground shadow-sm'
+                                : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
+                                }`}
+                        >
+                            Drawdown
                         </button>
                     </div>
                 </div>
@@ -159,7 +168,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                 <ResponsiveContainer width="100%" height="100%">
                     {view === 'return' ? (
                         <LineChart syncId="portfolio-sync" data={data} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                             <XAxis
                                 dataKey="date"
                                 tickFormatter={formatXAxis}
@@ -198,7 +207,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                 />
                             ))}
                         </LineChart>
-                    ) : (
+                    ) : view === 'value' ? (
                         <AreaChart syncId="portfolio-sync" data={data} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
                             <defs>
                                 <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
@@ -206,7 +215,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                     <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
                                 </linearGradient>
                             </defs>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                             <XAxis
                                 dataKey="date"
                                 tickFormatter={formatXAxis}
@@ -231,6 +240,41 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                 stroke="#2563eb"
                                 fillOpacity={1}
                                 fill="url(#colorValue)"
+                                strokeWidth={2}
+                            />
+                        </AreaChart>
+                    ) : (
+                        <AreaChart syncId="portfolio-sync" data={data} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+                            <defs>
+                                <linearGradient id="colorDrawdown" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.1} />
+                                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                                </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                            <XAxis
+                                dataKey="date"
+                                tickFormatter={formatXAxis}
+                                tick={{ fontSize: 12, fill: '#9ca3af' }}
+                                axisLine={false}
+                                tickLine={false}
+                                minTickGap={30}
+                            />
+                            <YAxis
+                                tickFormatter={formatYAxis}
+                                tick={{ fontSize: 12, fill: '#9ca3af' }}
+                                axisLine={false}
+                                tickLine={false}
+                                width={45}
+                            />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Area
+                                name="Drawdown"
+                                type="monotone"
+                                dataKey="drawdown"
+                                stroke="#ef4444"
+                                fillOpacity={1}
+                                fill="url(#colorDrawdown)"
                                 strokeWidth={2}
                             />
                         </AreaChart>

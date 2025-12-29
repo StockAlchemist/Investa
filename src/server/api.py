@@ -15,7 +15,7 @@ from market_data import MarketDataProvider, map_to_yf_symbol
 from db_utils import add_transaction_to_db, update_transaction_in_db, delete_transaction_from_db, get_database_path, get_db_connection
 
 
-from risk_metrics import calculate_all_risk_metrics
+from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series
 import config
 from pydantic import BaseModel, Field
 
@@ -703,6 +703,9 @@ async def get_history(
         # Prepare reverse mapping for display names
         ticker_to_name = {v: k for k, v in config.BENCHMARK_MAPPING.items()}
 
+        # Calculate Drawdown Series
+        drawdown_series = calculate_drawdown_series(daily_df["Portfolio Value"])
+
         # Format for frontend
         result = []
         # daily_df index is Date
@@ -710,11 +713,13 @@ async def get_history(
             # Handle NaN values
             val = row.get("Portfolio Value", 0.0)
             twr = row.get("Portfolio Accumulated Gain", 1.0)
+            dd = drawdown_series.get(dt, 0.0)
             
             item = {
                 "date": dt.strftime("%Y-%m-%d"),
                 "value": val if pd.notnull(val) else 0.0,
-                "twr": (twr - 1) * 100 if pd.notnull(twr) else 0.0 # Convert to percentage change
+                "twr": (twr - 1) * 100 if pd.notnull(twr) else 0.0, # Convert to percentage change
+                "drawdown": dd * 100 if pd.notnull(dd) else 0.0 # Convert to percentage
             }
 
             # Add benchmark data

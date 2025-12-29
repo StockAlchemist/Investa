@@ -26,6 +26,8 @@ export interface PortfolioSummary {
         total_return_pct: number;
         dividends: number;
         commissions: number;
+        fx_gain_loss_display?: number;
+        fx_gain_loss_pct?: number;
         annualized_twr?: number;
         cash_balance?: number; // Might not be directly in metrics, check account_metrics for Cash
         exchange_rate_to_display?: number;
@@ -109,7 +111,8 @@ export interface PerformanceData {
     date: string;
     value: number;
     twr: number;
-    [key: string]: any; // Allow dynamic keys for benchmarks
+    drawdown?: number;
+    [key: string]: number | string | undefined; // Allow dynamic keys for benchmarks
 }
 
 export async function fetchTransactions(accounts?: string[]): Promise<Transaction[]> {

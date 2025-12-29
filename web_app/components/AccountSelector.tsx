@@ -61,7 +61,7 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
             </button>
 
             {isOpen && (
-                <div className="absolute right-0 top-full mt-2 w-full origin-top-right bg-popover border border-border rounded-xl shadow-xl outline-none z-10 overflow-hidden">
+                <div className="absolute right-0 top-full mt-2 min-w-full w-max origin-top-right bg-popover border border-border rounded-xl shadow-xl outline-none z-50 overflow-hidden">
                     <div className="py-1 max-h-60 overflow-y-auto">
                         <button
                             onClick={handleSelectAll}

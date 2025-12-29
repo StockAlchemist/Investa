@@ -48,10 +48,11 @@ const MetricCard = ({
 const DEFAULT_ITEMS = [
     { id: 'portfolioValue', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
     { id: 'dayGL', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
-    { id: 'totalReturn', colSpan: '' },
-    { id: 'annualTWR', colSpan: '' },
+    { id: 'totalReturn', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
     { id: 'unrealizedGL', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
-    { id: 'realizedGain', colSpan: '' },
+    { id: 'fxGL', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
+    { id: 'realizedGain', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
+    { id: 'annualTWR', colSpan: '' },
     { id: 'cashBalance', colSpan: '' },
     { id: 'ytdDividends', colSpan: '' },
     { id: 'fees', colSpan: '' },
@@ -78,9 +79,12 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
     const dayGLPct = m.day_change_percent || 0;
     const unrealizedGL = m.unrealized_gain || 0;
     const unrealizedGLPct = (m.unrealized_gain / (m.cost_basis_held || 1)) * 100;
+    const fxGL = m.fx_gain_loss_display || 0;
+    const fxGLPct = m.fx_gain_loss_pct || 0;
 
     const dayGLColor = dayGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
     const unrealizedGLColor = unrealizedGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
+    const fxGLColor = fxGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
 
     const totalGain = m.total_gain || 0;
     const realizedGain = m.realized_gain || 0;
@@ -116,7 +120,12 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
                 return <MetricCard
                     title="Total Return"
                     value={totalGain}
+                    subValue={m.total_return_pct}
                     colorClass={totalReturnColor}
+                    valueClassName="text-4xl"
+                    subValueClassName={cn("text-2xl", (m.total_return_pct || 0) >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white hover:bg-rose-700 border-none")}
+                    containerClassName="h-full flex flex-col justify-center"
+                    isHero={true}
                     currency={currency}
                 />;
             case 'annualTWR':
@@ -133,7 +142,19 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
                     subValue={unrealizedGLPct}
                     colorClass={unrealizedGLColor}
                     valueClassName="text-4xl"
-                    subValueClassName={cn("text-2xl", unrealizedGLPct >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "")}
+                    subValueClassName={cn("text-2xl", unrealizedGLPct >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white hover:bg-rose-700 border-none")}
+                    containerClassName="h-full flex flex-col justify-center"
+                    isHero={true}
+                    currency={currency}
+                />;
+            case 'fxGL':
+                return <MetricCard
+                    title="FX Gain/Loss"
+                    value={fxGL}
+                    subValue={fxGLPct}
+                    colorClass={fxGLColor}
+                    valueClassName="text-4xl"
+                    subValueClassName={cn("text-2xl", fxGLPct >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white hover:bg-rose-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
@@ -143,6 +164,9 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
                     title="Realized Gain"
                     value={realizedGain}
                     colorClass={realizedGainColor}
+                    valueClassName="text-4xl"
+                    containerClassName="h-full flex flex-col justify-center"
+                    isHero={true}
                     currency={currency}
                 />;
             case 'cashBalance':
