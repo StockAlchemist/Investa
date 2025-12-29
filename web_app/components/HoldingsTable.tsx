@@ -261,7 +261,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
     const getCellClass = (val: unknown, header: string) => {
         if (typeof val !== 'number') return '';
         if (['Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Real. G/L', 'Total G/L', 'Total Ret %', 'FX G/L', 'FX G/L %', 'IRR (%)'].includes(header)) {
-            return val >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium';
+            return val >= 0 ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-rose-600 dark:text-rose-400 font-medium';
         }
         return '';
     };
@@ -277,7 +277,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
     };
 
     return (
-        <div className="bg-black/5 dark:bg-white/5 backdrop-blur-md border border-black/5 dark:border-white/10 rounded-xl shadow-sm mt-4 overflow-hidden scrollbar-thin scrollbar-thumb-black/10 dark:scrollbar-thumb-white/10 scrollbar-track-transparent">
+        <div className="bg-card backdrop-blur-md border border-border rounded-xl shadow-sm mt-4 overflow-hidden scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800 scrollbar-track-transparent">
             <div className="p-4 border-b border-black/5 dark:border-white/5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-start">
                     <h2 className="text-lg font-bold text-foreground">Holdings</h2>
@@ -291,7 +291,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                 <div className="relative flex flex-wrap gap-2 w-full md:w-auto" ref={columnMenuRef}>
                     <button
                         onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)}
-                        className="flex-1 md:flex-none px-3 py-1.5 text-sm font-medium text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-md shadow-sm hover:bg-black/10 dark:hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md"
+                        className="flex-1 md:flex-none px-3 py-1.5 text-sm font-medium text-foreground bg-secondary border border-border rounded-md shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md"
                     >
                         Columns
                     </button>
@@ -301,7 +301,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                         className={`flex-1 md:flex-none px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md
                             ${showLots
                                 ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
-                                : 'text-foreground bg-black/5 dark:bg-white/5 border-black/5 dark:border-white/10 hover:bg-black/10 dark:hover:bg-white/10'
+                                : 'text-foreground bg-secondary border border-border hover:bg-accent/10'
                             }`}
                     >
                         {showLots ? 'Hide Lots' : 'Show Lots'}
@@ -309,13 +309,13 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
 
                     <button
                         onClick={() => exportToCSV(holdings, 'holdings.csv')}
-                        className="flex-1 md:flex-none px-3 py-1.5 text-sm font-medium text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-md shadow-sm hover:bg-black/10 dark:hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md"
+                        className="flex-1 md:flex-none px-3 py-1.5 text-sm font-medium text-foreground bg-secondary border border-border rounded-md shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md"
                     >
                         Export CSV
                     </button>
 
                     {isColumnMenuOpen && (
-                        <div className="absolute right-0 z-50 mt-2 w-56 origin-top-right bg-white/95 dark:bg-zinc-900/95 border border-black/5 dark:border-white/10 rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
+                        <div className="absolute right-0 z-50 mt-2 w-56 origin-top-right bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
                             <div className="py-1">
                                 {Object.keys(COLUMN_DEFINITIONS).map(header => (
                                     <label key={header} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer">
@@ -337,7 +337,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
             {/* Desktop Table View */}
             <div className="hidden md:block overflow-x-auto">
                 <table className="min-w-full divide-y divide-black/5 dark:divide-white/5">
-                    <thead className="bg-black/5 dark:bg-white/5">
+                    <thead className="bg-secondary">
                         <tr>
                             {visibleColumns.map(header => (
                                 <th
@@ -347,7 +347,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                                     onDragStart={(e) => handleDragStart(e, header)}
                                     onDragOver={handleDragOver}
                                     onDrop={(e) => handleDrop(e, header)}
-                                    className={`px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:bg-black/10 dark:hover:bg-white/10 select-none whitespace-nowrap ${draggedColumn === header ? 'opacity-50 bg-black/10 dark:bg-white/10' : ''}`}
+                                    className={`px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:bg-accent/10 transition-colors select-none whitespace-nowrap ${draggedColumn === header ? 'opacity-50 bg-secondary' : ''}`}
                                     onClick={() => handleSort(header)}
                                 >
                                     <div className="flex items-center justify-end gap-1">
@@ -363,7 +363,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                     <tbody className="divide-y divide-black/5 dark:divide-white/5">
                         {visibleHoldings.map((holding, idx) => (
                             <React.Fragment key={`${holding.Symbol}-${idx}`}>
-                                <tr className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                                <tr className="hover:bg-accent/5 transition-colors">
                                     {visibleColumns.map(header => {
                                         const val = getValue(holding, header);
                                         return (
@@ -375,7 +375,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                                 </tr>
                                 {showLots && holding.lots && holding.lots.length > 0 && (
                                     holding.lots.map((lot, lotIdx) => (
-                                        <tr key={`${holding.Symbol}-lot-${lotIdx}`} className="bg-black/5 dark:bg-white/5">
+                                        <tr key={`${holding.Symbol}-lot-${lotIdx}`} className="bg-zinc-50/50 dark:bg-zinc-900/40">
                                             {visibleColumns.map(header => {
                                                 const holdingPrice = getValue(holding, "Price") as number;
                                                 const val = getLotValue(lot, header, holdingPrice);
@@ -397,7 +397,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
             {/* Mobile Card View */}
             <div className="block md:hidden space-y-4 p-4">
                 {visibleHoldings.map((holding, idx) => (
-                    <div key={`mobile-${holding.Symbol}-${idx}`} className="bg-black/5 dark:bg-white/5 rounded-lg border border-black/5 dark:border-white/10 shadow-sm p-4 backdrop-blur-md">
+                    <div key={`mobile-${holding.Symbol}-${idx}`} className="bg-card rounded-lg border border-border shadow-sm p-4 backdrop-blur-md">
                         <div className="flex justify-between items-start mb-2">
                             <div>
                                 <h3 className="text-lg font-bold text-foreground">{holding.Symbol}</h3>
@@ -430,7 +430,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                                 <span className="text-muted-foreground">Div Yield:</span>
                                 <span className="text-foreground font-medium">{formatValue(getValue(holding, "Yield (Mkt) %"), "Yield (Mkt) %")}</span>
                             </div>
-                            <div className="flex justify-between col-span-2 bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 p-2 rounded backdrop-blur-sm">
+                            <div className="flex justify-between col-span-2 bg-secondary border border-border p-2 rounded backdrop-blur-sm">
                                 <span className="text-muted-foreground">Total Return:</span>
                                 <span className={`font-medium ${getCellClass(getValue(holding, "Total G/L"), "Total G/L")}`}>
                                     {formatValue(getValue(holding, "Total G/L"), "Total G/L")} ({formatValue(getValue(holding, "Total Ret %"), "Total Ret %")})
@@ -448,7 +448,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                                         const gain = getLotValue(lot, "Unreal. G/L", holdingPrice);
                                         const gainPct = getLotValue(lot, "Unreal. G/L %", holdingPrice);
                                         return (
-                                            <div key={`mobile-lot-${lotIdx}`} className="bg-black/5 dark:bg-white/5 p-2 rounded text-xs border border-black/5 dark:border-white/5">
+                                            <div key={`mobile-lot-${lotIdx}`} className="bg-secondary p-2 rounded text-xs border border-border">
                                                 <div className="flex justify-between items-center mb-1">
                                                     <span className="font-medium text-foreground">
                                                         {formatValue(getLotValue(lot, "Symbol"), "Symbol")}
@@ -480,7 +480,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                     </button>
                     <button
                         onClick={handleShowAll}
-                        className="px-4 py-2 bg-black/10 dark:bg-white/10 text-foreground rounded-md hover:bg-black/20 dark:hover:bg-white/20 transition-colors text-sm font-medium"
+                        className="px-4 py-2 bg-secondary text-foreground border border-border rounded-md hover:bg-accent/10 transition-colors text-sm font-medium"
                     >
                         Show All
                     </button>

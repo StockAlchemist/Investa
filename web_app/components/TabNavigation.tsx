@@ -19,7 +19,7 @@ const TABS = [
 export default function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
     return (
         <div className="w-full overflow-x-auto no-scrollbar py-4">
-            <div className="flex min-w-max p-1 bg-black/5 dark:bg-white/5 backdrop-blur-md border border-black/5 dark:border-white/10 rounded-xl">
+            <div className="flex min-w-max p-1 bg-secondary/50 backdrop-blur-md border border-border rounded-xl">
                 {TABS.map((tab) => (
                     <button
                         key={tab.id}
@@ -27,8 +27,8 @@ export default function TabNavigation({ activeTab, onTabChange }: TabNavigationP
                         className={cn(
                             "py-2 px-4 text-sm font-medium rounded-lg transition-all whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-cyan-500",
                             activeTab === tab.id
-                                ? "bg-black/10 dark:bg-white/10 text-foreground shadow-sm border border-black/5 dark:border-white/10"
-                                : "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                                ? "bg-card text-foreground shadow-sm border border-border"
+                                : "text-muted-foreground hover:text-foreground hover:bg-accent/10"
                         )}
                     >
                         {tab.label}

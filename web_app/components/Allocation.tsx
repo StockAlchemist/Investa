@@ -45,7 +45,7 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
     const countryData = aggregateData('Country');
 
     const renderPieChart = (title: string, data: AggregatedData[]) => (
-        <div className="bg-white/5 backdrop-blur-md p-4 rounded-xl shadow-sm border border-white/10 flex flex-col h-[32rem]">
+        <div className="bg-card backdrop-blur-md p-4 rounded-xl shadow-sm border border-border flex flex-col h-[32rem]">
             <h3 className="text-lg font-semibold text-foreground mb-4 text-center">{title}</h3>
             <div className="flex-grow">
                 <ResponsiveContainer width="100%" height="100%">

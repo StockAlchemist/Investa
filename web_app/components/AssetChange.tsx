@@ -60,7 +60,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
     });
 
     return (
-        <div className="bg-white/5 backdrop-blur-md p-4 rounded-xl shadow-sm border border-white/10 mb-6">
+        <div className="bg-card backdrop-blur-md p-4 rounded-xl shadow-sm border border-border mb-6">
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-semibold text-foreground">{config.title} ({viewMode === 'percent' ? '%' : currency})</h3>
                 <div className="flex items-center space-x-2">
@@ -71,7 +71,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                         max="100"
                         value={numPeriods}
                         onChange={(e) => setNumPeriods(parseInt(e.target.value) || 1)}
-                        className="w-16 px-2 py-1 text-sm bg-black/20 border border-white/10 rounded text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        className="w-16 px-2 py-1 text-sm bg-secondary border border-border rounded text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
                     />
                 </div>
             </div>
@@ -158,13 +158,13 @@ export default function AssetChange({ data, currency }: AssetChangeProps) {
         <div className="space-y-6">
             <div className="flex justify-end space-x-2 mb-4">
                 <span className="text-sm font-medium text-muted-foreground self-center">View:</span>
-                <div className="inline-flex rounded-lg shadow-sm bg-black/5 dark:bg-black/20 p-1 border border-black/5 dark:border-white/10">
+                <div className="inline-flex rounded-lg shadow-sm bg-secondary p-1 border border-border">
                     <button
                         type="button"
                         onClick={() => setViewMode('percent')}
-                        className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'percent'
-                            ? 'bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 shadow-sm ring-1 ring-cyan-500/50'
-                            : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
+                        className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'percent' // or 'value'
+                            ? 'bg-card text-foreground shadow-sm ring-1 ring-border'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
                             }`}
                     >
                         Percentage (%)

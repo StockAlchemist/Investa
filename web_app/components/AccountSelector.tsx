@@ -47,7 +47,7 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
         <div className="relative mb-4" ref={dropdownRef}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex justify-between w-full px-4 py-2 text-sm font-medium text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-lg shadow-sm hover:bg-black/10 dark:hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-xl transition-all"
+                className="flex justify-between w-full px-4 py-2 text-sm font-medium text-foreground bg-card border border-border rounded-lg shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-xl transition-all"
             >
                 <span className="font-medium">{getLabel()}</span>
                 <svg
@@ -68,7 +68,7 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                             className={`group flex items-center justify-between w-full px-4 py-3 text-sm font-medium ${isAllSelected
                                 ? 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400'
                                 : 'text-popover-foreground'
-                                } hover:bg-black/5 dark:hover:bg-white/10 transition-colors border-b border-black/5 dark:border-white/5`}
+                                } hover:bg-accent/10 transition-colors border-b border-border`}
                         >
                             <span className="whitespace-nowrap">All Accounts</span>
                             {isAllSelected && (
@@ -87,7 +87,7 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                                     className={`group flex items-center justify-between w-full px-4 py-3 text-sm font-medium ${isSelected
                                         ? 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400'
                                         : 'text-popover-foreground'
-                                        } hover:bg-black/5 dark:hover:bg-white/10 transition-colors border-b border-black/5 dark:border-white/5 last:border-0`}
+                                        } hover:bg-accent/10 transition-colors border-b border-border last:border-0`}
                                 >
                                     <span className="whitespace-nowrap">{account}</span>
                                     {isSelected && (

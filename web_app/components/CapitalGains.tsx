@@ -84,19 +84,19 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
         <div className="space-y-6">
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white/5 backdrop-blur-md p-4 rounded-xl shadow-sm border border-white/10">
+                <div className="bg-card backdrop-blur-md p-4 rounded-xl shadow-sm border border-border">
                     <h3 className="text-sm font-medium text-muted-foreground">Total Realized Gain</h3>
                     <p className={`text-2xl font-bold ${totalRealizedGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                         {formatCurrency(totalRealizedGain, currency)}
                     </p>
                 </div>
-                <div className="bg-white/5 backdrop-blur-md p-4 rounded-xl shadow-sm border border-white/10">
+                <div className="bg-card backdrop-blur-md p-4 rounded-xl shadow-sm border border-border">
                     <h3 className="text-sm font-medium text-muted-foreground">Total Proceeds</h3>
                     <p className="text-2xl font-bold text-foreground">
                         {formatCurrency(totalProceeds, currency)}
                     </p>
                 </div>
-                <div className="bg-white/5 backdrop-blur-md p-4 rounded-xl shadow-sm border border-white/10">
+                <div className="bg-card backdrop-blur-md p-4 rounded-xl shadow-sm border border-border">
                     <h3 className="text-sm font-medium text-muted-foreground">Total Cost Basis</h3>
                     <p className="text-2xl font-bold text-foreground">
                         {formatCurrency(totalCostBasis, currency)}
@@ -105,7 +105,7 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
             </div>
 
             {/* Annual Gains Chart */}
-            <div className="bg-white/5 backdrop-blur-md p-4 rounded-xl shadow-sm border border-white/10">
+            <div className="bg-card backdrop-blur-md p-4 rounded-xl shadow-sm border border-border">
                 <h3 className="text-lg font-semibold text-foreground mb-4">Annual Realized Gains</h3>
                 <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
@@ -145,7 +145,7 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
             </div>
 
             {/* Transactions Table */}
-            <div className="bg-black/5 dark:bg-white/5 backdrop-blur-md rounded-xl shadow-sm border border-black/5 dark:border-white/10 overflow-hidden">
+            <div className="bg-card backdrop-blur-md rounded-xl shadow-sm border border-border overflow-hidden">
                 <div className="p-4 border-b border-black/5 dark:border-white/5 flex justify-between items-center">
                     <h3 className="text-lg font-semibold text-foreground">Realized Gain Transactions</h3>
                     <div className="text-sm text-muted-foreground">
@@ -155,7 +155,7 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                 {/* Mobile Card View */}
                 <div className="md:hidden space-y-4 p-4">
                     {visibleData.map((item, index) => (
-                        <div key={`mobile-${index}`} className="bg-black/5 dark:bg-white/5 p-4 rounded-lg border border-black/5 dark:border-white/10 shadow-sm">
+                        <div key={`mobile-${index}`} className="bg-card p-4 rounded-lg border border-border shadow-sm">
                             <div className="flex justify-between items-start mb-2">
                                 <div>
                                     <h3 className="text-lg font-bold text-foreground">{item.Symbol}</h3>
@@ -198,7 +198,7 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                 {/* Desktop Table View */}
                 <div className="hidden md:block overflow-x-auto">
                     <table className="min-w-full divide-y divide-black/5 dark:divide-white/10">
-                        <thead className="bg-black/5 dark:bg-white/5">
+                        <thead className="bg-secondary">
                             <tr>
                                 {['Date', 'Symbol', 'Account', 'Type', 'Quantity', 'Proceeds', 'Cost Basis', 'Realized Gain'].map((header) => (
                                     <th
@@ -209,7 +209,7 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                                                     header === 'Cost Basis' ? 'Total Cost Basis (Display)' :
                                                         header as keyof CapitalGain
                                         )}
-                                        className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                        className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:bg-accent/10 transition-colors"
                                     >
                                         {header}
                                     </th>
@@ -218,7 +218,7 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                         </thead>
                         <tbody className="divide-y divide-black/5 dark:divide-white/10">
                             {visibleData.map((item, index) => (
-                                <tr key={index} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                                <tr key={index} className="hover:bg-accent/5 transition-colors">
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">{item.Date}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">{item.Symbol}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{item.Account}</td>
@@ -249,7 +249,7 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                         </button>
                         <button
                             onClick={handleShowAll}
-                            className="px-4 py-2 bg-black/5 dark:bg-white/5 text-foreground border border-black/5 dark:border-white/10 rounded-md hover:bg-black/10 dark:hover:bg-white/10 transition-colors text-sm font-medium"
+                            className="px-4 py-2 bg-secondary text-foreground border border-border rounded-md hover:bg-accent/10 transition-colors text-sm font-medium"
                         >
                             Show All
                         </button>

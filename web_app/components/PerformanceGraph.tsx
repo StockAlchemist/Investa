@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     LineChart,
     Line,
@@ -73,6 +73,34 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         loadData();
     }, [period, benchmarks, currency, accounts]);
 
+    const periodStats = useMemo(() => {
+        if (!data || data.length < 2) return null;
+
+        const start = data[0];
+        const end = data[data.length - 1];
+
+        if (view === 'return') {
+            const twr = end.twr;
+            return {
+                label: "Period TWR",
+                text: `${twr > 0 ? '+' : ''}${twr.toFixed(2)}%`,
+                color: twr >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+            };
+        } else if (view === 'value') {
+            const startVal = start.value;
+            const endVal = end.value;
+            const change = endVal - startVal;
+            const changePct = startVal !== 0 ? (change / startVal) * 100 : 0;
+
+            return {
+                label: "Period Change",
+                text: `${formatCurrency(change, currency)} (${change > 0 ? '+' : ''}${changePct.toFixed(2)}%)`,
+                color: change >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+            };
+        }
+        return null;
+    }, [data, view, currency]);
+
     if (!data || data.length === 0) {
         return (
             <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 h-64 flex items-center justify-center text-gray-500">
@@ -129,48 +157,65 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         : [];
 
     return (
-        <div className="bg-black/5 dark:bg-white/5 backdrop-blur-md rounded-xl p-4 shadow-sm border border-black/10 dark:border-white/10 mb-6">
-            <div className="flex flex-col space-y-4 mb-4">
-                <div className="flex justify-between items-center">
-                    <h3 className="text-lg font-semibold text-foreground">
+        <div className="bg-card backdrop-blur-md rounded-xl p-4 shadow-sm border border-border mb-6">
+            <div className="mb-6">
+                <div className="flex flex-col gap-1 mb-4">
+                    <h3 className="text-lg font-medium text-muted-foreground">
                         {view === 'return' ? 'Time-Weighted Return' : view === 'value' ? 'Portfolio Value' : 'Drawdown'}
                     </h3>
-                    <div className="flex space-x-2 bg-black/5 dark:bg-white/5 rounded-lg p-1 border border-black/5 dark:border-white/5">
-                        <button
-                            onClick={() => setView('return')}
-                            className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${view === 'return'
-                                ? 'bg-black/10 dark:bg-white/10 text-foreground shadow-sm'
-                                : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
-                                }`}
-                        >
-                            Return %
-                        </button>
-                        <button
-                            onClick={() => setView('value')}
-                            className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${view === 'value'
-                                ? 'bg-black/10 dark:bg-white/10 text-foreground shadow-sm'
-                                : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
-                                }`}
-                        >
-                            Value
-                        </button>
-                        <button
-                            onClick={() => setView('drawdown')}
-                            className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${view === 'drawdown'
-                                ? 'bg-black/10 dark:bg-white/10 text-foreground shadow-sm'
-                                : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
-                                }`}
-                        >
-                            Drawdown
-                        </button>
-                    </div>
+                    {periodStats ? (
+                        <div className="flex items-baseline gap-2">
+                            <span className="text-sm font-medium text-muted-foreground">
+                                {periodStats.label}
+                            </span>
+                            <span className={`text-xl font-bold tracking-tight ${periodStats.color}`}>
+                                {periodStats.text}
+                            </span>
+                        </div>
+                    ) : (
+                        <div className="h-9" /> /* Spacer for loading state */
+                    )}
                 </div>
 
-                <div className="flex justify-between items-center flex-wrap gap-2">
-                    <PeriodSelector selectedPeriod={period} onPeriodChange={setPeriod} />
-                    {view === 'return' && (
-                        <BenchmarkSelector selectedBenchmarks={benchmarks} onBenchmarkChange={onBenchmarksChange} />
-                    )}
+                <div className="flex flex-col sm:flex-row justify-between gap-3">
+                    <div className="flex items-center gap-2 pb-1 sm:pb-0">
+                        <PeriodSelector selectedPeriod={period} onPeriodChange={setPeriod} />
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                        {view === 'return' && (
+                            <BenchmarkSelector selectedBenchmarks={benchmarks} onBenchmarkChange={onBenchmarksChange} />
+                        )}
+                        <div className="flex bg-secondary rounded-lg p-1 border border-border shrink-0">
+                            <button
+                                onClick={() => setView('return')}
+                                className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${view === 'return'
+                                    ? 'bg-card text-foreground shadow-sm'
+                                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
+                                    }`}
+                            >
+                                Return %
+                            </button>
+                            <button
+                                onClick={() => setView('value')}
+                                className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${view === 'value'
+                                    ? 'bg-card text-foreground shadow-sm'
+                                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
+                                    }`}
+                            >
+                                Value
+                            </button>
+                            <button
+                                onClick={() => setView('drawdown')}
+                                className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${view === 'drawdown'
+                                    ? 'bg-card text-foreground shadow-sm'
+                                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
+                                    }`}
+                            >
+                                Drawdown
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 

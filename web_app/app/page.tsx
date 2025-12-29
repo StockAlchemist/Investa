@@ -139,10 +139,12 @@ export default function Home() {
         return (
           <>
             {summary && <Dashboard summary={summary} currency={currency} />}
-            <RiskMetricsComponent
-              metrics={riskMetricsQuery.data || {}}
-              isLoading={riskMetricsQuery.isLoading}
-            />
+            <div className="mb-6">
+              <RiskMetricsComponent
+                metrics={riskMetricsQuery.data || {}}
+                isLoading={riskMetricsQuery.isLoading}
+              />
+            </div>
             <PerformanceGraph
               currency={currency}
               accounts={selectedAccounts}
@@ -172,7 +174,7 @@ export default function Home() {
             ) : (
               <div className="grid grid-cols-1 gap-4">
                 {Object.values(summary.metrics.indices).map((index: { name: string; price: number; change: number; changesPercentage: number }) => (
-                  <div key={index.name} className="flex items-center justify-between p-4 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10">
+                  <div key={index.name} className="flex items-center justify-between p-4 rounded-xl bg-card border border-border">
                     <span className="font-medium text-foreground text-lg">{index.name}</span>
                     <div className="flex flex-col items-end">
                       <span className="text-foreground font-medium text-lg">{index.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -233,7 +235,7 @@ export default function Home() {
         onNavigate={handleNavigate}
       />
 
-      <header className="sticky top-0 z-50 w-full border-b border-white/5 bg-background/60 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
+      <header className="sticky top-0 z-50 w-full border-b border-border bg-background/60 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
           <div className="flex items-center gap-4">
             {/* Logo - Simplified for Modern Look */}
@@ -251,7 +253,7 @@ export default function Home() {
 
           <div className="flex items-center gap-4">
             {summary?.metrics?.indices && Object.values(summary.metrics.indices).map((index: { name: string; price: number; change: number; changesPercentage: number }) => (
-              <div key={index.name} className="hidden lg:flex items-center space-x-2 text-xs font-medium px-3 py-1.5 rounded-full bg-white/5 border border-white/5 hover:bg-white/10 transition-colors">
+              <div key={index.name} className="hidden lg:flex items-center space-x-2 text-xs font-medium px-3 py-1.5 rounded-full bg-card border border-border hover:bg-accent/10 transition-colors">
                 <span className="text-muted-foreground">{index.name}</span>
                 <span className="text-foreground">{index.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 <span className={index.change >= 0 ? "text-emerald-500" : "text-rose-500"}>

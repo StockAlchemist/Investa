@@ -28,7 +28,7 @@ interface AttributionChartProps {
 export default function AttributionChart({ data, isLoading, currency }: AttributionChartProps) {
     if (isLoading) {
         return (
-            <div className="bg-white dark:bg-zinc-900 rounded-xl p-6 shadow-sm border border-zinc-200 dark:border-zinc-800 animate-pulse h-80">
+            <div className="bg-card rounded-xl p-6 shadow-sm border border-border animate-pulse h-80">
             </div>
         );
     }
@@ -51,10 +51,10 @@ export default function AttributionChart({ data, isLoading, currency }: Attribut
     if (!hasSectors && !hasStocks) {
         return (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                <div className="bg-white dark:bg-zinc-900 rounded-xl p-6 shadow-sm border border-zinc-200 dark:border-zinc-800 flex items-center justify-center h-40">
+                <div className="bg-card rounded-xl p-6 shadow-sm border border-border flex items-center justify-center h-40">
                     <p className="text-zinc-500">No sector attribution data available</p>
                 </div>
-                <div className="bg-white dark:bg-zinc-900 rounded-xl p-6 shadow-sm border border-zinc-200 dark:border-zinc-800 flex items-center justify-center h-40">
+                <div className="bg-card rounded-xl p-6 shadow-sm border border-border flex items-center justify-center h-40">
                     <p className="text-zinc-500">No top contributor data available</p>
                 </div>
             </div>
@@ -64,7 +64,7 @@ export default function AttributionChart({ data, isLoading, currency }: Attribut
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Sector Attribution */}
-            <div className="bg-white/5 backdrop-blur-md rounded-xl p-6 shadow-sm border border-white/10">
+            <div className="bg-card backdrop-blur-md rounded-xl p-6 shadow-sm border border-border">
                 <h3 className="text-sm font-medium text-muted-foreground mb-6 uppercase tracking-wider">Sector Contribution</h3>
                 <div className="space-y-4">
                     {hasSectors ? data.sectors.map((s) => (
@@ -75,7 +75,7 @@ export default function AttributionChart({ data, isLoading, currency }: Attribut
                                     {formatCurrency(s.gain)} ({formatPercent(s.contribution)})
                                 </span>
                             </div>
-                            <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
+                            <div className="w-full bg-secondary rounded-full h-1.5 overflow-hidden">
                                 <div
                                     className={`h-full ${s.gain >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`}
                                     style={{ width: `${Math.min(100, Math.abs(s.contribution * 100))}%` }}
@@ -89,11 +89,11 @@ export default function AttributionChart({ data, isLoading, currency }: Attribut
             </div>
 
             {/* Top Contributors */}
-            <div className="bg-white/5 backdrop-blur-md rounded-xl p-6 shadow-sm border border-white/10">
+            <div className="bg-card backdrop-blur-md rounded-xl p-6 shadow-sm border border-border">
                 <h3 className="text-sm font-medium text-muted-foreground mb-6 uppercase tracking-wider">Top Contributors</h3>
                 <div className="space-y-3">
                     {hasStocks ? data.stocks.map((stock, idx) => (
-                        <div key={`${stock.symbol}-${idx}`} className="flex items-center justify-between p-2 hover:bg-white/5 rounded-lg transition-colors">
+                        <div key={`${stock.symbol}-${idx}`} className="flex items-center justify-between p-2 hover:bg-accent/10 rounded-lg transition-colors">
                             <div className="flex flex-col">
                                 <span className="text-sm font-bold text-foreground">{stock.symbol}</span>
                                 <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{stock.name}</span>

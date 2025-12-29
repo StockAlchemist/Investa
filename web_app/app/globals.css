@@ -1,11 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  /* White background for light mode */
-  --foreground: #09090b;
-  /* Zinc 950 text */
-  --card: #ffffff;
+  --background: #f4f4f5; /* Zinc 100 - light grey background */
+  --foreground: #09090b; /* Zinc 950 - dark text */
+  --card: #ffffff;      /* White cards */
   --card-foreground: #09090b;
   --popover: #ffffff;
   --popover-foreground: #09090b;
@@ -19,7 +17,7 @@
   --accent-foreground: #18181b;
   --destructive: #ef4444;
   --destructive-foreground: #fafafa;
-  --border: #e4e4e7;
+  --border: #e4e4e7;    /* Zinc 200 */
   --input: #e4e4e7;
   --ring: #18181b;
   --radius: 0.5rem;
@@ -27,26 +25,25 @@
 }
 
 .dark {
-  --background: #020617;
-  /* Slate 950 - Darker background */
-  --foreground: #f8fafc;
-  --card: #1e293b;
-  --card-foreground: #f8fafc;
-  --popover: #020617;
-  --popover-foreground: #f8fafc;
-  --primary: #f8fafc;
-  --primary-foreground: #020617;
-  --secondary: #1e293b;
-  --secondary-foreground: #f8fafc;
-  --muted: #1e293b;
-  --muted-foreground: #94a3b8;
-  --accent: #1e293b;
-  --accent-foreground: #f8fafc;
+  --background: #09090b; /* Zinc 950 - pure black background */
+  --foreground: #fafafa; /* Zinc 50 - bright text */
+  --card: #18181b;      /* Zinc 900 - dark grey cards */
+  --card-foreground: #fafafa;
+  --popover: #09090b;
+  --popover-foreground: #fafafa;
+  --primary: #fafafa;
+  --primary-foreground: #18181b;
+  --secondary: #27272a; /* Zinc 800 */
+  --secondary-foreground: #fafafa;
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+  --accent: #27272a;
+  --accent-foreground: #fafafa;
   --destructive: #7f1d1d;
-  --destructive-foreground: #f8fafc;
-  --border: #1e293b;
-  --input: #1e293b;
-  --ring: #cbd5e1;
+  --destructive-foreground: #fafafa;
+  --border: #27272a;    /* Zinc 800 border */
+  --input: #27272a;
+  --ring: #d4d4d8;
   --glass-hover: rgba(255, 255, 255, 0.05);
 }
 

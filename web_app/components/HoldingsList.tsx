@@ -21,11 +21,11 @@ export default function HoldingsList({ holdings }: HoldingsListProps) {
     const sortedHoldings = [...holdings].sort((a, b) => getValue(b, 'Market Value') - getValue(a, 'Market Value'));
 
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-t-xl shadow-sm border-t border-gray-100 dark:border-gray-700 mt-4">
-            <div className="p-4 border-b border-gray-100 dark:border-gray-700">
-                <h2 className="text-lg font-bold text-gray-900 dark:text-white">Holdings</h2>
+        <div className="bg-card rounded-xl shadow-sm border border-border mt-4 overflow-hidden">
+            <div className="p-4 border-b border-border">
+                <h2 className="text-lg font-bold text-foreground">Holdings</h2>
             </div>
-            <div className="divide-y divide-gray-100 dark:divide-gray-700">
+            <div className="divide-y divide-border">
                 {sortedHoldings.map((h, idx) => {
                     const dayChange = getValue(h, 'Day Change'); // Matches "Day Change (USD)"
                     const dayChangePct = getValue(h, 'Day Change %');
@@ -34,7 +34,7 @@ export default function HoldingsList({ holdings }: HoldingsListProps) {
                     const isPositive = dayChange >= 0;
 
                     return (
-                        <div key={idx} className="p-4 flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+                        <div key={idx} className="p-4 flex justify-between items-center hover:bg-accent/5 transition-colors">
                             <div>
                                 <div className="font-bold text-gray-900 dark:text-white">{h.Symbol}</div>
                                 <div className="text-sm text-gray-500 dark:text-gray-400">
@@ -45,7 +45,7 @@ export default function HoldingsList({ holdings }: HoldingsListProps) {
                                 <div className="font-bold text-gray-900 dark:text-white">
                                     ${marketValue?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </div>
-                                <div className={`text-sm font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                                <div className={`text-sm font-medium ${isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                                     {isPositive ? '+' : ''}{dayChange.toFixed(2)} ({dayChangePct.toFixed(2)}%)
                                 </div>
                             </div>

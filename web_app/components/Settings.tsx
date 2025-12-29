@@ -64,7 +64,7 @@ export default function Settings() {
     const [portfolioCountries, setPortfolioCountries] = useState<string[]>([]);
 
     // Common input/select classes
-    const inputClassName = "w-full rounded-md border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 text-foreground shadow-sm focus:border-cyan-500 focus:ring-cyan-500 px-3 py-2 text-sm outline-none focus:ring-1";
+    const inputClassName = "w-full rounded-md border border-border bg-secondary text-foreground shadow-sm focus:border-cyan-500 focus:ring-cyan-500 px-3 py-2 text-sm outline-none focus:ring-1";
     const labelClassName = "block text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide";
 
     useEffect(() => {
@@ -308,8 +308,8 @@ export default function Settings() {
         <div className="space-y-8 pb-20 max-w-6xl mx-auto">
 
             {/* Symbol Settings Section */}
-            <div className="bg-black/5 dark:bg-white/5 backdrop-blur-md shadow-sm rounded-xl overflow-hidden border border-black/5 dark:border-white/10">
-                <div className="px-6 py-4 border-b border-black/5 dark:border-white/10">
+            <div className="bg-card backdrop-blur-md shadow-sm rounded-xl overflow-hidden border border-border">
+                <div className="px-6 py-4 border-b border-border">
                     <h2 className="text-xl font-bold text-foreground">Symbol Settings</h2>
                     <p className="text-sm text-muted-foreground mt-1">
                         Manage price overrides, custom symbol mappings, and exclusions.
@@ -317,12 +317,12 @@ export default function Settings() {
                 </div>
 
                 {/* Tabs */}
-                <div className="flex border-b border-black/5 dark:border-white/10 bg-black/5 dark:bg-white/5">
+                <div className="flex border-b border-border bg-secondary">
                     <button
                         onClick={() => setActiveTab('overrides')}
                         className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors border-b-2 ${activeTab === 'overrides'
                             ? 'border-cyan-500 text-cyan-500 dark:text-cyan-400'
-                            : 'border-transparent text-muted-foreground hover:text-foreground hover:border-black/20 dark:hover:border-white/20'
+                            : 'border-transparent text-muted-foreground hover:text-foreground hover:border-black/10 dark:hover:border-white/10'
                             }`}
                     >
                         Manual Overrides
@@ -355,7 +355,7 @@ export default function Settings() {
                             <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
                                 Set manual prices or metadata (Asset Type, Sector, etc.) to override automatic data.
                             </p>
-                            <div className="flex flex-col gap-4 mb-6 bg-black/5 dark:bg-white/5 p-4 rounded-lg border border-black/5 dark:border-white/10">
+                            <div className="flex flex-col gap-4 mb-6 bg-secondary p-4 rounded-lg border border-border">
                                 <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                                     <div className="col-span-1">
                                         <label className={labelClassName}>Symbol</label>
@@ -451,8 +451,8 @@ export default function Settings() {
                             </div>
 
                             <div className="overflow-x-auto">
-                                <table className="min-w-full divide-y divide-black/5 dark:divide-white/10 text-sm">
-                                    <thead className="bg-black/5 dark:bg-white/5">
+                                <table className="min-w-full divide-y divide-border text-sm">
+                                    <thead className="bg-secondary">
                                         <tr>
                                             <th scope="col" className="px-4 py-3 text-left font-medium text-muted-foreground uppercase tracking-wider">Symbol</th>
                                             <th scope="col" className="px-4 py-3 text-left font-medium text-muted-foreground uppercase tracking-wider">Price</th>
@@ -463,7 +463,7 @@ export default function Settings() {
                                             <th scope="col" className="px-4 py-3 text-right font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-black/5 dark:divide-white/10">
+                                    <tbody className="divide-y divide-border">
                                         {Object.entries(overrides).length === 0 ? (
                                             <tr>
                                                 <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground italic">
@@ -483,7 +483,7 @@ export default function Settings() {
                                                     const currency = isObj ? (data as ManualOverrideData).currency : 'USD';
 
                                                     return (
-                                                        <tr key={symbol} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                                                        <tr key={symbol} className="hover:bg-accent/5 transition-colors">
                                                             <td className="px-4 py-4 whitespace-nowrap font-medium text-foreground">{symbol}</td>
                                                             <td className="px-4 py-4 whitespace-nowrap text-muted-foreground font-mono">
                                                                 {price === 0
@@ -527,7 +527,7 @@ export default function Settings() {
                             <p className="mb-4 text-sm text-muted-foreground">
                                 Map standard symbols in your portfolio to specific Yahoo Finance tickers for data retrieval.
                             </p>
-                            <div className="flex flex-col md:flex-row gap-4 mb-6 bg-black/5 dark:bg-white/5 p-4 rounded-lg border border-black/5 dark:border-white/10">
+                            <div className="flex flex-col md:flex-row gap-4 mb-6 bg-secondary p-4 rounded-lg border border-border">
                                 <div className="flex-1">
                                     <label className={labelClassName}>Portfolio Symbol</label>
                                     <input
@@ -564,8 +564,8 @@ export default function Settings() {
                             </div>
 
                             <div className="overflow-x-auto">
-                                <table className="min-w-full divide-y divide-black/5 dark:divide-white/10">
-                                    <thead className="bg-black/5 dark:bg-white/5">
+                                <table className="min-w-full divide-y divide-border">
+                                    <thead className="bg-secondary">
                                         <tr>
                                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Portfolio Symbol</th>
                                             <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Mapped To</th>
@@ -573,7 +573,7 @@ export default function Settings() {
                                             <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-black/5 dark:divide-white/10">
+                                    <tbody className="divide-y divide-border">
                                         {Object.entries(symbolMap).length === 0 ? (
                                             <tr>
                                                 <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground italic">
@@ -584,10 +584,10 @@ export default function Settings() {
                                             Object.entries(symbolMap)
                                                 .sort((a, b) => a[0].localeCompare(b[0]))
                                                 .map(([from, to]: [string, string]) => (
-                                                    <tr key={from} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                                                    <tr key={from} className="hover:bg-accent/5 transition-colors">
                                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">{from}</td>
                                                         <td className="px-6 py-4 whitespace-nowrap text-center text-muted-foreground">→</td>
-                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground font-mono bg-black/5 dark:bg-white/5 px-2 rounded w-min">{to}</td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground font-mono bg-accent/10 px-2 rounded w-min">{to}</td>
                                                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                                             <button
                                                                 type="button"
@@ -612,7 +612,7 @@ export default function Settings() {
                             <p className="mb-4 text-sm text-muted-foreground">
                                 Symbols listed here will be ignored by the market data provider and analysis.
                             </p>
-                            <div className="flex flex-col md:flex-row gap-4 mb-6 bg-black/5 dark:bg-white/5 p-4 rounded-lg border border-black/5 dark:border-white/10">
+                            <div className="flex flex-col md:flex-row gap-4 mb-6 bg-secondary p-4 rounded-lg border border-border">
                                 <div className="flex-1">
                                     <label className={labelClassName}>Symbol to Exclude</label>
                                     <input
@@ -635,15 +635,15 @@ export default function Settings() {
                                 </div>
                             </div>
 
-                            <div className="overflow-hidden bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-lg">
+                            <div className="overflow-hidden bg-secondary border border-border rounded-lg">
                                 {excluded.length === 0 ? (
                                     <div className="p-8 text-center text-muted-foreground italic">
                                         No excluded symbols.
                                     </div>
                                 ) : (
-                                    <ul className="divide-y divide-black/5 dark:divide-white/10">
+                                    <ul className="divide-y divide-border">
                                         {excluded.map((sym, idx) => (
-                                            <li key={sym + idx} className="px-6 py-4 flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                                            <li key={sym + idx} className="px-6 py-4 flex items-center justify-between hover:bg-accent/5 transition-colors">
                                                 <span className="text-sm font-medium text-foreground">{sym}</span>
                                                 <button
                                                     type="button"
@@ -666,7 +666,7 @@ export default function Settings() {
             </div>
 
             {/* Webhook Connection (Existing) */}
-            <div className="bg-black/5 dark:bg-white/5 backdrop-blur-md shadow-sm rounded-xl p-6 border border-black/5 dark:border-white/10 border-l-4 border-l-cyan-500">
+            <div className="bg-card backdrop-blur-md shadow-sm rounded-xl p-6 border border-border border-l-4 border-l-cyan-500">
                 <h2 className="text-lg font-bold mb-4 text-foreground">Webhook Integration</h2>
                 <div className="space-y-4">
                     <p className="text-sm text-muted-foreground">
@@ -678,12 +678,12 @@ export default function Settings() {
                             placeholder="Webhook Secret"
                             value={refreshSecret}
                             onChange={(e) => setRefreshSecret(e.target.value)}
-                            className="flex-1 rounded-md border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 shadow-sm focus:border-cyan-500 focus:ring-cyan-500 sm:text-sm text-foreground px-3 py-2 outline-none focus:ring-1"
+                            className="flex-1 rounded-md border border-border bg-secondary shadow-sm focus:border-cyan-500 focus:ring-cyan-500 sm:text-sm text-foreground px-3 py-2 outline-none focus:ring-1"
                         />
                         <button
                             type="button"
                             onClick={handleRefresh}
-                            className="px-4 py-2 border border-black/10 dark:border-white/10 rounded-md shadow-sm text-sm font-medium text-foreground bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors"
+                            className="px-4 py-2 border border-border rounded-md shadow-sm text-sm font-medium text-foreground bg-secondary hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors"
                         >
                             Test
                         </button>

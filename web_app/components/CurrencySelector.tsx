@@ -28,7 +28,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate }: 
         <div className="relative" ref={dropdownRef}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="text-xs font-medium px-2 py-1 bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-colors flex items-center gap-2 backdrop-blur-md"
+                className="text-xs font-medium px-2 py-1 bg-card border border-border rounded text-foreground hover:bg-accent/10 transition-colors flex items-center gap-2 backdrop-blur-md"
             >
                 {currentCurrency !== 'USD' && fxRate && (
                     <span className="text-muted-foreground mr-1 border-r border-border pr-2">
@@ -50,7 +50,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate }: 
                                 onChange(currency);
                                 setIsOpen(false);
                             }}
-                            className={`w-full text-left px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/10 transition-colors ${currentCurrency === currency
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-accent/10 transition-colors ${currentCurrency === currency
                                 ? 'text-cyan-600 dark:text-cyan-400 font-medium bg-cyan-500/10'
                                 : 'text-popover-foreground'
                                 }`}

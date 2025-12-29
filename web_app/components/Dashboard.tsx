@@ -36,7 +36,7 @@ const MetricCard = ({
 }: MetricCardProps) => (
     <Card className={cn(
         "h-full transition-all duration-300 relative overflow-hidden group",
-        "bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 border-black/5 dark:border-white/10",
+        "hover:bg-accent/5 transition-colors",
         containerClassName
     )}>
 

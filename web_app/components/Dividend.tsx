@@ -83,14 +83,14 @@ export default function Dividend({ data, currency, expectedDividends, children }
         <div className="space-y-6">
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white/5 backdrop-blur-md p-4 rounded-xl shadow-sm border border-white/10">
+                <div className="bg-card backdrop-blur-md p-4 rounded-xl shadow-sm border border-border">
                     <h3 className="text-sm font-medium text-muted-foreground">Total Dividends</h3>
                     <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
                         {formatCurrency(totalDividends, currency)}
                     </p>
                 </div>
                 {expectedDividends !== undefined && (
-                    <div className="bg-white/5 backdrop-blur-md p-4 rounded-xl shadow-sm border border-white/10">
+                    <div className="bg-card backdrop-blur-md p-4 rounded-xl shadow-sm border border-border">
                         <h3 className="text-sm font-medium text-muted-foreground">Expected Dividends (Next 12M)</h3>
                         <p className="text-2xl font-bold text-cyan-600 dark:text-cyan-400">
                             {formatCurrency(expectedDividends, currency)}
@@ -103,7 +103,7 @@ export default function Dividend({ data, currency, expectedDividends, children }
             {children}
 
             {/* Annual Dividends Chart */}
-            <div className="bg-white/5 backdrop-blur-md p-4 rounded-xl shadow-sm border border-white/10">
+            <div className="bg-card backdrop-blur-md p-4 rounded-xl shadow-sm border border-border">
                 <h3 className="text-lg font-semibold text-foreground mb-4">Annual Dividends</h3>
                 <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
@@ -143,7 +143,7 @@ export default function Dividend({ data, currency, expectedDividends, children }
             </div>
 
             {/* Transactions Table */}
-            <div className="bg-black/5 dark:bg-white/5 backdrop-blur-md rounded-xl shadow-sm border border-black/5 dark:border-white/10 overflow-hidden">
+            <div className="bg-card backdrop-blur-md rounded-xl shadow-sm border border-border overflow-hidden">
                 <div className="p-4 border-b border-black/5 dark:border-white/5 flex justify-between items-center">
                     <h3 className="text-lg font-semibold text-foreground">Dividend Transactions</h3>
                     <div className="text-sm text-muted-foreground">
@@ -153,13 +153,13 @@ export default function Dividend({ data, currency, expectedDividends, children }
                 {/* Desktop Table View */}
                 <div className="hidden md:block overflow-x-auto">
                     <table className="min-w-full divide-y divide-black/5 dark:divide-white/10">
-                        <thead className="bg-black/5 dark:bg-white/5">
+                        <thead className="bg-secondary">
                             <tr>
                                 {['Date', 'Symbol', 'Account', 'DividendAmountDisplayCurrency'].map((header) => (
                                     <th
                                         key={header}
                                         onClick={() => requestSort(header as keyof Dividend)}
-                                        className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                        className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:bg-accent/10 transition-colors"
                                     >
                                         {header === 'DividendAmountDisplayCurrency' ? 'Amount' : header}
                                     </th>
@@ -168,7 +168,7 @@ export default function Dividend({ data, currency, expectedDividends, children }
                         </thead>
                         <tbody className="divide-y divide-black/5 dark:divide-white/10">
                             {visibleData.map((item, index) => (
-                                <tr key={index} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                                <tr key={index} className="hover:bg-accent/5 transition-colors">
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">{item.Date}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">{item.Symbol}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{item.Account}</td>
@@ -184,7 +184,7 @@ export default function Dividend({ data, currency, expectedDividends, children }
                 {/* Mobile Card View */}
                 <div className="block md:hidden space-y-4 p-4">
                     {visibleData.map((item, index) => (
-                        <div key={`mobile-div-${index}`} className="bg-black/5 dark:bg-white/5 rounded-lg border border-black/5 dark:border-white/10 shadow-sm p-4">
+                        <div key={`mobile-div-${index}`} className="bg-card rounded-lg border border-border shadow-sm p-4">
                             <div className="flex justify-between items-start mb-2">
                                 <div>
                                     <h3 className="text-lg font-bold text-foreground">{item.Symbol}</h3>
@@ -209,7 +209,7 @@ export default function Dividend({ data, currency, expectedDividends, children }
                         </button>
                         <button
                             onClick={handleShowAll}
-                            className="px-4 py-2 bg-black/5 dark:bg-white/5 text-foreground border border-black/5 dark:border-white/10 rounded-md hover:bg-black/10 dark:hover:bg-white/10 transition-colors text-sm font-medium"
+                            className="px-4 py-2 bg-secondary text-foreground border border-border rounded-md hover:bg-accent/10 transition-colors text-sm font-medium"
                         >
                             Show All
                         </button>
