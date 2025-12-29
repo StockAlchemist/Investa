@@ -30,9 +30,14 @@ DB_SCHEMA_VERSION = 2
 
 def get_database_path(db_filename: str = DB_FILENAME) -> str:
     """
-    Determines the full path for the SQLite database file using the
-    centralized application data directory.
+    Determines the full path for the SQLite database file.
+    Checks CWD first, then falls back to centralized application data directory.
     """
+    # Check if DB exists in current working directory
+    cwd_path = os.path.join(os.getcwd(), db_filename)
+    if os.path.exists(cwd_path):
+        return cwd_path
+
     app_data_dir = config.get_app_data_dir()
     return os.path.join(app_data_dir, db_filename)
 

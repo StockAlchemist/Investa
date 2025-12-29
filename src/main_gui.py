@@ -578,10 +578,33 @@ class PortfolioApp(QMainWindow, UiHelpersMixin):
                 return np.nan  # Or some other appropriate value
 
     def load_config(self):
+        # Debug logging for config loading
+        try:
+            with open("desktop_debug.txt", "a") as f:
+                f.write(f"load_config called. CWD: {os.getcwd()}\n")
+        except: pass
+
         """Loads configuration via ConfigManager and synchronizes attributes."""
         self.config_manager.load_gui_config()
         self.config = self.config_manager.gui_config
         self.DB_FILE_PATH = self.config.get("transactions_file")
+        
+        # --- PATCH: Force checking local DB in CWD due to potential path Mismatch ---
+        # If we are running in a different location than what config says, 
+        # and a local DB exists, prefer the local one.
+        cwd_db_path = os.path.abspath("investa_transactions.db")
+        # Log the decision process
+        try:
+            with open("desktop_debug.txt", "a") as f:
+                f.write(f"Config DB Path: {self.DB_FILE_PATH}\n")
+                f.write(f"CWD DB Path: {cwd_db_path}\n")
+                f.write(f"CWD DB Exists: {os.path.exists(cwd_db_path)}\n")
+        except: pass
+
+        if os.path.exists(cwd_db_path):
+            logging.info(f"Detected local database at {cwd_db_path}. Overriding config path: {self.DB_FILE_PATH}")
+            self.DB_FILE_PATH = cwd_db_path
+        # ---------------------------------------------------------------------------
         self.column_visibility = self.config.get("column_visibility", {})
         self.account_currency_map = self.config.get("account_currency_map", {})
         self.default_currency = self.config.get("default_currency", "USD")
@@ -2315,6 +2338,11 @@ The CSV file should contain the following columns (header names must match exact
 
     # --- Initialization Method ---
     def __init__(self):
+        try:
+            with open("desktop_debug.txt", "a") as f:
+                f.write(f"\n--- PortfolioApp.__init__ called at {datetime.now()} ---\n")
+                f.write(f"Init CWD: {os.getcwd()}\n")
+        except: pass
         """Initializes the main application window, loads config, and sets up UI."""
         # --- IMPORTANT: Call super().__init__() for QMainWindow ---
         super().__init__()
@@ -2418,7 +2446,21 @@ The CSV file should contain the following columns (header names must match exact
 
         # --- Initialize DB Connection ---
         # initialize_database will create the DB file and tables if they don't exist at self.DB_FILE_PATH
+        
+        try:
+            with open("desktop_debug.txt", "a") as f:
+                f.write(f"Final DB_FILE_PATH: {self.DB_FILE_PATH}\n")
+                f.write(f"DB Exists: {os.path.exists(self.DB_FILE_PATH) if self.DB_FILE_PATH else 'None'}\n")
+        except: pass
         self.db_conn = initialize_database(self.DB_FILE_PATH)
+
+
+
+
+
+
+
+
         if not self.db_conn:
             QMessageBox.critical(
                 self,
@@ -5496,6 +5538,11 @@ The CSV file should contain the following columns (header names must match exact
         self.view_ignored_button.clicked.connect(self.show_ignored_log)
 
     def _init_ui_widgets(self):
+        try:
+            with open("desktop_debug.txt", "a") as f:
+                from datetime import datetime
+        except: pass
+
         """Orchestrates the initialization of all UI widgets within their frames."""
         logging.debug(
             "DEBUG PRINT: _init_ui_widgets method has been entered."
@@ -8410,6 +8457,13 @@ The CSV file should contain the following columns (header names must match exact
         self.threadpool.start(worker)
 
     def _perform_initial_load_from_db_only(self):
+        try:
+            with open("desktop_debug.txt", "a") as f:
+                f.write("_perform_initial_load_from_db_only called\n")
+        except: pass
+
+
+
         """Loads data from DB on startup if load_on_startup is true and DB is not empty."""
         if self.db_conn:
             # Check if DB has any data before refreshing
@@ -8418,6 +8472,10 @@ The CSV file should contain the following columns (header names must match exact
                 cursor.execute("SELECT COUNT(*) FROM transactions")
                 count_result = cursor.fetchone()
                 count = count_result[0] if count_result else 0
+                try:
+                    with open("desktop_debug.txt", "a") as f:
+                        f.write(f"Initial DB check: count={count}\n")
+                except: pass
 
                 if count > 0:
                     logging.info(
