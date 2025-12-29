@@ -15,7 +15,7 @@ const COLORS = [
 interface AggregatedData {
     name: string;
     value: number;
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 export default function Allocation({ holdings, currency }: AllocationProps) {
@@ -27,13 +27,11 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
 
     const aggregateData = (key: keyof Holding | 'Sector' | 'Industry' | 'Country' | 'quoteType'): AggregatedData[] => {
         const aggregation: Record<string, number> = {};
-        let totalValue = 0;
 
         holdings.forEach(h => {
-            const value = h[marketValueKey] || 0;
+            const value = (h[marketValueKey] as number) || 0;
             const category = (h[key] as string) || 'Unknown';
             aggregation[category] = (aggregation[category] || 0) + value;
-            totalValue += value;
         });
 
         return Object.entries(aggregation)

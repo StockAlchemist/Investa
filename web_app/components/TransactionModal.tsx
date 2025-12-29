@@ -35,20 +35,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
     const [error, setError] = useState<string | null>(null);
     const [activeSuggestionField, setActiveSuggestionField] = useState<'Symbol' | 'Account' | null>(null);
 
-    // Close suggestions on click outside
-    useEffect(() => {
-        const handleClickOutside = (e: MouseEvent) => {
-            if (activeSuggestionField) {
-                // Logic to close if clicking outside
-                // For simplicity, we can rely on onBlur with delay or just close if clicking outside modal content
-                // but typically specific click outside handlers are cleaner.
-                // However, let's keep it simple: input onBlur handles closing, 
-                // and items onMouseDown prevents blur.
-            }
-        };
-        // document.addEventListener('mousedown', handleClickOutside);
-        // return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [activeSuggestionField]);
+
 
     useEffect(() => {
         if (isOpen) {
@@ -83,7 +70,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value, type } = e.target;
 
-        let val: any = value;
+        let val: string | number = value;
         if (type === 'number') {
             val = value === '' ? 0 : parseFloat(value);
         } else if (name === 'Symbol' || name === 'Local Currency') {
@@ -95,8 +82,8 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
 
             // Auto-calculate Total Amount if Price and Qty change
             if (name === 'Quantity' || name === 'Price/Share') {
-                const qty = name === 'Quantity' ? val : (prev.Quantity || 0);
-                const price = name === 'Price/Share' ? val : (prev['Price/Share'] || 0);
+                const qty = name === 'Quantity' ? Number(val) : (prev.Quantity || 0);
+                const price = name === 'Price/Share' ? Number(val) : (prev['Price/Share'] || 0);
                 newData['Total Amount'] = parseFloat((qty * price).toFixed(2));
             }
             if (name === 'Account') {
@@ -202,8 +189,9 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
 
             await onSubmit(submissionData as Transaction);
             onClose();
-        } catch (err: any) {
-            setError(err.message || "Failed to save transaction");
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "Failed to save transaction";
+            setError(message);
         } finally {
             setLoading(false);
         }

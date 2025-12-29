@@ -14,7 +14,7 @@ export default function HoldingsList({ holdings }: HoldingsListProps) {
     const getValue = (holding: Holding, prefix: string) => {
         const key = Object.keys(holding).find(k => k.startsWith(prefix));
         const val = key ? holding[key] : 0;
-        return (val === null || val === undefined) ? 0 : val;
+        return (val === null || val === undefined) ? 0 : (val as number);
     };
 
     // Sort by Market Value desc

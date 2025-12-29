@@ -36,11 +36,11 @@ export interface PortfolioSummary {
             change: number;
             changesPercentage: number;
             name: string;
-            [key: string]: any;
+            [key: string]: unknown;
         }>;
-        [key: string]: any;
+        [key: string]: unknown;
     } | null;
-    account_metrics: Record<string, any> | null;
+    account_metrics: Record<string, unknown> | null;
 }
 
 export interface Lot {
@@ -50,7 +50,7 @@ export interface Lot {
     "Market Value": number;
     "Unreal. Gain": number;
     "Unreal. Gain %": number;
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 export interface Holding {
@@ -66,7 +66,7 @@ export interface Holding {
     Country?: string;
     quoteType?: string;
     // Keys are dynamic based on currency, e.g., "Market Value (USD)"
-    [key: string]: any;
+    [key: string]: unknown;
     lots?: Lot[];
 }
 
@@ -84,7 +84,7 @@ export interface Transaction {
     "Split Ratio"?: number;
     Note?: string;
     "To Account"?: string;
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 export async function fetchSummary(currency: string = 'USD', accounts?: string[]): Promise<PortfolioSummary> {
@@ -125,7 +125,14 @@ export async function fetchTransactions(accounts?: string[]): Promise<Transactio
     return res.json();
 }
 
-export async function addTransaction(transaction: Transaction): Promise<any> {
+export interface StatusResponse {
+    status: string;
+    message?: string;
+    id?: number;
+    [key: string]: unknown;
+}
+
+export async function addTransaction(transaction: Transaction): Promise<StatusResponse> {
     const response = await fetch(`${API_BASE_URL}/transactions`, {
         method: "POST",
         headers: {
@@ -139,7 +146,7 @@ export async function addTransaction(transaction: Transaction): Promise<any> {
     return response.json();
 }
 
-export async function updateTransaction(id: number, transaction: Transaction): Promise<any> {
+export async function updateTransaction(id: number, transaction: Transaction): Promise<StatusResponse> {
     const response = await fetch(`${API_BASE_URL}/transactions/${id}`, {
         method: "PUT",
         headers: {
@@ -153,7 +160,7 @@ export async function updateTransaction(id: number, transaction: Transaction): P
     return response.json();
 }
 
-export async function deleteTransaction(id: number): Promise<any> {
+export async function deleteTransaction(id: number): Promise<StatusResponse> {
     const response = await fetch(`${API_BASE_URL}/transactions/${id}`, {
         method: "DELETE",
     });
@@ -184,7 +191,7 @@ export async function fetchHistory(
 export interface AssetChangeData {
     [period: string]: {
         Date: string;
-        [key: string]: any;
+        [key: string]: unknown;
     }[];
 }
 
@@ -221,7 +228,7 @@ export interface CapitalGain {
     "Realized Gain (Display)": number;
     LocalCurrency: string;
     original_tx_id: number;
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 export async function fetchCapitalGains(
@@ -245,7 +252,7 @@ export interface Dividend {
     DividendAmountLocal: number;
     FXRateUsed: number;
     DividendAmountDisplayCurrency: number;
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 export async function fetchDividends(
@@ -290,7 +297,7 @@ export interface SettingsUpdate {
     user_excluded_symbols?: string[];
 }
 
-export async function updateSettings(settings: SettingsUpdate): Promise<any> {
+export async function updateSettings(settings: SettingsUpdate): Promise<StatusResponse> {
     const response = await fetch(`${API_BASE_URL}/settings/update`, {
         method: "POST",
         headers: {
@@ -366,7 +373,7 @@ export async function fetchDividendCalendar(accounts?: string[]): Promise<Divide
     return res.json();
 }
 
-export async function saveManualOverride(symbol: string, price: number | null): Promise<any> {
+export async function saveManualOverride(symbol: string, price: number | null): Promise<StatusResponse> {
     const response = await fetch(`${API_BASE_URL}/settings/manual_overrides`, {
         method: "POST",
         headers: {
@@ -380,7 +387,7 @@ export async function saveManualOverride(symbol: string, price: number | null): 
     return response.json();
 }
 
-export async function triggerRefresh(secret: string): Promise<any> {
+export async function triggerRefresh(secret: string): Promise<StatusResponse> {
     const response = await fetch(`${API_BASE_URL}/webhook/refresh`, {
         method: "POST",
         headers: {

@@ -1,4 +1,4 @@
-# Welcome to Investa! A Quick Tutorial
+# Welcome to Investa v1.0! A Quick Tutorial
 
 Investa is your personal desktop assistant for keeping a close eye on your investment portfolio. It uses a local SQLite database to store your transaction history, fetches the latest market data, and then presents you with a clear, detailed picture of how your investments are doing.
 

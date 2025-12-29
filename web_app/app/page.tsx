@@ -13,7 +13,7 @@ import {
   fetchAttribution,
   fetchDividendCalendar
 } from '@/lib/api';
-import { CURRENCY_SYMBOLS } from '@/lib/utils';
+// import { CURRENCY_SYMBOLS } from '@/lib/utils';
 import Dashboard from '@/components/Dashboard';
 import HoldingsTable from '@/components/HoldingsTable';
 import AccountSelector from '@/components/AccountSelector';
@@ -131,7 +131,7 @@ export default function Home() {
   const dividendData = dividendsQuery.data || null;
   const loading = summaryQuery.isLoading;
 
-  const availableAccounts = summary?.metrics?._available_accounts || [];
+  const availableAccounts = (summary?.metrics?._available_accounts as string[]) || [];
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -171,7 +171,7 @@ export default function Home() {
               <p className="text-muted-foreground">Market data unavailable.</p>
             ) : (
               <div className="grid grid-cols-1 gap-4">
-                {Object.values(summary.metrics.indices).map((index: any) => (
+                {Object.values(summary.metrics.indices).map((index: { name: string; price: number; change: number; changesPercentage: number }) => (
                   <div key={index.name} className="flex items-center justify-between p-4 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10">
                     <span className="font-medium text-foreground text-lg">{index.name}</span>
                     <div className="flex flex-col items-end">
@@ -195,7 +195,7 @@ export default function Home() {
       case 'dividend':
         return (
           <div className="space-y-6">
-            <DividendComponent data={dividendData} currency={currency} expectedDividends={summary?.metrics?.est_annual_income_display}>
+            <DividendComponent data={dividendData} currency={currency} expectedDividends={summary?.metrics?.est_annual_income_display as number}>
               <DividendCalendar
                 events={dividendCalendarQuery.data || []}
                 isLoading={dividendCalendarQuery.isLoading}
@@ -219,6 +219,7 @@ export default function Home() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);
 
@@ -237,6 +238,7 @@ export default function Home() {
           <div className="flex items-center gap-4">
             {/* Logo - Simplified for Modern Look */}
             <div className="flex items-center gap-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={mounted && resolvedTheme === 'dark' ? "/logo-dark.png" : "/logo.png"} alt="Investa Logo" className="w-8 h-8 rounded-lg shadow-lg shadow-cyan-500/20" />
               <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
                 Investa
@@ -248,7 +250,7 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-4">
-            {summary?.metrics?.indices && Object.values(summary.metrics.indices).map((index: any) => (
+            {summary?.metrics?.indices && Object.values(summary.metrics.indices).map((index: { name: string; price: number; change: number; changesPercentage: number }) => (
               <div key={index.name} className="hidden lg:flex items-center space-x-2 text-xs font-medium px-3 py-1.5 rounded-full bg-white/5 border border-white/5 hover:bg-white/10 transition-colors">
                 <span className="text-muted-foreground">{index.name}</span>
                 <span className="text-foreground">{index.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>

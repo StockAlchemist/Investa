@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { Dividend } from '../lib/api';
 import { formatCurrency } from '../lib/utils';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 
 interface DividendProps {
     data: Dividend[] | null;
@@ -30,11 +30,13 @@ export default function Dividend({ data, currency, expectedDividends, children }
     // Sorting
     const sortedData = useMemo(() => {
         if (!data) return [];
-        let sortableItems = [...data];
+        const sortableItems = [...data];
         if (sortConfig !== null) {
             sortableItems.sort((a, b) => {
-                const aValue = a[sortConfig.key];
-                const bValue = b[sortConfig.key];
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const aValue = a[sortConfig.key] as any;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const bValue = b[sortConfig.key] as any;
 
                 if (aValue < bValue) {
                     return sortConfig.direction === 'ascending' ? -1 : 1;

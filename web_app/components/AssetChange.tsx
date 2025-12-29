@@ -17,7 +17,16 @@ const PERIOD_CONFIGS = [
 
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#0088fe', '#00C49F'];
 
-const AssetSection = ({ config, data, currency, viewMode, formatValue }: any) => {
+interface AssetSectionProps {
+    config: { key: string; title: string; dataKey: string; defaultPeriods: number };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    data: any;
+    currency: string;
+    viewMode: 'percent' | 'value';
+    formatValue: (val: number) => string;
+}
+
+const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSectionProps) => {
     const periodData = data[config.key] || [];
     const [numPeriods, setNumPeriods] = useState(config.defaultPeriods);
 
@@ -91,7 +100,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: any) =>
                                     return (
                                         <div className="bg-popover/95 backdrop-blur-sm border border-border p-3 rounded-lg shadow-xl">
                                             <p className="font-medium text-foreground mb-1">{label}</p>
-                                            {payload.map((entry: any, index: number) => (
+                                            {payload.map((entry, index) => (
                                                 <div key={index} className="flex items-center gap-2 text-sm">
                                                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
                                                     <span className="text-muted-foreground">{entry.name}:</span>
@@ -116,7 +125,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: any) =>
                                 fill={viewMode === 'percent' ? COLORS[index % COLORS.length] : undefined}
                                 radius={[4, 4, 0, 0]}
                             >
-                                {viewMode === 'value' && displayData.map((entry: any, i: number) => (
+                                {viewMode === 'value' && displayData.map((entry: Record<string, number>, i: number) => (
                                     <Cell
                                         key={`cell-${i}`}
                                         fill={entry[key] >= 0 ? '#10b981' : '#e11d48'}

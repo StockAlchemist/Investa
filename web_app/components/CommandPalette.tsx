@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 
 interface CommandPaletteProps {
     isOpen: boolean;
@@ -23,6 +22,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }: CommandP
     // Reset state when opened
     useEffect(() => {
         if (isOpen) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setQuery('');
             setSelectedIndex(0);
             setTimeout(() => inputRef.current?.focus(), 50);

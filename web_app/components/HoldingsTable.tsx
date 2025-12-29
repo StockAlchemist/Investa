@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { exportToCSV } from '../lib/export';
 import { Holding, Lot } from '../lib/api';
 
@@ -68,6 +68,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
             try {
                 const parsed = JSON.parse(savedColumns);
                 if (Array.isArray(parsed) && parsed.length > 0) {
+                    // eslint-disable-next-line react-hooks/set-state-in-effect
                     setVisibleColumns(parsed);
                 }
             } catch (e) {
@@ -118,7 +119,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
     }, []);
 
     // Helper to get value from holding object handling currency suffix
-    const getValue = (holding: Holding, header: string) => {
+    const getValue = useCallback((holding: Holding, header: string) => {
         const prefix = COLUMN_DEFINITIONS[header];
         if (!prefix) return null;
 
@@ -132,10 +133,10 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
         // Fallback: search for key starting with prefix
         const foundKey = Object.keys(holding).find(k => k.startsWith(prefix));
         return foundKey ? holding[foundKey] : null;
-    };
+    }, [currency]);
 
     // In getLotValue
-    const getLotValue = (lot: Lot, header: string, holdingPrice?: number) => {
+    const getLotValue = useCallback((lot: Lot, header: string, holdingPrice?: number) => {
         if (header === 'Quantity') return lot.Quantity;
         if (header === 'Cost Basis' || header === 'Total Buy Cost') return lot['Cost Basis'];
         if (header === 'Mkt Val') {
@@ -166,7 +167,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
         if (header === 'Account' && !visibleColumns.includes('Symbol')) return `Lot: ${lot.Date}`;
 
         return null;
-    };
+    }, [visibleColumns]);
 
     const handleSort = (header: string) => {
         setSortConfig(current => ({
@@ -190,9 +191,11 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                     : valB.localeCompare(valA);
             }
 
-            return sortConfig.direction === 'asc' ? (valA - valB) : (valB - valA);
+            const numA = typeof valA === 'number' ? valA : 0;
+            const numB = typeof valB === 'number' ? valB : 0;
+            return sortConfig.direction === 'asc' ? (numA - numB) : (numB - numA);
         });
-    }, [holdings, sortConfig, currency]);
+    }, [holdings, sortConfig, getValue]);
 
     if (!holdings || holdings.length === 0) {
         return <div className="p-4 text-center text-gray-500">No holdings found.</div>;
@@ -236,9 +239,9 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
     };
 
     // Formatters
-    const formatValue = (val: any, header: string) => {
+    const formatValue = (val: unknown, header: string) => {
         if (val === null || val === undefined) return '-';
-        if (typeof val !== 'number') return val;
+        if (typeof val !== 'number') return val as string;
 
         if (header.includes('%') || header.includes('Yield') || header.includes('Ret')) {
             return `${val.toFixed(2)}%`;
@@ -255,7 +258,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
         return val;
     };
 
-    const getCellClass = (val: any, header: string) => {
+    const getCellClass = (val: unknown, header: string) => {
         if (typeof val !== 'number') return '';
         if (['Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Real. G/L', 'Total G/L', 'Total Ret %', 'FX G/L', 'FX G/L %', 'IRR (%)'].includes(header)) {
             return val >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium';

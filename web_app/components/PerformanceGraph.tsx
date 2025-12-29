@@ -16,6 +16,19 @@ import BenchmarkSelector from './BenchmarkSelector';
 import { fetchHistory, PerformanceData } from '../lib/api';
 import { formatCurrency } from '../lib/utils';
 
+
+
+interface CustomTooltipProps {
+    active?: boolean;
+    payload?: {
+        color?: string;
+        name?: string;
+        value?: number;
+        [key: string]: unknown;
+    }[];
+    label?: string;
+}
+
 interface PerformanceGraphProps {
     currency: string;
     accounts?: string[];
@@ -84,16 +97,18 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         }
     };
 
-    const CustomTooltip = ({ active, payload, label }: any) => {
+
+
+    const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
         if (active && payload && payload.length) {
             return (
                 <div className="bg-popover/95 backdrop-blur-sm p-3 border border-border shadow-xl rounded-lg">
-                    <p className="text-sm text-foreground mb-1">{new Date(label).toLocaleDateString()}</p>
-                    {payload.map((entry: any, index: number) => (
+                    <p className="text-sm text-foreground mb-1">{label ? new Date(label).toLocaleDateString() : ''}</p>
+                    {payload.map((entry, index) => (
                         <p key={index} className="text-sm font-medium" style={{ color: entry.color }}>
                             {entry.name}: {view === 'return' || view === 'drawdown'
-                                ? `${entry.value > 0 ? '+' : ''}${entry.value.toFixed(2)}%`
-                                : formatCurrency(entry.value, currency)
+                                ? `${(entry.value as number) > 0 ? '+' : ''}${(entry.value as number).toFixed(2)}%`
+                                : formatCurrency(entry.value as number, currency)
                             }
                         </p>
                     ))}

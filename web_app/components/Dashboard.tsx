@@ -8,20 +8,32 @@ interface DashboardProps {
     currency: string;
 }
 
+interface MetricCardProps {
+    title: string;
+    value: string | number;
+    subValue?: number;
+    isCurrency?: boolean;
+    colorClass?: string;
+    valueClassName?: string;
+    containerClassName?: string;
+    subValueClassName?: string;
+    currency?: string;
+    isHero?: boolean;
+    isPercent?: boolean;
+    vertical?: boolean;
+}
+
 const MetricCard = ({
     title,
     value,
     subValue,
     isCurrency = true,
-    isPercent = false,
     colorClass = '',
-    vertical = false,
     valueClassName = 'text-2xl',
     containerClassName = '',
-    isHero = false,
     subValueClassName = '',
     currency = 'USD'
-}: any) => (
+}: MetricCardProps) => (
     <Card className={cn(
         "h-full transition-all duration-300 relative overflow-hidden group",
         "bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 border-black/5 dark:border-white/10",
@@ -33,7 +45,7 @@ const MetricCard = ({
 
             <div className="mt-2 flex items-center gap-3 flex-wrap relative z-10">
                 <h3 className={cn("font-bold tracking-tight", colorClass || "text-foreground", valueClassName)}>
-                    {value !== null && value !== undefined ? (isCurrency ? formatCurrency(value, currency) : value) : '-'}
+                    {value !== null && value !== undefined ? (isCurrency && typeof value === 'number' ? formatCurrency(value, currency) : value) : '-'}
                 </h3>
                 {subValue && (
                     <Badge variant={subValue >= 0 ? "success" : "destructive"} className={cn("text-xs font-semibold px-2 py-0.5", subValueClassName)}>
@@ -74,20 +86,21 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
     }
 
     // Prepare data helpers
-    const cashBalance = am?.['Cash']?.['total_market_value_display'] || 0;
-    const dayGL = m.day_change_display || 0;
-    const dayGLPct = m.day_change_percent || 0;
-    const unrealizedGL = m.unrealized_gain || 0;
-    const unrealizedGLPct = (m.unrealized_gain / (m.cost_basis_held || 1)) * 100;
-    const fxGL = m.fx_gain_loss_display || 0;
-    const fxGLPct = m.fx_gain_loss_pct || 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cashBalance = (am?.['Cash'] as any)?.['total_market_value_display'] || 0;
+    const dayGL = (m.day_change_display as number) || 0;
+    const dayGLPct = (m.day_change_percent as number) || 0;
+    const unrealizedGL = (m.unrealized_gain as number) || 0;
+    const unrealizedGLPct = ((m.unrealized_gain as number) / ((m.cost_basis_held as number) || 1)) * 100;
+    const fxGL = (m.fx_gain_loss_display as number) || 0;
+    const fxGLPct = (m.fx_gain_loss_pct as number) || 0;
 
     const dayGLColor = dayGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
     const unrealizedGLColor = unrealizedGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
     const fxGLColor = fxGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
 
-    const totalGain = m.total_gain || 0;
-    const realizedGain = m.realized_gain || 0;
+    const totalGain = (m.total_gain as number) || 0;
+    const realizedGain = (m.realized_gain as number) || 0;
 
     const totalReturnColor = totalGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
     const realizedGainColor = realizedGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';

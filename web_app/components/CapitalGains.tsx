@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { CapitalGain } from '../lib/api';
 import { formatCurrency } from '../lib/utils';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 
 interface CapitalGainsProps {
     data: CapitalGain[] | null;
@@ -28,11 +28,14 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
     // Sorting
     const sortedData = useMemo(() => {
         if (!data) return [];
+        // eslint-disable-next-line
         let sortableItems = [...data];
         if (sortConfig !== null) {
             sortableItems.sort((a, b) => {
-                const aValue = a[sortConfig.key];
-                const bValue = b[sortConfig.key];
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const aValue = a[sortConfig.key] as any;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const bValue = b[sortConfig.key] as any;
 
                 if (aValue < bValue) {
                     return sortConfig.direction === 'ascending' ? -1 : 1;
@@ -201,10 +204,10 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                                     <th
                                         key={header}
                                         onClick={() => requestSort(
-                                            header === 'Realized Gain' ? 'Realized Gain (Display)' as any :
-                                                header === 'Proceeds' ? 'Total Proceeds (Display)' as any :
-                                                    header === 'Cost Basis' ? 'Total Cost Basis (Display)' as any :
-                                                        header as any
+                                            header === 'Realized Gain' ? 'Realized Gain (Display)' :
+                                                header === 'Proceeds' ? 'Total Proceeds (Display)' :
+                                                    header === 'Cost Basis' ? 'Total Cost Basis (Display)' :
+                                                        header as keyof CapitalGain
                                         )}
                                         className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                                     >

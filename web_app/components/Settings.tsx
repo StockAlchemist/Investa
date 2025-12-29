@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { fetchSettings, updateSettings, triggerRefresh, fetchHoldings, Settings as SettingsType, ManualOverride, ManualOverrideData } from '../lib/api';
-import { COUNTRIES, ALL_INDUSTRIES, SECTOR_INDUSTRY_MAP } from '../lib/constants';
+import { COUNTRIES, ALL_INDUSTRIES } from '../lib/constants';
 
 type Tab = 'overrides' | 'mapping' | 'excluded';
 
@@ -193,7 +193,8 @@ export default function Settings() {
             setOverrideIndustry('');
 
             await loadSettings(true);
-        } catch (err) {
+            await loadSettings(true);
+        } catch {
             alert('Failed to save override');
         }
     };
@@ -218,7 +219,7 @@ export default function Settings() {
         try {
             await updateSettings({ manual_price_overrides: cleanedOverrides });
             await loadSettings(true);
-        } catch (err) {
+        } catch {
             alert('Failed to remove override');
         }
     };
@@ -234,7 +235,7 @@ export default function Settings() {
             setMapFrom('');
             setMapTo('');
             await loadSettings(true);
-        } catch (err) {
+        } catch {
             alert('Failed to save mapping');
         }
     };
@@ -247,7 +248,7 @@ export default function Settings() {
         try {
             await updateSettings({ user_symbol_map: currentMap });
             await loadSettings(true);
-        } catch (err) {
+        } catch {
             alert('Failed to remove mapping');
         }
     };
@@ -265,7 +266,7 @@ export default function Settings() {
             await updateSettings({ user_excluded_symbols: currentList });
             setExcludeSymbol('');
             await loadSettings(true);
-        } catch (err) {
+        } catch {
             alert('Failed to add excluded symbol');
         }
     };
@@ -277,7 +278,7 @@ export default function Settings() {
         try {
             await updateSettings({ user_excluded_symbols: currentList });
             await loadSettings(true);
-        } catch (err) {
+        } catch {
             alert('Failed to remove excluded symbol');
         }
     };
@@ -285,9 +286,10 @@ export default function Settings() {
     const handleRefresh = async () => {
         try {
             const res = await triggerRefresh(refreshSecret);
-            setRefreshStatus(res.message);
-        } catch (err: any) {
-            setRefreshStatus(`Error: ${err.message}`);
+            setRefreshStatus(res.message || null);
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            setRefreshStatus(`Error: ${message}`);
         }
     }
 
