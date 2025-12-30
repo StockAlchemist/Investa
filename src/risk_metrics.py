@@ -142,7 +142,7 @@ def calculate_sortino_ratio(
     downside_returns = returns_series[returns_series < target_return]
     
     if downside_returns.empty:
-        return float('inf') if mean_excess_return > 0 else 0.0
+        return 0.0 # Return 0 instead of inf for JSON compatibility and safety
         
     # Calculate downside deviation (using 0 as the target for deviation calculation usually, 
     # or the mean of downside? Standard is root mean squared of deviations below target)
@@ -155,7 +155,7 @@ def calculate_sortino_ratio(
     downside_deviation = np.sqrt(squared_underperformance.mean())
     
     if downside_deviation == 0:
-        return float('inf') if mean_excess_return > 0 else 0.0
+        return 0.0
         
     sortino_daily = mean_excess_return / downside_deviation
     sortino_annual = sortino_daily * np.sqrt(periods_per_year)
@@ -182,7 +182,8 @@ def calculate_all_risk_metrics(
         return {}
         
     # Calculate returns
-    returns = portfolio_values.pct_change().dropna()
+    # Calculate returns and replace inf with NaN so they can be dropped or handled
+    returns = portfolio_values.pct_change().replace([np.inf, -np.inf], np.nan).dropna()
     
     mdd = calculate_max_drawdown(portfolio_values)
     vol = calculate_volatility(returns, periods_per_year)

@@ -731,7 +731,7 @@ async def get_history(
                 
             result.append(item)
             
-        return result
+        return clean_nans(result)
 
     except Exception as e:
         logging.error(f"Error getting history: {e}", exc_info=True)
@@ -1062,7 +1062,7 @@ async def get_risk_metrics(
 
         portfolio_values = daily_df["Portfolio Value"]
         metrics = calculate_all_risk_metrics(portfolio_values)
-        return metrics
+        return clean_nans(metrics)
     except Exception as e:
         logging.error(f"Error calculating risk metrics: {e}")
         return {"error": str(e)}
@@ -1163,11 +1163,11 @@ async def get_attribution(
         sector_attribution.sort(key=lambda x: abs(x["contribution"]), reverse=True)
         stock_data.sort(key=lambda x: abs(x["gain"]), reverse=True)
 
-        return {
+        return clean_nans({
             "sectors": sector_attribution,
             "stocks": stock_data[:10], # Top 10 contributors/detractors
             "total_gain": total_gain
-        }
+        })
     except Exception as e:
         logging.error(f"Error calculating attribution: {e}")
         return {"error": str(e)}
@@ -1258,7 +1258,7 @@ async def get_dividend_calendar(
             except Exception as e_cal:
                 logging.warning(f"Failed to fetch calendar for {sym}: {e_cal}")
 
-        return calendar_events
+        return clean_nans(calendar_events)
     except Exception as e:
         logging.error(f"Error fetching dividend calendar: {e}")
         return {"error": str(e)}
