@@ -261,7 +261,8 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
     const getCellClass = (val: unknown, header: string) => {
         if (typeof val !== 'number') return '';
         if (['Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Real. G/L', 'Total G/L', 'Total Ret %', 'FX G/L', 'FX G/L %', 'IRR (%)'].includes(header)) {
-            return val >= 0 ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-rose-600 dark:text-rose-400 font-medium';
+            if (Math.abs(val) < 0.001) return 'text-muted-foreground';
+            return val > 0 ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-rose-600 dark:text-rose-400 font-medium';
         }
         return '';
     };
@@ -367,7 +368,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                                     {visibleColumns.map(header => {
                                         const val = getValue(holding, header);
                                         return (
-                                            <td key={header} className={`px-6 py-4 whitespace-nowrap text-sm text-right ${getCellClass(val, header)} ${header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
+                                            <td key={header} className={`px-6 py-4 whitespace-nowrap text-sm text-right ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')}`}>
                                                 {formatValue(val, header)}
                                             </td>
                                         );
@@ -380,7 +381,7 @@ export default function HoldingsTable({ holdings, currency }: HoldingsTableProps
                                                 const holdingPrice = getValue(holding, "Price") as number;
                                                 const val = getLotValue(lot, header, holdingPrice);
                                                 return (
-                                                    <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-t border-white/5 ${getCellClass(val, header)} ${header === 'Symbol' ? 'pl-10 text-muted-foreground italic' : ''}`}>
+                                                    <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-t border-white/5 ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic' : 'text-muted-foreground')}`}>
                                                         {formatValue(val, header)}
                                                     </td>
                                                 );
