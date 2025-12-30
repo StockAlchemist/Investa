@@ -160,21 +160,19 @@ export default function AssetChange({ data, currency }: AssetChangeProps) {
                 <span className="text-sm font-medium text-muted-foreground self-center">View:</span>
                 <div className="inline-flex rounded-lg shadow-sm bg-secondary p-1 border border-border">
                     <button
-                        type="button"
                         onClick={() => setViewMode('percent')}
-                        className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'percent' // or 'value'
-                            ? 'bg-card text-foreground shadow-sm ring-1 ring-border'
-                            : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
+                        className={`whitespace-nowrap py-1.5 px-4 rounded text-sm font-medium transition-all ${viewMode === 'percent'
+                            ? 'bg-[#0097b2] text-white shadow-sm'
+                            : 'text-muted-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800'
                             }`}
                     >
                         Percentage (%)
                     </button>
                     <button
-                        type="button"
                         onClick={() => setViewMode('value')}
-                        className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'value'
-                            ? 'bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 shadow-sm ring-1 ring-cyan-500/50'
-                            : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
+                        className={`whitespace-nowrap py-1.5 px-4 rounded text-sm font-medium transition-all ${viewMode === 'value'
+                            ? 'bg-[#0097b2] text-white shadow-sm'
+                            : 'text-muted-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800'
                             }`}
                     >
                         Value ({currency})

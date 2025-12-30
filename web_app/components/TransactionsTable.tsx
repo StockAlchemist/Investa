@@ -141,7 +141,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                     <div className="flex flex-wrap gap-2 w-full md:w-auto">
                         <button
                             onClick={handleAdd}
-                            className="flex-1 md:flex-none px-4 py-2 bg-cyan-600 text-white rounded-md hover:bg-cyan-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                            className="flex-1 md:flex-none px-4 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium shadow-sm flex items-center justify-center gap-2"
                         >
                             <span>+</span> Add Transaction
                         </button>
@@ -363,13 +363,13 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                     <div className="flex justify-center gap-4 p-4 border-t border-black/5 dark:border-white/10">
                         <button
                             onClick={handleShowMore}
-                            className="px-4 py-2 bg-cyan-600 text-white rounded-md hover:bg-cyan-700 transition-colors text-sm font-medium"
+                            className="px-4 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium shadow-sm"
                         >
                             Show More
                         </button>
                         <button
                             onClick={handleShowAll}
-                            className="px-4 py-2 bg-secondary text-foreground border border-border rounded-md hover:bg-accent/10 transition-colors text-sm font-medium"
+                            className="px-4 py-2 bg-card text-foreground border border-border rounded-md hover:bg-secondary transition-colors text-sm font-medium shadow-sm"
                         >
                             Show All
                         </button>
