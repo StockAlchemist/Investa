@@ -65,14 +65,14 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                     <div className="py-1 max-h-60 overflow-y-auto">
                         <button
                             onClick={handleSelectAll}
-                            className={`group flex items-center justify-between w-full px-4 py-3 text-sm font-medium ${isAllSelected
-                                ? 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400'
-                                : 'text-popover-foreground'
-                                } hover:bg-accent/10 transition-colors border-b border-border`}
+                            className={`group flex items-center justify-between w-full px-4 py-3 text-sm font-medium transition-colors ${isAllSelected
+                                ? 'bg-brand text-brand-foreground'
+                                : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
+                                }`}
                         >
                             <span className="whitespace-nowrap">All Accounts</span>
                             {isAllSelected && (
-                                <svg className="w-4 h-4 text-cyan-600 dark:text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-4 h-4 text-brand-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                 </svg>
                             )}
@@ -84,14 +84,14 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                                 <button
                                     key={account}
                                     onClick={() => toggleAccount(account)}
-                                    className={`group flex items-center justify-between w-full px-4 py-3 text-sm font-medium ${isSelected
-                                        ? 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400'
-                                        : 'text-popover-foreground'
-                                        } hover:bg-accent/10 transition-colors border-b border-border last:border-0`}
+                                    className={`group flex items-center justify-between w-full px-4 py-3 text-sm font-medium transition-colors ${isSelected
+                                        ? 'bg-brand text-brand-foreground'
+                                        : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
+                                        } last:border-0`}
                                 >
                                     <span className="whitespace-nowrap">{account}</span>
                                     {isSelected && (
-                                        <svg className="w-4 h-4 text-cyan-600 dark:text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <svg className="w-4 h-4 text-brand-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                         </svg>
                                     )}
