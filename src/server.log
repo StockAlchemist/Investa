@@ -1,1412 +1,315 @@
-INFO:     Will watch for changes in these directories: ['/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src']
-INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [30643] using StatReload
-INFO:     Started server process [30851]
+Checking for existing Investa processes...
+Killing existing backend on port 8000...
+Killing existing frontend on port 3000...
+Warning: client version "1.92.3-t9a08e8f1c" != tailscaled server version "1.90.9-t66826a496"
+==================================================
+Tailscale IP: 100.66.59.98
+You can access the API at: http://100.66.59.98:8000/api/
+==================================================
+Starting Investa Server...
+Starting Web App...
+Investa is running.
+Backend PID: 82720
+Frontend PID: 82825
+Press Ctrl+C to stop both.
+
+> web_app@1.0.1 dev
+> next dev -H 0.0.0.0 -H 0.0.0.0
+
+   ▲ Next.js 16.0.6 (Turbopack)
+   - Local:         http://localhost:3000
+   - Network:       http://0.0.0.0:3000
+
+ ✓ Starting...
+ ✓ Ready in 660ms
+INFO:     Will watch for changes in these directories: ['/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/apps/python/Investa']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [82735] using StatReload
+INFO:     Started server process [82855]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-DEBUG: Executing main.py from /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server/main.py
-DEBUG: CWD is /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src
-DEBUG: sys.path is ['/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/research/magcalc/pyMagCalc', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python312.zip', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/lib-dynload', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages']
-INFO:     127.0.0.1:51501 - "GET /api/dividends?currency=USD HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51541 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51543 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-04, end=2025-12-04
-INFO:     127.0.0.1:51543 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-04, end=2025-12-04
-INFO:     127.0.0.1:51541 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51541 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51543 - "GET /api/dividends?currency=USD HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-04, end=2025-12-04
-INFO:     127.0.0.1:51723 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51724 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51725 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-04, end=2025-12-04
-INFO:     127.0.0.1:51727 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-04, end=2025-12-04
-INFO:     127.0.0.1:51725 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-04, end=2025-12-04
-INFO:     127.0.0.1:51727 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51747 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51748 - "GET /api/dividends?currency=USD HTTP/1.1" 200 OK
-WARNING:root:Hist WARN (Scope: All Accounts): No market days found. Using business day range.
-2025-12-04 09:10:24 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-01
-2025-12-04 09:10:24 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-02
-2025-12-04 09:10:24 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-02-21
-2025-12-04 09:10:24 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-10-16
-2025-12-04 09:10:24 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-03
-2025-12-04 09:10:24 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-02-24
-2025-12-04 09:10:24 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-10-17
-2025-12-04 09:10:24 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-04
-2025-12-04 09:10:24 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-02-25
-2025-12-04 09:10:24 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-05
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-10-20
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-02-26
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-08
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-10-21
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-09
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-02-27
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-10-22
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-10
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-02-28
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-10-23
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-11
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-03
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-10-24
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-12
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-04
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-15
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-05
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-10-27
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-16
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-06
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-10-28
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-17
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-10-29
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-18
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-07
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-10-30
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-19
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-10-31
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-22
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-10
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-03
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-23
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-04
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-24
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-11
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-05
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-25
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-12
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-06
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-26
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-13
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-29
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-07
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-14
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-30
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-17
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-07-31
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-10
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-18
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-19
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-11
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-01
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-20
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-12
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-21
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-13
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-02
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-24
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-14
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-05
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-25
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-17
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-06
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-26
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-18
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-07
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-27
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-19
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-08
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-28
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-20
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-09
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-03-31
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-21
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-12
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-01
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-24
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-13
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-02
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-25
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-14
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-03
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-26
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-15
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-04
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-27
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-16
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-07
-2025-12-04 09:10:25 [WARNING ] PID:31451 {portfolio_logic:2950} Valuation failed for date: 2003-11-28
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-19
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-08
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-20
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-09
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-21
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-10
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-22
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-11
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-23
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-26
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-27
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-14
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-28
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-15
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-29
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-16
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-08-30
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-17
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-02
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-18
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-03
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-21
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-04
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-22
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-23
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-24
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-05
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-25
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-28
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-06
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-29
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-09
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-04-30
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-10
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-01
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-02
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-05
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-11
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-06
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-12
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-07
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-13
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-08
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-16
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-09
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-17
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-12
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-18
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-13
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-19
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-14
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-20
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-15
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-23
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-16
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-24
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-19
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-25
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-26
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-20
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-27
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-09-30
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-21
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-01
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-22
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-02
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-23
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-03
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-26
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-04
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-27
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-07
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-28
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-08
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-29
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-09
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-05-30
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-10
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-02
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-03
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-04
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-05
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-11
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-06
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-09
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-14
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-10
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-15
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-11
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-16
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-12
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-17
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-13
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-18
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-16
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-21
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-17
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-22
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-18
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-23
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-19
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-24
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-20
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-25
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-23
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-28
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-29
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-24
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-30
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-25
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-26
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-10-31
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-27
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-06-30
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-01
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-02
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-01
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-03
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-04
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-05
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-04
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-06
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-07
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-07
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-08
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-08
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-11
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-09
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-10
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-12
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-13
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-14
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-15
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-11
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-14
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-15
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-16
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-18
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-19
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-17
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-20
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-18
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-21
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-21
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-22
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-22
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-25
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-23
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-26
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-27
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-24
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-28
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-25
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-11-29
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-28
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-02
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-29
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-03
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-30
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-04
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-07-31
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-05
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-01
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-06
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-04
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-09
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-05
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-10
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-06
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-11
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-12
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-07
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-13
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-16
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-17
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-08
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-18
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-11
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-19
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-12
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-20
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-13
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-23
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-14
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-24
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-15
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-25
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-18
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-19
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-26
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-20
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-27
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-30
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-21
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2002-12-31
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-01
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-22
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-02
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-25
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-03
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-26
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-06
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-27
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-07
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-28
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-08
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-08-29
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-09
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-10
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-01
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-13
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-02
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-14
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-03
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-15
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-04
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-16
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-05
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-17
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-08
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-20
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-09
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-21
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-10
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-22
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-11
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-23
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-12
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-24
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-15
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-27
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-16
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-28
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-17
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-29
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-18
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-30
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-19
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-01-31
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-22
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-02-03
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-23
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-02-04
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-24
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-02-05
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-25
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-02-06
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-26
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-02-07
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-29
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-09-30
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-02-10
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-10-01
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-02-11
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-02-12
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-10-02
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-02-13
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-10-03
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-10-06
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-10-07
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-02-14
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-10-08
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-02-17
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-10-09
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-02-18
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-10-10
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-02-19
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-10-13
-2025-12-04 09:10:25 [WARNING ] PID:31449 {portfolio_logic:2950} Valuation failed for date: 2003-02-20
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-10-14
-2025-12-04 09:10:25 [WARNING ] PID:31454 {portfolio_logic:2950} Valuation failed for date: 2003-10-15
-INFO:     127.0.0.1:51863 - "GET /api/summary?currency=THB HTTP/1.1" 200 OK
-WARNING:root:Hist WARN (Scope: All Accounts): No market days found. Using business day range.
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-02-21
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-02-24
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-02-25
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-01
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-02-26
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-02
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-02-27
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-03
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-02-28
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-04
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-03
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-05
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-04
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-08
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-05
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-09
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-06
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-10
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-07
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-11
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-10
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-12
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-11
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-15
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-12
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-16
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-13
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-17
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-14
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-18
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-17
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-19
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-18
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-19
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-22
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-20
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-21
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-23
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-24
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-24
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-25
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-25
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-26
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-26
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-27
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-29
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-28
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-30
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-03-31
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-07-31
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-01
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-01
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-02
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-02
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-03
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-05
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-04
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-06
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-07
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-07
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-08
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-08
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-09
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-09
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-10
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-12
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-11
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-13
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-14
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-14
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-15
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-16
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-10-16
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-17
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-15
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-10-17
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-18
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-10-20
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-21
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-10-21
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-22
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-16
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-23
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-10-22
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-24
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-10-23
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-25
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-10-24
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-28
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-10-27
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-19
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-29
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-10-28
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-20
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-10-29
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-04-30
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-10-30
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-01
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-02
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-10-31
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-21
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-03
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-22
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-04
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-05
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-05
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-23
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-06
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-06
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-07
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-26
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-07
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-10
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-08
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-11
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-27
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-09
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-12
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-28
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-12
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-13
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-13
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-14
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-29
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-14
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-17
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-18
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-15
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-08-30
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-19
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-02
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-16
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-20
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-03
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-19
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-21
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-04
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-24
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-20
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-25
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-05
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-21
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-26
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-06
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-22
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-27
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-23
-2025-12-04 09:10:42 [WARNING ] PID:31476 {portfolio_logic:2950} Valuation failed for date: 2003-11-28
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-09
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-26
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-10
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-27
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-11
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-28
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-12
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-29
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-13
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-05-30
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-16
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-02
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-17
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-03
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-18
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-04
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-19
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-05
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-06
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-20
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-09
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-10
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-23
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-11
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-24
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-25
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-12
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-26
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-27
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-13
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-09-30
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-01
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-16
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-02
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-03
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-04
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-17
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-07
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-08
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-18
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-09
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-19
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-10
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-20
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-11
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-23
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-14
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-15
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-16
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-17
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-24
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-18
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-25
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-21
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-26
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-22
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-27
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-06-30
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-23
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-01
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-24
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-02
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-25
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-28
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-03
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-29
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-30
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-10-31
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-04
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-01
-2025-12-04 09:10:42 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-07
-2025-12-04 09:10:42 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-04
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-05
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-06
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-08
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-07
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-09
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-08
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-10
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-11
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-12
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-13
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-14
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-15
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-11
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-14
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-15
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-16
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-17
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-18
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-18
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-21
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-19
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-22
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-20
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-23
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-24
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-21
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-22
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-25
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-25
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-26
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-28
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-27
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-28
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-11-29
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-29
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-02
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-30
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-03
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-07-31
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-04
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-05
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-06
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-01
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-09
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-04
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-10
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-05
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-11
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-06
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-12
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-07
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-13
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-08
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-11
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-16
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-12
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-17
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-13
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-18
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-14
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-19
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-15
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-20
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-23
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-18
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-24
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-25
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-19
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-26
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-20
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-21
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-22
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-27
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-25
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-30
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-26
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2002-12-31
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-27
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-01
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-28
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-02
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-08-29
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-03
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-01
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-06
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-02
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-07
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-03
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-08
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-04
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-09
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-10
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-05
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-13
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-14
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-08
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-15
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-09
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-10
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-11
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-16
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-12
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-15
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-17
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-16
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-20
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-17
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-21
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-18
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-22
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-19
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-23
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-22
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-24
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-23
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-27
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-28
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-29
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-24
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-30
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-25
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-01-31
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-26
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-02-03
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-29
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-02-04
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-09-30
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-02-05
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-10-01
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-10-02
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-02-06
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-10-03
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-02-07
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-10-06
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-02-10
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-02-11
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-10-07
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-02-12
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-02-13
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-02-14
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-10-08
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-02-17
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-02-18
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-10-09
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-02-19
-2025-12-04 09:10:43 [WARNING ] PID:31469 {portfolio_logic:2950} Valuation failed for date: 2003-02-20
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-10-10
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-10-13
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-10-14
-2025-12-04 09:10:43 [WARNING ] PID:31468 {portfolio_logic:2950} Valuation failed for date: 2003-10-15
-INFO:     127.0.0.1:51864 - "GET /api/dividends?currency=THB HTTP/1.1" 200 OK
-WARNING:root:Hist WARN (Scope: All Accounts): No market days found. Using business day range.
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-04, end=2025-12-04
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-01
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-02-21
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-02
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-03
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-02-24
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-02-25
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-02-26
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-04
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-02-27
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-02-28
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-05
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-03
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-08
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-04
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-09
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-05
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-10
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-06
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-11
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-07
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-10
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-12
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-15
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-11
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-12
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-16
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-13
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-17
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-18
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-14
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-19
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-22
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-17
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-23
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-18
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-24
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-19
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-20
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-25
-2025-12-04 09:11:25 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-21
-2025-12-04 09:11:25 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-26
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-24
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-29
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-25
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-30
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-26
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-07-31
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-27
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-01
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-28
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-02
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-03-31
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-05
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-06
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-01
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-07
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-08
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-02
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-09
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-03
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-12
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-04
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-13
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-14
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-07
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-15
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-08
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-16
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-19
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-20
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-09
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-21
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-10
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-11
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-22
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-14
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-23
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-15
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-10-16
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-26
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-16
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-27
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-17
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-28
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-10-17
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-18
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-10-20
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-21
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-10-21
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-22
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-23
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-29
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-10-22
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-24
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-08-30
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-10-23
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-25
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-02
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-10-24
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-28
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-10-27
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-29
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-10-28
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-04-30
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-03
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-01
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-04
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-10-29
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-02
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-05
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-05
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-10-30
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-06
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-06
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-10-31
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-09
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-07
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-10
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-03
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-08
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-04
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-11
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-05
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-09
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-12
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-06
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-12
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-07
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-13
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-13
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-10
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-14
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-16
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-11
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-17
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-12
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-15
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-18
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-13
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-16
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-14
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-19
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-17
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-20
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-18
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-21
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-19
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-22
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-20
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-21
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-19
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-23
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-24
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-25
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-20
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-23
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-26
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-26
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-24
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-27
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-27
-2025-12-04 09:11:26 [WARNING ] PID:31499 {portfolio_logic:2950} Valuation failed for date: 2003-11-28
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-28
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-25
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-29
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-26
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-05-30
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-02
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-03
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-04
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-05
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-27
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-06
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-09
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-09-30
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-10
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-11
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-01
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-02
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-03
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-12
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-04
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-13
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-16
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-07
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-17
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-08
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-09
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-18
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-10
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-11
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-14
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-19
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-20
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-15
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-23
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-16
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-24
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-25
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-17
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-26
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-27
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-06-30
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-18
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-01
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-21
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-02
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-22
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-03
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-23
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-04
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-24
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-07
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-25
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-28
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-08
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-29
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-09
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-30
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-10-31
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-10
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-01
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-04
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-05
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-06
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-07
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-08
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-11
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-12
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-13
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-14
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-15
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-11
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-14
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-15
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-16
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-17
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-18
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-21
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-22
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-23
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-24
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-25
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-28
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-29
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-30
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-07-31
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-01
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-18
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-04
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-19
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-05
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-20
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-06
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-21
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-07
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-22
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-08
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-25
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-11
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-26
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-12
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-27
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-13
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-28
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-14
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-11-29
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-15
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-02
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-18
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-03
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-19
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-04
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-20
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-05
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-21
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-22
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-25
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-06
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-09
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-10
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-26
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-27
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-11
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-28
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-12
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-08-29
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-13
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-16
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-01
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-17
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-02
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-18
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-03
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-19
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-04
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-20
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-05
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-23
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-08
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-09
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-24
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-10
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-11
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-25
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-12
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-26
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-27
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-15
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-30
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2002-12-31
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-16
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-01
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-17
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-02
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-18
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-03
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-06
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-07
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-19
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-08
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-09
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-10
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-22
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-13
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-23
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-24
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-14
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-25
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-15
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-26
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-16
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-29
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-17
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-09-30
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-20
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-10-01
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-21
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-10-02
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-10-03
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-22
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-10-06
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-23
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-24
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-10-07
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-27
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-10-08
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-28
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-10-09
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-10-10
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-29
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-10-13
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-30
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-01-31
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-10-14
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-02-03
-2025-12-04 09:11:26 [WARNING ] PID:31504 {portfolio_logic:2950} Valuation failed for date: 2003-10-15
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-02-04
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-02-05
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-02-06
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-02-07
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-02-10
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-02-11
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-02-12
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-02-13
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-02-14
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-02-17
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-02-18
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-02-19
-2025-12-04 09:11:26 [WARNING ] PID:31497 {portfolio_logic:2950} Valuation failed for date: 2003-02-20
-INFO:     127.0.0.1:51907 - "GET /api/history?currency=THB&period=1y HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51908 - "GET /api/summary?currency=THB HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51909 - "GET /api/holdings?currency=THB HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-04, end=2025-12-04
-INFO:     127.0.0.1:51925 - "GET /api/history?currency=THB&period=1y HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-04, end=2025-12-04
-INFO:     127.0.0.1:51909 - "GET /api/history?currency=THB&period=1y HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-04, end=2025-12-04
-INFO:     127.0.0.1:51925 - "GET /api/history?currency=THB&period=1y HTTP/1.1" 200 OK
-WARNING:root:Hist WARN (Scope: All Accounts): No market days found. Using business day range.
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-04, end=2025-12-04
-INFO:     127.0.0.1:52061 - "GET /api/history?currency=JPY&period=1y HTTP/1.1" 200 OK
-WARNING:root:Hist WARN (Scope: All Accounts): No market days found. Using business day range.
-INFO:     127.0.0.1:52062 - "GET /api/summary?currency=JPY HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52063 - "GET /api/holdings?currency=JPY HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52157 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52274 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52276 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52297 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52296 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-04, end=2025-12-04
-INFO:     127.0.0.1:52296 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-04, end=2025-12-04
-INFO:     127.0.0.1:52300 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-04, end=2025-12-04
-INFO:     127.0.0.1:52300 - "GET /api/history?currency=THB&period=1y HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52296 - "GET /api/summary?currency=THB HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52303 - "GET /api/holdings?currency=THB HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-04, end=2025-12-04
-INFO:     127.0.0.1:52303 - "GET /api/history?currency=THB&period=1y HTTP/1.1" 200 OK
-DEBUG API: History Request: period=1y, benchmarks=None
-DEBUG API: History Date Range: start=2024-12-04, end=2025-12-04
-INFO:     127.0.0.1:52305 - "GET /api/history?currency=THB&period=1y HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52387 - "GET /api/summary?currency=THB HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52389 - "GET /api/transactions HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52419 - "GET /api/summary?currency=THB HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52420 - "GET /api/holdings?currency=THB HTTP/1.1" 200 OK
-WARNING:  StatReload detected changes in 'market_data.py'. Reloading...
+ ○ Compiling / ...
+ GET / 200 in 3.9s (compile: 3.7s, render: 179ms)
+INFO:     127.0.0.1:56393 - "GET /api/history?currency=USD&period=7d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56392 - "GET /api/attribution?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56389 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56390 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56391 - "GET /api/risk_metrics?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56389 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56391 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56465 - "POST /api/watchlist HTTP/1.1" 200 OK
+ GET / 200 in 57ms (compile: 18ms, render: 38ms)
+INFO:     127.0.0.1:56534 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56536 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56540 - "GET /api/history?currency=USD&period=7d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56537 - "GET /api/risk_metrics?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56539 - "GET /api/attribution?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56534 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56539 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56539 - "OPTIONS /api/watchlist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56539 - "POST /api/watchlist HTTP/1.1" 200 OK
+ERROR:root:Failed to fetch quotes for watchlist: too many values to unpack (expected 2)
+WARNING:root:Failed to fetch sparkline for AMZN: MarketDataProvider.get_historical_data() got an unexpected keyword argument 'period'
+WARNING:root:Failed to fetch sparkline for TEST: MarketDataProvider.get_historical_data() got an unexpected keyword argument 'period'
+INFO:     127.0.0.1:56539 - "GET /api/watchlist?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56565 - "OPTIONS /api/watchlist/TEST HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56565 - "DELETE /api/watchlist/TEST HTTP/1.1" 200 OK
+ERROR:root:Failed to fetch quotes for watchlist: too many values to unpack (expected 2)
+WARNING:root:Failed to fetch sparkline for AMZN: MarketDataProvider.get_historical_data() got an unexpected keyword argument 'period'
+INFO:     127.0.0.1:56565 - "GET /api/watchlist?currency=USD HTTP/1.1" 200 OK
+ GET / 200 in 44ms (compile: 8ms, render: 36ms)
+INFO:     127.0.0.1:56595 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56596 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56599 - "GET /api/risk_metrics?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56601 - "GET /api/attribution?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56602 - "GET /api/history?currency=USD&period=7d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56595 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56602 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+ERROR:root:Failed to fetch quotes for watchlist: too many values to unpack (expected 2)
+WARNING:root:Failed to fetch sparkline for AMZN: MarketDataProvider.get_historical_data() got an unexpected keyword argument 'period'
+INFO:     127.0.0.1:56602 - "GET /api/watchlist?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56736 - "GET /api/transactions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56736 - "POST /api/watchlist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56740 - "POST /api/watchlist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56740 - "POST /api/watchlist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56740 - "POST /api/watchlist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56740 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56743 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56743 - "POST /api/watchlist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56743 - "POST /api/watchlist HTTP/1.1" 200 OK
+ERROR:root:Failed to fetch quotes for watchlist: too many values to unpack (expected 2)
+WARNING:root:Failed to fetch sparkline for BRK.B: MarketDataProvider.get_historical_data() got an unexpected keyword argument 'period'
+WARNING:root:Failed to fetch sparkline for GOOG: MarketDataProvider.get_historical_data() got an unexpected keyword argument 'period'
+WARNING:root:Failed to fetch sparkline for UNH: MarketDataProvider.get_historical_data() got an unexpected keyword argument 'period'
+WARNING:root:Failed to fetch sparkline for VHT: MarketDataProvider.get_historical_data() got an unexpected keyword argument 'period'
+WARNING:root:Failed to fetch sparkline for AMZN: MarketDataProvider.get_historical_data() got an unexpected keyword argument 'period'
+INFO:     127.0.0.1:56743 - "GET /api/watchlist?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56791 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56791 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+WARNING:  StatReload detected changes in 'src/server/api.py'. Reloading...
 INFO:     Shutting down
 INFO:     Waiting for application shutdown.
 INFO:     Application shutdown complete.
-INFO:     Finished server process [30851]
-Process SpawnProcess-2:
-Traceback (most recent call last):
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/multiprocessing/process.py", line 314, in _bootstrap
-    self.run()
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/multiprocessing/process.py", line 108, in run
-    self._target(*self._args, **self._kwargs)
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
-    target(sockets=sockets)
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/server.py", line 67, in run
-    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/asyncio/runners.py", line 195, in run
-    return runner.run(main)
-           ^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/asyncio/runners.py", line 118, in run
-    return self._loop.run_until_complete(task)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
-    return future.result()
-           ^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/server.py", line 71, in serve
-    await self._serve(sockets)
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/server.py", line 78, in _serve
-    config.load()
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/config.py", line 439, in load
-    self.loaded_app = import_from_string(self.app)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/importer.py", line 19, in import_from_string
-    module = importlib.import_module(module_str)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/importlib/__init__.py", line 90, in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
-  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
-  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
-  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
-  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
-  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
-  File "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server/main.py", line 17, in <module>
-    from server.api import router as api_router
-  File "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server/api.py", line 8, in <module>
-    from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
-  File "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/portfolio_logic.py", line 129, in <module>
-    from market_data import MarketDataProvider
-  File "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/market_data.py", line 811
-    )  # Error = True, Warning = True
-    ^
-SyntaxError: unmatched ')'
-DEBUG: Executing main.py from /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server/main.py
-DEBUG: CWD is /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src
-DEBUG: sys.path is ['/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/research/magcalc/pyMagCalc', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python312.zip', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/lib-dynload', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages']
-WARNING:  StatReload detected changes in 'market_data.py'. Reloading...
-Process SpawnProcess-3:
-Traceback (most recent call last):
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/multiprocessing/process.py", line 314, in _bootstrap
-    self.run()
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/multiprocessing/process.py", line 108, in run
-    self._target(*self._args, **self._kwargs)
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
-    target(sockets=sockets)
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/server.py", line 67, in run
-    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/asyncio/runners.py", line 195, in run
-    return runner.run(main)
-           ^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/asyncio/runners.py", line 118, in run
-    return self._loop.run_until_complete(task)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
-    return future.result()
-           ^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/server.py", line 71, in serve
-    await self._serve(sockets)
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/server.py", line 78, in _serve
-    config.load()
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/config.py", line 439, in load
-    self.loaded_app = import_from_string(self.app)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/importer.py", line 19, in import_from_string
-    module = importlib.import_module(module_str)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/importlib/__init__.py", line 90, in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
-  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
-  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
-  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
-  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
-  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
-  File "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server/main.py", line 17, in <module>
-    from server.api import router as api_router
-  File "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server/api.py", line 8, in <module>
-    from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
-  File "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/portfolio_logic.py", line 129, in <module>
-    from market_data import MarketDataProvider
-  File "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/market_data.py", line 808
-    fx_prev_close_vs_usd[base_curr_from_symbol] = np.nan
-IndentationError: unexpected indent
-DEBUG: Executing main.py from /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server/main.py
-DEBUG: CWD is /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src
-DEBUG: sys.path is ['/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/research/magcalc/pyMagCalc', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python312.zip', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/lib-dynload', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages']
-WARNING:  StatReload detected changes in 'server/api.py'. Reloading...
-Process SpawnProcess-4:
-Traceback (most recent call last):
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/multiprocessing/process.py", line 314, in _bootstrap
-    self.run()
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/multiprocessing/process.py", line 108, in run
-    self._target(*self._args, **self._kwargs)
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
-    target(sockets=sockets)
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/server.py", line 67, in run
-    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/asyncio/runners.py", line 195, in run
-    return runner.run(main)
-           ^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/asyncio/runners.py", line 118, in run
-    return self._loop.run_until_complete(task)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
-    return future.result()
-           ^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/server.py", line 71, in serve
-    await self._serve(sockets)
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/server.py", line 78, in _serve
-    config.load()
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/config.py", line 439, in load
-    self.loaded_app = import_from_string(self.app)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/importer.py", line 19, in import_from_string
-    module = importlib.import_module(module_str)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/importlib/__init__.py", line 90, in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
-  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
-  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
-  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
-  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
-  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
-  File "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server/main.py", line 17, in <module>
-    from server.api import router as api_router
-  File "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server/api.py", line 8, in <module>
-    from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
-  File "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/portfolio_logic.py", line 129, in <module>
-    from market_data import MarketDataProvider
-  File "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/market_data.py", line 808
-    fx_prev_close_vs_usd[base_curr_from_symbol] = np.nan
-IndentationError: unexpected indent
-DEBUG: Executing main.py from /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server/main.py
-DEBUG: CWD is /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src
-DEBUG: sys.path is ['/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/research/magcalc/pyMagCalc', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python312.zip', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/lib-dynload', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages']
-WARNING:  StatReload detected changes in 'server/api.py'. Reloading...
-Process SpawnProcess-5:
-Traceback (most recent call last):
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/multiprocessing/process.py", line 314, in _bootstrap
-    self.run()
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/multiprocessing/process.py", line 108, in run
-    self._target(*self._args, **self._kwargs)
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
-    target(sockets=sockets)
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/server.py", line 67, in run
-    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/asyncio/runners.py", line 195, in run
-    return runner.run(main)
-           ^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/asyncio/runners.py", line 118, in run
-    return self._loop.run_until_complete(task)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
-    return future.result()
-           ^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/server.py", line 71, in serve
-    await self._serve(sockets)
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/server.py", line 78, in _serve
-    config.load()
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/config.py", line 439, in load
-    self.loaded_app = import_from_string(self.app)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages/uvicorn/importer.py", line 19, in import_from_string
-    module = importlib.import_module(module_str)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/importlib/__init__.py", line 90, in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
-  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
-  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
-  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
-  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
-  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
-  File "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server/main.py", line 17, in <module>
-    from server.api import router as api_router
-  File "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server/api.py", line 8, in <module>
-    from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
-  File "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/portfolio_logic.py", line 129, in <module>
-    from market_data import MarketDataProvider
-  File "/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/market_data.py", line 808
-    fx_prev_close_vs_usd[base_curr_from_symbol] = np.nan
-IndentationError: unexpected indent
-DEBUG: Executing main.py from /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src/server/main.py
-DEBUG: CWD is /Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src
-DEBUG: sys.path is ['/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/Evaluations/python/Investa/src', '/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/research/magcalc/pyMagCalc', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python312.zip', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/lib-dynload', '/Users/kmatan/.pyenv/versions/3.12.9/lib/python3.12/site-packages']
-WARNING:  StatReload detected changes in 'market_data.py'. Reloading...
+INFO:     Finished server process [82855]
+INFO:     Started server process [84432]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:56940 - "GET /api/watchlist?currency=USD HTTP/1.1" 200 OK
+ GET / 200 in 103ms (compile: 33ms, render: 70ms)
+INFO:     127.0.0.1:57017 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57018 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57022 - "GET /api/attribution?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57023 - "GET /api/history?currency=USD&period=7d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57020 - "GET /api/risk_metrics?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57017 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57020 - "GET /api/watchlist?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57023 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+ GET / 200 in 128ms (compile: 35ms, render: 94ms)
+ GET / 200 in 65ms (compile: 5ms, render: 60ms)
+ GET / 200 in 67ms (compile: 9ms, render: 58ms)
+INFO:     100.117.141.22:61988 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:62003 - "GET /api/risk_metrics?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:62001 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:62002 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:62004 - "GET /api/attribution?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:62005 - "GET /api/history?currency=USD&period=7d HTTP/1.1" 200 OK
+
+-----
+[1m[31mFATAL[39m[0m: An unexpected Turbopack error occurred. A panic log has been written to /var/folders/3m/0tdxppp9401c87lzj8c9ndsh0000gn/T/next-panic-cb04c118789699e577a82c1c0e2f4bf.log.
+
+To help make Turbopack better, report this error by ]8;;https://github.com/vercel/next.js/discussions/new?category=turbopack-error-report&title=Turbopack%20Error%3A%20reading%20file%20%2FUsers%2Fkmatan%2FLibrary%2FCloudStorage%2FOneDrive-MahidolUniversity%2Ffinance%2FStocks%2Fapps%2Fpython%2FInvesta%2Fweb_app%2Fapp%2Ffavicon.ico&body=Turbopack%20version%3A%20%60v16.0.4%60%0ANext.js%20version%3A%20%600.0.0%60%0A%0AError%20message%3A%0A%60%60%60%0Areading%20file%20%2FUsers%2Fkmatan%2FLibrary%2FCloudStorage%2FOneDrive-MahidolUniversity%2Ffinance%2FStocks%2Fapps%2Fpython%2FInvesta%2Fweb_app%2Fapp%2Ffavicon.ico%0A%0ACaused%20by%3A%0A-%20Operation%20timed%20out%20%28os%20error%2060%29%0A%0ADebug%20info%3A%0A-%20Execution%20of%20subscribe_issues_and_diags_operation%20failed%0A-%20Execution%20of%20PlainIssue%3A%3Afrom_issue%20failed%0A-%20Execution%20of%20PlainSource%3A%3Afrom_source%20failed%0A-%20Execution%20of%20%3CStructuredImageFileSource%20as%20Asset%3E%3A%3Acontent%20failed%0A-%20Execution%20of%20%3CFileSource%20as%20Asset%3E%3A%3Acontent%20failed%0A-%20Execution%20of%20%3CDiskFileSystem%20as%20FileSystem%3E%3A%3Aread%20failed%0A-%20reading%20file%20%2FUsers%2Fkmatan%2FLibrary%2FCloudStorage%2FOneDrive-MahidolUniversity%2Ffinance%2FStocks%2Fapps%2Fpython%2FInvesta%2Fweb_app%2Fapp%2Ffavicon.ico%0A-%20Operation%20timed%20out%20%28os%20error%2060%29%0A%60%60%60&labels=Turbopack,Turbopack%20Panic%20Backtrace\clicking here.]8;;\
+-----
+
+ ✓ Compiled in 7.5s
+
+-----
+[1m[31mFATAL[39m[0m: An unexpected Turbopack error occurred. A panic log has been written to /var/folders/3m/0tdxppp9401c87lzj8c9ndsh0000gn/T/next-panic-cb04c118789699e577a82c1c0e2f4bf.log.
+
+To help make Turbopack better, report this error by ]8;;https://github.com/vercel/next.js/discussions/new?category=turbopack-error-report&title=Turbopack%20Error%3A%20reading%20file%20%2FUsers%2Fkmatan%2FLibrary%2FCloudStorage%2FOneDrive-MahidolUniversity%2Ffinance%2FStocks%2Fapps%2Fpython%2FInvesta%2Fweb_app%2Fapp%2Ffavicon.ico&body=Turbopack%20version%3A%20%60v16.0.4%60%0ANext.js%20version%3A%20%600.0.0%60%0A%0AError%20message%3A%0A%60%60%60%0Areading%20file%20%2FUsers%2Fkmatan%2FLibrary%2FCloudStorage%2FOneDrive-MahidolUniversity%2Ffinance%2FStocks%2Fapps%2Fpython%2FInvesta%2Fweb_app%2Fapp%2Ffavicon.ico%0A%0ACaused%20by%3A%0A-%20Operation%20timed%20out%20%28os%20error%2060%29%0A%0ADebug%20info%3A%0A-%20Execution%20of%20hmr_update_with_issues_operation%20failed%0A-%20Execution%20of%20PlainIssue%3A%3Afrom_issue%20failed%0A-%20Execution%20of%20PlainSource%3A%3Afrom_source%20failed%0A-%20Execution%20of%20%3CStructuredImageFileSource%20as%20Asset%3E%3A%3Acontent%20failed%0A-%20Execution%20of%20%3CFileSource%20as%20Asset%3E%3A%3Acontent%20failed%0A-%20Execution%20of%20%3CDiskFileSystem%20as%20FileSystem%3E%3A%3Aread%20failed%0A-%20reading%20file%20%2FUsers%2Fkmatan%2FLibrary%2FCloudStorage%2FOneDrive-MahidolUniversity%2Ffinance%2FStocks%2Fapps%2Fpython%2FInvesta%2Fweb_app%2Fapp%2Ffavicon.ico%0A-%20Operation%20timed%20out%20%28os%20error%2060%29%0A%60%60%60&labels=Turbopack,Turbopack%20Panic%20Backtrace\clicking here.]8;;\
+-----
+
+
+-----
+[1m[31mFATAL[39m[0m: An unexpected Turbopack error occurred. A panic log has been written to /var/folders/3m/0tdxppp9401c87lzj8c9ndsh0000gn/T/next-panic-cb04c118789699e577a82c1c0e2f4bf.log.
+
+To help make Turbopack better, report this error by ]8;;https://github.com/vercel/next.js/discussions/new?category=turbopack-error-report&title=Turbopack%20Error%3A%20reading%20file%20%2FUsers%2Fkmatan%2FLibrary%2FCloudStorage%2FOneDrive-MahidolUniversity%2Ffinance%2FStocks%2Fapps%2Fpython%2FInvesta%2Fweb_app%2Fapp%2Ffavicon.ico&body=Turbopack%20version%3A%20%60v16.0.4%60%0ANext.js%20version%3A%20%600.0.0%60%0A%0AError%20message%3A%0A%60%60%60%0Areading%20file%20%2FUsers%2Fkmatan%2FLibrary%2FCloudStorage%2FOneDrive-MahidolUniversity%2Ffinance%2FStocks%2Fapps%2Fpython%2FInvesta%2Fweb_app%2Fapp%2Ffavicon.ico%0A%0ACaused%20by%3A%0A-%20Operation%20timed%20out%20%28os%20error%2060%29%0A%0ADebug%20info%3A%0A-%20Execution%20of%20hmr_update_with_issues_operation%20failed%0A-%20Execution%20of%20PlainIssue%3A%3Afrom_issue%20failed%0A-%20Execution%20of%20PlainSource%3A%3Afrom_source%20failed%0A-%20Execution%20of%20%3CStructuredImageFileSource%20as%20Asset%3E%3A%3Acontent%20failed%0A-%20Execution%20of%20%3CFileSource%20as%20Asset%3E%3A%3Acontent%20failed%0A-%20Execution%20of%20%3CDiskFileSystem%20as%20FileSystem%3E%3A%3Aread%20failed%0A-%20reading%20file%20%2FUsers%2Fkmatan%2FLibrary%2FCloudStorage%2FOneDrive-MahidolUniversity%2Ffinance%2FStocks%2Fapps%2Fpython%2FInvesta%2Fweb_app%2Fapp%2Ffavicon.ico%0A-%20Operation%20timed%20out%20%28os%20error%2060%29%0A%60%60%60&labels=Turbopack,Turbopack%20Panic%20Backtrace\clicking here.]8;;\
+-----
+
+ GET / 500 in 3.1s (compile: 2.6s, render: 467ms)
+ GET / 500 in 10.5s (compile: 10.3s, render: 169ms)
+ GET / 200 in 406ms (compile: 223ms, render: 184ms)
+ERROR:yfinance:
+1 Failed download:
+ERROR:yfinance:['JNJ']: DNSError('Failed to perform, curl: (6) Could not resolve host: query2.finance.yahoo.com. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.')
+WARNING:root:Warning: Yahoo price invalid/missing for JNJ. Trying fallbacks.
+INFO:     127.0.0.1:58465 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+WARNING:root:Warning: Yahoo price invalid/missing for JNJ. Trying fallbacks.
+INFO:     127.0.0.1:58468 - "GET /api/attribution?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58466 - "GET /api/risk_metrics?currency=USD HTTP/1.1" 200 OK
+WARNING:root:Warning: Yahoo price invalid/missing for JNJ. Trying fallbacks.
+INFO:     127.0.0.1:58463 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58469 - "GET /api/history?currency=USD&period=7d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58463 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58469 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+ERROR:root:Error fetching watchlist: no such table: watchlist
+INFO:     127.0.0.1:58524 - "GET /api/watchlist?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58524 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58529 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58529 - "OPTIONS /api/watchlist HTTP/1.1" 200 OK
+ERROR:root:Error adding GOOG to watchlist: no such table: watchlist
+INFO:     127.0.0.1:58529 - "POST /api/watchlist HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:58529 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58546 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+ GET / 200 in 51ms (compile: 11ms, render: 40ms)
+WARNING:root:Warning: Yahoo price invalid/missing for JNJ. Trying fallbacks.
+INFO:     127.0.0.1:58565 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+WARNING:root:Warning: Yahoo price invalid/missing for JNJ. Trying fallbacks.
+INFO:     127.0.0.1:58564 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+WARNING:root:Warning: Yahoo price invalid/missing for JNJ. Trying fallbacks.
+INFO:     127.0.0.1:58570 - "GET /api/attribution?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58567 - "GET /api/risk_metrics?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58571 - "GET /api/history?currency=USD&period=7d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58564 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58571 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+ERROR:root:Error adding GOOG to watchlist: no such table: watchlist
+INFO:     127.0.0.1:58571 - "POST /api/watchlist HTTP/1.1" 500 Internal Server Error
+ERROR:root:Error adding GOOG to watchlist: no such table: watchlist
+INFO:     127.0.0.1:58595 - "POST /api/watchlist HTTP/1.1" 500 Internal Server Error
+ERROR:root:Error adding GOOG to watchlist: no such table: watchlist
+INFO:     127.0.0.1:58595 - "POST /api/watchlist HTTP/1.1" 500 Internal Server Error
+ GET / 200 in 65ms (compile: 23ms, render: 42ms)
+ GET / 200 in 21ms (compile: 1475µs, render: 20ms)
+INFO:     100.117.141.22:57948 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+ GET / 200 in 22ms (compile: 3ms, render: 19ms)
+INFO:     100.117.141.22:57958 - "GET /api/attribution?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57957 - "GET /api/risk_metrics?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57955 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57956 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57959 - "GET /api/history?currency=USD&period=7d HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57965 - "GET /api/attribution?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57962 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57963 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57966 - "GET /api/history?currency=USD&period=7d HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57964 - "GET /api/risk_metrics?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57965 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57962 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57967 - "GET /api/portfolio_health?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57969 - "GET /api/portfolio_health?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57968 - "GET /api/correlation?period=1y HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57970 - "GET /api/correlation?period=1y HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57969 - "GET /api/summary?currency=USD&accounts=IBKR+Acct.+2 HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57968 - "GET /api/portfolio_health?currency=USD&accounts=IBKR+Acct.+2 HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57970 - "GET /api/correlation?period=1y&accounts=IBKR+Acct.+2 HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57969 - "GET /api/portfolio_health?currency=USD&accounts=IBKR+Acct.+2 HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57971 - "GET /api/correlation?period=1y&accounts=IBKR+Acct.+2 HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57972 - "GET /api/summary?currency=USD&accounts=IBKR+Acct.+2&accounts=WeBull HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57972 - "GET /api/portfolio_health?currency=USD&accounts=IBKR+Acct.+2&accounts=WeBull HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57974 - "GET /api/portfolio_health?currency=USD&accounts=IBKR+Acct.+2&accounts=WeBull HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57973 - "GET /api/correlation?period=1y&accounts=IBKR+Acct.+2&accounts=WeBull HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57975 - "GET /api/correlation?period=1y&accounts=IBKR+Acct.+2&accounts=WeBull HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57972 - "GET /api/summary?currency=USD&accounts=WeBull HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57974 - "GET /api/portfolio_health?currency=USD&accounts=WeBull HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57973 - "GET /api/correlation?period=1y&accounts=WeBull HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57972 - "GET /api/correlation?period=1y&accounts=WeBull HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57975 - "GET /api/portfolio_health?currency=USD&accounts=WeBull HTTP/1.1" 200 OK
+WARNING:root:    No dividend transactions found for accounts ['WeBull'] after filtering. Initial count was 533.
+INFO:     100.117.141.22:57976 - "GET /api/dividends?currency=USD&accounts=WeBull HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57977 - "GET /api/dividend_calendar?accounts=WeBull HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57976 - "GET /api/settings HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57977 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57978 - "GET /api/settings HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57979 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57980 - "GET /api/history?currency=USD&period=1y&accounts=WeBull HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57981 - "GET /api/holdings?currency=USD&accounts=WeBull HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57983 - "GET /api/attribution?currency=USD&accounts=WeBull HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57985 - "GET /api/history?currency=USD&period=1y&accounts=WeBull HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57984 - "GET /api/history?currency=USD&period=7d&accounts=WeBull HTTP/1.1" 200 OK
+INFO:     100.117.141.22:57982 - "GET /api/risk_metrics?currency=USD&accounts=WeBull HTTP/1.1" 200 OK
+ GET / 200 in 67ms (compile: 23ms, render: 44ms)
+INFO:     100.117.141.22:64251 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:64252 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:64253 - "GET /api/risk_metrics?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:64254 - "GET /api/attribution?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:64255 - "GET /api/history?currency=USD&period=7d HTTP/1.1" 200 OK
+INFO:     100.117.141.22:61285 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:61288 - "GET /api/history?currency=USD&period=7d HTTP/1.1" 200 OK
+INFO:     100.117.141.22:61289 - "GET /api/risk_metrics?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:61290 - "GET /api/attribution?currency=USD HTTP/1.1" 200 OK
+ GET / 200 in 36ms (compile: 9ms, render: 28ms)
+INFO:     100.117.141.22:51958 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:51959 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:51960 - "GET /api/risk_metrics?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:51961 - "GET /api/attribution?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:51962 - "GET /api/history?currency=USD&period=7d HTTP/1.1" 200 OK
+INFO:     100.117.141.22:51958 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     100.117.141.22:51964 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49423 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49428 - "GET /api/attribution?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49429 - "GET /api/history?currency=USD&period=7d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49422 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49426 - "GET /api/risk_metrics?currency=USD HTTP/1.1" 200 OK
+ GET / 200 in 94ms (compile: 47ms, render: 46ms)
+INFO:     100.117.141.22:53980 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:53981 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:53984 - "GET /api/history?currency=USD&period=7d HTTP/1.1" 200 OK
+INFO:     100.117.141.22:53982 - "GET /api/risk_metrics?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:53983 - "GET /api/attribution?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:53980 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     100.117.141.22:53985 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+WARNING:  StatReload detected changes in 'src/db_utils.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [84432]
+INFO:     Started server process [97730]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+ GET / 200 in 102ms (compile: 44ms, render: 58ms)
+INFO:     127.0.0.1:52482 - "GET /api/risk_metrics?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52484 - "GET /api/attribution?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52478 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52485 - "GET /api/history?currency=USD&period=7d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52480 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52478 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52480 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52480 - "OPTIONS /api/watchlist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52480 - "POST /api/watchlist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52480 - "GET /api/watchlist?currency=USD HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52553 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52555 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52555 - "GET /api/transactions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52564 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52566 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+ GET / 200 in 162ms (compile: 56ms, render: 106ms)
+ GET / 200 in 21ms (compile: 1387µs, render: 19ms)
+INFO:     100.117.141.22:58822 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:58831 - "GET /api/risk_metrics?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:58829 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:58832 - "GET /api/attribution?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:58830 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:58833 - "GET /api/history?currency=USD&period=7d HTTP/1.1" 200 OK
+INFO:     100.117.141.22:58831 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     100.117.141.22:58829 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+ GET / 200 in 26ms (compile: 4ms, render: 22ms)
+INFO:     100.117.141.22:58842 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:58844 - "GET /api/risk_metrics?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:58843 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:58846 - "GET /api/history?currency=USD&period=7d HTTP/1.1" 200 OK
+INFO:     100.117.141.22:58845 - "GET /api/attribution?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:58842 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     100.117.141.22:58847 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+ GET / 200 in 64ms (compile: 24ms, render: 39ms)
+ GET / 200 in 18ms (compile: 1820µs, render: 16ms)
+INFO:     100.117.141.22:49719 - "GET /api/summary?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:49720 - "GET /api/holdings?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:49722 - "GET /api/attribution?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:49723 - "GET /api/history?currency=USD&period=7d HTTP/1.1" 200 OK
+INFO:     100.117.141.22:49721 - "GET /api/risk_metrics?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:49719 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     100.117.141.22:49724 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     100.117.141.22:49725 - "GET /api/portfolio_health?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:49727 - "GET /api/portfolio_health?currency=USD HTTP/1.1" 200 OK
+INFO:     100.117.141.22:49726 - "GET /api/correlation?period=1y HTTP/1.1" 200 OK
+INFO:     100.117.141.22:49728 - "GET /api/correlation?period=1y HTTP/1.1" 200 OK
+INFO:     100.117.141.22:49729 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK
+INFO:     100.117.141.22:49730 - "GET /api/history?currency=USD&period=1y HTTP/1.1" 200 OK

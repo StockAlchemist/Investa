@@ -831,8 +831,24 @@ def get_historical_price(
         
         # Try asof with original target_date
         try:
-             res = df.asof(target_date)
-        except (TypeError, ValueError):
+             # Force target_date to Timestamp for more reliable awareness checks in pandas
+             target_ts = pd.Timestamp(target_date)
+             
+             # Align awareness BEFORE calling asof to avoid TypeError in certain pandas versions
+             if isinstance(df.index, pd.DatetimeIndex):
+                 idx_tz = df.index.tz
+                 target_tz = target_ts.tz
+                 
+                 if idx_tz is not None and target_tz is None:
+                     target_ts = target_ts.tz_localize(idx_tz)
+                 elif idx_tz is None and target_tz is not None:
+                     target_ts = target_ts.tz_localize(None)
+                 elif idx_tz is not None and target_tz is not None:
+                     target_ts = target_ts.tz_convert(idx_tz)
+                     
+             res = df.asof(target_ts)
+        except (TypeError, ValueError) as e_asof:
+             logging.debug(f"AsOf initial fail for {symbol_key} on {target_date}: {e_asof}")
              # Fallback: Try converting to Timestamp
              ts_target = pd.Timestamp(target_date)
              
@@ -857,15 +873,23 @@ def get_historical_price(
 
         if price is None or pd.isna(price):
              # Check if target_date is before the start of the data (Backfill Strategy)
-             first_date = df.index[0].date() if isinstance(df.index, pd.DatetimeIndex) else df.index[0]
-             if isinstance(first_date, datetime): first_date = first_date.date()
-             
-             # If target date is before first data point, use the first available price
-             if target_date < first_date:
-                 backfill_price = df['price'].iloc[0] # Assumes sorted (ensured above)
-                 if pd.notna(backfill_price):
-                     # logging.warning(f"Backfilling {symbol_key} for {target_date} using first available price from {first_date}: {backfill_price}")
-                     return float(backfill_price)
+             # Use Timestamps for robust comparison
+             try:
+                 first_ts = pd.Timestamp(df.index[0])
+                 target_ts_eval = pd.Timestamp(target_date)
+                 
+                 # Align awareness for comparison
+                 if first_ts.tz is not None and target_ts_eval.tz is None:
+                     target_ts_eval = target_ts_eval.tz_localize(first_ts.tz)
+                 elif first_ts.tz is None and target_ts_eval.tz is not None:
+                     target_ts_eval = target_ts_eval.tz_localize(None)
+                 
+                 if target_ts_eval < first_ts:
+                     backfill_price = df['price'].iloc[0]
+                     if pd.notna(backfill_price):
+                         return float(backfill_price)
+             except Exception as e_comp:
+                 logging.debug(f"Comparison fail in get_historical_price: {e_comp}")
 
         return float(price) if pd.notna(price) else None
 

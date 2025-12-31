@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { exportToCSV } from '../lib/export';
-import { Transaction, addTransaction, updateTransaction, deleteTransaction } from '../lib/api';
+import { Transaction, addTransaction, updateTransaction, deleteTransaction, addToWatchlist } from '../lib/api';
+import { Trash2, Star } from 'lucide-react';
 import TransactionModal from './TransactionModal';
 
 interface TransactionsTableProps {
@@ -17,6 +18,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
     const [currentTransaction, setCurrentTransaction] = useState<Transaction | null>(null);
+    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
     const queryClient = useQueryClient();
 
@@ -45,6 +47,42 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
             } catch (error) {
                 console.error("Failed to delete transaction:", error);
                 alert("Failed to delete transaction");
+            }
+        }
+    };
+
+    const handleToggleSelect = (id: number) => {
+        const next = new Set(selectedIds);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        setSelectedIds(next);
+    };
+
+    const handleSelectAll = () => {
+        if (selectedIds.size === visibleTransactions.length) {
+            setSelectedIds(new Set());
+        } else {
+            const allIds = visibleTransactions
+                .map(tx => tx.id)
+                .filter((id): id is number => id !== undefined);
+            setSelectedIds(new Set(allIds));
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        if (selectedIds.size === 0) return;
+        if (window.confirm(`Are you sure you want to delete ${selectedIds.size} selected transactions?`)) {
+            try {
+                // Delete one by one for now (or implement bulk API if needed)
+                for (const id of Array.from(selectedIds)) {
+                    await deleteTransaction(id);
+                }
+                setSelectedIds(new Set());
+                queryClient.invalidateQueries();
+                alert(`Successfully deleted ${selectedIds.size} transactions.`);
+            } catch (error) {
+                console.error("Failed bulk delete:", error);
+                alert("Failed to delete some transactions.");
             }
         }
     };
@@ -145,6 +183,15 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                         >
                             <span>+</span> Add Transaction
                         </button>
+                        {selectedIds.size > 0 && (
+                            <button
+                                onClick={handleBulkDelete}
+                                className="flex-1 md:flex-none px-4 py-2 bg-rose-600 text-white rounded-md hover:bg-rose-700 transition-colors text-sm font-medium shadow-sm flex items-center justify-center gap-2"
+                            >
+                                <Trash2 className="h-4 w-4" />
+                                Delete Selected ({selectedIds.size})
+                            </button>
+                        )}
                         <button
                             onClick={() => { setShowFilters(!showFilters); if (showFilters) resetFilters(); }}
                             className="flex justify-between w-full md:w-auto px-4 py-2 gap-3 text-sm font-medium text-foreground bg-secondary border border-border rounded-lg shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-md transition-all items-center"
@@ -231,6 +278,14 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                     <table className="min-w-full divide-y divide-black/5 dark:divide-white/10">
                         <thead className="bg-secondary">
                             <tr>
+                                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground w-10">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedIds.size === visibleTransactions.length && visibleTransactions.length > 0}
+                                        onChange={handleSelectAll}
+                                        className="rounded border-gray-300 text-cyan-500 focus:ring-cyan-500"
+                                    />
+                                </th>
                                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Date</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Type</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Symbol</th>
@@ -247,7 +302,15 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                         </thead>
                         <tbody className="divide-y divide-black/5 dark:divide-white/10">
                             {visibleTransactions.map((tx, index) => (
-                                <tr key={index} className="hover:bg-accent/5 transition-colors group">
+                                <tr key={index} className={`hover:bg-accent/5 transition-colors group ${tx.id !== undefined && selectedIds.has(tx.id) ? 'bg-cyan-500/5' : ''}`}>
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                        <input
+                                            type="checkbox"
+                                            checked={tx.id !== undefined && selectedIds.has(tx.id)}
+                                            onChange={() => tx.id !== undefined && handleToggleSelect(tx.id)}
+                                            className="rounded border-gray-300 text-cyan-500 focus:ring-cyan-500 cursor-pointer"
+                                        />
+                                    </td>
                                     <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">{tx.Date ? tx.Date.split('T')[0].split(' ')[0] : '-'}</td>
                                     <td className="px-4 py-3 text-sm text-muted-foreground">
                                         <span className={`px-2 py-0.5 rounded text-xs font-medium ${tx.Type.toUpperCase() === 'BUY' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
@@ -257,7 +320,23 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                                             {tx.Type}
                                         </span>
                                     </td>
-                                    <td className="px-4 py-3 text-sm font-medium text-foreground">{tx.Symbol}</td>
+                                    <td className="px-4 py-3 text-sm font-medium text-foreground flex items-center gap-2">
+                                        <button
+                                            onClick={async (e) => {
+                                                e.stopPropagation();
+                                                try {
+                                                    await addToWatchlist(tx.Symbol);
+                                                } catch (err) {
+                                                    console.error("Failed to add to watchlist", err);
+                                                }
+                                            }}
+                                            className="text-muted-foreground/30 hover:text-yellow-500 transition-colors"
+                                            title="Add to Watchlist"
+                                        >
+                                            <Star className="h-3 w-3" />
+                                        </button>
+                                        {tx.Symbol}
+                                    </td>
                                     <td className="px-4 py-3 text-sm text-right text-muted-foreground">{tx.Quantity}</td>
                                     <td className="px-4 py-3 text-sm text-right text-muted-foreground">{tx["Price/Share"]?.toFixed(2)}</td>
                                     <td className="px-4 py-3 text-sm text-right font-medium text-foreground">

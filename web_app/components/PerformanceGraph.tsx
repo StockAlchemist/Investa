@@ -129,17 +129,79 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
 
     const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
         if (active && payload && payload.length) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const dataPoint = payload[0].payload as any;
+            const dateStr = new Date(dataPoint.date).toLocaleDateString(undefined, {
+                weekday: 'short',
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
+
+            // Find benchmark keys present in this data point
+            const allKeys = Object.keys(dataPoint);
+            const benchKeys = allKeys.filter(k =>
+                k !== 'date' && k !== 'value' && k !== 'twr' && k !== 'drawdown'
+            );
+
             return (
-                <div className="bg-popover/95 backdrop-blur-sm p-3 border border-border shadow-xl rounded-lg">
-                    <p className="text-sm text-foreground mb-1">{label ? new Date(label).toLocaleDateString() : ''}</p>
-                    {payload.map((entry, index) => (
-                        <p key={index} className="text-sm font-medium" style={{ color: entry.color }}>
-                            {entry.name}: {view === 'return' || view === 'drawdown'
-                                ? `${(entry.value as number) > 0 ? '+' : ''}${(entry.value as number).toFixed(2)}%`
-                                : formatCurrency(entry.value as number, currency)
-                            }
-                        </p>
-                    ))}
+                <div className="bg-popover/95 backdrop-blur-md p-4 border border-border shadow-xl rounded-xl min-w-[200px]">
+                    <p className="text-sm font-semibold text-foreground mb-3 border-b border-border pb-2">
+                        {dateStr}
+                    </p>
+
+                    <div className="space-y-3">
+                        {/* Portfolio Section */}
+                        <div className="space-y-1">
+                            <div className="flex items-center justify-between gap-4">
+                                <span className="text-xs text-muted-foreground font-medium">Portfolio Value</span>
+                                <span className="text-sm font-bold text-foreground">
+                                    {formatCurrency(dataPoint.value, currency)}
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                                <span className="text-xs text-muted-foreground font-medium">Return (TWR)</span>
+                                <span className={`text-sm font-bold ${dataPoint.twr >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                    {dataPoint.twr >= 0 ? '+' : ''}{dataPoint.twr.toFixed(2)}%
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                                <span className="text-xs text-muted-foreground font-medium">Drawdown</span>
+                                <span className="text-sm font-bold text-rose-500">
+                                    {dataPoint.drawdown.toFixed(2)}%
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Benchmarks Section */}
+                        {benchKeys.length > 0 && (
+                            <>
+                                <div className="h-px bg-border my-2" />
+                                <div className="space-y-1">
+                                    {benchKeys.map((bKey, idx) => {
+                                        // Use the same color logic as the main chart if possible, or just standard colors
+                                        // We need to match the chart color. The chart uses COLORS array cyclicly.
+                                        // But we can't easily know the index here without passing it down?
+                                        // We can infer it from the mapped lines if we want strict consistency, 
+                                        // but for now let's just use the color from payload if available:
+                                        const payloadEntry = payload.find(p => p.name === bKey);
+                                        const color = payloadEntry?.color || COLORS[(idx + 1) % COLORS.length];
+
+                                        return (
+                                            <div key={bKey} className="flex items-center justify-between gap-4">
+                                                <span className="text-xs font-medium" style={{ color: color }}>
+                                                    {bKey}
+                                                </span>
+                                                <span className={`text-sm font-bold ${dataPoint[bKey] >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                    {dataPoint[bKey] >= 0 ? '+' : ''}{Number(dataPoint[bKey]).toFixed(2)}%
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </>
+                        )}
+                    </div>
                 </div>
             );
         }

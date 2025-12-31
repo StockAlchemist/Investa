@@ -1,11 +1,15 @@
-import React from 'react';
-import { PortfolioSummary } from '../lib/api';
+import { PortfolioSummary, PerformanceData } from '../lib/api';
 import { formatCurrency, cn } from '../lib/utils';
+import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+
 interface DashboardProps {
     summary: PortfolioSummary;
     currency: string;
+    history?: PerformanceData[];
+    isLoading?: boolean;
 }
 
 interface MetricCardProps {
@@ -21,6 +25,8 @@ interface MetricCardProps {
     isHero?: boolean;
     isPercent?: boolean;
     vertical?: boolean;
+    sparklineData?: { value: number }[];
+    isLoading?: boolean;
 }
 
 const MetricCard = ({
@@ -32,27 +38,57 @@ const MetricCard = ({
     valueClassName = 'text-xl sm:text-2xl',
     containerClassName = '',
     subValueClassName = '',
-    currency = 'USD'
+    vertical = false,
+    sparklineData,
+    currency = 'USD',
+    isLoading = false
 }: MetricCardProps) => (
     <Card className={cn(
         "h-full transition-all duration-300 relative overflow-hidden group",
         "hover:bg-accent/5 transition-colors",
         containerClassName
     )}>
-
-        <CardContent className="h-full flex flex-col justify-center p-4 sm:p-6">
+        <CardContent className="h-full flex flex-col justify-center p-4 sm:p-6 relative">
             <p className="text-sm font-medium text-muted-foreground relative z-10 uppercase tracking-wider text-[10px]">{title}</p>
 
             <div className="mt-2 flex items-center gap-2 sm:gap-3 flex-wrap relative z-10">
-                <h3 className={cn("font-bold tracking-tight", colorClass || "text-foreground", valueClassName)}>
-                    {value !== null && value !== undefined ? (isCurrency && typeof value === 'number' ? formatCurrency(value, currency) : value) : '-'}
-                </h3>
-                {subValue !== undefined && subValue !== null && (
+                {isLoading ? (
+                    <Skeleton className="h-8 w-32" />
+                ) : (
+                    <h3 className={cn("font-bold tracking-tight", colorClass || "text-foreground", valueClassName)}>
+                        {value !== null && value !== undefined ? (isCurrency && typeof value === 'number' ? formatCurrency(value, currency) : value) : '-'}
+                    </h3>
+                )}
+                {isLoading ? (
+                    <Skeleton className="h-5 w-12 rounded-full" />
+                ) : subValue !== undefined && subValue !== null && (
                     <Badge variant={subValue >= 0 ? "success" : "destructive"} className={cn("text-[9px] sm:text-[11px] font-bold px-1.5 sm:px-2 py-0.5", subValueClassName)}>
                         {subValue > 0 ? '+' : ''}{subValue.toFixed(2)}%
                     </Badge>
                 )}
             </div>
+
+            {!isLoading && sparklineData && sparklineData.length > 1 && (
+                <div className="absolute inset-0 z-0 pointer-events-none opacity-30 group-hover:opacity-50 transition-opacity">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={sparklineData}>
+                            <Line
+                                type="monotone"
+                                dataKey="value"
+                                stroke={subValue && subValue >= 0 ? "#10b981" : "#f43f5e"}
+                                strokeWidth={2}
+                                dot={false}
+                                isAnimationActive={false}
+                            />
+                        </LineChart>
+                    </ResponsiveContainer>
+                </div>
+            )}
+            {isLoading && (
+                <div className="absolute bottom-0 left-0 right-0 h-10 px-6">
+                    <Skeleton className="h-full w-full opacity-20" />
+                </div>
+            )}
         </CardContent>
     </Card>
 );
@@ -70,11 +106,11 @@ const DEFAULT_ITEMS = [
     { id: 'fees', colSpan: '' },
 ];
 
-export default function Dashboard({ summary, currency }: DashboardProps) {
+export default function Dashboard({ summary, currency, history = [], isLoading = false }: DashboardProps) {
     const m = summary?.metrics;
     const am = summary?.account_metrics;
 
-    if (!m) {
+    if (!m && !isLoading) {
         return (
             <div className="flex items-center justify-center p-12">
                 <div className="animate-pulse flex flex-col items-center">
@@ -88,19 +124,19 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
     // Prepare data helpers
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cashBalance = (am?.['Cash'] as any)?.['total_market_value_display'] || 0;
-    const dayGL = (m.day_change_display as number) || 0;
-    const dayGLPct = (m.day_change_percent as number) || 0;
-    const unrealizedGL = (m.unrealized_gain as number) || 0;
-    const unrealizedGLPct = ((m.unrealized_gain as number) / ((m.cost_basis_held as number) || 1)) * 100;
-    const fxGL = (m.fx_gain_loss_display as number) || 0;
-    const fxGLPct = (m.fx_gain_loss_pct as number) || 0;
+    const dayGL = (m?.day_change_display as number) || 0;
+    const dayGLPct = (m?.day_change_percent as number) || 0;
+    const unrealizedGL = (m?.unrealized_gain as number) || 0;
+    const unrealizedGLPct = m ? ((m.unrealized_gain as number) / ((m.cost_basis_held as number) || 1)) * 100 : 0;
+    const fxGL = (m?.fx_gain_loss_display as number) || 0;
+    const fxGLPct = (m?.fx_gain_loss_pct as number) || 0;
 
     const dayGLColor = dayGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
     const unrealizedGLColor = unrealizedGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
     const fxGLColor = fxGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
 
-    const totalGain = (m.total_gain as number) || 0;
-    const realizedGain = (m.realized_gain as number) || 0;
+    const totalGain = (m?.total_gain as number) || 0;
+    const realizedGain = (m?.realized_gain as number) || 0;
 
     const totalReturnColor = totalGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
     const realizedGainColor = realizedGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
@@ -111,11 +147,14 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
             case 'portfolioValue':
                 return <MetricCard
                     title="Total Portfolio Value"
-                    value={m.market_value}
+                    value={m?.market_value ?? 0}
+                    subValue={dayGLPct}
                     valueClassName="text-3xl sm:text-5xl"
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
+                    sparklineData={history?.map(d => ({ value: d.value }))}
+                    isLoading={isLoading}
                 />;
             case 'dayGL':
                 return <MetricCard
@@ -128,25 +167,29 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
+                    sparklineData={history.map(d => ({ value: d.twr }))}
+                    isLoading={isLoading}
                 />;
             case 'totalReturn':
                 return <MetricCard
                     title="Total Return"
                     value={totalGain}
-                    subValue={m.total_return_pct}
+                    subValue={m?.total_return_pct}
                     colorClass={totalReturnColor}
                     valueClassName="text-2xl sm:text-3xl"
-                    subValueClassName={cn("text-base sm:text-xl", (m.total_return_pct || 0) >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white hover:bg-rose-700 border-none")}
+                    subValueClassName={cn("text-base sm:text-xl", (m?.total_return_pct || 0) >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white hover:bg-rose-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
+                    isLoading={isLoading}
                 />;
             case 'annualTWR':
                 return <MetricCard
                     title="Annual TWR"
-                    value={m.annualized_twr !== undefined && m.annualized_twr !== null ? `${m.annualized_twr.toFixed(2)}%` : '-'}
+                    value={m?.annualized_twr !== undefined && m?.annualized_twr !== null ? `${m.annualized_twr.toFixed(2)}%` : '-'}
                     isCurrency={false}
-                    colorClass={m.annualized_twr && m.annualized_twr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}
+                    colorClass={m?.annualized_twr && m.annualized_twr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}
+                    isLoading={isLoading}
                 />;
             case 'unrealizedGL':
                 return <MetricCard
@@ -159,6 +202,7 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
+                    isLoading={isLoading}
                 />;
             case 'fxGL':
                 return <MetricCard
@@ -171,6 +215,7 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
+                    isLoading={isLoading}
                 />;
             case 'realizedGain':
                 return <MetricCard
@@ -181,25 +226,29 @@ export default function Dashboard({ summary, currency }: DashboardProps) {
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
+                    isLoading={isLoading}
                 />;
             case 'cashBalance':
                 return <MetricCard
                     title="Cash Balance"
                     value={cashBalance}
                     currency={currency}
+                    isLoading={isLoading}
                 />;
             case 'ytdDividends':
                 return <MetricCard
                     title="YTD Dividends"
-                    value={m.dividends}
+                    value={m?.dividends ?? 0}
                     currency={currency}
+                    isLoading={isLoading}
                 />;
             case 'fees':
                 return <MetricCard
                     title="Fees"
-                    value={m.commissions}
+                    value={m?.commissions ?? 0}
                     colorClass="text-rose-600 dark:text-rose-400"
                     currency={currency}
+                    isLoading={isLoading}
                 />;
             default:
                 return null;

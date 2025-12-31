@@ -24,21 +24,27 @@ import traceback
 import config
 
 DB_FILENAME = "investa_transactions.db"
-DB_SCHEMA_VERSION = 2
+DB_SCHEMA_VERSION = 3
 
 
 def get_database_path(db_filename: str = DB_FILENAME) -> str:
     """
     Determines the full path for the SQLite database file.
-    Checks CWD first, then falls back to centralized application data directory.
+    Prioritizes centralized application data directory, falls back to CWD.
     """
-    # Check if DB exists in current working directory
+    # Priority 1: Check centralized application data directory
+    app_data_dir = config.get_app_data_dir()
+    app_data_path = os.path.join(app_data_dir, db_filename)
+    if os.path.exists(app_data_path):
+        return app_data_path
+
+    # Priority 2: Check if DB exists in current working directory
     cwd_path = os.path.join(os.getcwd(), db_filename)
     if os.path.exists(cwd_path):
         return cwd_path
 
-    app_data_dir = config.get_app_data_dir()
-    return os.path.join(app_data_dir, db_filename)
+    # Final Fallback: Return app data path (it will be created if it doesn't exist)
+    return app_data_path
 
 
 def get_db_connection(db_path: Optional[str] = None) -> Optional[sqlite3.Connection]:
@@ -137,9 +143,28 @@ def create_transactions_table(conn: sqlite3.Connection):
                 (DB_SCHEMA_VERSION, datetime.now().isoformat()),
             )
 
+        create_watchlist_sql = """
+        CREATE TABLE IF NOT EXISTS watchlist (
+            Symbol TEXT PRIMARY KEY,
+            Note TEXT,
+            AddedOn TEXT NOT NULL
+        );
+        """
+        cursor.execute(create_watchlist_sql)
+
+        if current_db_version < 3:
+            logging.info("Schema version is less than 3. Watchlist table created (if not exists).")
+            # In this case, CREATE TABLE already handled it, so we just update version if needed
+            # but usually we want specific migrations if structure changed.
+            # For a NEW table, the CREATE TABLE IF NOT EXISTS is enough.
+            cursor.execute(
+                "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
+                (DB_SCHEMA_VERSION, datetime.now().isoformat()),
+            )
+
         conn.commit()
         logging.info(
-            "Transactions and schema_version tables checked/created/updated successfully."
+            "Transactions, watchlist, and schema_version tables checked/created/updated successfully."
         )
     except sqlite3.Error as e:
         logging.error(f"Error creating/updating tables: {e}", exc_info=True)
@@ -533,6 +558,47 @@ def delete_transaction_from_db(
         except:
             pass
         return False
+
+
+def add_to_watchlist(db_conn: sqlite3.Connection, symbol: str, note: str = "") -> bool:
+    """Adds a symbol to the watchlist."""
+    sql = "INSERT OR REPLACE INTO watchlist (Symbol, Note, AddedOn) VALUES (?, ?, ?)"
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute(sql, (symbol, note, datetime.now().isoformat()))
+        db_conn.commit()
+        logging.info(f"Successfully added {symbol} to watchlist.")
+        return True
+    except sqlite3.Error as e:
+        logging.error(f"Error adding {symbol} to watchlist: {e}")
+        return False
+
+
+def remove_from_watchlist(db_conn: sqlite3.Connection, symbol: str) -> bool:
+    """Removes a symbol from the watchlist."""
+    sql = "DELETE FROM watchlist WHERE Symbol = ?"
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute(sql, (symbol,))
+        db_conn.commit()
+        logging.info(f"Successfully removed {symbol} from watchlist.")
+        return True
+    except sqlite3.Error as e:
+        logging.error(f"Error removing {symbol} from watchlist: {e}")
+        return False
+
+
+def get_watchlist(db_conn: sqlite3.Connection) -> List[Dict[str, Any]]:
+    """Fetches all symbols in the watchlist."""
+    sql = "SELECT Symbol, Note, AddedOn FROM watchlist ORDER BY AddedOn DESC"
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute(sql)
+        rows = cursor.fetchall()
+        return [{"Symbol": r[0], "Note": r[1], "AddedOn": r[2]} for r in rows]
+    except sqlite3.Error as e:
+        logging.error(f"Error fetching watchlist: {e}")
+        return []
 
 
 def initialize_database(db_path: Optional[str] = None) -> Optional[sqlite3.Connection]:

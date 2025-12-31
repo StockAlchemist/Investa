@@ -6,6 +6,7 @@ interface PeriodSelectorProps {
 }
 
 const PERIODS = [
+    { label: '5D', value: '5d' },
     { label: '1M', value: '1m' },
     { label: '3M', value: '3m' },
     { label: '6M', value: '6m' },

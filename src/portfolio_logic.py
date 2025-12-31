@@ -197,6 +197,7 @@ def calculate_portfolio_summary(
 ) -> Tuple[
     Optional[Dict[str, Any]],
     Optional[pd.DataFrame],
+    Optional[Dict[str, Dict[str, Any]]],
     Optional[Dict[str, Dict[str, float]]],
     Set[int],
     Dict[int, str],
@@ -1453,29 +1454,8 @@ def _unadjust_prices(
 
         # --- Prepare DataFrame for Unadjustment ---
         unadj_df = adj_price_df.copy()
-        # --- Robust Index Conversion ---
-        try:
-            # Convert index to date objects for comparison with split dates
-            unadj_df.index = pd.to_datetime(unadj_df.index, errors="coerce").date
-            unadj_df = unadj_df[
-                pd.notnull(unadj_df.index)
-            ]  # Remove rows where conversion failed
-        except Exception as e_idx:
-            warn_key = f"unadjust_index_conv_{yf_symbol}"
-            if warn_key not in processed_warnings:
-                logging.warning(
-                    f"Hist WARN: Failed converting index to date for {yf_symbol}: {e_idx}"
-                )
-                processed_warnings.add(warn_key)
-            if IS_DEBUG_SYMBOL:
-                logging.warning(
-                    "    Failed to convert index to date. Skipping unadjustment."
-                )
-            unadjusted_prices_yf[yf_symbol] = (
-                adj_price_df.copy()
-            )  # Return original on failure
-            continue
-        # --- END Robust Index Conversion ---
+        # FIX: Ensure index is UTC Timestamp for precise comparison and preservation
+        unadj_df.index = pd.to_datetime(unadj_df.index, utc=True)
 
         if unadj_df.empty:  # Check if empty after index conversion/filtering
             unadjusted_prices_yf[yf_symbol] = unadj_df
@@ -1513,8 +1493,9 @@ def _unadjust_prices(
                         )
                     continue  # Skip this invalid split
 
-                # Apply factor to dates *before* the split date
-                mask = forward_split_factor.index < split_date
+                # FIX: Convert split_date to UTC Timestamp for comparison
+                split_ts = pd.Timestamp(split_date).tz_localize('UTC')
+                mask = forward_split_factor.index < split_ts
                 if IS_DEBUG_SYMBOL and split_date == date(
                     2020, 8, 31
                 ):  # Example debug date
@@ -1604,11 +1585,28 @@ def _calculate_daily_net_cash_flow_vectorized(
         return daily_net_flow, False
 
     # Filter transactions within date range
-    mask_date = (transactions_df["Date"] >= date_range[0]) & (transactions_df["Date"] <= date_range[-1])
+    # FIX: Ensure transaction dates are UTC for comparison with UTC date_range
+    tx_dates = pd.to_datetime(transactions_df["Date"], utc=True)
+    mask_date = (tx_dates >= date_range[0]) & (tx_dates <= date_range[-1])
     df_period = transactions_df[mask_date].copy()
     
     if df_period.empty:
         return daily_net_flow, False
+
+    # --- PROACTIVE TIMEZONE NORMALIZATION ---
+    # Ensure transaction dates match the target date_range timezone EXACTLY.
+    # This prevents "tz-naive vs tz-aware" errors during later aggregation.
+    target_tz = date_range.tz
+    
+    # 1. Convert to datetime and FORCIBLY NORMALIZE to naive to avoid mixed-awareness object dtypes
+    # This is critical for Transfers which often have timezones from external exports.
+    df_period["Date"] = pd.to_datetime(df_period["Date"], utc=True).dt.tz_localize(None)
+    
+    # 2. Align Timezone (Now that it's clean and naive)
+    if target_tz is not None:
+        # Target is Aware
+        df_period["Date"] = df_period["Date"].dt.tz_localize(target_tz)
+    # else: Already naive from the normalization above
 
     # Normalize included accounts
     included_set = set()
@@ -1691,15 +1689,41 @@ def _calculate_daily_net_cash_flow_vectorized(
                              if not price_series.index.is_monotonic_increasing:
                                  price_series = price_series.sort_index()
                                  
-                             # Fix 2: Ensure index is proper DatetimeIndex (sometimes it's object-dtype with dates)
+                             # Fix 2: Ensure index is proper DatetimeIndex and NORMALIZE to naive
                              if not isinstance(price_series.index, pd.DatetimeIndex):
                                  price_series.index = pd.to_datetime(price_series.index)
                              
-                             # Fix: Ensure needed_dates are Timestamps to match price_series index
-                             # Explicitly cast to datetime64[ns] to avoid object-dtype issues (which cause TypeError in asof)
-                             needed_dates_ts = pd.to_datetime(needed_dates).astype("datetime64[ns]")
+                             if price_series.index.tz is not None:
+                                 price_series.index = price_series.index.tz_localize(None)
                              
-                             found_prices = price_series.asof(needed_dates_ts).values
+                             # Fix: Ensure needed_dates are Timestamps to match price_series index
+                             # Force both to be definitely naive to avoid "Cannot compare tz-naive and tz-aware"
+                             try:
+                                 # Helper to safely strip timezone
+                                 def strip_tz(x):
+                                     if hasattr(x, 'dt'):
+                                         return x.dt.tz_localize(None) if x.dt.tz is not None else x
+                                     if hasattr(x, 'tz'):
+                                         return x.tz_localize(None) if x.tz is not None else x
+                                     return x
+
+                                 needed_dates_ts = strip_tz(pd.to_datetime(needed_dates)).astype("datetime64[ns]")
+                                 normalized_price_index = strip_tz(pd.to_datetime(price_series.index)).astype("datetime64[ns]")
+                                 
+                                 # Work on a copy with naive index for asof call
+                                 price_series_naive = price_series.copy()
+                                 price_series_naive.index = normalized_price_index
+                                 
+                                 found_prices = price_series_naive.asof(needed_dates_ts)
+                                 # Ensure we have a Series/Values even if asof returns something else
+                                 if hasattr(found_prices, "values"):
+                                     found_prices = found_prices.values
+
+                             except Exception as e_lookup:
+                                 logging.error(f"Lookup crash for {sym}: {e_lookup}")
+                                 # Fallback to current behavior if shield fails, but with better error trace
+                                 raise ValueError(f"Lookup failed for {sym} on dates {list(needed_dates)[:2]}: {e_lookup}")
+
                              # Update
                              idxs_to_update = relevant_trans_missing.loc[sym_mask].index
                              price.loc[idxs_to_update] = pd.Series(found_prices, index=idxs_to_update).fillna(0.0)
@@ -1744,6 +1768,30 @@ def _calculate_daily_net_cash_flow_vectorized(
     if final_flows:
         total_series = pd.concat(final_flows)
         daily_net_flow_add = total_series.groupby(level=0).sum()
+        
+        # DYNAMIC TIMEZONE ALIGNMENT
+        # Align `daily_net_flow_add` (derived from transactions, originally naive) 
+        # to match `daily_net_flow` (which comes from date_range, typically UTC).
+        if isinstance(daily_net_flow.index, pd.DatetimeIndex):
+            target_tz = daily_net_flow.index.tz
+            
+            if isinstance(daily_net_flow_add.index, pd.DatetimeIndex):
+                source_tz = daily_net_flow_add.index.tz
+                
+                if target_tz is not None:
+                    # Target is Aware (e.g. UTC)
+                    if source_tz is None:
+                        # Source is Naive -> Localize to Target
+                        daily_net_flow_add.index = daily_net_flow_add.index.tz_localize(target_tz)
+                    else:
+                        # Source is Aware -> Convert to Target
+                        daily_net_flow_add.index = daily_net_flow_add.index.tz_convert(target_tz)
+                else:
+                    # Target is Naive
+                    if source_tz is not None:
+                        # Source is Aware -> Make Naive
+                        daily_net_flow_add.index = daily_net_flow_add.index.tz_localize(None)
+             
         daily_net_flow = daily_net_flow.add(daily_net_flow_add, fill_value=0.0)
     
     return daily_net_flow, has_lookup_errors
@@ -2806,7 +2854,10 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     # --- END ADDED ---
 
     try:
-        target_date_ordinal = target_date.toordinal()
+        target_date_ts = pd.Timestamp(target_date)
+        if target_date_ts.tz is None: target_date_ts = target_date_ts.tz_localize('UTC')
+        target_date_ordinal = target_date_ts.value
+        
         # --- FIX: Define tx_types_np earlier for use in debug block ---
         tx_types_series = (
             transactions_til_date["Type"]
@@ -2817,10 +2868,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         )
         tx_types_np = tx_types_series.values.astype(np.int64)
 
-        tx_dates_ordinal_np = np.array(
-            [d.toordinal() for d in transactions_til_date["Date"].dt.date.values],
-            dtype=np.int64,
-        )
+        tx_dates_ordinal_np = np.array(pd.to_datetime(transactions_til_date["Date"], utc=True).values.astype('int64'), dtype=np.int64)
         tx_symbols_series = _normalize_series(transactions_til_date["Symbol"]).map(
             symbol_to_id
         )
@@ -3388,6 +3436,7 @@ def _prepare_historical_inputs(
     user_excluded_symbols: Optional[Set[str]] = None,
     # ADDED: original_csv_file_path for daily_results_cache_key hash generation
     original_csv_file_path: Optional[str] = None,
+    interval: str = "1d",
 ) -> Tuple[
     Optional[pd.DataFrame],
     Optional[pd.DataFrame],  # This will be original_transactions_df_for_ignored
@@ -3781,7 +3830,8 @@ def _prepare_historical_inputs(
             f"{acc_map_str}::{default_currency}::"
             f"{included_accounts_str}::{excluded_accounts_str}::"
             f"{user_map_str}::{user_excluded_str}::"  # Added user settings
-            f"{HISTORICAL_CALC_METHOD}"  # Added calc method
+            f"{HISTORICAL_CALC_METHOD}::"  # Added calc method
+            f"{interval}"  # Added interval to prevent hourly/daily collision
         )
         daily_results_cache_key = hashlib.sha256(
             daily_results_cache_key_str_content.encode()
@@ -3870,8 +3920,8 @@ def _value_daily_holdings_vectorized(
             if not price_df.empty and "price" in price_df.columns:
                 # Reindex to date_range
                 price_series = price_df["price"]
-                if isinstance(price_series.index, pd.DatetimeIndex):
-                    price_series.index = price_series.index.normalize()
+                # FIX: Ensure UTC awareness and DO NOT Normalize (preserves intraday/hourly timestamps)
+                price_series.index = pd.to_datetime(price_series.index, utc=True)
                 
                 # Reindex using ffill
                 aligned_series = price_series.reindex(date_range, method='ffill')
@@ -3901,8 +3951,7 @@ def _value_daily_holdings_vectorized(
             if not t_df.empty and "price" in t_df.columns:
                 # Reindex to date_range with ffill
                 t_series = t_df["price"]
-                if isinstance(t_series.index, pd.DatetimeIndex):
-                     t_series.index = t_series.index.normalize()
+                t_series.index = pd.to_datetime(t_series.index, utc=True)
                 target_rate_series = t_series.reindex(date_range, method='ffill').bfill()
     
     # If target rate missing, we can't convert anything (unless local==target)
@@ -3940,8 +3989,8 @@ def _value_daily_holdings_vectorized(
                  l_df = historical_fx_yf[local_pair]
                  if not l_df.empty and "price" in l_df.columns:
                     l_series = l_df["price"]
-                    if isinstance(l_series.index, pd.DatetimeIndex):
-                        l_series.index = l_series.index.normalize()
+                    # FIX: Ensure UTC awareness and DO NOT Normalize (preserves intraday/hourly timestamps)
+                    l_series.index = pd.to_datetime(l_series.index, utc=True)
                     local_rate_series = l_series.reindex(date_range, method='ffill').bfill()
 
         if local_rate_series is None:
@@ -4018,11 +4067,11 @@ def _value_daily_holdings_vectorized(
     daily_value_series = pd.Series(total_value, index=date_range)
     return daily_value_series, has_errors, status_msg
 
-# @profile
 def _load_or_calculate_daily_results(
     use_daily_results_cache: bool,
     daily_results_cache_file: Optional[str],
     daily_results_cache_key: Optional[str],
+    interval: str,
     worker_signals: Optional[Any],  # <-- ADDED: For progress reporting
     transactions_csv_file: str,  # <-- ADDED: Need path for mtime check
     start_date: date,
@@ -4294,9 +4343,21 @@ def _load_or_calculate_daily_results(
             )
             calc_start_date = max(start_date, first_tx_date)
             calc_end_date = end_date
-            date_range_for_calc = pd.date_range(
-                start=calc_start_date, end=calc_end_date, freq="D"
-            )
+            
+            # Determine calculation frequency range
+            # If interval is 1h, we use daily for history and hourly for active range
+            if interval == "1h":
+                range_historical = pd.date_range(start=calc_start_date, end=start_date - timedelta(days=1), freq="D")
+                range_active = pd.date_range(start=start_date, end=calc_end_date, freq="h")
+                date_range_for_calc = range_historical.append(range_active).unique().sort_values()
+            else:
+                date_range_for_calc = pd.date_range(
+                    start=calc_start_date, end=calc_end_date, freq="D"
+                )
+            
+            # Standardize to UTC for mixed-resolution/intraday support
+            if date_range_for_calc.tz is None:
+                date_range_for_calc = date_range_for_calc.tz_localize('UTC')
             # logging.debug(f"DEBUG HIST: calc_start_date={calc_start_date}, first_tx_date={first_tx_date}, range_len={len(date_range_for_calc)}")
 
             # Determine which set of holdings to use (L1 cached or calculate now)
@@ -4339,8 +4400,11 @@ def _load_or_calculate_daily_results(
                 sorted_df = transactions_df_effective.sort_values(by=["Date", "original_index"]).copy()
 
                 # Prepare inputs for chronological Numba function
-                date_ordinals_np = np.array([d.toordinal() for d in date_range_for_calc], dtype=np.int64)
-                tx_dates_ordinal_np = np.array([d.toordinal() for d in sorted_df["Date"].dt.date.values], dtype=np.int64)
+                # Use nanosecond timestamps (np.int64) for sub-daily precision support
+                # date_range_for_calc is already UTC-aware Timestamps
+                date_ordinals_np = np.array(date_range_for_calc.values.astype('int64'), dtype=np.int64)
+                
+                tx_dates_ordinal_np = np.array(pd.to_datetime(sorted_df["Date"], utc=True).values.astype('int64'), dtype=np.int64)
                 tx_symbols_np = sorted_df["Symbol"].map(symbol_to_id).values.astype(np.int64)
             
                 account_ids_series = _normalize_series(sorted_df["Account"]).map(account_to_id)
@@ -4870,15 +4934,15 @@ def _get_or_calculate_all_daily_holdings(
     # --- FIX: Create a sorted copy to ensure chronological processing ---
     sorted_tx_df = all_transactions_df.sort_values(by=["Date", "original_index"]).copy()
 
+    # Create date range for calculation - Daily freq for this L1 cache
     date_range_for_calc = pd.date_range(start=start_date, end=end_date, freq="D")
-    date_ordinals_np = np.array(
-        [d.toordinal() for d in date_range_for_calc], dtype=np.int64
-    )
-
-    tx_dates_ordinal_np = np.array(
-        [d.toordinal() for d in sorted_tx_df["Date"].dt.date.values],
-        dtype=np.int64,
-    )
+    
+    # Standardize range to UTC
+    if date_range_for_calc.tz is None:
+        date_range_for_calc = date_range_for_calc.tz_localize('UTC')
+    date_ordinals_np = np.array(date_range_for_calc.values.astype('int64'), dtype=np.int64)
+    
+    tx_dates_ordinal_np = np.array(pd.to_datetime(sorted_tx_df["Date"], utc=True).values.astype('int64'), dtype=np.int64)
     tx_symbols_np = (
         sorted_tx_df["Symbol"].map(symbol_to_id).fillna(-1).values.astype(np.int64)
     )
@@ -5269,7 +5333,7 @@ def calculate_historical_performance(
     ignored_reasons_from_load: Dict[int, str],  # MODIFIED
     start_date: date,
     end_date: date,
-    interval: str,
+    interval: str,  # 'D', 'W', 'M', 'ME' for grouping, or data interval like '1h'
     benchmark_symbols_yf: List[str],  # Expects YF tickers
     display_currency: str,
     account_currency_map: Dict,
@@ -5347,7 +5411,7 @@ def calculate_historical_performance(
         return pd.DataFrame(), {}, {}, "Error: MarketDataProvider not available."
     if start_date >= end_date:
         return pd.DataFrame(), {}, {}, "Error: Start date must be before end date."
-    if interval not in ["D", "W", "M", "ME"]:
+    if interval not in ["D", "W", "M", "ME", "1h", "1d"]:
         return pd.DataFrame(), {}, {}, f"Error: Invalid interval '{interval}'."
 
     clean_benchmark_symbols_yf = (
@@ -5389,6 +5453,7 @@ def calculate_historical_performance(
         user_symbol_map=user_symbol_map,
         user_excluded_symbols=user_excluded_symbols,
         original_csv_file_path=original_csv_file_path,  # Pass for cache key
+        interval=interval,
     )
     (
         transactions_df_effective,
@@ -5457,9 +5522,7 @@ def calculate_historical_performance(
         hist_data_cache_dir_name="historical_data_cache"
     )
 
-    # --- 3. Load or Fetch ADJUSTED Historical Raw Data ---
-    # --- NEW: Load/Calculate ALL daily holdings (Layer 1 Cache) ---
-    # logging.info("Checking Layer 1 cache for all daily holdings...")
+    # --- 2. Load/Calculate ALL daily holdings (Layer 1 Cache) ---
     all_holdings_qty, all_cash_balances, all_last_prices = _get_or_calculate_all_daily_holdings(
         all_transactions_df=all_transactions_df_cleaned,
         start_date=full_start_date,
@@ -5471,32 +5534,81 @@ def calculate_historical_performance(
     if all_holdings_qty is None:
         status_parts.append("L1 Cache Error")
         has_errors = True  # This is a critical failure
-    # --- END NEW ---
 
-    # logging.info("Fetching/Loading adjusted historical prices...")
-    fetched_prices_adj, fetch_failed_prices = market_provider.get_historical_data(
+    # --- 3. Load or Fetch ADJUSTED Historical Raw Data ---
+    # We always fetch daily data for the FULL range to support valuation baseline.
+    historical_prices_yf_adjusted, fetch_failed_prices = market_provider.get_historical_data(
         symbols_yf=symbols_for_stocks_and_benchmarks_yf,
         start_date=full_start_date,
         end_date=fetch_end_date,
+        interval="1d",
         use_cache=use_raw_data_cache,
-        cache_key=raw_data_cache_key,  # Pass the key for manifest validation
-        # cache_file is not directly used by get_historical_data for path
+        cache_key=raw_data_cache_key,
     )
-    historical_prices_yf_adjusted = (
-        fetched_prices_adj if fetched_prices_adj is not None else {}
-    )
+    
+    # If 1h interval requested, fetch hourly data for the RECENT/ACTIVE range only (limit to 730 days)
+    if interval == "1h":
+        hourly_start = max(start_date, date.today() - timedelta(days=725))
+        hourly_prices, _ = market_provider.get_historical_data(
+            symbols_yf=symbols_for_stocks_and_benchmarks_yf,
+            start_date=hourly_start,
+            end_date=fetch_end_date,
+            interval="1h",
+            use_cache=use_raw_data_cache,
+        )
+        # Merge hourly data into the adjusted map
+        for s, h_df in hourly_prices.items():
+            if s in historical_prices_yf_adjusted:
+                d_df = historical_prices_yf_adjusted[s]
+                # Force standardized UTC DatetimeIndex
+                d_df.index = pd.to_datetime(d_df.index, utc=True)
+                
+                h_df_proc = h_df.copy()
+                h_df_proc.index = pd.to_datetime(h_df_proc.index, utc=True)
+                
+                h_start_ts = pd.Timestamp(hourly_start).tz_localize('UTC')
+                
+                # Combine and remove duplicates
+                combined = pd.concat([d_df[d_df.index < h_start_ts], h_df_proc]).sort_index()
+                historical_prices_yf_adjusted[s] = combined[~combined.index.duplicated(keep='last')]
+            else:
+                historical_prices_yf_adjusted[s] = h_df
 
     logging.info(
         f"Fetching/Loading historical FX rates ({len(fx_pairs_for_api_yf)} pairs)..."
     )
-    fetched_fx_rates, fetch_failed_fx = market_provider.get_historical_fx_rates(
+    historical_fx_yf, fetch_failed_fx = market_provider.get_historical_fx_rates(
         fx_pairs_yf=fx_pairs_for_api_yf,
         start_date=full_start_date,
         end_date=fetch_end_date,
+        interval="1d",
         use_cache=use_raw_data_cache,
-        cache_key=raw_data_cache_key,  # Pass the key for manifest validation
+        cache_key=raw_data_cache_key,
     )
-    historical_fx_yf = fetched_fx_rates if fetched_fx_rates is not None else {}
+    
+    if interval == "1h":
+        hourly_start = max(start_date, date.today() - timedelta(days=725))
+        hourly_fx, _ = market_provider.get_historical_fx_rates(
+            fx_pairs_yf=fx_pairs_for_api_yf,
+            start_date=hourly_start,
+            end_date=fetch_end_date,
+            interval="1h",
+            use_cache=use_raw_data_cache,
+        )
+        for p, h_df in hourly_fx.items():
+            if p in historical_fx_yf:
+                d_df = historical_fx_yf[p]
+                d_df.index = pd.to_datetime(d_df.index, utc=True)
+                
+                h_df_proc = h_df.copy()
+                h_df_proc.index = pd.to_datetime(h_df_proc.index, utc=True)
+                
+                h_start_ts = pd.Timestamp(hourly_start).tz_localize('UTC')
+                
+                combined = pd.concat([d_df[d_df.index < h_start_ts], h_df_proc]).sort_index()
+                historical_fx_yf[p] = combined[~combined.index.duplicated(keep='last')]
+            else:
+                historical_fx_yf[p] = h_df
 
     fetch_failed = fetch_failed_prices or fetch_failed_fx
     if fetch_failed:
@@ -5519,6 +5631,13 @@ def calculate_historical_performance(
             final_status,
         )
 
+    # --- GLOBAL STANDARDIZATION: Ensure ALL dataframes have UTC index ---
+    # This covers symbols that were NOT touched by the 1h merge logic above.
+    for s_map in [historical_prices_yf_adjusted, historical_fx_yf]:
+        for k, v in s_map.items():
+            if not isinstance(v.index, pd.DatetimeIndex) or v.index.tz is None:
+                v.index = pd.to_datetime(v.index, utc=True)
+
     # --- 4. Derive Unadjusted Prices ---
     # logging.info("Deriving unadjusted prices using split data...")
     historical_prices_yf_unadjusted = _unadjust_prices(
@@ -5534,17 +5653,17 @@ def calculate_historical_performance(
     # --- Create String-to-ID Mappings (for Numba) ---
 
     # --- 5 & 6. Load or Calculate Daily Results ---
-    # Pass original_csv_file_path to _load_or_calculate_daily_results for cache validation.
     # If it's None (e.g., data loaded from DB), the mtime check in daily results cache will be skipped or handled.
     daily_df, cache_was_valid_daily, status_update_daily = (
         _load_or_calculate_daily_results(
             use_daily_results_cache=use_daily_results_cache,
             daily_results_cache_file=daily_results_cache_file,
+            daily_results_cache_key=daily_results_cache_key,
+            interval=interval,
             worker_signals=worker_signals,
             transactions_csv_file=(
                 original_csv_file_path  # Pass None or actual path for mtime check
             ),
-            daily_results_cache_key=daily_results_cache_key,
             transactions_df_effective=transactions_df_effective,  # This is filtered
             start_date=full_start_date,  # Use full range for calculation
             end_date=fetch_end_date,  # Use full range for calculation
@@ -5568,20 +5687,12 @@ def calculate_historical_performance(
             all_cash_balances=all_cash_balances,
             all_last_prices=all_last_prices, # Pass L1 cache
             included_accounts_list=included_accounts_list_sorted,
-            # DEBUG
-            # if not transactions_df_effective.empty and "Date" in transactions_df_effective.columns:
-            #     nov_11 = transactions_df_effective[transactions_df_effective["Date"].dt.date == pd.Timestamp("2025-11-11").date()]
             num_processes=num_processes,
             current_hist_version=CURRENT_HIST_VERSION,
             filter_desc=filter_desc,
             calc_method=calc_method or HISTORICAL_CALC_METHOD,
         )
     )
-    # DEBUG
-    logging.debug(f"DEBUG calc_summary before load_calc: {len(transactions_df_effective)} rows")
-    if not transactions_df_effective.empty and "Date" in transactions_df_effective.columns:
-        nov_11 = transactions_df_effective[transactions_df_effective["Date"].dt.date == pd.Timestamp("2025-11-11").date()]
-        logging.debug(f"DEBUG calc_summary before load_calc Nov 11: {len(nov_11)} rows")
     if status_update_daily:
         status_parts.append(status_update_daily.strip())
     if daily_df is None or daily_df.empty:
@@ -5617,8 +5728,8 @@ def calculate_historical_performance(
                         bm_series = bm_df['price'].copy()
                         bm_series.name = f"{bm} Price"
                         # Ensure index is datetime for merging
-                        if not isinstance(bm_series.index, pd.DatetimeIndex):
-                            bm_series.index = pd.to_datetime(bm_series.index)
+                        if not isinstance(bm_series.index, pd.DatetimeIndex) or bm_series.index.tz is None:
+                            bm_series.index = pd.to_datetime(bm_series.index, utc=True)
                         
                         # Merge into daily_df
                         # We use left join to keep daily_df structure
@@ -5632,8 +5743,15 @@ def calculate_historical_performance(
     # --- FIX: Filter DataFrame by requested date range BEFORE gain calc ---
     # This ensures accumulated gains start at 0% (1.0 factor) for the requested period.
     if not daily_df.empty:
-        ts_req_start = pd.Timestamp(start_date)
-        ts_req_end = pd.Timestamp(end_date)
+        # FIX: Align with UTC index of daily_df (which supports intraday)
+        ts_req_start = pd.Timestamp(start_date).tz_localize('UTC')
+        # Use end of day for end_date to include all intraday points
+        ts_req_end = (pd.Timestamp(end_date) + pd.Timedelta(days=1) - pd.Timedelta(nanoseconds=1)).tz_localize('UTC')
+        
+        # Ensure daily_df index is UTC (it should be, but be safe)
+        if daily_df.index.tz is None:
+             daily_df.index = daily_df.index.tz_localize('UTC')
+             
         daily_df = daily_df[(daily_df.index >= ts_req_start) & (daily_df.index <= ts_req_end)].copy()
     # --- END FIX ---
 

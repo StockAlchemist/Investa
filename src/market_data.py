@@ -205,7 +205,7 @@ class MarketDataProvider:
         return os.path.join(self._get_historical_cache_dir(), "manifest.json")
 
     def _get_historical_symbol_data_path(
-        self, yf_symbol: str, data_type: str = "price"
+        self, yf_symbol: str, data_type: str = "price", interval: str = "1d"
     ) -> str:
         """
         Returns the full path for an individual symbol's historical data file.
@@ -215,7 +215,9 @@ class MarketDataProvider:
         safe_yf_symbol = "".join(
             c if c.isalnum() or c in [".", "_", "-"] else "_" for c in yf_symbol
         )  # Allow . _ -
-        filename = f"{safe_yf_symbol}_{data_type}.json"
+        # Append interval to filename if not daily
+        interval_suffix = f"_{interval}" if interval != "1d" else ""
+        filename = f"{safe_yf_symbol}_{data_type}{interval_suffix}.json"
         return os.path.join(self._get_historical_cache_dir(), filename)
 
     def _get_metadata_cache_path(self) -> str:
@@ -411,9 +413,17 @@ class MarketDataProvider:
                             div_rate = info.get("dividendRate", 0.0)
                             div_yield = info.get("dividendYield", 0.0)
                             
+                            # Additional data for matching frequency and projection
+                            ex_div_date = info.get("exDividendDate", None)
+                            last_div_val = info.get("lastDividendValue", 0.0)
+                            last_div_date = info.get("lastDividendDate", None)
+
                             cache[sym] = {
                                 "trailingAnnualDividendRate": div_rate if div_rate else 0.0,
                                 "dividendYield": div_yield if div_yield else 0.0,
+                                "exDividendDate": ex_div_date,
+                                "lastDividendValue": last_div_val,
+                                "lastDividendDate": last_div_date,
                                 "timestamp": now_ts.isoformat()
                             }
                         except Exception as e_tick:
@@ -528,7 +538,7 @@ class MarketDataProvider:
                 # timeout=30 (seconds) explicitly to avoid default 10s failures on slow nets
                 df = yf.download(
                     list(yf_symbols_to_fetch),
-                    period="5d", 
+                    period="7d", 
                     group_by="ticker",
                     auto_adjust=True,
                     progress=False,
@@ -545,6 +555,7 @@ class MarketDataProvider:
                         try:
                             price = None
                             prev_close = None
+                            sparkline = []
                             
                             # Handle yf.download structure
                             sym_df = pd.DataFrame()
@@ -568,6 +579,7 @@ class MarketDataProvider:
                                 valid_days = sym_df.dropna(subset=[col_name])
                                 if not valid_days.empty:
                                     price = float(valid_days[col_name].iloc[-1])
+                                    sparkline = [float(v) for v in valid_days[col_name].tolist()]
                                     if len(valid_days) >= 2:
                                         prev_close = float(valid_days[col_name].iloc[-2])
                             
@@ -592,7 +604,8 @@ class MarketDataProvider:
                                     "source": "yf_batch_download",
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
                                     "trailingAnnualDividendRate": fund.get("trailingAnnualDividendRate", 0),
-                                    "dividendYield": fund.get("dividendYield", 0)
+                                    "dividendYield": fund.get("dividendYield", 0),
+                                    "sparkline_7d": sparkline
                                 }
                             else:
                                 # logging.warning(f"Missing price or currency for {yf_sym}.")
@@ -648,10 +661,10 @@ class MarketDataProvider:
                                 has_warnings = True
 
                         else:
-                             logging.warning(f"No fast_info for FX {yf_symbol}")
-                             has_warnings = True
+                            logging.warning(f"No fast_info for FX {yf_symbol}")
+                            has_warnings = True
                     except Exception as e_fx_sym:
-                         logging.warning(f"Error for FX {yf_symbol}: {e_fx_sym}")
+                        logging.warning(f"Error for FX {yf_symbol}: {e_fx_sym}")
                          
             except Exception as e_fx:
                 logging.error(f"FX fetch error: {e_fx}")
@@ -927,7 +940,7 @@ class MarketDataProvider:
 
     @profile
     def _fetch_yf_historical_data(
-        self, symbols_yf: List[str], start_date: date, end_date: date
+        self, symbols_yf: List[str], start_date: date, end_date: date, interval: str = "1d"
     ) -> Dict[str, pd.DataFrame]:
         """
         Internal helper to fetch historical 'Close' data (adjusted) using yfinance.download.
@@ -995,9 +1008,20 @@ class MarketDataProvider:
         # Historical data implies "past" data. Real-time is handled elsewhere.
         today = date.today()
         if yf_start_date >= today:
-             logging.info(f"Hist Fetch Helper: Request start date {yf_start_date} is >= today ({today}). Skipping historical fetch to avoid yfinance errors.")
-             return {}
+            logging.info(f"Hist Fetch Helper: Requested start date {yf_start_date} is today or in the future. Skipping fetch.")
+            return {}
+
+        # --- SAFETY CLIP: YFinance 1h data limit is 730 days ---
+        if interval == "1h":
+            limit_start = today - timedelta(days=729)
+            if yf_start_date < limit_start:
+                logging.warning(f"Hist Fetch Helper: Clipping 1h start date from {yf_start_date} to {limit_start} (YF limit).")
+                yf_start_date = limit_start
+                if yf_start_date >= yf_end_date:
+                     return {}
         
+        # --- END FIX ---
+
         # Clamp end date to today (exclusive in yfinance means up to yesterday) 
         # if we are not asking for today's data (which we shouldn't be here).
         # Actually, if we ask for end=tomorrow, yfinance tries to get today.
@@ -1051,6 +1075,7 @@ class MarketDataProvider:
                         tickers=batch_symbols,
                         start=yf_start_date,
                         end=yf_end_date,
+                        interval=interval,
                         progress=False,
                         group_by="ticker",
                         auto_adjust=True,
@@ -1432,10 +1457,9 @@ class MarketDataProvider:
     def _save_historical_data_and_manifest(
         self,
         cache_key_to_save: str,
-        data_to_save_map: Dict[
-            str, pd.DataFrame
-        ] = None,  # e.g., existing FX data if saving prices
-        data_type: str = "price",  # "price" or "fx"
+        data_to_save_map: Dict[str, pd.DataFrame],
+        data_type: str = "price",
+        interval: str = "1d"
     ):
         """Saves individual symbol historical data files and updates the manifest.json."""
         manifest_path = self._get_historical_manifest_path()
@@ -1455,7 +1479,7 @@ class MarketDataProvider:
                 )
                 continue
             symbol_file_path = self._get_historical_symbol_data_path(
-                yf_symbol, data_type
+                yf_symbol, data_type, interval=interval
             )
             try:
                 # Serialize DataFrame to JSON string
@@ -1592,6 +1616,7 @@ class MarketDataProvider:
         symbols_yf: List[str],
         start_date: date,
         end_date: date,
+        interval: str = "1d",
         use_cache: bool = True,
         cache_key: Optional[str] = None,  # Kept for API compatibility, but logic relies on individual files
         cache_file: Optional[str] = None,  # Not directly used
@@ -1633,9 +1658,9 @@ class MarketDataProvider:
 
         # --- 1. Try Loading Individual Cache Files ---
         if use_cache:
-            logging.info(f"Hist Prices: Checking local cache for {len(symbols_yf)} symbols...")
+            logging.info(f"Hist Prices: Checking local cache for {len(symbols_yf)} symbols (interval: {interval})...")
             for yf_symbol in symbols_yf:
-                symbol_file_path = self._get_historical_symbol_data_path(yf_symbol, data_type="price")
+                symbol_file_path = self._get_historical_symbol_data_path(yf_symbol, data_type="price", interval=interval)
                 
                 # Check if file exists
                 if os.path.exists(symbol_file_path):
@@ -1705,7 +1730,7 @@ class MarketDataProvider:
             for last_d, syms in by_last_date.items():
                 fetch_start = last_d + timedelta(days=1)
                 if fetch_start <= end_date:
-                    delta_data = self._fetch_yf_historical_data(syms, fetch_start, end_date)
+                    delta_data = self._fetch_yf_historical_data(syms, fetch_start, end_date, interval=interval)
                     
                     # Merge
                     for s in syms:
@@ -1725,8 +1750,8 @@ class MarketDataProvider:
         # Also clean up list to assume any symbol not already in 'historical_prices_yf_adjusted' needs full fetch
         # (Though our logic above populated 'symbols_needing_full_fetch' explicitly)
         if symbols_needing_full_fetch:
-             logging.info(f"Hist Prices: Full/Gap fetch needed for {len(symbols_needing_full_fetch)} symbols...")
-             fetched_data = self._fetch_yf_historical_data(symbols_needing_full_fetch, start_date, end_date)
+             logging.info(f"Hist Prices: Full/Gap fetch needed for {len(symbols_needing_full_fetch)} symbols (interval: {interval})...")
+             fetched_data = self._fetch_yf_historical_data(symbols_needing_full_fetch, start_date, end_date, interval=interval)
              historical_prices_yf_adjusted.update(fetched_data)
         
         logging.info(f"Hist Prices: Data available for {len(historical_prices_yf_adjusted)}/{len(symbols_yf)} symbols.")
@@ -1748,7 +1773,8 @@ class MarketDataProvider:
                 self._save_historical_data_and_manifest(
                     cache_key_to_save=cache_key,
                     data_to_save_map=historical_prices_yf_adjusted,
-                    data_type="price"
+                    data_type="price",
+                    interval=interval
                 )
             else:
                  # Even without a key, we should save the individual files!
@@ -1757,7 +1783,7 @@ class MarketDataProvider:
                  # Let's iterate and save files directly if strictly no key, but usually cache_key is provided by caller.
                  if not cache_key:
                      # Just save files manually to ensure persistence
-                     self._save_files_only(historical_prices_yf_adjusted, "price")
+                     self._save_files_only(historical_prices_yf_adjusted, "price", interval=interval)
 
         # --- 4. Final Validation ---
         invalid_cache = self._load_invalid_symbols_cache()
@@ -1773,15 +1799,16 @@ class MarketDataProvider:
 
         return historical_prices_yf_adjusted, fetch_failed
 
-    def _save_files_only(self, data_map, data_type):
-        """Helper to save just file content without manifest update (if needed)."""
-        for sym, df in data_map.items():
-             if df.empty: continue
-             path = self._get_historical_symbol_data_path(sym, data_type)
-             try:
-                 df.to_json(path, orient="split", date_format="iso")
-             except Exception as e:
-                 logging.error(f"Error saving file for {sym}: {e}")
+    def _save_files_only(self, data_map, data_type, interval="1d"):
+        """Saves individual symbol data files without updating a global manifest."""
+        for yf_symbol, df in data_map.items():
+            if df is None or df.empty:
+                continue
+            symbol_file_path = self._get_historical_symbol_data_path(yf_symbol, data_type=data_type, interval=interval)
+            try:
+                df.to_json(symbol_file_path, orient="split", date_format="iso")
+            except Exception as e:
+                logging.error(f"Error saving file for {yf_symbol}: {e}")
 
     @profile
     def get_historical_fx_rates(
@@ -1789,6 +1816,7 @@ class MarketDataProvider:
         fx_pairs_yf: List[str],  # e.g., ['EUR=X', 'JPY=X']
         start_date: date,
         end_date: date,
+        interval: str = "1d",
         use_cache: bool = True,
         cache_key: Optional[str] = None,  # Key for validation (used for manifest)
         cache_file: Optional[str] = None,  # Not directly used
@@ -1805,9 +1833,9 @@ class MarketDataProvider:
 
         # --- 1. Load from cache files ---
         if use_cache:
-            logging.info(f"Hist FX: Checking local cache for {len(fx_pairs_yf)} pairs...")
+            logging.info(f"Hist FX: Checking local cache for {len(fx_pairs_yf)} pairs (interval: {interval})...")
             for pair in fx_pairs_yf:
-                symbol_file_path = self._get_historical_symbol_data_path(pair, data_type="fx")
+                symbol_file_path = self._get_historical_symbol_data_path(pair, data_type="fx", interval=interval)
                 
                 if os.path.exists(symbol_file_path):
                     try:
@@ -1862,7 +1890,7 @@ class MarketDataProvider:
             for last_d, syms in by_last_date.items():
                 fetch_start = last_d + timedelta(days=1)
                 if fetch_start <= end_date:
-                    delta_data = self._fetch_yf_historical_data(syms, fetch_start, end_date)
+                    delta_data = self._fetch_yf_historical_data(syms, fetch_start, end_date, interval=interval)
                     for s in syms:
                         if s in delta_data and not delta_data[s].empty:
                             old_df = historical_fx_yf[s]
@@ -1876,8 +1904,8 @@ class MarketDataProvider:
 
         # 2b. Full
         if fx_needing_full_fetch:
-             logging.info(f"Hist FX: Full fetch needed for {len(fx_needing_full_fetch)} pairs...")
-             fetched_fx = self._fetch_yf_historical_data(fx_needing_full_fetch, start_date, end_date)
+             logging.info(f"Hist FX: Full fetch needed for {len(fx_needing_full_fetch)} pairs (interval: {interval})...")
+             fetched_fx = self._fetch_yf_historical_data(fx_needing_full_fetch, start_date, end_date, interval=interval)
              historical_fx_yf.update(fetched_fx)
              
         # --- 3. Save ---
@@ -1887,12 +1915,13 @@ class MarketDataProvider:
                 self._save_historical_data_and_manifest(
                     cache_key_to_save=cache_key,
                     data_to_save_map=data_to_save,
-                    data_type="fx"
+                    data_type="fx",
+                    interval=interval
                 )
             else:
                  # Check if we should save manually without key
                  data_to_save = {k: v for k, v in historical_fx_yf.items() if k in fx_pairs_yf}
-                 self._save_files_only(data_to_save, "fx")
+                 self._save_files_only(data_to_save, "fx", interval=interval)
 
         # --- 4. Validation ---
         missing_fx = [p for p in fx_pairs_yf if p not in historical_fx_yf or historical_fx_yf[p].empty]

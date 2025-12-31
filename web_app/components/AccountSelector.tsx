@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { cn } from '@/lib/utils';
 
 interface AccountSelectorProps {
     availableAccounts: string[];
@@ -38,20 +39,36 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
     const isAllSelected = selectedAccounts.length === 0;
 
     const getLabel = () => {
-        if (isAllSelected) return "All Accounts";
+        if (isAllSelected) return (
+            <>
+                <span className="hidden sm:inline">All Accounts</span>
+                <span className="sm:hidden">All</span>
+            </>
+        );
         if (selectedAccounts.length === 1) return selectedAccounts[0];
-        return `${selectedAccounts.length} Accounts Selected`;
+        return (
+            <>
+                <span className="hidden sm:inline">{selectedAccounts.length} Accounts Selected</span>
+                <span className="sm:hidden">{selectedAccounts.length} Accs</span>
+            </>
+        );
     };
 
     return (
-        <div className="relative mb-4" ref={dropdownRef}>
+        <div className="relative" ref={dropdownRef}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex justify-between w-full px-4 py-2 text-sm font-medium text-foreground bg-card border border-border rounded-lg shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-xl transition-all"
+                className={cn(
+                    "flex items-center gap-2 px-4 py-2 text-xs font-medium transition-all duration-300",
+                    "bg-white/5 hover:bg-white/10 dark:bg-black/20 dark:hover:bg-black/30",
+                    "border border-white/10 dark:border-white/5 backdrop-blur-xl shadow-lg shadow-black/5 rounded-2xl",
+                    isOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-cyan-500"
+                )}
             >
-                <span className="font-medium">{getLabel()}</span>
+                <span className="font-semibold text-muted-foreground/80 uppercase tracking-tighter mr-1 border-r border-border pr-2 hidden sm:inline">Accounts</span>
+                <span className="font-medium text-cyan-500">{getLabel()}</span>
                 <svg
-                    className={`w-5 h-5 text-muted-foreground transition-transform ${isOpen ? 'transform rotate-180' : ''}`}
+                    className={`w-3.5 h-3.5 text-cyan-500/60 transition-transform ${isOpen ? 'transform rotate-180' : ''}`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"

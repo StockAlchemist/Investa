@@ -68,6 +68,7 @@ export interface Holding {
     // Keys are dynamic based on currency, e.g., "Market Value (USD)"
     [key: string]: unknown;
     lots?: Lot[];
+    sparkline_7d?: number[];
 }
 
 export interface Transaction {
@@ -397,6 +398,118 @@ export async function triggerRefresh(secret: string): Promise<StatusResponse> {
     });
     if (!response.ok) {
         throw new Error(`Failed to trigger refresh: ${response.statusText}`);
+    }
+    return response.json();
+}
+export interface CorrelationData {
+    assets: string[];
+    correlation: { x: string; y: string; value: number }[];
+}
+
+export async function fetchCorrelationMatrix(
+    period: string = '1y',
+    accounts?: string[]
+): Promise<CorrelationData> {
+    const params = new URLSearchParams({ period });
+    if (accounts) {
+        accounts.forEach(acc => params.append('accounts', acc));
+    }
+    const res = await fetch(`${API_BASE_URL}/correlation?${params.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch correlation matrix');
+    return res.json();
+}
+export interface ProjectedIncome {
+    month: string;
+    value: number;
+    year_month: string;
+    [key: string]: number | string; // Allow dynamic keys for stacked bar breakdown
+}
+
+export async function fetchProjectedIncome(
+    currency: string = 'USD',
+    accounts?: string[]
+): Promise<ProjectedIncome[]> {
+    const params = new URLSearchParams({ currency });
+    if (accounts) {
+        accounts.forEach(acc => params.append('accounts', acc));
+    }
+    const res = await fetch(`${API_BASE_URL}/projected_income?${params.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch projected income');
+    return res.json();
+}
+
+export interface HealthComponent {
+    score: number;
+    metric: number | string;
+    label: string;
+}
+
+export interface PortfolioHealth {
+    overall_score: number;
+    rating: string;
+    debug_error?: string;
+    components: {
+        diversification: HealthComponent;
+        efficiency: HealthComponent;
+        stability: HealthComponent;
+    };
+}
+
+export async function fetchPortfolioHealth(
+    currency: string = 'USD',
+    accounts?: string[]
+): Promise<PortfolioHealth | null> {
+    const params = new URLSearchParams({ currency });
+    if (accounts) {
+        accounts.forEach(acc => params.append('accounts', acc));
+    }
+    const res = await fetch(`${API_BASE_URL}/portfolio_health?${params.toString()}`);
+    if (!res.ok) {
+        console.error("Failed to fetch portfolio health");
+        return null;
+    }
+    return res.json();
+}
+
+export interface WatchlistItem {
+    Symbol: string;
+    Note: string;
+    AddedOn: string;
+    Price: number | null;
+    "Day Change": number | null;
+    "Day Change %": number | null;
+    Name: string | null;
+    Currency: string | null;
+    Sparkline: number[];
+}
+
+export async function fetchWatchlist(currency: string = 'USD'): Promise<WatchlistItem[]> {
+    const params = new URLSearchParams({ currency });
+    const res = await fetch(`${API_BASE_URL}/watchlist?${params.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch watchlist');
+    return res.json();
+}
+
+export async function addToWatchlist(symbol: string, note: string = ""): Promise<StatusResponse> {
+    const response = await fetch(`${API_BASE_URL}/watchlist`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ symbol, note }),
+    });
+    if (!response.ok) {
+        throw new Error(`Failed to add to watchlist: ${response.statusText}`);
+    }
+    return response.json();
+}
+
+export async function removeFromWatchlist(symbol: string): Promise<StatusResponse> {
+    const response = await fetch(`${API_BASE_URL}/watchlist/${symbol}`, {
+        method: "DELETE",
+    });
+    if (!response.ok) {
+        throw new Error(`Failed to remove from watchlist: ${response.statusText}`);
     }
     return response.json();
 }

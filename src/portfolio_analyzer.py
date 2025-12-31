@@ -1164,6 +1164,7 @@ def _build_summary_rows(
                 f"FX Gain/Loss ({display_currency})": fx_gain_loss_display_holding,
                 "FX Gain/Loss %": fx_gain_loss_pct_holding,
                 "Name": stock_data.get("name", ""),  # Add Company Name
+                "sparkline_7d": stock_data.get("sparkline_7d", []),
             }
         )
     # --- End Stock/ETF Loop ---
@@ -2625,3 +2626,152 @@ def calculate_rebalancing_trades(
 
     summary["Estimated Number of Trades"] = len(trades)
     return pd.DataFrame(trades), summary
+
+# --- Portfolio Health Analysis ---
+
+def calculate_hhi(weights: List[float]) -> float:
+    """
+    Calculates the Herfindahl-Hirschman Index (HHI) for a list of weights.
+    HHI = sum(w_i^2) where w_i are fractions (0 to 1).
+    Returns value between 1/N (perfectly diversified) and 1.0 (concentrated).
+    """
+    if not weights:
+        return 1.0
+    
+    # Ensure weights are normalized sum to 1
+    total_w = sum(weights)
+    if total_w == 0:
+        return 0.0
+        
+    normalized_weights = [w / total_w for w in weights]
+    hhi = sum(w**2 for w in normalized_weights)
+    return hhi
+
+def calculate_health_score(
+    summary_df: pd.DataFrame, 
+    risk_metrics: Dict[str, float],
+    risk_free_rate: float = 0.02
+) -> Dict[str, Any]:
+    """
+    Calculates a comprehensive 'Health Score' for the portfolio.
+    
+    Components:
+    1. Diversification (HHI of asset weights).
+    2. Efficiency (Sharpe Ratio).
+    3. Volatility Check (Penalty if too high).
+    """
+    score_breakdown = {}
+    
+    # 1. Diversification Score (0-100)
+    # HHI Approach: Lower is better. 
+    # HHI < 1500 (0.15) is Competitive (Good)
+    # HHI 1500-2500 (0.15-0.25) is Moderately Concentrated
+    # HHI > 2500 (0.25) is Highly Concentrated
+    
+    relevant_holdings = pd.DataFrame()
+    
+    # Identify the Market Value column (it usually has currency like "Market Value (USD)")
+    mv_col = next((c for c in summary_df.columns if c.startswith("Market Value (")), None)
+    
+    if not summary_df.empty and 'Symbol' in summary_df.columns and mv_col:
+        # Robustly handle is_total if it doesn't exist
+        if 'is_total' in summary_df.columns:
+            is_total_mask = summary_df['is_total'].fillna(False)
+        else:
+            is_total_mask = pd.Series(False, index=summary_df.index)
+
+        relevant_holdings = summary_df[
+            (summary_df['Symbol'] != 'Total') & 
+            (summary_df[mv_col] > 0) & 
+            (~is_total_mask)
+        ]
+    
+    if relevant_holdings.empty:
+        return {
+            "overall_score": 0,
+            "components": {},
+            "rating": "N/A"
+        }
+        
+    weights = relevant_holdings[mv_col].tolist()
+    hhi = calculate_hhi(weights)
+    
+    # Convert HHI to Score (Inverse). 
+    # Current HHI range is [1/N to 1.0].
+    # Logic: 
+    # HHI 0.1 (10 equal stocks) -> 90 Score
+    # HHI 0.2 (5 equal stocks) -> 70 Score
+    # HHI 1.0 (1 stock) -> 10 Score
+    # Formula: 100 * (1 - hhi^0.4) approx? 
+    # 0.1^0.4 = 0.39 -> 100*(1-0.39)=61. Too low.
+    # Let's use: 100 * (1.0 - (hhi ** 0.5)) but shift it.
+    # Actually, a simple linear-ish curve or adjusted power:
+    div_score = 100 * (1.0 - (hhi ** 0.6)) + 10
+    div_score = max(0, min(100, div_score))
+    
+    # 2. Efficiency Score (Sharpe)
+    # New Logic:
+    # Sharpe 0.0 -> Score 30 (Poor, matching risk-free isn't 'fair' for stocks)
+    # Sharpe 1.0 -> Score 80 (Good)
+    # Sharpe 1.5 -> Score 100 (Excellent)
+    sharpe = risk_metrics.get("Sharpe Ratio", 0.0)
+    if sharpe <= 0:
+        eff_score = max(0, 30 + (sharpe * 10)) # Penalize negative sharpe
+    else:
+        # Scale 0 to 1.0 -> 30 to 80
+        # Scale 1.0 to 1.5 -> 80 to 100
+        if sharpe <= 1.0:
+            eff_score = 30 + (sharpe * 50)
+        else:
+            eff_score = 80 + ((sharpe - 1.0) * 40)
+            
+    eff_score = max(0, min(100, eff_score))
+    
+    # 3. Volatility Penalty / Score
+    # Volatility logic:
+    # Vol 0.0 -> Score 50 (Neutral/Insufficient Data)
+    # Vol 10-20% -> Score 100 (Healthy active range)
+    # Vol > 30% -> Penalty
+    vol = risk_metrics.get("Volatility (Ann.)", 0.0)
+    if vol == 0:
+        vol_score = 50.0
+    elif vol < 0.05:
+        vol_score = 70.0 # Extreme low vol (cash-like)
+    elif vol <= 0.25:
+        vol_score = 100.0 # Ideal range
+    else:
+        # Penalty for high vol
+        vol_score = max(0, 100 - (vol - 0.25) * 200) # 35% vol -> 80 score
+        
+    # Composite Score
+    # Weighted average: Div 40%, Eff 40%, Vol 20%
+    overall = (div_score * 0.4) + (eff_score * 0.4) + (vol_score * 0.2)
+    
+    # Rating
+    if overall >= 80: rating = "Excellent"
+    elif overall >= 60: rating = "Good"
+    elif overall >= 40: rating = "Fair"
+    elif overall >= 20: rating = "Poor"
+    else: rating = "Critical"
+    
+    return {
+        "overall_score": round(overall, 1),
+        "rating": rating,
+        "components": {
+            "diversification": {
+                "score": round(div_score, 1),
+                "metric": round(hhi, 3), 
+                "label": "HHI (Concentration)"
+            },
+            "efficiency": {
+                "score": round(eff_score, 1),
+                "metric": round(sharpe, 2),
+                "label": "Sharpe Ratio"
+            },
+            "stability": {
+                "score": round(vol_score, 1),
+                "metric": f"{round(vol * 100, 1)}%",
+                "label": "Volatility"
+            }
+        }
+    }
