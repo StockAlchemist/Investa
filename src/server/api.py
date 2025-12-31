@@ -894,10 +894,11 @@ async def _calculate_historical_performance_internal(
         # Add benchmark data
         if benchmarks:
             for b_ticker in benchmarks:
-                if b_ticker in daily_df.columns:
-                        b_val = row.get(b_ticker)
-                        display_name = ticker_to_name.get(b_ticker, b_ticker)
-                        item[display_name] = (b_val - 1) * 100 if pd.notnull(b_val) else 0.0
+                bm_col = f"{b_ticker} Accumulated Gain"
+                if bm_col in daily_df.columns:
+                    b_val = row.get(bm_col)
+                    display_name = ticker_to_name.get(b_ticker, b_ticker)
+                    item[display_name] = (b_val - 1) * 100 if pd.notnull(b_val) else 0.0
             
         result.append(item)
         
