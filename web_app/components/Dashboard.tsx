@@ -148,7 +148,6 @@ export default function Dashboard({ summary, currency, history = [], isLoading =
                 return <MetricCard
                     title="Total Portfolio Value"
                     value={m?.market_value ?? 0}
-                    subValue={dayGLPct}
                     valueClassName="text-3xl sm:text-5xl"
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
