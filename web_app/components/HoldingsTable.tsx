@@ -333,16 +333,17 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
     return (
         <div className="bg-card backdrop-blur-md border border-border rounded-xl shadow-sm mt-4 overflow-hidden scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800 scrollbar-track-transparent">
             <div className="flex flex-col gap-4 p-4 border-b border-black/5 dark:border-white/5">
-                {/* Top Row: Title & Search */}
-                <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-                    <div className="flex items-center gap-3 w-full md:w-auto">
+                {/* Header Row: Title & Count */}
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
                         <h2 className="text-lg font-bold text-foreground">Holdings</h2>
                         <span className="text-xs font-medium text-muted-foreground bg-secondary px-2 py-1 rounded-full border border-border">
                             {filteredHoldings.length} / {holdings.length}
                         </span>
                     </div>
 
-                    <div className="relative w-full md:w-72">
+                    {/* Desktop Search (hidden on mobile) */}
+                    <div className="hidden lg:relative lg:block lg:w-72">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <svg className="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -368,85 +369,112 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                     </div>
                 </div>
 
-                {/* Second Row: Filters & Actions */}
-                <div className="flex flex-wrap items-center gap-2">
-                    {/* Sector Filter */}
-                    <div className="relative" ref={sectorMenuRef}>
+                {/* Mobile Search (hidden on desktop) */}
+                <div className="relative w-full lg:hidden">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <svg className="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                    </div>
+                    <input
+                        type="text"
+                        placeholder="Search symbol..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full pl-9 pr-4 py-1.5 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 placeholder-muted-foreground transition-all"
+                    />
+                    {searchQuery && (
                         <button
-                            onClick={() => setIsSectorMenuOpen(!isSectorMenuOpen)}
-                            className={`px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-md transition-colors
-                                ${selectedSectors.size > 0 || isSectorMenuOpen
-                                    ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
-                                    : 'text-foreground bg-secondary border-border hover:bg-accent/10'
-                                }`}
+                            onClick={() => setSearchQuery("")}
+                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted-foreground hover:text-foreground"
                         >
-                            Sector {selectedSectors.size > 0 && `(${selectedSectors.size})`}
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
                         </button>
-                        {isSectorMenuOpen && (
-                            <div className="absolute left-0 z-50 mt-2 w-56 origin-top-left bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
-                                <div className="p-2 border-b border-border">
-                                    <button onClick={() => setSelectedSectors(new Set())} className="text-xs text-cyan-500 hover:text-cyan-600 font-medium w-full text-left px-2">
-                                        Clear Filter
-                                    </button>
+                    )}
+                </div>
+
+                {/* Filters & Actions Group */}
+                <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-3">
+                    {/* Left side: Filters */}
+                    <div className="flex flex-wrap items-center gap-2">
+                        {/* Sector Filter */}
+                        <div className="relative" ref={sectorMenuRef}>
+                            <button
+                                onClick={() => setIsSectorMenuOpen(!isSectorMenuOpen)}
+                                className={`px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-md transition-colors
+                                    ${selectedSectors.size > 0 || isSectorMenuOpen
+                                        ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
+                                        : 'text-foreground bg-secondary border-border hover:bg-accent/10'
+                                    }`}
+                            >
+                                Sector {selectedSectors.size > 0 && `(${selectedSectors.size})`}
+                            </button>
+                            {isSectorMenuOpen && (
+                                <div className="absolute left-0 z-50 mt-2 w-56 origin-top-left bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
+                                    <div className="p-2 border-b border-border">
+                                        <button onClick={() => setSelectedSectors(new Set())} className="text-xs text-cyan-500 hover:text-cyan-600 font-medium w-full text-left px-2">
+                                            Clear Filter
+                                        </button>
+                                    </div>
+                                    <div className="py-1">
+                                        {uniqueSectors.map(sector => (
+                                            <label key={sector} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedSectors.has(sector)}
+                                                    onChange={() => toggleSector(sector)}
+                                                    className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded bg-secondary"
+                                                />
+                                                <span className="ml-2 truncate">{sector}</span>
+                                            </label>
+                                        ))}
+                                        {uniqueSectors.length === 0 && <div className="px-4 py-2 text-sm text-muted-foreground">No sectors found</div>}
+                                    </div>
                                 </div>
-                                <div className="py-1">
-                                    {uniqueSectors.map(sector => (
-                                        <label key={sector} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedSectors.has(sector)}
-                                                onChange={() => toggleSector(sector)}
-                                                className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded bg-secondary"
-                                            />
-                                            <span className="ml-2 truncate">{sector}</span>
-                                        </label>
-                                    ))}
-                                    {uniqueSectors.length === 0 && <div className="px-4 py-2 text-sm text-muted-foreground">No sectors found</div>}
+                            )}
+                        </div>
+
+                        {/* Account Filter */}
+                        <div className="relative" ref={accountMenuRef}>
+                            <button
+                                onClick={() => setIsAccountMenuOpen(!isAccountMenuOpen)}
+                                className={`px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-md transition-colors
+                                    ${selectedAccounts.size > 0 || isAccountMenuOpen
+                                        ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
+                                        : 'text-foreground bg-secondary border-border hover:bg-accent/10'
+                                    }`}
+                            >
+                                Account {selectedAccounts.size > 0 && `(${selectedAccounts.size})`}
+                            </button>
+                            {isAccountMenuOpen && (
+                                <div className="absolute left-0 z-50 mt-2 w-56 origin-top-left bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
+                                    <div className="p-2 border-b border-border">
+                                        <button onClick={() => setSelectedAccounts(new Set())} className="text-xs text-cyan-500 hover:text-cyan-600 font-medium w-full text-left px-2">
+                                            Clear Filter
+                                        </button>
+                                    </div>
+                                    <div className="py-1">
+                                        {uniqueAccounts.map(account => (
+                                            <label key={account} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedAccounts.has(account)}
+                                                    onChange={() => toggleAccount(account)}
+                                                    className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded bg-secondary"
+                                                />
+                                                <span className="ml-2 truncate">{account}</span>
+                                            </label>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
+                        </div>
                     </div>
 
-                    {/* Account Filter */}
-                    <div className="relative" ref={accountMenuRef}>
-                        <button
-                            onClick={() => setIsAccountMenuOpen(!isAccountMenuOpen)}
-                            className={`px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-md transition-colors
-                                ${selectedAccounts.size > 0 || isAccountMenuOpen
-                                    ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
-                                    : 'text-foreground bg-secondary border-border hover:bg-accent/10'
-                                }`}
-                        >
-                            Account {selectedAccounts.size > 0 && `(${selectedAccounts.size})`}
-                        </button>
-                        {isAccountMenuOpen && (
-                            <div className="absolute left-0 z-50 mt-2 w-56 origin-top-left bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
-                                <div className="p-2 border-b border-border">
-                                    <button onClick={() => setSelectedAccounts(new Set())} className="text-xs text-cyan-500 hover:text-cyan-600 font-medium w-full text-left px-2">
-                                        Clear Filter
-                                    </button>
-                                </div>
-                                <div className="py-1">
-                                    {uniqueAccounts.map(account => (
-                                        <label key={account} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedAccounts.has(account)}
-                                                onChange={() => toggleAccount(account)}
-                                                className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded bg-secondary"
-                                            />
-                                            <span className="ml-2 truncate">{account}</span>
-                                        </label>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="flex-grow md:flex-grow-0" />
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-2 ml-auto">
+                    {/* Right side: Actions */}
+                    <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
                         <div className="relative" ref={columnMenuRef}>
                             <button
                                 onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)}
