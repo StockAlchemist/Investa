@@ -235,7 +235,7 @@ export default function Dashboard({ summary, currency, history = [], isLoading =
                 />;
             case 'ytdDividends':
                 return <MetricCard
-                    title="YTD Dividends"
+                    title="Total Dividends"
                     value={m?.dividends ?? 0}
                     currency={currency}
                     isLoading={isLoading}
