@@ -98,10 +98,13 @@ export async function fetchSummary(currency: string = 'USD', accounts?: string[]
     return res.json();
 }
 
-export async function fetchHoldings(currency: string = 'USD', accounts?: string[]): Promise<Holding[]> {
+export async function fetchHoldings(currency: string = 'USD', accounts?: string[], showClosed: boolean = false): Promise<Holding[]> {
     const params = new URLSearchParams({ currency });
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
+    }
+    if (showClosed) {
+        params.append('show_closed', 'true');
     }
     const res = await fetch(`${API_BASE_URL}/holdings?${params.toString()}`);
     if (!res.ok) throw new Error('Failed to fetch holdings');

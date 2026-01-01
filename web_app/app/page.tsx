@@ -48,6 +48,18 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState('performance');
   const [benchmarks, setBenchmarks] = useState<string[]>([]);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [showClosed, setShowClosed] = useState(false);
+
+  // Initialize showClosed from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('investa_show_closed');
+    if (saved) setShowClosed(saved === 'true');
+  }, []);
+
+  // Persist showClosed to localStorage
+  useEffect(() => {
+    localStorage.setItem('investa_show_closed', showClosed.toString());
+  }, [showClosed]);
 
   // Command Palette Keyboard Listener
   useEffect(() => {
@@ -76,8 +88,8 @@ export default function Home() {
   });
 
   const holdingsQuery = useQuery({
-    queryKey: ['holdings', currency, selectedAccounts],
-    queryFn: () => fetchHoldings(currency, selectedAccounts),
+    queryKey: ['holdings', currency, selectedAccounts, showClosed],
+    queryFn: () => fetchHoldings(currency, selectedAccounts, showClosed),
     enabled: activeTab === 'performance' || activeTab === 'allocation',
     staleTime: 5 * 60 * 1000,
   });
@@ -184,6 +196,8 @@ export default function Home() {
               holdings={holdings}
               currency={currency}
               isLoading={holdingsQuery.isLoading}
+              showClosed={showClosed}
+              onToggleShowClosed={setShowClosed}
             />
           </>
         );

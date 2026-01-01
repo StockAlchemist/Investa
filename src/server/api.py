@@ -499,6 +499,7 @@ async def get_correlation_matrix(
 async def get_holdings(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),
+    show_closed: bool = Query(False),
     data: tuple = Depends(get_transaction_data)
 ):
     """
@@ -532,7 +533,7 @@ async def get_holdings(
         summary_data = await _calculate_portfolio_summary_internal(
             currency=currency,
             include_accounts=accounts,
-            show_closed_positions=False, # Don't show closed in holdings
+            show_closed_positions=show_closed, # Pass the parameter
             data=data
         )
         

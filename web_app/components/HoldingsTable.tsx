@@ -12,6 +12,8 @@ interface HoldingsTableProps {
     holdings: Holding[];
     currency: string;
     isLoading?: boolean;
+    showClosed?: boolean;
+    onToggleShowClosed?: (val: boolean) => void;
 }
 
 // Mapping from UI Header to Data Key Prefix (or exact key)
@@ -56,7 +58,7 @@ interface SortConfig {
     direction: SortDirection;
 }
 
-export default function HoldingsTable({ holdings, currency, isLoading = false }: HoldingsTableProps) {
+export default function HoldingsTable({ holdings, currency, isLoading = false, showClosed = false, onToggleShowClosed }: HoldingsTableProps) {
     const [visibleColumns, setVisibleColumns] = useState<string[]>(DEFAULT_VISIBLE_COLUMNS);
     const [showLots, setShowLots] = useState(false);
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'Mkt Val', direction: 'desc' });
@@ -470,6 +472,17 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
                                 </div>
                             )}
                         </div>
+
+                        <button
+                            onClick={() => onToggleShowClosed?.(!showClosed)}
+                            className={`px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md transition-colors
+                                ${showClosed
+                                    ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
+                                    : 'text-foreground bg-secondary border-border hover:bg-accent/10'
+                                }`}
+                        >
+                            {showClosed ? 'Hide Closed' : 'Show Closed'}
+                        </button>
 
                         <button
                             onClick={() => setShowLots(!showLots)}
