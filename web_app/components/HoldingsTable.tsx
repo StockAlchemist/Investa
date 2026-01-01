@@ -46,7 +46,7 @@ const COLUMN_DEFINITIONS: { [header: string]: string } = {
 };
 
 const DEFAULT_VISIBLE_COLUMNS = [
-    "Symbol", "7d Trend", "Quantity", "Price", "Mkt Val", "Day Chg %", "Unreal. G/L %"
+    "Symbol", "7d Trend", "Quantity", "Price", "Mkt Val", "Day Chg", "Day Chg %", "Unreal. G/L", "Unreal. G/L %"
 ];
 
 type SortDirection = 'asc' | 'desc';
