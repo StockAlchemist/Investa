@@ -153,7 +153,6 @@ export default function Dashboard({ summary, currency, history = [], isLoading =
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
-                    sparklineData={history?.map(d => ({ value: d.value }))}
                     isLoading={isLoading}
                 />;
             case 'dayGL':

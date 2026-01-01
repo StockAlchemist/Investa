@@ -298,7 +298,7 @@ export default function Home() {
             {/* Logo and App Title */}
             <div className="flex items-center gap-2 sm:gap-3 transition-all duration-300">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={mounted && resolvedTheme === 'dark' ? "/logo-dark.png" : "/logo.png"} alt="Investa Logo" className="w-8 h-8 rounded-lg shadow-lg shadow-cyan-500/20" />
+              <img src={mounted && resolvedTheme === 'dark' ? "/logo-dark.png" : "/logo.png"} alt="Investa Logo" className="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/20" />
               <h1 className="text-xl md:text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
                 <span className="hidden sm:block">Investa</span>
                 <span className="hidden md:inline-flex items-center rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs font-medium text-muted-foreground">
