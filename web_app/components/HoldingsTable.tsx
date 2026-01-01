@@ -395,141 +395,136 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                     )}
                 </div>
 
-                {/* Filters & Actions Group */}
-                <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-3">
-                    {/* Left side: Filters */}
-                    <div className="flex flex-wrap items-center gap-2">
-                        {/* Sector Filter */}
-                        <div className="relative" ref={sectorMenuRef}>
-                            <button
-                                onClick={() => setIsSectorMenuOpen(!isSectorMenuOpen)}
-                                className={`px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-md transition-colors
-                                    ${selectedSectors.size > 0 || isSectorMenuOpen
-                                        ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
-                                        : 'text-foreground bg-secondary border-border hover:bg-accent/10'
-                                    }`}
-                            >
-                                Sector {selectedSectors.size > 0 && `(${selectedSectors.size})`}
-                            </button>
-                            {isSectorMenuOpen && (
-                                <div className="absolute left-0 z-50 mt-2 w-56 origin-top-left bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
-                                    <div className="p-2 border-b border-border">
-                                        <button onClick={() => setSelectedSectors(new Set())} className="text-xs text-cyan-500 hover:text-cyan-600 font-medium w-full text-left px-2">
-                                            Clear Filter
-                                        </button>
-                                    </div>
-                                    <div className="py-1">
-                                        {uniqueSectors.map(sector => (
-                                            <label key={sector} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedSectors.has(sector)}
-                                                    onChange={() => toggleSector(sector)}
-                                                    className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded bg-secondary"
-                                                />
-                                                <span className="ml-2 truncate">{sector}</span>
-                                            </label>
-                                        ))}
-                                        {uniqueSectors.length === 0 && <div className="px-4 py-2 text-sm text-muted-foreground">No sectors found</div>}
-                                    </div>
+                {/* Filters & Actions Group - Consolidated into one row */}
+                <div className="flex flex-wrap items-center gap-2">
+                    {/* Sector Filter */}
+                    <div className="relative" ref={sectorMenuRef}>
+                        <button
+                            onClick={() => setIsSectorMenuOpen(!isSectorMenuOpen)}
+                            className={`px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-md transition-colors
+                                ${selectedSectors.size > 0 || isSectorMenuOpen
+                                    ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
+                                    : 'text-foreground bg-secondary border-border hover:bg-accent/10'
+                                }`}
+                        >
+                            Sector {selectedSectors.size > 0 && `(${selectedSectors.size})`}
+                        </button>
+                        {isSectorMenuOpen && (
+                            <div className="absolute left-0 z-50 mt-2 w-56 origin-top-left bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
+                                <div className="p-2 border-b border-border">
+                                    <button onClick={() => setSelectedSectors(new Set())} className="text-xs text-cyan-500 hover:text-cyan-600 font-medium w-full text-left px-2">
+                                        Clear Filter
+                                    </button>
                                 </div>
-                            )}
-                        </div>
-
-                        {/* Account Filter */}
-                        <div className="relative" ref={accountMenuRef}>
-                            <button
-                                onClick={() => setIsAccountMenuOpen(!isAccountMenuOpen)}
-                                className={`px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-md transition-colors
-                                    ${selectedAccounts.size > 0 || isAccountMenuOpen
-                                        ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
-                                        : 'text-foreground bg-secondary border-border hover:bg-accent/10'
-                                    }`}
-                            >
-                                Account {selectedAccounts.size > 0 && `(${selectedAccounts.size})`}
-                            </button>
-                            {isAccountMenuOpen && (
-                                <div className="absolute left-0 z-50 mt-2 w-56 origin-top-left bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
-                                    <div className="p-2 border-b border-border">
-                                        <button onClick={() => setSelectedAccounts(new Set())} className="text-xs text-cyan-500 hover:text-cyan-600 font-medium w-full text-left px-2">
-                                            Clear Filter
-                                        </button>
-                                    </div>
-                                    <div className="py-1">
-                                        {uniqueAccounts.map(account => (
-                                            <label key={account} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedAccounts.has(account)}
-                                                    onChange={() => toggleAccount(account)}
-                                                    className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded bg-secondary"
-                                                />
-                                                <span className="ml-2 truncate">{account}</span>
-                                            </label>
-                                        ))}
-                                    </div>
+                                <div className="py-1">
+                                    {uniqueSectors.map(sector => (
+                                        <label key={sector} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedSectors.has(sector)}
+                                                onChange={() => toggleSector(sector)}
+                                                className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded bg-secondary"
+                                            />
+                                            <span className="ml-2 truncate">{sector}</span>
+                                        </label>
+                                    ))}
+                                    {uniqueSectors.length === 0 && <div className="px-4 py-2 text-sm text-muted-foreground">No sectors found</div>}
                                 </div>
-                            )}
-                        </div>
+                            </div>
+                        )}
                     </div>
 
-                    {/* Right side: Actions */}
-                    <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
-                        <div className="relative" ref={columnMenuRef}>
-                            <button
-                                onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)}
-                                className="px-3 py-1.5 text-sm font-medium text-foreground bg-secondary border border-border rounded-md shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md"
-                            >
-                                Columns
-                            </button>
-                            {isColumnMenuOpen && (
-                                <div className="absolute right-0 z-50 mt-2 w-56 origin-top-right bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
-                                    <div className="py-1">
-                                        {Object.keys(COLUMN_DEFINITIONS).map(header => (
-                                            <label key={header} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={visibleColumns.includes(header)}
-                                                    onChange={() => toggleColumn(header)}
-                                                    className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded bg-secondary"
-                                                />
-                                                <span className="ml-2">{header}</span>
-                                            </label>
-                                        ))}
-                                    </div>
+                    {/* Account Filter */}
+                    <div className="relative" ref={accountMenuRef}>
+                        <button
+                            onClick={() => setIsAccountMenuOpen(!isAccountMenuOpen)}
+                            className={`px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-md transition-colors
+                                ${selectedAccounts.size > 0 || isAccountMenuOpen
+                                    ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
+                                    : 'text-foreground bg-secondary border-border hover:bg-accent/10'
+                                }`}
+                        >
+                            Account {selectedAccounts.size > 0 && `(${selectedAccounts.size})`}
+                        </button>
+                        {isAccountMenuOpen && (
+                            <div className="absolute left-0 z-50 mt-2 w-56 origin-top-left bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
+                                <div className="p-2 border-b border-border">
+                                    <button onClick={() => setSelectedAccounts(new Set())} className="text-xs text-cyan-500 hover:text-cyan-600 font-medium w-full text-left px-2">
+                                        Clear Filter
+                                    </button>
                                 </div>
-                            )}
-                        </div>
+                                <div className="py-1">
+                                    {uniqueAccounts.map(account => (
+                                        <label key={account} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedAccounts.has(account)}
+                                                onChange={() => toggleAccount(account)}
+                                                className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded bg-secondary"
+                                            />
+                                            <span className="ml-2 truncate">{account}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
 
+                    {/* Actions consolidated here */}
+                    <div className="relative" ref={columnMenuRef}>
                         <button
-                            onClick={() => onToggleShowClosed?.(!showClosed)}
-                            className={`px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md transition-colors
-                                ${showClosed
-                                    ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
-                                    : 'text-foreground bg-secondary border-border hover:bg-accent/10'
-                                }`}
-                        >
-                            {showClosed ? 'Hide Closed' : 'Show Closed'}
-                        </button>
-
-                        <button
-                            onClick={() => setShowLots(!showLots)}
-                            className={`px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md transition-colors
-                                ${showLots
-                                    ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
-                                    : 'text-foreground bg-secondary border-border hover:bg-accent/10'
-                                }`}
-                        >
-                            {showLots ? 'Hide Lots' : 'Show Lots'}
-                        </button>
-
-                        <button
-                            onClick={() => exportToCSV(holdings, 'holdings.csv')}
+                            onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)}
                             className="px-3 py-1.5 text-sm font-medium text-foreground bg-secondary border border-border rounded-md shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md"
                         >
-                            Export
+                            Columns
                         </button>
+                        {isColumnMenuOpen && (
+                            <div className="absolute left-0 sm:left-auto sm:right-0 z-50 mt-2 w-56 origin-top-left sm:origin-top-right bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
+                                <div className="py-1">
+                                    {Object.keys(COLUMN_DEFINITIONS).map(header => (
+                                        <label key={header} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={visibleColumns.includes(header)}
+                                                onChange={() => toggleColumn(header)}
+                                                className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded bg-secondary"
+                                            />
+                                            <span className="ml-2">{header}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
+
+                    <button
+                        onClick={() => onToggleShowClosed?.(!showClosed)}
+                        className={`px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md transition-colors
+                            ${showClosed
+                                ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
+                                : 'text-foreground bg-secondary border-border hover:bg-accent/10'
+                            }`}
+                    >
+                        {showClosed ? 'Hide Closed' : 'Show Closed'}
+                    </button>
+
+                    <button
+                        onClick={() => setShowLots(!showLots)}
+                        className={`px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md transition-colors
+                            ${showLots
+                                ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
+                                : 'text-foreground bg-secondary border-border hover:bg-accent/10'
+                            }`}
+                    >
+                        {showLots ? 'Hide Lots' : 'Show Lots'}
+                    </button>
+
+                    <button
+                        onClick={() => exportToCSV(holdings, 'holdings.csv')}
+                        className="px-3 py-1.5 text-sm font-medium text-foreground bg-secondary border border-border rounded-md shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md"
+                    >
+                        Export
+                    </button>
                 </div>
             </div>
 
