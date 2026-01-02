@@ -4,6 +4,7 @@ import { exportToCSV } from '../lib/export';
 import { Transaction, addTransaction, updateTransaction, deleteTransaction, addToWatchlist } from '../lib/api';
 import { Trash2, Star } from 'lucide-react';
 import TransactionModal from './TransactionModal';
+import StockTicker from './StockTicker';
 
 interface TransactionsTableProps {
     transactions: Transaction[];
@@ -320,22 +321,24 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                                             {tx.Type}
                                         </span>
                                     </td>
-                                    <td className="px-4 py-3 text-sm font-medium text-foreground flex items-center gap-2">
-                                        <button
-                                            onClick={async (e) => {
-                                                e.stopPropagation();
-                                                try {
-                                                    await addToWatchlist(tx.Symbol);
-                                                } catch (err) {
-                                                    console.error("Failed to add to watchlist", err);
-                                                }
-                                            }}
-                                            className="text-muted-foreground/30 hover:text-yellow-500 transition-colors"
-                                            title="Add to Watchlist"
-                                        >
-                                            <Star className="h-3 w-3" />
-                                        </button>
-                                        {tx.Symbol}
+                                    <td className="px-4 py-3 whitespace-nowrap">
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={async (e) => {
+                                                    e.stopPropagation();
+                                                    try {
+                                                        await addToWatchlist(tx.Symbol);
+                                                    } catch (err) {
+                                                        console.error("Failed to add to watchlist", err);
+                                                    }
+                                                }}
+                                                className="text-muted-foreground/30 hover:text-yellow-500 transition-colors"
+                                                title="Add to Watchlist"
+                                            >
+                                                <Star className="h-3 w-3" />
+                                            </button>
+                                            <StockTicker symbol={tx.Symbol} currency={tx["Local Currency"]} />
+                                        </div>
                                     </td>
                                     <td className="px-4 py-3 text-sm text-right text-muted-foreground">{tx.Quantity}</td>
                                     <td className="px-4 py-3 text-sm text-right text-muted-foreground">{tx["Price/Share"]?.toFixed(2)}</td>
@@ -382,7 +385,9 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                                     }`}>
                                     {tx.Type}
                                 </span>
-                                <h3 className="text-lg font-bold text-foreground mt-1">{tx.Symbol}</h3>
+                                <h3 className="text-lg font-bold text-foreground mt-1">
+                                    <StockTicker symbol={tx.Symbol} currency={tx["Local Currency"]} />
+                                </h3>
                             </div>
                             <div className="text-right">
                                 <div className="text-sm font-medium text-foreground">

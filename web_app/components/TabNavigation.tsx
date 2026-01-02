@@ -82,10 +82,6 @@ export default function TabNavigation({ activeTab, onTabChange, side = 'bottom' 
                 )}>
                     <ActiveIcon className={cn(side === 'bottom' ? "w-4 h-4" : "w-5 h-5")} />
                 </div>
-                <ChevronDown className={cn(
-                    "w-3 h-3 transition-transform duration-300 text-cyan-500/60",
-                    isOpen && "rotate-180"
-                )} />
             </button>
 
             {isOpen && (

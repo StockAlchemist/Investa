@@ -13,6 +13,7 @@ import {
   fetchAttribution,
   fetchDividendCalendar,
   fetchHistory,
+  fetchWatchlist,
   PerformanceData
 } from '@/lib/api';
 // import { CURRENCY_SYMBOLS } from '@/lib/utils';
@@ -150,6 +151,12 @@ export default function Home() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const watchlistQuery = useQuery({
+    queryKey: ['watchlist', currency],
+    queryFn: () => fetchWatchlist(currency),
+    staleTime: 1 * 60 * 1000,
+  });
+
   const summary = summaryQuery.data;
   const holdings = holdingsQuery.data || [];
   const transactions = transactionsQuery.data || [];
@@ -198,6 +205,7 @@ export default function Home() {
               isLoading={holdingsQuery.isLoading}
               showClosed={showClosed}
               onToggleShowClosed={setShowClosed}
+              watchlist={watchlistQuery.data}
             />
           </>
         );

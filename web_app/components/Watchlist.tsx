@@ -10,6 +10,7 @@ import { Plus, Trash2, TrendingUp, TrendingDown, RefreshCw } from "lucide-react"
 import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts';
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatPercent } from "@/lib/utils";
+import StockTicker from './StockTicker';
 
 interface WatchlistProps {
     currency: string;
@@ -134,7 +135,9 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                 ) : (
                                     watchlist?.map((item) => (
                                         <tr key={item.Symbol} className="hover:bg-accent/10 transition-colors">
-                                            <td className="px-4 py-4 whitespace-nowrap font-bold text-cyan-600 dark:text-cyan-400 text-sm">{item.Symbol}</td>
+                                            <td className="px-4 py-4 whitespace-nowrap text-sm">
+                                                <StockTicker symbol={item.Symbol} currency={currency} />
+                                            </td>
                                             <td className="px-4 py-4 whitespace-nowrap text-foreground text-sm max-w-[200px] truncate">{item.Name || '-'}</td>
                                             <td className="px-4 py-4 whitespace-nowrap text-right font-mono font-medium text-sm text-foreground">
                                                 {item.Price ? formatCurrency(item.Price, item.Currency || 'USD') : '-'}

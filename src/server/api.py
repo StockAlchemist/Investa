@@ -27,6 +27,18 @@ from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series
 import config
 from pydantic import BaseModel, Field
 import numpy as np # Ensure numpy is imported
+import traceback
+
+# --- Financial Ratios Integration ---
+try:
+    from financial_ratios import (
+        calculate_key_ratios_timeseries,
+        calculate_current_valuation_ratios
+    )
+    FINANCIAL_RATIOS_AVAILABLE = True
+except ImportError:
+    logging.warning("financial_ratios.py not found or import failed. Ratios will be disabled.")
+    FINANCIAL_RATIOS_AVAILABLE = False
 
 router = APIRouter()
 
@@ -1606,6 +1618,123 @@ async def get_dividend_calendar(
     except Exception as e:
         logging.error(f"Error fetching dividend calendar: {e}")
         return {"error": str(e)}
+
+# --- FUNDAMENTALS & FINANCIALS ENDPOINTS ---
+
+@router.get("/fundamentals/{symbol}")
+async def get_fundamentals_endpoint(
+    symbol: str,
+    data: tuple = Depends(get_transaction_data)
+):
+    """Returns fundamental data (ticker.info) for a symbol."""
+    (_, _, user_symbol_map, user_excluded_symbols, _, _) = data
+    yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
+    if not yf_symbol:
+        raise HTTPException(status_code=400, detail=f"Could not map {symbol} to Yahoo Finance symbol.")
+    
+    try:
+        mdp = MarketDataProvider()
+        fundamental_data = mdp.get_fundamental_data(yf_symbol)
+        if fundamental_data is None:
+             raise HTTPException(status_code=404, detail=f"No fundamental data found for {yf_symbol}")
+        return clean_nans(fundamental_data)
+    except Exception as e:
+        logging.error(f"Error fetching fundamentals for {yf_symbol}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/financials/{symbol}")
+async def get_financials_endpoint(
+    symbol: str,
+    period_type: str = "annual",
+    data: tuple = Depends(get_transaction_data)
+):
+    """Returns historical financial statements for a symbol."""
+    (_, _, user_symbol_map, user_excluded_symbols, _, _) = data
+    yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
+    if not yf_symbol:
+        raise HTTPException(status_code=400, detail=f"Could not map {symbol} to Yahoo Finance symbol.")
+    
+    try:
+        mdp = MarketDataProvider()
+        financials = mdp.get_financials(yf_symbol, period_type)
+        balance_sheet = mdp.get_balance_sheet(yf_symbol, period_type)
+        cashflow = mdp.get_cashflow(yf_symbol, period_type)
+        
+        # Convert DataFrames to dicts for JSON serialization
+        def df_to_dict(df):
+            if df is None or df.empty: return {}
+            return json.loads(df.to_json(orient="split", date_format="iso"))
+
+        # Extract Shareholders' Equity from Balance Sheet if possible
+        equity_items = [
+            "Stockholders Equity", "Total Equity Gross Minority Interest", 
+            "Common Stock Equity", "Retained Earnings", "Capital Stock", 
+            "Common Stock", "Other Equity Adjustments", 
+            "Gains Losses Not Affecting Retained Earnings",
+            "Treasury Shares Number", "Ordinary Shares Number", "Share Issued"
+        ]
+        shareholders_equity = None
+        if balance_sheet is not None and not balance_sheet.empty:
+            # Filter rows that exist in the balance sheet index
+            existing_equity_items = [item for item in equity_items if item in balance_sheet.index]
+            if existing_equity_items:
+                shareholders_equity = balance_sheet.loc[existing_equity_items]
+
+        import json
+        return clean_nans({
+            "financials": df_to_dict(financials),
+            "balance_sheet": df_to_dict(balance_sheet),
+            "cashflow": df_to_dict(cashflow),
+            "shareholders_equity": df_to_dict(shareholders_equity)
+        })
+    except Exception as e:
+        logging.error(f"Error fetching financials for {yf_symbol}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/ratios/{symbol}")
+async def get_ratios_endpoint(
+    symbol: str,
+    data: tuple = Depends(get_transaction_data)
+):
+    """Returns calculated financial ratios for a symbol."""
+    if not FINANCIAL_RATIOS_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Financial ratios module not available.")
+
+    (_, _, user_symbol_map, user_excluded_symbols, _, _) = data
+    yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
+    if not yf_symbol:
+        raise HTTPException(status_code=400, detail=f"Could not map {symbol} to Yahoo Finance symbol.")
+    
+    try:
+        mdp = MarketDataProvider()
+        # Fetch data needed for ratios
+        info = mdp.get_fundamental_data(yf_symbol)
+        financials = mdp.get_financials(yf_symbol, "annual")
+        balance_sheet = mdp.get_balance_sheet(yf_symbol, "annual")
+        
+        # Calculate historical ratios
+        historical_ratios_df = calculate_key_ratios_timeseries(financials, balance_sheet)
+        
+        # Calculate current valuation ratios
+        current_valuation = calculate_current_valuation_ratios(info, financials, balance_sheet)
+        
+        # Format historical ratios
+        def df_to_dict(df):
+            if df is None or df.empty: return {}
+            # Reset index to include 'Period'
+            df_reset = df.reset_index()
+            if 'Period' in df_reset.columns:
+                df_reset['Period'] = df_reset['Period'].astype(str)
+            return df_reset.to_dict(orient="records")
+
+        return clean_nans({
+            "historical": df_to_dict(historical_ratios_df),
+            "valuation": current_valuation
+        })
+    except Exception as e:
+        logging.error(f"Error calculating ratios for {yf_symbol}: {e}")
+        logging.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- Phase 5: Settings & Webhook Endpoints ---
 

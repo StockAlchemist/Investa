@@ -67,14 +67,6 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
             >
                 <span className="font-semibold text-muted-foreground/80 uppercase tracking-tighter mr-1 border-r border-border pr-2 hidden sm:inline">Accounts</span>
                 <span className="font-medium text-cyan-500">{getLabel()}</span>
-                <svg
-                    className={`w-3.5 h-3.5 text-cyan-500/60 transition-transform ${isOpen ? 'transform rotate-180' : ''}`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
             </button>
 
             {isOpen && (

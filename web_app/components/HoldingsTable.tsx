@@ -2,11 +2,13 @@
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { exportToCSV } from '../lib/export';
-import { Holding, Lot, addToWatchlist } from '../lib/api';
+import { Holding, Lot, addToWatchlist, removeFromWatchlist, WatchlistItem } from '../lib/api';
+import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { LineChart, Line, ResponsiveContainer, YAxis } from 'recharts';
-import { Star } from 'lucide-react';
+import { Star, Search, X, Filter, LayoutGrid, Eye, EyeOff, Layers, Download, Building2, UserCircle } from 'lucide-react';
 
 import { Skeleton } from './ui/skeleton';
+import { useStockModal } from '@/context/StockModalContext';
 
 interface HoldingsTableProps {
     holdings: Holding[];
@@ -14,6 +16,7 @@ interface HoldingsTableProps {
     isLoading?: boolean;
     showClosed?: boolean;
     onToggleShowClosed?: (val: boolean) => void;
+    watchlist?: WatchlistItem[];
 }
 
 // Mapping from UI Header to Data Key Prefix (or exact key)
@@ -58,7 +61,32 @@ interface SortConfig {
     direction: SortDirection;
 }
 
-export default function HoldingsTable({ holdings, currency, isLoading = false, showClosed = false, onToggleShowClosed }: HoldingsTableProps) {
+export default function HoldingsTable({ holdings, currency, isLoading = false, showClosed = false, onToggleShowClosed, watchlist = [] }: HoldingsTableProps) {
+    const queryClient = useQueryClient();
+
+    const addWatchlistMutation = useMutation({
+        mutationFn: ({ symbol, note }: { symbol: string, note: string }) => addToWatchlist(symbol, note),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['watchlist'] });
+        },
+    });
+
+    const removeWatchlistMutation = useMutation({
+        mutationFn: (symbol: string) => removeFromWatchlist(symbol),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['watchlist'] });
+        },
+    });
+
+    const toggleWatchlist = (symbol: string) => {
+        const isInWatchlist = watchlist.some(item => item.Symbol === symbol);
+        if (isInWatchlist) {
+            removeWatchlistMutation.mutate(symbol);
+        } else {
+            addWatchlistMutation.mutate({ symbol, note: '' });
+        }
+    };
+
     const [visibleColumns, setVisibleColumns] = useState<string[]>(DEFAULT_VISIBLE_COLUMNS);
     const [showLots, setShowLots] = useState(false);
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'Mkt Val', direction: 'desc' });
@@ -67,6 +95,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
     const columnMenuRef = useRef<HTMLDivElement>(null);
     const isLoaded = useRef(false);
     const [visibleRows, setVisibleRows] = useState(10);
+    const { openStockDetail } = useStockModal();
 
     // --- Search & Filter State ---
     const [searchQuery, setSearchQuery] = useState("");
@@ -333,21 +362,18 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
     return (
         <div className="bg-card backdrop-blur-md border border-border rounded-xl shadow-sm mt-4 overflow-hidden scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800 scrollbar-track-transparent">
             <div className="flex flex-col gap-4 p-4 border-b border-black/5 dark:border-white/5">
-                {/* Header Row: Title & Count */}
-                <div className="flex flex-wrap items-center justify-between gap-4">
+                {/* Header Row: Title, Count & Search */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
                         <h2 className="text-lg font-bold text-foreground">Holdings</h2>
-                        <span className="text-xs font-medium text-muted-foreground bg-secondary px-2 py-1 rounded-full border border-border">
+                        <span className="text-xs font-medium text-muted-foreground bg-secondary px-2 py-0.5 rounded-full border border-border">
                             {filteredHoldings.length} / {holdings.length}
                         </span>
                     </div>
 
-                    {/* Desktop Search (hidden on mobile) */}
-                    <div className="hidden lg:relative lg:block lg:w-72">
+                    <div className="relative w-full sm:w-64 lg:w-80">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <svg className="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                            </svg>
+                            <Search className="h-4 w-4 text-muted-foreground" />
                         </div>
                         <input
                             type="text"
@@ -361,56 +387,30 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                 onClick={() => setSearchQuery("")}
                                 className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted-foreground hover:text-foreground"
                             >
-                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
+                                <X className="h-4 w-4" />
                             </button>
                         )}
                     </div>
                 </div>
 
-                {/* Mobile Search (hidden on desktop) */}
-                <div className="relative w-full lg:hidden">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <svg className="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                    </div>
-                    <input
-                        type="text"
-                        placeholder="Search symbol..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-9 pr-4 py-1.5 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 placeholder-muted-foreground transition-all"
-                    />
-                    {searchQuery && (
-                        <button
-                            onClick={() => setSearchQuery("")}
-                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted-foreground hover:text-foreground"
-                        >
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </button>
-                    )}
-                </div>
-
-                {/* Filters & Actions Group - Consolidated into one row */}
-                <div className="flex flex-wrap items-center gap-2">
+                {/* Filters & Actions Group - Consolidated and Compact */}
+                <div className="flex flex-wrap items-center gap-1.5">
                     {/* Sector Filter */}
                     <div className="relative" ref={sectorMenuRef}>
                         <button
                             onClick={() => setIsSectorMenuOpen(!isSectorMenuOpen)}
-                            className={`px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-md transition-colors
+                            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-md transition-colors
                                 ${selectedSectors.size > 0 || isSectorMenuOpen
                                     ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
                                     : 'text-foreground bg-secondary border-border hover:bg-accent/10'
                                 }`}
                         >
-                            Sector {selectedSectors.size > 0 && `(${selectedSectors.size})`}
+                            <Building2 className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Sector {selectedSectors.size > 0 && `(${selectedSectors.size})`}</span>
+                            {selectedSectors.size > 0 && <span className="sm:hidden text-[10px] absolute -top-1 -right-1 bg-cyan-500 text-white rounded-full w-4 h-4 flex items-center justify-center border border-card">{selectedSectors.size}</span>}
                         </button>
                         {isSectorMenuOpen && (
-                            <div className="absolute left-0 z-50 mt-2 w-56 origin-top-left bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
+                            <div className="absolute left-0 z-50 mt-1.5 w-56 origin-top-left bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
                                 <div className="p-2 border-b border-border">
                                     <button onClick={() => setSelectedSectors(new Set())} className="text-xs text-cyan-500 hover:text-cyan-600 font-medium w-full text-left px-2">
                                         Clear Filter
@@ -438,16 +438,18 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                     <div className="relative" ref={accountMenuRef}>
                         <button
                             onClick={() => setIsAccountMenuOpen(!isAccountMenuOpen)}
-                            className={`px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-md transition-colors
+                            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-md transition-colors
                                 ${selectedAccounts.size > 0 || isAccountMenuOpen
                                     ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
                                     : 'text-foreground bg-secondary border-border hover:bg-accent/10'
                                 }`}
                         >
-                            Account {selectedAccounts.size > 0 && `(${selectedAccounts.size})`}
+                            <UserCircle className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Account {selectedAccounts.size > 0 && `(${selectedAccounts.size})`}</span>
+                            {selectedAccounts.size > 0 && <span className="sm:hidden text-[10px] absolute -top-1 -right-1 bg-cyan-500 text-white rounded-full w-4 h-4 flex items-center justify-center border border-card">{selectedAccounts.size}</span>}
                         </button>
                         {isAccountMenuOpen && (
-                            <div className="absolute left-0 z-50 mt-2 w-56 origin-top-left bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
+                            <div className="absolute left-0 z-50 mt-1.5 w-56 origin-top-left bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
                                 <div className="p-2 border-b border-border">
                                     <button onClick={() => setSelectedAccounts(new Set())} className="text-xs text-cyan-500 hover:text-cyan-600 font-medium w-full text-left px-2">
                                         Clear Filter
@@ -470,16 +472,17 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         )}
                     </div>
 
-                    {/* Actions consolidated here */}
+                    {/* Columns Selector */}
                     <div className="relative" ref={columnMenuRef}>
                         <button
                             onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)}
-                            className="px-3 py-1.5 text-sm font-medium text-foreground bg-secondary border border-border rounded-md shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md"
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-foreground bg-secondary border border-border rounded-md shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md"
                         >
-                            Columns
+                            <LayoutGrid className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Columns</span>
                         </button>
                         {isColumnMenuOpen && (
-                            <div className="absolute left-0 sm:left-auto sm:right-0 z-50 mt-2 w-56 origin-top-left sm:origin-top-right bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
+                            <div className="absolute left-0 sm:left-auto sm:right-0 z-50 mt-1.5 w-56 origin-top-left sm:origin-top-right bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
                                 <div className="py-1">
                                     {Object.keys(COLUMN_DEFINITIONS).map(header => (
                                         <label key={header} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
@@ -497,33 +500,41 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         )}
                     </div>
 
+                    {/* Show/Hide Closed Toggle */}
                     <button
                         onClick={() => onToggleShowClosed?.(!showClosed)}
-                        className={`px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md transition-colors
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md transition-colors
                             ${showClosed
                                 ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
                                 : 'text-foreground bg-secondary border-border hover:bg-accent/10'
                             }`}
+                        title={showClosed ? 'Hide Closed Positions' : 'Show Closed Positions'}
                     >
-                        {showClosed ? 'Hide Closed' : 'Show Closed'}
+                        {showClosed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        <span className="hidden sm:inline">Closed</span>
                     </button>
 
+                    {/* Show/Hide Lots Toggle */}
                     <button
                         onClick={() => setShowLots(!showLots)}
-                        className={`px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md transition-colors
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md transition-colors
                             ${showLots
                                 ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
                                 : 'text-foreground bg-secondary border-border hover:bg-accent/10'
                             }`}
+                        title={showLots ? 'Hide Tax Lots' : 'Show Tax Lots'}
                     >
-                        {showLots ? 'Hide Lots' : 'Show Lots'}
+                        <Layers className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Lots</span>
                     </button>
 
+                    {/* Export Button */}
                     <button
                         onClick={() => exportToCSV(holdings, 'holdings.csv')}
-                        className="px-3 py-1.5 text-sm font-medium text-foreground bg-secondary border border-border rounded-md shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md"
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-foreground bg-secondary border border-border rounded-md shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md ml-auto"
+                        title="Export to CSV"
                     >
-                        Export
+                        <Download className="w-3.5 h-3.5" />
                     </button>
                 </div>
             </div>
@@ -597,21 +608,24 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                 ) : header === 'Symbol' ? (
                                                     <div className="flex items-center justify-end gap-2">
                                                         <button
-                                                            onClick={async (e) => {
+                                                            onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                try {
-                                                                    await addToWatchlist(val as string);
-                                                                    // We could add a visual feedback here if we had state
-                                                                } catch (err) {
-                                                                    console.error("Failed to add to watchlist", err);
-                                                                }
+                                                                toggleWatchlist(val as string);
                                                             }}
-                                                            className="text-muted-foreground/30 hover:text-yellow-500 transition-colors"
-                                                            title="Add to Watchlist"
+                                                            className={`transition-colors ${watchlist.some(item => item.Symbol === val)
+                                                                ? 'text-yellow-500 fill-yellow-500'
+                                                                : 'text-muted-foreground/30 hover:text-yellow-500'
+                                                                }`}
+                                                            title={watchlist.some(item => item.Symbol === val) ? "Remove from Watchlist" : "Add to Watchlist"}
                                                         >
                                                             <Star className="h-3 w-3" />
                                                         </button>
-                                                        <span className="font-medium text-foreground">{formatValue(val, header)}</span>
+                                                        <button
+                                                            onClick={() => openStockDetail(val as string, currency)}
+                                                            className="font-medium text-foreground hover:text-cyan-500 transition-colors cursor-pointer"
+                                                        >
+                                                            {formatValue(val, header)}
+                                                        </button>
                                                     </div>
                                                 ) : (
                                                     formatValue(val, header)
@@ -644,11 +658,30 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
             {/* Mobile Card View */}
             <div className="block md:hidden space-y-4 p-4">
                 {visibleHoldings.map((holding, idx) => (
-                    <div key={`mobile-${holding.Symbol}-${idx}`} className="bg-card rounded-lg border border-border shadow-sm p-4 backdrop-blur-md">
+                    <div
+                        key={`mobile-${holding.Symbol}-${idx}`}
+                        className="bg-card rounded-lg border border-border shadow-sm p-4 backdrop-blur-md cursor-pointer hover:border-cyan-500/50 transition-all active:scale-[0.98]"
+                        onClick={() => openStockDetail(holding.Symbol, currency)}
+                    >
                         <div className="flex justify-between items-start mb-2">
-                            <div>
-                                <h3 className="text-lg font-bold text-foreground">{holding.Symbol}</h3>
-                                <p className="text-xs text-muted-foreground">{holding.Account}</p>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleWatchlist(holding.Symbol);
+                                    }}
+                                    className={`transition-colors ${watchlist.some(item => item.Symbol === holding.Symbol)
+                                        ? 'text-yellow-500 fill-yellow-500'
+                                        : 'text-muted-foreground/30 hover:text-yellow-500'
+                                        }`}
+                                    title={watchlist.some(item => item.Symbol === holding.Symbol) ? "Remove from Watchlist" : "Add to Watchlist"}
+                                >
+                                    <Star className="h-4 w-4" />
+                                </button>
+                                <div>
+                                    <h3 className="text-lg font-bold text-foreground">{holding.Symbol}</h3>
+                                    <p className="text-xs text-muted-foreground">{holding.Account}</p>
+                                </div>
                             </div>
                             <div className="text-right">
                                 <div className="text-lg font-bold text-foreground">
@@ -733,6 +766,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                     </button>
                 </div>
             )}
+
         </div>
     );
 }

@@ -1944,6 +1944,7 @@ class MarketDataProvider:
             Optional[Dict[str, Any]]: A dictionary containing the fundamental data,
                                       or None if fetching fails or symbol is invalid.
         """
+        _ensure_yfinance()
         if not YFINANCE_AVAILABLE:
             logging.error("yfinance not available. Cannot fetch fundamental data.")
             return None
@@ -2161,6 +2162,7 @@ class MarketDataProvider:
         """
         Fetches a specific financial statement using yfinance and caches it.
         """
+        _ensure_yfinance()
         if not YFINANCE_AVAILABLE:
             return None
 
@@ -2273,6 +2275,7 @@ class MarketDataProvider:
             Optional[pd.DataFrame]: A DataFrame containing the intraday data,
                                       or None if fetching fails.
         """
+        _ensure_yfinance()
         if not YFINANCE_AVAILABLE:
             logging.error("yfinance not available. Cannot fetch intraday data.")
             return None

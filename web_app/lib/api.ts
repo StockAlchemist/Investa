@@ -516,3 +516,69 @@ export async function removeFromWatchlist(symbol: string): Promise<StatusRespons
     }
     return response.json();
 }
+
+// --- Fundamentals, Financials, and Ratios ---
+
+export interface Fundamentals {
+    symbol: string;
+    longName?: string;
+    shortName?: string;
+    longBusinessSummary?: string;
+    website?: string;
+    sector?: string;
+    industry?: string;
+    marketCap?: number;
+    trailingPE?: number;
+    forwardPE?: number;
+    dividendYield?: number;
+    beta?: number;
+    fiftyTwoWeekHigh?: number;
+    fiftyTwoWeekLow?: number;
+    averageVolume?: number;
+    regularMarketPrice?: number;
+    currency?: string;
+    exchange?: string;
+    [key: string]: any;
+}
+
+export interface FinancialStatement {
+    columns: string[];
+    index: string[];
+    data: (number | null)[][];
+}
+
+export interface FinancialsResponse {
+    financials: FinancialStatement;
+    balance_sheet: FinancialStatement;
+    cashflow: FinancialStatement;
+    shareholders_equity?: FinancialStatement;
+}
+
+export interface FinancialRatio {
+    Period: string;
+    [key: string]: number | string | null;
+}
+
+export interface RatiosResponse {
+    historical: FinancialRatio[];
+    valuation: Record<string, number | null>;
+}
+
+export async function fetchFundamentals(symbol: string): Promise<Fundamentals> {
+    const res = await fetch(`${API_BASE_URL}/fundamentals/${symbol}`);
+    if (!res.ok) throw new Error(`Failed to fetch fundamentals for ${symbol}`);
+    return res.json();
+}
+
+export async function fetchFinancials(symbol: string, periodType: 'annual' | 'quarterly' = 'annual'): Promise<FinancialsResponse> {
+    const params = new URLSearchParams({ period_type: periodType });
+    const res = await fetch(`${API_BASE_URL}/financials/${symbol}?${params.toString()}`);
+    if (!res.ok) throw new Error(`Failed to fetch financials for ${symbol}`);
+    return res.json();
+}
+
+export async function fetchRatios(symbol: string): Promise<RatiosResponse> {
+    const res = await fetch(`${API_BASE_URL}/ratios/${symbol}`);
+    if (!res.ok) throw new Error(`Failed to fetch ratios for ${symbol}`);
+    return res.json();
+}

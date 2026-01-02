@@ -35,9 +35,9 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                     "flex flex-col items-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group",
                     "bg-white/5 hover:bg-white/10 dark:bg-black/20 dark:hover:bg-black/30",
                     "border border-white/10 dark:border-white/5 backdrop-blur-xl shadow-lg shadow-black/5",
-                    "text-xs font-semibold tracking-tight",
+                    "font-semibold tracking-tight min-w-[80px]",
                     isOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-cyan-500",
-                    side === 'bottom' && "flex-row py-2 px-4"
+                    side === 'bottom' && "flex-row py-2 px-4 h-[44px]"
                 )}
                 title={`Currency: ${currentCurrency}`}
             >
@@ -48,17 +48,18 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                 )}>
                     <Globe className={cn(side === 'bottom' ? "w-3.5 h-3.5" : "w-5 h-5")} />
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex flex-col items-start leading-none gap-0">
                     <span className={cn(
-                        "bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent truncate",
+                        "bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent truncate font-bold uppercase text-[14px]",
                         side === 'right' ? "hidden lg:block max-w-[40px]" : "block max-w-[60px]"
                     )}>
                         {currentCurrency}
                     </span>
-                    <ChevronDown className={cn(
-                        "w-3 h-3 transition-transform duration-300 text-cyan-500/60",
-                        isOpen && "rotate-180"
-                    )} />
+                    {currentCurrency !== 'USD' && fxRate && (
+                        <div className="text-[12px] text-cyan-600 dark:text-cyan-400 font-black font-mono mt-0.5">
+                            {fxRate.toFixed(2)}
+                        </div>
+                    )}
                 </div>
             </button>
 
