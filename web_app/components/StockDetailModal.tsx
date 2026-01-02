@@ -114,9 +114,12 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [logoError, setLogoError] = useState(false);
+    const [logoSourceIndex, setLogoSourceIndex] = useState(0);
+
     useEffect(() => {
         if (isOpen && symbol) {
             setLogoError(false);
+            setLogoSourceIndex(0);
             loadData();
         }
     }, [isOpen, symbol]);
@@ -177,7 +180,34 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     };
 
     const domain = getDomain(fundamentals?.website);
-    const logoUrl = domain && !logoError ? `https://logo.clearbit.com/${domain}` : null;
+
+    const getLogoUrl = () => {
+        if (logoError) return null;
+
+        // Brand mappings for improved domain lookup
+        const brandMappings: Record<string, string> = {
+            'GOOG': 'google.com',
+            'GOOGL': 'google.com',
+            'META': 'facebook.com',
+        };
+
+        const effectiveDomain = brandMappings[symbol] || domain;
+
+        const sources = [
+            `https://financialmodelingprep.com/image-stock/${symbol}.png`,
+            effectiveDomain ? `https://logo.clearbit.com/${effectiveDomain}` : null,
+            effectiveDomain ? `https://www.google.com/s2/favicons?domain=${effectiveDomain}&sz=128` : null,
+        ].filter(Boolean) as string[];
+
+        if (logoSourceIndex >= sources.length) {
+            setLogoError(true);
+            return null;
+        }
+
+        return sources[logoSourceIndex];
+    };
+
+    const logoUrl = getLogoUrl();
 
     const renderOverview = () => {
         if (!fundamentals) return null;
@@ -280,6 +310,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         <thead className="text-xs uppercase bg-secondary/50 text-muted-foreground">
                             <tr>
                                 <th className="px-6 py-4 font-semibold text-foreground sticky left-0 bg-card/80 backdrop-blur-md"></th>
+                                <th className="px-6 py-4 font-semibold text-center">Trend</th>
                                 {currentStatement.columns.map(col => (
                                     <th key={col} className="px-6 py-4 font-semibold text-center">{new Date(col).getFullYear()}</th>
                                 ))}
@@ -289,6 +320,9 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             {currentStatement.index.map((item, idx) => (
                                 <tr key={item} className="hover:bg-accent/10 transition-colors">
                                     <td className="px-6 py-4 font-medium text-foreground sticky left-0 bg-card/80 backdrop-blur-md min-w-[200px]">{item}</td>
+                                    <td className="px-6 py-4 text-center min-w-[100px]">
+                                        <Sparkline data={currentStatement.data[idx] as number[]} />
+                                    </td>
                                     {currentStatement.data[idx].map((val, vIdx) => (
                                         <td key={vIdx} className="px-6 py-4 text-foreground text-right font-medium tabular-nums">
                                             {formatCompact(val as number)}
@@ -313,7 +347,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <RatioChart
                         data={chartData}
-                        dataKey="ROE (%)"
+                        dataKey="Return on Equity (ROE) (%)"
                         title="Return on Equity"
                         color="#10b981"
                         suffix="%"
@@ -367,7 +401,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                         src={logoUrl}
                                         alt={fundamentals?.shortName || symbol}
                                         className="w-full h-full object-cover p-2 bg-white"
-                                        onError={() => setLogoError(true)}
+                                        onError={() => setLogoSourceIndex(prev => prev + 1)}
                                     />
                                 ) : (
                                     fundamentals?.shortName?.[0] || symbol[0]
@@ -540,6 +574,45 @@ function RatioChart({ data, dataKey, title, color, suffix = "" }: any) {
                     </AreaChart>
                 </ResponsiveContainer>
             </div>
+        </div>
+    );
+}
+
+function Sparkline({ data }: { data: number[] }) {
+    if (!data || data.length < 2) return null;
+
+    // Filter out null/undefined and reverse to chronological order (oldest to newest)
+    const values = [...data].filter(v => v !== null && v !== undefined).reverse();
+    if (values.length < 2) return null;
+
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min || 1;
+
+    const width = 80;
+    const height = 30;
+    const padding = 2;
+
+    const points = values.map((val, i) => {
+        const x = (i / (values.length - 1)) * (width - 2 * padding) + padding;
+        const y = height - ((val - min) / range) * (height - 2 * padding) - padding;
+        return `${x},${y}`;
+    }).join(' ');
+
+    const trendColor = values[values.length - 1] >= values[0] ? '#10b981' : '#ef4444';
+
+    return (
+        <div className="flex items-center justify-center">
+            <svg width={width} height={height} className="overflow-visible">
+                <polyline
+                    fill="none"
+                    stroke={trendColor}
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    points={points}
+                />
+            </svg>
         </div>
     );
 }

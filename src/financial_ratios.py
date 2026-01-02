@@ -131,7 +131,11 @@ def calculate_key_ratios_timeseries(
             )
 
         total_equity = _get_statement_value(
+            balance_sheet_df, "Stockholders Equity", period_str_bs
+        ) or _get_statement_value(
             balance_sheet_df, "Total Stockholder Equity", period_str_bs
+        ) or _get_statement_value(
+            balance_sheet_df, "Total Equity Gross Minority Interest", period_str_bs
         )
         total_assets = _get_statement_value(
             balance_sheet_df, "Total Assets", period_str_bs
@@ -183,9 +187,13 @@ def calculate_key_ratios_timeseries(
 
         # Liquidity
         current_assets = _get_statement_value(
+            balance_sheet_df, "Current Assets", period_str_bs
+        ) or _get_statement_value(
             balance_sheet_df, "Total Current Assets", period_str_bs
         )
         current_liabilities = _get_statement_value(
+            balance_sheet_df, "Current Liabilities", period_str_bs
+        ) or _get_statement_value(
             balance_sheet_df, "Total Current Liabilities", period_str_bs
         )
         inventory = _get_statement_value(balance_sheet_df, "Inventory", period_str_bs)
@@ -206,6 +214,8 @@ def calculate_key_ratios_timeseries(
 
         # Solvency
         total_liab = _get_statement_value(
+            balance_sheet_df, "Total Liabilities Net Minority Interest", period_str_bs
+        ) or _get_statement_value(
             balance_sheet_df, "Total Liab", period_str_bs
         ) or _get_statement_value(balance_sheet_df, "Total Liabilities", period_str_bs)
         current_ratios["Debt-to-Equity Ratio"] = (
