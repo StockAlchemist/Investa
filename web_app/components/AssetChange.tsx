@@ -99,7 +99,11 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                                 if (active && payload && payload.length) {
                                     return (
                                         <div className="bg-popover/95 backdrop-blur-sm border border-border p-3 rounded-lg shadow-xl">
-                                            <p className="font-medium text-foreground mb-1">{label}</p>
+                                            <p className="font-medium text-foreground mb-1">
+                                                {typeof label === 'string' && !isNaN(Date.parse(label))
+                                                    ? new Date(label).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+                                                    : label}
+                                            </p>
                                             {payload.map((entry, index) => (
                                                 <div key={index} className="flex items-center gap-2 text-sm">
                                                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
