@@ -1032,7 +1032,7 @@ def map_to_yf_symbol(
         return None
 
     if normalized_symbol in user_excluded_symbols:
-        logging.warning(f"  map_to_yf_symbol: Symbol '{normalized_symbol}' is in EXCLUSION list. Returning None.")
+        logging.debug(f"  map_to_yf_symbol: Symbol '{normalized_symbol}' is in EXCLUSION list. Returning None.")
         return None
 
     # --- 2. Check Explicit Map (if not excluded) ---

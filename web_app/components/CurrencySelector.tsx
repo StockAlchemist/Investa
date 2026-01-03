@@ -48,7 +48,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                 )}>
                     <Globe className={cn(side === 'bottom' ? "w-3.5 h-3.5" : "w-5 h-5")} />
                 </div>
-                <div className="flex flex-col items-center sm:items-start leading-none gap-0">
+                <div className="flex flex-col items-center leading-none gap-0">
                     <span className={cn(
                         "bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent truncate font-bold uppercase text-[14px]",
                         side === 'right' ? "hidden lg:block max-w-[40px]" : "block max-w-[60px]"
