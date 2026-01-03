@@ -192,6 +192,17 @@ def run_factor_regression(
         logging.error("Failed to fetch factor data. Cannot run regression.")
         return None
 
+    # --- FIX: Normalize Timezones to Naive ---
+    # Pandas cannot join tz-naive and tz-aware indices.
+    # Portfolio returns are typically naive (date only), while yfinance returns tz-aware (e.g. America/New_York).
+    # We strip timezone info from both to ensure alignment.
+    if portfolio_returns.index.tz is not None:
+        portfolio_returns.index = portfolio_returns.index.tz_localize(None)
+    
+    if factor_data.index.tz is not None:
+        factor_data.index = factor_data.index.tz_localize(None)
+    # ----------------------------------------
+
     # Resample portfolio returns to match factor data frequency (e.g., monthly)
     portfolio_returns_monthly = portfolio_returns.resample("ME").apply(
         lambda x: (1 + x).prod() - 1
