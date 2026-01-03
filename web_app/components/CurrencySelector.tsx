@@ -37,7 +37,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                     "border border-white/10 dark:border-white/5 backdrop-blur-xl shadow-lg shadow-black/5",
                     "font-semibold tracking-tight min-w-[80px]",
                     isOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-cyan-500",
-                    side === 'bottom' && "flex-row py-2 px-4 h-[44px]"
+                    side === 'bottom' && "flex-row py-2 px-4 h-[44px] justify-center"
                 )}
                 title={`Currency: ${currentCurrency}`}
             >
@@ -48,7 +48,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                 )}>
                     <Globe className={cn(side === 'bottom' ? "w-3.5 h-3.5" : "w-5 h-5")} />
                 </div>
-                <div className="flex flex-col items-start leading-none gap-0">
+                <div className="flex flex-col items-center sm:items-start leading-none gap-0">
                     <span className={cn(
                         "bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent truncate font-bold uppercase text-[14px]",
                         side === 'right' ? "hidden lg:block max-w-[40px]" : "block max-w-[60px]"

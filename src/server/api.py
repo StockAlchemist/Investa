@@ -1630,6 +1630,8 @@ async def get_fundamentals_endpoint(
     (_, _, user_symbol_map, user_excluded_symbols, _, _) = data
     yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
     if not yf_symbol:
+        if symbol.upper() in user_excluded_symbols:
+             raise HTTPException(status_code=400, detail=f"Symbol {symbol} is currently in the exclusion list.")
         raise HTTPException(status_code=400, detail=f"Could not map {symbol} to Yahoo Finance symbol.")
     
     try:
@@ -1652,6 +1654,8 @@ async def get_financials_endpoint(
     (_, _, user_symbol_map, user_excluded_symbols, _, _) = data
     yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
     if not yf_symbol:
+        if symbol.upper() in user_excluded_symbols:
+             raise HTTPException(status_code=400, detail=f"Symbol {symbol} is currently in the exclusion list.")
         raise HTTPException(status_code=400, detail=f"Could not map {symbol} to Yahoo Finance symbol.")
     
     try:
@@ -1703,6 +1707,8 @@ async def get_ratios_endpoint(
     (_, _, user_symbol_map, user_excluded_symbols, _, _) = data
     yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
     if not yf_symbol:
+        if symbol.upper() in user_excluded_symbols:
+             raise HTTPException(status_code=400, detail=f"Symbol {symbol} is currently in the exclusion list.")
         raise HTTPException(status_code=400, detail=f"Could not map {symbol} to Yahoo Finance symbol.")
     
     try:

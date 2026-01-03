@@ -1027,13 +1027,12 @@ def map_to_yf_symbol(
     logging.debug(f"  Normalized to: '{normalized_symbol}'")
 
     # --- 1. Check Excluded and Cash Symbols FIRST ---
-    if (
-        is_cash_symbol(internal_symbol)  # Use helper to catch all variants
-        or normalized_symbol in user_excluded_symbols  # CORRECTLY Use user-defined exclusions
-    ):
-        logging.debug(
-            f"  Symbol '{normalized_symbol}' is CASH or EXCLUDED. Returning None."
-        )
+    if is_cash_symbol(internal_symbol):
+        logging.debug(f"  Symbol '{normalized_symbol}' is CASH. Returning None.")
+        return None
+
+    if normalized_symbol in user_excluded_symbols:
+        logging.warning(f"  map_to_yf_symbol: Symbol '{normalized_symbol}' is in EXCLUSION list. Returning None.")
         return None
 
     # --- 2. Check Explicit Map (if not excluded) ---
