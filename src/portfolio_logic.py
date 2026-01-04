@@ -4304,12 +4304,12 @@ def _load_or_calculate_daily_results(
 
                 # Handle index restoration
                 if "Date" in daily_df.columns:
-                    daily_df["Date"] = pd.to_datetime(daily_df["Date"])
+                    daily_df["Date"] = pd.to_datetime(daily_df["Date"], utc=True)
                     daily_df.set_index("Date", inplace=True)
                 elif "index" in daily_df.columns:
                     # Fallback: 'reset_index' might have named it 'index' if original name was None
                     daily_df.rename(columns={"index": "Date"}, inplace=True)
-                    daily_df["Date"] = pd.to_datetime(daily_df["Date"])
+                    daily_df["Date"] = pd.to_datetime(daily_df["Date"], utc=True)
                     daily_df.set_index("Date", inplace=True)
                 elif not isinstance(daily_df.index, pd.DatetimeIndex):
                     # Fallback: try to convert index if it looks like dates (unlikely for feather if reset)
@@ -4319,7 +4319,8 @@ def _load_or_calculate_daily_results(
                          logging.warning("Loaded Feather cache has RangeIndex and no Date column. Cache might be invalid.")
                          raise ValueError("Invalid cache structure (missing Date index/column)")
                     
-                    daily_df.index = pd.to_datetime(daily_df.index, errors="coerce")
+                    # Force UTC conversion to ensure compatibility with benchmark data
+                    daily_df.index = pd.to_datetime(daily_df.index, errors="coerce", utc=True)
                     daily_df = daily_df[pd.notnull(daily_df.index)]
 
                 daily_df.sort_index(inplace=True)
@@ -4606,10 +4607,6 @@ def _load_or_calculate_daily_results(
                 "value": daily_value_series,
                 "net_flow": daily_net_flow_series
             }, index=date_range_for_calc)
-            daily_df = pd.DataFrame({
-                "value": daily_value_series,
-                "net_flow": daily_net_flow_series
-            }, index=date_range_for_calc)
         
         if daily_df.empty:
             status_update = " Calculating daily values..."
@@ -4642,7 +4639,7 @@ def _load_or_calculate_daily_results(
                 ):  # ADDED: Check if index is valid before conversion
                     try:
                         # Ensure index is datetime first
-                        datetime_index = pd.to_datetime(bench_df.index, errors="coerce")
+                        datetime_index = pd.to_datetime(bench_df.index, errors="coerce", utc=True)
                         valid_datetime_index = datetime_index.dropna()
                         if not valid_datetime_index.empty:
                             # --- MODIFIED: Preserve intraday resolution if interval implies it ---
@@ -4830,7 +4827,7 @@ def _load_or_calculate_daily_results(
 
             try:
                 daily_df = pd.DataFrame(successful_results)
-                daily_df["Date"] = pd.to_datetime(daily_df["Date"])
+                daily_df["Date"] = pd.to_datetime(daily_df["Date"], utc=True)
                 daily_df.set_index("Date", inplace=True)
                 daily_df.sort_index(inplace=True)
                 cols_to_numeric = ["value", "net_flow"]
@@ -5587,7 +5584,7 @@ def calculate_historical_performance(
         # Ensure 'Date' column is datetime
         if not pd.api.types.is_datetime64_any_dtype(transactions_df_effective["Date"]):
             transactions_df_effective["Date"] = pd.to_datetime(
-                transactions_df_effective["Date"], errors="coerce"
+                transactions_df_effective["Date"], errors="coerce", utc=True
             )
             transactions_df_effective.dropna(
                 subset=["Date"], inplace=True
@@ -5842,6 +5839,12 @@ def calculate_historical_performance(
     # We do this AFTER getting the portfolio daily_df (cached or calc'd)
     # so that benchmark changes don't invalidate portfolio cache.
     if not daily_df.empty and clean_benchmark_symbols_yf:
+        # --- DEFENSIVE: Ensure daily_df index is UTC before alignment ---
+        if not isinstance(daily_df.index, pd.DatetimeIndex):
+            daily_df.index = pd.to_datetime(daily_df.index, utc=True)
+        if daily_df.index.tz is None:
+            daily_df.index = daily_df.index.tz_localize('UTC')
+            
         logging.info(f"Fetching historical data for {len(clean_benchmark_symbols_yf)} benchmarks...")
         # Use the same market_provider instance
         bench_prices_adj, _ = market_provider.get_historical_data(
@@ -5849,6 +5852,7 @@ def calculate_historical_performance(
             start_date=full_start_date,
             end_date=fetch_end_date,
             use_cache=True,
+            interval=interval,  # FIX: Pass interval to ensure intraday data is fetched for 1d view
             # We don't pass a monolithic cache_key here, allowing per-symbol caching
         )
         
@@ -5859,74 +5863,108 @@ def calculate_historical_performance(
                     if bm_df is not None and not bm_df.empty and 'price' in bm_df.columns:
                         bm_series = bm_df['price'].copy()
                         bm_series.name = f"{bm} Price"
+                        
                         # Ensure index is datetime for merging
                         if not isinstance(bm_series.index, pd.DatetimeIndex) or bm_series.index.tz is None:
                             bm_series.index = pd.to_datetime(bm_series.index, utc=True)
                         
-                        # Merge into daily_df
-                        # We use left join to keep daily_df structure
-                        daily_df = daily_df.join(bm_series, how='left')
+                        # Merge into daily_df using reindex with 'nearest' to handle timestamp mismatches
+                        # Standard left join requires exact timestamp match which often fails for 5m/1h data
+                        # due to slight seconds offsets (e.g. 14:30:00 vs 14:30:05).
+                        try:
+                            # Dynamic tolerance based on interval
+                            if interval in ["1d", "5d", "1wk", "1mo", "3mo", "1y", "ytd"]:
+                                # For daily data, timestamps might differ significantly (00:00 vs 16:00)
+                                # Using 40h tolerance ensures we find a point within the same day cycle or prev close,
+                                # especially over weekends.
+                                tol = pd.Timedelta('40h')
+                            elif interval in ["1h", "60m"]:
+                                tol = pd.Timedelta('30m')
+                            else:
+                                # For intraday (1m, 5m), use tight tolerance
+                                tol = pd.Timedelta('3m')
+
+                            bm_series_aligned = bm_series.reindex(
+                                daily_df.index, 
+                                method='nearest', 
+                                tolerance=tol
+                            )
+                            daily_df[f"{bm} Price"] = bm_series_aligned
+                        except Exception as e_align:
+                            logging.warning(f"Benchmark alignment failed for {bm}: {e_align}. Falling back to strict join.")
+                            # Fallback to strict alignment (will likely be NaN if mismatch exists)
+                            daily_df[f"{bm} Price"] = bm_series
+                        
                     else:
                         logging.warning(f"No price data found for benchmark {bm}")
                         daily_df[f"{bm} Price"] = np.nan
                 else:
                     daily_df[f"{bm} Price"] = np.nan
 
-    # --- FIX: Filter DataFrame by requested date range BEFORE gain calc ---
-    # This ensures accumulated gains start at 0% (1.0 factor) for the requested period.
-    if not daily_df.empty:
-        # FIX: Align with UTC index of daily_df (which supports intraday)
-        ts_req_start = pd.Timestamp(start_date).tz_localize('UTC')
-        # Use end of day for end_date to include all intraday points
-        ts_req_end = (pd.Timestamp(end_date) + pd.Timedelta(days=1) - pd.Timedelta(nanoseconds=1)).tz_localize('UTC')
-        
-        # Ensure daily_df index is UTC (it should be, but be safe)
-        if daily_df.index.tz is None:
-             daily_df.index = daily_df.index.tz_localize('UTC')
-             
-        daily_df = daily_df[(daily_df.index >= ts_req_start) & (daily_df.index <= ts_req_end)].copy()
-    # --- END FIX ---
+    # --- NEW: Calculate Accumulated Gains for Portfolio and Benchmarks BEFORE filtering ---
+    # This ensures the 'base' point for the requested period is correctly calculated
+    # while preserving historical context for the first point's return.
 
     if not daily_df.empty and "daily_return" in daily_df.columns:
-        logging.debug("Calculating daily accumulated gains for full_df...")
+        logging.info("Calculating daily accumulated gains...")
         try:
             gain_factors_portfolio = 1 + daily_df["daily_return"].fillna(0.0)
             daily_df["Portfolio Accumulated Gain"] = gain_factors_portfolio.cumprod()
-            if not daily_df.empty and pd.isna(daily_df["daily_return"].iloc[0]):
-                daily_df.iloc[
-                    0, daily_df.columns.get_loc("Portfolio Accumulated Gain")
-                ] = np.nan
-
-            for bm_symbol_yf_iter in clean_benchmark_symbols_yf:  # Iterate YF tickers
+            
+            for bm_symbol_yf_iter in clean_benchmark_symbols_yf:
                 price_col_iter = f"{bm_symbol_yf_iter} Price"
                 accum_col_final_iter = f"{bm_symbol_yf_iter} Accumulated Gain"
                 if price_col_iter in daily_df.columns:
                     bench_prices_no_na_iter = daily_df[price_col_iter].dropna()
                     if not bench_prices_no_na_iter.empty:
+                        # Use wider context for returns calculation
                         bench_daily_returns_iter = (
                             bench_prices_no_na_iter.pct_change()
                             .reindex(daily_df.index)
                             .fillna(0.0)
                         )
                         gain_factors_bench_iter = 1 + bench_daily_returns_iter
-                        daily_df[accum_col_final_iter] = (
-                            gain_factors_bench_iter.cumprod()
-                        )
-                        if not daily_df.empty:
-                            daily_df.iloc[
-                                0, daily_df.columns.get_loc(accum_col_final_iter)
-                            ] = np.nan
+                        daily_df[accum_col_final_iter] = gain_factors_bench_iter.cumprod()
                     else:
                         daily_df[accum_col_final_iter] = np.nan
                 else:
                     daily_df[accum_col_final_iter] = np.nan
-            logging.debug("Finished calculating daily accumulated gains for full_df.")
-        except Exception as e_accum_daily:
-            logging.error(
-                f"Error calculating daily accumulated gains for full_df: {e_accum_daily}"
-            )
-            has_warnings = True
-            status_parts.append("Daily Accum Gain Calc Failed")
+        except Exception as e_accum:
+            logging.error(f"Error in early accumulated gain calculation: {e_accum}")
+
+    # --- FIX: Filter DataFrame by requested date range AFTER gain calculation ---
+    # This ensures Accumulated Gains are relative to the start of the full calculation range,
+    # but we will then re-normalize them to the requested start date.
+    if not daily_df.empty:
+        # Align with UTC index
+        ts_req_start = pd.Timestamp(start_date).tz_localize('UTC')
+        ts_req_end = (pd.Timestamp(end_date) + pd.Timedelta(days=1) - pd.Timedelta(nanoseconds=1)).tz_localize('UTC')
+        
+        if daily_df.index.tz is None:
+             daily_df.index = daily_df.index.tz_localize('UTC')
+             
+        # Normalize Benchmarks to start at 1.0 at ts_req_start
+        # Find the value at or immediately after ts_req_start
+        actual_start_slice = daily_df[daily_df.index >= ts_req_start]
+        if not actual_start_slice.empty:
+            start_dt = actual_start_slice.index[0]
+            
+            # Normalize portfolio
+            if "Portfolio Accumulated Gain" in daily_df.columns:
+                base_ptr = daily_df.loc[start_dt, "Portfolio Accumulated Gain"]
+                if pd.notnull(base_ptr) and base_ptr != 0:
+                    daily_df["Portfolio Accumulated Gain"] = daily_df["Portfolio Accumulated Gain"] / base_ptr
+
+            # Normalize benchmarks
+            for bm in clean_benchmark_symbols_yf:
+                acc_col = f"{bm} Accumulated Gain"
+                if acc_col in daily_df.columns:
+                    base_acc = daily_df.loc[start_dt, acc_col]
+                    if pd.notnull(base_acc) and base_acc != 0:
+                        daily_df[acc_col] = daily_df[acc_col] / base_acc
+        
+        # Finally filter to requested range
+        daily_df = daily_df[(daily_df.index >= ts_req_start) & (daily_df.index <= ts_req_end)].copy()
 
     final_twr_factor = np.nan
     if not daily_df.empty and "Portfolio Accumulated Gain" in daily_df.columns:

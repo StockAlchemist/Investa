@@ -212,7 +212,7 @@ def _run_isolated_fetch(tickers, start, end, interval):
                 try:
                     df = pd.read_json(file_path, orient='split')
                     if not df.empty:
-                        df.index = pd.to_datetime(df.index)
+                        df.index = pd.to_datetime(df.index, utc=True)
                 except Exception as e_read:
                     logging.error(f"Error reading isolated fetch result file: {e_read}")
                     df = pd.DataFrame()
@@ -1368,7 +1368,7 @@ class MarketDataProvider:
 
                         # Ensure index is datetime
                         if not isinstance(df_symbol.index, pd.DatetimeIndex):
-                            df_symbol.index = pd.to_datetime(df_symbol.index)
+                            df_symbol.index = pd.to_datetime(df_symbol.index, utc=True)
 
                         # Filter for requested range
                         mask = (df_symbol.index.date >= start_date) & (
@@ -1435,7 +1435,7 @@ class MarketDataProvider:
                                  
                              # Ensure index
                              if not isinstance(df_ind.index, pd.DatetimeIndex):
-                                 df_ind.index = pd.to_datetime(df_ind.index)
+                                 df_ind.index = pd.to_datetime(df_ind.index, utc=True)
                                  
                              # Filter
                              mask = (df_ind.index.date >= start_date) & (df_ind.index.date <= end_date)
@@ -1732,12 +1732,23 @@ class MarketDataProvider:
         try:
             # Using StringIO as pd.read_json expects a file-like object or path for string input
             df_temp = pd.read_json(
-                StringIO(data_json_str), orient="split", dtype={"price": float}
+                StringIO(data_json_str), orient="split", dtype=None 
             )
             df_temp.index = pd.to_datetime(df_temp.index, errors="coerce", utc=True)
-            df_temp = df_temp.dropna(
-                subset=["price"]
-            )  # Ensure 'price' column has valid data
+            
+            # --- FIX: Support legacy cache keys (Close/Adj Close) ---
+            if "price" not in df_temp.columns and not df_temp.empty:
+                 if "Close" in df_temp.columns:
+                     df_temp.rename(columns={"Close": "price"}, inplace=True)
+                 elif "Adj Close" in df_temp.columns:
+                     df_temp.rename(columns={"Adj Close": "price"}, inplace=True)
+                 elif len(df_temp.columns) == 1:
+                     # Fallback to first column
+                     df_temp.rename(columns={df_temp.columns[0]: "price"}, inplace=True)
+
+            if "price" in df_temp.columns:
+                df_temp["price"] = pd.to_numeric(df_temp["price"], errors="coerce")
+                df_temp = df_temp.dropna(subset=["price"])  # Ensure 'price' column has valid data
             df_temp = df_temp[pd.notnull(df_temp.index)]  # Ensure index is valid dates
             if not df_temp.empty:
                 df = df_temp.sort_index()
@@ -1915,8 +1926,10 @@ class MarketDataProvider:
                             old_df = historical_prices_yf_adjusted[s]
                             new_df = delta_data[s]
                             # Ensure index types match
-                            if not isinstance(old_df.index, pd.DatetimeIndex): old_df.index = pd.to_datetime(old_df.index)
-                            if not isinstance(new_df.index, pd.DatetimeIndex): new_df.index = pd.to_datetime(new_df.index)
+                            if not isinstance(old_df.index, pd.DatetimeIndex) or old_df.index.tz is None:
+                                old_df.index = pd.to_datetime(old_df.index, utc=True)
+                            if not isinstance(new_df.index, pd.DatetimeIndex) or new_df.index.tz is None:
+                                new_df.index = pd.to_datetime(new_df.index, utc=True)
                                 
                             merged_df = pd.concat([old_df, new_df])
                             merged_df = merged_df[~merged_df.index.duplicated(keep='last')]
@@ -2072,8 +2085,11 @@ class MarketDataProvider:
                         if s in delta_data and not delta_data[s].empty:
                             old_df = historical_fx_yf[s]
                             new_df = delta_data[s]
-                            if not isinstance(old_df.index, pd.DatetimeIndex): old_df.index = pd.to_datetime(old_df.index)
-                            if not isinstance(new_df.index, pd.DatetimeIndex): new_df.index = pd.to_datetime(new_df.index)
+                            # Ensure index types match
+                            if not isinstance(old_df.index, pd.DatetimeIndex) or old_df.index.tz is None:
+                                old_df.index = pd.to_datetime(old_df.index, utc=True)
+                            if not isinstance(new_df.index, pd.DatetimeIndex) or new_df.index.tz is None:
+                                new_df.index = pd.to_datetime(new_df.index, utc=True)
                             merged = pd.concat([old_df, new_df])
                             merged = merged[~merged.index.duplicated(keep='last')]
                             merged.sort_index(inplace=True)
