@@ -3072,6 +3072,7 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         # --- END ADDED ---
 
         current_qty = holdings_qty_np[symbol_id, account_id]
+        last_price = last_prices_np[symbol_id, account_id]
         
         internal_symbol = id_to_symbol[symbol_id]
         account = id_to_account[account_id]
