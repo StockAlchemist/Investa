@@ -111,6 +111,33 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         return null;
     }, [data, view, currency]);
 
+    const hasFXRate = useMemo(() => data && data.length > 0 && data.some(d => (d as any).fx_rate !== undefined), [data]);
+
+    // Determine which keys to plot
+    // Always plot 'twr' or 'value' for portfolio
+    // For benchmarks, they are usually only relevant for 'return' view
+    // Benchmarks keys in data will be their tickers/names.
+    // We need to know which keys correspond to benchmarks.
+    // A simple way is to look at keys in the first data point that are not 'date', 'value', 'twr', 'drawdown', 'fx_rate'.
+    const benchmarkKeys = useMemo(() => {
+        if (!data || data.length === 0) return [];
+        return Object.keys(data[0]).filter(k => k !== 'date' && k !== 'value' && k !== 'twr' && k !== 'drawdown' && k !== 'fx_rate');
+    }, [data]);
+
+    const processedData = useMemo(() => {
+        if (!data || data.length === 0) return [];
+        const startFX = (data[0] as any).fx_rate;
+        if (startFX === undefined) return data;
+
+        return data.map(d => {
+            const currentFX = (d as any).fx_rate;
+            return {
+                ...d,
+                fx_return: currentFX !== undefined ? ((currentFX / startFX) - 1) * 100 : undefined
+            };
+        });
+    }, [data]);
+
     if (!data || data.length === 0) {
         return (
             <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 h-64 flex items-center justify-center text-gray-500">
@@ -190,7 +217,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
             // Find benchmark keys present in this data point
             const allKeys = Object.keys(dataPoint);
             const benchKeys = allKeys.filter(k =>
-                k !== 'date' && k !== 'value' && k !== 'twr' && k !== 'drawdown'
+                k !== 'date' && k !== 'value' && k !== 'twr' && k !== 'drawdown' && k !== 'fx_rate' && k !== 'fx_return'
             );
 
             return (
@@ -221,6 +248,29 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                 </span>
                             </div>
                         </div>
+
+                        {/* FX Rate Section */}
+                        {dataPoint.fx_rate !== undefined && (
+                            <>
+                                <div className="h-px bg-border my-2" />
+                                <div className="space-y-1">
+                                    <div className="flex items-center justify-between gap-4">
+                                        <span className="text-xs text-amber-500 font-medium">FX Rate ({currency}/USD)</span>
+                                        <span className="text-sm font-bold text-amber-500">
+                                            {dataPoint.fx_rate.toFixed(4)}
+                                        </span>
+                                    </div>
+                                    {dataPoint.fx_return !== undefined && (
+                                        <div className="flex items-center justify-between gap-4">
+                                            <span className="text-xs text-amber-500 font-medium">FX Return</span>
+                                            <span className={`text-sm font-bold ${dataPoint.fx_return >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                {dataPoint.fx_return >= 0 ? '+' : ''}{dataPoint.fx_return.toFixed(2)}%
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        )}
 
                         {/* Benchmarks Section */}
                         {benchKeys.length > 0 && (
@@ -256,16 +306,6 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         }
         return null;
     };
-
-    // Determine which keys to plot
-    // Always plot 'twr' or 'value' for portfolio
-    // For benchmarks, they are usually only relevant for 'return' view
-    // Benchmarks keys in data will be their tickers/names.
-    // We need to know which keys correspond to benchmarks.
-    // A simple way is to look at keys in the first data point that are not 'date', 'value', 'twr'.
-    const benchmarkKeys = data.length > 0
-        ? Object.keys(data[0]).filter(k => k !== 'date' && k !== 'value' && k !== 'twr' && k !== 'drawdown')
-        : [];
 
     return (
         <div className="bg-card backdrop-blur-md rounded-xl p-4 shadow-sm border border-border mb-6">
@@ -338,7 +378,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                 )}
                 <ResponsiveContainer width="100%" height="100%">
                     {view === 'return' ? (
-                        <LineChart syncId="portfolio-sync" data={data} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+                        <LineChart syncId="portfolio-sync" data={processedData} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                             <XAxis
                                 dataKey="date"
@@ -377,9 +417,20 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                     dot={false}
                                 />
                             ))}
+                            {hasFXRate && (
+                                <Line
+                                    name={`FX (${currency}/USD)`}
+                                    type="monotone"
+                                    dataKey="fx_return"
+                                    stroke="#f59e0b"
+                                    strokeWidth={1.5}
+                                    strokeDasharray="5 5"
+                                    dot={false}
+                                />
+                            )}
                         </LineChart>
                     ) : view === 'value' ? (
-                        <AreaChart syncId="portfolio-sync" data={data} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+                        <AreaChart syncId="portfolio-sync" data={processedData} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
                             <defs>
                                 <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="5%" stopColor="#2563eb" stopOpacity={0.1} />
@@ -403,6 +454,18 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                 width={60}
                                 domain={['auto', 'auto']}
                             />
+                            {hasFXRate && (
+                                <YAxis
+                                    yAxisId="right"
+                                    orientation="right"
+                                    tick={{ fontSize: 10, fill: '#f59e0b' }}
+                                    axisLine={false}
+                                    tickLine={false}
+                                    width={40}
+                                    domain={['auto', 'auto']}
+                                    tickFormatter={(val) => val.toFixed(2)}
+                                />
+                            )}
                             <Tooltip content={<CustomTooltip />} />
                             <Area
                                 name="Portfolio Value"
@@ -413,9 +476,21 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                 fill="url(#colorValue)"
                                 strokeWidth={2}
                             />
+                            {hasFXRate && (
+                                <Line
+                                    yAxisId="right"
+                                    name={`FX (${currency}/USD)`}
+                                    type="monotone"
+                                    dataKey="fx_rate"
+                                    stroke="#f59e0b"
+                                    strokeWidth={1.5}
+                                    strokeDasharray="5 5"
+                                    dot={false}
+                                />
+                            )}
                         </AreaChart>
                     ) : (
-                        <AreaChart syncId="portfolio-sync" data={data} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+                        <AreaChart syncId="portfolio-sync" data={processedData} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
                             <defs>
                                 <linearGradient id="colorDrawdown" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="5%" stopColor="#ef4444" stopOpacity={0.1} />
@@ -450,6 +525,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                             />
                         </AreaChart>
                     )}
+
                 </ResponsiveContainer>
             </div>
         </div>

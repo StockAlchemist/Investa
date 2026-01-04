@@ -853,10 +853,9 @@ def _calculate_historical_performance_internal(
     # --- MODIFIED: Use provided interval or default ---
     calc_interval = interval
     
-    logging.info(f"DEBUG API: config.HISTORICAL_CALC_METHOD={getattr(config, 'HISTORICAL_CALC_METHOD', 'MISSING')}")
     t_start = time.time()
     try:
-        daily_df, _, _, _ = calculate_historical_performance(
+        daily_df, _, historical_fx_yf, _ = calculate_historical_performance(
             all_transactions_df_cleaned=df,
             original_transactions_df_for_ignored=None, # Not needed for web view
             ignored_indices_from_load=set(),
@@ -880,7 +879,7 @@ def _calculate_historical_performance_internal(
         raise HTTPException(status_code=500, detail=str(e))
 
     logging.info(f"API: calculation complete in {time.time() - t_start:.2f}s.")
-
+    
     if daily_df is None or daily_df.empty:
         return pd.DataFrame() if return_df else []
 
@@ -906,6 +905,32 @@ def _calculate_historical_performance_internal(
          daily_df.index = pd.to_datetime(daily_df.index)
 
     ticker_to_name = {v: k for k, v in config.BENCHMARK_MAPPING.items()}
+    
+    # --- FX Rate series preparation ---
+    fx_rate_series = None
+    if currency != "USD" and historical_fx_yf:
+        fx_pair = f"{currency}=X"
+        if fx_pair in historical_fx_yf:
+            fx_df = historical_fx_yf[fx_pair]
+            # Handle both 'price' (new format) and 'Close' (old/direct format)
+            rate_col = "price" if "price" in fx_df.columns else ("Close" if "Close" in fx_df.columns else None)
+            
+            if not fx_df.empty and rate_col:
+                # Ensure UTC alignment
+                fx_idx = fx_df.index
+                if not isinstance(fx_idx, pd.DatetimeIndex) or fx_idx.tz is None:
+                    fx_idx = pd.to_datetime(fx_idx, utc=True)
+                
+                fx_df_proc = fx_df.copy()
+                fx_df_proc.index = fx_idx
+                
+                daily_idx = daily_df.index
+                if not isinstance(daily_idx, pd.DatetimeIndex) or daily_idx.tz is None:
+                    daily_idx = pd.to_datetime(daily_idx, utc=True)
+                
+                # Reindex with forward fill to match portfolio timestamps
+                fx_rate_series = fx_df_proc[rate_col].reindex(daily_idx, method='ffill')
+    
     
     for dt, row in daily_df.iterrows():
         # Skip weekends (Saturday=5, Sunday=6) to avoid flat lines in graph
@@ -936,6 +961,13 @@ def _calculate_historical_performance_internal(
             "twr": (twr - 1) * 100 if pd.notnull(twr) else 0.0, # Convert to percentage change
             "drawdown": dd * 100 if pd.notnull(dd) else 0.0 # Convert to percentage
         }
+
+        # Add FX Rate if available
+        if fx_rate_series is not None:
+            fx_val = fx_rate_series.get(dt)
+            if pd.notnull(fx_val):
+                item["fx_rate"] = float(fx_val)
+    
 
         # Add benchmark data
         if benchmarks:
