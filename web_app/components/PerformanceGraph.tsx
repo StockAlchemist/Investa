@@ -57,7 +57,17 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         const loadData = async () => {
             setLoading(true);
             try {
-                const newData = await fetchHistory(currency, accounts, period, benchmarks);
+                // Determine interval based on period
+                let interval = '1d';
+                if (period === '1d') {
+                    interval = '5m';
+                } else if (period === '5d') {
+                    interval = '15m'; // 15m * 5 days = ~130 points
+                } else if (period === '1m') {
+                    interval = '60m'; // 1h * 30 days = ~200 points
+                }
+
+                const newData = await fetchHistory(currency, accounts, period, benchmarks, interval);
                 setData(newData);
             } catch (error) {
                 console.error("Failed to fetch history:", error);
@@ -111,6 +121,18 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
 
     const formatXAxis = (tickItem: string) => {
         const date = new Date(tickItem);
+        // For short periods, show time. For 1M (hourly), maybe show Day + Time?
+        // Let's simple check:
+        if (period === '1d') {
+            return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+        } else if (period === '5d') {
+            // Show Day + Time for context
+            return date.toLocaleString(undefined, { weekday: 'short', hour: '2-digit' });
+        } else if (period === '1m') {
+            // Hourly for 1 month. Date + maybe Hour? Too crowded.
+            // Just Date is probably fine, or Day.
+            return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        }
         return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     };
 
@@ -118,9 +140,21 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         if (view === 'return' || view === 'drawdown') {
             return `${tickItem.toFixed(1)}%`;
         } else {
+            // Check if we need more precision
+            // If the range is small, we might see duplicate ticks like "1.7M", "1.7M", "1.7M"
+            // We can check the data range to decide.
+            // But formatting happens per tick.
+
+            // Heuristic working with the tick value itself isn't enough, we need context.
+            // However, we can just use more localized formatting if the number is large?
+            // Or just increase fraction digits to 2 or 3?
+
+            // Let's try 3 fraction digits for compact notation.
+            // "1.662M" vs "1.7M"
             return new Intl.NumberFormat('en-US', {
                 notation: "compact",
-                maximumFractionDigits: 1
+                maximumFractionDigits: 3,
+                minimumFractionDigits: 0
             }).format(tickItem);
         }
     };
@@ -131,12 +165,27 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         if (active && payload && payload.length) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const dataPoint = payload[0].payload as any;
-            const dateStr = new Date(dataPoint.date).toLocaleDateString(undefined, {
-                weekday: 'short',
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric'
-            });
+            const dateObj = new Date(dataPoint.date);
+
+            let dateStr;
+            // For intraday periods (1d, 5d), show time
+            if (period === '1d' || period === '5d' || period === '1m') { // 1M is hourly, so show time too? Yes.
+                // Actually 1M is 60m interval.
+                dateStr = dateObj.toLocaleString(undefined, {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            } else {
+                dateStr = dateObj.toLocaleDateString(undefined, {
+                    weekday: 'short',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                });
+            }
 
             // Find benchmark keys present in this data point
             const allKeys = Object.keys(dataPoint);
@@ -304,7 +353,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                 tick={{ fontSize: 12, fill: '#9ca3af' }}
                                 axisLine={false}
                                 tickLine={false}
-                                width={45}
+                                width={60}
                             />
                             <Tooltip content={<CustomTooltip />} />
                             <Legend />
@@ -351,7 +400,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                 tick={{ fontSize: 12, fill: '#9ca3af' }}
                                 axisLine={false}
                                 tickLine={false}
-                                width={45}
+                                width={60}
                                 domain={['auto', 'auto']}
                             />
                             <Tooltip content={<CustomTooltip />} />
@@ -387,7 +436,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                 tick={{ fontSize: 12, fill: '#9ca3af' }}
                                 axisLine={false}
                                 tickLine={false}
-                                width={45}
+                                width={60}
                             />
                             <Tooltip content={<CustomTooltip />} />
                             <Area

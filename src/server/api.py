@@ -4,7 +4,8 @@ from collections import defaultdict
 import pandas as pd
 import logging
 import os
-from datetime import datetime, date # Added this import
+import time
+from datetime import datetime, date, time as dt_time
 
 
 
@@ -791,13 +792,14 @@ async def delete_transaction(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def _calculate_historical_performance_internal(
+def _calculate_historical_performance_internal(
     currency: str,
     period: str,
     accounts: Optional[List[str]],
-    benchmarks: Optional[List[str]],
+    benchmarks: List[str],
     data: tuple,
-    return_df: bool = False
+    return_df: bool = False,
+    interval: str = "1d"
 ):
     (
         df,
@@ -813,7 +815,19 @@ async def _calculate_historical_performance_internal(
 
     # Determine date range
     end_date = date.today()
-    if period == "5d" or period == "7d":
+    if period == "1d":
+        # Handle weekends/Mondays to ensure we get some data (last trading day)
+        # If Sat(5) or Sun(6), go back to Friday.
+        # If Mon(0), go back to Friday to ensure we have context if market just opened.
+        if end_date.weekday() == 6: # Sunday -> Friday
+             start_date = end_date - timedelta(days=2)
+        elif end_date.weekday() == 5: # Saturday -> Friday
+             start_date = end_date - timedelta(days=1)
+        elif end_date.weekday() == 0: # Monday -> Friday (3 days)
+             start_date = end_date - timedelta(days=3)
+        else:
+             start_date = end_date - timedelta(days=1)
+    elif period == "5d" or period == "7d":
         start_date = end_date - timedelta(days=7)
     elif period == "1m":
         start_date = end_date - timedelta(days=30)
@@ -836,14 +850,18 @@ async def _calculate_historical_performance_internal(
 
     # Call calculation logic
     # Revert to daily interval for ALL periods to prevent repeating dates in graph
-    calc_interval = "1d"
+    # --- MODIFIED: Use provided interval or default ---
+    calc_interval = interval
     
-    daily_df, _, _, _ = calculate_historical_performance(
-        all_transactions_df_cleaned=df,
-        original_transactions_df_for_ignored=None, # Not needed for web view
-        ignored_indices_from_load=set(),
-        ignored_reasons_from_load={},
-        start_date=start_date,
+    logging.info(f"DEBUG API: config.HISTORICAL_CALC_METHOD={getattr(config, 'HISTORICAL_CALC_METHOD', 'MISSING')}")
+    t_start = time.time()
+    try:
+        daily_df, _, _, _ = calculate_historical_performance(
+            all_transactions_df_cleaned=df,
+            original_transactions_df_for_ignored=None, # Not needed for web view
+            ignored_indices_from_load=set(),
+            ignored_reasons_from_load={},
+            start_date=start_date,
         end_date=end_date,
         display_currency=currency,
         manual_overrides_dict=manual_overrides,
@@ -855,6 +873,13 @@ async def _calculate_historical_performance_internal(
         default_currency=config.DEFAULT_CURRENCY,
         interval=calc_interval
     )
+    except Exception as e:
+        logging.error(f"API Error in calculate_historical_performance: {e}")
+        import traceback
+        logging.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+    logging.info(f"API: calculation complete in {time.time() - t_start:.2f}s.")
 
     if daily_df is None or daily_df.empty:
         return pd.DataFrame() if return_df else []
@@ -891,6 +916,14 @@ async def _calculate_historical_performance_internal(
             continue
         elif isinstance(dt, (date, datetime)) and dt.weekday() >= 5:
             continue
+        # Strict market hours filter for intraday (09:30 - 16:00 EST)
+        # We only apply this to intraday intervals.
+        if interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]:
+             # Convert dt to NY time for filtering
+             # dt in daily_df.index is already UTC-aware Timestamp
+             dt_ny = dt.tz_convert("America/New_York")
+             if not (dt_time(9, 30) <= dt_ny.time() <= dt_time(16, 0)):
+                 continue
 
         # Handle NaN values
         val = row.get("Portfolio Value", 0.0)
@@ -898,7 +931,7 @@ async def _calculate_historical_performance_internal(
         dd = drawdown_series.get(dt, 0.0)
         
         item = {
-            "date": dt.strftime("%Y-%m-%d"),
+            "date": dt.isoformat(),
             "value": val if pd.notnull(val) else 0.0,
             "twr": (twr - 1) * 100 if pd.notnull(twr) else 0.0, # Convert to percentage change
             "drawdown": dd * 100 if pd.notnull(dd) else 0.0 # Convert to percentage
@@ -919,11 +952,12 @@ async def _calculate_historical_performance_internal(
 
 
 @router.get("/history")
-async def get_history(
+def get_history(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),
     period: str = "1y",
     benchmarks: Optional[List[str]] = Query(None),
+    interval: str = "1d",
     data: tuple = Depends(get_transaction_data)
 ):
     """
@@ -938,13 +972,14 @@ async def get_history(
                 else:
                     mapped_benchmarks.append(b)
 
-        return await _calculate_historical_performance_internal(
+        return _calculate_historical_performance_internal(
             currency=currency,
             period=period,
             accounts=accounts,
             benchmarks=mapped_benchmarks,
             data=data,
-            return_df=False
+            return_df=False,
+            interval=interval
         )
     except Exception as e:
         logging.error(f"Error getting history: {e}", exc_info=True)

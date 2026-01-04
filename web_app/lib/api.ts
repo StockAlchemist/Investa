@@ -178,9 +178,10 @@ export async function fetchHistory(
     currency: string = 'USD',
     accounts?: string[],
     period: string = '1y',
-    benchmarks?: string[]
+    benchmarks?: string[],
+    interval: string = '1d'
 ): Promise<PerformanceData[]> {
-    const params = new URLSearchParams({ currency, period });
+    const params = new URLSearchParams({ currency, period, interval });
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }

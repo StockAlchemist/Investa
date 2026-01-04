@@ -98,11 +98,11 @@ const DEFAULT_ITEMS = [
     { id: 'dayGL', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
     { id: 'totalReturn', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
     { id: 'unrealizedGL', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
-    { id: 'fxGL', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
     { id: 'realizedGain', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
+    { id: 'ytdDividends', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
     { id: 'annualTWR', colSpan: '' },
     { id: 'cashBalance', colSpan: '' },
-    { id: 'ytdDividends', colSpan: '' },
+    { id: 'fxGL', colSpan: '' },
     { id: 'fees', colSpan: '' },
 ];
 
@@ -208,7 +208,6 @@ export default function Dashboard({ summary, currency, history = [], isLoading =
                     value={fxGL}
                     subValue={fxGLPct}
                     colorClass={fxGLColor}
-                    valueClassName="text-2xl sm:text-3xl"
                     subValueClassName={cn("text-base sm:text-xl", fxGLPct >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white hover:bg-rose-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
@@ -237,6 +236,9 @@ export default function Dashboard({ summary, currency, history = [], isLoading =
                 return <MetricCard
                     title="Total Dividends"
                     value={m?.dividends ?? 0}
+                    valueClassName="text-2xl sm:text-3xl"
+                    containerClassName="h-full flex flex-col justify-center"
+                    isHero={true}
                     currency={currency}
                     isLoading={isLoading}
                 />;

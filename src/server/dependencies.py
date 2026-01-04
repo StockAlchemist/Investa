@@ -110,7 +110,7 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
     if not db_path:
         db_path = get_database_path(DB_FILENAME)
         logging.info(f"Using db_utils fallback DB: {db_path}")
-    
+
     # Check modification time for DB
     current_mtime = 0.0
     if os.path.exists(db_path):

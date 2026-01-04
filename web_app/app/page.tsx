@@ -144,9 +144,9 @@ export default function Home() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const history7dQuery = useQuery({
-    queryKey: ['history', currency, selectedAccounts, '7d'],
-    queryFn: () => fetchHistory(currency, selectedAccounts, '7d'),
+  const historySparklineQuery = useQuery({
+    queryKey: ['history', currency, selectedAccounts, 'sparkline'],
+    queryFn: () => fetchHistory(currency, selectedAccounts, '1d', [], '5m'),
     enabled: activeTab === 'performance',
     staleTime: 5 * 60 * 1000,
   });
@@ -175,7 +175,7 @@ export default function Home() {
             <Dashboard
               summary={summary || { metrics: null, account_metrics: null }}
               currency={currency}
-              history={history7dQuery.data || []}
+              history={historySparklineQuery.data || []}
               isLoading={summaryQuery.isLoading}
             />
             <div className="mb-6">
@@ -332,11 +332,11 @@ export default function Home() {
 
           <div className="flex items-center gap-4">
             {summary?.metrics?.indices && Object.values(summary.metrics.indices).map((index: { name: string; price: number; change: number; changesPercentage: number }) => (
-              <div key={index.name} className="hidden lg:flex items-center space-x-2 text-xs font-medium px-3 py-1.5 rounded-full bg-card border border-border hover:bg-accent/10 transition-colors">
+              <div key={index.name} className="hidden md:flex items-center space-x-2 text-xs font-medium px-3 py-1.5 rounded-full bg-card border border-border hover:bg-accent/10 transition-colors">
                 <span className="text-muted-foreground">{index.name}</span>
-                <span className="text-foreground">{index.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                <span className={index.change >= 0 ? "text-emerald-500" : "text-rose-500"}>
-                  {index.change >= 0 ? "+" : ""}{index.change.toFixed(2)} ({index.changesPercentage.toFixed(2)}%)
+                <span className="text-foreground">{index.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? "0.00"}</span>
+                <span className={(index.change || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}>
+                  {(index.change || 0) >= 0 ? "+" : ""}{(index.change || 0).toFixed(2)} ({(index.changesPercentage || 0).toFixed(2)}%)
                 </span>
               </div>
             ))}

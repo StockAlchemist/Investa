@@ -59,14 +59,24 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 className={cn(
-                    "flex items-center gap-2 px-4 py-2 text-xs font-medium transition-all duration-300",
+                    "flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group",
                     "bg-white/5 hover:bg-white/10 dark:bg-black/20 dark:hover:bg-black/30",
-                    "border border-white/10 dark:border-white/5 backdrop-blur-xl shadow-lg shadow-black/5 rounded-2xl",
-                    isOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-cyan-500"
+                    "border border-white/10 dark:border-white/5 backdrop-blur-xl shadow-lg shadow-black/5",
+                    "font-semibold tracking-tight min-w-[80px]",
+                    isOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-cyan-500",
+                    // Use a flex-row layout on mobile or if aligned in a row context if needed, 
+                    // but for now relying on the base 'currency' style which is flex-col usually, 
+                    // but the user's screenshot suggests a simple centered text box.
+                    // CurrencySelector has: side === 'bottom' && "flex-row py-2 px-4 h-[44px] justify-center"
+                    // We'll adopt a similar height/padding for consistency.
+                    "flex-row py-2 px-4 h-[44px]"
                 )}
             >
-                <span className="font-semibold text-muted-foreground/80 uppercase tracking-tighter mr-1 border-r border-border pr-2 hidden sm:inline">Accounts</span>
-                <span className="font-medium text-cyan-500">{getLabel()}</span>
+                <div className="flex flex-col items-center leading-none gap-0">
+                    <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent truncate font-bold uppercase text-[14px]">
+                        {getLabel()}
+                    </span>
+                </div>
             </button>
 
             {isOpen && (

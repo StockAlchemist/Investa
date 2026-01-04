@@ -768,7 +768,6 @@ def calculate_portfolio_summary(
         # )
         pass # Continue execution
 
-    logging.debug(f"DEBUG: Passed fetch check. has_errors={has_errors}")
 
     # --- 6. Build Detailed Summary Rows ---
     # --- ADDED: Calculate Realized Gains using FIFO (Capital Gains Logic) ---
@@ -1411,11 +1410,17 @@ def _unadjust_prices(
     unadjusted_count = 0
 
     for yf_symbol, adj_price_df in adjusted_prices_yf.items():
-        # --- DEBUG FLAG (Should be removed/made configurable) ---
+        # --- DEBUG FLAG ---
         IS_DEBUG_SYMBOL = yf_symbol == "AAPL"
-        if IS_DEBUG_SYMBOL:
-            logging.debug(f"  Processing unadjustment for DEBUG symbol: {yf_symbol}")
-        # --- END DEBUG FLAG ---
+        
+        if yf_symbol == "AMZN":
+            with open("/tmp/investa_debug.log", "a") as f_log:
+                f_log.write(f"\n--- TRYING UNADJUST AMZN (input points={len(adj_price_df)}) ---\n")
+                jan2_pts = adj_price_df[adj_price_df.index.date == date(2026, 1, 2)]
+                f_log.write(f"Jan 2 points in ADJUSTED input: {len(jan2_pts)}\n")
+                if len(jan2_pts) > 1:
+                    f_log.write(f"Jan 2 unique prices: {jan2_pts['price'].nunique()}\n")
+                    f_log.write(f"Jan 2 first 5 index: {jan2_pts.index[:5].tolist()}\n")
 
         # --- Handle Empty/Invalid Input DataFrame ---
         if adj_price_df.empty or "price" not in adj_price_df.columns:
@@ -1543,10 +1548,16 @@ def _unadjust_prices(
         ):
             unadjusted_count += 1
         # Return DataFrame with only the unadjusted price column, renamed to 'price'
-        unadjusted_prices_yf[yf_symbol] = unadj_df[["unadjusted_price"]].rename(
-            columns={"unadjusted_price": "price"}
-        )
-
+        result_df = unadj_df[["unadjusted_price"]].rename(columns={"unadjusted_price": "price"})
+        unadjusted_prices_yf[yf_symbol] = result_df
+        
+        if yf_symbol == "AMZN":
+            today_points = result_df[result_df.index >= pd.Timestamp(date.today(), tz='UTC')]
+            with open("/tmp/investa_debug.log", "a") as f_log:
+                f_log.write(f"\n--- UNADJUSTED AMZN TODAY (points={len(today_points)}) ---\n")
+                if not today_points.empty:
+                    f_log.write(f"First 5: {today_points.index[:5].tolist()}\n")
+                    f_log.write(f"Unique prices: {today_points['price'].nunique()}\n")
     logging.info(
         f"--- Finished Price Unadjustment ({unadjusted_count} symbols processed with splits) ---"
     )
@@ -2842,6 +2853,29 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
     transactions_til_date.sort_values(
         by=["Date", "original_index"], inplace=True, ascending=True
     )
+    
+    # --- ADDED: Support Intraday comparison ---
+    # If target_date is a full datetime (and not just midnight), use exact comparison
+    mask = None
+    if isinstance(target_date, datetime):
+        # Check if it has non-zero time or if we are in intraday mode (context dependent)
+        # But safest is: if it's a datetime, use full comparison.
+        # However, for legacy daily calls, target_date might be datetime(2023,1,1,0,0) but we want all day?
+        # Actually daily logic usually passes date() objects.
+        # Intraday logic passes datetime() objects.
+        mask = transactions_df["Date"] <= target_date
+    else:
+        # Fallback for date objects (Legacy Daily)
+        mask = transactions_df["Date"].dt.date <= target_date
+        
+    transactions_til_date = transactions_df[mask].copy()
+    if transactions_til_date.empty:
+        return 0.0, False
+        
+    # Re-sort again just in case (though filtered subset should preserve order)
+    transactions_til_date.sort_values(
+        by=["Date", "original_index"], inplace=True, ascending=True
+    )
     # --- Prepare NumPy Inputs (Step 4: Update Data Prep) ---
     # --- ADDED: Prepare included_account_ids set ---
     included_account_ids = set()
@@ -2892,7 +2926,6 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         # --- END ADDED ---
 
         # --- DEBUG BLOCK 2: Check Mapping ---
-        logging.debug("\n--- DEBUG: MAPPING CHECK ---")
 
         # 1. Check ID Map for specific target
         target_acc = "IBKR Acct. 1".upper().strip()
@@ -3749,7 +3782,7 @@ def _prepare_historical_inputs(
     }  # Ensure type
     symbols_to_fetch_yf_portfolio = sorted(list(set(symbols_to_fetch_yf_portfolio)))
     symbols_for_stocks_and_benchmarks_yf = sorted(
-        list(set(symbols_to_fetch_yf_portfolio)) # Benchmarks removed
+        list(set(symbols_to_fetch_yf_portfolio) | set(benchmark_symbols_yf))
     )
 
     all_currencies_in_tx_effective = set(
@@ -3907,6 +3940,12 @@ def _value_daily_holdings_vectorized(
     # Initialize with NaNs
     daily_prices_aligned = np.full((num_days, num_symbols), np.nan, dtype=np.float64)
     
+    with open("/tmp/investa_debug.log", "a") as f_log:
+        f_log.write(f"\n--- VALUATION START ---\n")
+        f_log.write(f"num_days={num_days}, num_symbols={num_symbols}\n")
+        f_log.write(f"Internal map keys: {list(internal_to_yf_map.keys())[:20]}...\n")
+        f_log.write(f"Unadjusted price keys: {list(historical_prices_yf_unadjusted.keys())}\n")
+    
     # Iterate symbols to fill prices
     # This loop is cheap (N_symbols ~ hundreds)
     for sym_id in range(num_symbols):
@@ -3926,6 +3965,14 @@ def _value_daily_holdings_vectorized(
                 # Reindex using ffill
                 aligned_series = price_series.reindex(date_range, method='ffill')
                 daily_prices_aligned[:, sym_id] = aligned_series.values
+                
+                if yf_symbol and yf_symbol.upper() == "AMZN":
+                    # Unconditional print for terminal visibility
+                    with open("/tmp/investa_debug.log", "a") as f_log:
+                        f_log.write(f"\n--- ALIGNED PRICES for AMZN (len={len(aligned_series)}) ---\n")
+                        f_log.write(f"Unique aligned: {aligned_series.nunique()}\n")
+                        jan2_aligned = aligned_series[aligned_series.index.date == date(2026, 1, 2)]
+                        f_log.write(f"Jan 2 aligned unique: {jan2_aligned.nunique()}\n")
 
     # 2. Check for missing prices and fill with Last Price if valid
     # We will handle fallback during calculation.
@@ -4340,30 +4387,66 @@ def _load_or_calculate_daily_results(
                 transactions_df_effective["Date"].min().date()
                 if not transactions_df_effective.empty
                 else start_date
+                if not transactions_df_effective.empty
+                else start_date
             )
-            calc_start_date = max(start_date, first_tx_date)
+            # FIX: Use min to ensure we calculate from earliest history if needed, 
+            # while respecting requested start_date as cutoff for active range.
+            calc_start_date = min(start_date, first_tx_date)
             calc_end_date = end_date
             
             # Determine calculation frequency range
-            # If interval is 1h, we use daily for history and hourly for active range
-            if interval == "1h":
+            # If interval is intraday, we use daily for history and intraday frequency for active range
+            valid_intraday = ["1h", "1m", "2m", "5m", "15m", "30m", "60m", "90m"]
+            if interval in valid_intraday:
+                freq_map = {
+                    "1h": "h", "60m": "h",
+                    "1m": "1min", "2m": "2min", "5m": "5min",
+                    "15m": "15min", "30m": "30min", "90m": "90min"
+                }
+                active_freq = freq_map.get(interval, "D")
+                
+                # Use daily for history before start_date
                 range_historical = pd.date_range(start=calc_start_date, end=start_date - timedelta(days=1), freq="D")
-                range_active = pd.date_range(start=start_date, end=calc_end_date, freq="h")
-                date_range_for_calc = range_historical.append(range_active).unique().sort_values()
+                # Fix: ensure historical range is UTC aware before append
+                if not range_historical.empty:
+                    range_historical = range_historical.tz_localize('UTC')
+
+                # Use intraday for active range
+                # FIX: Ensure range_active covers the FULL end_date day for intraday intervals
+                range_active = pd.date_range(
+                    start=pd.Timestamp(start_date, tz='UTC'), 
+                    end=pd.Timestamp(calc_end_date, tz='UTC') + timedelta(days=1), 
+                    freq=active_freq,
+                    inclusive='left'
+                )
+                
+                if range_historical.empty and range_active.empty:
+                     date_range_for_calc = pd.DatetimeIndex([])
+                elif range_historical.empty:
+                     date_range_for_calc = range_active
+                elif range_active.empty:
+                     date_range_for_calc = range_historical
+                else:
+                     # Append and unique handles UTC-aware indices correctly now
+                     date_range_for_calc = range_historical.append(range_active).unique().sort_values()
             else:
                 date_range_for_calc = pd.date_range(
                     start=calc_start_date, end=calc_end_date, freq="D"
-                )
+                ).tz_localize('UTC')
             
-            # Standardize to UTC for mixed-resolution/intraday support
+            # Final check - ensure UTC
             if date_range_for_calc.tz is None:
                 date_range_for_calc = date_range_for_calc.tz_localize('UTC')
             # logging.debug(f"DEBUG HIST: calc_start_date={calc_start_date}, first_tx_date={first_tx_date}, range_len={len(date_range_for_calc)}")
 
             # Determine which set of holdings to use (L1 cached or calculate now)
+            # L1 Cache is purely DAILY. We cannot use it if we are calculating Intraday (mismatch in array length/mapping).
+            is_intraday = interval in valid_intraday
             use_l1_cache = (
                 all_holdings_qty is not None 
                 and all_cash_balances is not None
+                and not is_intraday # DISABLE L1 cache for intraday
                 and not included_accounts_list  # Only use cache if no account filtering
             )
         
@@ -4446,6 +4529,8 @@ def _load_or_calculate_daily_results(
 
                 num_accounts = len(account_to_id)
             
+                num_accounts = len(account_to_id)
+            
                 # Call Numba function
                 daily_holdings_qty_to_use, daily_cash_balances_to_use, daily_last_prices_to_use = _calculate_daily_holdings_chronological_numba(
                     date_ordinals_np,
@@ -4521,6 +4606,11 @@ def _load_or_calculate_daily_results(
                 "value": daily_value_series,
                 "net_flow": daily_net_flow_series
             }, index=date_range_for_calc)
+            daily_df = pd.DataFrame({
+                "value": daily_value_series,
+                "net_flow": daily_net_flow_series
+            }, index=date_range_for_calc)
+        
         if daily_df.empty:
             status_update = " Calculating daily values..."
             first_tx_date = (
@@ -4536,6 +4626,8 @@ def _load_or_calculate_daily_results(
                     market_day_source_symbol = next(iter(historical_prices_yf_adjusted.keys()))
                 else:
                     market_day_source_symbol = None
+            
+
             market_days_index = pd.Index([], dtype="object")
             logging.debug(
                 f"[_load_or_calculate_daily_results] Attempting to use '{market_day_source_symbol}' for market days."
@@ -4553,11 +4645,15 @@ def _load_or_calculate_daily_results(
                         datetime_index = pd.to_datetime(bench_df.index, errors="coerce")
                         valid_datetime_index = datetime_index.dropna()
                         if not valid_datetime_index.empty:
-                            market_days_index = pd.Index(
-                                valid_datetime_index.date
-                            ).unique()  # Get unique dates
-                            logging.debug(
-                                f"  Successfully created market_days_index from '{market_day_source_symbol}' ({len(market_days_index)} days)."
+                            # --- MODIFIED: Preserve intraday resolution if interval implies it ---
+                            if interval in ["1m", "5m", "15m", "30m", "60m", "1h", "90m"]:
+                                market_days_index = valid_datetime_index.unique() # Keep Timestamps
+                            else:
+                                market_days_index = pd.Index(
+                                    valid_datetime_index.date
+                                ).unique()  # Get unique dates (Daily)
+                            logging.info(
+                                f"  Successfully created market_days_index from '{market_day_source_symbol}' ({len(market_days_index)} points)."
                             )  # ADDED LOG
                         else:
                             logging.warning(
@@ -4793,7 +4889,6 @@ def _load_or_calculate_daily_results(
                     / adjusted_prev_value.loc[valid_denom_mask]
                 )
 
-                # --- DEBUG: Log potential TWR anomalies ---
                 anomalies = daily_df[
                     (daily_df["value"] < 1.0) & 
                     (daily_df["net_flow"] > 1000.0) & 
@@ -5411,7 +5506,7 @@ def calculate_historical_performance(
         return pd.DataFrame(), {}, {}, "Error: MarketDataProvider not available."
     if start_date >= end_date:
         return pd.DataFrame(), {}, {}, "Error: Start date must be before end date."
-    if interval not in ["D", "W", "M", "ME", "1h", "1d"]:
+    if interval not in ["D", "W", "M", "ME", "1d", "1h", "1m", "2m", "5m", "15m", "30m", "60m", "90m"]:
         return pd.DataFrame(), {}, {}, f"Error: Invalid interval '{interval}'."
 
     clean_benchmark_symbols_yf = (
@@ -5475,7 +5570,6 @@ def calculate_historical_performance(
         filter_desc,
     ) = prep_result
 
-
     if transactions_df_effective is None:  # Check if prep failed
         status_msg = "Error: Failed to prepare inputs from preloaded DataFrame."
         return pd.DataFrame(), {}, {}, status_msg
@@ -5522,7 +5616,9 @@ def calculate_historical_performance(
         hist_data_cache_dir_name="historical_data_cache"
     )
 
-    # --- 2. Load/Calculate ALL daily holdings (Layer 1 Cache) ---
+    # This calculates daily holdings purely from transactions (no market data yet), or loads L1 cache
+    # But it returns just the arrays/maps needed for *daily* scope.
+    # For intraday, we might re-calculate inside _load_or_calculate if needed (cache miss logic handles it).
     all_holdings_qty, all_cash_balances, all_last_prices = _get_or_calculate_all_daily_holdings(
         all_transactions_df=all_transactions_df_cleaned,
         start_date=full_start_date,
@@ -5531,9 +5627,14 @@ def calculate_historical_performance(
         account_to_id=account_to_id,
         type_to_id=type_to_id,
     )
+
     if all_holdings_qty is None:
         status_parts.append("L1 Cache Error")
         has_errors = True  # This is a critical failure
+
+    with open("/tmp/investa_debug.log", "a") as f_log:
+        f_log.write(f"\n--- FETCH START ---\n")
+        f_log.write(f"Interval: {interval}, requested symbols: {symbols_for_stocks_and_benchmarks_yf}\n")
 
     # --- 3. Load or Fetch ADJUSTED Historical Raw Data ---
     # We always fetch daily data for the FULL range to support valuation baseline.
@@ -5546,33 +5647,61 @@ def calculate_historical_performance(
         cache_key=raw_data_cache_key,
     )
     
-    # If 1h interval requested, fetch hourly data for the RECENT/ACTIVE range only (limit to 730 days)
-    if interval == "1h":
-        hourly_start = max(start_date, date.today() - timedelta(days=725))
-        hourly_prices, _ = market_provider.get_historical_data(
+    with open("/tmp/investa_debug.log", "a") as f_log:
+        f_log.write(f"Fetch failed: {fetch_failed_prices}\n")
+        f_log.write(f"Adjusted keys returned: {list(historical_prices_yf_adjusted.keys())}\n")
+    
+    # If intraday interval requested, fetch intraday data for the RECENT/ACTIVE range
+    if interval in ["1h", "1m", "2m", "5m", "15m", "30m", "60m", "90m"]:
+        # Determined strictly by loop logic in market_data, but we pass full range here.
+        # Market data provider handles limits (e.g. 730d for 1h, 30d for 1m).
+        # We start from max(start_date, limit) usually, but let's just pass full range and let provider clip if needed?
+        # Provider clips start date. So we can just pass start_date.
+        # BUT, to be efficient, we might only want intraday for the *relevant* recent period if the user asked for "All" but visualized as 1h?
+        # No, if user asks for 1h, they get 1h for as long as possible.
+        
+        intraday_prices, _ = market_provider.get_historical_data(
             symbols_yf=symbols_for_stocks_and_benchmarks_yf,
-            start_date=hourly_start,
+            start_date=start_date, # Let provider clip
             end_date=fetch_end_date,
-            interval="1h",
+            interval=interval,
             use_cache=use_raw_data_cache,
         )
-        # Merge hourly data into the adjusted map
-        for s, h_df in hourly_prices.items():
-            if s in historical_prices_yf_adjusted:
-                d_df = historical_prices_yf_adjusted[s]
+        # Merge intraday data into the adjusted map
+        # Use a case-insensitive lookup for matching symbols
+        adj_prices_upper = {k.upper(): k for k in historical_prices_yf_adjusted.keys()}
+        
+        with open("/tmp/investa_debug.log", "a") as f_log:
+            f_log.write(f"\n--- NEW SYMBOL MERGE (interval={interval}) ---\n")
+            f_log.write(f"Adjusted keys: {list(historical_prices_yf_adjusted.keys())}\n")
+            f_log.write(f"Intraday keys: {list(intraday_prices.keys())}\n")
+
+        for s, h_df in intraday_prices.items():
+            s_upper = s.upper()
+            if s_upper in adj_prices_upper:
+                original_key = adj_prices_upper[s_upper]
+                d_df = historical_prices_yf_adjusted[original_key]
                 # Force standardized UTC DatetimeIndex
                 d_df.index = pd.to_datetime(d_df.index, utc=True)
                 
                 h_df_proc = h_df.copy()
                 h_df_proc.index = pd.to_datetime(h_df_proc.index, utc=True)
                 
-                h_start_ts = pd.Timestamp(hourly_start).tz_localize('UTC')
-                
-                # Combine and remove duplicates
-                combined = pd.concat([d_df[d_df.index < h_start_ts], h_df_proc]).sort_index()
-                historical_prices_yf_adjusted[s] = combined[~combined.index.duplicated(keep='last')]
+                if not h_df_proc.empty:
+                    h_start_ts = h_df_proc.index.min()
+                    
+                    combined = pd.concat([d_df[d_df.index < h_start_ts], h_df_proc]).sort_index()
+                    final_df = combined[~combined.index.duplicated(keep='last')]
+                    historical_prices_yf_adjusted[original_key] = final_df
+                    with open("/tmp/investa_debug.log", "a") as f_log:
+                        f_log.write(f"MERGED {original_key}: {len(h_df_proc)} points. Total {len(final_df)} points.\n")
+                else:
+                    with open("/tmp/investa_debug.log", "a") as f_log:
+                        f_log.write(f"EMPTY intraday for {original_key}\n")
             else:
                 historical_prices_yf_adjusted[s] = h_df
+                with open("/tmp/investa_debug.log", "a") as f_log:
+                    f_log.write(f"NEW ENTRY for {s}: {len(h_df)} points.\n")
 
     logging.info(
         f"Fetching/Loading historical FX rates ({len(fx_pairs_for_api_yf)} pairs)..."
@@ -5586,16 +5715,15 @@ def calculate_historical_performance(
         cache_key=raw_data_cache_key,
     )
     
-    if interval == "1h":
-        hourly_start = max(start_date, date.today() - timedelta(days=725))
-        hourly_fx, _ = market_provider.get_historical_fx_rates(
+    if interval in ["1h", "1m", "2m", "5m", "15m", "30m", "60m", "90m"]:
+        intraday_fx, _ = market_provider.get_historical_fx_rates(
             fx_pairs_yf=fx_pairs_for_api_yf,
-            start_date=hourly_start,
+            start_date=start_date, # Let provider clip
             end_date=fetch_end_date,
-            interval="1h",
+            interval=interval,
             use_cache=use_raw_data_cache,
         )
-        for p, h_df in hourly_fx.items():
+        for p, h_df in intraday_fx.items():
             if p in historical_fx_yf:
                 d_df = historical_fx_yf[p]
                 d_df.index = pd.to_datetime(d_df.index, utc=True)
@@ -5603,10 +5731,11 @@ def calculate_historical_performance(
                 h_df_proc = h_df.copy()
                 h_df_proc.index = pd.to_datetime(h_df_proc.index, utc=True)
                 
-                h_start_ts = pd.Timestamp(hourly_start).tz_localize('UTC')
-                
-                combined = pd.concat([d_df[d_df.index < h_start_ts], h_df_proc]).sort_index()
-                historical_fx_yf[p] = combined[~combined.index.duplicated(keep='last')]
+                if not h_df_proc.empty:
+                    h_start_ts = h_df_proc.index.min()
+                    
+                    combined = pd.concat([d_df[d_df.index < h_start_ts], h_df_proc]).sort_index()
+                    historical_fx_yf[p] = combined[~combined.index.duplicated(keep='last')]
             else:
                 historical_fx_yf[p] = h_df
 
@@ -5654,19 +5783,23 @@ def calculate_historical_performance(
 
     # --- 5 & 6. Load or Calculate Daily Results ---
     # If it's None (e.g., data loaded from DB), the mtime check in daily results cache will be skipped or handled.
+    
+    # 1. Attempt Load from Cache
+    daily_results_cache_file_path = (
+        daily_results_cache_file if daily_results_cache_file else None
+    )
     daily_df, cache_was_valid_daily, status_update_daily = (
         _load_or_calculate_daily_results(
-            use_daily_results_cache=use_daily_results_cache,
-            daily_results_cache_file=daily_results_cache_file,
+            daily_results_cache_file=daily_results_cache_file_path,
             daily_results_cache_key=daily_results_cache_key,
             interval=interval,
             worker_signals=worker_signals,
             transactions_csv_file=(
                 original_csv_file_path  # Pass None or actual path for mtime check
             ),
-            transactions_df_effective=transactions_df_effective,  # This is filtered
-            start_date=full_start_date,  # Use full range for calculation
-            end_date=fetch_end_date,  # Use full range for calculation
+            transactions_df_effective=transactions_df_effective,
+            start_date=start_date,  # FIX: Pass requested view start (2026), not loaded history start (2002)
+            end_date=fetch_end_date,
             historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,
             historical_prices_yf_adjusted=historical_prices_yf_adjusted,
             historical_fx_yf=historical_fx_yf,
@@ -5674,20 +5807,19 @@ def calculate_historical_performance(
             internal_to_yf_map=internal_to_yf_map,
             account_currency_map=account_currency_map,
             default_currency=default_currency,
-            manual_overrides_dict=manual_overrides_dict,
             symbol_to_id=symbol_to_id,
-            id_to_symbol=id_to_symbol,  # Pass mappings
+            id_to_symbol=id_to_symbol,
             account_to_id=account_to_id,
             id_to_account=id_to_account,
+            manual_overrides_dict=manual_overrides_dict,
             type_to_id=type_to_id,
             currency_to_id=currency_to_id,
             id_to_currency=id_to_currency,
-            # --- NEW: Pass pre-calculated holdings and account filter list ---
             all_holdings_qty=all_holdings_qty,
             all_cash_balances=all_cash_balances,
-            all_last_prices=all_last_prices, # Pass L1 cache
-            included_accounts_list=included_accounts_list_sorted,
-            num_processes=num_processes,
+            all_last_prices=all_last_prices,
+            use_daily_results_cache=use_daily_results_cache and interval not in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"], # DISABLE CACHE if intraday
+            included_accounts_list=include_accounts,
             current_hist_version=CURRENT_HIST_VERSION,
             filter_desc=filter_desc,
             calc_method=calc_method or HISTORICAL_CALC_METHOD,

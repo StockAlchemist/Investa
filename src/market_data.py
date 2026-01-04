@@ -11,6 +11,12 @@ import requests  # Keep for potential future use
 import traceback  # For detailed error logging
 from io import StringIO  # For historical cache loading
 import hashlib  # For cache key hashing
+import subprocess
+import sys
+import tempfile
+
+
+
 
 # --- ADDED: Import line_profiler if available, otherwise create dummy decorator ---
 try:
@@ -145,6 +151,90 @@ class NpEncoder(json.JSONEncoder):
             return obj.tolist()
         # Let the base class default method raise the TypeError
         return super(NpEncoder, self).default(obj)
+
+
+def _run_isolated_fetch(tickers, start, end, interval):
+    """
+    Runs yfinance fetch in a separate process using file I/O to prevent crashing the main server.
+    """
+    temp_output = None
+    try:
+        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "market_data_worker.py")
+        
+        # Create a temp file path for the worker to write to
+        fd, temp_output = tempfile.mkstemp(suffix=".json")
+        os.close(fd) # Output file path only
+        
+        payload = {
+            "symbols": tickers,
+            "start": str(start),
+            "end": str(end),
+            "interval": interval,
+            "output_file": temp_output
+        }
+        
+        # Run subprocess
+        result = subprocess.run(
+            [sys.executable, script_path],
+            input=json.dumps(payload),
+            capture_output=True, # Still capture metadata output
+            text=True,
+            timeout=180 # 3 minute timeout
+        )
+
+        
+        if result.stderr:
+             logging.info(f"Isolated fetch STDERR: {result.stderr}")
+
+        if result.returncode != 0:
+            logging.error(f"Isolated fetch failed (Code {result.returncode}): {result.stderr}")
+            if os.path.exists(temp_output): os.remove(temp_output)
+            return pd.DataFrame()
+            
+        # Parse metadata output
+        try:
+            response = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            logging.error(f"Isolated fetch returned invalid JSON metadata: {result.stdout[:200]}")
+            if os.path.exists(temp_output): os.remove(temp_output)
+            return pd.DataFrame()
+            
+        if response.get("status") == "success":
+            # Check if empty
+            if response.get("data") is None and "file" not in response:
+                 # Empty result path
+                 if os.path.exists(temp_output): os.remove(temp_output)
+                 return pd.DataFrame()
+
+            # Read from file
+            file_path = response.get("file")
+            if file_path and os.path.exists(file_path):
+                try:
+                    df = pd.read_json(file_path, orient='split')
+                    if not df.empty:
+                        df.index = pd.to_datetime(df.index)
+                except Exception as e_read:
+                    logging.error(f"Error reading isolated fetch result file: {e_read}")
+                    df = pd.DataFrame()
+                finally:
+                    # Clean up
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                return df
+            else:
+                 # "data": None case
+                 if os.path.exists(temp_output): os.remove(temp_output)
+                 return pd.DataFrame()
+        else:
+            logging.error(f"Isolated fetch worker reported error: {response.get('message')}")
+            if os.path.exists(temp_output): os.remove(temp_output)
+            return pd.DataFrame()
+
+    except Exception as e:
+        logging.error(f"Error running isolated fetch: {e}")
+        if temp_output and os.path.exists(temp_output):
+            os.remove(temp_output)
+        return pd.DataFrame()
 
 
 # --- Main Class ---
@@ -560,17 +650,33 @@ class MarketDataProvider:
                             # Handle yf.download structure
                             sym_df = pd.DataFrame()
                             if len(yf_symbols_to_fetch) > 1:
-                                if isinstance(df.columns, pd.MultiIndex) and yf_sym in df.columns.levels[0]:
-                                     sym_df = df[yf_sym]
-                                elif isinstance(df.columns, pd.MultiIndex) and yf_sym not in df.columns.levels[0]:
-                                     # Ticker missing from result
-                                     pass
-                                elif yf_sym in df.columns:
-                                     # Flat structure?
-                                     sym_df = df[[yf_sym]].rename(columns={yf_sym: "Close"}) # Rough guess
+                                try:
+                                    # Robust check for MultiIndex or flat tuple index
+                                    has_multilevel = getattr(df.columns, 'nlevels', 1) > 1
+                                    if has_multilevel and yf_sym in df.columns.get_level_values(0):
+                                        sym_df = df[yf_sym]
+                                    elif not has_multilevel and any(isinstance(c, (tuple, list)) and c[0].upper() == yf_sym.upper() for c in df.columns):
+                                        # Handle flattened MultiIndex (tuples/lists)
+                                        cols_for_sym = [c for c in df.columns if isinstance(c, (tuple, list)) and c[0].upper() == yf_sym.upper()]
+                                        sym_df = df[cols_for_sym]
+                                        sym_df.columns = [c[1] for c in sym_df.columns]
+                                    elif has_multilevel and yf_sym not in df.columns.get_level_values(0):
+                                        # Ticker missing from result, or alias not found
+                                        pass # sym_df remains empty
+                                    elif yf_sym in df.columns:
+                                        # Flat structure, e.g., if only one ticker was requested but df is not MultiIndex
+                                        sym_df = df[[yf_sym]].rename(columns={yf_sym: "Close"}) # Rough guess
+                                except Exception as e_df_parse:
+                                    logging.warning(f"Error parsing DataFrame for {yf_sym}: {e_df_parse}")
+                                    sym_df = pd.DataFrame() # Ensure it's empty on error
                             else:
                                 # Single ticker download
-                                sym_df = df
+                                if not has_multilevel and any(isinstance(c, (tuple, list)) and c[0].upper() == yf_sym.upper() for c in df.columns):
+                                     cols_for_sym = [c for c in df.columns if isinstance(c, (tuple, list)) and c[0].upper() == yf_sym.upper()]
+                                     sym_df = df[cols_for_sym]
+                                     sym_df.columns = [c[1] for c in sym_df.columns]
+                                else:
+                                     sym_df = df
                             
                             if not sym_df.empty:
                                 # Check for Close or Price column
@@ -724,7 +830,7 @@ class MarketDataProvider:
         cached_results = None
 
         # --- Caching Logic for Index Quotes ---
-        cache_key = f"INDEX_QUOTES_v1::{'_'.join(sorted(index_symbols))}"
+        cache_key = f"INDEX_QUOTES_v2::{'_'.join(sorted(index_symbols))}"
         cache_duration_minutes = (
             CURRENT_QUOTE_CACHE_DURATION_MINUTES  # Use same duration as stock quotes
         )
@@ -834,12 +940,12 @@ class MarketDataProvider:
                                 results[internal_result_key] = (
                                     {  # Store result with internal key
                                         "price": price,
-                                        "change": change,
+                                        "change": change if change is not None else 0.0,
                                         "changesPercentage": (
                                             change_pct
                                             if change_pct is not None
-                                            else None
-                                        ),  # Store as percentage
+                                            else 0.0
+                                        ),
                                         "name": name,
                                         "source": "yf_info",
                                         "timestamp": datetime.now(
@@ -993,14 +1099,19 @@ class MarketDataProvider:
         symbols_yf = symbols_to_fetch # Update the list to process
         # --- END OPTIMIZATION ---
 
+        # Ensure inputs are normalized to date objects first
+        if isinstance(start_date, str):
+            start_date = pd.to_datetime(start_date).date()
+        elif isinstance(start_date, pd.Timestamp):
+            start_date = start_date.date()
+            
+        if isinstance(end_date, str):
+            end_date = pd.to_datetime(end_date).date()
+        elif isinstance(end_date, pd.Timestamp):
+            end_date = end_date.date()
+
         yf_end_date = max(start_date, end_date) + timedelta(days=1)
         yf_start_date = min(start_date, end_date)
-
-        # Ensure we are working with date objects for comparison
-        if isinstance(yf_start_date, pd.Timestamp):
-            yf_start_date = yf_start_date.date()
-        if isinstance(yf_end_date, pd.Timestamp):
-            yf_end_date = yf_end_date.date()
 
         # --- FIX: Prevent fetching future dates which causes YFPricesMissingError ---
         # If the requested start date is today or in the future, yfinance might error 
@@ -1016,6 +1127,13 @@ class MarketDataProvider:
             limit_start = today - timedelta(days=729)
             if yf_start_date < limit_start:
                 logging.warning(f"Hist Fetch Helper: Clipping 1h start date from {yf_start_date} to {limit_start} (YF limit).")
+                yf_start_date = limit_start
+                if yf_start_date >= yf_end_date:
+                     return {}
+        elif interval == "1m": # 1-minute data limit is 30 days
+            limit_start = today - timedelta(days=29) # Safe buffer
+            if yf_start_date < limit_start:
+                logging.warning(f"Hist Fetch Helper: Clipping 1m start date from {yf_start_date} to {limit_start} (YF limit).")
                 yf_start_date = limit_start
                 if yf_start_date >= yf_end_date:
                      return {}
@@ -1049,19 +1167,35 @@ class MarketDataProvider:
                      if curr.weekday() < 5: # 0-4 are Mon-Fri
                          bus_days += 1
                      curr += timedelta(days=1)
+                     curr += timedelta(days=1)
              
              if bus_days == 0:
-                 logging.info(f"Hist Fetch Helper: Skipping fetch for {yf_start_date} to {yf_end_date} (0 business days). This prevents yfinance errors.")
-                 return {} # Return empty dict, do not fetch
+                 # FIX: If 0 business days (e.g. weekend request) but we want intraday data,
+                 # shift START date back to Friday to ensure we get *some* data for the chart.
+                 # Otherwise we return empty and the UI shows "No Data".
+                 if "m" in interval or "h" in interval:
+                     logging.info(f"Hist Fetch Helper: 0 bus days for {yf_start_date}-{yf_end_date}. Extending start back by 2 days to capture Friday.")
+                     yf_start_date = yf_start_date - timedelta(days=3)
+                     # Re-run check logically (or just let it proceed, worst case it fetches 3 days of nothing if holidays)
+                 else:
+                     logging.info(f"Hist Fetch Helper: Skipping fetch for {yf_start_date} to {yf_end_date} (0 business days).")
+                     return {}
                  
         except Exception as e_bus:
              logging.warning(f"Hist Fetch Helper: Error in business day check: {e_bus}. Find logic fallthrough.")
         # --- END FIX ---
-        fetch_batch_size = 50  # Process symbols in batches to be friendlier to the API
+        # --- END FIX ---
+        # Reduce batch size for intraday data to prevent OOM/Crash
+        if "m" in interval or "h" in interval:
+             fetch_batch_size = 5
+        else:
+             fetch_batch_size = 50 
+
 
         # --- ADDED: Retry logic parameters for increased network robustness ---
-        retries = 3
-        timeout_seconds = 30
+        # --- ADDED: Retry logic parameters for increased network robustness ---
+        retries = 2 # Reduced from 3 to improve responsiveness
+        timeout_seconds = 10 # Reduced from 30 to fail fast
         # --- END ADDED ---
 
         for i in range(0, len(symbols_yf), fetch_batch_size):
@@ -1071,22 +1205,51 @@ class MarketDataProvider:
             # --- Attempt Batch Fetch ---
             for attempt in range(retries):
                 try:
-                    data = yf.download(
-                        tickers=batch_symbols,
-                        start=yf_start_date,
-                        end=yf_end_date,
-                        interval=interval,
-                        progress=False,
-                        group_by="ticker",
-                        auto_adjust=True,
-                        actions=False,
-                        timeout=timeout_seconds,
-                    )
+                    t0 = time.time()
+                    # --- CHUNKING LOGIC FOR 1m INTERVAL ---
+                    # Yahoo Finance limits 1m data to 7 days per request.
+                    if interval == "1m" and (yf_end_date - yf_start_date).days > 7:
+                        chunk_dfs = []
+                        curr_chunk_start = yf_start_date
+                        while curr_chunk_start < yf_end_date:
+                            curr_chunk_end = min(curr_chunk_start + timedelta(days=7), yf_end_date)
+                            if curr_chunk_start >= curr_chunk_end:
+                                break
+                                
+                            try:
+                                chunk_df = _run_isolated_fetch(
+                                    tickers=batch_symbols,
+                                    start=curr_chunk_start,
+                                    end=curr_chunk_end,
+                                    interval=interval,
+                                )
+                                if not chunk_df.empty:
+                                    chunk_dfs.append(chunk_df)
+                            except Exception as e_chunk:
+                                logging.warning(f"  Hist Fetch Helper WARN (Chunk {curr_chunk_start}): {e_chunk}")
+                                
+                            curr_chunk_start = curr_chunk_end
+
+                        if chunk_dfs:
+                            data = pd.concat(chunk_dfs).sort_index()
+                        else:
+                            data = pd.DataFrame()
+                    else:
+                        # Standard fetch for other intervals or short 1m ranges
+                        data = _run_isolated_fetch(
+                            tickers=batch_symbols,
+                            start=yf_start_date,
+                            end=yf_end_date,
+                            interval=interval,
+                        )
+                    
+                    elapsed = time.time() - t0
+                    logging.debug(f"  Batch fetch took {elapsed:.2f}s for {len(batch_symbols)} symbols (Attempt {attempt + 1}).")
                     # yfinance prints its own errors for failed tickers. If the whole batch fails,
                     # it might return an empty DataFrame.
                     if data.empty and len(batch_symbols) > 0:
-                        logging.info(
-                            f"  Hist Fetch Helper INFO (Attempt {attempt + 1}/{retries}): yf.download returned empty DataFrame for batch: {', '.join(batch_symbols)}. This likely means no data for the range (e.g. weekend)."
+                        logging.warning(
+                            f"  Hist Fetch Helper WARN (Attempt {attempt + 1}/{retries}): yf.download returned empty DataFrame for batch: {', '.join(batch_symbols)}. This likely means no data for the range {yf_start_date} to {yf_end_date} (e.g. weekend)."
                         )
                         # Do NOT raise exception. Treat as valid "empty" result and stop retrying.
                         break
@@ -1153,12 +1316,25 @@ class MarketDataProvider:
                     df_symbol = None
                     found_in_batch = False
                     try:
-                        if len(batch_symbols) == 1 and not data.columns.nlevels > 1:
+                        has_multilevel = getattr(data.columns, 'nlevels', 1) > 1
+                        if len(batch_symbols) == 1 and not has_multilevel:
+                            # Single ticker, flat index
                             if not data.empty:
-                                df_symbol = data
+                                if any(isinstance(c, (tuple, list)) and c[0].upper() == symbol.upper() for c in data.columns):
+                                     cols_for_sym = [c for c in data.columns if isinstance(c, (tuple, list)) and c[0].upper() == symbol.upper()]
+                                     df_symbol = data[cols_for_sym]
+                                     df_symbol.columns = [c[1] for c in df_symbol.columns]
+                                else:
+                                     df_symbol = data
                                 found_in_batch = True
-                        elif symbol in data.columns.levels[0]:
+                        elif has_multilevel and symbol in data.columns.get_level_values(0):
                             df_symbol = data[symbol]
+                            found_in_batch = True
+                        elif not has_multilevel and any((isinstance(c, (tuple, list)) and c[0].upper() == symbol.upper()) for c in data.columns):
+                            # Handle flattened/serialization cases (JSON often turns tuples into lists)
+                            cols_for_sym = [c for c in data.columns if isinstance(c, (tuple, list)) and c[0].upper() == symbol.upper()]
+                            df_symbol = data[cols_for_sym]
+                            df_symbol.columns = [c[1] for c in df_symbol.columns]
                             found_in_batch = True
                         elif len(batch_symbols) > 1 and not data.columns.nlevels > 1:
                             # Unexpected flat structure for multi-ticker batch
@@ -1179,7 +1355,7 @@ class MarketDataProvider:
                             missing_symbols_in_batch.append(symbol)
                             continue
 
-                        price_col = "Close"  # Adjusted close price
+                        price_col = "Close"
                         if price_col not in df_symbol.columns:
                              # Try to find it or just mark as missing?
                              # If 'Close' is missing, maybe it's single column?
@@ -1558,7 +1734,7 @@ class MarketDataProvider:
             df_temp = pd.read_json(
                 StringIO(data_json_str), orient="split", dtype={"price": float}
             )
-            df_temp.index = pd.to_datetime(df_temp.index, errors="coerce").date
+            df_temp.index = pd.to_datetime(df_temp.index, errors="coerce", utc=True)
             df_temp = df_temp.dropna(
                 subset=["price"]
             )  # Ensure 'price' column has valid data
@@ -1685,6 +1861,7 @@ class MarketDataProvider:
                             # For simplified logic: if we have data up to (end_date - 1 day) or later, we consider it "fresh enough" for that end.
                             # Or strictly: fetch incremental if last_avail < end_date.
 
+                            # Check for staleness at the HEAD (new data needed)
                             # Check for staleness at the HEAD (new data needed)
                             if last_avail < end_date:
                                 # We have data, but it's old. Use what we have, but mark for update.
