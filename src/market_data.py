@@ -1052,6 +1052,9 @@ class MarketDataProvider:
         Internal helper to fetch historical 'Close' data (adjusted) using yfinance.download.
         (Replaces fetch_yf_historical)
         """
+        # Normalize interval for yfinance
+        if interval == "D":
+            interval = "1d"
         _ensure_yfinance()
         if not YFINANCE_AVAILABLE:
             logging.error("Error: yfinance not available for historical fetch.")
@@ -1832,8 +1835,12 @@ class MarketDataProvider:
         if isinstance(end_date, pd.Timestamp):
             end_date = end_date.date()
             
+        # Normalize interval for yfinance compatibility
+        if interval == "D":
+            interval = "1d"
+
         logging.info(
-            f"Hist Prices: Fetching historical data for {len(symbols_yf)} symbols ({start_date} to {end_date})..."
+            f"Hist Prices: Fetching historical data for {len(symbols_yf)} symbols ({start_date} to {end_date}, interval: {interval})..."
         )
 
 

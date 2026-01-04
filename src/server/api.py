@@ -1893,7 +1893,7 @@ async def get_portfolio_health(
         
         # 2. Get Risk Metrics (for efficiency/volatility)
         logging.info("Health: Fetching history (1y period)")
-        history_df = await _calculate_historical_performance_internal(
+        history_df = _calculate_historical_performance_internal(
             currency=currency,
             period="1y", # Standard period for health check
             accounts=accounts,

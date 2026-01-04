@@ -4145,6 +4145,7 @@ def _load_or_calculate_daily_results(
     all_holdings_qty: Optional[np.ndarray],
     all_cash_balances: Optional[np.ndarray],
     all_last_prices: Optional[np.ndarray],  # NEW argument
+    all_holdings_start_date: Optional[date],  # NEW argument for L1 offset calc
     included_accounts_list: List[str],
     # --- Parameters with defaults follow ---
     num_processes: Optional[int] = None,
@@ -4462,7 +4463,12 @@ def _load_or_calculate_daily_results(
                 status_update = " Using pre-calculated daily values..."
             
                 # Calculate offset if we are starting later than the first transaction
-                l1_cache_start_date = transactions_df_effective["Date"].min().date()
+                # FIX: Use passed all_holdings_start_date if available (covers expanded ranges)
+                l1_cache_start_date = (
+                    all_holdings_start_date 
+                    if all_holdings_start_date 
+                    else transactions_df_effective["Date"].min().date()
+                )
                 l1_offset = (calc_start_date - l1_cache_start_date).days
                 if l1_offset < 0: l1_offset = 0
             
@@ -5595,11 +5601,13 @@ def calculate_historical_performance(
                 "Effective transaction DataFrame became empty after date conversion."
             )
 
-        full_start_date = transactions_df_effective["Date"].min().date()
+        # FIX: Ensure full_start_date covers the requested start_date
+        # This prevents shape mismatch in _value_daily_holdings_vectorized when L1 cache is used.
+        full_start_date = min(start_date, transactions_df_effective["Date"].min().date())
         full_end_date_tx = transactions_df_effective["Date"].max().date()
         fetch_end_date = max(end_date, full_end_date_tx)
         logging.info(
-            f"Determined full transaction range: {full_start_date} to {full_end_date_tx}. Fetching data up to {fetch_end_date}."
+            f"Determined full transaction range: {full_start_date} to {full_end_date_tx}. Fetching data up to {fetch_end_date} (requested start_date: {start_date})."
         )
     except Exception as e_range:
         logging.error(
@@ -5815,6 +5823,7 @@ def calculate_historical_performance(
             all_holdings_qty=all_holdings_qty,
             all_cash_balances=all_cash_balances,
             all_last_prices=all_last_prices,
+            all_holdings_start_date=full_start_date, # PASS the expanded start date
             use_daily_results_cache=use_daily_results_cache and interval not in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"], # DISABLE CACHE if intraday
             included_accounts_list=include_accounts,
             current_hist_version=CURRENT_HIST_VERSION,
