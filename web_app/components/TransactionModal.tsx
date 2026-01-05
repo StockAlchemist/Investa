@@ -338,222 +338,226 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
     const isSplit = txType === 'split' || txType === 'stock split';
     const isDividend = txType === 'dividend';
 
-    const isQtyDisabled = isSplit; // Split is special
+    const isQtyDisabled = isSplit;
     const isPriceDisabled = isTransfer || isSplit || (isCash && ['deposit', 'withdrawal', 'buy', 'sell'].includes(txType));
     const isTotalDisabled = isTransfer || isSplit;
     const isCommDisabled = isTransfer || isSplit;
     const isSplitRatioDisabled = !isSplit;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4 overflow-y-auto">
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg w-full max-w-md shadow-xl relative">
-                <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                        {mode === 'edit' ? 'Edit Transaction' : 'Add Transaction'}
-                    </h2>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                        ✕
-                    </button>
-                </div>
-
-                {error && <div className="mb-4 p-2 bg-red-100 text-red-600 rounded text-sm">{error}</div>}
-
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    {/* Date */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date *</label>
-                        <input
-                            type="date"
-                            name="Date"
-                            value={formData.Date}
-                            onChange={handleChange}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                            required
-                        />
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-sm">
+            <div className="flex min-h-full items-center justify-center p-4">
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-lg w-full max-w-md shadow-xl relative">
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                            {mode === 'edit' ? 'Edit Transaction' : 'Add Transaction'}
+                        </h2>
+                        <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                            ✕
+                        </button>
                     </div>
 
-                    {/* Type */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type *</label>
-                        <select
-                            name="Type"
-                            value={formData.Type}
-                            onChange={handleChange}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                        >
-                            {TRANSACTION_TYPES.map(type => (
-                                <option key={type} value={type}>{type}</option>
-                            ))}
-                        </select>
-                    </div>
+                    {error && <div className="mb-4 p-2 bg-red-100 text-red-600 rounded text-sm">{error}</div>}
 
-                    {/* Symbol */}
-                    <div className="relative">
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Symbol *</label>
-                        <input
-                            type="text"
-                            name="Symbol"
-                            value={formData.Symbol}
-                            onChange={handleChange}
-                            onFocus={() => setActiveSuggestionField('Symbol')}
-                            onBlur={() => setTimeout(() => setActiveSuggestionField(null), 100)}
-                            placeholder="e.g. AAPL"
-                            autoComplete="off"
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 uppercase"
-                            required
-                        />
-                        {renderSuggestions('Symbol', existingSymbols)}
-                    </div>
-
-                    {/* Accounts */}
-                    {isTransfer ? (
-                        <>
-                            <div className="relative">
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">From Account *</label>
+                    <form onSubmit={handleSubmit} className="space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {/* Date */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date *</label>
                                 <input
-                                    type="text"
-                                    name="From Account"
-                                    value={formData['From Account']}
+                                    type="date"
+                                    name="Date"
+                                    value={formData.Date}
                                     onChange={handleChange}
-                                    onFocus={() => setActiveSuggestionField('From Account')}
-                                    onBlur={() => setTimeout(() => setActiveSuggestionField(null), 100)}
                                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                                     required
                                 />
-                                {renderSuggestions('From Account', existingAccounts)}
                             </div>
-                            <div className="relative">
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">To Account *</label>
-                                <input
-                                    type="text"
-                                    name="To Account"
-                                    value={formData['To Account']}
+
+                            {/* Type */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type *</label>
+                                <select
+                                    name="Type"
+                                    value={formData.Type}
                                     onChange={handleChange}
-                                    onFocus={() => setActiveSuggestionField('To Account')}
-                                    onBlur={() => setTimeout(() => setActiveSuggestionField(null), 100)}
                                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                                    required
-                                />
-                                {renderSuggestions('To Account', existingAccounts)}
+                                >
+                                    {TRANSACTION_TYPES.map(type => (
+                                        <option key={type} value={type}>{type}</option>
+                                    ))}
+                                </select>
                             </div>
-                        </>
-                    ) : (
+                        </div>
+
+                        {/* Symbol */}
                         <div className="relative">
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Account *</label>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Symbol *</label>
                             <input
                                 type="text"
-                                name="Account"
-                                value={formData.Account}
+                                name="Symbol"
+                                value={formData.Symbol}
                                 onChange={handleChange}
-                                onFocus={() => setActiveSuggestionField('Account')}
+                                onFocus={() => setActiveSuggestionField('Symbol')}
                                 onBlur={() => setTimeout(() => setActiveSuggestionField(null), 100)}
-                                placeholder="e.g. Brokerage"
+                                placeholder="e.g. AAPL"
                                 autoComplete="off"
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 uppercase"
                                 required
                             />
-                            {renderSuggestions('Account', existingAccounts)}
+                            {renderSuggestions('Symbol', existingSymbols)}
                         </div>
-                    )}
 
-                    <div className="grid grid-cols-2 gap-4">
-                        {/* Quantity */}
+                        {/* Accounts */}
+                        {isTransfer ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="relative">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">From *</label>
+                                    <input
+                                        type="text"
+                                        name="From Account"
+                                        value={formData['From Account']}
+                                        onChange={handleChange}
+                                        onFocus={() => setActiveSuggestionField('From Account')}
+                                        onBlur={() => setTimeout(() => setActiveSuggestionField(null), 100)}
+                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                                        required
+                                    />
+                                    {renderSuggestions('From Account', existingAccounts)}
+                                </div>
+                                <div className="relative">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">To *</label>
+                                    <input
+                                        type="text"
+                                        name="To Account"
+                                        value={formData['To Account']}
+                                        onChange={handleChange}
+                                        onFocus={() => setActiveSuggestionField('To Account')}
+                                        onBlur={() => setTimeout(() => setActiveSuggestionField(null), 100)}
+                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                                        required
+                                    />
+                                    {renderSuggestions('To Account', existingAccounts)}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="relative">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Account *</label>
+                                <input
+                                    type="text"
+                                    name="Account"
+                                    value={formData.Account}
+                                    onChange={handleChange}
+                                    onFocus={() => setActiveSuggestionField('Account')}
+                                    onBlur={() => setTimeout(() => setActiveSuggestionField(null), 100)}
+                                    placeholder="e.g. Brokerage"
+                                    autoComplete="off"
+                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                                    required
+                                />
+                                {renderSuggestions('Account', existingAccounts)}
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-3">
+                            {/* Quantity */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Quantity</label>
+                                <input
+                                    type="number"
+                                    name="Quantity"
+                                    value={formData.Quantity}
+                                    onChange={handleChange}
+                                    disabled={isQtyDisabled}
+                                    className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 ${isQtyDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                />
+                            </div>
+                            {/* Price */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Price/Share</label>
+                                <input
+                                    type="number"
+                                    name="Price/Share"
+                                    value={formData["Price/Share"]}
+                                    onChange={handleChange}
+                                    disabled={isPriceDisabled}
+                                    className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 ${isPriceDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            {/* Total Amount */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Total Amount</label>
+                                <input
+                                    type="number"
+                                    name="Total Amount"
+                                    value={formData["Total Amount"]}
+                                    onChange={handleChange}
+                                    disabled={isTotalDisabled}
+                                    className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 ${isTotalDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                />
+                            </div>
+
+                            {/* Commission */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Commission</label>
+                                <input
+                                    type="number"
+                                    name="Commission"
+                                    value={formData.Commission}
+                                    onChange={handleChange}
+                                    disabled={isCommDisabled}
+                                    className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 ${isCommDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Split Ratio */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Quantity</label>
+                            <label className={`block text-sm font-medium mb-1 ${isSplitRatioDisabled ? 'text-gray-400' : 'text-gray-700 dark:text-gray-300'}`}>Split Ratio (Optional)</label>
                             <input
                                 type="number"
-                                name="Quantity"
-                                value={formData.Quantity}
+                                name="Split Ratio"
+                                value={formData["Split Ratio"]}
                                 onChange={handleChange}
-                                disabled={isQtyDisabled}
-                                className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 ${isQtyDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                disabled={isSplitRatioDisabled}
+                                placeholder={isSplit ? "e.g. 2 for 2:1" : ""}
+                                className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 ${isSplitRatioDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                             />
                         </div>
-                        {/* Price */}
+
+                        {/* Note */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Price/Share</label>
-                            <input
-                                type="number"
-                                name="Price/Share"
-                                value={formData["Price/Share"]}
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Note</label>
+                            <textarea
+                                name="Note"
+                                value={formData.Note || ''}
                                 onChange={handleChange}
-                                disabled={isPriceDisabled}
-                                className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 ${isPriceDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            />
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        {/* Total Amount */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Total Amount</label>
-                            <input
-                                type="number"
-                                name="Total Amount"
-                                value={formData["Total Amount"]}
-                                onChange={handleChange}
-                                disabled={isTotalDisabled}
-                                className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 ${isTotalDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 h-20"
                             />
                         </div>
 
-                        {/* Commission */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Commission</label>
-                            <input
-                                type="number"
-                                name="Commission"
-                                value={formData.Commission}
-                                onChange={handleChange}
-                                disabled={isCommDisabled}
-                                className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 ${isCommDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            />
+                        {/* Actions */}
+                        <div className="flex justify-end gap-2 mt-6">
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded dark:text-gray-300 dark:hover:bg-gray-700"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                            >
+                                {loading ? 'Saving...' : (mode === 'edit' ? 'Update Transaction' : 'Add Transaction')}
+                            </button>
                         </div>
-                    </div>
 
-                    {/* Split Ratio */}
-                    <div>
-                        <label className={`block text-sm font-medium mb-1 ${isSplitRatioDisabled ? 'text-gray-400' : 'text-gray-700 dark:text-gray-300'}`}>Split Ratio (Optional)</label>
-                        <input
-                            type="number"
-                            name="Split Ratio"
-                            value={formData["Split Ratio"]}
-                            onChange={handleChange}
-                            disabled={isSplitRatioDisabled}
-                            placeholder={isSplit ? "e.g. 2 for 2:1" : ""}
-                            className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 ${isSplitRatioDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        />
-                    </div>
-
-                    {/* Note */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Note</label>
-                        <textarea
-                            name="Note"
-                            value={formData.Note || ''}
-                            onChange={handleChange}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 h-20"
-                        />
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex justify-end gap-2 mt-6">
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded dark:text-gray-300 dark:hover:bg-gray-700"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                        >
-                            {loading ? 'Saving...' : (mode === 'edit' ? 'Update Transaction' : 'Add Transaction')}
-                        </button>
-                    </div>
-
-                </form>
+                    </form>
+                </div>
             </div>
         </div>
     );
