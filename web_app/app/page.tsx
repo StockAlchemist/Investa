@@ -48,7 +48,7 @@ export default function Home() {
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [currency, setCurrency] = useState('USD');
   const [activeTab, setActiveTab] = useState('performance');
-  const [benchmarks, setBenchmarks] = useState<string[]>([]);
+  const [benchmarks, setBenchmarks] = useState<string[]>(['S&P 500', 'Dow Jones', 'NASDAQ']);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [showClosed, setShowClosed] = useState(false);
 

@@ -407,7 +407,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                 width={60}
                             />
                             <Tooltip content={<CustomTooltip />} />
-                            <Legend />
+                            <Legend wrapperStyle={{ fontSize: '12px' }} />
                             <Line
                                 name="Portfolio"
                                 type="monotone"
