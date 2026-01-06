@@ -405,7 +405,9 @@ def add_transaction_to_db(
         )
         placeholders_list.append(f":{placeholder_name}")
         value = transaction_data.get(col_name)
-        if col_name == "Date":
+        if col_name == "Type" and isinstance(value, str):
+            data_for_sql_ordered.append(value.strip().title())
+        elif col_name == "Date":
             if isinstance(value, (datetime, date)):
                 data_for_sql_ordered.append(value.strftime("%Y-%m-%d"))
             elif isinstance(value, str):
@@ -455,7 +457,10 @@ def update_transaction_in_db(
     for key, value in new_data_dict.items():
         placeholder = key.replace("/", "_per_").replace(" ", "_").replace(".", "_")
         set_clauses.append(f'"{key}" = :{placeholder}')
-        if key == "Date":
+
+        if key == "Type" and isinstance(value, str):
+            values_for_sql[placeholder] = value.strip().title()
+        elif key == "Date":
             if isinstance(value, (datetime, date)):
                 values_for_sql[placeholder] = value.strftime("%Y-%m-%d")
             elif isinstance(value, str):

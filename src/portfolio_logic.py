@@ -1657,9 +1657,9 @@ def _calculate_daily_net_cash_flow_vectorized(
         comm = pd.to_numeric(df_cash["Commission"], errors="coerce").fillna(0.0)
         
         # 1. Deposit
-        is_dep = df_cash["Type"] == "deposit"
+        is_dep = df_cash["Type"].str.lower() == "deposit"
         # 2. Withdrawal
-        is_wd = df_cash["Type"] == "withdrawal"
+        is_wd = df_cash["Type"].str.lower() == "withdrawal"
         
         local_flow = pd.Series(0.0, index=df_cash.index)
         local_flow[is_dep] = qty[is_dep].abs() - comm[is_dep]
@@ -2066,6 +2066,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
     # --- END ADDED ---
 
     holdings: Dict[Tuple[str, str], Dict] = {}
+    processed_splits: Set[Tuple[str, date, float]] = set()
     for index, row in transactions_til_date.iterrows():
         symbol = str(row.get("Symbol", "UNKNOWN")).strip()
         # Normalize account
@@ -2110,18 +2111,21 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
             split_ratio = pd.to_numeric(row.get("Split Ratio"), errors="coerce")
             if tx_type in ["split", "stock split"]:
                 if pd.notna(split_ratio) and split_ratio > 0:
-                    for h_key, h_data in holdings.items():
-                        h_symbol, _ = h_key
-                        if h_symbol == symbol:
-                            old_qty = h_data["qty"]
-                            if abs(old_qty) >= 1e-9:
-                                h_data["qty"] *= split_ratio
-                                if IS_DEBUG_DATE:
-                                    logging.debug(
-                                        f"  Applying split ratio {split_ratio} to {h_key} (Date: {tx_date_row}) Qty: {old_qty:.4f} -> {h_data['qty']:.4f}"
-                                    )
-                                if abs(h_data["qty"]) < 1e-9:
-                                    h_data["qty"] = 0.0
+                    split_event = (symbol, tx_date_row, float(split_ratio))
+                    if split_event not in processed_splits:
+                        for h_key, h_data in holdings.items():
+                            h_symbol, _ = h_key
+                            if h_symbol == symbol:
+                                old_qty = h_data["qty"]
+                                if abs(old_qty) >= 1e-9:
+                                    h_data["qty"] *= split_ratio
+                                    if IS_DEBUG_DATE:
+                                        logging.debug(
+                                            f"  Applying global split ratio {split_ratio} to {h_key} (Date: {tx_date_row}) Qty: {old_qty:.4f} -> {h_data['qty']:.4f}"
+                                        )
+                                    if abs(h_data["qty"]) < 1e-9:
+                                        h_data["qty"] = 0.0
+                        processed_splits.add(split_event)
                 else:
                     if IS_DEBUG_DATE:
                         logging.warning(

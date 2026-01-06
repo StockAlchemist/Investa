@@ -596,7 +596,7 @@ def load_and_clean_transactions(
                 has_warnings = True
 
     # Text Column Cleaning (strip whitespace, ensure string type)
-    text_cols = ["Type", "Symbol", "Account", "Note", "Local Currency"]
+    text_cols = ["Symbol", "Account", "Note", "Local Currency"]
     for col in text_cols:
         if col in df.columns:
             df[col] = (
@@ -605,6 +605,15 @@ def load_and_clean_transactions(
                 .str.strip()
                 .replace("None", "", regex=False)
             )
+
+    # Standardize Type to Title Case (e.g., 'buy' -> 'Buy')
+    if "Type" in df.columns:
+        df["Type"] = (
+            df["Type"]
+            .astype(str)
+            .str.strip()
+            .str.title()
+        )
 
     # --- Tags Cleaning ---
     if "Tags" in df.columns:

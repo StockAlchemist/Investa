@@ -2233,6 +2233,9 @@ def calculate_fifo_lots_and_gains(
     # Dictionary to store purchase lots: (symbol, account) -> list of lots
     holdings_long: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
     realized_gains_records: List[Dict[str, Any]] = []
+    
+    # Track splits already applied to avoid double-processing (symbol, date, ratio)
+    processed_splits: Set[Tuple[str, date, float]] = set()
 
     # Ensure transactions are sorted chronologically
     # Note: We assume transactions_df is already a copy if needed, but safe to sort in place if it's passed as such.
@@ -2335,13 +2338,18 @@ def calculate_fifo_lots_and_gains(
 
         if tx_type in ["split", "stock split"]:
             if pd.notna(split_ratio) and split_ratio > 0:
-                if holding_key in holdings_long:
-                    for lot in holdings_long[holding_key]:
-                        lot["qty"] *= split_ratio
-                        if lot["qty"] > 0:
-                            lot["cost_per_share_local_net"] /= split_ratio
-                        else:
-                            lot["cost_per_share_local_net"] = 0.0
+                split_event = (symbol, tx_date, float(split_ratio))
+                if split_event not in processed_splits:
+                    # Global split: apply to all accounts holding this symbol
+                    for (h_sym, h_acc), lots in holdings_long.items():
+                        if h_sym == symbol:
+                            for lot in lots:
+                                lot["qty"] *= split_ratio
+                                if lot["qty"] > 0:
+                                    lot["cost_per_share_local_net"] /= split_ratio
+                                else:
+                                    lot["cost_per_share_local_net"] = 0.0
+                    processed_splits.add(split_event)
             continue
 
         if pd.isna(qty) or qty <= 1e-9:
