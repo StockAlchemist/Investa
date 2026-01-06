@@ -1363,7 +1363,8 @@ async def get_projected_income(
 
 @router.get("/settings")
 async def get_settings(
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
+    config_manager = Depends(get_config_manager)
 ):
     """
     Returns the current application configuration settings.
@@ -1408,7 +1409,8 @@ async def get_settings(
             "manual_overrides": enriched_overrides,
             "user_symbol_map": user_symbol_map,
             "user_excluded_symbols": list(user_excluded_symbols),
-            "account_currency_map": account_currency_map
+            "account_currency_map": account_currency_map,
+            "account_groups": config_manager.gui_config.get("account_groups", {})
         }
     except Exception as e:
         logging.error(f"Error getting settings: {e}", exc_info=True)
@@ -1418,6 +1420,7 @@ class SettingsUpdate(BaseModel):
     manual_price_overrides: Optional[Dict[str, Any]] = None
     user_symbol_map: Optional[Dict[str, str]] = None
     user_excluded_symbols: Optional[List[str]] = None
+    account_groups: Optional[Dict[str, List[str]]] = None
 
 @router.post("/settings/update")
 async def update_settings(
@@ -1463,6 +1466,10 @@ async def update_settings(
         if settings.user_excluded_symbols is not None:
             current_overrides["user_excluded_symbols"] = sorted(list(set(settings.user_excluded_symbols)))
             
+        if settings.account_groups is not None:
+             config_manager.gui_config["account_groups"] = settings.account_groups
+             config_manager.save_gui_config()
+
         # Save to AppData
         if config_manager.save_manual_overrides(current_overrides):
             

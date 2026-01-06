@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { fetchSettings, updateSettings, triggerRefresh, fetchHoldings, Settings as SettingsType, ManualOverride, ManualOverrideData } from '../lib/api';
+import { fetchSettings, updateSettings, triggerRefresh, fetchHoldings, fetchSummary, Settings as SettingsType, ManualOverride, ManualOverrideData } from '../lib/api';
+import { useQueryClient } from '@tanstack/react-query';
 import { COUNTRIES, ALL_INDUSTRIES } from '../lib/constants';
+import AccountGroupManager from './AccountGroupManager';
 
-type Tab = 'overrides' | 'mapping' | 'excluded';
+type Tab = 'overrides' | 'mapping' | 'excluded' | 'groups';
 
 // --- Constants (Mirrored from config.py) ---
 const ASSET_TYPES = [
@@ -38,6 +40,7 @@ const SECTORS = [
 ];
 
 export default function Settings() {
+    const queryClient = useQueryClient();
     const [settings, setSettings] = useState<SettingsType | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -62,6 +65,7 @@ export default function Settings() {
 
     // Dynamic lists based on portfolio data
     const [portfolioCountries, setPortfolioCountries] = useState<string[]>([]);
+    const [availableAccounts, setAvailableAccounts] = useState<string[]>([]);
 
     // Common input/select classes
     const inputClassName = "w-full rounded-md border border-border bg-secondary text-foreground shadow-sm focus:border-cyan-500 focus:ring-cyan-500 px-3 py-2 text-sm outline-none focus:ring-1";
@@ -74,12 +78,17 @@ export default function Settings() {
     const loadSettings = async (isRefreshing = false) => {
         try {
             if (!isRefreshing) setLoading(true);
-            const [data, holdings] = await Promise.all([
+            const [data, holdings, summary] = await Promise.all([
                 fetchSettings(),
-                fetchHoldings()
+                fetchHoldings(),
+                fetchSummary('USD') // Fetch summary to get available accounts
             ]);
 
             setSettings(data);
+
+            if (summary?.metrics?._available_accounts) {
+                setAvailableAccounts(summary.metrics._available_accounts as string[]);
+            }
 
             // Extract unique used countries from holdings
             const usedCountries = new Set<string>();
@@ -183,6 +192,7 @@ export default function Settings() {
 
         try {
             await updateSettings({ manual_price_overrides: cleanedOverrides });
+            await queryClient.invalidateQueries({ queryKey: ['settings'] });
 
             // Reset form
             setOverrideSymbol('');
@@ -218,6 +228,7 @@ export default function Settings() {
 
         try {
             await updateSettings({ manual_price_overrides: cleanedOverrides });
+            await queryClient.invalidateQueries({ queryKey: ['settings'] });
             await loadSettings(true);
         } catch {
             alert('Failed to remove override');
@@ -232,6 +243,7 @@ export default function Settings() {
 
         try {
             await updateSettings({ user_symbol_map: currentMap });
+            await queryClient.invalidateQueries({ queryKey: ['settings'] });
             setMapFrom('');
             setMapTo('');
             await loadSettings(true);
@@ -247,6 +259,7 @@ export default function Settings() {
 
         try {
             await updateSettings({ user_symbol_map: currentMap });
+            await queryClient.invalidateQueries({ queryKey: ['settings'] });
             await loadSettings(true);
         } catch {
             alert('Failed to remove mapping');
@@ -277,6 +290,7 @@ export default function Settings() {
 
         try {
             await updateSettings({ user_excluded_symbols: currentList });
+            await queryClient.invalidateQueries({ queryKey: ['settings'] });
             await loadSettings(true);
         } catch {
             alert('Failed to remove excluded symbol');
@@ -317,7 +331,16 @@ export default function Settings() {
                 </div>
 
                 {/* Tabs */}
-                <div className="flex border-b border-border bg-secondary">
+                <div className="flex border-b border-border bg-secondary overflow-x-auto">
+                    <button
+                        onClick={() => setActiveTab('groups')}
+                        className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors border-b-2 whitespace-nowrap ${activeTab === 'groups'
+                            ? 'border-cyan-500 text-cyan-500 dark:text-cyan-400'
+                            : 'border-transparent text-muted-foreground hover:text-foreground hover:border-black/10 dark:hover:border-white/10'
+                            }`}
+                    >
+                        Account Groups
+                    </button>
                     <button
                         onClick={() => setActiveTab('overrides')}
                         className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors border-b-2 ${activeTab === 'overrides'
@@ -329,7 +352,7 @@ export default function Settings() {
                     </button>
                     <button
                         onClick={() => setActiveTab('mapping')}
-                        className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors border-b-2 ${activeTab === 'mapping'
+                        className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors border-b-2 whitespace-nowrap ${activeTab === 'mapping'
                             ? 'border-cyan-500 text-cyan-500 dark:text-cyan-400'
                             : 'border-transparent text-muted-foreground hover:text-foreground hover:border-black/20 dark:hover:border-white/20'
                             }`}
@@ -338,7 +361,7 @@ export default function Settings() {
                     </button>
                     <button
                         onClick={() => setActiveTab('excluded')}
-                        className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors border-b-2 ${activeTab === 'excluded'
+                        className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors border-b-2 whitespace-nowrap ${activeTab === 'excluded'
                             ? 'border-cyan-500 text-cyan-500 dark:text-cyan-400'
                             : 'border-transparent text-muted-foreground hover:text-foreground hover:border-black/20 dark:hover:border-white/20'
                             }`}
@@ -348,6 +371,15 @@ export default function Settings() {
                 </div>
 
                 <div className="p-6 min-h-[400px]">
+
+                    {/* Account Groups Tab */}
+                    {activeTab === 'groups' && settings && (
+                        <AccountGroupManager
+                            settings={settings}
+                            availableAccounts={availableAccounts}
+                            onUpdate={() => loadSettings(true)}
+                        />
+                    )}
 
                     {/* Manual Price Overrides Tab */}
                     {activeTab === 'overrides' && (

@@ -30,6 +30,9 @@ class ConfigManager:
         # Initialize defaults
         self.gui_config = self._get_default_gui_config()
         self.manual_overrides = self._get_default_manual_overrides()
+        
+        # Load from disk
+        self.load_all()
 
     def _get_default_gui_config(self) -> Dict[str, Any]:
         from db_utils import get_database_path, DB_FILENAME

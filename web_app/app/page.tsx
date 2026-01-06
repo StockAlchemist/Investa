@@ -14,6 +14,7 @@ import {
   fetchDividendCalendar,
   fetchHistory,
   fetchWatchlist,
+  fetchSettings,
   PerformanceData
 } from '@/lib/api';
 // import { CURRENCY_SYMBOLS } from '@/lib/utils';
@@ -155,6 +156,12 @@ export default function Home() {
     queryKey: ['watchlist', currency],
     queryFn: () => fetchWatchlist(currency),
     staleTime: 1 * 60 * 1000,
+  });
+
+  const settingsQuery = useQuery({
+    queryKey: ['settings'],
+    queryFn: fetchSettings,
+    staleTime: 5 * 60 * 1000,
   });
 
   const summary = summaryQuery.data;
@@ -353,6 +360,7 @@ export default function Home() {
                 availableAccounts={availableAccounts}
                 selectedAccounts={selectedAccounts}
                 onChange={setSelectedAccounts}
+                accountGroups={settingsQuery.data?.account_groups}
               />
               <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} side="bottom" />
             </div>
@@ -362,6 +370,7 @@ export default function Home() {
                 availableAccounts={availableAccounts}
                 selectedAccounts={selectedAccounts}
                 onChange={setSelectedAccounts}
+                accountGroups={settingsQuery.data?.account_groups}
               />
             </div>
           </div>

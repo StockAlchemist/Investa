@@ -5,9 +5,10 @@ interface AccountSelectorProps {
     availableAccounts: string[];
     selectedAccounts: string[];
     onChange: (accounts: string[]) => void;
+    accountGroups?: Record<string, string[]>;
 }
 
-export default function AccountSelector({ availableAccounts, selectedAccounts, onChange }: AccountSelectorProps) {
+export default function AccountSelector({ availableAccounts, selectedAccounts, onChange, accountGroups = {} }: AccountSelectorProps) {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -36,6 +37,18 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
         onChange([]); // Empty means all
     };
 
+    const handleSelectGroup = (groupName: string, accounts: string[]) => {
+        // Filter accounts to only include those that are actually available
+        const validAccounts = accounts.filter(acc => availableAccounts.includes(acc));
+        onChange(validAccounts);
+        setIsOpen(false); // Optional: close on group selection? Or keep open? Let's keep open for consistency if it acts like a preset.
+        // Actually, usually presets replace the selection, so closing might feel nicer.
+        // But if we treat it as "Select these", user might want to tweak. 
+        // Let's decide based on UX. The desktop app behavior is unknown, but usually groups act as quick-filters.
+        // Let's keep it open to allow refinement, or close it if it feels like a "Navigation" action.
+        // Given it's a multi-select, replacing current selection seems appropriate.
+    };
+
     const isAllSelected = selectedAccounts.length === 0;
 
     const getLabel = () => {
@@ -54,6 +67,8 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
         );
     };
 
+    const hasGroups = Object.keys(accountGroups).length > 0;
+
     return (
         <div className="relative" ref={dropdownRef}>
             <button
@@ -64,11 +79,6 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                     "border border-white/10 dark:border-white/5 backdrop-blur-xl shadow-lg shadow-black/5",
                     "font-semibold tracking-tight min-w-[80px]",
                     isOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-cyan-500",
-                    // Use a flex-row layout on mobile or if aligned in a row context if needed, 
-                    // but for now relying on the base 'currency' style which is flex-col usually, 
-                    // but the user's screenshot suggests a simple centered text box.
-                    // CurrencySelector has: side === 'bottom' && "flex-row py-2 px-4 h-[44px] justify-center"
-                    // We'll adopt a similar height/padding for consistency.
                     "flex-row py-2 px-4 h-[44px]"
                 )}
             >
@@ -80,8 +90,9 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
             </button>
 
             {isOpen && (
-                <div className="absolute right-0 top-full mt-2 min-w-full w-max origin-top-right bg-popover border border-border rounded-xl shadow-xl outline-none z-50 overflow-hidden">
-                    <div className="py-1 max-h-60 overflow-y-auto">
+                <div className="absolute right-0 top-full mt-2 min-w-[200px] w-max origin-top-right bg-popover border border-border rounded-xl shadow-xl outline-none z-50 overflow-hidden">
+                    <div className="py-1 max-h-[80vh] overflow-y-auto">
+                        {/* All Accounts Option */}
                         <button
                             onClick={handleSelectAll}
                             className={`group flex items-center justify-between w-full px-4 py-3 text-sm font-medium transition-colors ${isAllSelected
@@ -96,6 +107,48 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                                 </svg>
                             )}
                         </button>
+
+                        {/* Account Groups Section */}
+                        {hasGroups && (
+                            <>
+                                <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">
+                                    Groups
+                                </div>
+                                {Object.entries(accountGroups).map(([groupName, groupAccounts]) => {
+                                    // Check if this group is currently exactly selected (ignoring order)
+                                    const isGroupSelected = !isAllSelected &&
+                                        selectedAccounts.length === groupAccounts.length &&
+                                        groupAccounts.every(acc => selectedAccounts.includes(acc));
+
+                                    return (
+                                        <button
+                                            key={groupName}
+                                            onClick={() => handleSelectGroup(groupName, groupAccounts)}
+                                            className={`group flex items-center justify-between w-full px-4 py-2 text-sm font-medium transition-colors ${isGroupSelected
+                                                ? 'text-cyan-500 bg-cyan-500/10'
+                                                : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
+                                                }`}
+                                        >
+                                            <span className="whitespace-nowrap">{groupName}</span>
+                                            {isGroupSelected && (
+                                                <svg className="w-4 h-4 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                </svg>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                                <div className="h-px bg-border my-1" />
+                            </>
+                        )}
+
+
+                        {/* Individual Accounts Section */}
+                        {hasGroups && (
+                            <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">
+                                Individual
+                            </div>
+                        )}
 
                         {availableAccounts.map((account) => {
                             const isSelected = selectedAccounts.includes(account);
