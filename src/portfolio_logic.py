@@ -203,8 +203,6 @@ def calculate_portfolio_summary(
     Dict[int, str],
     str,
 ]:
-    import logging
-    logging.error("DEBUG: ENTERING calculate_portfolio_summary in portfolio_logic.py. I AM THE MODIFIED VERSION!!!")
     """
     Calculates the current portfolio summary using MarketDataProvider for market data
     and helper functions from portfolio_analyzer.py for calculations.
