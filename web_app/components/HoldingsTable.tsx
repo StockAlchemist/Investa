@@ -137,14 +137,16 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
     };
 
 
-    // Initialize columns and sort from localStorage
+    const [isInitialized, setIsInitialized] = useState(false);
+
+    // Initialize state from localStorage
     useEffect(() => {
+        // Columns
         const savedColumns = localStorage.getItem('investa_holdings_columns');
         if (savedColumns) {
             try {
                 const parsed = JSON.parse(savedColumns);
                 if (Array.isArray(parsed) && parsed.length > 0) {
-                    // eslint-disable-next-line react-hooks/set-state-in-effect
                     setVisibleColumns(parsed);
                 }
             } catch (e) {
@@ -152,6 +154,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
             }
         }
 
+        // Sort
         const savedSort = localStorage.getItem('investa_holdings_sort');
         if (savedSort) {
             try {
@@ -164,22 +167,32 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
             }
         }
 
-        isLoaded.current = true;
+        // Show Lots
+        const savedShowLots = localStorage.getItem('investa_holdings_show_lots');
+        if (savedShowLots) {
+            setShowLots(savedShowLots === 'true');
+        }
+
+        setIsInitialized(true);
     }, []);
 
     // Persist columns to localStorage on change
     useEffect(() => {
-        if (!isLoaded.current) return;
-        if (visibleColumns && visibleColumns.length > 0) {
-            localStorage.setItem('investa_holdings_columns', JSON.stringify(visibleColumns));
-        }
-    }, [visibleColumns]);
+        if (!isInitialized) return;
+        localStorage.setItem('investa_holdings_columns', JSON.stringify(visibleColumns));
+    }, [visibleColumns, isInitialized]);
 
     // Persist sort to localStorage on change
     useEffect(() => {
-        if (!isLoaded.current) return;
+        if (!isInitialized) return;
         localStorage.setItem('investa_holdings_sort', JSON.stringify(sortConfig));
-    }, [sortConfig]);
+    }, [sortConfig, isInitialized]);
+
+    // Persist showLots to localStorage on change
+    useEffect(() => {
+        if (!isInitialized) return;
+        localStorage.setItem('investa_holdings_show_lots', String(showLots));
+    }, [showLots, isInitialized]);
 
     // Close menus when clicking outside
     useEffect(() => {

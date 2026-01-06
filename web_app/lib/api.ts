@@ -353,6 +353,7 @@ export interface AttributionData {
         gain: number;
         value: number;
         sector: string;
+        contribution: number;
     }[];
     total_gain: number;
 }
