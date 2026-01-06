@@ -1663,8 +1663,19 @@ class MarketDataProvider:
             try:
                 # Serialize DataFrame to JSON string
                 json_str = df_data.to_json(orient="split", date_format="iso")
-                with open(symbol_file_path, "w", encoding="utf-8") as sf:
-                    sf.write(json_str)
+                
+                # ATOMIC WRITE: Write to UNIQUE temp file first, then rename
+                # Use tempfile.NamedTemporaryFile in the same directory to ensure atomic move
+                target_dir = os.path.dirname(symbol_file_path)
+                with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=target_dir, delete=False) as tf:
+                    temp_file_path = tf.name
+                    tf.write(json_str)
+                    tf.flush()
+                    os.fsync(tf.fileno()) # Ensure write to disk
+                
+                # Atomic replace
+                os.replace(temp_file_path, symbol_file_path)
+                
                 current_manifest_symbol_entries[yf_symbol] = (
                     True  # Could store mtime or hash here later
                 )
@@ -1715,10 +1726,17 @@ class MarketDataProvider:
             timezone.utc
         ).isoformat()  # Overall manifest timestamp
         try:
-            with open(manifest_path, "w", encoding="utf-8") as f:
-                json.dump(
-                    full_manifest_content, f, indent=2
-                )  # CORRECTED: Use full_manifest_content
+            # ATOMIC WRITE: Write to UNIQUE temp file first, then rename
+            target_dir = os.path.dirname(manifest_path)
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=target_dir, delete=False) as tf:
+                temp_manifest_path = tf.name
+                json.dump(full_manifest_content, tf, indent=2) 
+                tf.flush()
+                os.fsync(tf.fileno()) # Ensure write to disk
+            
+            os.replace(temp_manifest_path, manifest_path)
+            
+            # CORRECTED: Use full_manifest_content (Logic preserved from original block)
             logging.info(
                 f"Hist Cache Save ({data_type}): Manifest updated at {manifest_path}"
             )
@@ -1870,6 +1888,16 @@ class MarketDataProvider:
                             first_avail = df_symbol.index.min()
                             last_avail = df_symbol.index.max()
                             if hasattr(first_avail, 'date'): first_avail = first_avail.date()
+                            # Check data coverage
+                            first_avail = df_symbol.index.min()
+                            last_avail = df_symbol.index.max()
+                            
+                            # Keep raw timestamps for intraday checks
+                            last_avail_ts = last_avail
+                            if last_avail_ts.tzinfo is None:
+                                last_avail_ts = last_avail_ts.replace(tzinfo=timezone.utc)
+                            
+                            if hasattr(first_avail, 'date'): first_avail = first_avail.date()
                             if hasattr(last_avail, 'date'): last_avail = last_avail.date()
                             
                             # Determine if we have enough coverage
@@ -1881,8 +1909,45 @@ class MarketDataProvider:
 
                             # Check for staleness at the HEAD (new data needed)
                             # Check for staleness at the HEAD (new data needed)
-                            if last_avail < end_date:
-                                # We have data, but it's old. Use what we have, but mark for update.
+                            # Check for staleness at the HEAD (new data needed)
+                            is_intraday = interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]
+                            needs_intraday_refresh = False
+                            
+                            if is_intraday and last_avail >= end_date:
+                                # Check if cache is stale for today/recent data
+                                now_utc = datetime.now(timezone.utc)
+                                
+                                # Dynamic staleness limit based on interval
+                                try:
+                                    if "m" in interval:
+                                        # e.g. "5m" -> 5 minutes
+                                        # Use the interval itself as the staleness limit, or min 1 minute
+                                        val = int(interval.replace("m", ""))
+                                        staleness_limit = timedelta(minutes=max(1, val)) 
+                                    elif "h" in interval:
+                                        val = int(interval.replace("h", ""))
+                                        staleness_limit = timedelta(minutes=val * 60)
+                                    else:
+                                        staleness_limit = timedelta(minutes=15)
+                                except:
+                                    staleness_limit = timedelta(minutes=5)
+                                
+                                # Logic: If last data point is from TODAY (matches system date), check if it's old.
+                                # If last data point is older than today, date check (last_avail < end_date) would handle it,
+                                # EXCEPT if last_avail IS end_date (e.g. yesterday match).
+                                # But we generally rely on last_avail < end_date for missed days.
+                                
+                                # Specific check: If last_avail is TODAY, and we want realtime.
+                                if last_avail >= now_utc.date():
+                                     if now_utc - last_avail_ts > staleness_limit:
+                                         # Only force refresh if market might be open or we expect data?
+                                         # Simple: Refresh if stale.
+                                          needs_intraday_refresh = True
+                                          # logging.info(f"  Intraday Stale for {yf_symbol}: Last {last_avail_ts}, Now {now_utc}")
+
+                            if last_avail < end_date or needs_intraday_refresh:
+                                # We have data, but it's old (by date) or stale (intraday). 
+                                # Use what we have, but mark for update.
                                 historical_prices_yf_adjusted[yf_symbol] = df_symbol
                                 symbols_needing_incremental_fetch.append((yf_symbol, last_avail))
                             else:
@@ -1924,6 +1989,13 @@ class MarketDataProvider:
             
             for last_d, syms in by_last_date.items():
                 fetch_start = last_d + timedelta(days=1)
+                
+                # FIX: For intraday updates on the SAME DAY (needs_intraday_refresh), last_d matches end_date.
+                # Standard logic sets fetch_start to Tomorrow, which skips fetch.
+                # We must allow re-fetching 'Today' to get the latest candles.
+                if interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"] and last_d >= end_date:
+                     fetch_start = last_d
+                
                 if fetch_start <= end_date:
                     delta_data = self._fetch_yf_historical_data(syms, fetch_start, end_date, interval=interval)
                     

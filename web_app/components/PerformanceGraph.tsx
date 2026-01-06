@@ -53,35 +53,43 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
     const [loading, setLoading] = useState(false);
 
     // Fetch data when period or benchmarks change
-    useEffect(() => {
-        const loadData = async () => {
-            setLoading(true);
-            try {
-                // Determine interval based on period
-                let interval = '1d';
-                if (period === '1d') {
-                    interval = '5m';
-                } else if (period === '5d') {
-                    interval = '15m'; // 15m * 5 days = ~130 points
-                } else if (period === '1m') {
-                    interval = '60m'; // 1h * 30 days = ~200 points
-                }
-
-                const newData = await fetchHistory(currency, accounts, period, benchmarks, interval);
-                setData(newData);
-            } catch (error) {
-                console.error("Failed to fetch history:", error);
-            } finally {
-                setLoading(false);
+    // Fetch data logic
+    const fetchData = React.useCallback(async (isBackground = false) => {
+        if (!isBackground) setLoading(true);
+        try {
+            // Determine interval based on period
+            let interval = '1d';
+            if (period === '1d') {
+                interval = '2m'; // Finer granularity for 1D view
+            } else if (period === '5d') {
+                interval = '15m'; // 15m * 5 days = ~130 points
+            } else if (period === '1m') {
+                interval = '60m'; // 1h * 30 days = ~200 points
             }
-        };
 
-        // Skip initial load if using initialData and params haven't changed (simplified check)
-        // Actually, initialData is likely 1y with no benchmarks. 
-        // If period is 1y and benchmarks empty, we could skip, but safer to just reload or check.
-        // For now, let's just reload to be safe and consistent.
-        loadData();
-    }, [period, benchmarks, currency, accounts]);
+            const newData = await fetchHistory(currency, accounts, period, benchmarks, interval);
+            setData(newData);
+        } catch (error) {
+            console.error("Failed to fetch history:", error);
+        } finally {
+            if (!isBackground) setLoading(false);
+        }
+    }, [currency, accounts, period, benchmarks]);
+
+    // Initial load and params change
+    useEffect(() => {
+        fetchData(false);
+    }, [fetchData]);
+
+    // Auto-refresh for 1D view (Real-time updates)
+    useEffect(() => {
+        if (period === '1d') {
+            const intervalId = setInterval(() => {
+                fetchData(true); // Background refresh
+            }, 60000); // Check every minute
+            return () => clearInterval(intervalId);
+        }
+    }, [period, fetchData]);
 
     const periodStats = useMemo(() => {
         if (!data || data.length < 2) return null;

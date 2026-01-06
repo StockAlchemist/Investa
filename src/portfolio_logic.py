@@ -4417,9 +4417,17 @@ def _load_or_calculate_daily_results(
 
                 # Use intraday for active range
                 # FIX: Ensure range_active covers the FULL end_date day for intraday intervals
+                # FIX 2: Cap at 'now' to prevent flat line into the future
+                ts_end_of_period = pd.Timestamp(calc_end_date, tz='UTC') + timedelta(days=1)
+                ts_now = pd.Timestamp.now(tz='UTC')
+                # Use min to allow historical views (where end < now) to work, but cap live views at now
+                active_end_bound = min(ts_end_of_period, ts_now)
+                
+                heading_into_future = active_end_bound < ts_end_of_period
+                
                 range_active = pd.date_range(
                     start=pd.Timestamp(start_date, tz='UTC'), 
-                    end=pd.Timestamp(calc_end_date, tz='UTC') + timedelta(days=1), 
+                    end=active_end_bound, 
                     freq=active_freq,
                     inclusive='left'
                 )
