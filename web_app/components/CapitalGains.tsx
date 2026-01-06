@@ -3,6 +3,8 @@ import { CapitalGain } from '../lib/api';
 import { formatCurrency } from '../lib/utils';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 
+import StockDetailModal from './StockDetailModal';
+
 interface CapitalGainsProps {
     data: CapitalGain[] | null;
     currency: string;
@@ -11,6 +13,7 @@ interface CapitalGainsProps {
 export default function CapitalGains({ data, currency }: CapitalGainsProps) {
     const [sortConfig, setSortConfig] = useState<{ key: keyof CapitalGain; direction: 'ascending' | 'descending' } | null>({ key: 'Date', direction: 'descending' });
     const [visibleRows, setVisibleRows] = useState(10);
+    const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
 
     // Group by Year for Chart
     const gainsByYear = useMemo(() => {
@@ -158,7 +161,12 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                         <div key={`mobile-${index}`} className="bg-card p-4 rounded-lg border border-border shadow-sm">
                             <div className="flex justify-between items-start mb-2">
                                 <div>
-                                    <h3 className="text-lg font-bold text-foreground">{item.Symbol}</h3>
+                                    <h3
+                                        className="text-lg font-bold text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
+                                        onClick={() => setSelectedSymbol(item.Symbol)}
+                                    >
+                                        {item.Symbol}
+                                    </h3>
                                     <div className="text-xs text-muted-foreground">
                                         {item.Date} • {item.Account}
                                     </div>
@@ -220,7 +228,12 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                             {visibleData.map((item, index) => (
                                 <tr key={index} className="hover:bg-accent/5 transition-colors">
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">{item.Date}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">{item.Symbol}</td>
+                                    <td
+                                        className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
+                                        onClick={() => setSelectedSymbol(item.Symbol)}
+                                    >
+                                        {item.Symbol}
+                                    </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{item.Account}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{item.Type}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{item.Quantity}</td>
@@ -256,6 +269,16 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                     </div>
                 )}
             </div>
+
+            {/* Stock Detail Modal */}
+            {selectedSymbol && (
+                <StockDetailModal
+                    symbol={selectedSymbol}
+                    isOpen={!!selectedSymbol}
+                    onClose={() => setSelectedSymbol(null)}
+                    currency={currency}
+                />
+            )}
         </div>
     );
 }

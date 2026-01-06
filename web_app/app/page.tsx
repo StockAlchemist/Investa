@@ -269,6 +269,7 @@ export default function Home() {
               <DividendCalendar
                 events={dividendCalendarQuery.data || []}
                 isLoading={dividendCalendarQuery.isLoading}
+                currency={currency}
               />
             </DividendComponent>
           </div>

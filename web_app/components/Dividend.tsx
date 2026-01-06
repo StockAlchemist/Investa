@@ -3,6 +3,8 @@ import type { Dividend } from '../lib/api';
 import { formatCurrency } from '../lib/utils';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 
+import StockDetailModal from './StockDetailModal';
+
 interface DividendProps {
     data: Dividend[] | null;
     currency: string;
@@ -13,6 +15,7 @@ interface DividendProps {
 export default function Dividend({ data, currency, expectedDividends, children }: DividendProps) {
     const [sortConfig, setSortConfig] = useState<{ key: keyof Dividend; direction: 'ascending' | 'descending' } | null>({ key: 'Date', direction: 'descending' });
     const [visibleRows, setVisibleRows] = useState(10);
+    const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
 
     // Group by Year for Chart
     const dividendsByYear = useMemo(() => {
@@ -170,7 +173,12 @@ export default function Dividend({ data, currency, expectedDividends, children }
                             {visibleData.map((item, index) => (
                                 <tr key={index} className="hover:bg-accent/5 transition-colors">
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">{item.Date}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">{item.Symbol}</td>
+                                    <td
+                                        className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
+                                        onClick={() => setSelectedSymbol(item.Symbol)}
+                                    >
+                                        {item.Symbol}
+                                    </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{item.Account}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-muted-foreground">
                                         {formatCurrency(item['DividendAmountDisplayCurrency'] || 0, currency)}
@@ -187,7 +195,12 @@ export default function Dividend({ data, currency, expectedDividends, children }
                         <div key={`mobile-div-${index}`} className="bg-card rounded-lg border border-border shadow-sm p-4">
                             <div className="flex justify-between items-start mb-2">
                                 <div>
-                                    <h3 className="text-lg font-bold text-foreground">{item.Symbol}</h3>
+                                    <h3
+                                        className="text-lg font-bold text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
+                                        onClick={() => setSelectedSymbol(item.Symbol)}
+                                    >
+                                        {item.Symbol}
+                                    </h3>
                                     <div className="text-xs text-muted-foreground">{item.Date} • {item.Account}</div>
                                 </div>
                                 <div className="text-right">
@@ -216,6 +229,16 @@ export default function Dividend({ data, currency, expectedDividends, children }
                     </div>
                 )}
             </div>
+
+            {/* Stock Detail Modal */}
+            {selectedSymbol && (
+                <StockDetailModal
+                    symbol={selectedSymbol}
+                    isOpen={!!selectedSymbol}
+                    onClose={() => setSelectedSymbol(null)}
+                    currency={currency}
+                />
+            )}
         </div>
     );
 }

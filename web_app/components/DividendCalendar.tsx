@@ -1,6 +1,5 @@
-'use client';
-
-import React from 'react';
+import StockDetailModal from './StockDetailModal';
+import { useState } from 'react';
 
 interface DividendEvent {
     symbol: string;
@@ -12,9 +11,12 @@ interface DividendEvent {
 interface DividendCalendarProps {
     events: DividendEvent[];
     isLoading: boolean;
+    currency: string;  // Added currency prop
 }
 
-export default function DividendCalendar({ events, isLoading }: DividendCalendarProps) {
+export default function DividendCalendar({ events, isLoading, currency }: DividendCalendarProps) {
+    const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+
     if (isLoading) {
         return (
             <div className="bg-card rounded-xl p-6 shadow-sm border border-border animate-pulse h-64">
@@ -56,7 +58,12 @@ export default function DividendCalendar({ events, isLoading }: DividendCalendar
                     <tbody className="divide-y divide-white/10">
                         {sortedEvents.map((event, idx) => (
                             <tr key={`${event.symbol}-${idx}`} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/80 transition-colors">
-                                <td className="px-6 py-4 font-bold text-foreground">{event.symbol}</td>
+                                <td
+                                    className="px-6 py-4 font-bold text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
+                                    onClick={() => setSelectedSymbol(event.symbol)}
+                                >
+                                    {event.symbol}
+                                </td>
                                 <td className="px-6 py-4 text-muted-foreground">
                                     {new Date(event.ex_dividend_date).toLocaleDateString()}
                                 </td>
@@ -71,6 +78,16 @@ export default function DividendCalendar({ events, isLoading }: DividendCalendar
                     </tbody>
                 </table>
             </div>
+
+            {/* Stock Detail Modal */}
+            {selectedSymbol && (
+                <StockDetailModal
+                    symbol={selectedSymbol}
+                    isOpen={!!selectedSymbol}
+                    onClose={() => setSelectedSymbol(null)}
+                    currency={currency}
+                />
+            )}
         </div>
     );
 }

@@ -1,6 +1,7 @@
 'use client';
 
-import React from 'react';
+import StockDetailModal from './StockDetailModal';
+import { useState } from 'react';
 
 interface AttributionData {
     sectors: {
@@ -26,6 +27,8 @@ interface AttributionChartProps {
 }
 
 export default function AttributionChart({ data, isLoading, currency }: AttributionChartProps) {
+    const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+
     if (isLoading) {
         return (
             <div className="bg-card rounded-xl p-6 shadow-sm border border-border animate-pulse h-80">
@@ -93,9 +96,31 @@ export default function AttributionChart({ data, isLoading, currency }: Attribut
                 <h3 className="text-sm font-medium text-muted-foreground mb-6 uppercase tracking-wider">Top Contributors</h3>
                 <div className="space-y-3">
                     {hasStocks ? data.stocks.map((stock, idx) => (
-                        <div key={`${stock.symbol}-${idx}`} className="flex items-center justify-between p-2 hover:bg-accent/10 rounded-lg transition-colors">
+                        <div
+                            key={`${stock.symbol}-${idx}`}
+                            className="flex items-center justify-between p-2 hover:bg-accent/10 rounded-lg transition-colors cursor-pointer group"
+                            onClick={() => {
+                                const symbols = stock.symbol.split(',').map(s => s.trim());
+                                if (symbols.length === 1) {
+                                    setSelectedSymbol(symbols[0]);
+                                }
+                            }}
+                        >
                             <div className="flex flex-col">
-                                <span className="text-sm font-bold text-foreground">{stock.symbol}</span>
+                                <div className="flex flex-wrap gap-1">
+                                    {stock.symbol.split(',').map(s => s.trim()).map((sym, i, arr) => (
+                                        <span
+                                            key={sym}
+                                            className="text-sm font-bold text-foreground hover:text-cyan-500 transition-colors cursor-pointer z-10"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedSymbol(sym);
+                                            }}
+                                        >
+                                            {sym}{i < arr.length - 1 ? ',' : ''}
+                                        </span>
+                                    ))}
+                                </div>
                                 <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{stock.name}</span>
                             </div>
                             <div className="text-right">
@@ -110,6 +135,16 @@ export default function AttributionChart({ data, isLoading, currency }: Attribut
                     )}
                 </div>
             </div>
+
+            {/* Stock Detail Modal */}
+            {selectedSymbol && (
+                <StockDetailModal
+                    symbol={selectedSymbol}
+                    isOpen={!!selectedSymbol}
+                    onClose={() => setSelectedSymbol(null)}
+                    currency={currency}
+                />
+            )}
         </div>
     );
 }
