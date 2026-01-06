@@ -200,25 +200,30 @@ async def _calculate_portfolio_summary_internal(
     # --- Caching Logic ---
     # Create a unique key for this request configuration + data state
     accounts_key = tuple(sorted(include_accounts)) if include_accounts else "ALL"
+    
+    # ADDED: Time-based invalidation (bucketed to 1 minute to match market data cache)
+    time_key = int(time.time() / 60)
+    
     cache_key = (
         currency,
         accounts_key,
         show_closed_positions,
         db_path,
-        db_mtime
+        db_mtime,
+        time_key
     )
     
     if cache_key in _PORTFOLIO_SUMMARY_CACHE:
         logging.info(f"Using cached portfolio summary for key: {cache_key[:3]}...") # Partial log for brevity
         return _PORTFOLIO_SUMMARY_CACHE[cache_key]
         
-    logging.info(f"Calculating portfolio summary (Cache Miss) for key: {cache_key[:3]}...")
+    logging.info(f"Summary Cache Miss. Calculating summary. Time key: {time_key}")
 
     mdp = MarketDataProvider()
     (
         overall_summary_metrics,
         summary_df,
-        holdings_dict,  # Unpack holdings dict
+        holdings_dict,
         account_level_metrics,
         _,
         _,
@@ -239,6 +244,11 @@ async def _calculate_portfolio_summary_internal(
         default_currency=config.DEFAULT_CURRENCY,
         market_provider=mdp
     )
+    
+    if overall_summary_metrics:
+        logging.info(f"Summary calculated. Total Value: {overall_summary_metrics.get('market_value')}, Day Change: {overall_summary_metrics.get('day_change_display')}")
+    else:
+        logging.error("Summary calculation returned None metrics")
 
     result = {
         "metrics": overall_summary_metrics,
@@ -359,9 +369,25 @@ async def get_portfolio_summary(
                 logging.warning(f"Failed to fetch market indices: {e_indices}")
 
         
+        # Serialize DataFrame and holdings_dict keys for JSON response
+        summary_df_raw = summary_data.get("summary_df")
+        holdings_dict_raw = summary_data.get("holdings_dict", {})
+        
+        serialized_df = []
+        if isinstance(summary_df_raw, pd.DataFrame):
+             # Handle NaNs
+             summary_df_clean = summary_df_raw.where(pd.notnull(summary_df_raw), None)
+             serialized_df = summary_df_clean.to_dict(orient="records")
+        
+        safe_holdings_dict = {}
+        if isinstance(holdings_dict_raw, dict):
+             safe_holdings_dict = {f"{sym}|{acc}": val for (sym, acc), val in holdings_dict_raw.items()}
+
         response_data = {
             "metrics": overall_summary_metrics,
-            "account_metrics": account_level_metrics
+            "account_metrics": account_level_metrics,
+            "summary_df": serialized_df,
+            "holdings_dict": safe_holdings_dict
         }
         return clean_nans(response_data)
     except Exception as e:

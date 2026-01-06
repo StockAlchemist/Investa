@@ -775,6 +775,7 @@ class MarketDataProvider:
             except Exception as e_fx:
                 logging.error(f"FX fetch error: {e_fx}")
         
+
         # --- 5. Save Cache ---
         if not has_errors:
             try:
@@ -1117,11 +1118,12 @@ class MarketDataProvider:
         yf_start_date = min(start_date, end_date)
 
         # --- FIX: Prevent fetching future dates which causes YFPricesMissingError ---
-        # If the requested start date is today or in the future, yfinance might error 
-        # because the "day" hasn't happened yet in the market's timezone.
         # Historical data implies "past" data. Real-time is handled elsewhere.
+        # But for intraday (1m, 5m), we NEED to fetch 'today' to see the chart update.
         today = date.today()
-        if yf_start_date >= today:
+        is_intraday = interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]
+        
+        if not is_intraday and yf_start_date >= today:
             logging.info(f"Hist Fetch Helper: Requested start date {yf_start_date} is today or in the future. Skipping fetch.")
             return {}
 
@@ -1148,7 +1150,7 @@ class MarketDataProvider:
         # Actually, if we ask for end=tomorrow, yfinance tries to get today.
         # If today isn't effectively over or started, it thinks we want today.
         # Safer to clamp end to 'today' (fetching UP TO yesterday) for strict history.
-        if yf_end_date > today:
+        if not is_intraday and yf_end_date > today:
              yf_end_date = today
         # --- END FIX ---
 

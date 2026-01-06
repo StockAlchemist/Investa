@@ -312,6 +312,7 @@ def calculate_portfolio_summary(
         )
 
     # --- 1. Use Pre-loaded Transactions ---
+
     if all_transactions_df_cleaned is None or all_transactions_df_cleaned.empty:
         msg = "Error: No transaction data provided or data is empty."
         logging.error(msg)
@@ -1195,6 +1196,7 @@ def calculate_portfolio_summary(
             if isinstance(account_level_metrics_temp, dict)
             else {}
         )
+        
 
         if err_agg:
             has_errors = True
@@ -5487,6 +5489,10 @@ def calculate_historical_performance(
     # Dict[str, Any] # current_valuation_ratios - Ratios are not calculated here
 ]:
     CURRENT_HIST_VERSION = "v1.9.10_REVERT_FILTER"  # Bump version due to changes (e.g. Numba, cache key)
+    # DIAGNOSTIC
+    with open("/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/apps/python/Investa/src/debug_summary.log", "a") as f:
+        f.write(f"\n--- calculate_historical_performance START ---\n")
+        f.write(f"Interval: {interval}, Benchmarks: {benchmark_symbols_yf}\n")
     start_time_hist = time.time()
     has_errors = False
     has_warnings = False
@@ -5630,10 +5636,15 @@ def calculate_historical_performance(
         # FIX: Ensure full_start_date covers the requested start_date
         # This prevents shape mismatch in _value_daily_holdings_vectorized when L1 cache is used.
         full_start_date = min(start_date, transactions_df_effective["Date"].min().date())
+        # Ensure we have at least a few days of history for benchmarks and normalization
+        # specially for intraday where we need the previous close.
+        if interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]:
+            full_start_date = full_start_date - timedelta(days=3)
+        
         full_end_date_tx = transactions_df_effective["Date"].max().date()
         fetch_end_date = max(end_date, full_end_date_tx)
         logging.info(
-            f"Determined full transaction range: {full_start_date} to {full_end_date_tx}. Fetching data up to {fetch_end_date} (requested start_date: {start_date})."
+            f"Determined full transaction range: {full_start_date} to {full_end_date_tx}. Fetching data up to {fetch_end_date} (requested start_date: {start_date}, interval: {interval})."
         )
     except Exception as e_range:
         logging.error(
@@ -5880,11 +5891,16 @@ def calculate_historical_performance(
         if daily_df.index.tz is None:
             daily_df.index = daily_df.index.tz_localize('UTC')
             
-        logging.info(f"Fetching historical data for {len(clean_benchmark_symbols_yf)} benchmarks...")
+        # FIX: For intraday intervals, don't fetch from full_start_date (too long)
+        # Instead, fetch from start_date - 1 day to get a baseline for returns.
+        benchmark_fetch_start = full_start_date
+        if interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]:
+             benchmark_fetch_start = max(full_start_date, start_date - timedelta(days=5))
+
         # Use the same market_provider instance
         bench_prices_adj, _ = market_provider.get_historical_data(
             symbols_yf=clean_benchmark_symbols_yf,
-            start_date=full_start_date,
+            start_date=benchmark_fetch_start,
             end_date=fetch_end_date,
             use_cache=True,
             interval=interval,  # FIX: Pass interval to ensure intraday data is fetched for 1d view
@@ -5892,10 +5908,12 @@ def calculate_historical_performance(
         )
         
         if bench_prices_adj:
+            logging.info(f"Fetched {len(bench_prices_adj)} benchmarks. Keys: {list(bench_prices_adj.keys())}")
             for bm in clean_benchmark_symbols_yf:
                 if bm in bench_prices_adj:
                     bm_df = bench_prices_adj[bm]
                     if bm_df is not None and not bm_df.empty and 'price' in bm_df.columns:
+                        logging.info(f"Benchmark {bm}: price count={len(bm_df)}, first={bm_df.index[0]}, last={bm_df.index[-1]}")
                         bm_series = bm_df['price'].copy()
                         bm_series.name = f"{bm} Price"
                         
@@ -5903,28 +5921,19 @@ def calculate_historical_performance(
                         if not isinstance(bm_series.index, pd.DatetimeIndex) or bm_series.index.tz is None:
                             bm_series.index = pd.to_datetime(bm_series.index, utc=True)
                         
-                        # Merge into daily_df using reindex with 'nearest' to handle timestamp mismatches
-                        # Standard left join requires exact timestamp match which often fails for 5m/1h data
-                        # due to slight seconds offsets (e.g. 14:30:00 vs 14:30:05).
+                        # Merge into daily_df using reindex with 'ffill' to handle timestamp mismatches
+                        # and overnight gaps. method='nearest' with tight tolerance often misses morning data.
                         try:
-                            # Dynamic tolerance based on interval
-                            if interval in ["1d", "5d", "1wk", "1mo", "3mo", "1y", "ytd"]:
-                                # For daily data, timestamps might differ significantly (00:00 vs 16:00)
-                                # Using 40h tolerance ensures we find a point within the same day cycle or prev close,
-                                # especially over weekends.
-                                tol = pd.Timedelta('40h')
-                            elif interval in ["1h", "60m"]:
-                                tol = pd.Timedelta('30m')
-                            else:
-                                # For intraday (1m, 5m), use tight tolerance
-                                tol = pd.Timedelta('3m')
+                            # Use generous tolerance to bridge overnight/weekend gaps
+                            tol = pd.Timedelta('48h')
 
                             bm_series_aligned = bm_series.reindex(
                                 daily_df.index, 
-                                method='nearest', 
+                                method='ffill', 
                                 tolerance=tol
                             )
                             daily_df[f"{bm} Price"] = bm_series_aligned
+                            
                         except Exception as e_align:
                             logging.warning(f"Benchmark alignment failed for {bm}: {e_align}. Falling back to strict join.")
                             # Fallback to strict alignment (will likely be NaN if mismatch exists)
@@ -5946,23 +5955,20 @@ def calculate_historical_performance(
             gain_factors_portfolio = 1 + daily_df["daily_return"].fillna(0.0)
             daily_df["Portfolio Accumulated Gain"] = gain_factors_portfolio.cumprod()
             
+
             for bm_symbol_yf_iter in clean_benchmark_symbols_yf:
                 price_col_iter = f"{bm_symbol_yf_iter} Price"
                 accum_col_final_iter = f"{bm_symbol_yf_iter} Accumulated Gain"
                 if price_col_iter in daily_df.columns:
-                    bench_prices_no_na_iter = daily_df[price_col_iter].dropna()
-                    if not bench_prices_no_na_iter.empty:
-                        # Use wider context for returns calculation
-                        bench_daily_returns_iter = (
-                            bench_prices_no_na_iter.pct_change()
-                            .reindex(daily_df.index)
-                            .fillna(0.0)
-                        )
-                        gain_factors_bench_iter = 1 + bench_daily_returns_iter
-                        daily_df[accum_col_final_iter] = gain_factors_bench_iter.cumprod()
-                    else:
-                        daily_df[accum_col_final_iter] = np.nan
+                    # FIX: Calculate returns on the dense (ffilled) prices
+                    # but only after ensuring we have a valid start.
+                    # filling first NaN with 0 ensures cumprod starts at 1.0.
+                    bench_returns = daily_df[price_col_iter].pct_change().fillna(0.0)
+                    daily_df[accum_col_final_iter] = (1 + bench_returns).cumprod()
+                    
+                    logging.info(f"Benchmark {bm_symbol_yf_iter} Normalized: first_accum={daily_df[accum_col_final_iter].iloc[0]}, last_accum={daily_df[accum_col_final_iter].iloc[-1]}")
                 else:
+                    logging.warning(f"Benchmark {bm_symbol_yf_iter} Price column missing in daily_df")
                     daily_df[accum_col_final_iter] = np.nan
         except Exception as e_accum:
             logging.error(f"Error in early accumulated gain calculation: {e_accum}")
