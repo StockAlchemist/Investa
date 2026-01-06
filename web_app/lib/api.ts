@@ -238,12 +238,16 @@ export interface CapitalGain {
 
 export async function fetchCapitalGains(
     currency: string = 'USD',
-    accounts?: string[]
+    accounts?: string[],
+    fromDate?: string,
+    toDate?: string
 ): Promise<CapitalGain[]> {
     const params = new URLSearchParams({ currency });
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
+    if (fromDate) params.append('from', fromDate);
+    if (toDate) params.append('to', toDate);
     const res = await fetch(`${API_BASE_URL}/capital_gains?${params.toString()}`);
     if (!res.ok) throw new Error('Failed to fetch capital gains');
     return res.json();
@@ -516,6 +520,20 @@ export async function removeFromWatchlist(symbol: string): Promise<StatusRespons
     });
     if (!response.ok) {
         throw new Error(`Failed to remove from watchlist: ${response.statusText}`);
+    }
+    return response.json();
+}
+
+export async function updateHoldingTags(account: string, symbol: string, tags: string): Promise<StatusResponse> {
+    const response = await fetch(`${API_BASE_URL}/holdings/update_tags`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ account, symbol, tags }),
+    });
+    if (!response.ok) {
+        throw new Error('Failed to update holding tags');
     }
     return response.json();
 }

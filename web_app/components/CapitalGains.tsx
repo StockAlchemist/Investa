@@ -1,21 +1,23 @@
 import React, { useState, useMemo } from 'react';
 import { CapitalGain } from '../lib/api';
 import { formatCurrency } from '../lib/utils';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
 
 import StockDetailModal from './StockDetailModal';
 
 interface CapitalGainsProps {
     data: CapitalGain[] | null;
     currency: string;
+    onDateRangeChange?: (fromDate?: string, toDate?: string) => void;
 }
 
 export default function CapitalGains({ data, currency }: CapitalGainsProps) {
+    const [selectedYear, setSelectedYear] = useState<string | null>(null);
     const [sortConfig, setSortConfig] = useState<{ key: keyof CapitalGain; direction: 'ascending' | 'descending' } | null>({ key: 'Date', direction: 'descending' });
     const [visibleRows, setVisibleRows] = useState(10);
     const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
 
-    // Group by Year for Chart
+    // Group by Year for Chart (Always use full data for context)
     const gainsByYear = useMemo(() => {
         if (!data) return [];
         const groups: Record<string, number> = {};
@@ -28,11 +30,17 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
             .sort((a, b) => a.year.localeCompare(b.year));
     }, [data]);
 
-    // Sorting
-    const sortedData = useMemo(() => {
+    // Filter data based on selection
+    const filteredData = useMemo(() => {
         if (!data) return [];
+        if (!selectedYear) return data;
+        return data.filter(item => item.Date.startsWith(selectedYear));
+    }, [data, selectedYear]);
+
+    // Sorting (on filtered data)
+    const sortedData = useMemo(() => {
         // eslint-disable-next-line
-        let sortableItems = [...data];
+        let sortableItems = [...filteredData];
         if (sortConfig !== null) {
             sortableItems.sort((a, b) => {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -50,7 +58,7 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
             });
         }
         return sortableItems;
-    }, [data, sortConfig]);
+    }, [filteredData, sortConfig]);
 
     if (!data) {
         return <div className="p-4 text-center text-muted-foreground">Loading capital gains data...</div>;
@@ -60,10 +68,10 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
         return <div className="p-4 text-center text-muted-foreground">No realized capital gains found for the selected criteria.</div>;
     }
 
-    // --- Calculations ---
-    const totalRealizedGain = data.reduce((sum, item) => sum + (item['Realized Gain (Display)'] || 0), 0);
-    const totalProceeds = data.reduce((sum, item) => sum + (item['Total Proceeds (Display)'] || 0), 0);
-    const totalCostBasis = data.reduce((sum, item) => sum + (item['Total Cost Basis (Display)'] || 0), 0);
+    // --- Calculations (on filtered data) ---
+    const totalRealizedGain = filteredData.reduce((sum, item) => sum + (item['Realized Gain (Display)'] || 0), 0);
+    const totalProceeds = filteredData.reduce((sum, item) => sum + (item['Total Proceeds (Display)'] || 0), 0);
+    const totalCostBasis = filteredData.reduce((sum, item) => sum + (item['Total Cost Basis (Display)'] || 0), 0);
 
     const requestSort = (key: keyof CapitalGain) => {
         let direction: 'ascending' | 'descending' = 'ascending';
@@ -83,9 +91,28 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
         setVisibleRows(sortedData.length);
     };
 
+    const handleBarClick = (entry: any) => {
+        // When clicking Bar directly, 'entry' is the data item itself (e.g. { year: '2023', gain: 100 })
+        if (entry && entry.year) {
+            const clickedYear = entry.year;
+            if (selectedYear === clickedYear) {
+                setSelectedYear(null); // Toggle off
+            } else {
+                setSelectedYear(clickedYear);
+                setVisibleRows(10); // Reset pagination on filter change
+            }
+        }
+    };
+
     return (
         <div className="space-y-6">
             {/* Summary Cards */}
+            <div className="flex justify-between items-center mb-4">
+                <div className="text-sm text-muted-foreground">
+                    {selectedYear ? `Showing data for ${selectedYear} (Click chart to reset)` : `Showing All Time`}
+                </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-card backdrop-blur-md p-4 rounded-xl shadow-sm border border-border">
                     <h3 className="text-sm font-medium text-muted-foreground">Total Realized Gain</h3>
@@ -110,9 +137,23 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
             {/* Annual Gains Chart */}
             <div className="bg-card backdrop-blur-md p-4 rounded-xl shadow-sm border border-border">
                 <h3 className="text-lg font-semibold text-foreground mb-4">Annual Realized Gains</h3>
+                <style>{`
+                    .recharts-wrapper, .recharts-surface, .recharts-cartesian-grid, .recharts-layer {
+                        outline: none !important;
+                        box-shadow: none !important;
+                    }
+                    *:focus {
+                        outline: none !important;
+                        box-shadow: none !important;
+                    }
+                `}</style>
                 <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={gainsByYear} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                        <BarChart
+                            data={gainsByYear}
+                            margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                            className="outline-none focus:outline-none [&_.recharts-surface]:outline-none"
+                        >
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
                             <XAxis dataKey="year" tick={{ fontSize: 12, fill: '#9ca3af' }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} />
                             <YAxis
@@ -134,6 +175,7 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                                                         {formatCurrency(payload[0].value as number, currency)}
                                                     </span>
                                                 </div>
+                                                <div className="mt-1 text-xs text-muted-foreground">Click to filter transactions</div>
                                             </div>
                                         );
                                     }
@@ -141,7 +183,20 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                                 }}
                                 cursor={{ fill: 'var(--glass-hover)' }}
                             />
-                            <Bar dataKey="gain" fill="#10B981" name="Realized Gain" radius={[4, 4, 0, 0]} />
+                            <Bar
+                                dataKey="gain"
+                                name="Realized Gain"
+                                radius={[4, 4, 0, 0]}
+                                onClick={handleBarClick}
+                                cursor="pointer"
+                            >
+                                {gainsByYear.map((entry, index) => (
+                                    <Cell
+                                        key={`cell-${index}`}
+                                        fill={selectedYear === entry.year ? '#059669' : (selectedYear ? '#10B98140' : '#10B981')}
+                                    />
+                                ))}
+                            </Bar>
                         </BarChart>
                     </ResponsiveContainer>
                 </div>

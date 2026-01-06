@@ -518,6 +518,27 @@ def _process_transactions_to_holdings(
         nb_shortable, STOCK_QUANTITY_CLOSE_TOLERANCE,
         n, num_syms, num_accs
     )
+
+    # --- Tags Aggregation (Outside Numba) ---
+    tags_map: Dict[Tuple[str, str], Set[str]] = defaultdict(set)
+    if 'Tags' in df.columns:
+        # Vectorized approach to collect tags would be complex, simple iteration is fine for metadata
+        # or use groupby
+        # Let's iterate over rows where Tags is not empty
+        df_tags = df[df['Tags'].notna() & (df['Tags'] != "")]
+        for _, row in df_tags.iterrows():
+            sym = row['Symbol']
+            acc = row['Account']
+            t_str = str(row['Tags'])
+            # Split by comma if multiple tags
+            for t in t_str.split(','):
+                cleaned_t = t.strip()
+                if cleaned_t:
+                    tags_map[(sym, acc)].add(cleaned_t)
+            
+            # Also handle transfer-in side?
+            # If it's a transfer, the tag should technically follow?
+            # For now, let's just stick to the account on the transaction record.
     
     holdings = {}
     overall_realized_gains_local = defaultdict(float)
@@ -555,7 +576,9 @@ def _process_transactions_to_holdings(
             "cumulative_investment_local": val[8],
             "total_buy_cost_local": val[9],
             "total_cost_display_historical_fx": val[10],
+            "total_cost_display_historical_fx": val[10],
             "realized_gain_display": val[12],
+            "tags": sorted(list(tags_map.get((sym, acc), set()))),
         }
         
         overall_realized_gains_local[curr] += val[2]
@@ -642,6 +665,7 @@ def _build_summary_rows(
             "total_cost_display_historical_fx", np.nan
         )
         realized_gain_display_from_holdings = data.get("realized_gain_display", np.nan)
+        tags_list = data.get("tags", [])
 
         account_local_currency_map[account] = local_currency
         stock_data = current_stock_data.get(symbol, {})
@@ -1165,6 +1189,7 @@ def _build_summary_rows(
                 "FX Gain/Loss %": fx_gain_loss_pct_holding,
                 "Name": stock_data.get("name", ""),  # Add Company Name
                 "sparkline_7d": stock_data.get("sparkline_7d", []),
+                "Tags": tags_list,  # Added Tags
             }
         )
     # --- End Stock/ETF Loop ---
@@ -1367,6 +1392,8 @@ def _build_summary_rows(
             }
         )
     # --- End Cash Loop ---
+
+
 
     # --- NEW: Calculate % of Total for all rows ---
     total_mv_display = sum(
@@ -2465,6 +2492,8 @@ def extract_realized_capital_gains_history(
     stock_quantity_close_tolerance: float = STOCK_QUANTITY_CLOSE_TOLERANCE,
     include_accounts: Optional[List[str]] = None,
     current_fx_rates_vs_usd: Optional[Dict[str, float]] = None,
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
 ) -> pd.DataFrame:
     """
     Calculates realized capital gains from transactions using FIFO accounting for long positions.
@@ -2510,6 +2539,23 @@ def extract_realized_capital_gains_history(
         include_accounts_upper = [str(acc).upper().strip() for acc in include_accounts]
         if not df_gains.empty:
              df_gains = df_gains[df_gains["Account"].isin(include_accounts_upper)]
+
+    # 4. Filter by Date (Tax Year / Custom Range)
+    if not df_gains.empty:
+        # Ensure Date column is datetime or date
+        # It usually comes out as datetime from calculate_fifo_lots_and_gains (from transactions_df)
+        # normalize to date for comparison
+        if "Date" in df_gains.columns:
+             # Convert to datetime if needed, though likely already is
+             if not pd.api.types.is_datetime64_any_dtype(df_gains["Date"]):
+                 df_gains["Date"] = pd.to_datetime(df_gains["Date"])
+             
+             if from_date:
+                 # pd.Timestamp(from_date) compares well with datetime64
+                 df_gains = df_gains[df_gains["Date"] >= pd.Timestamp(from_date)]
+             
+             if to_date:
+                 df_gains = df_gains[df_gains["Date"] <= pd.Timestamp(to_date)]
 
     logging.info(f"Extracted {len(df_gains)} realized capital gains records.")
     return df_gains

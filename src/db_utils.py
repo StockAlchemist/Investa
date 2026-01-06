@@ -24,7 +24,7 @@ import traceback
 import config
 
 DB_FILENAME = "investa_transactions.db"
-DB_SCHEMA_VERSION = 3
+DB_SCHEMA_VERSION = 4
 
 
 def get_database_path(db_filename: str = DB_FILENAME) -> str:
@@ -86,7 +86,8 @@ def create_transactions_table(conn: sqlite3.Connection):
         "Split Ratio" REAL,
         Note TEXT,
         "Local Currency" TEXT NOT NULL,
-        "To Account" TEXT
+        "To Account" TEXT,
+        "Tags" TEXT
     );
     """
     create_version_table_sql = """
@@ -157,6 +158,22 @@ def create_transactions_table(conn: sqlite3.Connection):
             # In this case, CREATE TABLE already handled it, so we just update version if needed
             # but usually we want specific migrations if structure changed.
             # For a NEW table, the CREATE TABLE IF NOT EXISTS is enough.
+            cursor.execute(
+                "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
+                (DB_SCHEMA_VERSION, datetime.now().isoformat()),
+            )
+
+        if current_db_version < 4:
+            logging.info("Schema version is less than 4. Applying 'Tags' column migration.")
+            try:
+                cursor.execute('ALTER TABLE transactions ADD COLUMN Tags TEXT;')
+                logging.info("Added 'Tags' column to transactions table.")
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" in str(e):
+                    logging.info("'Tags' column already exists.")
+                else:
+                    raise
+
             cursor.execute(
                 "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
                 (DB_SCHEMA_VERSION, datetime.now().isoformat()),
@@ -260,6 +277,7 @@ def migrate_csv_to_db(
             "Split Ratio",
             "Note",
             "Local Currency",  # "To Account" is not in the CSV standard
+            "Tags",
         ]
         df_for_insert = transactions_df.reindex(columns=db_columns)
         placeholders = ", ".join(["?"] * len(db_columns))
@@ -312,7 +330,7 @@ def load_all_transactions_from_db(
     try:
         query = """
         SELECT id as original_index, Date, Type, Symbol, Quantity, "Price/Share",
-               "Total Amount", Commission, Account, "Split Ratio", Note, "Local Currency", "To Account"
+               "Total Amount", Commission, Account, "Split Ratio", Note, "Local Currency", "To Account", Tags
         FROM transactions
         ORDER BY Date, original_index;
         """
@@ -371,7 +389,9 @@ def add_transaction_to_db(
         "Split Ratio",
         "Note",
         "Local Currency",
+        "Local Currency",
         "To Account",
+        "Tags",
     ]
     quoted_db_columns = [
         f'"{col}"' if "/" in col or " " in col else col for col in db_column_order

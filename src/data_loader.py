@@ -80,6 +80,7 @@ EXPECTED_CLEANED_COLUMNS = [
     "Local Currency",
     "original_index",  # original_index is crucial
     "To Account",
+    "Tags",
 ]
 
 # --- Column Mapping (for CSV loading if still used) ---
@@ -126,6 +127,9 @@ COLUMN_MAPPING_CSV_TO_INTERNAL: Dict[str, str] = {
     "Shares": "Quantity",
     "Cost Basis": "Total Amount",  # Can sometimes mean total cost
     "Broker": "Account",
+    "Tags": "Tags",
+    "Labels": "Tags",
+    "Groups": "Tags",
 }
 
 
@@ -601,6 +605,12 @@ def load_and_clean_transactions(
                 .str.strip()
                 .replace("None", "", regex=False)
             )
+
+    # --- Tags Cleaning ---
+    if "Tags" in df.columns:
+        # Ensure string, strip whitespace, remove 'nan' strings
+        df["Tags"] = df["Tags"].astype(str).str.strip()
+        df.loc[df["Tags"].str.lower().isin(["nan", "none", "<na>"]), "Tags"] = ""
 
     # --- Normalize Cash Symbol ---
     if "Symbol" in df.columns:

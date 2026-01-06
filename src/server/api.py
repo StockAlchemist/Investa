@@ -22,6 +22,7 @@ from db_utils import (
     add_to_watchlist,
     remove_from_watchlist,
     get_watchlist,
+    update_transaction_in_db, # Ensure this is imported
 )
 
 from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series
@@ -692,6 +693,7 @@ class TransactionInput(BaseModel):
     Note: Optional[str] = None
     Local_Currency: str = Field(..., alias="Local Currency")
     To_Account: Optional[str] = Field(None, alias="To Account")
+    Tags: Optional[str] = None
     
     class Config:
         populate_by_name = True
@@ -731,6 +733,9 @@ async def create_transaction(
              tx_data["To Account"] = tx_data.pop("To_Account")
         if "Split_Ratio" in tx_data:
              tx_data["Split Ratio"] = tx_data.pop("Split_Ratio")
+        if "Tags" in tx_data and tx_data["Tags"] is not None:
+             # Ensure stripped string
+             tx_data["Tags"] = str(tx_data["Tags"]).strip()
 
         success, new_id = add_transaction_to_db(conn, tx_data)
         conn.close()
@@ -781,6 +786,8 @@ async def update_transaction(
              tx_data["To Account"] = tx_data.pop("To_Account")
         if "Split_Ratio" in tx_data:
              tx_data["Split Ratio"] = tx_data.pop("Split_Ratio")
+        if "Tags" in tx_data and tx_data["Tags"] is not None:
+             tx_data["Tags"] = str(tx_data["Tags"]).strip()
 
         success = update_transaction_in_db(conn, transaction_id, tx_data)
         conn.close()
@@ -795,6 +802,83 @@ async def update_transaction(
         logging.error(f"Error updating transaction: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.delete("/transactions/{transaction_id}")
+async def delete_transaction(
+    transaction_id: int,
+    data: tuple = Depends(get_transaction_data)
+):
+    """
+    Deletes a transaction.
+
+    Args:
+        transaction_id (int): ID of the transaction to delete.
+        data (tuple): Dependency injection.
+
+    Returns:
+        Dict: Status message.
+    """
+    try:
+        _, _, _, _, _, db_path, _ = data
+        conn = get_db_connection(db_path)
+        if not conn:
+             raise HTTPException(status_code=500, detail="Database connection failed")
+
+        success = delete_transaction_from_db(conn, transaction_id)
+        conn.close()
+        
+        if success:
+            reload_data()
+            return {"status": "success", "message": "Transaction deleted"}
+        else:
+            raise HTTPException(status_code=404, detail="Transaction not found or delete failed")
+
+    except Exception as e:
+        logging.error(f"Error deleting transaction: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class HoldingTagUpdate(BaseModel):
+    account: str
+    symbol: str
+    tags: str
+
+    class Config:
+        populate_by_name = True
+
+@router.post("/holdings/update_tags")
+async def update_holding_tags(
+    update_data: HoldingTagUpdate,
+    data: tuple = Depends(get_transaction_data)
+):
+    """
+    Updates tags for all transactions associated with a specific holding (Symbol + Account).
+    """
+    try:
+        _, _, _, _, _, db_path, _ = data
+        conn = get_db_connection(db_path)
+        if not conn:
+             raise HTTPException(status_code=500, detail="Database connection failed")
+
+        cursor = conn.cursor()
+        # Clean tags
+        tags_value = update_data.tags.strip()
+        
+        # Update all transactions for this symbol and account
+        # Note: We probably want to update ALL types (Buy, Sell, Div, etc) so they stay grouped?
+        # Or just open positions?
+        # ShareSight groups by holding. So updating all history is consistent.
+        sql = "UPDATE transactions SET Tags = ? WHERE Symbol = ? AND Account = ?"
+        cursor.execute(sql, (tags_value, update_data.symbol, update_data.account))
+        conn.commit()
+        rows_affected = cursor.rowcount
+        conn.close()
+        
+        reload_data()
+        return {"status": "success", "message": f"Updated tags for {rows_affected} transactions"}
+
+    except Exception as e:
+        logging.error(f"Error updating holding tags: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 @router.delete("/transactions/{transaction_id}")
 async def delete_transaction(
     transaction_id: int,
@@ -1060,6 +1144,8 @@ def get_history(
 async def get_capital_gains(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),
+    from_date: Optional[str] = Query(None, alias="from"),
+    to_date: Optional[str] = Query(None, alias="to"),
     data: tuple = Depends(get_transaction_data)
 ):
     """
@@ -1115,13 +1201,29 @@ async def get_capital_gains(
             original_csv_file_path=original_csv_path
         )
         
+        # Parse dates
+        start_dt = None
+        end_dt = None
+        if from_date:
+            try:
+                start_dt = date.fromisoformat(from_date)
+            except ValueError:
+                pass
+        if to_date:
+            try:
+                end_dt = date.fromisoformat(to_date)
+            except ValueError:
+                pass
+
         capital_gains_df = extract_realized_capital_gains_history(
             all_transactions_df=df,
             display_currency=currency,
             historical_fx_yf=historical_fx_yf,
             default_currency=config.DEFAULT_CURRENCY,
             shortable_symbols=config.SHORTABLE_SYMBOLS,
-            include_accounts=accounts
+            include_accounts=accounts,
+            from_date=start_dt,
+            to_date=end_dt
         )
         
         if capital_gains_df.empty:
@@ -1634,6 +1736,10 @@ async def get_attribution(
         # Sort by contribution
         sector_attribution.sort(key=lambda x: abs(x["contribution"]), reverse=True)
         stock_data.sort(key=lambda x: abs(x["gain"]), reverse=True)
+        
+        # Calculate contribution % for stocks
+        for stock in stock_data:
+            stock["contribution"] = (stock["gain"] / total_gain) if total_gain != 0 else 0.0
 
         return clean_nans({
             "sectors": sector_attribution,

@@ -16,6 +16,7 @@ interface AttributionData {
         gain: number;
         value: number;
         sector: string;
+        contribution: number;
     }[];
     total_gain: number;
 }
@@ -36,7 +37,7 @@ export default function AttributionChart({ data, isLoading, currency }: Attribut
         );
     }
 
-    // DEBUG: Log data to see what we are receiving
+
 
 
     const formatCurrency = (val: number) => {
@@ -74,7 +75,7 @@ export default function AttributionChart({ data, isLoading, currency }: Attribut
                         <div key={s.sector}>
                             <div className="flex justify-between text-xs mb-1.5">
                                 <span className="font-medium text-foreground">{s.sector}</span>
-                                <span className={s.gain >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
+                                <span className={s.gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
                                     {formatCurrency(s.gain)} ({formatPercent(s.contribution)})
                                 </span>
                             </div>
@@ -124,8 +125,9 @@ export default function AttributionChart({ data, isLoading, currency }: Attribut
                                 <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{stock.name}</span>
                             </div>
                             <div className="text-right">
-                                <p className={`text-sm font-medium ${stock.gain >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                <p className={`text-sm font-medium ${stock.gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                                     {stock.gain >= 0 ? '+' : ''}{formatCurrency(stock.gain)}
+                                    <span className="text-xs ml-1">({formatPercent(stock.contribution)})</span>
                                 </p>
                                 <p className="text-[10px] text-muted-foreground uppercase">{stock.sector}</p>
                             </div>

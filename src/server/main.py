@@ -12,6 +12,8 @@ project_root = os.path.dirname(src_dir)
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
+
+import portfolio_logic
 from server.api import router as api_router
 import config
 
@@ -20,6 +22,8 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+
+import portfolio_analyzer
 
 app = FastAPI(title="Investa API", description="Backend for Investa PWA")
 

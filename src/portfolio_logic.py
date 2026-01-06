@@ -203,6 +203,8 @@ def calculate_portfolio_summary(
     Dict[int, str],
     str,
 ]:
+    import logging
+    logging.error("DEBUG: ENTERING calculate_portfolio_summary in portfolio_logic.py. I AM THE MODIFIED VERSION!!!")
     """
     Calculates the current portfolio summary using MarketDataProvider for market data
     and helper functions from portfolio_analyzer.py for calculations.
@@ -1303,7 +1305,18 @@ def calculate_portfolio_summary(
     else:  # show_closed_positions is True
         summary_df_final = summary_df_unfiltered
 
-    # --- 9. Calculate % of Total ---
+    # --- 9a. Calculate Contribution % ---
+    if not summary_df_final.empty and overall_summary_metrics:
+        total_inv = overall_summary_metrics.get("total_cost_invested", 0.0)
+        total_gain_col = f"Total Gain ({display_currency})"
+        
+        # Calculate Contribution % (Total Gain / Total Cost Invested)
+        if total_gain_col in summary_df_final.columns and abs(total_inv) > 1e-9:
+             summary_df_final["Contribution %"] = (summary_df_final[total_gain_col] / total_inv) * 100.0
+        else:
+             summary_df_final["Contribution %"] = 0.0
+
+    # --- 9b. Calculate % of Total ---
     if not summary_df_final.empty and overall_summary_metrics:
         total_mkt_val = overall_summary_metrics.get("market_value", 0.0)
         mkt_val_col = f"Market Value ({display_currency})"

@@ -51,6 +51,7 @@ export default function Home() {
   const [benchmarks, setBenchmarks] = useState<string[]>(['S&P 500', 'Dow Jones', 'NASDAQ']);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [showClosed, setShowClosed] = useState(false);
+  const [capitalGainsDates, setCapitalGainsDates] = useState<{ from?: string, to?: string }>({});
 
   // Initialize showClosed from localStorage
   useEffect(() => {
@@ -111,8 +112,8 @@ export default function Home() {
   });
 
   const capitalGainsQuery = useQuery({
-    queryKey: ['capitalGains', currency, selectedAccounts],
-    queryFn: () => fetchCapitalGains(currency, selectedAccounts),
+    queryKey: ['capitalGains', currency, selectedAccounts, capitalGainsDates.from, capitalGainsDates.to],
+    queryFn: () => fetchCapitalGains(currency, selectedAccounts, capitalGainsDates.from, capitalGainsDates.to),
     enabled: activeTab === 'capital_gains',
     staleTime: 5 * 60 * 1000,
   });
@@ -248,7 +249,13 @@ export default function Home() {
       case 'asset_change':
         return <AssetChange data={assetChangeData} currency={currency} />;
       case 'capital_gains':
-        return <CapitalGains data={capitalGainsData} currency={currency} />;
+        return (
+          <CapitalGains
+            data={capitalGainsData}
+            currency={currency}
+            onDateRangeChange={(from, to) => setCapitalGainsDates({ from, to })}
+          />
+        );
       case 'analytics':
         return (
           <div className="space-y-6">
