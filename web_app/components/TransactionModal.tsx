@@ -87,6 +87,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
             }
             setError(null);
             setTotalLockedByUser(false);
+            setLoading(false);
         }
     }, [isOpen, initialData, mode]);
 

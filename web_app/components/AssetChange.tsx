@@ -84,7 +84,14 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                         <XAxis
                             dataKey="Date"
                             tick={{ fontSize: 10, fill: '#9ca3af' }}
-                            tickFormatter={(val) => val} // Dates are already strings
+                            tickFormatter={(val) => {
+                                if (!val) return '';
+                                const datePart = val.split(' ')[0];
+                                if (config.key === 'Y') {
+                                    return datePart.split('-')[0];
+                                }
+                                return datePart;
+                            }}
                             axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
                         />
                         <YAxis

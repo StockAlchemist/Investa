@@ -167,6 +167,9 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
             // Hourly for 1 month. Date + maybe Hour? Too crowded.
             // Just Date is probably fine, or Day.
             return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        } else if (['3y', '5y', 'all'].includes(period)) {
+            // Long periods: Show Month + Year (e.g., Jan 2023)
+            return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
         }
         return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     };
