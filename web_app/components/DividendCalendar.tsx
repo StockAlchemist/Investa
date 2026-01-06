@@ -43,34 +43,34 @@ export default function DividendCalendar({ events, isLoading, currency }: Divide
     return (
         <div className="bg-card backdrop-blur-md rounded-xl shadow-sm border border-border overflow-hidden">
             <div className="p-6 border-b border-border">
-                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Dividend Calendar</h3>
+                <h3 className="text-sm font-semibold text-muted-foreground">Dividend Calendar</h3>
             </div>
             <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
-                    <thead className="text-xs text-muted-foreground uppercase bg-secondary">
+                    <thead className="bg-secondary/50 font-semibold border-b border-border">
                         <tr>
-                            <th className="px-6 py-3 font-medium">Symbol</th>
-                            <th className="px-6 py-3 font-medium">Ex-Dividend Date</th>
-                            <th className="px-6 py-3 font-medium">Dividend Date</th>
-                            <th className="px-6 py-3 font-medium text-right">Amount</th>
+                            <th className="px-6 py-3 text-xs font-semibold text-muted-foreground">Symbol</th>
+                            <th className="px-6 py-3 text-xs font-semibold text-muted-foreground">Ex-Dividend Date</th>
+                            <th className="px-6 py-3 text-xs font-semibold text-muted-foreground">Dividend Date</th>
+                            <th className="px-6 py-3 text-xs font-semibold text-muted-foreground text-right">Amount</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/10">
+                    <tbody className="divide-y divide-border/50">
                         {sortedEvents.map((event, idx) => (
-                            <tr key={`${event.symbol}-${idx}`} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/80 transition-colors">
+                            <tr key={`${event.symbol}-${idx}`} className="hover:bg-accent/5 transition-colors">
                                 <td
-                                    className="px-6 py-4 font-bold text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
+                                    className="px-6 py-3 font-medium text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
                                     onClick={() => setSelectedSymbol(event.symbol)}
                                 >
                                     {event.symbol}
                                 </td>
-                                <td className="px-6 py-4 text-muted-foreground">
+                                <td className="px-6 py-3 text-muted-foreground">
                                     {new Date(event.ex_dividend_date).toLocaleDateString()}
                                 </td>
-                                <td className="px-6 py-4 text-muted-foreground italic">
+                                <td className="px-6 py-3 text-muted-foreground italic">
                                     {new Date(event.dividend_date).toLocaleDateString()}
                                 </td>
-                                <td className="px-6 py-4 text-right font-medium text-emerald-500 dark:text-emerald-400">
+                                <td className="px-6 py-3 text-right font-medium text-emerald-500 dark:text-emerald-400 tabular-nums">
                                     ${event.amount.toFixed(2)}
                                 </td>
                             </tr>

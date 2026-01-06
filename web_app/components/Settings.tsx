@@ -484,15 +484,15 @@ export default function Settings() {
 
                             <div className="overflow-x-auto">
                                 <table className="min-w-full divide-y divide-border text-sm">
-                                    <thead className="bg-secondary">
+                                    <thead className="bg-secondary/50 font-semibold border-b border-border">
                                         <tr>
-                                            <th scope="col" className="px-4 py-3 text-left font-medium text-muted-foreground uppercase tracking-wider">Symbol</th>
-                                            <th scope="col" className="px-4 py-3 text-left font-medium text-muted-foreground uppercase tracking-wider">Price</th>
-                                            <th scope="col" className="px-4 py-3 text-left font-medium text-muted-foreground uppercase tracking-wider">Asset Type</th>
-                                            <th scope="col" className="px-4 py-3 text-left font-medium text-muted-foreground uppercase tracking-wider">Sector</th>
-                                            <th scope="col" className="px-4 py-3 text-left font-medium text-muted-foreground uppercase tracking-wider">Geography</th>
-                                            <th scope="col" className="px-4 py-3 text-left font-medium text-muted-foreground uppercase tracking-wider">Industry</th>
-                                            <th scope="col" className="px-4 py-3 text-right font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
+                                            <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Symbol</th>
+                                            <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Price</th>
+                                            <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Asset Type</th>
+                                            <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Sector</th>
+                                            <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Geography</th>
+                                            <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Industry</th>
+                                            <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-border">
@@ -516,18 +516,18 @@ export default function Settings() {
 
                                                     return (
                                                         <tr key={symbol} className="hover:bg-accent/5 transition-colors">
-                                                            <td className="px-4 py-4 whitespace-nowrap font-medium text-foreground">{symbol}</td>
-                                                            <td className="px-4 py-4 whitespace-nowrap text-muted-foreground font-mono">
+                                                            <td className="px-4 py-3 whitespace-nowrap font-medium text-foreground">{symbol}</td>
+                                                            <td className="px-4 py-3 whitespace-nowrap text-muted-foreground font-mono tabular-nums">
                                                                 {price === 0
                                                                     ? <span className="text-muted-foreground">-</span>
                                                                     : `${currency === 'THB' ? '฿' : '$'}${price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`
                                                                 }
                                                             </td>
-                                                            <td className="px-4 py-4 whitespace-nowrap text-muted-foreground">{assetType || '-'}</td>
-                                                            <td className="px-4 py-4 whitespace-nowrap text-muted-foreground">{sector || '-'}</td>
-                                                            <td className="px-4 py-4 whitespace-nowrap text-muted-foreground">{geo || '-'}</td>
-                                                            <td className="px-4 py-4 whitespace-nowrap text-muted-foreground">{industry || '-'}</td>
-                                                            <td className="px-4 py-4 whitespace-nowrap text-right font-medium">
+                                                            <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{assetType || '-'}</td>
+                                                            <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{sector || '-'}</td>
+                                                            <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{geo || '-'}</td>
+                                                            <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{industry || '-'}</td>
+                                                            <td className="px-4 py-3 whitespace-nowrap text-right font-medium">
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => handleEdit(symbol, data)}
@@ -597,12 +597,12 @@ export default function Settings() {
 
                             <div className="overflow-x-auto">
                                 <table className="min-w-full divide-y divide-border">
-                                    <thead className="bg-secondary">
+                                    <thead className="bg-secondary/50 font-semibold border-b border-border">
                                         <tr>
-                                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Portfolio Symbol</th>
-                                            <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Mapped To</th>
-                                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">YFinance Ticker</th>
-                                            <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
+                                            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground">Portfolio Symbol</th>
+                                            <th scope="col" className="px-6 py-3 text-center text-xs font-semibold text-muted-foreground">Mapped To</th>
+                                            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground">YFinance Ticker</th>
+                                            <th scope="col" className="px-6 py-3 text-right text-xs font-semibold text-muted-foreground">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-border">
@@ -617,10 +617,10 @@ export default function Settings() {
                                                 .sort((a, b) => a[0].localeCompare(b[0]))
                                                 .map(([from, to]: [string, string]) => (
                                                     <tr key={from} className="hover:bg-accent/5 transition-colors">
-                                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">{from}</td>
-                                                        <td className="px-6 py-4 whitespace-nowrap text-center text-muted-foreground">→</td>
-                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground font-mono bg-accent/10 px-2 rounded w-min">{to}</td>
-                                                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                        <td className="px-6 py-3 whitespace-nowrap text-sm font-medium text-foreground">{from}</td>
+                                                        <td className="px-6 py-3 whitespace-nowrap text-center text-muted-foreground">→</td>
+                                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-foreground font-mono bg-accent/10 px-2 rounded w-min">{to}</td>
+                                                        <td className="px-6 py-3 whitespace-nowrap text-right text-sm font-medium">
                                                             <button
                                                                 type="button"
                                                                 onClick={() => removeMapping(from)}

@@ -277,9 +277,9 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
             <div className="bg-card backdrop-blur-md rounded-xl shadow-sm border border-border overflow-hidden">
                 <div className="hidden md:block overflow-x-auto">
                     <table className="min-w-full divide-y divide-black/5 dark:divide-white/10">
-                        <thead className="bg-secondary">
+                        <thead className="bg-secondary/50 font-semibold border-b border-border">
                             <tr>
-                                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground w-10">
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground w-10">
                                     <input
                                         type="checkbox"
                                         checked={selectedIds.size === visibleTransactions.length && visibleTransactions.length > 0}
@@ -287,18 +287,18 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                                         className="rounded border-gray-300 text-cyan-500 focus:ring-cyan-500"
                                     />
                                 </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Date</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Type</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Symbol</th>
-                                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Qty</th>
-                                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Price/Share</th>
-                                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Total Amount</th>
-                                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Commission</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Account</th>
-                                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Split Ratio</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Note</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Currency</th>
-                                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Actions</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Date</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Type</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Symbol</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Qty</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Price/Share</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Total Amount</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Commission</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Account</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Split Ratio</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Note</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Currency</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-black/5 dark:divide-white/10">
@@ -340,16 +340,16 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                                             <StockTicker symbol={tx.Symbol} currency={tx["Local Currency"]} />
                                         </div>
                                     </td>
-                                    <td className="px-4 py-3 text-sm text-right text-muted-foreground">{tx.Quantity}</td>
-                                    <td className="px-4 py-3 text-sm text-right text-muted-foreground">{tx["Price/Share"]?.toFixed(2)}</td>
-                                    <td className="px-4 py-3 text-sm text-right font-medium text-foreground">
+                                    <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">{tx.Quantity}</td>
+                                    <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">{tx["Price/Share"]?.toFixed(2)}</td>
+                                    <td className="px-4 py-3 text-sm text-right font-medium text-foreground tabular-nums">
                                         {tx["Total Amount"] ? Math.abs(tx["Total Amount"]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
                                     </td>
-                                    <td className="px-4 py-3 text-sm text-right text-muted-foreground">
+                                    <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">
                                         {tx.Commission ? tx.Commission.toFixed(2) : '-'}
                                     </td>
                                     <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{tx.Account}</td>
-                                    <td className="px-4 py-3 text-sm text-right text-muted-foreground">{tx["Split Ratio"] ? tx["Split Ratio"] : ''}</td>
+                                    <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">{tx["Split Ratio"] ? tx["Split Ratio"] : ''}</td>
                                     <td className="px-4 py-3 text-sm text-muted-foreground truncate max-w-xs" title={tx.Note}>{tx.Note || '-'}</td>
                                     <td className="px-4 py-3 text-sm text-muted-foreground">{tx["Local Currency"]}</td>
                                     <td className="px-4 py-3 text-sm text-right text-foreground whitespace-nowrap">

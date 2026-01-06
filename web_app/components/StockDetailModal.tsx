@@ -307,24 +307,24 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
                 <div className="overflow-x-auto rounded-2xl border border-border bg-muted/20 backdrop-blur-md">
                     <table className="w-full text-sm text-left">
-                        <thead className="text-xs uppercase bg-secondary/50 text-muted-foreground">
+                        <thead className="bg-secondary/50 font-semibold border-b border-border">
                             <tr>
-                                <th className="px-6 py-4 font-semibold text-foreground sticky left-0 bg-card/80 backdrop-blur-md"></th>
-                                <th className="px-6 py-4 font-semibold text-center">Trend</th>
+                                <th className="px-6 py-3 font-semibold text-foreground sticky left-0 bg-card/80 backdrop-blur-md"></th>
+                                <th className="px-6 py-3 font-semibold text-center text-muted-foreground">Trend</th>
                                 {currentStatement.columns.map(col => (
-                                    <th key={col} className="px-6 py-4 font-semibold text-center">{new Date(col).getFullYear()}</th>
+                                    <th key={col} className="px-6 py-3 font-semibold text-center text-muted-foreground tabular-nums">{new Date(col).getFullYear()}</th>
                                 ))}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-border">
+                        <tbody className="divide-y divide-border/50">
                             {currentStatement.index.map((item, idx) => (
-                                <tr key={item} className="hover:bg-accent/10 transition-colors">
-                                    <td className="px-6 py-4 font-medium text-foreground sticky left-0 bg-card/80 backdrop-blur-md min-w-[200px]">{item}</td>
-                                    <td className="px-6 py-4 text-center min-w-[100px]">
+                                <tr key={item} className="hover:bg-accent/5 transition-colors">
+                                    <td className="px-6 py-3 font-medium text-foreground sticky left-0 bg-card/80 backdrop-blur-md min-w-[200px] border-r border-border/50 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">{item}</td>
+                                    <td className="px-6 py-3 text-center min-w-[100px]">
                                         <Sparkline data={currentStatement.data[idx] as number[]} />
                                     </td>
                                     {currentStatement.data[idx].map((val, vIdx) => (
-                                        <td key={vIdx} className="px-6 py-4 text-foreground text-right font-medium tabular-nums">
+                                        <td key={vIdx} className="px-6 py-3 text-foreground text-right font-medium tabular-nums">
                                             {formatCompact(val as number)}
                                         </td>
                                     ))}

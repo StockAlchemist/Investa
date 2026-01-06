@@ -542,7 +542,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
             {/* Desktop Table View */}
             <div className="hidden md:block overflow-x-auto">
                 <table className="min-w-full divide-y divide-black/5 dark:divide-white/5">
-                    <thead className="bg-secondary">
+                    <thead className="bg-secondary/50 font-semibold border-b border-border">
                         <tr>
                             {visibleColumns.map(header => (
                                 <th
@@ -552,20 +552,20 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                     onDragStart={(e) => handleDragStart(e, header)}
                                     onDragOver={handleDragOver}
                                     onDrop={(e) => handleDrop(e, header)}
-                                    className={`px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:bg-accent/10 transition-colors select-none whitespace-nowrap ${draggedColumn === header ? 'opacity-50 bg-secondary' : ''}`}
+                                    className={`px-6 py-3 text-right text-xs font-semibold text-muted-foreground transition-colors select-none whitespace-nowrap group hover:bg-accent/10 cursor-pointer ${draggedColumn === header ? 'opacity-50 bg-secondary' : ''}`}
                                     onClick={() => handleSort(header)}
                                 >
                                     <div className="flex items-center justify-end gap-1">
                                         {header}
                                         {sortConfig.key === header && (
-                                            <span>{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                                            <span className="text-cyan-500">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
                                         )}
                                     </div>
                                 </th>
                             ))}
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-black/5 dark:divide-white/5">
+                    <tbody className="divide-y divide-border/50">
                         {isLoading ? (
                             Array.from({ length: 5 }).map((_, i) => (
                                 <tr key={`skeleton-${i}`}>
@@ -581,8 +581,11 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                 <tr className="hover:bg-accent/5 transition-colors">
                                     {visibleColumns.map(header => {
                                         const val = getValue(holding, header);
+                                        // Use tabular-nums for numeric columns to ensure digit alignment
+                                        const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
+
                                         return (
-                                            <td key={header} className={`px-6 py-4 whitespace-nowrap text-sm text-right ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')}`}>
+                                            <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm text-right ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')}`}>
                                                 {header === '7d Trend' ? (
                                                     <div className="h-8 w-24 ml-auto">
                                                         {val && Array.isArray(val) && val.length > 1 ? (
@@ -622,7 +625,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                         </button>
                                                         <button
                                                             onClick={() => openStockDetail(val as string, currency)}
-                                                            className="font-medium text-foreground hover:text-cyan-500 transition-colors cursor-pointer"
+                                                            className="font-semibold text-foreground hover:text-cyan-500 transition-colors cursor-pointer"
                                                         >
                                                             {formatValue(val, header)}
                                                         </button>
@@ -640,8 +643,11 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                             {visibleColumns.map(header => {
                                                 const holdingPrice = getValue(holding, "Price") as number;
                                                 const val = getLotValue(lot, header, holdingPrice);
+                                                const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
+
                                                 return (
-                                                    <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-t border-white/5 ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic' : 'text-muted-foreground')}`}>
+                                                    <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-t border-dashed border-border/40 ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')}`}>
+                                                        {header === 'Symbol' && <span className="text-[10px] opacity-50">↳</span>}
                                                         {formatValue(val, header)}
                                                     </td>
                                                 );

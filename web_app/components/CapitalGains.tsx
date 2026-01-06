@@ -206,7 +206,7 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                 {/* Desktop Table View */}
                 <div className="hidden md:block overflow-x-auto">
                     <table className="min-w-full divide-y divide-black/5 dark:divide-white/10">
-                        <thead className="bg-secondary">
+                        <thead className="bg-secondary/50 font-semibold border-b border-border">
                             <tr>
                                 {['Date', 'Symbol', 'Account', 'Type', 'Quantity', 'Proceeds', 'Cost Basis', 'Realized Gain'].map((header) => (
                                     <th
@@ -217,33 +217,33 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                                                     header === 'Cost Basis' ? 'Total Cost Basis (Display)' :
                                                         header as keyof CapitalGain
                                         )}
-                                        className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:bg-accent/10 transition-colors"
+                                        className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground cursor-pointer hover:bg-accent/10 transition-colors"
                                     >
                                         {header}
                                     </th>
                                 ))}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-black/5 dark:divide-white/10">
+                        <tbody className="divide-y divide-border/50">
                             {visibleData.map((item, index) => (
                                 <tr key={index} className="hover:bg-accent/5 transition-colors">
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">{item.Date}</td>
+                                    <td className="px-6 py-3 whitespace-nowrap text-sm text-foreground">{item.Date}</td>
                                     <td
-                                        className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
+                                        className="px-6 py-3 whitespace-nowrap text-sm font-medium text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
                                         onClick={() => setSelectedSymbol(item.Symbol)}
                                     >
                                         {item.Symbol}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{item.Account}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{item.Type}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">{item.Quantity}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-muted-foreground">
+                                    <td className="px-6 py-3 whitespace-nowrap text-sm text-muted-foreground">{item.Account}</td>
+                                    <td className="px-6 py-3 whitespace-nowrap text-sm text-muted-foreground">{item.Type}</td>
+                                    <td className="px-6 py-3 whitespace-nowrap text-sm text-muted-foreground tabular-nums">{item.Quantity}</td>
+                                    <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-muted-foreground tabular-nums">
                                         {formatCurrency(item["Total Proceeds (Display)"] || 0, currency)}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-muted-foreground">
+                                    <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-muted-foreground tabular-nums">
                                         {formatCurrency(item["Total Cost Basis (Display)"] || 0, currency)}
                                     </td>
-                                    <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-medium ${(item['Realized Gain (Display)'] || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                                    <td className={`px-6 py-3 whitespace-nowrap text-sm text-right font-medium tabular-nums ${(item['Realized Gain (Display)'] || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
                                         }`}>
                                         {formatCurrency(item['Realized Gain (Display)'] || 0, currency)}
                                     </td>

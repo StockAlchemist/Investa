@@ -113,19 +113,19 @@ export default function Watchlist({ currency }: WatchlistProps) {
                     </form>
 
                     <div className="overflow-x-auto rounded-lg border border-border">
-                        <table className="min-w-full divide-y divide-border">
-                            <thead className="bg-secondary/50">
+                        <table className="min-w-full divide-y divide-border/50">
+                            <thead className="bg-secondary/50 font-semibold border-b border-border">
                                 <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Symbol</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Name</th>
-                                    <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Price</th>
-                                    <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Day Change</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">7D Trend</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Note</th>
-                                    <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Actions</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Symbol</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Name</th>
+                                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Price</th>
+                                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Day Change</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">7D Trend</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Note</th>
+                                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-border bg-transparent">
+                            <tbody className="divide-y divide-border/50 bg-transparent">
                                 {watchlist?.length === 0 ? (
                                     <tr>
                                         <td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
@@ -134,22 +134,22 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                     </tr>
                                 ) : (
                                     watchlist?.map((item) => (
-                                        <tr key={item.Symbol} className="hover:bg-accent/10 transition-colors">
-                                            <td className="px-4 py-4 whitespace-nowrap text-sm">
+                                        <tr key={item.Symbol} className="hover:bg-accent/5 transition-colors">
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm">
                                                 <StockTicker symbol={item.Symbol} currency={currency} />
                                             </td>
-                                            <td className="px-4 py-4 whitespace-nowrap text-foreground text-sm max-w-[200px] truncate">{item.Name || '-'}</td>
-                                            <td className="px-4 py-4 whitespace-nowrap text-right font-mono font-medium text-sm text-foreground">
+                                            <td className="px-4 py-3 whitespace-nowrap text-foreground text-sm max-w-[200px] truncate">{item.Name || '-'}</td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-right font-mono font-medium text-sm text-foreground tabular-nums">
                                                 {item.Price ? formatCurrency(item.Price, item.Currency || 'USD') : '-'}
                                             </td>
-                                            <td className="px-4 py-4 whitespace-nowrap text-right text-sm">
-                                                <div className={`flex items-center justify-end font-mono ${(item["Day Change"] || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                                            <td className="px-4 py-3 whitespace-nowrap text-right text-sm">
+                                                <div className={`flex items-center justify-end font-mono tabular-nums ${(item["Day Change"] || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
                                                     }`}>
                                                     {(item["Day Change"] || 0) >= 0 ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
                                                     {item["Day Change %"] ? formatPercent(item["Day Change %"] / 100) : '-'}
                                                 </div>
                                             </td>
-                                            <td className="px-4 py-4 whitespace-nowrap w-28">
+                                            <td className="px-4 py-3 whitespace-nowrap w-28">
                                                 <div className="h-8 w-24">
                                                     {item.Sparkline && item.Sparkline.length > 1 ? (
                                                         <ResponsiveContainer width="100%" height="100%">
@@ -170,10 +170,10 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                     )}
                                                 </div>
                                             </td>
-                                            <td className="px-4 py-4 whitespace-nowrap text-muted-foreground italic text-xs max-w-[150px] truncate">
+                                            <td className="px-4 py-3 whitespace-nowrap text-muted-foreground italic text-xs max-w-[150px] truncate">
                                                 {item.Note}
                                             </td>
-                                            <td className="px-4 py-4 whitespace-nowrap text-right">
+                                            <td className="px-4 py-3 whitespace-nowrap text-right">
                                                 <Button
                                                     variant="ghost"
                                                     size="icon"
