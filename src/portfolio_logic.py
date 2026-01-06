@@ -5489,10 +5489,6 @@ def calculate_historical_performance(
     # Dict[str, Any] # current_valuation_ratios - Ratios are not calculated here
 ]:
     CURRENT_HIST_VERSION = "v1.9.10_REVERT_FILTER"  # Bump version due to changes (e.g. Numba, cache key)
-    # DIAGNOSTIC
-    with open("/Users/kmatan/Library/CloudStorage/OneDrive-MahidolUniversity/finance/Stocks/apps/python/Investa/src/debug_summary.log", "a") as f:
-        f.write(f"\n--- calculate_historical_performance START ---\n")
-        f.write(f"Interval: {interval}, Benchmarks: {benchmark_symbols_yf}\n")
     start_time_hist = time.time()
     has_errors = False
     has_warnings = False
