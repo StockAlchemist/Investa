@@ -254,10 +254,16 @@ Once your data is loaded (from the database) and refreshed, the main dashboard c
   * `Update Accounts`: A quicker refresh if you've only changed the account filter.
   * A dedicated section for graph controls with date range selectors, a benchmark selection button, and an "Update Graphs" button. A "Presets..." dropdown menu is available to quickly set common time ranges (`1W`, `MTD`, `YTD`, `1Y`, `All`, etc.).
   * `Update Graphs`: A quicker refresh if you've only changed graph parameters (like date ranges or benchmarks).
+  
+* **Top Contributors:**
+    A widget displaying the top 5 positive and negative contributors to your portfolio's performance, along with their sector and contribution percentage.
+
 
 * **Holdings Table (Main Area):**
     This is the heart of the dashboard, listing all your individual assets (stocks, ETFs, `$CASH`) within the currently selected accounts.
-  * **Columns:** Displays comprehensive information for each holding, such as Symbol, Quantity, Current Price, Market Value, Cost Basis, Unrealized Gain/Loss (value and %), Realized Gain/Loss, Dividends, Fees, Return %, TWR %, and more.
+  * **Columns:** Displays comprehensive information for each holding, such as Symbol, Quantity, Current Price, Market Value, Cost Basis, Unrealized Gain/Loss (value and %), Realized Gain/Loss, Dividends, Fees, Return %, TWR %, **Contribution %**, and **Tags**.
+  * **Contribution %:** Shows how much this holding contributed to the total portfolio return.
+  * **Tags (Custom Groups):** View and edit custom tags for your holdings by clicking the pen icon next to the tag column. Useful for grouping assets (e.g., "Core", "Speculative").
   * **Sorting:** Click any column header to sort the table by that column. Click again to reverse the sort order.
   * **Customize Columns:** Right-click on any column header to open a context menu that allows you to show or hide specific columns, tailoring the table to your preferences.
   * **Live Filtering:**
@@ -427,6 +433,7 @@ The **"Capital Gains"** tab provides a focused view of the profits or losses you
         * `Quarterly`: Shows total realized gains/losses per quarter.
         This selection drives the bar chart and the summary table below it.
     * **Periods to Show:** This spinbox lets you define how many of the chosen aggregation periods (e.g., the last 10 years, the last 8 quarters) are displayed in the chart and summary table.
+    * **Interactive Filtering:** Click on any bar in the chart to filter the summary table and detailed transaction list below to show only data for that specific period (e.g., click the "2023" bar to see only 2023 gains). Click the selected bar again to clear the filter.
     * *(Note: Changes to these controls will automatically update the chart and summary table.)*
 
 4. **Capital Gains Bar Chart:**
@@ -554,6 +561,11 @@ Investa packs several additional features and settings to enhance your portfolio
 * **Data Caching & Clearing Cache:**
   * Investa automatically caches market data (prices, FX rates, fundamental info) to speed up loading times and reduce API calls to Yahoo Finance. Cache settings (like duration) are generally managed in `config.py`.
   * If you suspect your cached data is stale or corrupted, you can clear it via **Settings > Clear Cache Files...**. This will delete the cached market data, and Investa will fetch fresh data on the next "Refresh All".
+
+* **Custom Groups (Tags):**
+  * You can now organize your holdings beyond standard sectors by using **Tags**.
+  * **How to use:** In the **Holdings Table**, look for the **Tags** column. Click the **Edit (Pen)** icon next to any holding to add or edit tags (e.g., "Core", "Speculative", "Income").
+  * Multiple tags can be separated by commas. These are saved to your database and can be used for custom sorting or grouping in future updates.
 
 * **Configuration Persistence (`gui_config.json` & `manual_overrides.json`):**
   * **`gui_config.json`:** Stores your UI preferences and operational settings. This includes:
