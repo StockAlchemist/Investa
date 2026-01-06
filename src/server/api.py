@@ -50,6 +50,9 @@ project_root = os.path.dirname(src_dir)
 
 # ... (existing code)
 
+# Global Cache for Portfolio Summary Calculations to avoid redundant processing per-request
+_PORTFOLIO_SUMMARY_CACHE = {}
+
 @router.get("/asset_change")
 async def get_asset_change(
     currency: str = "USD",
@@ -75,7 +78,8 @@ async def get_asset_change(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
-        original_csv_path
+        original_csv_path,
+        _ # Ignore db_mtime
     ) = data
 
     if df.empty:
@@ -185,11 +189,29 @@ async def _calculate_portfolio_summary_internal(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
-        _
+        db_path,
+        db_mtime
     ) = data
 
     if df.empty:
         return {"metrics": {}, "rows": []}
+
+    # --- Caching Logic ---
+    # Create a unique key for this request configuration + data state
+    accounts_key = tuple(sorted(include_accounts)) if include_accounts else "ALL"
+    cache_key = (
+        currency,
+        accounts_key,
+        show_closed_positions,
+        db_path,
+        db_mtime
+    )
+    
+    if cache_key in _PORTFOLIO_SUMMARY_CACHE:
+        logging.info(f"Using cached portfolio summary for key: {cache_key[:3]}...") # Partial log for brevity
+        return _PORTFOLIO_SUMMARY_CACHE[cache_key]
+        
+    logging.info(f"Calculating portfolio summary (Cache Miss) for key: {cache_key[:3]}...")
 
     mdp = MarketDataProvider()
     (
@@ -217,12 +239,25 @@ async def _calculate_portfolio_summary_internal(
         market_provider=mdp
     )
 
-    return {
+    result = {
         "metrics": overall_summary_metrics,
         "summary_df": summary_df,
         "holdings_dict": holdings_dict,
         "account_metrics": account_level_metrics
     }
+    
+    # Store in cache
+    _PORTFOLIO_SUMMARY_CACHE[cache_key] = result
+    
+    # Optional: Simple cache eviction policy (e.g. keep only last 20 entries to prevent overflow)
+    if len(_PORTFOLIO_SUMMARY_CACHE) > 20:
+        # Remove random or oldest item (simplest is popitem which removes LIFO in < 3.7 but FIFO in 3.7+)
+        # For a dict, popitem(last=False) is not available. standard dict preserves insertion order.
+        # So we can just remove the first key.
+        first_key = next(iter(_PORTFOLIO_SUMMARY_CACHE))
+        del _PORTFOLIO_SUMMARY_CACHE[first_key]
+
+    return result
 
 @router.get("/summary")
 async def get_portfolio_summary(
@@ -247,7 +282,8 @@ async def get_portfolio_summary(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
-        original_csv_path
+        original_csv_path,
+        _
     ) = data
     
     if df.empty:
@@ -361,6 +397,7 @@ async def get_correlation_matrix(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
+        _,
         _
     ) = data
 
@@ -532,7 +569,8 @@ async def get_holdings(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
-        original_csv_path
+        original_csv_path,
+        _
     ) = data
     
     if df.empty:
@@ -610,7 +648,7 @@ async def get_transactions(
     Returns:
         List[Dict]: A list of transaction records.
     """
-    df, _, _, _, _, _ = data
+    df, _, _, _, _, _, _ = data
     
     if df.empty:
         return []
@@ -674,7 +712,7 @@ async def create_transaction(
         Dict: Status message and the new transaction ID.
     """
     try:
-        _, _, _, _, _, db_path = data
+        _, _, _, _, _, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
             raise HTTPException(status_code=500, detail="Database connection failed")
@@ -725,7 +763,7 @@ async def update_transaction(
         Dict: Status message.
     """
     try:
-        _, _, _, _, _, db_path = data
+        _, _, _, _, _, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
              raise HTTPException(status_code=500, detail="Database connection failed")
@@ -773,7 +811,7 @@ async def delete_transaction(
         Dict: Status message.
     """
     try:
-        _, _, _, _, _, db_path = data
+        _, _, _, _, _, db_path, _ = data
         conn = get_db_connection(db_path)
         if not conn:
              raise HTTPException(status_code=500, detail="Database connection failed")
@@ -807,7 +845,8 @@ def _calculate_historical_performance_internal(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
-        original_csv_path
+        original_csv_path,
+        _
     ) = data
 
     if df.empty:
@@ -1040,7 +1079,8 @@ async def get_capital_gains(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
-        original_csv_path
+        original_csv_path,
+        _
     ) = data
 
     if df.empty:
@@ -1122,7 +1162,8 @@ async def get_dividends(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
-        original_csv_path
+        original_csv_path,
+        _
     ) = data
 
     if df.empty:
@@ -1213,7 +1254,7 @@ async def get_projected_income(
             return []
 
         # 3. Map to YF Symbols and Fetch Fundamentals
-        df, _, user_symbol_map, user_excluded_symbols, _, _ = data
+        df, _, user_symbol_map, user_excluded_symbols, _, _, _ = data
         from finutils import is_cash_symbol
         from market_data import MarketDataProvider, map_to_yf_symbol
         
@@ -1333,6 +1374,7 @@ async def get_settings(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
+        _,
         _
     ) = data
 
@@ -1456,7 +1498,7 @@ async def get_risk_metrics(
     """
     Returns portfolio risk metrics (Sharpe, Volatility, Max Drawdown).
     """
-    df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, _ = data
+    df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, _, _ = data
     if df.empty:
         return {}
 
@@ -1499,7 +1541,7 @@ async def get_attribution(
     """
     Returns performance attribution by sector and stock.
     """
-    df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, _ = data
+    df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, _, _ = data
     if df.empty:
         return {}
 
@@ -1603,7 +1645,7 @@ async def get_dividend_calendar(
     """
     Returns upcoming dividend events for the portfolio.
     """
-    df, _, user_symbol_map, user_excluded_symbols, _, _ = data
+    df, _, user_symbol_map, user_excluded_symbols, _, _, _ = data
     if df.empty:
         return []
 
@@ -1694,7 +1736,7 @@ async def get_fundamentals_endpoint(
     data: tuple = Depends(get_transaction_data)
 ):
     """Returns fundamental data (ticker.info) for a symbol."""
-    (_, _, user_symbol_map, user_excluded_symbols, _, _) = data
+    (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
     yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
     if not yf_symbol:
         if symbol.upper() in user_excluded_symbols:
@@ -1718,7 +1760,7 @@ async def get_financials_endpoint(
     data: tuple = Depends(get_transaction_data)
 ):
     """Returns historical financial statements for a symbol."""
-    (_, _, user_symbol_map, user_excluded_symbols, _, _) = data
+    (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
     yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
     if not yf_symbol:
         if symbol.upper() in user_excluded_symbols:
@@ -1771,7 +1813,7 @@ async def get_ratios_endpoint(
     if not FINANCIAL_RATIOS_AVAILABLE:
         raise HTTPException(status_code=501, detail="Financial ratios module not available.")
 
-    (_, _, user_symbol_map, user_excluded_symbols, _, _) = data
+    (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
     yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
     if not yf_symbol:
         if symbol.upper() in user_excluded_symbols:
@@ -2028,6 +2070,7 @@ async def get_watchlist_endpoint(
         user_symbol_map,
         user_excluded_symbols,
         account_currency_map,
+        _,
         _
     ) = data
 

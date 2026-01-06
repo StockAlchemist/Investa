@@ -1,28 +1,28 @@
 {
     "manual_price_overrides": {
         "ES-GQG": {
-            "price": 22.8253,
+            "price": 22.7966,
             "asset_type": "MUTUALFUND",
             "sector": "Exchange-Traded Fund",
             "geography": "United States",
             "industry": "Broad Market - US"
         },
         "SCBCHA-SSF": {
-            "price": 9.5193,
+            "price": 9.6922,
             "asset_type": "ETF",
             "sector": "Exchange-Traded Fund",
             "geography": "China",
             "industry": "Broad Market - Emerging Markets"
         },
         "SCBRCTECH": {
-            "price": 6.264,
+            "price": 6.3042,
             "asset_type": "ETF",
             "sector": "Exchange-Traded Fund",
             "geography": "China",
             "industry": "Broad Market - Emerging Markets"
         },
         "SCBRMS&P500": {
-            "price": 20.8542,
+            "price": 20.896,
             "asset_type": "ETF",
             "sector": "Exchange-Traded Fund",
             "geography": "United States",
@@ -48,6 +48,13 @@
             "sector": "Exchange-Traded Fund",
             "geography": "United States",
             "industry": "Broad Market - US"
+        },
+        "SCBRM1": {
+            "price": 15.2889,
+            "asset_type": "MUTUALFUND",
+            "sector": "Other",
+            "geography": "Thailand",
+            "industry": "Other"
         }
     },
     "user_symbol_map": {

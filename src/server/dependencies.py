@@ -31,7 +31,7 @@ _DB_MTIME: float = 0.0
 _OVERRIDES_PATH: Optional[str] = None
 _OVERRIDES_MTIME: float = 0.0
 
-def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str], Set[str], Dict[str, str], str]:
+def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str], Set[str], Dict[str, str], str, float]:
     """
     Loads transaction data from the database.
     Checks for file modification to auto-reload.
@@ -213,10 +213,10 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
             logging.info(f"Loaded {len(df)} transactions.")
         except Exception as e:
             logging.error(f"Error loading transactions: {e}", exc_info=True)
-            return pd.DataFrame(), {}, {}, set(), {}, ""
+            return pd.DataFrame(), {}, {}, set(), {}, "", 0.0
 
     # Return cached data
-    return _TRANSACTIONS_CACHE, _MANUAL_OVERRIDES, _USER_SYMBOL_MAP, _USER_EXCLUDED_SYMBOLS, _ACCOUNT_CURRENCY_MAP, _DB_PATH
+    return _TRANSACTIONS_CACHE, _MANUAL_OVERRIDES, _USER_SYMBOL_MAP, _USER_EXCLUDED_SYMBOLS, _ACCOUNT_CURRENCY_MAP, _DB_PATH, _DB_MTIME
 
 def reload_data():
     """Forces a reload of the transaction data."""
@@ -245,4 +245,4 @@ def reload_config():
     # This is a placeholder if we need to reload global vars derived from config
     # Currently get_transaction_data handles its own reloading of config files on each call if needed/logic allows
     # But for immediate effect of overrides, we might need to clear _TRANSACTIONS_CACHE
-    reload_data() 
+    reload_data()
