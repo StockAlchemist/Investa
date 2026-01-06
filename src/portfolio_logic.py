@@ -5253,7 +5253,7 @@ def _calculate_accumulated_gains_and_resample(
                 bench_prices_no_na = results_df[price_col].dropna()
                 if not bench_prices_no_na.empty:
                     bench_daily_returns = (
-                        bench_prices_no_na.pct_change()
+                        bench_prices_no_na.pct_change(fill_method=None)
                         .reindex(results_df.index)
                         .ffill()
                         .fillna(0.0)
@@ -5322,7 +5322,7 @@ def _calculate_accumulated_gains_and_resample(
                     "value" in final_df_resampled.columns
                     and not final_df_resampled["value"].dropna().empty
                 ):
-                    resampled_returns = final_df_resampled["value"].pct_change()
+                    resampled_returns = final_df_resampled["value"].pct_change(fill_method=None)
                     resampled_gain_factors = 1 + resampled_returns.fillna(0.0)
                     final_df_resampled["Portfolio Accumulated Gain"] = (
                         resampled_gain_factors.cumprod()
@@ -5348,7 +5348,7 @@ def _calculate_accumulated_gains_and_resample(
                     ):
                         resampled_bench_returns = final_df_resampled[
                             price_col
-                        ].pct_change()
+                        ].pct_change(fill_method=None)
                         resampled_bench_gain_factors = (
                             1 + resampled_bench_returns.fillna(0.0)
                         )
@@ -5963,7 +5963,7 @@ def calculate_historical_performance(
                     # FIX: Calculate returns on the dense (ffilled) prices
                     # but only after ensuring we have a valid start.
                     # filling first NaN with 0 ensures cumprod starts at 1.0.
-                    bench_returns = daily_df[price_col_iter].pct_change().fillna(0.0)
+                    bench_returns = daily_df[price_col_iter].pct_change(fill_method=None).fillna(0.0)
                     daily_df[accum_col_final_iter] = (1 + bench_returns).cumprod()
                     
                     logging.info(f"Benchmark {bm_symbol_yf_iter} Normalized: first_accum={daily_df[accum_col_final_iter].iloc[0]}, last_accum={daily_df[accum_col_final_iter].iloc[-1]}")
