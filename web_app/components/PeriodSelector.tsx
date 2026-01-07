@@ -16,6 +16,7 @@ const PERIODS = [
     { label: '3Y', value: '3y' },
     { label: '5Y', value: '5y' },
     { label: 'All', value: 'all' },
+    { label: 'Custom', value: 'custom' },
 ];
 
 export default function PeriodSelector({ selectedPeriod, onPeriodChange }: PeriodSelectorProps) {

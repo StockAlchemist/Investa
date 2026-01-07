@@ -179,7 +179,9 @@ export async function fetchHistory(
     accounts?: string[],
     period: string = '1y',
     benchmarks?: string[],
-    interval: string = '1d'
+    interval: string = '1d',
+    fromDate?: string,
+    toDate?: string
 ): Promise<PerformanceData[]> {
     const params = new URLSearchParams({ currency, period, interval });
     if (accounts) {
@@ -188,6 +190,8 @@ export async function fetchHistory(
     if (benchmarks) {
         benchmarks.forEach(b => params.append('benchmarks', b));
     }
+    if (fromDate) params.append('from', fromDate);
+    if (toDate) params.append('to', toDate);
     const res = await fetch(`${API_BASE_URL}/history?${params.toString()}`);
     if (!res.ok) throw new Error('Failed to fetch history');
     return res.json();

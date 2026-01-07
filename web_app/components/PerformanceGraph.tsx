@@ -52,6 +52,15 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
     const [data, setData] = useState<PerformanceData[]>([]);
     const [loading, setLoading] = useState(false);
 
+    const [customFromDate, setCustomFromDate] = useState(() => {
+        const d = new Date();
+        d.setFullYear(d.getFullYear() - 1);
+        return d.toISOString().split('T')[0];
+    });
+    const [customToDate, setCustomToDate] = useState(() => {
+        return new Date().toISOString().split('T')[0];
+    });
+
     // Fetch data when period or benchmarks change
     // Fetch data logic
     const fetchData = React.useCallback(async (isBackground = false) => {
@@ -67,14 +76,17 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                 interval = '60m'; // 1h * 30 days = ~200 points
             }
 
-            const newData = await fetchHistory(currency, accounts, period, benchmarks, interval);
+            const from = period === 'custom' ? customFromDate : undefined;
+            const to = period === 'custom' ? customToDate : undefined;
+
+            const newData = await fetchHistory(currency, accounts, period, benchmarks, interval, from, to);
             setData(newData);
         } catch (error) {
             console.error("Failed to fetch history:", error);
         } finally {
             if (!isBackground) setLoading(false);
         }
-    }, [currency, accounts, period, benchmarks]);
+    }, [currency, accounts, period, benchmarks, customFromDate, customToDate]);
 
     // Initial load and params change
     useEffect(() => {
@@ -167,9 +179,13 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
             // Hourly for 1 month. Date + maybe Hour? Too crowded.
             // Just Date is probably fine, or Day.
             return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-        } else if (['3y', '5y', 'all'].includes(period)) {
-            // Long periods: Show Month + Year (e.g., Jan 2023)
-            return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+        } else if (['3y', '5y', 'all', 'custom'].includes(period)) {
+            // Long periods or custom range: Show Month + Year if range is large
+            const showYear = period !== 'custom' || (new Date(customToDate).getTime() - new Date(customFromDate).getTime() > 1000 * 60 * 60 * 24 * 365);
+            if (showYear) {
+                return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+            }
+            return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
         }
         return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     };
@@ -340,8 +356,32 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                 </div>
 
                 <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-                    <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto no-scrollbar pb-1">
-                        <PeriodSelector selectedPeriod={period} onPeriodChange={setPeriod} />
+                    <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto no-scrollbar pb-1">
+                            <PeriodSelector selectedPeriod={period} onPeriodChange={setPeriod} />
+                        </div>
+                        {period === 'custom' && (
+                            <div className="flex items-center gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                                <div className="flex items-center gap-1.5 bg-secondary rounded-lg px-2.5 py-1 border border-border">
+                                    <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">From</span>
+                                    <input
+                                        type="date"
+                                        value={customFromDate}
+                                        onChange={(e) => setCustomFromDate(e.target.value)}
+                                        className="bg-transparent border-none text-xs sm:text-sm font-medium focus:ring-0 p-0 w-[110px] sm:w-auto"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-1.5 bg-secondary rounded-lg px-2.5 py-1 border border-border">
+                                    <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">To</span>
+                                    <input
+                                        type="date"
+                                        value={customToDate}
+                                        onChange={(e) => setCustomToDate(e.target.value)}
+                                        className="bg-transparent border-none text-xs sm:text-sm font-medium focus:ring-0 p-0 w-[110px] sm:w-auto"
+                                    />
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto pb-1">

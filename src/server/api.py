@@ -946,7 +946,9 @@ def _calculate_historical_performance_internal(
     benchmarks: List[str],
     data: tuple,
     return_df: bool = False,
-    interval: str = "1d"
+    interval: str = "1d",
+    from_date_str: Optional[str] = None,
+    to_date_str: Optional[str] = None
 ):
     (
         df,
@@ -962,8 +964,23 @@ def _calculate_historical_performance_internal(
         return pd.DataFrame() if return_df else []
 
     # Determine date range
-    end_date = date.today()
-    if period == "1d":
+    from_date_custom = None
+    to_date_custom = None
+    if from_date_str:
+        try:
+            from_date_custom = datetime.strptime(from_date_str, "%Y-%m-%d").date()
+        except Exception:
+            logging.warning(f"Invalid from_date_str: {from_date_str}")
+    if to_date_str:
+        try:
+            to_date_custom = datetime.strptime(to_date_str, "%Y-%m-%d").date()
+        except Exception:
+            logging.warning(f"Invalid to_date_str: {to_date_str}")
+
+    end_date = to_date_custom if to_date_custom else date.today()
+    if period == "custom" and from_date_custom:
+        start_date = from_date_custom
+    elif period == "1d":
         # Handle weekends/Mondays to ensure we get some data (last trading day)
         # If Sat(5) or Sun(6), go back to Friday.
         # If Mon(0), go back to Friday to ensure we have context if market just opened.
@@ -1138,11 +1155,14 @@ def get_history(
     period: str = "1y",
     benchmarks: Optional[List[str]] = Query(None),
     interval: str = "1d",
+    from_date: Optional[str] = Query(None, alias="from"),
+    to_date: Optional[str] = Query(None, alias="to"),
     data: tuple = Depends(get_transaction_data)
 ):
     """
     Returns historical portfolio performance (Value and TWR) and benchmarks.
     """
+    logging.info(f"get_history: period={period}, from={from_date}, to={to_date}")
     try:
         mapped_benchmarks = []
         if benchmarks:
@@ -1159,7 +1179,9 @@ def get_history(
             benchmarks=mapped_benchmarks,
             data=data,
             return_df=False,
-            interval=interval
+            interval=interval,
+            from_date_str=from_date,
+            to_date_str=to_date
         )
     except Exception as e:
         logging.error(f"Error getting history: {e}", exc_info=True)
