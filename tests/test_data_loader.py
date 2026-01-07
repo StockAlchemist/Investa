@@ -82,6 +82,7 @@ def test_load_clean_basic_success(tmp_path):
         "Local Currency",
         "original_index",
         "To Account",
+        "Tags",
     }  # original_index is added after mapping
     assert (
         set(df.columns) == expected_cols

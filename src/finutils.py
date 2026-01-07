@@ -814,6 +814,9 @@ def get_historical_price(
                          before it). Returns None if the symbol is not found, the date is before
                          the first available price point, or an error occurs during lookup.
     """
+    if target_date is None or not isinstance(target_date, (date, datetime, pd.Timestamp)):
+        return None
+    
     if symbol_key not in prices_dict or prices_dict[symbol_key].empty:
         # logging.debug(f"get_historical_price: {symbol_key} missing or empty.")
         return None
@@ -834,7 +837,7 @@ def get_historical_price(
              # Force target_date to Timestamp for more reliable awareness checks in pandas
              target_ts = pd.Timestamp(target_date)
              
-             # Align awareness BEFORE calling asof to avoid TypeError in certain pandas versions
+             # Align awareness and type BEFORE calling asof
              if isinstance(df.index, pd.DatetimeIndex):
                  idx_tz = df.index.tz
                  target_tz = target_ts.tz
@@ -845,7 +848,11 @@ def get_historical_price(
                      target_ts = target_ts.tz_localize(None)
                  elif idx_tz is not None and target_tz is not None:
                      target_ts = target_ts.tz_convert(idx_tz)
-                     
+             elif len(df.index) > 0 and isinstance(df.index[0], date) and not isinstance(df.index[0], datetime):
+                 # index is likely date objects, asof(Timestamp) might fail.
+                 # Convert target_ts back to date for lookup if index is date objects.
+                 target_ts = target_ts.date()
+                      
              res = df.asof(target_ts)
             
              if symbol_key == "AMZN":

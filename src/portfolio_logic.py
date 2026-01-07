@@ -4139,7 +4139,25 @@ def _value_daily_holdings_vectorized(
         # P_full = (D, S, A)
         P_full = np.broadcast_to(P_3d, daily_holdings_qty_np.shape).copy()
         mask_nan = np.isnan(P_full)
+        
+        # --- NEW: Identify and Log symbols that are missing market data ---
+        if mask_nan.any():
+            nan_indices = np.where(mask_nan)
+            # Just log once per symbol if it has significant gaps
+            unique_nan_sym_ids = np.unique(nan_indices[1])
+            for s_id in unique_nan_sym_ids:
+                sym_name = id_to_symbol.get(s_id, "Unknown")
+                if sym_name != CASH_SYMBOL_CSV:
+                    logging.debug(f"Valuation: Symbol '{sym_name}' missing market data. Using fallback.")
+        
         P_full[mask_nan] = daily_last_prices_np[mask_nan]
+        
+        # --- NEW: Final fallback for symbols with NO market data and NO transaction price ---
+        # (Though buy transactions should always have a price)
+        # If still NaN, we might have a transfer or split with missing price.
+        # Use 1.0 as a catastrophic fallback to avoid total value NaN if possible, 
+        # but only if quantity > 0. Actually, better to let it be NaN and ffill later.
+        
         V_stocks = daily_holdings_qty_np * P_full * daily_fx_aligned[:, np.newaxis, :]
     else:
         V_stocks = daily_holdings_qty_np * P_3d * daily_fx_aligned[:, np.newaxis, :]
@@ -4171,13 +4189,17 @@ def _value_daily_holdings_vectorized(
     # 6. Total
     total_value = total_stock_value + total_cash_value
     
-    if np.isnan(total_value).any():
-        # Clean up NaNs to allow plotting/display (treat as 0.0 value or gap)
-        # We don't want to fail the whole calculation due to some missing data.
-        status_msg += " (partial data missing)"
-        total_value = np.nan_to_num(total_value, nan=0.0)
-        # bas_errors = False  <-- Don't set to True, allow partial success
     daily_value_series = pd.Series(total_value, index=date_range)
+    
+    # --- FIX: Avoid zeroing out portfolio value due to missing data ---
+    # Instead of nan_to_num(nan=0.0), use forward-fill to maintain TWR integrity.
+    if daily_value_series.isna().any():
+        status_msg += " (partial data missing, f-filled)"
+        # Identify which dates are missing
+        missing_dates = daily_value_series.index[daily_value_series.isna()]
+        logging.warning(f"Valuation: Missing data for {len(missing_dates)} days. Using forward-fill.")
+        daily_value_series = daily_value_series.ffill().fillna(0.0) # fillna(0) only for very beginning
+    
     return daily_value_series, has_errors, status_msg
 
 def _load_or_calculate_daily_results(
@@ -5313,6 +5335,18 @@ def _calculate_accumulated_gains_and_resample(
                 results_df[accum_col_daily] = np.nan
         status_update += " Daily accum gain calc complete."
 
+        # --- NEW: Calculate Absolute Gain / ROI on Daily Basis ---
+        # This provides a money-weighted perspective for all views.
+        if "value" in results_df.columns and "net_flow" in results_df.columns:
+            results_df["Cumulative Net Flow"] = results_df["net_flow"].fillna(0.0).cumsum()
+            results_df["Absolute Gain ($)"] = (
+                results_df["value"] - results_df["Cumulative Net Flow"]
+            )
+            denom_roi = results_df["Cumulative Net Flow"].replace(0, np.nan)
+            results_df["Absolute ROI (%)"] = (
+                (results_df["Absolute Gain ($)"] / denom_roi.abs()) * 100.0
+            )
+
         if interval == "D":
             final_df_resampled = results_df
             final_df_resampled.rename(
@@ -5342,11 +5376,24 @@ def _calculate_accumulated_gains_and_resample(
                 if interval == "M":
                     resample_freq = "ME"  # Use Month End for 'M' interval
                 # --- END FIX ---
-                resampling_agg = {"value": "last", "daily_gain": "sum"}
+
+                # --- MODIFIED: Include absolute investment tracking ---
+                resampling_agg = {
+                    "value": "last",
+                    "daily_gain": "sum",
+                    "net_flow": "sum",
+                    "Portfolio Accumulated Gain Daily": "last",
+                    "Cumulative Net Flow": "last",
+                    "Absolute Gain ($)": "last",
+                }
                 for bm_symbol in benchmark_symbols_yf:
                     price_col = f"{bm_symbol} Price"
+                    accum_col_daily = f"{bm_symbol} Accumulated Gain Daily"
                     if price_col in results_df.columns:
                         resampling_agg[price_col] = "last"
+                    if accum_col_daily in results_df.columns:
+                        resampling_agg[accum_col_daily] = "last"
+
                 final_df_resampled = results_df.resample(resample_freq).agg(
                     resampling_agg
                 )
@@ -5355,68 +5402,12 @@ def _calculate_accumulated_gains_and_resample(
                 logging.debug(
                     f"Resampling '{interval}': Output final_df_resampled shape: {final_df_resampled.shape}"
                 )
-                logging.debug(
-                    f"Output final_df_resampled tail:\n{final_df_resampled.tail().to_string()}"
-                )
 
-                # <-- Use resample_freq
-                if (
-                    "value" in final_df_resampled.columns
-                    and not final_df_resampled["value"].dropna().empty
-                ):
-                    resampled_returns = final_df_resampled["value"].pct_change(fill_method=None)
-                    resampled_gain_factors = 1 + resampled_returns.fillna(0.0)
-                    final_df_resampled["Portfolio Accumulated Gain"] = (
-                        resampled_gain_factors.cumprod()
-                    )
-                    if not final_df_resampled.empty and pd.isna(
-                        resampled_returns.iloc[0]
-                    ):
-                        final_df_resampled.iloc[
-                            0,
-                            final_df_resampled.columns.get_loc(
-                                "Portfolio Accumulated Gain"
-                            ),
-                        ] = np.nan
-                else:
-                    final_df_resampled["Portfolio Accumulated Gain"] = np.nan
-
-                for bm_symbol in benchmark_symbols_yf:
-                    price_col = f"{bm_symbol} Price"
-                    accum_col = f"{bm_symbol} Accumulated Gain"
-                    if (
-                        price_col in final_df_resampled.columns
-                        and not final_df_resampled[price_col].dropna().empty
-                    ):
-                        resampled_bench_returns = final_df_resampled[
-                            price_col
-                        ].pct_change(fill_method=None)
-                        resampled_bench_gain_factors = (
-                            1 + resampled_bench_returns.fillna(0.0)
-                        )
-                        final_df_resampled[accum_col] = (
-                            resampled_bench_gain_factors.cumprod()
-                        )
-                        if not final_df_resampled.empty and pd.isna(
-                            resampled_bench_returns.iloc[0]
-                        ):
-                            final_df_resampled.iloc[
-                                0, final_df_resampled.columns.get_loc(accum_col)
-                            ] = np.nan
-                    else:
-                        final_df_resampled[accum_col] = np.nan
-                status_update += f" Resampled to '{interval}'."
-            except Exception as e_resample:
-                logging.warning(
-                    f"Hist WARN: Failed resampling to interval '{interval}': {e_resample}. Returning daily results."
-                )
-                status_update += f" Resampling failed ('{interval}')."
-                final_df_resampled = results_df
+                # --- FIX: Use Daily Accumulated Gain directly ---
+                # This ensures TWR is consistent across all timeframes.
                 final_df_resampled.rename(
-                    columns={
-                        "Portfolio Accumulated Gain Daily": "Portfolio Accumulated Gain"
-                    },
-                    inplace=True,
+                    columns={"Portfolio Accumulated Gain Daily": "Portfolio Accumulated Gain"},
+                    inplace=True
                 )
                 for bm_symbol in benchmark_symbols_yf:
                     accum_col_daily = f"{bm_symbol} Accumulated Gain Daily"
@@ -5425,8 +5416,25 @@ def _calculate_accumulated_gains_and_resample(
                         final_df_resampled.rename(
                             columns={accum_col_daily: accum_col_final}, inplace=True
                         )
-                else:
-                    final_df_resampled[accum_col] = np.nan
+
+                # --- NEW: NO LONGER recalculating Absolute ROI here, it's summed/lasted from daily ---
+                # But we do need to handle ROI on resampled data because simply taking 'last' ROI 
+                # or summing ROI doesn't make sense.
+                # However, Absolute Gain is additive (if using sum of gains) or 'last' (if using cumulative flow).
+                # Actually, using 'last' for Absolute Gain and Cumulative Flow IS correct because they are status-at-time.
+                # But let's re-calculate ROI on the resampled values to be perfectly accurate.
+                denom_roi_res = final_df_resampled["Cumulative Net Flow"].replace(0, np.nan)
+                final_df_resampled["Absolute ROI (%)"] = (
+                    (final_df_resampled["Absolute Gain ($)"] / denom_roi_res.abs()) * 100.0
+                )
+                
+                status_update += f" Resampled to '{interval}' with Absolute metrics."
+            except Exception as e_resample:
+                logging.warning(
+                    f"Hist WARN: Failed resampling to interval '{interval}': {e_resample}. Returning daily results."
+                )
+                status_update += f" Resampling failed ('{interval}')."
+                final_df_resampled = results_df
         else:
             final_df_resampled = results_df
             final_df_resampled.rename(
@@ -5443,7 +5451,14 @@ def _calculate_accumulated_gains_and_resample(
                         columns={accum_col_daily: accum_col_final}, inplace=True
                     )
 
-        columns_to_keep = ["value", "daily_gain", "Portfolio Accumulated Gain"]
+        columns_to_keep = [
+            "value",
+            "daily_gain",
+            "Portfolio Accumulated Gain",
+            "Absolute Gain ($)",
+            "Absolute ROI (%)",
+            "Cumulative Net Flow",
+        ]
         for bm_symbol in benchmark_symbols_yf:
             price_col = f"{bm_symbol} Price"
             accum_col_final = f"{bm_symbol} Accumulated Gain"
@@ -5451,9 +5466,12 @@ def _calculate_accumulated_gains_and_resample(
                 columns_to_keep.append(price_col)
             if accum_col_final in final_df_resampled.columns:
                 columns_to_keep.append(accum_col_final)
+        
+        # Ensure we only keep columns that actually exist
         columns_to_keep = [
             col for col in columns_to_keep if col in final_df_resampled.columns
         ]
+        
         final_df_output = final_df_resampled[columns_to_keep].copy()
         final_df_output.rename(
             columns={"value": "Portfolio Value", "daily_gain": "Portfolio Daily Gain"},
@@ -5478,8 +5496,16 @@ def _calculate_accumulated_gains_and_resample(
                 if final_df_output.index.tz is not None:
                     final_df_output.index = final_df_output.index.tz_localize(None)
                 final_df_output = final_df_output.loc[pd_start:pd_end]
+                if not final_df_output.empty:
+                    # Normalize portfolio and benchmarks to start at 1.0 for the visible range
+                    for col in final_df_output.columns:
+                        if "Accumulated Gain" in col:
+                            first_val = final_df_output[col].iloc[0]
+                            if pd.notnull(first_val) and first_val != 0:
+                                final_df_output[col] = final_df_output[col] / first_val
+                
                 logging.debug(
-                    f"Filtered final output to range: {start_date_filter} - {end_date_filter}"
+                    f"Filtered and normalized final output to range: {start_date_filter} - {end_date_filter}"
                 )
             except Exception as e_final_filter:
                 logging.warning(f"Could not apply final date filter: {e_final_filter}")
@@ -5983,77 +6009,22 @@ def calculate_historical_performance(
                 else:
                     daily_df[f"{bm} Price"] = np.nan
 
-    # --- NEW: Calculate Accumulated Gains for Portfolio and Benchmarks BEFORE filtering ---
-    # This ensures the 'base' point for the requested period is correctly calculated
-    # while preserving historical context for the first point's return.
-
-    if not daily_df.empty and "daily_return" in daily_df.columns:
-        logging.info("Calculating daily accumulated gains...")
-        try:
-            gain_factors_portfolio = 1 + daily_df["daily_return"].fillna(0.0)
-            daily_df["Portfolio Accumulated Gain"] = gain_factors_portfolio.cumprod()
-            
-
-            for bm_symbol_yf_iter in clean_benchmark_symbols_yf:
-                price_col_iter = f"{bm_symbol_yf_iter} Price"
-                accum_col_final_iter = f"{bm_symbol_yf_iter} Accumulated Gain"
-                if price_col_iter in daily_df.columns:
-                    # FIX: Calculate returns on the dense (ffilled) prices
-                    # but only after ensuring we have a valid start.
-                    # filling first NaN with 0 ensures cumprod starts at 1.0.
-                    bench_returns = daily_df[price_col_iter].pct_change(fill_method=None).fillna(0.0)
-                    daily_df[accum_col_final_iter] = (1 + bench_returns).cumprod()
-                    
-                    logging.info(f"Benchmark {bm_symbol_yf_iter} Normalized: first_accum={daily_df[accum_col_final_iter].iloc[0]}, last_accum={daily_df[accum_col_final_iter].iloc[-1]}")
-                else:
-                    logging.warning(f"Benchmark {bm_symbol_yf_iter} Price column missing in daily_df")
-                    daily_df[accum_col_final_iter] = np.nan
-        except Exception as e_accum:
-            logging.error(f"Error in early accumulated gain calculation: {e_accum}")
-
-    # --- FIX: Filter DataFrame by requested date range AFTER gain calculation ---
-    # This ensures Accumulated Gains are relative to the start of the full calculation range,
-    # but we will then re-normalize them to the requested start date.
-    if not daily_df.empty:
-        # Align with UTC index
-        ts_req_start = pd.Timestamp(start_date).tz_localize('UTC')
-        ts_req_end = (pd.Timestamp(end_date) + pd.Timedelta(days=1) - pd.Timedelta(nanoseconds=1)).tz_localize('UTC')
-        
-        if daily_df.index.tz is None:
-             daily_df.index = daily_df.index.tz_localize('UTC')
-             
-        # Normalize Benchmarks to start at 1.0 at ts_req_start
-        # Find the value at or immediately after ts_req_start
-        actual_start_slice = daily_df[daily_df.index >= ts_req_start]
-        if not actual_start_slice.empty:
-            start_dt = actual_start_slice.index[0]
-            
-            # Normalize portfolio
-            if "Portfolio Accumulated Gain" in daily_df.columns:
-                base_ptr = daily_df.loc[start_dt, "Portfolio Accumulated Gain"]
-                if pd.notnull(base_ptr) and base_ptr != 0:
-                    daily_df["Portfolio Accumulated Gain"] = daily_df["Portfolio Accumulated Gain"] / base_ptr
-
-            # Normalize benchmarks
-            for bm in clean_benchmark_symbols_yf:
-                acc_col = f"{bm} Accumulated Gain"
-                if acc_col in daily_df.columns:
-                    base_acc = daily_df.loc[start_dt, acc_col]
-                    if pd.notnull(base_acc) and base_acc != 0:
-                        daily_df[acc_col] = daily_df[acc_col] / base_acc
-        
-        # Finally filter to requested range
-        daily_df = daily_df[(daily_df.index >= ts_req_start) & (daily_df.index <= ts_req_end)].copy()
-
-    final_twr_factor = np.nan
-    if not daily_df.empty and "Portfolio Accumulated Gain" in daily_df.columns:
-        last_valid_twr_series = daily_df["Portfolio Accumulated Gain"].dropna()
-        if not last_valid_twr_series.empty:
-            final_twr_factor = last_valid_twr_series.iloc[-1]
+    # --- 7. Resample and Calculate Final TWR & Absolute Metrics ---
+    # This call handles TWR, benchmarks, resampling, normalization, and absolute metrics.
+    # It replaces the manual filtering and calculation that was previously here.
+    daily_df, final_twr_factor, status_update_resample = _calculate_accumulated_gains_and_resample(
+        daily_df=daily_df,
+        benchmark_symbols_yf=clean_benchmark_symbols_yf,
+        interval=interval,
+        start_date_filter=start_date,
+        end_date_filter=end_date,
+    )
+    if status_update_resample:
+        status_parts.append(status_update_resample.strip())
 
     # --- 8. Final Status and Return ---
+    # Note: final_twr_factor is already calculated by the helper
     end_time_hist = time.time()
-    # logging.info(f"Historical Performance Calculation Finished (Scope: {filter_desc})")
     logging.info(
         f"Total Historical Calc Time: {end_time_hist - start_time_hist:.2f} seconds"
     )
@@ -6063,23 +6034,20 @@ def calculate_historical_performance(
         final_status_prefix = "Finished with Errors"
     elif has_warnings:
         final_status_prefix = "Finished with Warnings"
+    
     final_status_str = (
-        f"{final_status_prefix} ({filter_desc})"  # Renamed to avoid conflict
+        f"{final_status_prefix} ({filter_desc})"
     )
     if status_parts:
         final_status_str += f" [{'; '.join(status_parts)}]"
+    
+    # Ensure TWR factor is correctly formatted in status string for UI components
     final_status_str += (
         f"|||TWR_FACTOR:{final_twr_factor:.6f}"
         if pd.notna(final_twr_factor)
         else "|||TWR_FACTOR:NaN"
     )
 
-    if not daily_df.empty and "value" in daily_df.columns:
-        daily_df.rename(columns={"value": "Portfolio Value"}, inplace=True)
-        
-        # --- FIX: Filter final DataFrame by requested date range ---
-        # Calculation is done on full range for correctness, but we must return only requested range.
-        ts_req_start = pd.Timestamp(start_date)
     return daily_df, historical_prices_yf_adjusted, historical_fx_yf, final_status_str
 
 

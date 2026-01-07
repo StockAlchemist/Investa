@@ -197,6 +197,7 @@ def test_numba_chrono_vs_python_accuracy_and_speed():
             use_daily_results_cache=False,
             daily_results_cache_file=None,
             daily_results_cache_key=None,
+            interval="D",
             worker_signals=None,
             transactions_csv_file="", # Skip mtime check
             start_date=start_date,
@@ -220,6 +221,7 @@ def test_numba_chrono_vs_python_accuracy_and_speed():
             all_holdings_qty=None,
             all_cash_balances=None,
             all_last_prices=None,
+            all_holdings_start_date=start_date,
             included_accounts_list=["Acc1", "Acc2"],
             calc_method=method,
             filter_desc="Test"

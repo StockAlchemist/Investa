@@ -131,7 +131,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         return null;
     }, [data, view, currency]);
 
-    const hasFXRate = useMemo(() => data && data.length > 0 && data.some(d => (d as any).fx_rate !== undefined), [data]);
+    const hasFXRate = useMemo(() => data && data.length > 0 && data.some(d => (d as any).fx_rate != null), [data]);
 
     // Determine which keys to plot
     // Always plot 'twr' or 'value' for portfolio
@@ -141,26 +141,33 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
     // A simple way is to look at keys in the first data point that are not 'date', 'value', 'twr', 'drawdown', 'fx_rate'.
     const benchmarkKeys = useMemo(() => {
         if (!data || data.length === 0) return [];
-        return Object.keys(data[0]).filter(k => k !== 'date' && k !== 'value' && k !== 'twr' && k !== 'drawdown' && k !== 'fx_rate');
+        return Object.keys(data[0]).filter(k =>
+            k !== 'date' && k !== 'value' && k !== 'twr' && k !== 'drawdown' &&
+            k !== 'fx_rate' && k !== 'abs_gain' && k !== 'abs_roi' && k !== 'cum_flow' && k !== 'fx_return'
+        );
     }, [data]);
 
     const processedData = useMemo(() => {
         if (!data || data.length === 0) return [];
-        const startFX = (data[0] as any).fx_rate;
+
+        // Find the first valid fx_rate to use as baseline
+        const firstValidFXPoint = data.find(d => (d as any).fx_rate != null);
+        const startFX = firstValidFXPoint ? (firstValidFXPoint as any).fx_rate : undefined;
+
         if (startFX === undefined) return data;
 
         return data.map(d => {
             const currentFX = (d as any).fx_rate;
             return {
                 ...d,
-                fx_return: currentFX !== undefined ? ((currentFX / startFX) - 1) * 100 : undefined
+                fx_return: currentFX != null ? ((currentFX / startFX) - 1) * 100 : undefined
             };
         });
     }, [data]);
 
     if (!data || data.length === 0) {
         return (
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 h-64 flex items-center justify-center text-gray-500">
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 h-80 flex items-center justify-center text-gray-500">
                 {loading ? 'Loading...' : 'No historical data available.'}
             </div>
         );
@@ -244,90 +251,106 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
             // Find benchmark keys present in this data point
             const allKeys = Object.keys(dataPoint);
             const benchKeys = allKeys.filter(k =>
-                k !== 'date' && k !== 'value' && k !== 'twr' && k !== 'drawdown' && k !== 'fx_rate' && k !== 'fx_return'
+                k !== 'date' && k !== 'value' && k !== 'twr' && k !== 'drawdown' &&
+                k !== 'fx_rate' && k !== 'fx_return' &&
+                k !== 'abs_gain' && k !== 'abs_roi' && k !== 'cum_flow'
             );
 
             return (
-                <div className="bg-popover/95 backdrop-blur-md p-4 border border-border shadow-xl rounded-xl min-w-[200px]">
-                    <p className="text-sm font-semibold text-foreground mb-3 border-b border-border pb-2">
+                <div className="bg-popover/90 backdrop-blur-md p-3 border border-border shadow-2xl rounded-xl min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-32px)] overflow-visible">
+                    <p className="text-sm font-bold text-foreground mb-2 border-b border-border pb-1">
                         {dateStr}
                     </p>
 
-                    <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-0 pb-1">
                         {/* Portfolio Section */}
-                        <div className="space-y-1">
-                            <div className="flex items-center justify-between gap-4">
-                                <span className="text-xs text-muted-foreground font-medium">Portfolio Value</span>
-                                <span className="text-sm font-bold text-foreground">
+                        <div className="space-y-0.5">
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Value</span>
+                                <span className="text-[13px] font-bold text-foreground">
                                     {formatCurrency(dataPoint.value, currency)}
                                 </span>
                             </div>
-                            <div className="flex items-center justify-between gap-4">
-                                <span className="text-xs text-muted-foreground font-medium">Return (TWR)</span>
-                                <span className={`text-sm font-bold ${dataPoint.twr >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">TWR</span>
+                                <span className={`text-[13px] font-bold ${dataPoint.twr >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                                     {dataPoint.twr >= 0 ? '+' : ''}{dataPoint.twr.toFixed(2)}%
                                 </span>
                             </div>
-                            <div className="flex items-center justify-between gap-4">
-                                <span className="text-xs text-muted-foreground font-medium">Drawdown</span>
-                                <span className="text-sm font-bold text-rose-500">
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Drawdown</span>
+                                <span className="text-[13px] font-bold text-rose-500">
                                     {dataPoint.drawdown.toFixed(2)}%
                                 </span>
                             </div>
                         </div>
 
-                        {/* FX Rate Section */}
-                        {dataPoint.fx_rate !== undefined && (
-                            <>
-                                <div className="h-px bg-border my-2" />
-                                <div className="space-y-1">
-                                    <div className="flex items-center justify-between gap-4">
-                                        <span className="text-xs text-amber-500 font-medium">FX Rate ({currency}/USD)</span>
-                                        <span className="text-sm font-bold text-amber-500">
-                                            {dataPoint.fx_rate.toFixed(4)}
+                        {/* Money-Weighted Metrics Section */}
+                        <div className="space-y-0.5">
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Gain</span>
+                                <span className={`text-[13px] font-bold ${dataPoint.abs_gain >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                    {formatCurrency(dataPoint.abs_gain, currency)}
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">ROI</span>
+                                <span className={`text-[13px] font-bold ${dataPoint.abs_roi >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                    {dataPoint.abs_roi >= 0 ? '+' : ''}{dataPoint.abs_roi.toFixed(2)}%
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Cost</span>
+                                <span className="text-[13px] font-bold text-foreground">
+                                    {formatCurrency(dataPoint.cum_flow, currency)}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* FX Rate & Benchmarks Section (Full Width) */}
+                    {(dataPoint.fx_rate != null || benchKeys.length > 0) && (
+                        <div className="mt-1 pt-1 border-t border-border space-y-1">
+                            {dataPoint.fx_rate != null && (
+                                <div className="grid grid-cols-2 gap-x-6">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className="text-[10px] uppercase tracking-wider text-amber-500 font-bold">FX Rate</span>
+                                        <span className="text-[12px] font-bold text-amber-500">
+                                            {typeof dataPoint.fx_rate === 'number' ? dataPoint.fx_rate.toFixed(4) : dataPoint.fx_rate}
                                         </span>
                                     </div>
-                                    {dataPoint.fx_return !== undefined && (
-                                        <div className="flex items-center justify-between gap-4">
-                                            <span className="text-xs text-amber-500 font-medium">FX Return</span>
-                                            <span className={`text-sm font-bold ${dataPoint.fx_return >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                    {dataPoint.fx_return != null && (
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className="text-[10px] uppercase tracking-wider text-amber-500 font-bold">FX Ret</span>
+                                            <span className={`text-[12px] font-bold ${dataPoint.fx_return >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                                                 {dataPoint.fx_return >= 0 ? '+' : ''}{dataPoint.fx_return.toFixed(2)}%
                                             </span>
                                         </div>
                                     )}
                                 </div>
-                            </>
-                        )}
+                            )}
 
-                        {/* Benchmarks Section */}
-                        {benchKeys.length > 0 && (
-                            <>
-                                <div className="h-px bg-border my-2" />
-                                <div className="space-y-1">
+                            {benchKeys.length > 0 && (
+                                <div className="grid grid-cols-2 gap-x-6 gap-y-0.5">
                                     {benchKeys.map((bKey, idx) => {
-                                        // Use the same color logic as the main chart if possible, or just standard colors
-                                        // We need to match the chart color. The chart uses COLORS array cyclicly.
-                                        // But we can't easily know the index here without passing it down?
-                                        // We can infer it from the mapped lines if we want strict consistency, 
-                                        // but for now let's just use the color from payload if available:
                                         const payloadEntry = payload.find(p => p.name === bKey);
                                         const color = payloadEntry?.color || COLORS[(idx + 1) % COLORS.length];
 
                                         return (
-                                            <div key={bKey} className="flex items-center justify-between gap-4">
-                                                <span className="text-xs font-medium" style={{ color: color }}>
+                                            <div key={bKey} className="flex items-center justify-between gap-2">
+                                                <span className="text-[10px] truncate max-w-[80px] font-bold uppercase tracking-wider" style={{ color: color }}>
                                                     {bKey}
                                                 </span>
-                                                <span className={`text-sm font-bold ${dataPoint[bKey] >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                <span className={`text-[12px] font-bold ${dataPoint[bKey] >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                                                     {dataPoint[bKey] >= 0 ? '+' : ''}{Number(dataPoint[bKey]).toFixed(2)}%
                                                 </span>
                                             </div>
                                         );
                                     })}
                                 </div>
-                            </>
-                        )}
-                    </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             );
         }
@@ -335,7 +358,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
     };
 
     return (
-        <div className="bg-card backdrop-blur-md rounded-xl p-4 shadow-sm border border-border mb-6">
+        <div className="bg-card backdrop-blur-md rounded-xl p-4 shadow-sm border border-border mb-6 overflow-visible">
             <div className="mb-6">
                 <div className="flex flex-col gap-1 mb-4">
                     <h3 className="text-lg font-medium text-muted-foreground">
@@ -355,9 +378,9 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                     )}
                 </div>
 
-                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-                    <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto no-scrollbar pb-1">
+                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 min-w-0">
+                    <div className="flex flex-col gap-2 w-full min-w-0">
+                        <div className="flex items-center gap-2 w-full overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
                             <PeriodSelector selectedPeriod={period} onPeriodChange={setPeriod} />
                         </div>
                         {period === 'custom' && (
@@ -421,7 +444,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                 </div>
             </div>
 
-            <div className="h-64 w-full relative">
+            <div className="h-[400px] w-full relative overflow-visible pb-4">
                 {loading && (
                     <div className="absolute inset-0 bg-white/50 dark:bg-gray-800/50 flex items-center justify-center z-10">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -429,7 +452,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                 )}
                 <ResponsiveContainer width="100%" height="100%">
                     {view === 'return' ? (
-                        <LineChart syncId="portfolio-sync" data={processedData} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+                        <LineChart syncId="portfolio-sync" data={processedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                             <XAxis
                                 dataKey="date"
@@ -446,7 +469,10 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                 tickLine={false}
                                 width={60}
                             />
-                            <Tooltip content={<CustomTooltip />} />
+                            <Tooltip
+                                content={<CustomTooltip />}
+                                allowEscapeViewBox={{ x: false, y: false }}
+                            />
                             <Legend wrapperStyle={{ fontSize: '12px' }} />
                             <Line
                                 name="Portfolio"
@@ -481,7 +507,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                             )}
                         </LineChart>
                     ) : view === 'value' ? (
-                        <AreaChart syncId="portfolio-sync" data={processedData} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+                        <AreaChart syncId="portfolio-sync" data={processedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                             <defs>
                                 <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="5%" stopColor="#2563eb" stopOpacity={0.1} />
@@ -517,7 +543,10 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                     tickFormatter={(val) => val.toFixed(2)}
                                 />
                             )}
-                            <Tooltip content={<CustomTooltip />} />
+                            <Tooltip
+                                content={<CustomTooltip />}
+                                allowEscapeViewBox={{ x: false, y: false }}
+                            />
                             <Area
                                 name="Portfolio Value"
                                 type="monotone"
@@ -541,7 +570,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                             )}
                         </AreaChart>
                     ) : (
-                        <AreaChart syncId="portfolio-sync" data={processedData} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+                        <AreaChart syncId="portfolio-sync" data={processedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                             <defs>
                                 <linearGradient id="colorDrawdown" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="5%" stopColor="#ef4444" stopOpacity={0.1} />
@@ -564,7 +593,10 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                 tickLine={false}
                                 width={60}
                             />
-                            <Tooltip content={<CustomTooltip />} />
+                            <Tooltip
+                                content={<CustomTooltip />}
+                                allowEscapeViewBox={{ x: false, y: false }}
+                            />
                             <Area
                                 name="Drawdown"
                                 type="monotone"

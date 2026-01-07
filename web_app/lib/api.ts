@@ -116,6 +116,9 @@ export interface PerformanceData {
     value: number;
     twr: number;
     drawdown?: number;
+    abs_gain?: number;
+    abs_roi?: number;
+    cum_flow?: number;
     [key: string]: number | string | undefined; // Allow dynamic keys for benchmarks
 }
 
