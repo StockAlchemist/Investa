@@ -407,7 +407,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                         )}
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto pb-1">
+                    <div className="flex items-center gap-2 w-full sm:w-auto pb-1">
                         {view === 'return' && (
                             <BenchmarkSelector selectedBenchmarks={benchmarks} onBenchmarkChange={onBenchmarksChange} />
                         )}

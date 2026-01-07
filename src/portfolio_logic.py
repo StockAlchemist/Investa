@@ -1610,10 +1610,10 @@ def _calculate_daily_net_cash_flow_vectorized(
     if transactions_df.empty:
         return daily_net_flow, False
 
-    # Filter transactions within date range
+    # Filter transactions up to the end date (Capture historical flows for 'Initial Flow')
     # FIX: Ensure transaction dates are UTC for comparison with UTC date_range
     tx_dates = pd.to_datetime(transactions_df["Date"], utc=True)
-    mask_date = (tx_dates >= date_range[0]) & (tx_dates <= date_range[-1])
+    mask_date = (tx_dates <= date_range[-1])
     df_period = transactions_df[mask_date].copy()
     
     if df_period.empty:
@@ -1777,16 +1777,69 @@ def _calculate_daily_net_cash_flow_vectorized(
         if curr == target_currency:
              final_flows.append(sub_df.set_index("Date")["_flow_local"])
         else:
-             # Map rates efficiently
-             needed_dates = sub_df["Date"].unique()
-             rate_map = {}
-             for d in needed_dates:
-                 d_date = pd.Timestamp(d).date()
-                 r = get_historical_rate_via_usd_bridge(curr, target_currency, d_date, historical_fx_yf)
-                 rate_map[d] = r if pd.notna(r) else np.nan
-                 if pd.isna(r): has_lookup_errors = True
-            
-             factors = sub_df["Date"].dt.date.map(rate_map)
+             # FIX: Robust Vectorized Lookup using Continuous Series
+             # Instead of picking single points which might fail or differ from valuation,
+             # we construct the full cross-rate series for the date_range and lookup.
+             
+             # 1. Build Target Rate Series (Target/USD)
+             target_rate_s = None
+             if target_currency.upper() == "USD":
+                 target_rate_s = pd.Series(1.0, index=date_range)
+             else:
+                 t_pair = f"{target_currency.upper()}=X"
+                 if t_pair in historical_fx_yf:
+                      t_df = historical_fx_yf[t_pair]
+                      if not t_df.empty and "price" in t_df.columns:
+                           t_s = t_df["price"]
+                           t_s.index = pd.to_datetime(t_s.index, utc=True)
+                           # AGGRESSIVE BACKFILL
+                           target_rate_s = t_s.reindex(date_range).ffill().bfill()
+             if target_rate_s is None:
+                  target_rate_s = pd.Series(np.nan, index=date_range)
+
+             # 2. Build Local Rate Series (Local/USD)
+             local_rate_s = None
+             if curr.upper() == "USD":
+                 local_rate_s = pd.Series(1.0, index=date_range)
+             else:
+                 l_pair = f"{curr.upper()}=X"
+                 if l_pair in historical_fx_yf:
+                      l_df = historical_fx_yf[l_pair]
+                      if not l_df.empty and "price" in l_df.columns:
+                           l_s = l_df["price"]
+                           l_s.index = pd.to_datetime(l_s.index, utc=True)
+                           # AGGRESSIVE BACKFILL
+                           local_rate_s = l_s.reindex(date_range).ffill().bfill()
+             if local_rate_s is None:
+                  local_rate_s = pd.Series(np.nan, index=date_range)
+             
+             # 3. Compute Cross Rate Series
+             with np.errstate(divide='ignore', invalid='ignore'):
+                 cross_rate_s = target_rate_s / local_rate_s
+                 # Fill any remaining NaNs (if one series was totally missing)
+                 if cross_rate_s.isna().any():
+                      cross_rate_s = cross_rate_s.ffill().bfill()
+                      # Final fallback to 1.0 ONLY if totally empty (catastrophic)
+                      cross_rate_s = cross_rate_s.fillna(1.0)
+
+             # 4. Map transactions to this series
+             # Transactions are "Date" (naive or aware). 
+             # Series is date_range (likely aware UTC).
+             # We need to map safely. index of cross_rate_s is DatetimeIndex.
+             
+             # Create a lookup map: Date(date) -> Rate
+             # This is fast enough for <10k days.
+             daily_rate_map = pd.Series(cross_rate_s.values, index=cross_rate_s.index.date).to_dict()
+             
+             factors = sub_df["Date"].dt.date.map(daily_rate_map)
+             
+             # Check for unmapped?
+             if factors.isna().any():
+                 # Should not happen with bfilled series unless date out of range?
+                 # If date out of range (snapping might put it inside range?), fallback to series mean or 1.0
+                 factors = factors.fillna(1.0) 
+                 has_lookup_errors = True
+
              converted = sub_df["_flow_local"] * factors
              converted.index = sub_df["Date"]
              final_flows.append(converted)
@@ -1817,6 +1870,22 @@ def _calculate_daily_net_cash_flow_vectorized(
                     if source_tz is not None:
                         # Source is Aware -> Make Naive
                         daily_net_flow_add.index = daily_net_flow_add.index.tz_localize(None)
+
+        # SNAPPING: Aggregate any transactions occurring BEFORE the start date into a single 'Initial Flow' 
+        # slot on the first day of the range. This ensures Cumulative Net Flow (COST) is accurate 
+        # and prevents 0-base TWR spikes.
+        start_ts = date_range[0]
+        pre_range_mask = daily_net_flow_add.index < start_ts
+        if pre_range_mask.any():
+            initial_flow_total = daily_net_flow_add[pre_range_mask].sum()
+            logging.info(f"STABILIZATION: Found {pre_range_mask.sum()} transactions before start date. Adding Initial Flow of {initial_flow_total:.2f} to {start_ts}")
+            
+            # Remove the old entries and add back to the first slot
+            daily_net_flow_add = daily_net_flow_add[~pre_range_mask]
+            if start_ts in daily_net_flow_add.index:
+                daily_net_flow_add[start_ts] += initial_flow_total
+            else:
+                daily_net_flow_add[start_ts] = initial_flow_total
              
         daily_net_flow = daily_net_flow.add(daily_net_flow_add, fill_value=0.0)
     
@@ -4063,9 +4132,11 @@ def _value_daily_holdings_vectorized(
             t_df = historical_fx_yf[target_pair]
             if not t_df.empty and "price" in t_df.columns:
                 # Reindex to date_range with ffill
+                # Reindex to date_range with ffill then bfill to cover start of history
                 t_series = t_df["price"]
                 t_series.index = pd.to_datetime(t_series.index, utc=True)
-                target_rate_series = t_series.reindex(date_range, method='ffill').bfill()
+                # FIX: Ensure we have a value for the first day by bfilling
+                target_rate_series = t_series.reindex(date_range).ffill().bfill()
     
     # If target rate missing, we can't convert anything (unless local==target)
     # Ensure it's not None for math consistency, fill with NaN if missing
@@ -4104,7 +4175,8 @@ def _value_daily_holdings_vectorized(
                     l_series = l_df["price"]
                     # FIX: Ensure UTC awareness and DO NOT Normalize (preserves intraday/hourly timestamps)
                     l_series.index = pd.to_datetime(l_series.index, utc=True)
-                    local_rate_series = l_series.reindex(date_range, method='ffill').bfill()
+                    # FIX: Aggressive backfill for local rates too
+                    local_rate_series = l_series.reindex(date_range).ffill().bfill()
 
         if local_rate_series is None:
              # Missing local rate data - Default to 1.0 to prevent NaN propagation
@@ -4112,18 +4184,23 @@ def _value_daily_holdings_vectorized(
              # logging.warning(f"Hist Val: Missing FX rates for {local_curr}, defaulting to 1.0")
              has_errors = True
         else:
-             # Compute cross rate
-             # Handle division by zero or NaN
-             with np.errstate(divide='ignore', invalid='ignore'):
-                 # aligned_target / aligned_local
-                 cross_rates = target_rate_series / local_rate_series
-             
-             rates = cross_rates.values
-             # Check for NaNs and fill with 1.0
-             mask_nan_fx = np.isnan(rates)
-             if mask_nan_fx.any():
-                  rates[mask_nan_fx] = 1.0
-                  # has_errors = True # Reduced severity
+              # Compute cross rate
+              # Handle division by zero or NaN
+              with np.errstate(divide='ignore', invalid='ignore'):
+                  # aligned_target / aligned_local
+                  cross_rates = target_rate_series / local_rate_series
+                  
+                  # Final safety: If any cross rate is STILL NaN, it means one of the series was all NaN 
+                  # or had persistent gaps. Try to bfill again to be sure.
+                  if pd.Series(cross_rates).isna().any():
+                       cross_rates = pd.Series(cross_rates).bfill().ffill().values
+              
+              rates = cross_rates
+              # Check for NaNs and ONLY fill with 1.0 as a catastrophic last resort
+              # if both target and local rates were completely missing.
+              mask_nan_fx = np.isnan(rates)
+              if mask_nan_fx.any():
+                   rates[mask_nan_fx] = 1.0
         
         daily_fx_aligned[:, acc_id] = rates
         currency_fx_series_cache[local_curr] = rates
@@ -4480,9 +4557,10 @@ def _load_or_calculate_daily_results(
                 if not transactions_df_effective.empty
                 else start_date
             )
-            # FIX: Use min to ensure we calculate from earliest history if needed, 
-            # while respecting requested start_date as cutoff for active range.
-            calc_start_date = min(start_date, first_tx_date)
+            # FIX: ALWAYS calculate from the earliest possible history to ensure
+            # Cumulative Net Flow (COST) and TWR context are preserved, 
+            # even if the user only requested a recent slice.
+            calc_start_date = first_tx_date
             calc_end_date = end_date
             
             # Determine calculation frequency range
@@ -4712,12 +4790,12 @@ def _load_or_calculate_daily_results(
         
         if daily_df.empty:
             status_update = " Calculating daily values..."
-            first_tx_date = (
-                transactions_df_effective["Date"].min().date()
-                if not transactions_df_effective.empty
-                else start_date
-            )
-            calc_start_date = max(start_date, first_tx_date)
+            # FIX: Ensure fallback calculation also uses full history for Cumulative context
+            if not transactions_df_effective.empty:
+                calc_start_date = transactions_df_effective["Date"].min().date()
+            else:
+                calc_start_date = start_date
+            
             calc_end_date = end_date
             market_day_source_symbol = "SPY"
             if "SPY" not in historical_prices_yf_adjusted:
@@ -5556,7 +5634,7 @@ def calculate_historical_performance(
     # pd.DataFrame, # key_ratios_df - Ratios are not calculated here
     # Dict[str, Any] # current_valuation_ratios - Ratios are not calculated here
 ]:
-    CURRENT_HIST_VERSION = "v1.9.12_TRUNCATION_FIX"  # Bump version due to logic fix (TWR & Truncation)
+    CURRENT_HIST_VERSION = "v1.9.17_FLOW_FX_ALIGNMENT"  # Force recalculation with aligned flow FX <!-- id: 18 -->
     start_time_hist = time.time()
     has_errors = False
     has_warnings = False
@@ -5866,12 +5944,25 @@ def calculate_historical_performance(
             final_status,
         )
 
-    # --- GLOBAL STANDARDIZATION: Ensure ALL dataframes have UTC index ---
-    # This covers symbols that were NOT touched by the 1h merge logic above.
+    # --- GLOBAL STANDARDIZATION: Ensure ALL dataframes have UTC index and are backfilled ---
+    # This prevents massive TWR spikes when data starts late by backfilling the first known 
+    # value to the very beginning of the portfolio history.
+    full_start_ts = pd.Timestamp(full_start_date, tz='UTC')
     for s_map in [historical_prices_yf_adjusted, historical_fx_yf]:
-        for k, v in s_map.items():
+        for k, v in list(s_map.items()): # Use list to avoid mutation issues
             if not isinstance(v.index, pd.DatetimeIndex) or v.index.tz is None:
                 v.index = pd.to_datetime(v.index, utc=True)
+            
+            # STABILIZATION: Backfill the first known value to full_start_ts
+            # to avoid jumps from 1.0 default for FX or None for stocks.
+            if v is not None and not v.empty:
+                min_idx = v.index.min()
+                if min_idx > full_start_ts:
+                    logging.info(f"STABILIZATION: Backfilling {k} from {min_idx} to {full_start_ts}")
+                    # Create a copy with the extended index and backfill
+                    new_index = pd.Index([full_start_ts]).union(v.index)
+                    v = v.reindex(new_index).sort_index().bfill()
+                    s_map[k] = v
 
     # --- 4. Derive Unadjusted Prices ---
     # logging.info("Deriving unadjusted prices using split data...")

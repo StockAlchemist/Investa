@@ -902,6 +902,7 @@ def get_historical_price(
                  if target_ts_eval < first_ts:
                      backfill_price = df['price'].iloc[0]
                      if pd.notna(backfill_price):
+                         # logging.debug(f"BACKFILL: {symbol_key} using {backfill_price} for {target_date}")
                          return float(backfill_price)
              except Exception as e_comp:
                  logging.debug(f"Comparison fail in get_historical_price: {e_comp}")
