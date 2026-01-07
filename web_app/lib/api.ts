@@ -604,3 +604,12 @@ export async function fetchRatios(symbol: string): Promise<RatiosResponse> {
     if (!res.ok) throw new Error(`Failed to fetch ratios for ${symbol}`);
     return res.json();
 }
+export async function clearCache(): Promise<StatusResponse> {
+    const response = await fetch(`${API_BASE_URL}/clear_cache`, {
+        method: "POST",
+    });
+    if (!response.ok) {
+        throw new Error(`Failed to clear cache: ${response.statusText}`);
+    }
+    return response.json();
+}

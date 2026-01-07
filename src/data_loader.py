@@ -606,13 +606,13 @@ def load_and_clean_transactions(
                 .replace("None", "", regex=False)
             )
 
-    # Standardize Type to Title Case (e.g., 'buy' -> 'Buy')
+    # Standardize Type to Lowercase (e.g., 'Buy' -> 'buy')
     if "Type" in df.columns:
         df["Type"] = (
             df["Type"]
             .astype(str)
             .str.strip()
-            .str.title()
+            .str.lower()
         )
 
     # --- Tags Cleaning ---

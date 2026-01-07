@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { fetchSettings, updateSettings, triggerRefresh, fetchHoldings, fetchSummary, Settings as SettingsType, ManualOverride, ManualOverrideData } from '../lib/api';
+import { fetchSettings, updateSettings, triggerRefresh, fetchHoldings, fetchSummary, clearCache, Settings as SettingsType, ManualOverride, ManualOverrideData } from '../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { COUNTRIES, ALL_INDUSTRIES } from '../lib/constants';
 import AccountGroupManager from './AccountGroupManager';
@@ -45,6 +45,7 @@ export default function Settings() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<Tab>('overrides');
+    const [clearStatus, setClearStatus] = useState<string | null>(null);
 
     // Webhook state
     const [refreshSecret, setRefreshSecret] = useState('');
@@ -306,6 +307,22 @@ export default function Settings() {
             setRefreshStatus(`Error: ${message}`);
         }
     }
+
+    const handleClearCache = async () => {
+        if (!confirm("Are you sure you want to clear all application caches? This will force a full recalculation of historical data and fresh market data retrieval.")) {
+            return;
+        }
+
+        try {
+            setClearStatus("Clearing...");
+            const res = await clearCache();
+            setClearStatus(res.message || "Cache cleared successfully.");
+            await queryClient.invalidateQueries(); // Refresh all data in the UI
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            setClearStatus(`Error: ${message}`);
+        }
+    };
 
     if (loading) return <div className="p-12 text-center text-gray-500">Loading settings...</div>;
     if (error) return <div className="p-12 text-center text-red-500">{error}</div>;
@@ -725,6 +742,30 @@ export default function Settings() {
                             {refreshStatus}
                         </p>
                     )}
+                </div>
+            </div>
+
+            {/* Cache Management Section */}
+            <div className="bg-card backdrop-blur-md shadow-sm rounded-xl p-6 border border-border border-l-4 border-l-rose-500">
+                <h2 className="text-lg font-bold mb-4 text-foreground">Cache Management</h2>
+                <div className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                        Identify and resolve data discrepancies by clearing all local caches. This includes historical performance data, market quotes, and metadata.
+                    </p>
+                    <div className="flex items-center gap-4">
+                        <button
+                            type="button"
+                            onClick={handleClearCache}
+                            className="px-4 py-2 border border-rose-500/50 rounded-md shadow-sm text-sm font-medium text-rose-500 bg-rose-500/5 hover:bg-rose-500/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 transition-colors"
+                        >
+                            Clear All Cache
+                        </button>
+                        {clearStatus && (
+                            <p className={`text-sm ${clearStatus.startsWith('Error') ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                {clearStatus}
+                            </p>
+                        )}
+                    </div>
                 </div>
             </div>
         </div >

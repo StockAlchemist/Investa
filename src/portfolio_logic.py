@@ -1849,17 +1849,20 @@ def _calculate_daily_net_cash_flow(
     fx_lookup_failed = False
     net_flow_target_curr = 0.0
     
-    # 1. Explicit Cash Flows (Deposit/Withdrawal)
+    # 1. External Flows (Deposit/Withdrawal)
     external_flow_types = ["deposit", "withdrawal"]
-    cash_flow_tx = daily_tx[
-        (daily_tx["Symbol"] == CASH_SYMBOL_CSV)
-        & (daily_tx["Type"].isin(external_flow_types))
+    
+    # Capture ALL deposits and withdrawals, now including non-cash assets
+    external_flow_tx = daily_tx[
+        (daily_tx["Type"].str.lower().str.strip().isin(external_flow_types))
     ].copy()
 
-    # Process Cash Flows
-    if not cash_flow_tx.empty:
-        for _, row in cash_flow_tx.iterrows():
-            tx_type = row["Type"]
+    # Process External Flows
+    if not external_flow_tx.empty:
+        for _, row in external_flow_tx.iterrows():
+            tx_type = row["Type"].lower().strip()
+            symbol = row["Symbol"]
+            is_cash = is_cash_symbol(symbol)
             qty = pd.to_numeric(row["Quantity"], errors="coerce")
             commission_local_raw = pd.to_numeric(row.get("Commission"), errors="coerce")
             commission_local = (
@@ -1871,10 +1874,53 @@ def _calculate_daily_net_cash_flow(
             if pd.isna(qty):
                 continue
 
-            if tx_type == "deposit":
-                flow_local = abs(qty) - commission_local
-            elif tx_type == "withdrawal":
-                flow_local = -abs(qty) - commission_local
+            if is_cash:
+                if tx_type == "deposit":
+                    flow_local = abs(qty) - commission_local
+                elif tx_type == "withdrawal":
+                    flow_local = -abs(qty) - commission_local
+            else:
+                # Non-cash Asset Contribution/Removal (e.g., Stock Deposit)
+                price_local = pd.to_numeric(row.get("Price/Share"), errors="coerce")
+                
+                # If price is missing or zero, try market price lookup
+                if pd.isna(price_local) or price_local <= 0:
+                    if historical_prices_yf_unadjusted and internal_to_yf_map:
+                        yf_ticker = internal_to_yf_map.get(symbol)
+                        if yf_ticker and yf_ticker in historical_prices_yf_unadjusted:
+                            prices_df = historical_prices_yf_unadjusted[yf_ticker]
+                            # Try exact date match first
+                            if target_date in prices_df.index:
+                                for col_name in ["Close", "price", "Adj Close"]:
+                                    if col_name in prices_df.columns:
+                                        price_local = prices_df.loc[target_date, col_name]
+                                        break
+                                else:
+                                    if not prices_df.empty:
+                                        price_local = prices_df.loc[target_date].iloc[0]
+                            else:
+                                # Try converting to timestamp
+                                try:
+                                    target_ts = pd.Timestamp(target_date)
+                                    if target_ts in prices_df.index:
+                                        for col_name in ["Close", "price", "Adj Close"]:
+                                            if col_name in prices_df.columns:
+                                                price_local = prices_df.loc[target_ts, col_name]
+                                                break
+                                        else:
+                                            if not prices_df.empty:
+                                                price_local = prices_df.loc[target_ts].iloc[0]
+                                except:
+                                    pass
+
+                if not pd.isna(price_local) and price_local > 0:
+                    if tx_type == "deposit":
+                        flow_local = (abs(qty) * price_local) - commission_local
+                    elif tx_type == "withdrawal":
+                        flow_local = -(abs(qty) * price_local) - commission_local
+                else:
+                    logging.warning(f"Flow: Could not determine price for asset flow {symbol} on {target_date}. Skipping.")
+                    continue
 
             flow_target = flow_local
             if local_currency != target_currency:
@@ -4868,15 +4914,11 @@ def _load_or_calculate_daily_results(
                 # Benchmarks removed from here, added later in main function
                 for col in cols_to_numeric:
                     daily_df[col] = pd.to_numeric(daily_df[col], errors="coerce")
-                initial_rows_calc = len(daily_df)
-            
-                # Drop rows where 'value' is NaN (failed lookup)
-                daily_df.dropna(subset=["value"], inplace=True)
-                rows_dropped = initial_rows_calc - len(daily_df)
-                if rows_dropped > 0:
-                    status_update += (
-                        f" ({rows_dropped} rows dropped post-calc due to NaN value)."
-                    )
+                # Skip: Drop rows where 'value' is NaN (failed lookup)
+                # FIX: Do NOT drop rows. This causes history truncation and incorrect TWR annualization.
+                # instead, let 'value' be NaN/0 and handle in gain calculations.
+                # daily_df.dropna(subset=["value"], inplace=True)
+                rows_dropped = 0
                 if daily_df.empty:
                     return (
                         pd.DataFrame(),
@@ -5488,7 +5530,7 @@ def calculate_historical_performance(
     # pd.DataFrame, # key_ratios_df - Ratios are not calculated here
     # Dict[str, Any] # current_valuation_ratios - Ratios are not calculated here
 ]:
-    CURRENT_HIST_VERSION = "v1.9.10_REVERT_FILTER"  # Bump version due to changes (e.g. Numba, cache key)
+    CURRENT_HIST_VERSION = "v1.9.12_TRUNCATION_FIX"  # Bump version due to logic fix (TWR & Truncation)
     start_time_hist = time.time()
     has_errors = False
     has_warnings = False

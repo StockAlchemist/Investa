@@ -93,6 +93,48 @@ def get_app_data_dir() -> str:
         # Final fallback: current working directory
         return os.getcwd()
 
+
+def get_app_cache_dir() -> Optional[str]:
+    """
+    Returns the centralized application cache directory (e.g. ~/Library/Caches/StockAlchemist/Investa).
+    """
+    try:
+        from PySide6.QtCore import QStandardPaths
+        pyside_available = True
+    except ImportError:
+        pyside_available = False
+
+    if pyside_available:
+        path = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
+        if path:
+            # If QStandardPaths didn't include the app name, append it manually
+            # On macOS, it's usually already correct if the app is bundled, 
+            # but for scripts we might need to be sure.
+            if APP_NAME not in path:
+                path = os.path.join(path, ORG_NAME, APP_NAME)
+            
+            try:
+                os.makedirs(path, exist_ok=True)
+                return path
+            except Exception:
+                pass
+
+    # Fallback: Check standard locations manually
+    system = platform.system()
+    home = os.path.expanduser("~")
+    if system == "Darwin":
+        path = os.path.join(home, "Library", "Caches", ORG_NAME, APP_NAME)
+    elif system == "Windows":
+        path = os.path.join(os.environ.get("LOCALAPPDATA", home), ORG_NAME, APP_NAME, "Cache")
+    else: # Linux/Other
+        path = os.path.join(home, ".cache", APP_NAME.lower())
+
+    try:
+        os.makedirs(path, exist_ok=True)
+        return path
+    except Exception:
+        return None
+
 # --- Debugging Flags ---
 HISTORICAL_DEBUG_USD_CONVERSION = False
 HISTORICAL_DEBUG_SET_VALUE = False

@@ -345,10 +345,9 @@ async def get_portfolio_summary(
                         # daily_df[twr_col] contains the cumulative TWR factor (e.g., 1.5 for 50% gain)
                         final_twr_factor = daily_df[twr_col].iloc[-1]
                         
-                        # Use the actual data range from the result for accuracy
-                        res_start_date = daily_df.index[0].date()
-                        res_end_date = daily_df.index[-1].date()
-                        days = (res_end_date - res_start_date).days
+                        # Ensure we annualize over the full REQUESTED period (from first transaction to today)
+                        # This is more robust than using daily_df.index which might be truncated if data is sparse.
+                        days = (max_date - min_date).days
                         
                         if days > 0 and pd.notna(final_twr_factor) and final_twr_factor > 0:
                             # Annualize: (Total_Factor)^(365.25 / Days) - 1
@@ -2293,3 +2292,80 @@ async def remove_from_watchlist_api(symbol: str):
         return {"status": "success"}
     finally:
         conn.close()
+@router.post("/clear_cache")
+async def clear_cache():
+    """Clears all application caches (files and in-memory)."""
+    try:
+        # 1. Clear In-Memory Caches
+        _PORTFOLIO_SUMMARY_CACHE.clear()
+        
+        # 2. Identify Cache Directories
+        app_data_dir = config.get_app_data_dir()
+        app_cache_dir = config.get_app_cache_dir()
+        
+        targets = [app_data_dir]
+        if app_cache_dir and app_cache_dir != app_data_dir:
+            targets.append(app_cache_dir)
+            
+        # Files that are DEFINITELY caches (often in root of directories)
+        cache_extensions = ('.json', '.feather', '.npy', '.key') 
+        cache_dir_names = ('historical_data_cache', 'fundamentals_cache', 'all_holdings_cache_new')
+        
+        # Files/Extensions to SAFELY IGNORE (Do NOT delete from app_data_dir)
+        keep_extensions = ('.db', '.sqlite', '.sqlite3', '.json.bak')
+        keep_files = ('gui_config.json', 'manual_overrides.json')
+        
+        deleted_count = 0
+        import shutil
+        
+        for base_dir in targets:
+            if not os.path.exists(base_dir):
+                continue
+                
+            for item in os.listdir(base_dir):
+                item_path = os.path.join(base_dir, item)
+                
+                # A. Handle Subdirectories
+                if os.path.isdir(item_path):
+                    if item in cache_dir_names:
+                        try:
+                            # Count files inside for reporting
+                            for _, _, files in os.walk(item_path):
+                                deleted_count += len(files)
+                            shutil.rmtree(item_path)
+                            deleted_count += 1 
+                        except Exception as e:
+                            logging.warning(f"Failed to delete cache dir {item_path}: {e}")
+                    continue
+                
+                # B. Handle Files
+                if os.path.isfile(item_path):
+                    # Skip specific protected files (only in AppData usually)
+                    if base_dir == app_data_dir and item in keep_files:
+                        continue
+                    
+                    # Skip database files
+                    if any(item.lower().endswith(ext) for ext in keep_extensions):
+                        continue
+                        
+                    # Delete caches
+                    is_cache_ext = any(item.lower().endswith(ext) for ext in cache_extensions)
+                    is_cache_prefix = any(item.startswith(p) for p in [config.HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX, config.DAILY_RESULTS_CACHE_PATH_PREFIX])
+                    
+                    if is_cache_ext or is_cache_prefix:
+                        try:
+                            os.remove(item_path)
+                            deleted_count += 1
+                        except Exception as e:
+                            logging.warning(f"Failed to delete cache file {item_path}: {e}")
+        
+        # 3. Reload Data
+        reload_data()
+        
+        return {"status": "success", "message": f"Cache cleared. {deleted_count} items removed."}
+    except Exception as e:
+        logging.error(f"Error clearing cache: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logging.error(f"Error clearing cache: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
