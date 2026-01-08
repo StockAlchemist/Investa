@@ -21,6 +21,8 @@ import sys
 import os
 import math # Added math import
 from datetime import datetime, date, timedelta
+import pytz
+from utils_time import get_est_today
 import json
 from typing import List, Dict, Tuple, Optional, Set, Any, Union
 
@@ -241,8 +243,10 @@ def calculate_portfolio_summary(
     has_warnings = False
     status_parts = []
 
+    from utils_time import get_est_today, get_latest_trading_date # Import local helper
+
     # Use the passed-in ignored data from the initial load
-    report_date = datetime.now().date()  # Defined early for use in default metrics
+    report_date = get_latest_trading_date()  # Defined early for use in default metrics
 
     # --- Define default metrics structures ---
     def get_default_metrics_dict(
@@ -1567,7 +1571,7 @@ def _unadjust_prices(
         unadjusted_prices_yf[yf_symbol] = result_df
         
         if yf_symbol == "AMZN":
-            today_points = result_df[result_df.index >= pd.Timestamp(date.today(), tz='UTC')]
+            today_points = result_df[result_df.index >= pd.Timestamp(get_est_today(), tz='UTC')]
             with open("/tmp/investa_debug.log", "a") as f_log:
                 f_log.write(f"\n--- UNADJUSTED AMZN TODAY (points={len(today_points)}) ---\n")
                 if not today_points.empty:
@@ -4582,13 +4586,13 @@ def _load_or_calculate_daily_results(
 
                 # Use intraday for active range
                 # FIX: Ensure range_active covers the FULL end_date day for intraday intervals
-                # FIX 2: Cap at 'now' to prevent flat line into the future
                 ts_end_of_period = pd.Timestamp(calc_end_date, tz='UTC') + timedelta(days=1)
-                ts_now = pd.Timestamp.now(tz='UTC')
-                # Use min to allow historical views (where end < now) to work, but cap live views at now
-                active_end_bound = min(ts_end_of_period, ts_now)
                 
-                heading_into_future = active_end_bound < ts_end_of_period
+                # FIX 2: Cap at 'now' removed. We rely on API layer to filter market hours.
+                # This prevents premature clipping if server clock is drifted or timezone issues.
+                active_end_bound = ts_end_of_period
+                
+                heading_into_future = False # logic no longer needed, we fill what we have
                 
                 range_active = pd.date_range(
                     start=pd.Timestamp(start_date, tz='UTC'), 
@@ -5420,10 +5424,26 @@ def _calculate_accumulated_gains_and_resample(
             results_df["Absolute Gain ($)"] = (
                 results_df["value"] - results_df["Cumulative Net Flow"]
             )
-            denom_roi = results_df["Cumulative Net Flow"].replace(0, np.nan)
-            results_df["Absolute ROI (%)"] = (
-                (results_df["Absolute Gain ($)"] / denom_roi.abs()) * 100.0
-            )
+            denom_roi = results_df["Cumulative Net Flow"]
+            # Set ROI to NaN if Cost Basis is <= 0 to avoid massive misleading spikes
+            # or undefined math (infinite return).
+            roi_series = (results_df["Absolute Gain ($)"] / denom_roi) * 100.0
+            roi_series[denom_roi <= 0] = np.nan
+            results_df["Absolute ROI (%)"] = roi_series
+
+        # --- NEW: Calculate Drawdown from Portfolio Accumulated Gain Daily ---
+        if "Portfolio Accumulated Gain Daily" in results_df.columns:
+            # 1. Calculate Running Max
+            running_max = results_df["Portfolio Accumulated Gain Daily"].cummax()
+            # 2. Drawdown = (Current / Running Max) - 1
+            # Handle potential NaNs or zeros if needed (though cummax usually safe)
+            results_df["drawdown"] = (results_df["Portfolio Accumulated Gain Daily"] / running_max) - 1
+            # 3. Convert to percentage? Frontend expects percentage number (e.g. -5.5 for -5.5%)?
+            # Looking at PerformanceGraph.tsx, it renders `dataPoint.drawdown.toFixed(2) + '%'`.
+            # If the value is -0.05 (for -5%), then * 100
+            results_df["drawdown"] = results_df["drawdown"] * 100.0
+            # Fill NaNs with 0.0
+            results_df["drawdown"] = results_df["drawdown"].fillna(0.0)
 
         if interval == "D":
             final_df_resampled = results_df
@@ -5463,6 +5483,7 @@ def _calculate_accumulated_gains_and_resample(
                     "Portfolio Accumulated Gain Daily": "last",
                     "Cumulative Net Flow": "last",
                     "Absolute Gain ($)": "last",
+                    "drawdown": "last",  # Preserve drawdown
                 }
                 for bm_symbol in benchmark_symbols_yf:
                     price_col = f"{bm_symbol} Price"
@@ -5536,6 +5557,7 @@ def _calculate_accumulated_gains_and_resample(
             "Absolute Gain ($)",
             "Absolute ROI (%)",
             "Cumulative Net Flow",
+            "drawdown",
         ]
         for bm_symbol in benchmark_symbols_yf:
             price_col = f"{bm_symbol} Price"
@@ -5634,7 +5656,7 @@ def calculate_historical_performance(
     # pd.DataFrame, # key_ratios_df - Ratios are not calculated here
     # Dict[str, Any] # current_valuation_ratios - Ratios are not calculated here
 ]:
-    CURRENT_HIST_VERSION = "v1.9.17_FLOW_FX_ALIGNMENT"  # Force recalculation with aligned flow FX <!-- id: 18 -->
+    CURRENT_HIST_VERSION = "v1.9.26_SUMMARY_FAST_CACHE"  # Force recalculation with Fast Summary Cache <!-- id: 36 -->
     start_time_hist = time.time()
     has_errors = False
     has_warnings = False
@@ -5784,7 +5806,10 @@ def calculate_historical_performance(
             full_start_date = full_start_date - timedelta(days=3)
         
         full_end_date_tx = transactions_df_effective["Date"].max().date()
+        # FIX REVERTED: MarketDataProvider handles +1 day for yfinance exclusivity.
+        # We pass the INCLUSIVE end date (today).
         fetch_end_date = max(end_date, full_end_date_tx)
+        
         logging.info(
             f"Determined full transaction range: {full_start_date} to {full_end_date_tx}. Fetching data up to {fetch_end_date} (requested start_date: {start_date}, interval: {interval})."
         )
@@ -5827,9 +5852,72 @@ def calculate_historical_performance(
         start_date=full_start_date,
         end_date=fetch_end_date,
         interval="1d",
-        use_cache=use_raw_data_cache,
-        cache_key=raw_data_cache_key,
+        # Force DISABLE raw cache for intraday intervals to ensure we get fresh daily close/open for the day
+        use_cache=use_raw_data_cache if interval == "1d" else False,
+        # Append fetch_end_date to key to ensure we don't use stale cache for different fetch range
+        cache_key=f"{raw_data_cache_key}_{fetch_end_date.isoformat()}",
     )
+    
+    # --- INTRADAY PATCH: Fetch high-res data for active range ---
+    # If the user requested an intraday interval (e.g. 5m), we must ensure 
+    # historical_prices_yf_adjusted contains these intraday timestamps for the active period.
+    # Otherwise, the calculation loop (which runs at 5m resolution) will just find the same
+    # 'daily' price for every 5m step, resulting in a flat line for the day.
+    if interval in ["1h", "1m", "2m", "5m", "15m", "30m", "60m", "90m"]:
+        logging.info(f"Intraday interval '{interval}' detected. Fetching coverage for {len(symbols_for_stocks_and_benchmarks_yf)} symbols...")
+        try:
+            # Fetch intraday data. yfinance handles 60d limit for 5m, 730d for 1h etc.
+            # We use start_date from the request to capture the relevant active window.
+            # CRITICAL: fetch_end_date is exclusive in yfinance. To include "Today" (if fetch_end_date is today),
+            # we must extend it by 1 day.
+            intraday_end_date = fetch_end_date
+            if intraday_end_date >= get_est_today():
+                 intraday_end_date = get_est_today() + timedelta(days=1)
+
+            intraday_prices_adj, _ = market_provider.get_historical_data(
+                symbols_yf=symbols_for_stocks_and_benchmarks_yf,
+                start_date=max(start_date, get_est_today() - timedelta(days=59)) if "m" in interval else start_date,
+                end_date=intraday_end_date,
+                interval=interval,
+                use_cache=False, # FORCE FALSE for intraday patch to ensure live data
+            )
+            
+            if intraday_prices_adj:
+                logging.info(f"Merging {len(intraday_prices_adj)} intraday price series into main price history...")
+                for sym, intra_df in intraday_prices_adj.items():
+                    if intra_df is None or intra_df.empty:
+                        continue
+                        
+                    # 1. Normalize Intraday Index to UTC
+                    if not isinstance(intra_df.index, pd.DatetimeIndex) or intra_df.index.tz is None:
+                        intra_df.index = pd.to_datetime(intra_df.index, utc=True)
+                    
+                    # 2. Merge into existing Daily DF
+                    # We combine them. If index overlaps, we prefer Intraday? 
+                    # Actually, Daily data is at 00:00 UTC (usually). Intraday is at 09:30, 09:35 etc.
+                    # So they don't overlap in time. We can just concat and sort.
+                    # This gives the "step" function for history (daily) and "curve" for active day (intraday).
+                    if sym in historical_prices_yf_adjusted:
+                        daily_df_sym = historical_prices_yf_adjusted[sym]
+                         # Normalize Daily Index to UTC if not already
+                        if not isinstance(daily_df_sym.index, pd.DatetimeIndex) or daily_df_sym.index.tz is None:
+                            daily_df_sym.index = pd.to_datetime(daily_df_sym.index, utc=True)
+                        
+                        # Concat and Sort
+                        # Filter out intraday range from daily to avoid duplication if daily has 'today' row?
+                        # Daily usually has 'today' 00:00 or similar.
+                        # Safest is to keep daily history OLDER than intraday start, and append full intraday.
+                        intra_start = intra_df.index.min()
+                        daily_mask = daily_df_sym.index < intra_start
+                        
+                        merged_df = pd.concat([daily_df_sym.loc[daily_mask], intra_df])
+                        merged_df = merged_df[~merged_df.index.duplicated(keep='last')].sort_index()
+                        historical_prices_yf_adjusted[sym] = merged_df
+                    else:
+                        historical_prices_yf_adjusted[sym] = intra_df
+        except Exception as e_intra:
+            logging.error(f"Failed to fetch/merge intraday data: {e_intra}")
+
     
     with open("/tmp/investa_debug.log", "a") as f_log:
         f_log.write(f"Fetch failed: {fetch_failed_prices}\n")
@@ -5878,7 +5966,9 @@ def calculate_historical_performance(
                     final_df = combined[~combined.index.duplicated(keep='last')]
                     historical_prices_yf_adjusted[original_key] = final_df
                     with open("/tmp/investa_debug.log", "a") as f_log:
-                        f_log.write(f"MERGED {original_key}: {len(h_df_proc)} points. Total {len(final_df)} points.\n")
+                        last_ts_str = str(final_df.index.max()) if not final_df.empty else "None"
+                        first_ts_str = str(final_df.index.min()) if not final_df.empty else "None"
+                        f_log.write(f"MERGED {original_key}: {len(h_df_proc)} points. Total {len(final_df)} points. Range: {first_ts_str} to {last_ts_str}\n")
                 else:
                     with open("/tmp/investa_debug.log", "a") as f_log:
                         f_log.write(f"EMPTY intraday for {original_key}\n")

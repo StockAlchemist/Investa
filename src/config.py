@@ -20,7 +20,7 @@ from datetime import date
 from typing import Optional
 
 # --- Cache Configuration ---
-HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = "yf_portfolio_hist_raw_adjusted"
+HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = "yf_portfolio_hist_raw_adjusted_v2"
 DAILY_RESULTS_CACHE_PATH_PREFIX = (
     "yf_portfolio_daily_results"  # For daily calculated values
 )

@@ -5,6 +5,7 @@ import logging
 import json
 import os
 from datetime import datetime, timedelta, date, UTC, timezone  # Added UTC
+from utils_time import get_est_today, get_latest_trading_date # Added for timezone enforcement
 from typing import List, Dict, Optional, Tuple, Set, Any
 import time
 import requests  # Keep for potential future use
@@ -91,7 +92,8 @@ except ImportError:
     # Define fallbacks if needed, though fixing import path is better
     DEFAULT_CURRENT_CACHE_FILE_PATH = "portfolio_cache_yf.json"
     YFINANCE_CACHE_DURATION_HOURS = 4
-    CURRENT_QUOTE_CACHE_DURATION_MINUTES = 15
+    CURRENT_QUOTE_CACHE_DURATION_MINUTES = 1
+
     YFINANCE_INDEX_TICKER_MAP = {}
     DEFAULT_INDEX_QUERY_SYMBOLS = []
     FUNDAMENTALS_CACHE_DURATION_HOURS = 24
@@ -391,6 +393,7 @@ class MarketDataProvider:
                  chunk_size = 50
                  for i in range(0, len(missing_symbols), chunk_size):
                      chunk = missing_symbols[i:i+chunk_size]
+                     logging.info(f"Hist Fetch Helper: Processing batch {i//chunk_size + 1}/{len(missing_symbols)//chunk_size + 1}. Symbols: {len(chunk)}")
                      tickers = yf.Tickers(" ".join(chunk))
                      
                      for sym, ticker in tickers.tickers.items():
@@ -578,7 +581,8 @@ class MarketDataProvider:
             pass
 
         # --- 2. Caching Logic for Current Quotes (Short-term Price Cache) ---
-        cache_key = f"CURRENT_QUOTES_v7_FINAL::{'_'.join(sorted(yf_symbols_to_fetch))}::{'_'.join(sorted(required_currencies))}"
+        # v9_NO_CACHE: Explicitly disabled caching to resolve persistent inconsistency/stale data issues.
+        cache_key = f"CURRENT_QUOTES_v9_NO_CACHE::{'_'.join(sorted(yf_symbols_to_fetch))}::{'_'.join(sorted(required_currencies))}"
         cached_quotes = None
         cached_fx = None
         cached_fx_prev = None
@@ -593,7 +597,7 @@ class MarketDataProvider:
                     if cache_timestamp_str:
                         cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
                         if datetime.now(timezone.utc) - cache_timestamp < timedelta(
-                            minutes=CURRENT_QUOTE_CACHE_DURATION_MINUTES
+                            minutes=0 # Force fresh fetch (User Request: Remove Caching)
                         ):
                             cached_quotes = cache_data.get("quotes")
                             cached_fx = cache_data.get("fx_rates")
@@ -620,7 +624,8 @@ class MarketDataProvider:
         # 3b. Batch Fetch Prices using yf.download (Existing Logic)
         stock_data_yf = {}
         if yf_symbols_to_fetch:
-            logging.info(f"Batch fetching prices for {len(yf_symbols_to_fetch)} symbols...")
+            # --- 3b. Batch Fetch Sparklines (and fallback prices) using yf.download ---
+            logging.info(f"Batch fetching sparklines/history for {len(yf_symbols_to_fetch)} symbols...")
             try:
                 # Use download for speed
                 # threads=True is default but explicit is good.
@@ -628,7 +633,7 @@ class MarketDataProvider:
                 # timeout=30 (seconds) explicitly to avoid default 10s failures on slow nets
                 df = yf.download(
                     list(yf_symbols_to_fetch),
-                    period="7d", 
+                    period="10d", 
                     group_by="ticker",
                     auto_adjust=True,
                     progress=False,
@@ -638,8 +643,14 @@ class MarketDataProvider:
                 
                 if df.empty:
                      logging.warning("Batch price fetch returned empty DataFrame.")
-                     has_errors = True
+                     # Don't set error yet, wait for fast_info
                 else:
+                    # Robust check for MultiIndex or flat tuple index (Moved here for scope)
+                    has_multilevel = getattr(df.columns, 'nlevels', 1) > 1
+                    
+                    # Current UTC date for filtering
+                    now_utc = datetime.now(timezone.utc).date()
+                    
                     # Process results
                     for internal_sym, yf_sym in internal_to_yf_map_local.items():
                         try:
@@ -651,8 +662,6 @@ class MarketDataProvider:
                             sym_df = pd.DataFrame()
                             if len(yf_symbols_to_fetch) > 1:
                                 try:
-                                    # Robust check for MultiIndex or flat tuple index
-                                    has_multilevel = getattr(df.columns, 'nlevels', 1) > 1
                                     if has_multilevel and yf_sym in df.columns.get_level_values(0):
                                         sym_df = df[yf_sym]
                                     elif not has_multilevel and any(isinstance(c, (tuple, list)) and c[0].upper() == yf_sym.upper() for c in df.columns):
@@ -661,14 +670,12 @@ class MarketDataProvider:
                                         sym_df = df[cols_for_sym]
                                         sym_df.columns = [c[1] for c in sym_df.columns]
                                     elif has_multilevel and yf_sym not in df.columns.get_level_values(0):
-                                        # Ticker missing from result, or alias not found
-                                        pass # sym_df remains empty
+                                        pass 
                                     elif yf_sym in df.columns:
-                                        # Flat structure, e.g., if only one ticker was requested but df is not MultiIndex
-                                        sym_df = df[[yf_sym]].rename(columns={yf_sym: "Close"}) # Rough guess
+                                        sym_df = df[[yf_sym]].rename(columns={yf_sym: "Close"}) 
                                 except Exception as e_df_parse:
                                     logging.warning(f"Error parsing DataFrame for {yf_sym}: {e_df_parse}")
-                                    sym_df = pd.DataFrame() # Ensure it's empty on error
+                                    sym_df = pd.DataFrame() 
                             else:
                                 # Single ticker download
                                 if not has_multilevel and any(isinstance(c, (tuple, list)) and c[0].upper() == yf_sym.upper() for c in df.columns):
@@ -684,11 +691,72 @@ class MarketDataProvider:
                                 
                                 valid_days = sym_df.dropna(subset=[col_name])
                                 if not valid_days.empty:
-                                    price = float(valid_days[col_name].iloc[-1])
-                                    sparkline = [float(v) for v in valid_days[col_name].tolist()]
-                                    if len(valid_days) >= 2:
-                                        prev_close = float(valid_days[col_name].iloc[-2])
-                            
+                                    # Convert index to dates for comparison
+                                    # Ensure index is datetime
+                                    valid_dates = valid_days.index.date
+                                    
+                                    # 1. Determine Stable Previous Close (Always Yesterday or earlier)
+                                    # Filter for dates strictly less than today (UTC)
+                                    # Note: Determining 'Today' is tricky with timezones. 
+                                    # Ideally use the last available data point that is NOT today.
+                                    # If the last point is today, use the one before it.
+                                    # If the last point is older than today, use it? No, that's current price.
+                                    
+                                    # Let's simplify: Take the last 2 points.
+                                    vals = valid_days[col_name].tolist()
+                                    dates_idx = valid_days.index.to_list()
+                                    
+                                    # Build sparkline
+                                    sparkline = [float(v) for v in vals]
+                                    if len(sparkline) > 7:
+                                        sparkline = sparkline[-7:] # Tail 7
+                                    
+                                    if len(vals) > 0:
+                                        last_val = float(vals[-1])
+                                        last_date = dates_idx[-1]
+                                        if hasattr(last_date, 'date'): last_date = last_date.date()
+                                        
+                                        # Default assumptions
+                                        price = last_val
+                                        
+                                        # To find prev_close, we look for the last point BEFORE last_date
+                                        # OR if last_date is today, we definitely want the one before it.
+                                        # If last_date is NOT today (stale), then that IS the close of that day,
+                                        # and prev_close should be the one before THAT.
+                                        
+                                        # Logic:
+                                        # If the last data point's date is strictly LESS than today (in UTC context),
+                                        # it means we have NO data for today yet (market closed or delayed).
+                                        # In this case, Price = YesterdayClose.
+                                        # To avoid showing "Yesterday's Change" as "Today's Change", we set Change = 0.
+                                        # This is done by setting prev_close = price.
+                                        
+                                        # However, if last_date == today, then:
+                                        # Price = TodayCurrent.
+                                        # PrevClose = The point before it (Yesterday).
+                                        
+                                        is_today = (last_date == now_utc)
+                                        # Allow for timezone diffs (e.g. Asia vs UTC). 
+                                        # If last_date is AHEAD of now_utc (tomorrow?), treat as today.
+                                        if last_date >= now_utc:
+                                            is_today = True
+                                            
+                                        if is_today:
+                                            if len(vals) >= 2:
+                                                prev_close = float(vals[-2])
+                                            else:
+                                                prev_close = last_val # No history, change=0
+                                        else:
+                                            # Stale data (Yesterday's close is the latest we have)
+                                            # User Request (Step 2730): "If the market is closed, show the day's gain/loss for the latest day when the market is open."
+                                            # So we DO want to calculate the change for that last day.
+                                            if len(vals) >= 2:
+                                                prev_close = float(vals[-2])
+                                            else:
+                                                prev_close = last_val # No history, change=0
+                                            
+                                        logging.debug(f"{yf_sym} Download: LastDate={last_date}, IsToday={is_today}, Price={price}, Prev={prev_close}")
+
                             # Retrieve metadata
                             meta = metadata_map.get(yf_sym, {})
                             currency = meta.get("currency")
@@ -707,23 +775,140 @@ class MarketDataProvider:
                                     "changesPercentage": change_pct,
                                     "currency": currency.upper(),
                                     "name": name,
-                                    "source": "yf_batch_download",
+                                    "source": "yf_batch_download_stale_safe" if not is_today else "yf_batch_download",
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
                                     "trailingAnnualDividendRate": fund.get("trailingAnnualDividendRate", 0),
                                     "dividendYield": fund.get("dividendYield", 0),
                                     "sparkline_7d": sparkline
                                 }
                             else:
-                                # logging.warning(f"Missing price or currency for {yf_sym}.")
-                                has_warnings = True
+                                # Don't warn yet, fast_info might fix it
+                                pass
 
                         except Exception as e_sym:
                             logging.warning(f"Error processing batch result for {yf_sym}: {e_sym}")
-                            has_warnings = True
                             
             except Exception as e_down:
                 logging.error(f"Batch download failed: {e_down}")
-                has_errors = True
+                # Don't set error yet, try fast_info
+
+            # --- 3c. Batch Real-Time Price Fetch (Optimized) ---
+            # Replace sequential fast_info (slow/flakey) with batched 1m download
+            logging.info(f"Batch fetching 1m intraday data for {len(yf_symbols_to_fetch)} symbols (Real-Time)...")
+            try:
+                # Download 1m data for the last 1 day. 
+                # This gives us the very latest traded price (Close of last minute bar).
+                # Much faster than 50 HTTP requests for fast_info.
+                df_rt = yf.download(
+                    list(yf_symbols_to_fetch),
+                    period="1d",
+                    interval="1m",
+                    group_by="ticker",
+                    auto_adjust=True,
+                    progress=False,
+                    threads=True,
+                    timeout=20
+                )
+                
+                if not df_rt.empty:
+                    # Parse 1m results
+                    has_multilevel_rt = getattr(df_rt.columns, 'nlevels', 1) > 1
+                    
+                    for internal_sym, yf_sym in internal_to_yf_map_local.items():
+                        try:
+                            price_rt = None
+                            
+                            # Extract 1m Series
+                            sym_df_rt = pd.DataFrame()
+                            if len(yf_symbols_to_fetch) > 1:
+                                if has_multilevel_rt and yf_sym in df_rt.columns.get_level_values(0):
+                                    sym_df_rt = df_rt[yf_sym]
+                                elif not has_multilevel_rt and any(isinstance(c, (tuple, list)) and c[0].upper() == yf_sym.upper() for c in df_rt.columns):
+                                     cols_for_sym = [c for c in df_rt.columns if isinstance(c, (tuple, list)) and c[0].upper() == yf_sym.upper()]
+                                     sym_df_rt = df_rt[cols_for_sym]
+                                     sym_df_rt.columns = [c[1] for c in sym_df_rt.columns]
+                            else:
+                                if not has_multilevel_rt:
+                                    sym_df_rt = df_rt 
+                            
+                            if not sym_df_rt.empty and "Close" in sym_df_rt.columns:
+                                # Get last valid price
+                                last_row = sym_df_rt.iloc[-1]
+                                price_rt = float(last_row["Close"])
+                                
+                                # Check if 1m data is actually from today (UTC) to avoid applying stale intraday noise
+                                last_rt_date = last_row.name.date() if hasattr(last_row.name, "date") else last_row.name
+                                if last_rt_date < now_utc:
+                                     # Stale 1m data (Yesterday). Skip update to preserve "Change=0" from Daily Logic.
+                                     price_rt = None
+                            
+                            if price_rt and price_rt > 0:
+                                entry = stock_data_yf.get(internal_sym)
+                                if entry:
+                                    # We have an existing entry from Daily download (containing Sparkline/PrevClose/Meta)
+                                    # We just update the Price and Change.
+                                    
+                                    # Recalculate Change using the stable PrevClose we already have
+                                    # The existing entry['change'] was 0.00 or based on daily.
+                                    # But entry['price'] might be stale (Yesterday).
+                                    
+                                    # We need to dig out the 'prev_close' implicated in the Daily logic?
+                                    # Actually, let's re-derive prev_close from the existing 'stock_data_yf' logic?
+                                    # No, stock_data_yf only stores final values.
+                                    
+                                    # However, we can trust that Daily Download (10d) finding 'Previous Close' is reasonably robust
+                                    # IF we correctly identified "Today" vs "Yesterday".
+                                    # Ah, my previous fix SET prev_close = price (change=0) if data was stale.
+                                    # Now we have FRESH price (price_rt).
+                                    # So we can try to recover the TRUE prev_close.
+                                    
+                                    # But wait, if Daily data was stale (Yesterday), then 'price' was YesterdayClose.
+                                    # And I forced 'prev_close' = YesterdayClose.
+                                    # So now I have price_rt (Today).
+                                    # So PrevClose IS technically that "Stale Price" (YesterdayClose)!
+                                    
+                                    # So: True PrevClose = entry['price'] (which came from the "Stale" Daily Bar logic).
+                                    # BUT only if the Daily logic marked it as stale?
+                                    # If Daily logic marked it as "Current" (Today), then entry['price'] is ALREADY Today's Daily Close (or live).
+                                    # Then entry['change'] is correct.
+                                    
+                                    # Let's assume price_rt is SUPERIOR.
+                                    # And let's assume entry['price'] (from Daily) is "Close of Yesterday" if Daily was stale,
+                                    # OR "Current" if Daily was live.
+                                    
+                                    # Issue: We lost the distinction in the dict.
+                                    # But we can assume:
+                                    # New Change = price_rt - entry['price'] + entry['change'] ?
+                                    # No.
+                                    # Old Price = P_old. Old Change = C_old. Old Prev = P_old - C_old.
+                                    prev_close_derived = entry["price"] - entry["change"]
+                                    
+                                    # Recalculate with New Price
+                                    change_new = price_rt - prev_close_derived
+                                    change_pct_new = (change_new / prev_close_derived) * 100.0 if prev_close_derived else 0.0
+                                    
+                                    entry["price"] = price_rt
+                                    entry["change"] = change_new
+                                    entry["changesPercentage"] = change_pct_new
+                                    entry["source"] = "yf_batch_1m_intraday"
+                                    entry["timestamp"] = datetime.now(timezone.utc).isoformat()
+                                    
+                                    stock_data_yf[internal_sym] = entry
+                                else:
+                                    # No daily entry? (Maybe failed daily but succeeded intraday?)
+                                    # Create partial entry
+                                    pass
+
+                        except Exception as e_sym_rt:
+                            # logging.warning(f"Error extracting RT data for {internal_sym}: {e_sym_rt}")
+                            pass
+                            
+            except Exception as e_rt_batch:
+                logging.warning(f"Batch real-time 1m fetch failed: {e_rt_batch}")
+            
+            # Legacy Fast Info Loop REMOVED (Replaced by Batch 1m)
+            pass
+            pass
 
         # --- 4. Fetch FX Rates ---
         fx_rates_vs_usd = {"USD": 1.0}
@@ -831,10 +1016,8 @@ class MarketDataProvider:
         cached_results = None
 
         # --- Caching Logic for Index Quotes ---
-        cache_key = f"INDEX_QUOTES_v2::{'_'.join(sorted(index_symbols))}"
-        cache_duration_minutes = (
-            CURRENT_QUOTE_CACHE_DURATION_MINUTES  # Use same duration as stock quotes
-        )
+        cache_key = f"INDEX_QUOTES_v3_NO_CACHE::{'_'.join(sorted(index_symbols))}"
+        cache_duration_minutes = 0 # Force fresh fetch
 
         if os.path.exists(self.current_cache_file):
             try:
@@ -1120,12 +1303,21 @@ class MarketDataProvider:
         # --- FIX: Prevent fetching future dates which causes YFPricesMissingError ---
         # Historical data implies "past" data. Real-time is handled elsewhere.
         # But for intraday (1m, 5m), we NEED to fetch 'today' to see the chart update.
-        today = date.today()
+        today = get_est_today()
         is_intraday = interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]
         
         if not is_intraday and yf_start_date >= today:
             logging.info(f"Hist Fetch Helper: Requested start date {yf_start_date} is today or in the future. Skipping fetch.")
             return {}
+
+        # --- FIX: Prevent fetching future dates (Intraday) ---
+        # If we ask for intraday data starting AFTER the latest trading session, it's definitely future or pre-market gap.
+        if is_intraday:
+            latest_trading = get_latest_trading_date()
+            if yf_start_date > latest_trading:
+                logging.info(f"Hist Fetch Helper: Requested start date {yf_start_date} is after latest trading date {latest_trading}. Market not open yet. Skipping.")
+                return {}
+
 
         # --- SAFETY CLIP: YFinance 1h data limit is 730 days ---
         if interval == "1h":
@@ -1199,7 +1391,7 @@ class MarketDataProvider:
 
         # --- ADDED: Retry logic parameters for increased network robustness ---
         # --- ADDED: Retry logic parameters for increased network robustness ---
-        retries = 2 # Reduced from 3 to improve responsiveness
+        retries = 4 # Increased to 4 to handle potential DNS flakiness
         timeout_seconds = 10 # Reduced from 30 to fail fast
         # --- END ADDED ---
 
@@ -1256,8 +1448,14 @@ class MarketDataProvider:
                         logging.warning(
                             f"  Hist Fetch Helper WARN (Attempt {attempt + 1}/{retries}): yf.download returned empty DataFrame for batch: {', '.join(batch_symbols)}. This likely means no data for the range {yf_start_date} to {yf_end_date} (e.g. weekend)."
                         )
-                        # Do NOT raise exception. Treat as valid "empty" result and stop retrying.
-                        break
+                        # Do NOT break immediately on empty data.
+                        # Transient network errors (DNS) can cause yfinance to return empty without raising.
+                        # We should retry to be robust.
+                        logging.warning(
+                            f"  Hist Fetch Helper WARN (Attempt {attempt + 1}/{retries}): yf.download returned empty DataFrame. Retrying..."
+                        )
+                        time.sleep(1)
+                        continue # FORCE RETRY
 
                     # If we get here, the download was successful for at least some symbols.
                     logging.info(

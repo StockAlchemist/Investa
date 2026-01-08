@@ -178,23 +178,23 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         // For short periods, show time. For 1M (hourly), maybe show Day + Time?
         // Let's simple check:
         if (period === '1d') {
-            return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+            return date.toLocaleTimeString(undefined, { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit' });
         } else if (period === '5d') {
             // Show Day + Time for context
-            return date.toLocaleString(undefined, { weekday: 'short', hour: '2-digit' });
+            return date.toLocaleString(undefined, { timeZone: 'America/New_York', weekday: 'short', hour: '2-digit' });
         } else if (period === '1m') {
             // Hourly for 1 month. Date + maybe Hour? Too crowded.
             // Just Date is probably fine, or Day.
-            return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            return date.toLocaleDateString(undefined, { timeZone: 'America/New_York', month: 'short', day: 'numeric' });
         } else if (['3y', '5y', 'all', 'custom'].includes(period)) {
             // Long periods or custom range: Show Month + Year if range is large
             const showYear = period !== 'custom' || (new Date(customToDate).getTime() - new Date(customFromDate).getTime() > 1000 * 60 * 60 * 24 * 365);
             if (showYear) {
-                return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+                return date.toLocaleDateString(undefined, { timeZone: 'America/New_York', month: 'short', year: 'numeric' });
             }
-            return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            return date.toLocaleDateString(undefined, { timeZone: 'America/New_York', month: 'short', day: 'numeric' });
         }
-        return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        return date.toLocaleDateString(undefined, { timeZone: 'America/New_York', month: 'short', day: 'numeric' });
     };
 
     const formatYAxis = (tickItem: number) => {
@@ -233,6 +233,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
             if (period === '1d' || period === '5d' || period === '1m') { // 1M is hourly, so show time too? Yes.
                 // Actually 1M is 60m interval.
                 dateStr = dateObj.toLocaleString(undefined, {
+                    timeZone: 'America/New_York',
                     weekday: 'short',
                     month: 'short',
                     day: 'numeric',
@@ -241,6 +242,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                 });
             } else {
                 dateStr = dateObj.toLocaleDateString(undefined, {
+                    timeZone: 'America/New_York',
                     weekday: 'short',
                     year: 'numeric',
                     month: 'short',
@@ -291,12 +293,6 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Gain</span>
                                 <span className={`text-[13px] font-bold ${dataPoint.abs_gain >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                                     {formatCurrency(dataPoint.abs_gain, currency)}
-                                </span>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">ROI</span>
-                                <span className={`text-[13px] font-bold ${dataPoint.abs_roi >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                    {dataPoint.abs_roi >= 0 ? '+' : ''}{dataPoint.abs_roi.toFixed(2)}%
                                 </span>
                             </div>
                             <div className="flex items-center justify-between gap-2">
@@ -461,6 +457,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                 axisLine={false}
                                 tickLine={false}
                                 minTickGap={30}
+                                interval="preserveStartEnd"
                             />
                             <YAxis
                                 tickFormatter={formatYAxis}
@@ -522,6 +519,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                 axisLine={false}
                                 tickLine={false}
                                 minTickGap={30}
+                                interval="preserveStartEnd"
                             />
                             <YAxis
                                 tickFormatter={formatYAxis}
@@ -585,6 +583,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                 axisLine={false}
                                 tickLine={false}
                                 minTickGap={30}
+                                interval="preserveStartEnd"
                             />
                             <YAxis
                                 tickFormatter={formatYAxis}

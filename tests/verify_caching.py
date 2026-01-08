@@ -75,8 +75,18 @@ async def test_caching():
     print(f"1st Call Duration: {duration1:.4f}s")
     
     # Verify Cache Entry Exists
-    cache_key = ("USD", "ALL", True, db_path, db_mtime)
-    if cache_key in _PORTFOLIO_SUMMARY_CACHE:
+    # Note: Cache key now includes time_key = int(time.time() / 5)
+    current_time_key = int(time.time() / 5)
+    # Check if any key matches the fixed parts (since time_key might flip if we cross a minute boundary)
+    found_key = False
+    for k in _PORTFOLIO_SUMMARY_CACHE.keys():
+        if k[:-1] == ("USD", "ALL", True, db_path, db_mtime):
+            # Also check if last element is reasonably close to now (same minute or prev minute)
+            if abs(k[-1] - current_time_key) <= 1:
+                found_key = True
+                break
+    
+    if found_key:
         print("SUCCESS: Cache entry created.")
     else:
         print("FAILURE: Cache entry NOT created.")

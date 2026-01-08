@@ -11,6 +11,7 @@ from datetime import datetime, date, time as dt_time
 
 from server.dependencies import get_transaction_data, get_config_manager, reload_data
 from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
+from utils_time import get_est_today, get_latest_trading_date
 from portfolio_analyzer import calculate_periodic_returns, extract_realized_capital_gains_history, extract_dividend_history
 from market_data import MarketDataProvider, map_to_yf_symbol
 from db_utils import (
@@ -170,7 +171,7 @@ def clean_nans(obj):
     if isinstance(obj, float):
         if math.isnan(obj) or math.isinf(obj):
             return None
-        return obj
+        return float(obj) # Force cast to python float (handles np.float64)
     elif isinstance(obj, dict):
         return {k: clean_nans(v) for k, v in obj.items()}
     elif isinstance(obj, list):
@@ -201,8 +202,8 @@ async def _calculate_portfolio_summary_internal(
     # Create a unique key for this request configuration + data state
     accounts_key = tuple(sorted(include_accounts)) if include_accounts else "ALL"
     
-    # ADDED: Time-based invalidation (bucketed to 1 minute to match market data cache)
-    time_key = int(time.time() / 60)
+    # ADDED: Time-based invalidation (bucketed to 5 seconds to allow fast retries)
+    time_key = int(time.time() / 5)
     
     cache_key = (
         currency,
@@ -977,7 +978,11 @@ def _calculate_historical_performance_internal(
         except Exception:
             logging.warning(f"Invalid to_date_str: {to_date_str}")
 
-    end_date = to_date_custom if to_date_custom else date.today()
+    # If to_date (custom) is not provided, default to the latest effective trading date
+    # This prevents the graph from showing an empty/flat "Today" (Jan 8) when in pre-market (1:30 AM EST)
+    end_date = to_date_custom if to_date_custom else get_latest_trading_date()
+    
+    # Calculate start_date based on period (legacy logic still valid, relative to end_date)
     if period == "custom" and from_date_custom:
         start_date = from_date_custom
     elif period == "1d":
@@ -991,7 +996,13 @@ def _calculate_historical_performance_internal(
         elif end_date.weekday() == 0: # Monday -> Friday (3 days)
              start_date = end_date - timedelta(days=3)
         else:
-             start_date = end_date - timedelta(days=1)
+             # Standard Weekday 1D View
+             # IMPORTANT: end_date is the "Target Day" (e.g. Yesterday).
+             # We want start_date to be that day.
+             # AND we must extend end_date by 1 day to be an exclusive upper bound [Start, End) header
+             # ensuring we capture the intraday data (09:30 > 00:00).
+             start_date = end_date
+             end_date = end_date + timedelta(days=1)
     elif period == "5d" or period == "7d":
         start_date = end_date - timedelta(days=7)
     elif period == "1m":
@@ -1089,6 +1100,12 @@ def _calculate_historical_performance_internal(
                 fx_rate_series = fx_df_proc[rate_col].reindex(daily_df.index, method='ffill')
     
     
+    # Debug logging for API filtering
+    filtered_count = 0
+    pre_market_count = 0
+    post_market_count = 0
+    total_input = len(daily_df)
+    
     for dt, row in daily_df.iterrows():
         # Skip weekends (Saturday=5, Sunday=6) to avoid flat lines in graph
         # Use .dayofweek which is standard for pd.Timestamp
@@ -1105,12 +1122,21 @@ def _calculate_historical_performance_internal(
              # dt in daily_df.index is already UTC-aware Timestamp
              dt_ny = dt.tz_convert("America/New_York")
              if not (dt_time(9, 30) <= dt_ny.time() <= dt_time(16, 0)):
+                 if dt_ny.time() < dt_time(9, 30): 
+                     if pre_market_count == 0: logging.info(f"First Pre-Market Reject: {dt_ny} (from {dt})")
+                     pre_market_count += 1
+                 else: 
+                     post_market_count += 1
                  continue
+             else:
+                 if filtered_count == 0: logging.info(f"First Accepted: {dt_ny} (from {dt})")
 
         # Handle NaN values
         val = row.get("Portfolio Value", 0.0)
         twr = row.get("Portfolio Accumulated Gain", 1.0)
-        dd = drawdown_series.get(dt, 0.0)
+        # Use simple 'drawdown' column if available (new logic), else fallback or use series
+        # Note: 'drawdown' from portfolio_logic is already in percentage (e.g. -5.0)
+        dd = row.get("drawdown", 0.0) 
         
         # --- NEW: Money-weighted metrics ---
         abs_gain = row.get("Absolute Gain ($)", 0.0)
@@ -1121,7 +1147,7 @@ def _calculate_historical_performance_internal(
             "date": dt.isoformat(),
             "value": val if pd.notnull(val) else 0.0,
             "twr": (twr - 1) * 100 if pd.notnull(twr) else 0.0, # Convert to percentage change
-            "drawdown": dd * 100 if pd.notnull(dd) else 0.0, # Convert to percentage
+            "drawdown": dd if pd.notnull(dd) else 0.0, # Already percentage from portfolio_logic
             "abs_gain": float(abs_gain) if pd.notnull(abs_gain) else 0.0,
             "abs_roi": float(abs_roi) if pd.notnull(abs_roi) else 0.0,
             "cum_flow": float(cum_flow) if pd.notnull(cum_flow) else 0.0,
@@ -1145,6 +1171,7 @@ def _calculate_historical_performance_internal(
             
         result.append(item)
         
+    logging.info(f"API History: Input {total_input} rows. Filtered: Pre={pre_market_count}, Post={post_market_count}. Output {len(result)} rows.")
     return clean_nans(result)
 
 

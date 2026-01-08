@@ -1580,6 +1580,23 @@ def _calculate_aggregate_metrics(
             acc_total_day_change_display = safe_sum(
                 account_full_df, f"Day Change ({display_currency})"
             )
+            # --- DEBUG LOGGING ---
+            # Log the top contributors to Day Change to trace fluctuations
+            if abs(acc_total_day_change_display) > 0:
+                day_change_breakdown = account_full_df[[
+                    "Symbol", f"Day Change ({display_currency})", f"Market Value ({display_currency})"
+                ]].copy()
+                day_change_breakdown = day_change_breakdown.sort_values(
+                    by=f"Day Change ({display_currency})", key=abs, ascending=False
+                ).head(5) # Top 5 movers
+                
+                logging.info(f"Day Change Breakdown for {account}: Total={acc_total_day_change_display}")
+                for _, row in day_change_breakdown.iterrows():
+                    logging.info(
+                        f"  > {row['Symbol']}: DayChg={row[f'Day Change ({display_currency})']}, "
+                        f"MV={row[f'Market Value ({display_currency})']}"
+                    )
+            # ---------------------
             metrics_entry["total_day_change_display"] = acc_total_day_change_display
             acc_current_mv_display = metrics_entry["total_market_value_display"]
             acc_prev_close_mv_display = np.nan
