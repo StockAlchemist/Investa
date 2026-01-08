@@ -1280,7 +1280,30 @@ def _build_summary_rows(
         market_value_display = (
             market_value_local * fx_rate if pd.notna(fx_rate) else np.nan
         )
-        day_change_value_display = 0.0  # Cash doesn't change value
+        # --- Asset Change (Day Change) with FX for Cash ---
+        # Value Today = Qty * 1.0 * FX_Today
+        # Value Yesterday = Qty * 1.0 * FX_Yesterday (Prev Close)
+        day_change_value_display = 0.0
+        day_change_pct = 0.0
+        
+        if local_currency != display_currency and pd.notna(fx_rate) and pd.notna(current_qty):
+             # 1. Get FX Previous Close
+             fx_prev = np.nan
+             # Safe fallback: if local matches display (e.g. USD cash displayed in USD), fx_prev is 1.0
+             # But the 'if' condition above handles that.
+             
+             fx_prev = get_conversion_rate(
+                local_currency, display_currency, current_fx_prev_close_vs_usd
+             )
+             
+             if pd.notna(fx_prev):
+                 val_today = current_qty * 1.0 * fx_rate
+                 val_yesterday = current_qty * 1.0 * fx_prev
+                 day_change_value_display = val_today - val_yesterday
+                 
+                 if abs(val_yesterday) > 1e-9:
+                     day_change_pct = (day_change_value_display / val_yesterday) * 100.0
+        
         current_price_display = (
             current_price_local * fx_rate
             if pd.notna(current_price_local) and pd.notna(fx_rate)
