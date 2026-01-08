@@ -64,6 +64,31 @@ export default function Home() {
     localStorage.setItem('investa_show_closed', showClosed.toString());
   }, [showClosed]);
 
+  const [benchmarksInitialized, setBenchmarksInitialized] = useState(false);
+
+  // Initialize benchmarks from localStorage
+  useEffect(() => {
+    const savedBenchmarks = localStorage.getItem('investa_graph_benchmarks');
+    if (savedBenchmarks) {
+      try {
+        const parsed = JSON.parse(savedBenchmarks);
+        if (Array.isArray(parsed)) {
+          setBenchmarks(parsed);
+        }
+      } catch (e) {
+        console.error("Failed to parse saved benchmarks", e);
+      }
+    }
+    setBenchmarksInitialized(true);
+  }, []);
+
+  // Persist benchmarks to localStorage
+  useEffect(() => {
+    if (benchmarksInitialized) {
+      localStorage.setItem('investa_graph_benchmarks', JSON.stringify(benchmarks));
+    }
+  }, [benchmarks, benchmarksInitialized]);
+
   // Command Palette Keyboard Listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

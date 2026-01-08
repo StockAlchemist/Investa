@@ -60,6 +60,32 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
     const [customToDate, setCustomToDate] = useState(() => {
         return new Date().toISOString().split('T')[0];
     });
+    const [isInitialized, setIsInitialized] = useState(false);
+
+    // Initialize state from localStorage
+    useEffect(() => {
+        const savedPeriod = localStorage.getItem('investa_graph_period');
+        if (savedPeriod) setPeriod(savedPeriod);
+
+        const savedView = localStorage.getItem('investa_graph_view');
+        if (savedView && ['return', 'value', 'drawdown'].includes(savedView)) {
+            setView(savedView as 'return' | 'value' | 'drawdown');
+        }
+        setIsInitialized(true);
+    }, []);
+
+    // Persist state to localStorage
+    useEffect(() => {
+        if (isInitialized) {
+            localStorage.setItem('investa_graph_period', period);
+        }
+    }, [period, isInitialized]);
+
+    useEffect(() => {
+        if (isInitialized) {
+            localStorage.setItem('investa_graph_view', view);
+        }
+    }, [view, isInitialized]);
 
     // Fetch data when period or benchmarks change
     // Fetch data logic
