@@ -2555,7 +2555,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
 
 
 # --- START NUMBA HELPER FUNCTION ---
-@numba.jit(nopython=True, fastmath=True)
+@numba.jit(nopython=True, fastmath=True, cache=True)
 def _calculate_holdings_numba(
     target_date_ordinal,
     tx_dates_ordinal_np,
@@ -2796,7 +2796,7 @@ def _calculate_holdings_numba(
 
 # --- START NEW CHRONOLOGICAL NUMBA HELPER ---
 @profile
-@numba.jit(nopython=True, fastmath=True)
+@numba.jit(nopython=True, fastmath=True, cache=True)
 def _calculate_daily_holdings_chronological_numba(
     date_ordinals_np,
     tx_dates_ordinal_np,

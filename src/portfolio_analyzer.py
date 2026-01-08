@@ -118,7 +118,7 @@ def get_type_id(t):
     if t == 'buy to cover': return TYPE_BUY_TO_COVER
     return TYPE_UNKNOWN
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True)
 def _process_numba_core(
     sym_ids, acc_ids, type_ids, qtys, prices, comms, split_ratios, 
     to_acc_ids, local_curr_ids, fx_rates_hist, 
@@ -459,10 +459,10 @@ def _process_transactions_to_holdings(
     }
     type_ids = df['Type'].map(type_map_dict).fillna(TYPE_UNKNOWN).astype(np.int64).values
     
-    qtys = pd.to_numeric(df['Quantity'], errors='coerce').fillna(0.0).values
+    qtys = pd.to_numeric(df['Quantity'], errors='coerce').fillna(0.0).astype(np.float64).values
     
-    raw_prices = pd.to_numeric(df['Price/Share'], errors='coerce').fillna(0.0).values
-    raw_totals = pd.to_numeric(df['Total Amount'], errors='coerce').fillna(0.0).values
+    raw_prices = pd.to_numeric(df['Price/Share'], errors='coerce').fillna(0.0).astype(np.float64).values
+    raw_totals = pd.to_numeric(df['Total Amount'], errors='coerce').fillna(0.0).astype(np.float64).values
     
     is_div = (type_ids == TYPE_DIVIDEND)
     mask_div_total = is_div & (np.abs(raw_totals) > 1e-9)
@@ -473,8 +473,8 @@ def _process_transactions_to_holdings(
     
     prices = raw_prices
     
-    comms = pd.to_numeric(df['Commission'], errors='coerce').fillna(0.0).values
-    split_ratios = pd.to_numeric(df['Split Ratio'], errors='coerce').fillna(0.0).values
+    comms = pd.to_numeric(df['Commission'], errors='coerce').fillna(0.0).astype(np.float64).values
+    split_ratios = pd.to_numeric(df['Split Ratio'], errors='coerce').fillna(0.0).astype(np.float64).values
     
     to_acc_ids = np.full(n, -1, dtype=np.int64)
     if 'To Account' in df.columns:
