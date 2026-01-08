@@ -581,8 +581,8 @@ class MarketDataProvider:
             pass
 
         # --- 2. Caching Logic for Current Quotes (Short-term Price Cache) ---
-        # v9_NO_CACHE: Explicitly disabled caching to resolve persistent inconsistency/stale data issues.
-        cache_key = f"CURRENT_QUOTES_v9_NO_CACHE::{'_'.join(sorted(yf_symbols_to_fetch))}::{'_'.join(sorted(required_currencies))}"
+        # v10_1M_CACHE: Re-enabled short cache to prevent thread explosion/crash on concurrent requests.
+        cache_key = f"CURRENT_QUOTES_v10_1M_CACHE::{'_'.join(sorted(yf_symbols_to_fetch))}::{'_'.join(sorted(required_currencies))}"
         cached_quotes = None
         cached_fx = None
         cached_fx_prev = None
@@ -597,7 +597,7 @@ class MarketDataProvider:
                     if cache_timestamp_str:
                         cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
                         if datetime.now(timezone.utc) - cache_timestamp < timedelta(
-                            minutes=0 # Force fresh fetch (User Request: Remove Caching)
+                            minutes=1 # Short 1-min cache to allow concurrency without crashing
                         ):
                             cached_quotes = cache_data.get("quotes")
                             cached_fx = cache_data.get("fx_rates")
@@ -637,7 +637,7 @@ class MarketDataProvider:
                     group_by="ticker",
                     auto_adjust=True,
                     progress=False,
-                    threads=True,
+                    threads=8, # Limit threads to prevent crash (default is True=Unlimited)
                     timeout=30 
                 )
                 
@@ -806,7 +806,7 @@ class MarketDataProvider:
                     group_by="ticker",
                     auto_adjust=True,
                     progress=False,
-                    threads=True,
+                    threads=8, # Limit threads to prevent crash
                     timeout=20
                 )
                 

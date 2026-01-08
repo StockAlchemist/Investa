@@ -978,9 +978,18 @@ def _calculate_historical_performance_internal(
         except Exception:
             logging.warning(f"Invalid to_date_str: {to_date_str}")
 
-    # If to_date (custom) is not provided, default to the latest effective trading date
-    # This prevents the graph from showing an empty/flat "Today" (Jan 8) when in pre-market (1:30 AM EST)
-    end_date = to_date_custom if to_date_custom else get_latest_trading_date()
+    # If to_date (custom) is not provided:
+    # 1. For "1d" view (Intraday): Use get_latest_trading_date(). 
+    #    This returns "Yesterday" if we are in US pre-market (e.g. 7 AM EST), preventing a flat, empty "Today" graph.
+    # 2. For other views (1m, 1y, etc): Use get_est_today().
+    #    This ensures "Today" is included as the last data point, capturing international markets (SET) 
+    #    that may have already closed/traded, matching the Summary Card total.
+    from utils_time import get_est_today, get_latest_trading_date
+    
+    if period == "1d":
+        end_date = to_date_custom if to_date_custom else get_latest_trading_date()
+    else:
+        end_date = to_date_custom if to_date_custom else get_est_today()
     
     # Calculate start_date based on period (legacy logic still valid, relative to end_date)
     if period == "custom" and from_date_custom:
