@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { fetchCorrelationMatrix, CorrelationData } from '../lib/api';
+import { fetchCorrelationMatrix, CorrelationData } from '../lib/api'; // fetchCorrelationMatrix type imported but not used directly
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface CorrelationMatrixProps {
-    currency?: string; // Passed to API if needed, though correlation is dimensionless
-    accounts?: string[];
+    data: CorrelationData | null;
+    isLoading: boolean;
+    period: string;
+    onPeriodChange: (p: string) => void;
 }
 
 const PERIOD_OPTIONS = [
@@ -18,38 +20,16 @@ const PERIOD_OPTIONS = [
     { value: '5y', label: '5 Years' },
 ];
 
-export function CorrelationMatrix({ currency = 'USD', accounts }: CorrelationMatrixProps) {
-    const [period, setPeriod] = useState<string>('1y');
-    const [data, setData] = useState<CorrelationData | null>(null);
-    const [loading, setLoading] = useState<boolean>(true);
-    const [error, setError] = useState<string | null>(null);
+export function CorrelationMatrix({ data, isLoading, period, onPeriodChange }: CorrelationMatrixProps) {
+    // Removed local state and useEffect
+    // const [period, setPeriod] = useState<string>('1y'); -> now prop
+
+    // const [error, setError] = useState<string | null>(null); // We can handle error if data is null and not loading, or just fail gracefully
+    // const [loading, setLoading] = useState<boolean>(true); -> now prop
+
     const [hoveredCell, setHoveredCell] = useState<{ x: string, y: string, value: number } | null>(null);
 
-    useEffect(() => {
-        let isMounted = true;
-        const loadData = async () => {
-            try {
-                setLoading(true);
-                setError(null);
-                const result = await fetchCorrelationMatrix(period, accounts);
-                if (isMounted) {
-                    setData(result);
-                }
-            } catch (err) {
-                if (isMounted) {
-                    console.error("Failed to load correlation matrix", err);
-                    setError("Failed to load data.");
-                }
-            } finally {
-                if (isMounted) {
-                    setLoading(false);
-                }
-            }
-        };
-
-        loadData();
-        return () => { isMounted = false; };
-    }, [period, accounts]);
+    // Removed useEffect for fetching data
 
     const getColor = (value: number) => {
         // -1 (red) -> 0 (white/grey) -> 1 (green)
@@ -98,23 +78,7 @@ export function CorrelationMatrix({ currency = 'USD', accounts }: CorrelationMat
         return "bg-emerald-500/70 text-white";
     };
 
-    if (error) {
-        return (
-            <Card className="h-full border-border/50 bg-card">
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        Correlation Matrix
-                    </CardTitle>
-                </CardHeader>
-                <CardContent className="h-[400px] flex items-center justify-center text-muted-foreground">
-                    <div className="flex flex-col items-center gap-2">
-                        <AlertCircle className="h-6 w-6 text-rose-500" />
-                        <span>{error}</span>
-                    </div>
-                </CardContent>
-            </Card>
-        );
-    }
+    /* Error handling handled by parent or empty state */
 
     // Prepare matrix grid
     const assets = data?.assets || [];
@@ -135,7 +99,7 @@ export function CorrelationMatrix({ currency = 'USD', accounts }: CorrelationMat
                 <div className="relative">
                     <select
                         value={period}
-                        onChange={(e) => setPeriod(e.target.value)}
+                        onChange={(e) => onPeriodChange(e.target.value)}
                         className="w-[120px] h-8 text-xs bg-background/50 border border-input/50 rounded-md px-2 focus:ring-primary/20 focus:outline-none appearance-none cursor-pointer"
                     >
                         {PERIOD_OPTIONS.map(opt => (
@@ -148,7 +112,7 @@ export function CorrelationMatrix({ currency = 'USD', accounts }: CorrelationMat
                 </div>
             </CardHeader>
             <CardContent>
-                {loading ? (
+                {isLoading ? (
                     <div className="space-y-4">
                         <Skeleton className="h-[300px] w-full rounded-xl bg-muted/20" />
                     </div>

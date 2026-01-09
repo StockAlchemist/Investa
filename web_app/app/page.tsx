@@ -14,7 +14,11 @@ import {
   fetchDividendCalendar,
   fetchHistory,
   fetchWatchlist,
+
   fetchSettings,
+  fetchPortfolioHealth,
+  fetchCorrelationMatrix,
+  fetchProjectedIncome,
   PerformanceData
 } from '@/lib/api';
 // import { CURRENCY_SYMBOLS } from '@/lib/utils';
@@ -52,6 +56,7 @@ export default function Home() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [showClosed, setShowClosed] = useState(false);
   const [capitalGainsDates, setCapitalGainsDates] = useState<{ from?: string, to?: string }>({});
+  const [correlationPeriod, setCorrelationPeriod] = useState('1y');
 
   // Initialize showClosed from localStorage
   useEffect(() => {
@@ -118,63 +123,54 @@ export default function Home() {
   const holdingsQuery = useQuery({
     queryKey: ['holdings', currency, selectedAccounts, showClosed],
     queryFn: () => fetchHoldings(currency, selectedAccounts, showClosed),
-    enabled: activeTab === 'performance' || activeTab === 'allocation',
     staleTime: 5 * 60 * 1000,
   });
 
   const transactionsQuery = useQuery({
     queryKey: ['transactions', selectedAccounts],
     queryFn: () => fetchTransactions(selectedAccounts),
-    enabled: activeTab === 'transactions',
     staleTime: 5 * 60 * 1000,
   });
 
   const assetChangeQuery = useQuery({
     queryKey: ['assetChange', currency, selectedAccounts, benchmarks],
     queryFn: () => fetchAssetChange(currency, selectedAccounts, benchmarks),
-    enabled: activeTab === 'asset_change',
     staleTime: 5 * 60 * 1000,
   });
 
   const capitalGainsQuery = useQuery({
     queryKey: ['capitalGains', currency, selectedAccounts, capitalGainsDates.from, capitalGainsDates.to],
     queryFn: () => fetchCapitalGains(currency, selectedAccounts, capitalGainsDates.from, capitalGainsDates.to),
-    enabled: activeTab === 'capital_gains',
     staleTime: 5 * 60 * 1000,
   });
 
   const dividendsQuery = useQuery({
     queryKey: ['dividends', currency, selectedAccounts],
     queryFn: () => fetchDividends(currency, selectedAccounts),
-    enabled: activeTab === 'dividend',
     staleTime: 5 * 60 * 1000,
   });
 
   const riskMetricsQuery = useQuery({
     queryKey: ['riskMetrics', currency, selectedAccounts],
     queryFn: () => fetchRiskMetrics(currency, selectedAccounts),
-    enabled: activeTab === 'performance',
     staleTime: 5 * 60 * 1000,
   });
 
   const attributionQuery = useQuery({
     queryKey: ['attribution', currency, selectedAccounts],
     queryFn: () => fetchAttribution(currency, selectedAccounts),
-    enabled: activeTab === 'performance',
     staleTime: 5 * 60 * 1000,
   });
 
   const dividendCalendarQuery = useQuery({
     queryKey: ['dividendCalendar', selectedAccounts],
     queryFn: () => fetchDividendCalendar(selectedAccounts),
-    enabled: activeTab === 'dividend',
     staleTime: 5 * 60 * 1000,
   });
 
   const historySparklineQuery = useQuery({
     queryKey: ['history', currency, selectedAccounts, 'sparkline'],
     queryFn: () => fetchHistory(currency, selectedAccounts, '1d', [], '5m'),
-    enabled: activeTab === 'performance',
     staleTime: 5 * 60 * 1000,
   });
 
@@ -187,6 +183,24 @@ export default function Home() {
   const settingsQuery = useQuery({
     queryKey: ['settings'],
     queryFn: fetchSettings,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const portfolioHealthQuery = useQuery({
+    queryKey: ['portfolioHealth', currency, selectedAccounts],
+    queryFn: () => fetchPortfolioHealth(currency, selectedAccounts),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const correlationMatrixQuery = useQuery({
+    queryKey: ['correlationMatrix', correlationPeriod, selectedAccounts],
+    queryFn: () => fetchCorrelationMatrix(correlationPeriod, selectedAccounts),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const incomeProjectionQuery = useQuery({
+    queryKey: ['incomeProjection', currency, selectedAccounts],
+    queryFn: () => fetchProjectedIncome(currency, selectedAccounts),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -286,10 +300,18 @@ export default function Home() {
           <div className="space-y-6">
             <h2 className="text-xl font-bold text-foreground">Analytics & Risk</h2>
 
-            <PortfolioHealthComponent currency={currency} accounts={selectedAccounts} />
+            <PortfolioHealthComponent
+              data={portfolioHealthQuery.data || null}
+              isLoading={portfolioHealthQuery.isLoading}
+            />
 
             <div className="h-[600px]">
-              <CorrelationMatrix currency={currency} accounts={selectedAccounts} />
+              <CorrelationMatrix
+                data={correlationMatrixQuery.data || null}
+                isLoading={correlationMatrixQuery.isLoading}
+                period={correlationPeriod}
+                onPeriodChange={setCorrelationPeriod}
+              />
             </div>
           </div>
         );
@@ -297,7 +319,11 @@ export default function Home() {
         return (
           <div className="space-y-6">
             <DividendComponent data={dividendData} currency={currency} expectedDividends={summary?.metrics?.est_annual_income_display as number}>
-              <IncomeProjector currency={currency} accounts={selectedAccounts} />
+              <IncomeProjector
+                data={incomeProjectionQuery.data || null}
+                isLoading={incomeProjectionQuery.isLoading}
+                currency={currency}
+              />
               <DividendCalendar
                 events={dividendCalendarQuery.data || []}
                 isLoading={dividendCalendarQuery.isLoading}
@@ -307,7 +333,13 @@ export default function Home() {
           </div>
         );
       case 'settings':
-        return <Settings />;
+        return (
+          <Settings
+            settings={settingsQuery.data || null}
+            holdings={holdings}
+            availableAccounts={availableAccounts}
+          />
+        );
       default:
         return (
           <div className="p-8 text-center text-gray-500 dark:text-gray-400">

@@ -1,15 +1,15 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { fetchPortfolioHealth, PortfolioHealth } from '../lib/api';
+import { PortfolioHealth } from '../lib/api';
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { Activity, PieChart, ShieldCheck } from 'lucide-react';
 
 interface PortfolioHealthProps {
-    currency: string;
-    accounts?: string[];
+    data: PortfolioHealth | null;
+    isLoading: boolean;
 }
 
 const ScoreRing = ({ score }: { score: number }) => {
@@ -88,28 +88,8 @@ const HealthBar = ({ score, label, icon: Icon, value }: { score: number, label: 
     );
 };
 
-export function PortfolioHealthComponent({ currency, accounts }: PortfolioHealthProps) {
-    const [data, setData] = useState<PortfolioHealth | null>(null);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        let isMounted = true;
-        const load = async () => {
-            try {
-                setLoading(true);
-                const res = await fetchPortfolioHealth(currency, accounts);
-                if (isMounted) setData(res);
-            } catch (err) {
-                console.error(err);
-            } finally {
-                if (isMounted) setLoading(false);
-            }
-        };
-        load();
-        return () => { isMounted = false; };
-    }, [currency, accounts]);
-
-    if (loading) {
+export function PortfolioHealthComponent({ data, isLoading }: PortfolioHealthProps) {
+    if (isLoading) {
         return <Skeleton className="h-[250px] w-full rounded-xl" />;
     }
 

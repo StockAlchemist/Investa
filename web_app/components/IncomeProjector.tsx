@@ -1,43 +1,19 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { fetchProjectedIncome, ProjectedIncome } from '../lib/api';
+import { ProjectedIncome } from '../lib/api';
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from '../lib/utils';
-import { cn } from "@/lib/utils";
 
 interface IncomeProjectorProps {
+    data: ProjectedIncome[] | null;
+    isLoading: boolean;
     currency: string;
-    accounts?: string[];
 }
 
-export function IncomeProjector({ currency, accounts }: IncomeProjectorProps) {
-    const [data, setData] = useState<ProjectedIncome[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        let isMounted = true;
-        const load = async () => {
-            try {
-                setLoading(true);
-                // setError(null); // Reset error on reload
-                const res = await fetchProjectedIncome(currency, accounts);
-                if (isMounted) setData(res);
-            } catch (err) {
-                if (isMounted) setError("Failed to load projection.");
-            } finally {
-                if (isMounted) setLoading(false);
-            }
-        };
-        load();
-        return () => { isMounted = false; };
-    }, [currency, accounts]);
-
-    const totalProjected = data.reduce((sum, item) => sum + item.value, 0);
-
+export function IncomeProjector({ data, isLoading, currency }: IncomeProjectorProps) {
     // Generate unique colors for each symbol dynamically
     const colors = [
         "#06b6d4", "#3b82f6", "#8b5cf6", "#ec4899", "#f43f5e",
@@ -46,6 +22,7 @@ export function IncomeProjector({ currency, accounts }: IncomeProjectorProps) {
 
     // Memoize keys to prevent re-renders and ensure consistent order
     const stackedKeys = React.useMemo(() => {
+        if (!data) return [];
         const keys = new Set<string>();
         data.forEach(item => {
             Object.keys(item).forEach(k => {
@@ -57,21 +34,15 @@ export function IncomeProjector({ currency, accounts }: IncomeProjectorProps) {
         return Array.from(keys).sort(); // Sort for consistent color assignment
     }, [data]);
 
-    if (error) {
-        return (
-            <Card className="bg-card border border-border p-6 mb-6">
-                <p className="text-red-500 text-sm">Unable to load income projection.</p>
-            </Card>
-        );
-    }
-
-    if (loading) {
+    if (isLoading) {
         return <Skeleton className="h-[300px] w-full rounded-xl mb-6 bg-muted/10" />;
     }
 
-    if (data.length === 0) {
+    if (!data || data.length === 0) {
         return null;
     }
+
+    const totalProjected = data.reduce((sum, item) => sum + item.value, 0);
 
     return (
         <Card className="bg-card border border-border overflow-hidden mb-6 shadow-sm">

@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { fetchSettings, updateSettings, triggerRefresh, fetchHoldings, fetchSummary, clearCache, Settings as SettingsType, ManualOverride, ManualOverrideData } from '../lib/api';
+import React, { useState, useMemo } from 'react';
+import { updateSettings, triggerRefresh, clearCache, Settings as SettingsType, ManualOverride, ManualOverrideData, Holding } from '../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { COUNTRIES, ALL_INDUSTRIES } from '../lib/constants';
 import AccountGroupManager from './AccountGroupManager';
@@ -39,11 +39,16 @@ const SECTORS = [
     "Exchange-Traded Fund",
 ];
 
-export default function Settings() {
+interface SettingsProps {
+    settings: SettingsType | null;
+    holdings: Holding[];
+    availableAccounts: string[];
+}
+
+export default function Settings({ settings, holdings, availableAccounts }: SettingsProps) {
     const queryClient = useQueryClient();
-    const [settings, setSettings] = useState<SettingsType | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    // Removed local settings state, loading, error, portfolioCountries, availableAccounts (now props/derived)
+
     const [activeTab, setActiveTab] = useState<Tab>('overrides');
     const [clearStatus, setClearStatus] = useState<string | null>(null);
 
@@ -64,51 +69,20 @@ export default function Settings() {
 
     const [excludeSymbol, setExcludeSymbol] = useState('');
 
-    // Dynamic lists based on portfolio data
-    const [portfolioCountries, setPortfolioCountries] = useState<string[]>([]);
-    const [availableAccounts, setAvailableAccounts] = useState<string[]>([]);
-
     // Common input/select classes
     const inputClassName = "w-full rounded-md border border-border bg-secondary text-foreground shadow-sm focus:border-cyan-500 focus:ring-cyan-500 px-3 py-2 text-sm outline-none focus:ring-1";
     const labelClassName = "block text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide";
 
-    useEffect(() => {
-        loadSettings();
-    }, []);
-
-    const loadSettings = async (isRefreshing = false) => {
-        try {
-            if (!isRefreshing) setLoading(true);
-            const [data, holdings, summary] = await Promise.all([
-                fetchSettings(),
-                fetchHoldings(),
-                fetchSummary('USD') // Fetch summary to get available accounts
-            ]);
-
-            setSettings(data);
-
-            if (summary?.metrics?._available_accounts) {
-                setAvailableAccounts(summary.metrics._available_accounts as string[]);
+    // Derive portfolioCountries from holdings prop
+    const portfolioCountries = useMemo(() => {
+        const usedCountries = new Set<string>();
+        holdings.forEach(h => {
+            if (h.Country && h.Country !== 'N/A') {
+                usedCountries.add(h.Country);
             }
-
-            // Extract unique used countries from holdings
-            const usedCountries = new Set<string>();
-            holdings.forEach(h => {
-                // Ensure Country exists and is not empty or "N/A"
-                if (h.Country && h.Country !== 'N/A') {
-                    usedCountries.add(h.Country);
-                }
-            });
-            setPortfolioCountries(Array.from(usedCountries).sort());
-
-            setError(null);
-        } catch (err) {
-            setError('Failed to load settings');
-            console.error(err);
-        } finally {
-            if (!isRefreshing) setLoading(false);
-        }
-    };
+        });
+        return Array.from(usedCountries).sort();
+    }, [holdings]);
 
 
 
@@ -203,8 +177,7 @@ export default function Settings() {
             setOverrideGeo('');
             setOverrideIndustry('');
 
-            await loadSettings(true);
-            await loadSettings(true);
+            // Removed loadSettings call, parent will update
         } catch {
             alert('Failed to save override');
         }
@@ -230,7 +203,6 @@ export default function Settings() {
         try {
             await updateSettings({ manual_price_overrides: cleanedOverrides });
             await queryClient.invalidateQueries({ queryKey: ['settings'] });
-            await loadSettings(true);
         } catch {
             alert('Failed to remove override');
         }
@@ -247,7 +219,7 @@ export default function Settings() {
             await queryClient.invalidateQueries({ queryKey: ['settings'] });
             setMapFrom('');
             setMapTo('');
-            await loadSettings(true);
+            // Removed loadSettings call
         } catch {
             alert('Failed to save mapping');
         }
@@ -261,7 +233,6 @@ export default function Settings() {
         try {
             await updateSettings({ user_symbol_map: currentMap });
             await queryClient.invalidateQueries({ queryKey: ['settings'] });
-            await loadSettings(true);
         } catch {
             alert('Failed to remove mapping');
         }
@@ -278,8 +249,9 @@ export default function Settings() {
 
         try {
             await updateSettings({ user_excluded_symbols: currentList });
+            await queryClient.invalidateQueries({ queryKey: ['settings'] });
             setExcludeSymbol('');
-            await loadSettings(true);
+            // Removed loadSettings call
         } catch {
             alert('Failed to add excluded symbol');
         }
@@ -292,7 +264,6 @@ export default function Settings() {
         try {
             await updateSettings({ user_excluded_symbols: currentList });
             await queryClient.invalidateQueries({ queryKey: ['settings'] });
-            await loadSettings(true);
         } catch {
             alert('Failed to remove excluded symbol');
         }
@@ -323,9 +294,6 @@ export default function Settings() {
             setClearStatus(`Error: ${message}`);
         }
     };
-
-    if (loading) return <div className="p-12 text-center text-gray-500">Loading settings...</div>;
-    if (error) return <div className="p-12 text-center text-red-500">{error}</div>;
 
     const overrides = settings?.manual_overrides || {};
     const symbolMap = settings?.user_symbol_map || {};
@@ -394,7 +362,7 @@ export default function Settings() {
                         <AccountGroupManager
                             settings={settings}
                             availableAccounts={availableAccounts}
-                            onUpdate={() => loadSettings(true)}
+                            onUpdate={() => queryClient.invalidateQueries({ queryKey: ['settings'] })}
                         />
                     )}
 
