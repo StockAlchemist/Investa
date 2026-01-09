@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { exportToCSV } from '../lib/export';
 import { Holding, Lot, addToWatchlist, removeFromWatchlist, WatchlistItem, updateHoldingTags } from '../lib/api';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
-import { LineChart, Line, ResponsiveContainer, YAxis } from 'recharts';
+import { AreaChart, Area, Line, ResponsiveContainer, YAxis, ReferenceLine } from 'recharts';
 import { Star, Search, X, Filter, LayoutGrid, Eye, EyeOff, Layers, Download, Building2, UserCircle, Tag, PenLine, Save } from 'lucide-react';
 
 import { Skeleton } from './ui/skeleton';
@@ -632,20 +632,41 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                             return (
                                                 <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm text-right ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')}`}>
                                                     {header === '7d Trend' ? (
-                                                        <div className="h-8 w-24 ml-auto">
+                                                        <div className="h-10 w-28 ml-auto">
                                                             {val && Array.isArray(val) && val.length > 1 ? (
                                                                 <ResponsiveContainer width="100%" height="100%">
-                                                                    <LineChart data={val.map(v => ({ value: v }))}>
+                                                                    <AreaChart data={val.map((v, i) => ({ value: v, index: i }))}>
+                                                                        <defs>
+                                                                            <linearGradient id={`gradient-green-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
+                                                                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                                                                                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                                                                            </linearGradient>
+                                                                            <linearGradient id={`gradient-red-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
+                                                                                <stop offset="5%" stopColor="#f43f5e" stopOpacity={0} />
+                                                                                <stop offset="95%" stopColor="#f43f5e" stopOpacity={0.3} />
+                                                                            </linearGradient>
+                                                                        </defs>
                                                                         <YAxis hide domain={['dataMin', 'dataMax']} />
-                                                                        <Line
+                                                                        <ReferenceLine y={val[0]} stroke="#71717a" strokeDasharray="2 2" strokeOpacity={0.5} />
+                                                                        <Area
                                                                             type="monotone"
                                                                             dataKey="value"
+                                                                            baseValue={val[0]}
                                                                             stroke={val[val.length - 1] >= val[0] ? "#10b981" : "#f43f5e"}
-                                                                            strokeWidth={2}
-                                                                            dot={false}
+                                                                            fill={`url(#gradient-${val[val.length - 1] >= val[0] ? 'green' : 'red'}-${holding.Symbol})`}
+                                                                            strokeWidth={1.5}
                                                                             isAnimationActive={false}
+                                                                            dot={(props: any) => {
+                                                                                const { cx, cy, index, stroke } = props;
+                                                                                if (index === val.length - 1) {
+                                                                                    return (
+                                                                                        <circle key="dot" cx={cx} cy={cy} r={2} fill={stroke} stroke="none" />
+                                                                                    );
+                                                                                }
+                                                                                return <React.Fragment key={index} />;
+                                                                            }}
                                                                         />
-                                                                    </LineChart>
+                                                                    </AreaChart>
                                                                 </ResponsiveContainer>
                                                             ) : (
                                                                 <div className="h-full w-full flex items-center justify-center text-[10px] text-muted-foreground/30">
