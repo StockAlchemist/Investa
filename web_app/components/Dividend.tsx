@@ -86,14 +86,14 @@ export default function Dividend({ data, currency, expectedDividends, children }
         <div className="space-y-6">
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-card backdrop-blur-md p-4 rounded-xl shadow-sm border border-border">
+                <div className="bg-card p-4 rounded-xl shadow-sm border border-border">
                     <h3 className="text-sm font-medium text-muted-foreground">Total Dividends</h3>
                     <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
                         {formatCurrency(totalDividends, currency)}
                     </p>
                 </div>
                 {expectedDividends !== undefined && (
-                    <div className="bg-card backdrop-blur-md p-4 rounded-xl shadow-sm border border-border">
+                    <div className="bg-card p-4 rounded-xl shadow-sm border border-border">
                         <h3 className="text-sm font-medium text-muted-foreground">Expected Dividends (Next 12M)</h3>
                         <p className="text-2xl font-bold text-cyan-600 dark:text-cyan-400">
                             {formatCurrency(expectedDividends, currency)}
@@ -106,7 +106,7 @@ export default function Dividend({ data, currency, expectedDividends, children }
             {children}
 
             {/* Annual Dividends Chart */}
-            <div className="bg-card backdrop-blur-md p-4 rounded-xl shadow-sm border border-border">
+            <div className="bg-card p-4 rounded-xl shadow-sm border border-border">
                 <h3 className="text-lg font-semibold text-foreground mb-4">Annual Dividends</h3>
                 <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
@@ -123,7 +123,7 @@ export default function Dividend({ data, currency, expectedDividends, children }
                                 content={({ active, payload, label }) => {
                                     if (active && payload && payload.length) {
                                         return (
-                                            <div className="bg-popover/95 backdrop-blur-sm border border-border p-3 rounded-lg shadow-xl">
+                                            <div className="bg-white dark:bg-zinc-950 border border-border p-3 rounded-lg shadow-xl">
                                                 <p className="font-medium text-foreground mb-1">{label}</p>
                                                 <div className="flex items-center gap-2 text-sm">
                                                     <span className="w-2 h-2 rounded-full bg-blue-500" />
@@ -146,7 +146,7 @@ export default function Dividend({ data, currency, expectedDividends, children }
             </div>
 
             {/* Transactions Table */}
-            <div className="bg-card backdrop-blur-md rounded-xl shadow-sm border border-border overflow-hidden">
+            <div className="bg-card rounded-xl shadow-sm border border-border overflow-hidden">
                 <div className="p-4 border-b border-black/5 dark:border-white/5 flex justify-between items-center">
                     <h3 className="text-lg font-semibold text-foreground">Dividend Transactions</h3>
                     <div className="text-sm text-muted-foreground">

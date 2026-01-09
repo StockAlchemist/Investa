@@ -60,7 +60,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
     });
 
     return (
-        <div className="bg-card backdrop-blur-md p-4 rounded-xl shadow-sm border border-border mb-6">
+        <div className="bg-card p-4 rounded-xl shadow-sm border border-border mb-6">
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-semibold text-foreground">{config.title} ({viewMode === 'percent' ? '%' : currency})</h3>
                 <div className="flex items-center space-x-2">
@@ -105,7 +105,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                             content={({ active, payload, label }) => {
                                 if (active && payload && payload.length) {
                                     return (
-                                        <div className="bg-popover/95 backdrop-blur-sm border border-border p-3 rounded-lg shadow-xl">
+                                        <div className="bg-white dark:bg-zinc-950 border border-border p-3 rounded-lg shadow-xl">
                                             <p className="font-medium text-foreground mb-1">
                                                 {typeof label === 'string' && !isNaN(Date.parse(label))
                                                     ? new Date(label).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
@@ -115,11 +115,43 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                                                 <div key={index} className="flex items-center gap-2 text-sm">
                                                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
                                                     <span className="text-muted-foreground">{entry.name}:</span>
-                                                    <span className="font-medium text-foreground">
+                                                    <span className={`font-medium ${Number(entry.value) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
                                                         {formatValue(entry.value)}
                                                     </span>
                                                 </div>
                                             ))}
+                                            {/* Show Net Flow and Total Change if available in Value mode */}
+                                            {viewMode === 'value' && payload[0]?.payload && (() => {
+                                                const record = payload[0].payload;
+                                                const netFlowKey = `Portfolio ${config.key}-NetFlow`;
+                                                const netFlow = record[netFlowKey];
+
+                                                // Only show if netFlow is defined and non-zero
+                                                if (netFlow !== undefined && Math.abs(netFlow) > 0.01) {
+                                                    const totalChange = (payload.find(p => p.name === 'Portfolio') as any)?.value + netFlow;
+                                                    return (
+                                                        <>
+                                                            <div className="flex items-center gap-2 text-sm mt-1 pt-1 border-t border-border/50">
+                                                                <span className="w-2 h-2 rounded-full bg-cyan-500" />
+                                                                <span className="text-muted-foreground">Net Flow:</span>
+                                                                <span className={`font-medium ${Number(netFlow) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                                                                    {formatValue(netFlow)}
+                                                                </span>
+                                                            </div>
+                                                            {totalChange !== undefined && !isNaN(totalChange) && (
+                                                                <div className="flex items-center gap-2 text-sm">
+                                                                    <span className="w-2 h-2 rounded-full bg-transparent" />
+                                                                    <span className="text-muted-foreground">Total Change:</span>
+                                                                    <span className={`font-medium ${Number(totalChange) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                                                                        {formatValue(totalChange)}
+                                                                    </span>
+                                                                </div>
+                                                            )}
+                                                        </>
+                                                    );
+                                                }
+                                                return null;
+                                            })()}
                                         </div>
                                     );
                                 }

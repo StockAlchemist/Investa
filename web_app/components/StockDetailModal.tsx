@@ -222,7 +222,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     <StatCard label="Beta" value={fundamentals.beta?.toFixed(2)} icon={Activity} color="text-purple-400" />
                 </div>
 
-                <div className="bg-muted/30 backdrop-blur-md rounded-2xl p-6 border border-border shadow-md">
+                <div className="bg-muted rounded-2xl p-6 border border-border shadow-md">
                     <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
                         <Building2 className="w-5 h-5 text-cyan-500" />
                         Business Summary
@@ -305,11 +305,11 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     ))}
                 </div>
 
-                <div className="overflow-x-auto rounded-2xl border border-border bg-muted/20 backdrop-blur-md">
+                <div className="overflow-x-auto rounded-2xl border border-border bg-muted">
                     <table className="w-full text-sm text-left">
                         <thead className="bg-secondary/50 font-semibold border-b border-border">
                             <tr>
-                                <th className="px-6 py-3 font-semibold text-foreground sticky left-0 bg-card/80 backdrop-blur-md"></th>
+                                <th className="px-6 py-3 font-semibold text-foreground sticky left-0 bg-card"></th>
                                 <th className="px-6 py-3 font-semibold text-center text-muted-foreground">Trend</th>
                                 {currentStatement.columns.map(col => (
                                     <th key={col} className="px-6 py-3 font-semibold text-center text-muted-foreground tabular-nums">{new Date(col).getFullYear()}</th>
@@ -319,7 +319,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         <tbody className="divide-y divide-border/50">
                             {currentStatement.index.map((item, idx) => (
                                 <tr key={item} className="hover:bg-accent/5 transition-colors">
-                                    <td className="px-6 py-3 font-medium text-foreground sticky left-0 bg-card/80 backdrop-blur-md min-w-[200px] border-r border-border/50 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">{item}</td>
+                                    <td className="px-6 py-3 font-medium text-foreground sticky left-0 bg-card min-w-[200px] border-r border-border/50 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">{item}</td>
                                     <td className="px-6 py-3 text-center min-w-[100px]">
                                         <Sparkline data={currentStatement.data[idx] as number[]} />
                                     </td>
@@ -379,9 +379,9 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
     return createPortal(
         <div className="fixed inset-0 z-[100] flex flex-col justify-end sm:justify-center items-center p-0 sm:p-4 isolate">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+            <div className="absolute inset-0 bg-black/60" onClick={onClose} />
 
-            <div className="relative bg-card w-full max-w-5xl h-[94vh] sm:h-auto sm:max-h-[90vh] rounded-t-[2.5rem] sm:rounded-[2rem] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-300">
+            <div className="relative bg-white dark:bg-zinc-950 w-full max-w-5xl h-[94vh] sm:h-auto sm:max-h-[90vh] rounded-t-[2.5rem] sm:rounded-[2rem] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-300">
 
                 {/* Mobile Drag Handle */}
                 <div className="sm:hidden w-full flex justify-center pt-3 pb-1 flex-shrink-0">
@@ -389,7 +389,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 </div>
 
                 {/* Sticky Header & Tabs Container */}
-                <div className="sticky top-0 z-50 bg-card/98 backdrop-blur-xl border-b border-border flex-shrink-0 shadow-sm">
+                <div className="sticky top-0 z-50 bg-card border-b border-border flex-shrink-0 shadow-sm">
                     {/* Header */}
                     <div className="p-5 sm:p-8 pb-3 sm:pb-4 flex justify-between items-start relative">
                         <div className="hidden sm:block absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-[100px] -mr-32 -mt-32" />
@@ -500,7 +500,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
 function StatCard({ label, value, icon: Icon, color, className, rotate }: any) {
     return (
-        <div className="bg-muted/30 backdrop-blur-md border border-border p-5 rounded-2xl flex items-center gap-4 transition-all hover:bg-muted/50 hover:border-accent group">
+        <div className="bg-muted border border-border p-5 rounded-2xl flex items-center gap-4 transition-all hover:bg-muted/50 hover:border-accent group">
             <div className={cn("p-3 rounded-xl bg-card border border-border", color, rotate)}>
                 <Icon className="w-5 h-5" />
             </div>
@@ -530,7 +530,7 @@ function TabButton({ active, onClick, icon: Icon, label }: any) {
 function RatioChart({ data, dataKey, title, color, suffix = "" }: any) {
     const sanitizedId = `gradient-${dataKey.replace(/[^a-zA-Z0-9]/g, '')}`;
     return (
-        <div className="bg-muted/30 backdrop-blur-md border border-border p-6 rounded-2xl">
+        <div className="bg-muted border border-border p-6 rounded-2xl">
             <h4 className="text-sm font-semibold text-muted-foreground mb-6 uppercase tracking-wider">{title}</h4>
             <div className="h-48 w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -558,9 +558,24 @@ function RatioChart({ data, dataKey, title, color, suffix = "" }: any) {
                             tickFormatter={(val) => `${val}${suffix}`}
                         />
                         <Tooltip
-                            contentStyle={{ backgroundColor: 'var(--card)', border: '1px solid var(--border)', borderRadius: '12px', fontSize: '12px', color: 'var(--foreground)' }}
-                            itemStyle={{ color: color }}
-                            formatter={(val: any) => [`${val.toFixed(2)}${suffix}`, title]}
+                            content={({ active, payload, label }) => {
+                                if (active && payload && payload.length) {
+                                    return (
+                                        <div className="bg-white dark:bg-zinc-950 border border-border p-3 rounded-xl shadow-xl text-xs">
+                                            <p className="font-medium text-foreground mb-1">{label}</p>
+                                            <div className="flex items-center gap-2">
+                                                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+                                                <span className="text-muted-foreground">{title}:</span>
+                                                <span className="font-bold text-foreground">
+                                                    {Number(payload[0].value).toFixed(2)}{suffix}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            }}
+                            cursor={{ stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '3 3' }}
                         />
                         <Area
                             type="monotone"

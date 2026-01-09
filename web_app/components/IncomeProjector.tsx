@@ -59,7 +59,7 @@ export function IncomeProjector({ currency, accounts }: IncomeProjectorProps) {
 
     if (error) {
         return (
-            <Card className="bg-card backdrop-blur-md border border-border p-6 mb-6">
+            <Card className="bg-card border border-border p-6 mb-6">
                 <p className="text-red-500 text-sm">Unable to load income projection.</p>
             </Card>
         );
@@ -74,7 +74,7 @@ export function IncomeProjector({ currency, accounts }: IncomeProjectorProps) {
     }
 
     return (
-        <Card className="bg-card backdrop-blur-md border border-border overflow-hidden mb-6 shadow-sm">
+        <Card className="bg-card border border-border overflow-hidden mb-6 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between pb-2 px-6 pt-6 space-y-0">
                 <div>
                     <CardTitle className="text-lg font-semibold text-foreground">
@@ -110,7 +110,7 @@ export function IncomeProjector({ currency, accounts }: IncomeProjectorProps) {
                                     // Sort payload by value desc for better reading in tooltip
                                     const sortedPayload = [...payload].sort((a, b) => (b.value as number) - (a.value as number));
                                     return (
-                                        <div className="bg-popover border border-border p-3 rounded-lg shadow-xl text-xs backdrop-blur-md min-w-[180px]">
+                                        <div className="bg-white dark:bg-zinc-950 border border-border p-3 rounded-lg shadow-xl text-xs min-w-[180px]">
                                             <p className="font-semibold mb-2 text-foreground">{label}</p>
                                             {sortedPayload.map((entry, idx) => (
                                                 <div key={`tooltip-${idx}`} className="flex items-center gap-3 mb-1 last:mb-0">

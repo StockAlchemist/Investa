@@ -346,7 +346,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
     const isSplitRatioDisabled = !isSplit;
 
     return (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50">
             <div className="flex min-h-full items-center justify-center p-4">
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-lg w-full max-w-md shadow-xl relative">
                     <div className="flex justify-between items-center mb-4">

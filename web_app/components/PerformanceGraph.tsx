@@ -285,7 +285,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
             );
 
             return (
-                <div className="bg-popover/90 backdrop-blur-md p-3 border border-border shadow-2xl rounded-xl min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-32px)] overflow-visible">
+                <div className="bg-white dark:bg-zinc-950 p-3 border border-border shadow-2xl rounded-xl min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-32px)] overflow-visible">
                     <p className="text-sm font-bold text-foreground mb-2 border-b border-border pb-1">
                         {dateStr}
                     </p>
@@ -380,7 +380,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
     };
 
     return (
-        <div className="bg-card backdrop-blur-md rounded-xl p-4 shadow-sm border border-border mb-6 overflow-visible">
+        <div className="bg-card rounded-xl p-4 shadow-sm border border-border mb-6 overflow-visible">
             <div className="mb-6">
                 <div className="flex flex-col gap-1 mb-4">
                     <h3 className="text-lg font-medium text-muted-foreground">
@@ -436,8 +436,8 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                         <div className="flex bg-secondary rounded-lg p-1 border border-border shrink-0">
                             <button
                                 onClick={() => setView('return')}
-                                className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-colors ${view === 'return'
-                                    ? 'bg-card text-foreground shadow-sm'
+                                className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'return'
+                                    ? 'bg-[#0097b2] text-white shadow-sm'
                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
                                     }`}
                             >
@@ -445,8 +445,8 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                             </button>
                             <button
                                 onClick={() => setView('value')}
-                                className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-colors ${view === 'value'
-                                    ? 'bg-card text-foreground shadow-sm'
+                                className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'value'
+                                    ? 'bg-[#0097b2] text-white shadow-sm'
                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
                                     }`}
                             >
@@ -454,8 +454,8 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                             </button>
                             <button
                                 onClick={() => setView('drawdown')}
-                                className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-colors ${view === 'drawdown'
-                                    ? 'bg-card text-foreground shadow-sm'
+                                className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'drawdown'
+                                    ? 'bg-[#0097b2] text-white shadow-sm'
                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
                                     }`}
                             >

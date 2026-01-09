@@ -45,7 +45,7 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
     const countryData = aggregateData('Country');
 
     const renderPieChart = (title: string, data: AggregatedData[]) => (
-        <div className="bg-card backdrop-blur-md p-4 rounded-xl shadow-sm border border-border flex flex-col h-[32rem]">
+        <div className="bg-card p-4 rounded-xl shadow-sm border border-border flex flex-col h-[32rem]">
             <h3 className="text-lg font-semibold text-foreground mb-4 text-center">{title}</h3>
             <div className="flex-grow">
                 <ResponsiveContainer width="100%" height="100%">
@@ -67,7 +67,7 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
                             content={({ active, payload }) => {
                                 if (active && payload && payload.length) {
                                     return (
-                                        <div className="bg-popover/95 backdrop-blur-sm border border-border p-3 rounded-lg shadow-xl">
+                                        <div className="bg-white dark:bg-zinc-950 border border-border p-3 rounded-lg shadow-xl">
                                             <p className="font-medium text-foreground">{payload[0].name}</p>
                                             <p className="text-sm text-muted-foreground">
                                                 {formatCurrency(payload[0].value as number, currency)}

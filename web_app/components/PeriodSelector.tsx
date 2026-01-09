@@ -21,13 +21,13 @@ const PERIODS = [
 
 export default function PeriodSelector({ selectedPeriod, onPeriodChange }: PeriodSelectorProps) {
     return (
-        <div className="flex shrink-0 space-x-1 bg-secondary backdrop-blur-md rounded-lg p-1 border border-border">
+        <div className="flex shrink-0 space-x-1 bg-secondary rounded-lg p-1 border border-border">
             {PERIODS.map((period) => (
                 <button
                     key={period.value}
                     onClick={() => onPeriodChange(period.value)}
-                    className={`px-2.5 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-colors ${selectedPeriod === period.value
-                        ? 'bg-card text-foreground shadow-sm border border-border'
+                    className={`px-2.5 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${selectedPeriod === period.value
+                        ? 'bg-[#0097b2] text-white shadow-sm'
                         : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
                         }`}
                 >

@@ -405,7 +405,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
 
     return (
         <>
-            <div className="bg-card backdrop-blur-md border border-border rounded-xl shadow-sm mt-4 overflow-hidden scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800 scrollbar-track-transparent">
+            <div className="bg-card border border-border rounded-xl shadow-sm mt-4 overflow-hidden scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800 scrollbar-track-transparent">
                 <div className="flex flex-col gap-4 p-4 border-b border-black/5 dark:border-white/5">
                     {/* Header Row: Title, Count & Search */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -444,9 +444,9 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         <div className="relative" ref={sectorMenuRef}>
                             <button
                                 onClick={() => setIsSectorMenuOpen(!isSectorMenuOpen)}
-                                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-md transition-colors
+                                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors
                                 ${selectedSectors.size > 0 || isSectorMenuOpen
-                                        ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
+                                        ? 'bg-[#0097b2] text-white shadow-sm border-transparent'
                                         : 'text-foreground bg-secondary border-border hover:bg-accent/10'
                                     }`}
                             >
@@ -455,7 +455,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                 {selectedSectors.size > 0 && <span className="sm:hidden text-[10px] absolute -top-1 -right-1 bg-cyan-500 text-white rounded-full w-4 h-4 flex items-center justify-center border border-card">{selectedSectors.size}</span>}
                             </button>
                             {isSectorMenuOpen && (
-                                <div className="absolute left-0 z-50 mt-1.5 w-56 origin-top-left bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
+                                <div className="absolute left-0 z-50 mt-1.5 w-56 origin-top-left bg-white dark:bg-zinc-950 border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto">
                                     <div className="p-2 border-b border-border">
                                         <button onClick={() => setSelectedSectors(new Set())} className="text-xs text-cyan-500 hover:text-cyan-600 font-medium w-full text-left px-2">
                                             Clear Filter
@@ -483,9 +483,9 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         <div className="relative" ref={accountMenuRef}>
                             <button
                                 onClick={() => setIsAccountMenuOpen(!isAccountMenuOpen)}
-                                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-md transition-colors
+                                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors
                                 ${selectedAccounts.size > 0 || isAccountMenuOpen
-                                        ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
+                                        ? 'bg-[#0097b2] text-white shadow-sm border-transparent'
                                         : 'text-foreground bg-secondary border-border hover:bg-accent/10'
                                     }`}
                             >
@@ -494,7 +494,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                 {selectedAccounts.size > 0 && <span className="sm:hidden text-[10px] absolute -top-1 -right-1 bg-cyan-500 text-white rounded-full w-4 h-4 flex items-center justify-center border border-card">{selectedAccounts.size}</span>}
                             </button>
                             {isAccountMenuOpen && (
-                                <div className="absolute left-0 z-50 mt-1.5 w-56 origin-top-left bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
+                                <div className="absolute left-0 z-50 mt-1.5 w-56 origin-top-left bg-white dark:bg-zinc-950 border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto">
                                     <div className="p-2 border-b border-border">
                                         <button onClick={() => setSelectedAccounts(new Set())} className="text-xs text-cyan-500 hover:text-cyan-600 font-medium w-full text-left px-2">
                                             Clear Filter
@@ -521,13 +521,17 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         <div className="relative" ref={columnMenuRef}>
                             <button
                                 onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)}
-                                className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-foreground bg-secondary border border-border rounded-md shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md"
+                                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors
+                                ${isColumnMenuOpen
+                                        ? 'bg-[#0097b2] text-white shadow-sm border-transparent'
+                                        : 'text-foreground bg-secondary border-border hover:bg-accent/10'
+                                    }`}
                             >
                                 <LayoutGrid className="w-3.5 h-3.5" />
                                 <span className="hidden sm:inline">Columns</span>
                             </button>
                             {isColumnMenuOpen && (
-                                <div className="absolute left-0 sm:left-auto sm:right-0 z-50 mt-1.5 w-56 origin-top-left sm:origin-top-right bg-card border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto backdrop-blur-xl">
+                                <div className="absolute left-0 sm:left-auto sm:right-0 z-50 mt-1.5 w-56 origin-top-left sm:origin-top-right bg-white dark:bg-zinc-950 border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto">
                                     <div className="py-1">
                                         {Object.keys(COLUMN_DEFINITIONS).map(header => (
                                             <label key={header} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
@@ -548,9 +552,9 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         {/* Show/Hide Closed Toggle */}
                         <button
                             onClick={() => onToggleShowClosed?.(!showClosed)}
-                            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md transition-colors
+                            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors
                             ${showClosed
-                                    ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
+                                    ? 'bg-[#0097b2] text-white shadow-sm border-transparent'
                                     : 'text-foreground bg-secondary border-border hover:bg-accent/10'
                                 }`}
                             title={showClosed ? 'Hide Closed Positions' : 'Show Closed Positions'}
@@ -562,9 +566,9 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         {/* Show/Hide Lots Toggle */}
                         <button
                             onClick={() => setShowLots(!showLots)}
-                            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md transition-colors
+                            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors
                             ${showLots
-                                    ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/50'
+                                    ? 'bg-[#0097b2] text-white shadow-sm border-transparent'
                                     : 'text-foreground bg-secondary border-border hover:bg-accent/10'
                                 }`}
                             title={showLots ? 'Hide Tax Lots' : 'Show Tax Lots'}
@@ -576,7 +580,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         {/* Export Button */}
                         <button
                             onClick={() => exportToCSV(holdings, 'holdings.csv')}
-                            className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-foreground bg-secondary border border-border rounded-md shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center backdrop-blur-md ml-auto"
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-foreground bg-secondary border border-border rounded-md shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center ml-auto"
                             title="Export to CSV"
                         >
                             <Download className="w-3.5 h-3.5" />
@@ -758,7 +762,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                     {visibleHoldings.map((holding, idx) => (
                         <div
                             key={`mobile-${holding.Symbol}-${idx}`}
-                            className="bg-card rounded-lg border border-border shadow-sm p-4 backdrop-blur-md cursor-pointer hover:border-cyan-500/50 transition-all active:scale-[0.98]"
+                            className="bg-card rounded-lg border border-border shadow-sm p-4 cursor-pointer hover:border-cyan-500/50 transition-all active:scale-[0.98]"
                             onClick={() => openStockDetail(holding.Symbol, currency)}
                         >
                             <div className="flex justify-between items-start mb-2">
@@ -808,7 +812,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                     <span className="text-muted-foreground">Div Yield:</span>
                                     <span className="text-foreground font-medium">{formatValue(getValue(holding, "Yield (Mkt) %"), "Yield (Mkt) %")}</span>
                                 </div>
-                                <div className="flex justify-between col-span-2 bg-secondary border border-border p-2 rounded backdrop-blur-sm">
+                                <div className="flex justify-between col-span-2 bg-secondary border border-border p-2 rounded">
                                     <span className="text-muted-foreground">Total Return:</span>
                                     <span className={`font-medium ${getCellClass(getValue(holding, "Total G/L"), "Total G/L")}`}>
                                         {formatValue(getValue(holding, "Total G/L"), "Total G/L")} ({formatValue(getValue(holding, "Total Ret %"), "Total Ret %")})
@@ -870,7 +874,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
             {/* Edit Tags Modal */}
             {
                 editingTags && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
                         <div className="bg-card border border-border rounded-lg shadow-xl w-full max-w-sm p-4 space-y-4">
                             <div className="flex justify-between items-center">
                                 <h3 className="text-lg font-semibold flex items-center gap-2">

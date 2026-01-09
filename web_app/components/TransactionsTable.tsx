@@ -195,14 +195,14 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                         )}
                         <button
                             onClick={() => { setShowFilters(!showFilters); if (showFilters) resetFilters(); }}
-                            className="flex justify-between w-full md:w-auto px-4 py-2 gap-3 text-sm font-medium text-foreground bg-secondary border border-border rounded-lg shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 backdrop-blur-md transition-all items-center"
+                            className="flex justify-between w-full md:w-auto px-4 py-2 gap-3 text-sm font-medium text-foreground bg-secondary border border-border rounded-lg shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-all items-center"
                         >
                             <span>{showFilters ? 'Hide Filters' : 'Show Filters'}</span>
                             <span className="text-xs">{showFilters ? '▲' : '▼'}</span>
                         </button>
                         <button
                             onClick={() => exportToCSV(filteredTransactions, 'transactions.csv')}
-                            className="flex-1 md:flex-none px-4 py-2 bg-secondary border border-border text-foreground rounded-md hover:bg-accent/10 transition-colors text-sm font-medium text-center backdrop-blur-md"
+                            className="flex-1 md:flex-none px-4 py-2 bg-secondary border border-border text-foreground rounded-md hover:bg-accent/10 transition-colors text-sm font-medium text-center"
                         >
                             Export CSV
                         </button>
@@ -220,7 +220,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                                 placeholder="Filter Symbol..."
                                 value={symbolFilter}
                                 onChange={(e) => setSymbolFilter(e.target.value)}
-                                className="bg-card border border-border text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-cyan-500 focus:border-cyan-500 backdrop-blur-md"
+                                className="bg-card border border-border text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-cyan-500 focus:border-cyan-500"
                             />
                             {symbolFilter && (
                                 <button
@@ -237,7 +237,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                                 placeholder="Filter Account..."
                                 value={accountFilter}
                                 onChange={(e) => setAccountFilter(e.target.value)}
-                                className="bg-card border border-border text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-cyan-500 focus:border-cyan-500 backdrop-blur-md"
+                                className="bg-card border border-border text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-cyan-500 focus:border-cyan-500"
                             />
                             {accountFilter && (
                                 <button
@@ -252,7 +252,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                             <select
                                 value={filterType}
                                 onChange={(e) => setFilterType(e.target.value)}
-                                className="bg-card border border-border text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-cyan-500 focus:border-cyan-500 backdrop-blur-md appearance-none pr-8"
+                                className="bg-card border border-border text-foreground rounded-md px-3 py-2 text-sm w-full focus:ring-cyan-500 focus:border-cyan-500 appearance-none pr-8"
                             >
                                 <option value="">All Types</option>
                                 {existingTypes.map(type => (
@@ -265,7 +265,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                         </div>
                         <button
                             onClick={resetFilters}
-                            className="flex-1 md:flex-none px-4 py-2 bg-secondary border border-border text-foreground rounded-md hover:bg-accent/10 transition-colors text-sm font-medium text-center backdrop-blur-md"
+                            className="flex-1 md:flex-none px-4 py-2 bg-secondary border border-border text-foreground rounded-md hover:bg-accent/10 transition-colors text-sm font-medium text-center"
                         >
                             Reset Filters
                         </button>
@@ -274,7 +274,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
             </div>
 
             {/* Desktop Table View */}
-            <div className="bg-card backdrop-blur-md rounded-xl shadow-sm border border-border overflow-hidden">
+            <div className="bg-card rounded-xl shadow-sm border border-border overflow-hidden">
                 <div className="hidden md:block overflow-x-auto">
                     <table className="min-w-full divide-y divide-black/5 dark:divide-white/10">
                         <thead className="bg-secondary/50 font-semibold border-b border-border">
@@ -376,7 +376,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
             {/* Mobile Card View */}
             <div className="block md:hidden space-y-4 p-4">
                 {visibleTransactions.map((tx, index) => (
-                    <div key={`mobile-tx-${index}`} className="bg-card rounded-lg border border-border shadow-sm p-4 backdrop-blur-md">
+                    <div key={`mobile-tx-${index}`} className="bg-card rounded-lg border border-border shadow-sm p-4">
                         <div className="flex justify-between items-start mb-2">
                             <div>
                                 <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${tx.Type.toUpperCase() === 'BUY' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :

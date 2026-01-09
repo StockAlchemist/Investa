@@ -55,7 +55,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
     if (isLoading) {
         return (
             <div className="space-y-4">
-                <Card className="bg-card/50 border-border">
+                <Card className="bg-card border-border">
                     <CardHeader>
                         <Skeleton className="h-8 w-48" />
                     </CardHeader>
@@ -71,7 +71,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
 
     return (
         <div className="space-y-6">
-            <Card className="bg-card/50 border-border backdrop-blur-sm">
+            <Card className="bg-card border-border">
                 <CardHeader className="flex flex-row items-center justify-between">
                     <div>
                         <CardTitle className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">

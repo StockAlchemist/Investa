@@ -41,7 +41,7 @@ export default function DividendCalendar({ events, isLoading, currency }: Divide
     );
 
     return (
-        <div className="bg-card backdrop-blur-md rounded-xl shadow-sm border border-border overflow-hidden">
+        <div className="bg-card rounded-xl shadow-sm border border-border overflow-hidden">
             <div className="p-6 border-b border-border">
                 <h3 className="text-sm font-semibold text-muted-foreground">Dividend Calendar</h3>
             </div>

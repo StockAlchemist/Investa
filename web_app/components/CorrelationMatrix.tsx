@@ -100,7 +100,7 @@ export function CorrelationMatrix({ currency = 'USD', accounts }: CorrelationMat
 
     if (error) {
         return (
-            <Card className="h-full border-border/50 bg-background/50 backdrop-blur-xl">
+            <Card className="h-full border-border/50 bg-card">
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         Correlation Matrix
@@ -127,7 +127,7 @@ export function CorrelationMatrix({ currency = 'USD', accounts }: CorrelationMat
     });
 
     return (
-        <Card className="h-full border-border/50 bg-background/50 backdrop-blur-xl transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 hover:border-primary/20">
+        <Card className="h-full border-border/50 bg-card transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 hover:border-primary/20">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
                     Correlation Matrix

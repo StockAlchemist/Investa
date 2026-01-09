@@ -76,7 +76,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }: CommandP
         <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]">
             {/* Backdrop */}
             <div
-                className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
+                className="fixed inset-0 bg-black/50 transition-opacity"
                 onClick={onClose}
             />
 

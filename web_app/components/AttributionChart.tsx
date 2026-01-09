@@ -68,7 +68,7 @@ export default function AttributionChart({ data, isLoading, currency }: Attribut
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Sector Attribution */}
-            <div className="bg-card backdrop-blur-md rounded-xl p-6 shadow-sm border border-border">
+            <div className="bg-card rounded-xl p-6 shadow-sm border border-border">
                 <h3 className="text-sm font-medium text-muted-foreground mb-6 uppercase tracking-wider">Sector Contribution</h3>
                 <div className="space-y-4">
                     {hasSectors ? data.sectors.map((s) => (
@@ -93,7 +93,7 @@ export default function AttributionChart({ data, isLoading, currency }: Attribut
             </div>
 
             {/* Top Contributors */}
-            <div className="bg-card backdrop-blur-md rounded-xl p-6 shadow-sm border border-border">
+            <div className="bg-card rounded-xl p-6 shadow-sm border border-border">
                 <h3 className="text-sm font-medium text-muted-foreground mb-6 uppercase tracking-wider">Top Contributors</h3>
                 <div className="space-y-3">
                     {hasStocks ? data.stocks.map((stock, idx) => (

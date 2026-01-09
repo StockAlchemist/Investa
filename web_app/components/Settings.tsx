@@ -339,7 +339,7 @@ export default function Settings() {
         <div className="space-y-8 pb-20 max-w-6xl mx-auto">
 
             {/* Symbol Settings Section */}
-            <div className="bg-card backdrop-blur-md shadow-sm rounded-xl overflow-hidden border border-border">
+            <div className="bg-white dark:bg-zinc-950 shadow-sm rounded-xl overflow-hidden border border-border">
                 <div className="px-6 py-4 border-b border-border">
                     <h2 className="text-xl font-bold text-foreground">Symbol Settings</h2>
                     <p className="text-sm text-muted-foreground mt-1">
@@ -715,7 +715,7 @@ export default function Settings() {
             </div>
 
             {/* Webhook Connection (Existing) */}
-            <div className="bg-card backdrop-blur-md shadow-sm rounded-xl p-6 border border-border border-l-4 border-l-cyan-500">
+            <div className="bg-white dark:bg-zinc-950 shadow-sm rounded-xl p-6 border border-border border-l-4 border-l-cyan-500">
                 <h2 className="text-lg font-bold mb-4 text-foreground">Webhook Integration</h2>
                 <div className="space-y-4">
                     <p className="text-sm text-muted-foreground">
@@ -746,7 +746,7 @@ export default function Settings() {
             </div>
 
             {/* Cache Management Section */}
-            <div className="bg-card backdrop-blur-md shadow-sm rounded-xl p-6 border border-border border-l-4 border-l-rose-500">
+            <div className="bg-white dark:bg-zinc-950 shadow-sm rounded-xl p-6 border border-border border-l-4 border-l-rose-500">
                 <h2 className="text-lg font-bold mb-4 text-foreground">Cache Management</h2>
                 <div className="space-y-4">
                     <p className="text-sm text-muted-foreground">

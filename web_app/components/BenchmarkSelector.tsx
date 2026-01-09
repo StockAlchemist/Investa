@@ -54,17 +54,23 @@ export default function BenchmarkSelector({ selectedBenchmarks, onBenchmarkChang
             </button>
 
             {isOpen && (
-                <div className="absolute left-0 md:right-0 mt-2 w-56 bg-popover backdrop-blur-xl rounded-md shadow-2xl border border-border z-50">
+                <div className="absolute left-0 md:right-0 mt-2 w-56 bg-white dark:bg-zinc-950 rounded-md shadow-2xl border border-border z-50">
                     <div className="p-2 space-y-1">
                         {BENCHMARKS.map((benchmark) => (
-                            <label key={benchmark} className="flex items-center space-x-2 px-2 py-1.5 hover:bg-accent/10 rounded cursor-pointer transition-colors">
+                            <label
+                                key={benchmark}
+                                className={`flex items-center space-x-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${selectedBenchmarks.includes(benchmark)
+                                    ? 'bg-[#0097b2] text-white shadow-sm'
+                                    : 'hover:bg-accent/10 text-foreground'
+                                    }`}
+                            >
                                 <input
                                     type="checkbox"
                                     checked={selectedBenchmarks.includes(benchmark)}
                                     onChange={() => handleToggle(benchmark)}
-                                    className="rounded border-border bg-secondary text-cyan-500 focus:ring-cyan-500"
+                                    className={`rounded border-border bg-secondary focus:ring-cyan-500 ${selectedBenchmarks.includes(benchmark) ? 'text-white' : 'text-cyan-500'}`}
                                 />
-                                <span className="text-sm text-foreground">{benchmark}</span>
+                                <span className={`text-sm ${selectedBenchmarks.includes(benchmark) ? 'text-white' : 'text-foreground'}`}>{benchmark}</span>
                             </label>
                         ))}
                     </div>

@@ -1905,10 +1905,21 @@ def calculate_periodic_returns(
             cols_to_resample = list(valid_gain_cols)
             agg_dict = {col: "last" for col in valid_gain_cols}
             
-            if "daily_gain" in historical_df.columns:
-                cols_to_resample.append("daily_gain")
-                agg_dict["daily_gain"] = "sum"
+            # Determine which daily gain column to use (it might be renamed to 'Portfolio Daily Gain')
+            target_daily_gain_col = "daily_gain"
+            if "Portfolio Daily Gain" in historical_df.columns:
+                target_daily_gain_col = "Portfolio Daily Gain"
+
+            if target_daily_gain_col in historical_df.columns:
+                cols_to_resample.append(target_daily_gain_col)
+                agg_dict[target_daily_gain_col] = "sum"
             
+            # Check for Cumulative Net Flow to calculate periodic flows
+            net_flow_col = "Cumulative Net Flow"
+            if net_flow_col in historical_df.columns:
+                cols_to_resample.append(net_flow_col)
+                agg_dict[net_flow_col] = "last"
+
             # Resample
             resampled_data = (
                 historical_df[cols_to_resample].resample(freq_code).agg(agg_dict)
@@ -1916,7 +1927,20 @@ def calculate_periodic_returns(
             
             # Separate factors and value changes
             resampled_factors = resampled_data[valid_gain_cols]
-            resampled_value_change = resampled_data["daily_gain"] if "daily_gain" in resampled_data.columns else pd.Series()
+            resampled_value_change = resampled_data[target_daily_gain_col] if target_daily_gain_col in resampled_data.columns else pd.Series()
+            
+            # Calculate periodic net flow
+            resampled_net_flow = pd.Series(dtype=float)
+            if net_flow_col in resampled_data.columns:
+                # Calculate diff to get flow per period
+                resampled_net_flow = resampled_data[net_flow_col].diff()
+                # Initial period flow is just the cumulative flow at that point (assuming start from 0 or handling disjoint periods)
+                # However, resample('ME') essentially snapshots the cumulative at end. 
+                # If the first period snapshots at X, and prev was 0, then flow is X.
+                # But we must be careful about the very first entry if it's not 0.
+                if not resampled_net_flow.empty:
+                     resampled_net_flow.iloc[0] = resampled_data[net_flow_col].iloc[0]
+
             # --- END MODIFIED ---
 
             # --- ADDED: Filter out weekends for Daily returns ---
@@ -1928,6 +1952,10 @@ def calculate_periodic_returns(
                 if not resampled_value_change.empty:
                     resampled_value_change = resampled_value_change[mask]
                 
+                # Filter Net Flow as well
+                if not resampled_net_flow.empty:
+                    resampled_net_flow = resampled_net_flow[mask]
+
                 # Filter out US Holidays
                 try:
                     cal = USFederalHolidayCalendar()
@@ -1936,6 +1964,8 @@ def calculate_periodic_returns(
                     resampled_factors = resampled_factors[mask_hol]
                     if not resampled_value_change.empty:
                         resampled_value_change = resampled_value_change[mask_hol]
+                    if not resampled_net_flow.empty:
+                        resampled_net_flow = resampled_net_flow[mask_hol]
                 except Exception as e_hol:
                     logging.warning(f"Failed to filter holidays: {e_hol}")
             # --- END ADDED ---
@@ -1958,6 +1988,10 @@ def calculate_periodic_returns(
                 if not resampled_value_change.empty:
                     # Align indices just in case
                     period_returns_df[f"Portfolio {interval_key}-Value"] = resampled_value_change
+                
+                # Add Net Flow column
+                if not resampled_net_flow.empty:
+                    period_returns_df[f"Portfolio {interval_key}-NetFlow"] = resampled_net_flow
             else:
                 period_returns_df = pd.DataFrame(columns=resampled_factors.columns)
             # --- END MODIFIED ---

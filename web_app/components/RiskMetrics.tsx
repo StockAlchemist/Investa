@@ -15,7 +15,7 @@ interface RiskMetricsProps {
 export default function RiskMetrics({ metrics, isLoading }: RiskMetricsProps) {
     if (isLoading) {
         return (
-            <div className="bg-card backdrop-blur-md rounded-xl p-6 shadow-sm border border-border animate-pulse">
+            <div className="bg-card rounded-xl p-6 shadow-sm border border-border animate-pulse">
                 <div className="h-6 w-32 bg-white/10 rounded mb-6"></div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {[1, 2, 3, 4].map((i) => (
@@ -67,7 +67,7 @@ export default function RiskMetrics({ metrics, isLoading }: RiskMetricsProps) {
     ];
 
     return (
-        <div className="bg-card backdrop-blur-md rounded-xl p-6 shadow-sm border border-border">
+        <div className="bg-card rounded-xl p-6 shadow-sm border border-border">
             <h3 className="text-sm font-medium text-muted-foreground mb-6 uppercase tracking-wider">Risk Analytics</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
                 {items.map((item) => (

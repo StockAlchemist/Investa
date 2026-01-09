@@ -67,8 +67,8 @@ export default function TabNavigation({ activeTab, onTabChange, side = 'bottom' 
                 onClick={() => setIsOpen(!isOpen)}
                 className={cn(
                     "flex flex-col items-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group",
-                    "bg-white/5 hover:bg-white/10 dark:bg-black/20 dark:hover:bg-black/30",
-                    "border border-white/10 dark:border-white/5 backdrop-blur-xl shadow-lg shadow-black/5",
+                    "bg-card hover:bg-accent/10",
+                    "border border-border shadow-sm",
                     "text-xs font-semibold tracking-tight",
                     isOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-foreground/80 hover:text-foreground",
                     side === 'bottom' && "flex-row py-2 px-4"
@@ -77,7 +77,7 @@ export default function TabNavigation({ activeTab, onTabChange, side = 'bottom' 
             >
                 <div className={cn(
                     "p-2 rounded-xl transition-all duration-300",
-                    isOpen ? "bg-cyan-500 text-white shadow-lg shadow-cyan-500/30" : "bg-white/5 text-cyan-500 group-hover:scale-110",
+                    isOpen ? "bg-cyan-500 text-white shadow-lg shadow-cyan-500/30" : "bg-secondary text-cyan-500 group-hover:scale-110",
                     side === 'bottom' && "p-1.5"
                 )}>
                     <ActiveIcon className={cn(side === 'bottom' ? "w-4 h-4" : "w-5 h-5")} />
@@ -90,7 +90,7 @@ export default function TabNavigation({ activeTab, onTabChange, side = 'bottom' 
                     side === 'right'
                         ? "left-full top-0 ml-4 slide-in-from-left-2"
                         : "right-0 top-full mt-2 slide-in-from-top-2 origin-top-right",
-                    "w-56 rounded-2xl bg-popover border border-border shadow-2xl shadow-black/40"
+                    "w-56 rounded-2xl bg-white dark:bg-zinc-950 border border-border shadow-2xl shadow-black/40"
                 )}>
                     <div className="p-2 grid gap-1">
                         <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 border-b border-border mb-1">
@@ -106,17 +106,17 @@ export default function TabNavigation({ activeTab, onTabChange, side = 'bottom' 
                                 className={cn(
                                     "flex items-center gap-3 w-full px-3 py-2 text-sm font-medium rounded-xl transition-all duration-200 group text-left",
                                     activeTab === tab.id
-                                        ? "bg-brand text-brand-foreground"
+                                        ? "bg-[#0097b2] text-white shadow-sm"
                                         : "text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5"
                                 )}
                             >
                                 <tab.icon className={cn(
                                     "w-4 h-4 transition-transform duration-300",
-                                    activeTab === tab.id ? "text-brand-foreground" : "text-cyan-500 group-hover:scale-110"
+                                    activeTab === tab.id ? "text-white" : "text-cyan-500 group-hover:scale-110"
                                 )} />
                                 <span className="flex-1">{tab.label}</span>
                                 {activeTab === tab.id && (
-                                    <div className="w-1.5 h-1.5 rounded-full bg-brand-foreground" />
+                                    <div className="w-1.5 h-1.5 rounded-full bg-white" />
                                 )}
                             </button>
                         ))}

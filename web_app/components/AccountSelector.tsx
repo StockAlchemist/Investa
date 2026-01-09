@@ -75,8 +75,8 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                 onClick={() => setIsOpen(!isOpen)}
                 className={cn(
                     "flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group",
-                    "bg-white/5 hover:bg-white/10 dark:bg-black/20 dark:hover:bg-black/30",
-                    "border border-white/10 dark:border-white/5 backdrop-blur-xl shadow-lg shadow-black/5",
+                    "bg-card hover:bg-accent/10",
+                    "border border-border shadow-sm",
                     "font-semibold tracking-tight min-w-[80px]",
                     isOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-cyan-500",
                     "flex-row py-2 px-4 h-[44px]"
@@ -90,19 +90,19 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
             </button>
 
             {isOpen && (
-                <div className="absolute right-0 top-full mt-2 min-w-[200px] w-max origin-top-right bg-popover border border-border rounded-xl shadow-xl outline-none z-50 overflow-hidden">
+                <div className="absolute right-0 top-full mt-2 min-w-[200px] w-max origin-top-right bg-white dark:bg-zinc-950 border border-border rounded-xl shadow-xl outline-none z-50 overflow-hidden">
                     <div className="py-1 max-h-[80vh] overflow-y-auto">
                         {/* All Accounts Option */}
                         <button
                             onClick={handleSelectAll}
                             className={`group flex items-center justify-between w-full px-4 py-3 text-sm font-medium transition-colors ${isAllSelected
-                                ? 'bg-brand text-brand-foreground'
+                                ? 'bg-[#0097b2] text-white shadow-sm'
                                 : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
                                 }`}
                         >
                             <span className="whitespace-nowrap">All Accounts</span>
                             {isAllSelected && (
-                                <svg className="w-4 h-4 text-brand-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                 </svg>
                             )}
@@ -125,13 +125,13 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                                             key={groupName}
                                             onClick={() => handleSelectGroup(groupName, groupAccounts)}
                                             className={`group flex items-center justify-between w-full px-4 py-2 text-sm font-medium transition-colors ${isGroupSelected
-                                                ? 'text-cyan-500 bg-cyan-500/10'
+                                                ? 'bg-[#0097b2] text-white shadow-sm'
                                                 : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
                                                 }`}
                                         >
                                             <span className="whitespace-nowrap">{groupName}</span>
                                             {isGroupSelected && (
-                                                <svg className="w-4 h-4 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                                 </svg>
                                             )}
@@ -157,13 +157,13 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                                     key={account}
                                     onClick={() => toggleAccount(account)}
                                     className={`group flex items-center justify-between w-full px-4 py-3 text-sm font-medium transition-colors ${isSelected
-                                        ? 'bg-brand text-brand-foreground'
+                                        ? 'bg-[#0097b2] text-white shadow-sm'
                                         : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
                                         } last:border-0`}
                                 >
                                     <span className="whitespace-nowrap">{account}</span>
                                     {isSelected && (
-                                        <svg className="w-4 h-4 text-brand-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                         </svg>
                                     )}
