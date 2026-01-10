@@ -204,7 +204,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                     variant="ghost"
                                                     size="icon"
                                                     onClick={() => removeMutation.mutate(item.Symbol)}
-                                                    className="h-8 w-8 text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10"
+                                                    className="h-8 w-8 text-rose-500 hover:text-rose-400 hover:bg-rose-500/10"
                                                 >
                                                     <Trash2 className="h-4 w-4" />
                                                 </Button>
