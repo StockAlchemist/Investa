@@ -13585,9 +13585,14 @@ The CSV file should contain the following columns (header names must match exact
                             {"Portfolio Value Change": value_change_series}
                         ).dropna(subset=["Portfolio Value Change"])
                 daily_df = self.full_historical_data.copy()
-                if "daily_gain" in daily_df.columns:
+                # Fix: Check for renamed column 'Portfolio Daily Gain' or original 'daily_gain'
+                daily_gain_col = "daily_gain"
+                if "Portfolio Daily Gain" in daily_df.columns:
+                    daily_gain_col = "Portfolio Daily Gain"
+
+                if daily_gain_col in daily_df.columns:
                     self.periodic_value_changes_data["D"] = pd.DataFrame(
-                        {"Portfolio Value Change": daily_df["daily_gain"]}
+                        {"Portfolio Value Change": daily_df[daily_gain_col]}
                     )
                 daily_returns_df = pd.DataFrame(index=daily_df.index)
                 if "daily_return" in daily_df.columns:
