@@ -577,12 +577,6 @@ class PortfolioApp(QMainWindow, UiHelpersMixin):
                 return np.nan  # Or some other appropriate value
 
     def load_config(self):
-        # Debug logging for config loading
-        try:
-            with open("desktop_debug.txt", "a") as f:
-                f.write(f"load_config called. CWD: {os.getcwd()}\n")
-        except: pass
-
         """Loads configuration via ConfigManager and synchronizes attributes."""
         self.config_manager.load_gui_config()
         self.config = self.config_manager.gui_config
@@ -2321,11 +2315,6 @@ The CSV file should contain the following columns (header names must match exact
 
     # --- Initialization Method ---
     def __init__(self):
-        try:
-            with open("desktop_debug.txt", "a") as f:
-                f.write(f"\n--- PortfolioApp.__init__ called at {datetime.now()} ---\n")
-                f.write(f"Init CWD: {os.getcwd()}\n")
-        except: pass
         """Initializes the main application window, loads config, and sets up UI."""
         # --- IMPORTANT: Call super().__init__() for QMainWindow ---
         super().__init__()
@@ -2430,11 +2419,6 @@ The CSV file should contain the following columns (header names must match exact
         # --- Initialize DB Connection ---
         # initialize_database will create the DB file and tables if they don't exist at self.DB_FILE_PATH
         
-        try:
-            with open("desktop_debug.txt", "a") as f:
-                f.write(f"Final DB_FILE_PATH: {self.DB_FILE_PATH}\n")
-                f.write(f"DB Exists: {os.path.exists(self.DB_FILE_PATH) if self.DB_FILE_PATH else 'None'}\n")
-        except: pass
         self.db_conn = initialize_database(self.DB_FILE_PATH)
 
 
@@ -2994,7 +2978,7 @@ The CSV file should contain the following columns (header names must match exact
             )
         except ValueError:
             logging.warning("Warn: Could not sort benchmarks based on options.")
-        self._update_benchmark_button_text()
+            self._update_benchmark_button_text()
         # Inform user to click Update Graphs
         self.set_status("Benchmark selection changed. Click 'Update Graphs' to apply.")
 
@@ -5354,7 +5338,7 @@ The CSV file should contain the following columns (header names must match exact
         self.account_pie_title_label.setTextFormat(Qt.RichText)
         account_chart_layout.addWidget(
             self.account_pie_title_label, alignment=Qt.AlignCenter
-        )  # <-- RESTORED Title
+        )  # <-- RESTORED Title AddWidget Call
         self.account_fig = Figure(figsize=PIE_CHART_FIG_SIZE, dpi=CHART_DPI)
         self.account_ax = self.account_fig.add_subplot(111)
         self.account_canvas = FigureCanvas(self.account_fig)
@@ -5521,11 +5505,6 @@ The CSV file should contain the following columns (header names must match exact
         self.view_ignored_button.clicked.connect(self.show_ignored_log)
 
     def _init_ui_widgets(self):
-        try:
-            with open("desktop_debug.txt", "a") as f:
-                from datetime import datetime
-        except: pass
-
         """Orchestrates the initialization of all UI widgets within their frames."""
         logging.debug(
             "DEBUG PRINT: _init_ui_widgets method has been entered."
@@ -8387,7 +8366,7 @@ The CSV file should contain the following columns (header names must match exact
             "manual_overrides_dict": self.manual_overrides_dict,
             "user_symbol_map": self.user_symbol_map_config,
             "user_excluded_symbols": self.user_excluded_symbols_config,
-            "original_csv_file_path": None,  # No single CSV path when data is from DB for cache key hash
+            "original_csv_file_path": self.DB_FILE_PATH,  # Pass DB path for cache key hash
         }
         if HISTORICAL_FN_SUPPORTS_EXCLUDE:
             accounts_to_exclude_hist = [
@@ -8440,13 +8419,6 @@ The CSV file should contain the following columns (header names must match exact
         self.threadpool.start(worker)
 
     def _perform_initial_load_from_db_only(self):
-        try:
-            with open("desktop_debug.txt", "a") as f:
-                f.write("_perform_initial_load_from_db_only called\n")
-        except: pass
-
-
-
         """Loads data from DB on startup if load_on_startup is true and DB is not empty."""
         if self.db_conn:
             # Check if DB has any data before refreshing
@@ -8455,10 +8427,7 @@ The CSV file should contain the following columns (header names must match exact
                 cursor.execute("SELECT COUNT(*) FROM transactions")
                 count_result = cursor.fetchone()
                 count = count_result[0] if count_result else 0
-                try:
-                    with open("desktop_debug.txt", "a") as f:
-                        f.write(f"Initial DB check: count={count}\n")
-                except: pass
+
 
                 if count > 0:
                     logging.info(

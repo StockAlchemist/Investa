@@ -4139,8 +4139,8 @@ def _value_daily_holdings_vectorized(
                 # Reindex to date_range with ffill then bfill to cover start of history
                 t_series = t_df["price"]
                 t_series.index = pd.to_datetime(t_series.index, utc=True)
-                # FIX: Ensure we have a value for the first day by bfilling
-                target_rate_series = t_series.reindex(date_range).ffill().bfill()
+                # FIX: Ensure we have a value for the first day by bfilling, but use interpolation
+                target_rate_series = t_series.reindex(date_range).interpolate(method='linear').ffill().bfill()
     
     # If target rate missing, we can't convert anything (unless local==target)
     # Ensure it's not None for math consistency, fill with NaN if missing
@@ -4179,8 +4179,8 @@ def _value_daily_holdings_vectorized(
                     l_series = l_df["price"]
                     # FIX: Ensure UTC awareness and DO NOT Normalize (preserves intraday/hourly timestamps)
                     l_series.index = pd.to_datetime(l_series.index, utc=True)
-                    # FIX: Aggressive backfill for local rates too
-                    local_rate_series = l_series.reindex(date_range).ffill().bfill()
+                    # FIX: Aggressive backfill for local rates too, but smooth it
+                    local_rate_series = l_series.reindex(date_range).interpolate(method='linear').ffill().bfill()
 
         if local_rate_series is None:
              # Missing local rate data - Default to 1.0 to prevent NaN propagation
@@ -5656,7 +5656,7 @@ def calculate_historical_performance(
     # pd.DataFrame, # key_ratios_df - Ratios are not calculated here
     # Dict[str, Any] # current_valuation_ratios - Ratios are not calculated here
 ]:
-    CURRENT_HIST_VERSION = "v1.9.26_SUMMARY_FAST_CACHE"  # Force recalculation with Fast Summary Cache <!-- id: 36 -->
+    CURRENT_HIST_VERSION = "v1.9.27_INTERPOLATION_FIX"  # Force recalculation with Interpolation Fix
     start_time_hist = time.time()
     has_errors = False
     has_warnings = False
@@ -5727,6 +5727,13 @@ def calculate_historical_performance(
         )
         has_warnings = True
 
+    # --- HARDENING: Enforce original_csv_file_path for Caching ---
+    # If using daily results cache, we MUST have the file path to generate a valid hash
+    # that changes when the file (DB or CSV) changes.
+    if use_daily_results_cache and not original_csv_file_path:
+        logging.critical("CRITICAL WARNING: `calculate_historical_performance` called with `use_daily_results_cache=True` but NO `original_csv_file_path`. Disabling cache to prevent stale data.")
+        use_daily_results_cache = False
+    
     # --- 1. Prepare Inputs (Uses preloaded DataFrame) ---
     prep_result = _prepare_historical_inputs(
         preloaded_transactions_df=all_transactions_df_cleaned,  # PASS DF
@@ -6043,15 +6050,29 @@ def calculate_historical_performance(
             if not isinstance(v.index, pd.DatetimeIndex) or v.index.tz is None:
                 v.index = pd.to_datetime(v.index, utc=True)
             
-            # STABILIZATION: Backfill the first known value to full_start_ts
-            # to avoid jumps from 1.0 default for FX or None for stocks.
+            # STABILIZATION: Use linear interpolation for smoothness, fallback to bfill/ffill for edges
             if v is not None and not v.empty:
                 min_idx = v.index.min()
                 if min_idx > full_start_ts:
-                    logging.info(f"STABILIZATION: Backfilling {k} from {min_idx} to {full_start_ts}")
-                    # Create a copy with the extended index and backfill
+                    logging.info(f"STABILIZATION: Smart-Filling {k} from {min_idx} to {full_start_ts}")
+                    # Create a copy with the extended index
                     new_index = pd.Index([full_start_ts]).union(v.index)
-                    v = v.reindex(new_index).sort_index().bfill()
+                    v = v.reindex(new_index).sort_index()
+                    
+                    # Interpolate gaps linearly (requires numerical/time index)
+                    # Limit direction both fills leading gaps too? No, it handles interpolation. 
+                    # If we only have extensive future data and 1 start point, interpolate creates a line.
+                    # But if start point is NaN (from reindex), we can't interpolate from nothing.
+                    # So we use bfill() BUT we might check if the gap is "too large".
+                    # However, to avoid "Jumps", backfilling constant price is better than 0.
+                    # The "Jump" issue (Step 72) showed 120k jump.
+                    
+                    # Revised Strategy: 
+                    # 1. Interpolate internal gaps (method='time').
+                    # 2. bfill() leading edge to ensure valid price exists, so value != 0.
+                    # 3. ffill() trailing edge.
+                    v = v.interpolate(method='time').bfill().ffill()
+                    
                     s_map[k] = v
 
     # --- 4. Derive Unadjusted Prices ---

@@ -113,7 +113,8 @@ async def get_asset_change(
             benchmark_symbols_yf=mapped_benchmarks,
             account_currency_map=account_currency_map,
             default_currency=config.DEFAULT_CURRENCY,
-            interval="D"
+            interval="D",
+            original_csv_file_path=original_csv_path
         )
         
         if daily_df is None or daily_df.empty:
@@ -336,7 +337,8 @@ async def get_portfolio_summary(
                     include_accounts=accounts,
                     manual_overrides_dict=manual_overrides,
                     user_symbol_map=user_symbol_map,
-                    user_excluded_symbols=user_excluded_symbols
+                    user_excluded_symbols=user_excluded_symbols,
+                    original_csv_file_path=original_csv_path
                 )
                 
                 if daily_df is not None and not daily_df.empty:
@@ -1055,7 +1057,8 @@ def _calculate_historical_performance_internal(
         benchmark_symbols_yf=benchmarks,
         account_currency_map=account_currency_map,
         default_currency=config.DEFAULT_CURRENCY,
-        interval=calc_interval
+        interval=calc_interval,
+        original_csv_file_path=original_csv_path
     )
     except Exception as e:
         logging.error(f"API Error in calculate_historical_performance: {e}")

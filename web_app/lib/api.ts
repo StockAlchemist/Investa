@@ -195,6 +195,8 @@ export async function fetchHistory(
     }
     if (fromDate) params.append('from', fromDate);
     if (toDate) params.append('to', toDate);
+    // Add cache buster to prevent browser caching of stale data
+    params.append('_t', Date.now().toString());
     const res = await fetch(`${API_BASE_URL}/history?${params.toString()}`);
     if (!res.ok) throw new Error('Failed to fetch history');
     return res.json();
