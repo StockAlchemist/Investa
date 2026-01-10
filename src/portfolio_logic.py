@@ -5553,6 +5553,7 @@ def _calculate_accumulated_gains_and_resample(
         columns_to_keep = [
             "value",
             "daily_gain",
+            "daily_return",
             "Portfolio Accumulated Gain",
             "Absolute Gain ($)",
             "Absolute ROI (%)",
