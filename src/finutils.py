@@ -71,9 +71,7 @@ def _get_file_hash(filepath: str) -> str:
             return True
         except FileNotFoundError:
             return False # Ignore if disappeared (e.g. checkpointed)
-        except Exception as e:
-            logging.warning(f"Error hashing companion file {path}: {e}")
-            return False
+
 
     try:
         # 1. Hash the main file
