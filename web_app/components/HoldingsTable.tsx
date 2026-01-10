@@ -641,30 +641,44 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                 <ResponsiveContainer width="100%" height="100%">
                                                                     <AreaChart data={val.map((v, i) => ({ value: v, index: i }))}>
                                                                         <defs>
-                                                                            <linearGradient id={`gradient-green-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
-                                                                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                                                                                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                                                                            </linearGradient>
-                                                                            <linearGradient id={`gradient-red-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
-                                                                                <stop offset="5%" stopColor="#f43f5e" stopOpacity={0} />
-                                                                                <stop offset="95%" stopColor="#f43f5e" stopOpacity={0.3} />
-                                                                            </linearGradient>
+                                                                            {(() => {
+                                                                                const baseline = val[0];
+                                                                                const min = Math.min(...val);
+                                                                                const max = Math.max(...val);
+                                                                                const range = max - min;
+                                                                                const off = range <= 0 ? 0 : (max - baseline) / range;
+
+                                                                                return (
+                                                                                    <>
+                                                                                        <linearGradient id={`splitFill-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
+                                                                                            <stop offset={off} stopColor="#10b981" stopOpacity={0.15} />
+                                                                                            <stop offset={off} stopColor="#f43f5e" stopOpacity={0.15} />
+                                                                                        </linearGradient>
+                                                                                        <linearGradient id={`splitStroke-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
+                                                                                            <stop offset={off} stopColor="#10b981" stopOpacity={1} />
+                                                                                            <stop offset={off} stopColor="#f43f5e" stopOpacity={1} />
+                                                                                        </linearGradient>
+                                                                                    </>
+                                                                                );
+                                                                            })()}
                                                                         </defs>
                                                                         <YAxis hide domain={['dataMin', 'dataMax']} />
-                                                                        <ReferenceLine y={val[0]} stroke="#71717a" strokeDasharray="2 2" strokeOpacity={0.5} />
+                                                                        <ReferenceLine y={val[0]} stroke="#71717a" strokeDasharray="2 2" strokeOpacity={0.3} />
                                                                         <Area
                                                                             type="monotone"
                                                                             dataKey="value"
                                                                             baseValue={val[0]}
-                                                                            stroke={val[val.length - 1] >= val[0] ? "#10b981" : "#f43f5e"}
-                                                                            fill={`url(#gradient-${val[val.length - 1] >= val[0] ? 'green' : 'red'}-${holding.Symbol})`}
+                                                                            stroke={`url(#splitStroke-${holding.Symbol})`}
+                                                                            fill={`url(#splitFill-${holding.Symbol})`}
                                                                             strokeWidth={1.5}
                                                                             isAnimationActive={false}
                                                                             dot={(props: any) => {
-                                                                                const { cx, cy, index, stroke } = props;
+                                                                                const { cx, cy, index } = props;
                                                                                 if (index === val.length - 1) {
+                                                                                    // Calculate color for dot based on value vs baseline
+                                                                                    const color = val[val.length - 1] >= val[0] ? "#10b981" : "#f43f5e";
                                                                                     return (
-                                                                                        <circle key="dot" cx={cx} cy={cy} r={2} fill={stroke} stroke="none" />
+                                                                                        <circle key="dot" cx={cx} cy={cy} r={2} fill={color} stroke="none" />
                                                                                     );
                                                                                 }
                                                                                 return <React.Fragment key={index} />;
