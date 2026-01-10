@@ -62,6 +62,7 @@ class ConfigManager:
             "last_csv_import_path": QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation) or os.getcwd(),
             "theme": "light",
             "account_groups": {},
+            "available_currencies": ["USD", "THB", "EUR", "GBP", "JPY", "CNY"],
         }
 
     def _get_default_manual_overrides(self) -> Dict[str, Any]:

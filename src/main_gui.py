@@ -4631,6 +4631,16 @@ The CSV file should contain the following columns (header names must match exact
                     except: pass
             self.config["rebalancing_targets"] = targets
 
+        # Preserve Web App Settings (Currencies & Groups) if not managed by Desktop UI
+        # This prevents the Desktop App from wiping out settings changed via the Web App
+        for key in ["available_currencies", "account_groups"]:
+            if key not in self.config and key in self.config_manager.gui_config:
+                self.config[key] = self.config_manager.gui_config[key]
+
+        # Account currency map is partially managed by desktop (if UI exists) but we should be careful to merge or preserve logic
+        if "account_currency_map" not in self.config and "account_currency_map" in self.config_manager.gui_config:
+             self.config["account_currency_map"] = self.config_manager.gui_config["account_currency_map"]
+
         self.config["transactions_file"] = self.DB_FILE_PATH
         self.config_manager.save_gui_config(self.config)
 
