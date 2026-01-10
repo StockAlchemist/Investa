@@ -5382,15 +5382,19 @@ def _calculate_accumulated_gains_and_resample(
             results_df.iloc[
                 0, results_df.columns.get_loc("Portfolio Accumulated Gain Daily")
             ] = np.nan
-        if (
-            not results_df.empty
-            and "Portfolio Accumulated Gain Daily" in results_df.columns
-        ):
-            last_valid_twr = (
-                results_df["Portfolio Accumulated Gain Daily"].dropna().iloc[-1:]
-            )
-            if not last_valid_twr.empty:
-                final_twr_factor = last_valid_twr.iloc[0]
+        
+        # --- MODIFIED: Calculate final_twr_factor ONLY for the requested range ---
+        if not results_df.empty:
+            ts_start = pd.Timestamp(start_date_filter).tz_localize(results_df.index.tz)
+            ts_end = pd.Timestamp(end_date_filter).tz_localize(results_df.index.tz) + pd.Timedelta(hours=23, minutes=59)
+            
+            # Slice the gain factors for the requested period
+            period_gain_factors = gain_factors_portfolio.loc[ts_start:ts_end]
+            if not period_gain_factors.empty:
+                final_twr_factor = period_gain_factors.prod()
+            else:
+                # Fallback to the last point if slicing yielded nothing (shouldn't happen with valid data)
+                final_twr_factor = results_df["Portfolio Accumulated Gain Daily"].dropna().iloc[-1] if not results_df.empty else np.nan
 
         for bm_symbol in benchmark_symbols_yf:
             price_col = f"{bm_symbol} Price"

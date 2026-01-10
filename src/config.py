@@ -503,6 +503,7 @@ INDEX_DISPLAY_NAMES = {
 
 # --- Default Settings ---
 DEFAULT_CURRENCY = "USD"
+DISPLAY_TIMEZONE = "America/New_York"  # Universal display timezone for graphs and metrics
 
 COMMON_CURRENCIES = [  # List of commonly used currency codes
     "USD",

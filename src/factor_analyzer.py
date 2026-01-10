@@ -216,8 +216,8 @@ def run_factor_regression(
 
     # Check for sufficient data points (at least 6 months recommended for any meaningful regression)
     if len(aligned_data) < 6:
-        logging.warning(
-            f"Insufficient data for factor analysis. Need at least 6 data points, got {len(aligned_data)}."
+        logging.info(
+            f"Insufficient data for factor analysis. Need at least 6 data points, got {len(aligned_data)}. Skipping analysis."
         )
         return None
 

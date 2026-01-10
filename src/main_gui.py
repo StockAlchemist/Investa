@@ -330,6 +330,7 @@ from portfolio_logic import (
     CASH_SYMBOL_CSV,
     calculate_historical_performance,
 )
+from utils_time import get_est_today, get_latest_trading_date  # ADDED
 from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series, calculate_max_drawdown, calculate_volatility, calculate_sharpe_ratio, calculate_sortino_ratio
 from factor_analyzer import run_factor_regression
 from market_data import MarketDataProvider
@@ -557,7 +558,7 @@ class PortfolioApp(QMainWindow, UiHelpersMixin):
             return np.nan
         try:
             num_days = (end_date - start_date).days
-            if num_days <= 0:
+            if num_days < 7:
                 return np.nan
             annualized_twr_factor = total_twr_factor ** (365.25 / num_days)
             return (annualized_twr_factor - 1) * 100.0
@@ -1497,7 +1498,13 @@ The CSV file should contain the following columns (header names must match exact
         end_date = date.today()
         start_date = None
 
-        if period == "1W":
+        if period == "1D":
+            end_date = get_latest_trading_date()
+            start_date = end_date
+        elif period == "5D":
+            end_date = get_est_today()
+            start_date = end_date - timedelta(days=7)
+        elif period == "1W":
             start_date = end_date - timedelta(weeks=1)
         elif period == "MTD":
             start_date = end_date.replace(day=1)
@@ -2196,15 +2203,30 @@ The CSV file should contain the following columns (header names must match exact
             x_val_num = selection.target[0]  # X value (often matplotlib numeric date)
             y_val = selection.target[1]  # Y value
 
-            # --- Convert X value (matplotlib date num) to datetime object ---
+            # --- Convert X value (matplotlib date num OR gapless index) to datetime ---
+            current_preset = self.date_preset_combo.currentText()
+            is_gapless = current_preset in ["1D", "5D"]
+            
             try:
-                # Use matplotlib's num2date for robust conversion
-                dt_obj = mdates.num2date(x_val_num)
-                # Format the date string
-                date_str = dt_obj.strftime("%Y-%m-%d")  # Or '%a, %b %d, %Y' etc.
+                if is_gapless and hasattr(self, "historical_data") and not self.historical_data.empty:
+                    # x_val_num is the integer index in results_df (which is self.historical_data)
+                    idx = int(round(x_val_num))
+                    if 0 <= idx < len(self.historical_data):
+                        dt_obj = self.historical_data.index[idx]
+                    else:
+                        dt_obj = mdates.num2date(x_val_num) # Fallback
+                else:
+                    # Normal mode: numeric date from matplotlib
+                    dt_obj = mdates.num2date(x_val_num)
+                
+                # Format date/time (EST)
+                if current_preset in ["1D", "5D"] or dt_obj.hour != 0 or dt_obj.minute != 0:
+                    date_str = dt_obj.strftime("%Y-%m-%d %H:%M")
+                else:
+                    date_str = dt_obj.strftime("%Y-%m-%d")
             except (ValueError, TypeError, OverflowError) as e_date:
                 logging.debug(f"Tooltip date conversion error: {e_date}")
-                date_str = f"Date Err ({x_val_num:.2f})"  # Show numeric value on error
+                date_str = f"Date Err ({x_val_num:.2f})"
 
             # --- Get Series Label ---
             label = artist.get_label()
@@ -4560,6 +4582,9 @@ The CSV file should contain the following columns (header names must match exact
             self.config["perf_graph_tab_index"] = self.perf_graphs_tab_widget.currentIndex()
         if hasattr(self, "selected_benchmarks") and isinstance(self.selected_benchmarks, list):
             self.config["graph_benchmarks"] = self.selected_benchmarks
+        # --- ADDED: Save Graph Preset ---
+        if hasattr(self, "date_preset_combo"):
+            self.config["graph_preset"] = self.date_preset_combo.currentText()
 
         # Table & Column State
         if hasattr(self, "column_visibility"):
@@ -4633,6 +4658,23 @@ The CSV file should contain the following columns (header names must match exact
         self._update_account_button_text()
         self._update_benchmark_button_text()
         self._update_table_title(pd.DataFrame())
+        
+        # --- NEW: Restore Graph Preset and Force Date Update ---
+        # This ensures that if "1D" or "5D" was saved, it is restored and the dates are 
+        # recalculated for "Today" instead of using potentially stale dates from config.
+        saved_preset = self.config.get("graph_preset", "Presets...")
+        if saved_preset and saved_preset != "Presets..." and hasattr(self, "date_preset_combo"):
+             # Block signals to prevent redundant updates while setting initial state
+            self.date_preset_combo.blockSignals(True)
+            self.date_preset_combo.setCurrentText(saved_preset)
+            self.date_preset_combo.blockSignals(False)
+            
+            # Explicitly force date range update based on this preset
+            # This is critical for 1D/5D to always show "Today" on startup
+            logging.info(f"Restoring saved graph preset: {saved_preset}")
+            self._set_graph_date_range(saved_preset) 
+        # --- END NEW ---
+
         # Header state is now restored in handle_results after data is loaded.
 
         # --- Style Tab Titles ---
@@ -5006,6 +5048,8 @@ The CSV file should contain the following columns (header names must match exact
         self.date_preset_combo.addItems(
             [
                 "Presets...",
+                "1D",
+                "5D",
                 "1W",
                 "MTD",
                 "1M",
@@ -8261,40 +8305,57 @@ The CSV file should contain the following columns (header names must match exact
             logging.info(f"Graph end date was in future, reset to today: {end_date_ui}")
         # --- END ADDED ---
 
-        if start_date_ui >= end_date_ui:
+        if start_date_ui > end_date_ui:
             QMessageBox.warning(
                 self, "Invalid Date Range", "Graph start date must be before end date."
             )
             self.calculation_finished()
             return
 
-        # For historical calculation, use the full range of transactions.
-        # The UI date pickers will be used later to filter the line graph display.
-        if not self.all_transactions_df_cleaned_for_logic.empty:
-            # Ensure 'Date' is datetime to find min/max
-            if not pd.api.types.is_datetime64_any_dtype(
-                self.all_transactions_df_cleaned_for_logic["Date"]
-            ):
-                self.all_transactions_df_cleaned_for_logic["Date"] = pd.to_datetime(
-                    self.all_transactions_df_cleaned_for_logic["Date"]
-                )
-
-            start_date_hist_calc = (
-                self.all_transactions_df_cleaned_for_logic["Date"].min().date()
+        # --- MODIFIED: Determine interval and date range based on preset ---
+        current_preset = self.date_preset_combo.currentText()
+        if current_preset == "1D":
+            interval_hist_calc = "1m"
+            start_date_hist_calc = start_date_ui - timedelta(days=1)  # Buffer for baseline
+            end_date_hist_calc = end_date_ui + timedelta(days=1)
+            logging.info(
+                f"Intraday 1D mode active. Calculation Range: {start_date_hist_calc} to {end_date_hist_calc}"
             )
-            logging.debug(
-                f"DEBUG: Full Transaction Min Date is: {start_date_hist_calc}"
+        elif current_preset == "5D":
+            interval_hist_calc = "5m"
+            start_date_hist_calc = start_date_ui - timedelta(days=1)  # Buffer for baseline
+            end_date_hist_calc = end_date_ui + timedelta(days=1)
+            logging.info(
+                f"Intraday 5D mode active. Calculation Range: {start_date_hist_calc} to {end_date_hist_calc}"
             )
-            end_date_hist_calc = date.today()  # Always calculate up to today
         else:
-            # Fallback if no transactions: use UI dates
-            start_date_hist_calc = start_date_ui
-            end_date_hist_calc = end_date_ui
+            # For standard daily views, use the full range of transactions.
+            # The UI date pickers will be used later to filter the line graph display.
+            if not self.all_transactions_df_cleaned_for_logic.empty:
+                # Ensure 'Date' is datetime to find min/max
+                if not pd.api.types.is_datetime64_any_dtype(
+                    self.all_transactions_df_cleaned_for_logic["Date"]
+                ):
+                    self.all_transactions_df_cleaned_for_logic["Date"] = pd.to_datetime(
+                        self.all_transactions_df_cleaned_for_logic["Date"]
+                    )
 
-        # The interval for the underlying historical data calculation should always be daily
-        # to provide the most granular data for all other calculations (like periodic returns).
-        # The UI interval combo will be used to resample this data for display.
-        interval_hist_calc = "D"
+                start_date_hist_calc = (
+                    self.all_transactions_df_cleaned_for_logic["Date"].min().date()
+                )
+                logging.debug(
+                    f"DEBUG: Full Transaction Min Date is: {start_date_hist_calc}"
+                )
+                end_date_hist_calc = date.today()  # Always calculate up to today
+            else:
+                # Fallback if no transactions: use UI dates
+                start_date_hist_calc = start_date_ui
+                end_date_hist_calc = end_date_ui
+
+            # The interval for the underlying historical data calculation should always be daily
+            # to provide the most granular data for all other calculations (like periodic returns).
+            # The UI interval combo will be used to resample this data for display.
+            interval_hist_calc = "D"
 
         selected_benchmark_tickers = [
             BENCHMARK_MAPPING.get(name)
@@ -9908,8 +9969,15 @@ The CSV file should contain the following columns (header names must match exact
 
             if plot_start_date and plot_end_date:
                 try:
-                    self.perf_return_ax.set_xlim(plot_start_date, plot_end_date)
-                    self.abs_value_ax.set_xlim(plot_start_date, plot_end_date)
+                    if plot_start_date == plot_end_date:
+                        # 1D View: Expand limits to show the full day clearly (avoiding singular transformation warning)
+                        start_ts = pd.Timestamp(plot_start_date)
+                        end_ts = start_ts + pd.Timedelta(hours=23, minutes=59)
+                        self.perf_return_ax.set_xlim(start_ts, end_ts)
+                        self.abs_value_ax.set_xlim(start_ts, end_ts)
+                    else:
+                        self.perf_return_ax.set_xlim(plot_start_date, plot_end_date)
+                        self.abs_value_ax.set_xlim(plot_start_date, plot_end_date)
                     self.perf_return_ax.set_ylim(-10, 10)  # Default Y range
                     self.abs_value_ax.set_ylim(0, 100)  # Default Y range
                 except Exception as e:
@@ -9944,7 +10012,9 @@ The CSV file should contain the following columns (header names must match exact
                         None
                     )
 
-                results_visible_df = results_df.loc[pd_start:pd_end]  # Use .loc slicing
+                # Ensure the end of the day is included for Y-limit calculation (capture all hours/minutes)
+                pd_end_inclusive = pd.Timestamp(plot_end_date) + pd.Timedelta(hours=23, minutes=59, seconds=59)
+                results_visible_df = results_df.loc[pd_start:pd_end_inclusive]  # Use .loc slicing
                 logging.debug(
                     f"[Graph Update] Using date range {plot_start_date} to {plot_end_date} for Y-limit calculation ({len(results_visible_df)} rows)"
                 )
@@ -10008,7 +10078,15 @@ The CSV file should contain the following columns (header names must match exact
         )
 
         # --- Plotting Setup ---
-        # Use the first color for the portfolio, the rest for benchmarks
+        # --- NEW: Check for Gapless Mode (1D/5D) ---
+        current_preset = self.date_preset_combo.currentText()
+        is_gapless = current_preset in ["1D", "5D"]
+        if is_gapless:
+            # Add a temporary index column for plotting against (skips gaps)
+            results_df["_gapless_idx"] = np.arange(len(results_df))
+            x_plot_source = results_df["_gapless_idx"]
+        # --- END NEW ---
+
         all_colors = [
             "red",
             "blue",
@@ -10024,14 +10102,28 @@ The CSV file should contain the following columns (header names must match exact
         value_lines_plotted = []  # Store plotted lines for the value graph
 
         # --- Plot 1: Accumulated Gain (TWR %) ---
+        # Add a zero-level reference line (dashed grey)
+        self.perf_return_ax.axhline(
+            0,
+            color=self.QCOLOR_TEXT_SECONDARY_THEMED.name(),
+            linestyle="--",
+            linewidth=0.8,
+            alpha=0.5,
+            zorder=1,
+        )
         port_plotted_full = False  # Track if portfolio line was plotted from full data
         if port_col in results_df.columns:
             vg_full = results_df[port_col].dropna()  # Plot FULL data
             if not vg_full.empty:
                 pct_full = (vg_full - 1) * 100
                 lbl = f"{scope_label}"
+                if is_gapless:
+                    x_vals = x_plot_source.loc[pct_full.index]
+                else:
+                    x_vals = pct_full.index
+
                 (line,) = self.perf_return_ax.plot(
-                    pct_full.index,
+                    x_vals,
                     pct_full,
                     label=lbl,
                     linewidth=2.0,
@@ -10053,8 +10145,13 @@ The CSV file should contain the following columns (header names must match exact
                     if not vgb_full.empty:
                         pctb_full = (vgb_full - 1) * 100
                         bcol = all_colors[(i + 1) % len(all_colors)]
+                        if is_gapless:
+                            x_vals = x_plot_source.loc[pctb_full.index]
+                        else:
+                            x_vals = pctb_full.index
+
                         (line,) = self.perf_return_ax.plot(
-                            pctb_full.index,
+                            x_vals,
                             pctb_full,
                             label=f"{display_name}",  # Use display_name for the label
                             linewidth=1.5,
@@ -10129,6 +10226,9 @@ The CSV file should contain the following columns (header names must match exact
                 linewidth=0.5,
                 color=self.QCOLOR_BORDER_THEMED.name(),
             )
+            self.perf_return_ax.axhline(
+                0, color=self.QCOLOR_BORDER_THEMED.name(), linewidth=0.8, alpha=0.5
+            )  # Add visible zero line
 
             # SET RETURN Y LIMITS (using VISIBLE range min/max)
             try:
@@ -10184,9 +10284,14 @@ The CSV file should contain the following columns (header names must match exact
         if val_col in results_df.columns:
             vv_full = results_df[val_col].dropna()  # Plot FULL data
             if not vv_full.empty:
+                if is_gapless:
+                    x_vals = x_plot_source.loc[vv_full.index]
+                else:
+                    x_vals = vv_full.index
+
                 # Plot the area under the curve first
                 self.abs_value_ax.fill_between(
-                    vv_full.index,
+                    x_vals,
                     vv_full.values,  # Use .values for y1
                     0,  # Fill down to the x-axis
                     color=portfolio_color,
@@ -10195,7 +10300,7 @@ The CSV file should contain the following columns (header names must match exact
                 )
                 # Then plot the line on top
                 (line,) = self.abs_value_ax.plot(
-                    vv_full.index,
+                    x_vals,
                     vv_full,
                     label=f"{scope_label} Value ({currency_symbol})",
                     color=portfolio_color,  # Use portfolio color for value line too
@@ -10420,25 +10525,73 @@ The CSV file should contain the following columns (header names must match exact
                     and not self.historical_data.empty
                 ):
                     try:
-                        first_data_date = (
-                            self.historical_data.index.min().date()
-                        )  # Get first date from filtered data
-                        effective_start_date = max(
-                            plot_start_date, first_data_date
-                        )  # Use the later date
+                        first_data_date_ts = self.historical_data.index.min()
+                        first_data_date = first_data_date_ts.date()
+                        effective_start_date = max(plot_start_date, first_data_date)
+                        
                         logging.debug(
                             f"Setting xlim: Effective Start={effective_start_date}, UI End={plot_end_date}"
                         )
-                        ax.set_xlim(effective_start_date, plot_end_date)
+                        # --- NEW: Match Web App X-Axis Alignment and Formatting ---
+                        current_preset = self.date_preset_combo.currentText()
+                        if current_preset == "1D" or plot_start_date == plot_end_date:
+                            if is_gapless:
+                                # Gapless Index-based limits
+                                ax.set_xlim(0, len(results_df) - 1)
+                                
+                                # Custom formatter to map index back to time
+                                def gapless_date_formatter(x, pos):
+                                    idx = int(round(x))
+                                    if 0 <= idx < len(results_df):
+                                        return results_df.index[idx].strftime("%H:%M")
+                                    return ""
+                                ax.xaxis.set_major_formatter(mtick.FuncFormatter(gapless_date_formatter))
+                                ax.xaxis.set_major_locator(mtick.MaxNLocator(nbins=8))
+                            else:
+                                # Fallback to standard time-based view
+                                ax_start = pd.Timestamp.combine(plot_start_date, time(9, 30))
+                                ax_end = pd.Timestamp.combine(plot_start_date, time(16, 0))
+                                ax.set_xlim(ax_start, ax_end)
+                        elif current_preset == "5D":
+                            if is_gapless:
+                                # Gapless Index-based limits
+                                ax.set_xlim(0, len(results_df) - 1)
+                                
+                                # Custom formatter to show Date for multi-day intraday
+                                def gapless_5d_formatter(x, pos):
+                                    idx = int(round(x))
+                                    if 0 <= idx < len(results_df):
+                                        dt = results_df.index[idx]
+                                        # Show Date only at first occurrence of the day OR for first/last ticks
+                                        if idx == 0 or results_df.index[idx].date() != results_df.index[idx-1].date():
+                                            return dt.strftime("%m-%d")
+                                        return dt.strftime("%H:%M")
+                                    return ""
+                                ax.xaxis.set_major_formatter(mtick.FuncFormatter(gapless_5d_formatter))
+                                ax.xaxis.set_major_locator(mtick.MaxNLocator(nbins=10))
+                            else:
+                                ax.set_xlim(plot_start_date, plot_end_date)
+                                ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
+                                ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+                        else:
+                            # Standard Historical View (D/W/M)
+                            ax.set_xlim(effective_start_date, plot_end_date)
+                            # Reset to standard auto-formatting
+                            ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+                            ax.xaxis.set_major_formatter(mdates.AutoDateFormatter(ax.xaxis.get_major_locator()))
                     except Exception as e_xlim_calc:
                         logging.warning(
                             f"Could not determine effective start date for xlim: {e_xlim_calc}. Using UI dates."
                         )
-                        ax.set_xlim(
-                            plot_start_date, plot_end_date
-                        )  # Fallback to UI dates
+                        if plot_start_date == plot_end_date:
+                             ax.set_xlim(pd.Timestamp(plot_start_date), pd.Timestamp(plot_end_date) + pd.Timedelta(hours=23, minutes=59))
+                        else:
+                             ax.set_xlim(plot_start_date, plot_end_date)
                 elif plot_start_date and plot_end_date:  # If no data, just use UI dates
-                    ax.set_xlim(plot_start_date, plot_end_date)
+                    if plot_start_date == plot_end_date:
+                        ax.set_xlim(pd.Timestamp(plot_start_date), pd.Timestamp(plot_end_date) + pd.Timedelta(hours=23, minutes=59))
+                    else:
+                        ax.set_xlim(plot_start_date, plot_end_date)
             except Exception as e:
                 logging.warning(f"Warn setting layout/xlim: {e}")
 
@@ -10771,36 +10924,14 @@ The CSV file should contain the following columns (header names must match exact
             self.last_hist_twr_factor
         )  # This factor now reflects the selected scope
 
-        # --- FIX: Use the actual date range from the FULL historical data for TWR annualization ---
-        start_date_val = None
-        end_date_val = None
-        if (
-            hasattr(self, "full_historical_data")
-            and isinstance(self.full_historical_data, pd.DataFrame)
-            and not self.full_historical_data.empty
-            and isinstance(self.full_historical_data.index, pd.DatetimeIndex)
-        ):
-            start_date_val = self.full_historical_data.index.min().date()
-            end_date_val = self.full_historical_data.index.max().date()
-            logging.debug(
-                f"Using full_historical_data date range for TWR annualization: {start_date_val} to {end_date_val}"
-            )
-        else:  # Fallback to UI controls if historical_data is not ready
-            start_date_val = (
-                self.graph_start_date_edit.date().toPython()
-                if hasattr(self, "graph_start_date_edit")
-                else None
-            )
-            end_date_val = (
-                self.graph_end_date_edit.date().toPython()
-                if hasattr(self, "graph_end_date_edit")
-                else None
-            )
-            # Only log a warning if we expected data to be present (i.e., not in a cleared/initial state)
-            if self.summary_metrics_data:
-                logging.warning(
-                    f"Fallback to UI date range for TWR annualization: {start_date_val} to {end_date_val}"
-                )
+        # --- FIX: Use the UI-selected date range for TWR annualization ---
+        # Get dates from UI for correct period determination
+        plot_start_date = self.graph_start_date_edit.date().toPython()
+        plot_end_date = self.graph_end_date_edit.date().toPython()
+        
+        start_date_val = plot_start_date
+        end_date_val = plot_end_date
+        
         # --- END FIX ---
 
         annualized_twr_pct = self._calculate_annualized_twr(
@@ -13485,6 +13616,21 @@ The CSV file should contain the following columns (header names must match exact
                 if full_historical_data_df is not None
                 else pd.DataFrame()
             )
+            # --- NEW: Convert full_historical_data to universal display timezone (EST) ---
+            if not self.full_historical_data.empty:
+                try:
+                    display_tz = config.DISPLAY_TIMEZONE
+                    if self.full_historical_data.index.tz is not None:
+                        self.full_historical_data.index = self.full_historical_data.index.tz_convert(display_tz)
+                    else:
+                        # If naive, assume it's UTC and localize then convert? 
+                        # Or just localize to UTC then convert to EST.
+                        # Most backend data is UTC.
+                        self.full_historical_data.index = self.full_historical_data.index.tz_localize("UTC").tz_convert(display_tz)
+                    logging.info(f"Converted historical data index to {display_tz}")
+                except Exception as e_tz:
+                    logging.warning(f"Failed to convert historical data to display timezone: {e_tz}")
+            # --- END NEW ---
             # Ensure 'Portfolio Value' column exists or rename 'value' if present (just in case logic differs)
             if not self.full_historical_data.empty:
                  if "Portfolio Value" not in self.full_historical_data.columns and "value" in self.full_historical_data.columns:
@@ -13621,11 +13767,47 @@ The CSV file should contain the following columns (header names must match exact
                     temp_df.index = pd.to_datetime(temp_df.index)
                 if temp_df.index.tz is not None:
                     temp_df.index = temp_df.index.tz_localize(None)
-                filtered_by_date_df = temp_df.loc[pd_start:pd_end].copy()
+                # Ensure the end of the day is included for intraday data (capture all hours/minutes)
+                pd_end_inclusive = pd.Timestamp(plot_end_date) + pd.Timedelta(hours=23, minutes=59, seconds=59)
+                filtered_by_date_df = temp_df.loc[pd_start:pd_end_inclusive].copy()
+
+                # --- NEW: Specific anchor point logic (9:30 AM for 1D/5D, midnight otherwise) ---
+                current_preset = self.date_preset_combo.currentText()
+                is_intraday = current_preset in ["1D", "5D"]
+                anchor_time = time(9, 30) if is_intraday else time(0, 0)
+                anchor_ts = pd.Timestamp.combine(plot_start_date, anchor_time)
+
+                # --- MODIFIED: Ensure a precise 0% start by injecting the previous close at exactly the anchor time (e.g. 09:30 AM) ---
+                if not filtered_by_date_df.empty and filtered_by_date_df.index[0] > anchor_ts:
+                    idx_before = temp_df.index.searchsorted(anchor_ts)
+                    if idx_before > 0:
+                        baseline_row = temp_df.iloc[[idx_before - 1]].copy()
+                        baseline_row.index = [anchor_ts]
+                        filtered_by_date_df = pd.concat([baseline_row, filtered_by_date_df])
+                        logging.debug(f"Injected baseline point at {anchor_ts} for smooth graph start.")
 
                 logging.debug(
-                    f"Filtered historical data to {len(filtered_by_date_df)} rows for date range."
+                    f"Filtered historical data to {len(filtered_by_date_df)} rows (after injection/filter)."
                 )
+
+                # --- NEW: Strict Market Hours Filtering for 1D/5D ---
+                if is_intraday and not filtered_by_date_df.empty:
+                    # Filter criteria: (09:30 <= time <= 16:00) OR (exactly anchor_ts)
+                    # This removes pre-market and after-hours data while keeping the 0% anchor at market open.
+                    def is_visible_intraday(ts):
+                        # Filter out weekends (Sat=5, Sun=6)
+                        if ts.weekday() >= 5:
+                            return False
+
+                        # Allow the anchor point regardless of time (though 09:30 is in range anyway)
+                        if ts == anchor_ts:
+                            return True
+                        t_val = ts.time()
+                        return time(9, 30) <= t_val <= time(16, 0)
+                    
+                    row_count_before = len(filtered_by_date_df)
+                    filtered_by_date_df = filtered_by_date_df[filtered_by_date_df.index.map(is_visible_intraday)]
+                    logging.info(f"Applied strict market hours trimming for {current_preset}. Filtered {row_count_before} -> {len(filtered_by_date_df)} rows.")
 
                 # --- Re-normalize all accumulated gain columns to start at 1.0 for the selected period ---
                 if not filtered_by_date_df.empty:
@@ -13638,40 +13820,47 @@ The CSV file should contain the following columns (header names must match exact
                         f"Re-normalizing accumulated gain columns: {gain_cols}"
                     )
                     for col in gain_cols:
-                        # Find the first valid (non-NaN and non-zero) value in the series to use as the base factor
-                        series_for_norm = filtered_by_date_df[col].dropna()
-                        # Filter out zeros effectively
-                        series_for_norm = series_for_norm[abs(series_for_norm) > 1e-9]
+                        # --- MODIFIED: Use the point immediately preceding the start_date as the baseline (t-1) ---
+                        # This ensures that the first point (t0) shows the true return of the first interval.
+                        try:
+                            # 1. Look for the index of pd_start in the full unfiltered data
+                            all_indices = temp_df.index
+                            idx_at_start = all_indices.searchsorted(pd_start)
 
-                        if not series_for_norm.empty:
-                            start_factor = series_for_norm.iloc[0]
-                            # start_factor is guaranteed non-zero by the filter above
-                            # Divide the whole column by the start_factor to re-base it to 1.0
-                            filtered_by_date_df[col] = (
-                                filtered_by_date_df[col] / start_factor
-                            )
-                            logging.debug(
-                                f"  Normalized '{col}' using start factor: {start_factor:.4f}"
-                            )
-                        else:
-                            # If there are no valid values (all NaNs or Zeros), we can't normalize.
-                            # We leave it as is (likely zeros or NaNs) or set to NaN if strictly required.
-                            # If it was all zeros, dividing by ? is impossible. 0 is fine.
-                            logging.debug(
-                                f"  No valid non-zero data to normalize for '{col}' in selected range."
-                            )
-                            # If we strictly want to hide invalid data:
-                            if filtered_by_date_df[col].dropna().empty:
-                                 # It was all NaNs
-                                 pass
+                            start_factor = 1.0
+                            if idx_at_start > 0:
+                                # We have a baseline point!
+                                start_factor = temp_df[col].iloc[idx_at_start - 1]
+                                logging.debug(
+                                    f"Renormalizing {col}: Baseline point found at {all_indices[idx_at_start-1]}, value={start_factor}"
+                                )
                             else:
-                                 # It was all Zeros (or NaNs)
-                                 # Normalized 0 is 0. So leaving it is fine.
-                                 pass
-                            # If there are no valid values in the filtered range, the column is all NaN.
-                            logging.debug(
-                                f"  No data to normalize for '{col}' in the selected range."
-                            )
+                                # Fallback to first visible point if no preceding point exists
+                                series_for_norm = filtered_by_date_df[col].dropna()
+                                # Check for non-zero to avoid division by zero
+                                series_for_norm = series_for_norm[abs(series_for_norm) > 1e-9]
+                                if not series_for_norm.empty:
+                                    start_factor = series_for_norm.iloc[0]
+                                    logging.debug(
+                                        f"Renormalizing {col}: No baseline point, using t0={series_for_norm.index[0]}, value={start_factor}"
+                                    )
+
+                            if pd.notnull(start_factor) and abs(start_factor) > 1e-9:
+                                filtered_by_date_df[col] = (
+                                    filtered_by_date_df[col] / start_factor
+                                )
+                                logging.debug(
+                                    f"  Normalized '{col}' using start factor: {start_factor:.4f}"
+                                )
+                            else:
+                                logging.debug(
+                                    f"  No valid non-zero data to normalize for '{col}' in selected range."
+                                )
+                        except Exception as e_norm:
+                            logging.warning(f"Normalization failed for {col}: {e_norm}")
+                    
+                    # --- REMOVED: Trimming logic for 1D/5D to match Web App exactly ---
+                    # We keep the overnight flat line to provide the same visual context as the web app.
                 # --- End Re-normalization ---
 
                 # Resample based on interval
