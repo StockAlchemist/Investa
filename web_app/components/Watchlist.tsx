@@ -7,7 +7,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Trash2, TrendingUp, TrendingDown, RefreshCw } from "lucide-react";
-import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import StockTicker from './StockTicker';
@@ -153,17 +153,43 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                 <div className="h-8 w-24">
                                                     {item.Sparkline && item.Sparkline.length > 1 ? (
                                                         <ResponsiveContainer width="100%" height="100%">
-                                                            <LineChart data={item.Sparkline.map(v => ({ value: v }))}>
+                                                            <AreaChart data={item.Sparkline.map(v => ({ value: v }))}>
+                                                                <defs>
+                                                                    {(() => {
+                                                                        const val = item.Sparkline!;
+                                                                        const baseline = val[0];
+                                                                        const min = Math.min(...val);
+                                                                        const max = Math.max(...val);
+                                                                        const range = max - min;
+                                                                        const off = range <= 0 ? 0 : (max - baseline) / range;
+
+                                                                        return (
+                                                                            <>
+                                                                                <linearGradient id={`splitFill-wl-${item.Symbol}`} x1="0" y1="0" x2="0" y2="1">
+                                                                                    <stop offset={off} stopColor="#10b981" stopOpacity={0.15} />
+                                                                                    <stop offset={off} stopColor="#f43f5e" stopOpacity={0.15} />
+                                                                                </linearGradient>
+                                                                                <linearGradient id={`splitStroke-wl-${item.Symbol}`} x1="0" y1="0" x2="0" y2="1">
+                                                                                    <stop offset={off} stopColor="#10b981" stopOpacity={1} />
+                                                                                    <stop offset={off} stopColor="#f43f5e" stopOpacity={1} />
+                                                                                </linearGradient>
+                                                                            </>
+                                                                        );
+                                                                    })()}
+                                                                </defs>
                                                                 <YAxis hide domain={['dataMin', 'dataMax']} />
-                                                                <Line
+                                                                <ReferenceLine y={item.Sparkline[0]} stroke="#71717a" strokeDasharray="2 2" strokeOpacity={0.3} />
+                                                                <Area
                                                                     type="monotone"
                                                                     dataKey="value"
-                                                                    stroke={item.Sparkline[item.Sparkline.length - 1] >= item.Sparkline[0] ? "#10b981" : "#f43f5e"}
-                                                                    strokeWidth={2}
-                                                                    dot={false}
+                                                                    baseValue={item.Sparkline[0]}
+                                                                    stroke={`url(#splitStroke-wl-${item.Symbol})`}
+                                                                    fill={`url(#splitFill-wl-${item.Symbol})`}
+                                                                    strokeWidth={1.5}
                                                                     isAnimationActive={false}
+                                                                    dot={false}
                                                                 />
-                                                            </LineChart>
+                                                            </AreaChart>
                                                         </ResponsiveContainer>
                                                     ) : (
                                                         <span className="text-[10px] text-muted-foreground text-center block">no trend</span>
