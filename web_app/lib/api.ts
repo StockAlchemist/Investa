@@ -302,6 +302,7 @@ export interface Settings {
     user_excluded_symbols: string[];
     account_currency_map: Record<string, string>;
     account_groups: Record<string, string[]>;
+    available_currencies: string[];
 }
 
 export async function fetchSettings(): Promise<Settings> {
@@ -315,6 +316,8 @@ export interface SettingsUpdate {
     user_symbol_map?: Record<string, string>;
     user_excluded_symbols?: string[];
     account_groups?: Record<string, string[]>;
+    account_currency_map?: Record<string, string>;
+    available_currencies?: string[];
 }
 
 export async function updateSettings(settings: SettingsUpdate): Promise<StatusResponse> {

@@ -1600,7 +1600,8 @@ async def get_settings(
             "user_symbol_map": user_symbol_map,
             "user_excluded_symbols": list(user_excluded_symbols),
             "account_currency_map": account_currency_map,
-            "account_groups": config_manager.gui_config.get("account_groups", {})
+            "account_groups": config_manager.gui_config.get("account_groups", {}),
+            "available_currencies": config_manager.gui_config.get("available_currencies", ['USD', 'THB', 'EUR', 'GBP', 'JPY', 'CNY'])
         }
     except Exception as e:
         logging.error(f"Error getting settings: {e}", exc_info=True)
@@ -1611,6 +1612,8 @@ class SettingsUpdate(BaseModel):
     user_symbol_map: Optional[Dict[str, str]] = None
     user_excluded_symbols: Optional[List[str]] = None
     account_groups: Optional[Dict[str, List[str]]] = None
+    account_currency_map: Optional[Dict[str, str]] = None
+    available_currencies: Optional[List[str]] = None
 
 @router.post("/settings/update")
 async def update_settings(
@@ -1658,7 +1661,14 @@ async def update_settings(
             
         if settings.account_groups is not None:
              config_manager.gui_config["account_groups"] = settings.account_groups
-             config_manager.save_gui_config()
+             
+        if settings.account_currency_map is not None:
+             config_manager.gui_config["account_currency_map"] = settings.account_currency_map
+
+        if settings.available_currencies is not None:
+             config_manager.gui_config["available_currencies"] = settings.available_currencies
+
+        config_manager.save_gui_config()
 
         # Save to AppData
         if config_manager.save_manual_overrides(current_overrides):

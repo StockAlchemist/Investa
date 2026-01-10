@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { exportToCSV } from '../lib/export';
 import { Transaction, addTransaction, updateTransaction, deleteTransaction, addToWatchlist } from '../lib/api';
-import { Trash2, Star } from 'lucide-react';
+import { Trash2, Star, Pencil } from 'lucide-react';
 import TransactionModal from './TransactionModal';
 import StockTicker from './StockTicker';
 
@@ -355,15 +355,17 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                                     <td className="px-4 py-3 text-sm text-right text-foreground whitespace-nowrap">
                                         <button
                                             onClick={() => handleEdit(tx)}
-                                            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 mr-2"
+                                            className="text-cyan-500 hover:text-cyan-400 hover:bg-cyan-500/10 p-2 rounded transition-colors mr-1"
+                                            title="Edit"
                                         >
-                                            Edit
+                                            <Pencil className="w-4 h-4" />
                                         </button>
                                         <button
                                             onClick={() => handleDelete(tx)}
-                                            className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                                            className="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded transition-colors"
+                                            title="Delete"
                                         >
-                                            Delete
+                                            <Trash2 className="w-4 h-4" />
                                         </button>
                                     </td>
                                 </tr>
@@ -426,15 +428,17 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                         < div className="mt-3 pt-2 border-t border-black/5 dark:border-white/10 flex justify-end gap-3" >
                             <button
                                 onClick={() => handleEdit(tx)}
-                                className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                                className="text-cyan-500 hover:text-cyan-400 hover:bg-cyan-500/10 p-2 rounded transition-colors"
+                                title="Edit"
                             >
-                                Edit
+                                <Pencil className="w-5 h-5" />
                             </button>
                             <button
                                 onClick={() => handleDelete(tx)}
-                                className="text-sm font-medium text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                                className="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded transition-colors"
+                                title="Delete"
                             >
-                                Delete
+                                <Trash2 className="w-5 h-5" />
                             </button>
                         </div>
                     </div>

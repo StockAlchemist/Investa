@@ -2,16 +2,19 @@ import React, { useState, useRef, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { ChevronDown, Globe } from 'lucide-react';
 
+const AVAILABLE_CURRENCIES = ['USD', 'THB', 'EUR', 'GBP', 'JPY', 'CNY'];
+
 interface CurrencySelectorProps {
     currentCurrency: string;
     onChange: (currency: string) => void;
     fxRate?: number;
     side?: 'right' | 'bottom';
+    availableCurrencies?: string[];
 }
 
-const AVAILABLE_CURRENCIES = ['USD', 'THB', 'EUR', 'GBP', 'JPY', 'CNY'];
+export default function CurrencySelector({ currentCurrency, onChange, fxRate, side = 'bottom', availableCurrencies }: CurrencySelectorProps) {
+    const currencies = availableCurrencies || AVAILABLE_CURRENCIES;
 
-export default function CurrencySelector({ currentCurrency, onChange, fxRate, side = 'bottom' }: CurrencySelectorProps) {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -75,7 +78,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                         <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 border-b border-border mb-1">
                             Currencies
                         </div>
-                        {AVAILABLE_CURRENCIES.map(currency => (
+                        {currencies.map(currency => (
                             <button
                                 key={currency}
                                 onClick={() => {

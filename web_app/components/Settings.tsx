@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { updateSettings, triggerRefresh, clearCache, Settings as SettingsType, ManualOverride, ManualOverrideData, Holding } from '../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { COUNTRIES, ALL_INDUSTRIES } from '../lib/constants';
 import AccountGroupManager from './AccountGroupManager';
 
-type Tab = 'overrides' | 'mapping' | 'excluded' | 'groups';
+type Tab = 'overrides' | 'mapping' | 'excluded' | 'groups' | 'currencies';
 
 // --- Constants (Mirrored from config.py) ---
 const ASSET_TYPES = [
@@ -68,6 +69,7 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
     const [mapTo, setMapTo] = useState('');
 
     const [excludeSymbol, setExcludeSymbol] = useState('');
+    const [newCurrency, setNewCurrency] = useState('');
 
     // Common input/select classes
     const inputClassName = "w-full rounded-md border border-border bg-secondary text-foreground shadow-sm focus:border-cyan-500 focus:ring-cyan-500 px-3 py-2 text-sm outline-none focus:ring-1";
@@ -269,6 +271,46 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
         }
     };
 
+    const addCurrency = async () => {
+        if (!settings || !newCurrency) return;
+        const currentList = [...(settings.available_currencies || ['USD', 'THB', 'EUR', 'GBP', 'JPY', 'CNY'])];
+        const curr = newCurrency.toUpperCase();
+        if (!currentList.includes(curr)) {
+            currentList.push(curr);
+        }
+        try {
+            await updateSettings({ available_currencies: currentList });
+            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            setNewCurrency('');
+        } catch {
+            alert('Failed to add currency');
+        }
+    }
+
+    const removeCurrency = async (curr: string) => {
+        if (!settings) return;
+        const currentList = (settings.available_currencies || ['USD', 'THB', 'EUR', 'GBP', 'JPY', 'CNY']).filter(c => c !== curr);
+        try {
+            await updateSettings({ available_currencies: currentList });
+            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+        } catch {
+            alert('Failed to remove currency');
+        }
+    }
+
+    const updateAccountCurrency = async (account: string, currency: string) => {
+        if (!settings) return;
+        const currentMap = { ...settings.account_currency_map };
+        currentMap[account] = currency;
+
+        try {
+            await updateSettings({ account_currency_map: currentMap });
+            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+        } catch {
+            alert('Failed to update account currency');
+        }
+    }
+
     const handleRefresh = async () => {
         try {
             const res = await triggerRefresh(refreshSecret);
@@ -299,6 +341,8 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
     const symbolMap = settings?.user_symbol_map || {};
     // Sort excluded symbols alphabetically
     const excluded = (settings?.user_excluded_symbols || []).slice().sort((a, b) => a.localeCompare(b));
+    const availableCurrencies = (settings?.available_currencies || ['USD', 'THB', 'EUR', 'GBP', 'JPY', 'CNY']).slice().sort();
+    const accountCurrencyMap = settings?.account_currency_map || {};
 
     // Construct Geography Options: Portfolio Countries first, then ALL countries
     const availableCountries = COUNTRIES.filter(c => !portfolioCountries.includes(c));
@@ -352,6 +396,15 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
                             }`}
                     >
                         Excluded Symbols
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('currencies')}
+                        className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors border-b-2 whitespace-nowrap ${activeTab === 'currencies'
+                            ? 'border-cyan-500 text-cyan-500 dark:text-cyan-400'
+                            : 'border-transparent text-muted-foreground hover:text-foreground hover:border-black/20 dark:hover:border-white/20'
+                            }`}
+                    >
+                        Currencies
                     </button>
                 </div>
 
@@ -516,16 +569,18 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => handleEdit(symbol, data)}
-                                                                    className="text-cyan-500 hover:text-cyan-400 hover:bg-cyan-500/10 px-3 py-1 rounded transition-colors mr-2"
+                                                                    className="text-cyan-500 hover:text-cyan-400 hover:bg-cyan-500/10 p-2 rounded transition-colors mr-1"
+                                                                    title="Edit"
                                                                 >
-                                                                    Edit
+                                                                    <Pencil className="w-4 h-4" />
                                                                 </button>
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => removeOverride(symbol)}
-                                                                    className="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 px-3 py-1 rounded transition-colors"
+                                                                    className="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded transition-colors"
+                                                                    title="Remove"
                                                                 >
-                                                                    Remove
+                                                                    <Trash2 className="w-4 h-4" />
                                                                 </button>
                                                             </td>
                                                         </tr>
@@ -609,9 +664,10 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
                                                             <button
                                                                 type="button"
                                                                 onClick={() => removeMapping(from)}
-                                                                className="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 px-3 py-1 rounded transition-colors"
+                                                                className="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded transition-colors"
+                                                                title="Remove"
                                                             >
-                                                                Remove
+                                                                <Trash2 className="w-4 h-4" />
                                                             </button>
                                                         </td>
                                                     </tr>
@@ -665,17 +721,98 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
                                                 <button
                                                     type="button"
                                                     onClick={() => removeExcluded(sym)}
-                                                    className="text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 p-2 rounded-full transition-all"
+                                                    className="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded transition-colors"
                                                     title="Remove from exclusion list"
                                                 >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                                                    </svg>
+                                                    <Trash2 className="w-4 h-4" />
                                                 </button>
                                             </li>
                                         ))}
                                     </ul>
                                 )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Currencies Tab */}
+                    {activeTab === 'currencies' && (
+                        <div>
+                            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+                                Manage available currencies and assign default currencies to accounts.
+                            </p>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                {/* Available Currencies */}
+                                <div>
+                                    <h3 className="text-md font-bold mb-2 text-foreground">Available Currencies</h3>
+                                    <div className="flex gap-2 mb-4">
+                                        <input
+                                            type="text"
+                                            value={newCurrency}
+                                            onChange={(e) => setNewCurrency(e.target.value.toUpperCase())}
+                                            placeholder="e.g. SGD"
+                                            className={inputClassName}
+                                            maxLength={3}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={addCurrency}
+                                            disabled={!newCurrency}
+                                            className="px-4 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium shadow-sm focus:outline-none disabled:opacity-50"
+                                        >
+                                            Add
+                                        </button>
+                                    </div>
+                                    <div className="bg-secondary border border-border rounded-lg overflow-hidden">
+                                        <ul className="divide-y divide-border">
+                                            {availableCurrencies.map(curr => (
+                                                <li key={curr} className="px-4 py-3 flex items-center justify-between hover:bg-accent/5">
+                                                    <span className="font-medium text-foreground">{curr}</span>
+                                                    <button
+                                                        onClick={() => removeCurrency(curr)}
+                                                        className="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded transition-colors"
+                                                        title="Remove"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                {/* Account Currency Map */}
+                                <div>
+                                    <h3 className="text-md font-bold mb-2 text-foreground">Account Default Currencies</h3>
+                                    <div className="bg-secondary border border-border rounded-lg overflow-hidden">
+                                        <table className="min-w-full divide-y divide-border">
+                                            <thead className="bg-secondary/50 font-semibold border-b border-border">
+                                                <tr>
+                                                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Account</th>
+                                                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Currency</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-border">
+                                                {availableAccounts.map(account => (
+                                                    <tr key={account} className="hover:bg-accent/5">
+                                                        <td className="px-4 py-3 text-sm font-medium text-foreground">{account}</td>
+                                                        <td className="px-4 py-2">
+                                                            <select
+                                                                value={accountCurrencyMap[account] || 'USD'} // Default to USD visually if missing, logic handles load
+                                                                onChange={(e) => updateAccountCurrency(account, e.target.value)}
+                                                                className={inputClassName}
+                                                            >
+                                                                {availableCurrencies.map(curr => (
+                                                                    <option key={curr} value={curr} className="bg-white dark:bg-black text-foreground">{curr}</option>
+                                                                ))}
+                                                            </select>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     )}

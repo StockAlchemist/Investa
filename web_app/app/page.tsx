@@ -372,6 +372,7 @@ export default function Home() {
             onChange={setCurrency}
             fxRate={summary?.metrics?.exchange_rate_to_display}
             side="right"
+            availableCurrencies={settingsQuery.data?.available_currencies}
           />
         </div>
 
@@ -420,6 +421,7 @@ export default function Home() {
                 currentCurrency={currency}
                 onChange={setCurrency}
                 fxRate={summary?.metrics?.exchange_rate_to_display}
+                availableCurrencies={settingsQuery.data?.available_currencies}
               />
               <AccountSelector
                 availableAccounts={availableAccounts}
