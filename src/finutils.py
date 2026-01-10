@@ -54,25 +54,51 @@ HASH_ERROR_UNEXPECTED = "HASHING_ERROR_UNEXPECTED"
 # --- File Hashing Helper ---
 def _get_file_hash(filepath: str) -> str:
     """Calculates the SHA256 hash of a file.
-
-    Args:
-        filepath (str): The path to the file.
-
-    Returns:
-        str: The SHA256 hash of the file as a hexadecimal string,
-             or a specific error string ('FILE_NOT_FOUND',
-             'HASHING_ERROR_PERMISSION', 'HASHING_ERROR_IO',
-             'HASHING_ERROR_UNEXPECTED') if an error occurs.
+    
+    If the file is a SQLite database (ends in .db, .sqlite, .sqlite3),
+    it also checks for associated Write-Ahead Log (-wal) and Shared Memory (-shm) files.
+    If found, their hashes are combined with the main file hash to ensure
+    any pending changes in the WAL are captured in the cache key.
     """
     hasher = hashlib.sha256()
+    
+    # Helper to hash a single file into the main hasher
+    def _update_hash_with_file(path: str):
+        try:
+            with open(path, "rb") as file:
+                while chunk := file.read(HASH_CHUNK_SIZE):
+                    hasher.update(chunk)
+            return True
+        except FileNotFoundError:
+            return False # Ignore if disappeared (e.g. checkpointed)
+        except Exception as e:
+            logging.warning(f"Error hashing companion file {path}: {e}")
+            return False
+
     try:
-        with open(filepath, "rb") as file:
-            while chunk := file.read(HASH_CHUNK_SIZE):  # Read in chunks
-                hasher.update(chunk)
+        # 1. Hash the main file
+        if not _update_hash_with_file(filepath):
+            # Main file not found or error
+            logging.warning(f"Warning: Main file not found for hashing: {filepath}")
+            return HASH_ERROR_NOT_FOUND
+
+        # 2. Check for SQLite companion files if applicable
+        # (Naive check based on extension, strictly redundant but safe)
+        lower_path = filepath.lower()
+        if lower_path.endswith((".db", ".sqlite", ".sqlite3")):
+            wal_path = filepath + "-wal"
+            shm_path = filepath + "-shm"
+            
+            if os.path.exists(wal_path):
+                 _update_hash_with_file(wal_path)
+                 # logging.debug(f"Hashed WAL file: {wal_path}")
+            
+            if os.path.exists(shm_path):
+                 _update_hash_with_file(shm_path)
+                 # logging.debug(f"Hashed SHM file: {shm_path}")
+
         return hasher.hexdigest()
-    except FileNotFoundError:
-        logging.warning(f"Warning: File not found for hashing: {filepath}")
-        return HASH_ERROR_NOT_FOUND
+
     except PermissionError:
         logging.error(f"Permission denied accessing file {filepath} for hashing.")
         return HASH_ERROR_PERMISSION

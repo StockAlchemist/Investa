@@ -1038,7 +1038,9 @@ def _calculate_historical_performance_internal(
     # Call calculation logic
     # Revert to daily interval for ALL periods to prevent repeating dates in graph
     # --- MODIFIED: Use provided interval or default ---
-    calc_interval = interval
+    # Force "D" for "all" period to match Desktop App (main_gui.py) logic exactly
+    # This ensures they share the exact same cache file (which is known to be clean).
+    calc_interval = "D" if period == "all" else interval
     
     t_start = time.time()
     try:
@@ -1693,7 +1695,7 @@ async def get_risk_metrics(
     """
     Returns portfolio risk metrics (Sharpe, Volatility, Max Drawdown).
     """
-    df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, _, _ = data
+    df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, original_csv_path, _ = data
     if df.empty:
         return {}
 
@@ -1714,7 +1716,8 @@ async def get_risk_metrics(
             benchmark_symbols_yf=[], # Add empty benchmarks for risk metrics
             account_currency_map=account_currency_map,
             default_currency=config.DEFAULT_CURRENCY,
-            interval="D"
+            interval="D",
+            original_csv_file_path=original_csv_path
         )
         
         if daily_df is None or "Portfolio Value" not in daily_df.columns:

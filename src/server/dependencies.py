@@ -42,15 +42,13 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
     # We need to know the DB path from config if it exists
     gui_config = {}
     
-    # Define system config path (Mac specific for now, matching main_gui.py logic)
-    home_dir = os.path.expanduser("~")
-    # Constants should match config.py/main_gui.py logic
-    ORG_NAME = "StockAlchemist"
-    APP_NAME = "Investa"
-    system_config_path = os.path.join(home_dir, "Library", "Application Support", ORG_NAME, APP_NAME, "gui_config.json")
+    # Define system config path using centralized logic from config.py
+    # This ensures consistency with the Desktop App (main_gui.py)
+    app_data_dir = config.get_app_data_dir()
+    system_config_path = os.path.join(app_data_dir, "gui_config.json")
     
     config_paths_to_try = [
-        system_config_path,  # Priority 1: System/User path (used by Desktop App)
+        system_config_path,  # Priority 1: System/User path (consistent with Desktop)
         os.path.join(project_root, "gui_config.json"),
         os.path.join(src_dir, "gui_config.json"),
         os.path.join(src_dir, "Investa", "gui_config.json"),
@@ -111,10 +109,21 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
         db_path = get_database_path(DB_FILENAME)
         logging.info(f"Using db_utils fallback DB: {db_path}")
 
-    # Check modification time for DB
+    # Check modification time for DB (and WAL/SHM if present)
     current_mtime = 0.0
     if os.path.exists(db_path):
         current_mtime = os.path.getmtime(db_path)
+        # Check WAL/SHM
+        wal_path = db_path + "-wal"
+        shm_path = db_path + "-shm"
+        if os.path.exists(wal_path):
+            wal_mtime = os.path.getmtime(wal_path)
+            if wal_mtime > current_mtime: 
+                current_mtime = wal_mtime
+        if os.path.exists(shm_path):
+            shm_mtime = os.path.getmtime(shm_path)
+            if shm_mtime > current_mtime:
+                current_mtime = shm_mtime
     
     # Check modification time for Overrides
     overrides_changed = False
