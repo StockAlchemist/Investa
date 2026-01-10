@@ -1035,6 +1035,27 @@ def _calculate_historical_performance_internal(
     else:
         start_date = end_date - timedelta(days=365)
 
+    # --- NEW: BASELINE BUFFERING ($t_{-1}$) ---
+    # Store the intended display start date before we buffer it for calculations
+    display_start_date = start_date
+    
+    # To support "Change relative to previous point", we expand the requested start_date 
+    # back by one interval. This ensures the backend has the baseline point available 
+    # for normalization and the chart can render the performance during the first day.
+    if period != "all":
+        if interval in ["D", "1d"]:
+            # For daily, go back 1 day (or 3 if 1d view hits a weekend)
+            start_date = start_date - timedelta(days=1)
+        elif interval == "W":
+            start_date = start_date - timedelta(days=7)
+        elif interval in ["M", "ME"]:
+            start_date = start_date - timedelta(days=31)
+        elif interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]:
+            # For intraday, one day back is usually enough to get the previous close
+            start_date = start_date - timedelta(days=1)
+            
+    # --- END BASELINE BUFFERING ---
+
     # Call calculation logic
     # Revert to daily interval for ALL periods to prevent repeating dates in graph
     # --- MODIFIED: Use provided interval or default ---
@@ -1073,6 +1094,32 @@ def _calculate_historical_performance_internal(
     if daily_df is None or daily_df.empty:
         return pd.DataFrame() if return_df else []
 
+    # --- NEW: BASELINE FILTERING ---
+    if daily_df is not None and not daily_df.empty:
+        # Ensure UTC alignment for comparison and output
+        daily_df.index = pd.to_datetime(daily_df.index, utc=True)
+        
+        # Ensure we only have ONE baseline point before the display_start_date.
+        # This prevents plotting "previous period data" while keeping the anchor.
+        if period != "all":
+            try:
+                # Use localized Timestamp for comparison
+                ds_ts = pd.Timestamp(display_start_date, tz='UTC')
+                
+                df_before = daily_df[daily_df.index < ds_ts]
+                df_display = daily_df[daily_df.index >= ds_ts]
+                
+                if not df_before.empty:
+                    # Take only the LAST point before display_start_date as the baseline
+                    baseline_point = df_before.iloc[[-1]]
+                    daily_df = pd.concat([baseline_point, df_display])
+                    logging.info(f"API: Filtered baseline to 1 point at {baseline_point.index[0]}")
+                else:
+                    daily_df = df_display
+            except Exception as e_filter:
+                logging.error(f"API: Baseline filtering failed: {e_filter}")
+    # --- END BASELINE FILTERING ---
+
     if return_df:
         # Standardize for internal consumers (like portfolio health)
         df_ret = daily_df.copy()
@@ -1088,7 +1135,6 @@ def _calculate_historical_performance_internal(
     
     result = []
     # daily_df index is Date
-    daily_df.index = pd.to_datetime(daily_df.index, utc=True)
 
     ticker_to_name = {v: k for k, v in config.BENCHMARK_MAPPING.items()}
     
@@ -1120,18 +1166,27 @@ def _calculate_historical_performance_internal(
     post_market_count = 0
     total_input = len(daily_df)
     
-    for dt, row in daily_df.iterrows():
-        # Skip weekends (Saturday=5, Sunday=6) to avoid flat lines in graph
-        # Use .dayofweek which is standard for pd.Timestamp
-        if hasattr(dt, 'dayofweek') and dt.dayofweek >= 5:
-            continue
-        elif hasattr(dt, 'weekday') and dt.weekday() >= 5:
-            continue
-        elif isinstance(dt, (date, datetime)) and dt.weekday() >= 5:
-            continue
+    # ds_ts is used to identify baseline points
+    ds_ts = pd.Timestamp(display_start_date, tz='UTC')
+    
+    for i, (dt, row) in enumerate(daily_df.iterrows()):
+        # Ensure the FIRST point (the baseline t-1) is correctly identified.
+        # It's only a baseline if it's before the intended display range.
+        is_baseline = (i == 0 and period != "all" and dt < ds_ts)
+        
+        if not is_baseline:
+            # Skip weekends (Saturday=5, Sunday=6) to avoid flat lines in graph
+            # Use .dayofweek which is standard for pd.Timestamp
+            if hasattr(dt, 'dayofweek') and dt.dayofweek >= 5:
+                continue
+            elif hasattr(dt, 'weekday') and dt.weekday() >= 5:
+                continue
+            elif isinstance(dt, (date, datetime)) and dt.weekday() >= 5:
+                continue
         # Strict market hours filter for intraday (09:30 - 16:00 EST)
         # We only apply this to intraday intervals.
-        if interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]:
+        # EXCEPTION: Always allow the baseline point (i=0) to provide the 0% anchor.
+        if not is_baseline and interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]:
              # Convert dt to NY time for filtering
              # dt in daily_df.index is already UTC-aware Timestamp
              dt_ny = dt.tz_convert("America/New_York")
@@ -1159,6 +1214,7 @@ def _calculate_historical_performance_internal(
 
         item = {
             "date": dt.isoformat(),
+            "is_baseline": is_baseline,
             "value": val if pd.notnull(val) else 0.0,
             "twr": (twr - 1) * 100 if pd.notnull(twr) else 0.0, # Convert to percentage change
             "drawdown": dd if pd.notnull(dd) else 0.0, # Already percentage from portfolio_logic

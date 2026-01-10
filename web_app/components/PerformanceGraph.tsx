@@ -9,7 +9,8 @@ import {
     ResponsiveContainer,
     AreaChart,
     Area,
-    Legend
+    Legend,
+    ReferenceLine
 } from 'recharts';
 import PeriodSelector from './PeriodSelector';
 import BenchmarkSelector from './BenchmarkSelector';
@@ -139,7 +140,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
             const twr = end.twr;
             return {
                 label: "Period TWR",
-                text: `${twr > 0 ? '+' : ''}${twr.toFixed(2)}%`,
+                text: `${twr > 0 ? '+' : ''}${twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`,
                 color: twr >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
             };
         } else if (view === 'value') {
@@ -150,7 +151,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
 
             return {
                 label: "Period Change",
-                text: `${formatCurrency(change, currency)} (${change > 0 ? '+' : ''}${changePct.toFixed(2)}%)`,
+                text: `${formatCurrency(change, currency)} (${change > 0 ? '+' : ''}${changePct.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`,
                 color: change >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
             };
         }
@@ -169,7 +170,8 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         if (!data || data.length === 0) return [];
         return Object.keys(data[0]).filter(k =>
             k !== 'date' && k !== 'value' && k !== 'twr' && k !== 'drawdown' &&
-            k !== 'fx_rate' && k !== 'abs_gain' && k !== 'abs_roi' && k !== 'cum_flow' && k !== 'fx_return'
+            k !== 'fx_rate' && k !== 'abs_gain' && k !== 'abs_roi' && k !== 'cum_flow' && k !== 'fx_return' &&
+            k !== 'is_baseline'
         );
     }, [data]);
 
@@ -191,7 +193,11 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         });
     }, [data]);
 
-    if (!data || data.length === 0) {
+    const chartedData = useMemo(() => {
+        return (processedData as any[]).filter((d: any) => !d.is_baseline);
+    }, [processedData]);
+
+    if (!chartedData || chartedData.length === 0) {
         return (
             <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 h-80 flex items-center justify-center text-gray-500">
                 {loading ? 'Loading...' : 'No historical data available.'}
@@ -281,7 +287,8 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
             const benchKeys = allKeys.filter(k =>
                 k !== 'date' && k !== 'value' && k !== 'twr' && k !== 'drawdown' &&
                 k !== 'fx_rate' && k !== 'fx_return' &&
-                k !== 'abs_gain' && k !== 'abs_roi' && k !== 'cum_flow'
+                k !== 'abs_gain' && k !== 'abs_roi' && k !== 'cum_flow' &&
+                k !== 'is_baseline'
             );
 
             return (
@@ -302,7 +309,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                             <div className="flex items-center justify-between gap-2">
                                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">TWR</span>
                                 <span className={`text-[13px] font-bold ${dataPoint.twr >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                    {dataPoint.twr >= 0 ? '+' : ''}{dataPoint.twr.toFixed(2)}%
+                                    {dataPoint.twr >= 0 ? '+' : ''}{dataPoint.twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                                 </span>
                             </div>
                             <div className="flex items-center justify-between gap-2">
@@ -364,7 +371,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                                     {bKey}
                                                 </span>
                                                 <span className={`text-[12px] font-bold ${dataPoint[bKey] >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                                    {dataPoint[bKey] >= 0 ? '+' : ''}{Number(dataPoint[bKey]).toFixed(2)}%
+                                                    {dataPoint[bKey] >= 0 ? '+' : ''}{Number(dataPoint[bKey]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                                                 </span>
                                             </div>
                                         );
@@ -474,7 +481,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                 )}
                 <ResponsiveContainer width="100%" height="100%">
                     {view === 'return' ? (
-                        <LineChart syncId="portfolio-sync" data={processedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
+                        <LineChart syncId="portfolio-sync" data={chartedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                             <XAxis
                                 dataKey="date"
@@ -528,9 +535,10 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                     dot={false}
                                 />
                             )}
+                            <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="3 3" />
                         </LineChart>
                     ) : view === 'value' ? (
-                        <AreaChart syncId="portfolio-sync" data={processedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
+                        <AreaChart syncId="portfolio-sync" data={chartedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                             <defs>
                                 <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="5%" stopColor="#2563eb" stopOpacity={0.1} />
@@ -592,9 +600,10 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                     dot={false}
                                 />
                             )}
+                            <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="3 3" />
                         </AreaChart>
                     ) : (
-                        <AreaChart syncId="portfolio-sync" data={processedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
+                        <AreaChart syncId="portfolio-sync" data={chartedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                             <defs>
                                 <linearGradient id="colorDrawdown" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="5%" stopColor="#ef4444" stopOpacity={0.1} />
@@ -631,6 +640,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                 fill="url(#colorDrawdown)"
                                 strokeWidth={2}
                             />
+                            <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="3 3" />
                         </AreaChart>
                     )}
 

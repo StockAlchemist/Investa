@@ -5593,17 +5593,55 @@ def _calculate_accumulated_gains_and_resample(
             try:
                 pd_start = pd.Timestamp(start_date_filter)
                 pd_end = pd.Timestamp(end_date_filter)
+                
                 # Ensure index is timezone-naive before comparison if needed
                 if final_df_output.index.tz is not None:
                     final_df_output.index = final_df_output.index.tz_localize(None)
+                # --- NEW BASELINE LOGIC ($t_{-1}$) ---
+                # Instead of normalizing by the first visible point (t0), 
+                # we want to normalize by the point immediately preceding it (t-1).
+                # This ensures the first point (t0) already shows the return of that first day.
+                
+                # 1. Prepare a TZ-naive copy of the full resampled data for lookup
+                resampled_naive = final_df_resampled.copy()
+                if resampled_naive.index.tz is not None:
+                    resampled_naive.index = resampled_naive.index.tz_localize(None)
+                
+                # 2. Identify first date in the visible range
+                available_dates = final_df_output.index.sort_values()
+                visible_mask = (available_dates >= pd_start) & (available_dates <= pd_end)
+                visible_dates = available_dates[visible_mask]
+                
+                if not visible_dates.empty:
+                    t0_date = visible_dates[0]
+                    # 3. Find the index of t0 in the full (unfiltered) resampled index
+                    all_indices = resampled_naive.index.sort_values()
+                    
+                    try:
+                        # Normalize entire output relative to the FIRST point in the visible range (t0).
+                        # Since api.py shifts the start_date back by one interval, t0 is effectively t-1 
+                        # relative to the user's requested period.
+                        for col in final_df_output.columns:
+                            if "Accumulated Gain" in col:
+                                # Get t0 value from the naive resampled data 
+                                # (or directly from final_df_output if we trust it's there)
+                                try:
+                                    divisor = final_df_output.loc[t0_date, col]
+                                    if pd.notnull(divisor) and divisor != 0:
+                                        final_df_output[col] = final_df_output[col] / divisor
+                                        logging.debug(f"Normalized {col} using t0 baseline ({t0_date})")
+                                except Exception as e_norm:
+                                    logging.warning(f"Normalization failed for {col} using t0: {e_norm}")
+                    except KeyError:
+                         # Fallback to t0 normalization
+                        for col in final_df_output.columns:
+                            if "Accumulated Gain" in col:
+                                first_val = final_df_output.loc[t0_date, col]
+                                if pd.notnull(first_val) and first_val != 0:
+                                    final_df_output[col] = final_df_output[col] / first_val
+                
+                # Finally slice the output
                 final_df_output = final_df_output.loc[pd_start:pd_end]
-                if not final_df_output.empty:
-                    # Normalize portfolio and benchmarks to start at 1.0 for the visible range
-                    for col in final_df_output.columns:
-                        if "Accumulated Gain" in col:
-                            first_val = final_df_output[col].iloc[0]
-                            if pd.notnull(first_val) and first_val != 0:
-                                final_df_output[col] = final_df_output[col] / first_val
                 
                 logging.debug(
                     f"Filtered and normalized final output to range: {start_date_filter} - {end_date_filter}"
