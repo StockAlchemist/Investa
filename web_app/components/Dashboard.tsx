@@ -1,15 +1,20 @@
+import { useState, useEffect, useRef } from 'react';
 import { PortfolioSummary, PerformanceData } from '../lib/api';
 import { formatCurrency, cn } from '../lib/utils';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { LayoutDashboard } from 'lucide-react';
 
 interface DashboardProps {
     summary: PortfolioSummary;
     currency: string;
     history?: PerformanceData[];
     isLoading?: boolean;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    riskMetrics?: any;
+    riskMetricsLoading?: boolean;
 }
 
 interface MetricCardProps {
@@ -93,20 +98,89 @@ const MetricCard = ({
     </Card>
 );
 
+// Lazy component import logic handled by parent or standard import above
+import RiskMetrics from './RiskMetrics';
+
 const DEFAULT_ITEMS = [
-    { id: 'portfolioValue', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
-    { id: 'dayGL', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
-    { id: 'totalReturn', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
-    { id: 'unrealizedGL', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
-    { id: 'realizedGain', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
-    { id: 'ytdDividends', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
-    { id: 'annualTWR', colSpan: '' },
-    { id: 'cashBalance', colSpan: '' },
-    { id: 'fxGL', colSpan: '' },
-    { id: 'fees', colSpan: '' },
+    { id: 'portfolioValue', title: 'Total Portfolio Value', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
+    { id: 'dayGL', title: "Day's Gain/Loss", colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
+    { id: 'totalReturn', title: 'Total Return', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
+    { id: 'unrealizedGL', title: 'Unrealized G/L', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
+    { id: 'realizedGain', title: 'Realized Gain', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
+    { id: 'ytdDividends', title: 'Total Dividends', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
+    { id: 'annualTWR', title: 'Annual TWR', colSpan: '' },
+    { id: 'cashBalance', title: 'Cash Balance', colSpan: '' },
+    { id: 'fxGL', title: 'FX Gain/Loss', colSpan: '' },
+    { id: 'fees', title: 'Fees', colSpan: '' },
+    { id: 'riskMetrics', title: 'Risk Analytics', colSpan: 'col-span-1 md:col-span-2 lg:col-span-4' },
 ];
 
-export default function Dashboard({ summary, currency, history = [], isLoading = false }: DashboardProps) {
+export default function Dashboard({
+    summary,
+    currency,
+    history = [],
+    isLoading = false,
+    riskMetrics = {},
+    riskMetricsLoading = false
+}: DashboardProps) {
+    const [visibleItems, setVisibleItems] = useState<string[]>([]);
+    const [isConfigOpen, setIsConfigOpen] = useState(false);
+    const configRef = useRef<HTMLDivElement>(null);
+
+    // Initialize visibility from localStorage
+    useEffect(() => {
+        const saved = localStorage.getItem('investa_dashboard_visible_items');
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed)) {
+                    setVisibleItems(parsed);
+                    return;
+                }
+            } catch (e) {
+                console.error("Failed to parse saved dashboard visibility", e);
+            }
+        }
+        // Default to all items
+        setVisibleItems(DEFAULT_ITEMS.map(i => i.id));
+    }, []);
+
+    // Persist visibility to localStorage
+    useEffect(() => {
+        if (visibleItems.length > 0) {
+            localStorage.setItem('investa_dashboard_visible_items', JSON.stringify(visibleItems));
+        }
+    }, [visibleItems]);
+
+    // Close config dropdown when clicking outside
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (configRef.current && !configRef.current.contains(event.target as Node)) {
+                setIsConfigOpen(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, []);
+
+    const toggleItem = (id: string) => {
+        if (visibleItems.includes(id)) {
+            // Don't allow hiding all items - keep at least 1
+            if (visibleItems.length > 1) {
+                setVisibleItems(visibleItems.filter(i => i !== id));
+            }
+        } else {
+            // Add back and resort
+            const newVisible = DEFAULT_ITEMS
+                .filter(item => item.id === id || visibleItems.includes(item.id))
+                .map(item => item.id);
+
+            setVisibleItems(newVisible);
+        }
+    };
+
     const m = summary?.metrics;
     const am = summary?.account_metrics;
 
@@ -250,15 +324,73 @@ export default function Dashboard({ summary, currency, history = [], isLoading =
                     currency={currency}
                     isLoading={isLoading}
                 />;
+            case 'riskMetrics':
+                return <RiskMetrics metrics={riskMetrics} isLoading={riskMetricsLoading!} />;
             default:
                 return null;
         }
     };
 
     return (
-        <div className="mb-10">
+        <div className="mb-10 space-y-4">
+            <div className="flex justify-end" ref={configRef}>
+                <div className="relative">
+                    <button
+                        onClick={() => setIsConfigOpen(!isConfigOpen)}
+                        className={cn(
+                            "flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group",
+                            "bg-card hover:bg-accent/10",
+                            "border border-border shadow-sm",
+                            "font-semibold tracking-tight min-w-[80px]",
+                            isConfigOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-cyan-500",
+                            "flex-row py-2 px-4 h-[44px]"
+                        )}
+                        title="Configure Dashboard"
+                    >
+                        <LayoutDashboard className="w-4 h-4 text-cyan-500 mr-2" />
+                        <div className="flex flex-col items-center leading-none gap-0">
+                            <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent truncate font-bold uppercase text-[14px]">
+                                Layout
+                            </span>
+                        </div>
+                    </button>
+
+                    {isConfigOpen && (
+                        <div className="absolute right-0 top-full mt-2 min-w-[240px] w-max origin-top-right bg-white dark:bg-zinc-950 border border-border rounded-xl shadow-xl outline-none z-50 overflow-hidden">
+                            <div className="py-1 max-h-[80vh] overflow-y-auto">
+                                <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">
+                                    Dashboard Elements
+                                </div>
+                                {DEFAULT_ITEMS.map((item) => {
+                                    const isVisible = visibleItems.includes(item.id);
+                                    return (
+                                        <button
+                                            key={item.id}
+                                            onClick={() => toggleItem(item.id)}
+                                            className={cn(
+                                                "group flex items-center justify-between w-full px-4 py-3 text-sm font-medium transition-colors last:border-0",
+                                                isVisible
+                                                    ? 'bg-[#0097b2] text-white shadow-sm'
+                                                    : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
+                                            )}
+                                        >
+                                            <span>{item.title}</span>
+                                            {isVisible && (
+                                                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                </svg>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {DEFAULT_ITEMS.map((item) => (
+                {DEFAULT_ITEMS.filter(item => visibleItems.includes(item.id)).map((item) => (
                     <div key={item.id} className={item.colSpan}>
                         {renderContent(item.id)}
                     </div>

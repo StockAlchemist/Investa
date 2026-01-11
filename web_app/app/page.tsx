@@ -224,13 +224,9 @@ export default function Home() {
               currency={currency}
               history={historySparklineQuery.data || []}
               isLoading={summaryQuery.isLoading}
+              riskMetrics={riskMetricsQuery.data || {}}
+              riskMetricsLoading={riskMetricsQuery.isLoading}
             />
-            <div className="mb-6">
-              <RiskMetricsComponent
-                metrics={riskMetricsQuery.data || {}}
-                isLoading={riskMetricsQuery.isLoading}
-              />
-            </div>
             <PerformanceGraph
               currency={currency}
               accounts={selectedAccounts}
