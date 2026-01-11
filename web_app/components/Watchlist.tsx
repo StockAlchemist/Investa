@@ -6,7 +6,7 @@ import { fetchWatchlist, addToWatchlist, removeFromWatchlist, WatchlistItem } fr
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2, TrendingUp, TrendingDown, RefreshCw } from "lucide-react";
+import { Plus, Trash2, TrendingUp, TrendingDown, RefreshCw, Pencil, Check, X } from "lucide-react";
 import { AreaChart, Area, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatPercent } from "@/lib/utils";
@@ -44,6 +44,26 @@ export default function Watchlist({ currency }: WatchlistProps) {
             queryClient.invalidateQueries({ queryKey: ['watchlist'] });
         },
     });
+
+    const [editingSymbol, setEditingSymbol] = useState<string | null>(null);
+    const [editNote, setEditNote] = useState('');
+
+    const startEditing = (item: WatchlistItem) => {
+        setEditingSymbol(item.Symbol);
+        setEditNote(item.Note || '');
+    };
+
+    const cancelEditing = () => {
+        setEditingSymbol(null);
+        setEditNote('');
+    };
+
+    const saveEdit = (symbol: string) => {
+        addMutation.mutate({ symbol, note: editNote });
+        setEditingSymbol(null);
+        setEditNote('');
+    };
+
 
     const handleAdd = (e: React.FormEvent) => {
         e.preventDefault();
@@ -196,18 +216,64 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                     )}
                                                 </div>
                                             </td>
-                                            <td className="px-4 py-3 whitespace-nowrap text-muted-foreground italic text-xs max-w-[150px] truncate">
-                                                {item.Note}
+                                            <td className={`px-4 py-3 whitespace-nowrap text-xs max-w-[150px] ${editingSymbol === item.Symbol ? '' : 'truncate text-muted-foreground italic'}`}>
+                                                {editingSymbol === item.Symbol ? (
+                                                    <Input
+                                                        value={editNote}
+                                                        onChange={(e) => setEditNote(e.target.value)}
+                                                        className="h-7 text-xs text-foreground bg-background border-input w-full min-w-[120px]"
+                                                        autoFocus
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') saveEdit(item.Symbol);
+                                                            if (e.key === 'Escape') cancelEditing();
+                                                        }}
+                                                    />
+                                                ) : (
+                                                    item.Note
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-right">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    onClick={() => removeMutation.mutate(item.Symbol)}
-                                                    className="h-8 w-8 text-rose-500 hover:text-rose-400 hover:bg-rose-500/10"
-                                                >
-                                                    <Trash2 className="h-4 w-4" />
-                                                </Button>
+                                                <div className="flex items-center justify-end gap-1">
+                                                    {editingSymbol === item.Symbol ? (
+                                                        <>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                onClick={() => saveEdit(item.Symbol)}
+                                                                className="h-8 w-8 text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10"
+                                                            >
+                                                                <Check className="h-4 w-4" />
+                                                            </Button>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                onClick={cancelEditing}
+                                                                className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-secondary"
+                                                            >
+                                                                <X className="h-4 w-4" />
+                                                            </Button>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                onClick={() => startEditing(item)}
+                                                                className="h-8 w-8 text-cyan-500 hover:text-cyan-400 hover:bg-cyan-500/10"
+                                                            >
+                                                                <Pencil className="h-4 w-4" />
+                                                            </Button>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                onClick={() => removeMutation.mutate(item.Symbol)}
+                                                                className="h-8 w-8 text-rose-500 hover:text-rose-400 hover:bg-rose-500/10"
+                                                            >
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </Button>
+                                                        </>
+                                                    )}
+                                                </div>
                                             </td>
                                         </tr>
                                     ))
