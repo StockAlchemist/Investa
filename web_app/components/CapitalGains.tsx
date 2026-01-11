@@ -4,6 +4,7 @@ import { formatCurrency } from '../lib/utils';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
 
 import StockDetailModal from './StockDetailModal';
+import StockIcon from './StockIcon';
 
 interface CapitalGainsProps {
     data: CapitalGain[] | null;
@@ -217,9 +218,10 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                             <div className="flex justify-between items-start mb-2">
                                 <div>
                                     <h3
-                                        className="text-lg font-bold text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
+                                        className="text-lg font-bold text-foreground cursor-pointer hover:text-cyan-500 transition-colors flex items-center gap-2"
                                         onClick={() => setSelectedSymbol(item.Symbol)}
                                     >
+                                        <StockIcon symbol={item.Symbol} size={24} />
                                         {item.Symbol}
                                     </h3>
                                     <div className="text-xs text-muted-foreground">
@@ -287,7 +289,10 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                                         className="px-6 py-3 whitespace-nowrap text-sm font-medium text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
                                         onClick={() => setSelectedSymbol(item.Symbol)}
                                     >
-                                        {item.Symbol}
+                                        <div className="flex items-center gap-2">
+                                            <StockIcon symbol={item.Symbol} size={20} />
+                                            {item.Symbol}
+                                        </div>
                                     </td>
                                     <td className="px-6 py-3 whitespace-nowrap text-sm text-muted-foreground">{item.Account}</td>
                                     <td className="px-6 py-3 whitespace-nowrap text-sm text-muted-foreground">{item.Type}</td>

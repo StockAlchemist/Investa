@@ -2,6 +2,7 @@
 
 import StockDetailModal from './StockDetailModal';
 import { useState } from 'react';
+import StockIcon from './StockIcon';
 
 export interface AttributionData {
     sectors: {
@@ -100,7 +101,8 @@ export function TopContributors({ data, isLoading, currency }: CommonProps) {
                             }}
                         >
                             <div className="flex flex-col">
-                                <div className="flex flex-wrap gap-1">
+                                <div className="flex flex-wrap gap-1 items-center">
+                                    <StockIcon symbol={stock.symbol.split(',')[0]} size={20} className="mr-1.5" />
                                     {stock.symbol.split(',').map(s => s.trim()).map((sym, i, arr) => (
                                         <span
                                             key={sym}

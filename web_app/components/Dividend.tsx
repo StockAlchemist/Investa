@@ -4,6 +4,7 @@ import { formatCurrency } from '../lib/utils';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 
 import StockDetailModal from './StockDetailModal';
+import StockIcon from './StockIcon';
 
 interface DividendProps {
     data: Dividend[] | null;
@@ -177,7 +178,10 @@ export default function Dividend({ data, currency, expectedDividends, children }
                                         className="px-6 py-3 whitespace-nowrap text-sm font-medium text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
                                         onClick={() => setSelectedSymbol(item.Symbol)}
                                     >
-                                        {item.Symbol}
+                                        <div className="flex items-center gap-2">
+                                            <StockIcon symbol={item.Symbol} size={20} />
+                                            {item.Symbol}
+                                        </div>
                                     </td>
                                     <td className="px-6 py-3 whitespace-nowrap text-sm text-muted-foreground">{item.Account}</td>
                                     <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-muted-foreground tabular-nums">
@@ -196,9 +200,10 @@ export default function Dividend({ data, currency, expectedDividends, children }
                             <div className="flex justify-between items-start mb-2">
                                 <div>
                                     <h3
-                                        className="text-lg font-bold text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
+                                        className="text-lg font-bold text-foreground cursor-pointer hover:text-cyan-500 transition-colors flex items-center gap-2"
                                         onClick={() => setSelectedSymbol(item.Symbol)}
                                     >
+                                        <StockIcon symbol={item.Symbol} size={24} />
                                         {item.Symbol}
                                     </h3>
                                     <div className="text-xs text-muted-foreground">{item.Date} • {item.Account}</div>

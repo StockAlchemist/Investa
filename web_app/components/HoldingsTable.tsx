@@ -9,6 +9,7 @@ import { Star, Search, X, Filter, LayoutGrid, Eye, EyeOff, Layers, Download, Bui
 
 import { Skeleton } from './ui/skeleton';
 import { useStockModal } from '@/context/StockModalContext';
+import StockIcon from './StockIcon';
 
 interface HoldingsTableProps {
     holdings: Holding[];
@@ -709,8 +710,9 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                             </button>
                                                             <button
                                                                 onClick={() => openStockDetail(val as string, currency)}
-                                                                className="font-semibold text-foreground hover:text-cyan-500 transition-colors cursor-pointer"
+                                                                className="font-semibold text-foreground hover:text-cyan-500 transition-colors cursor-pointer flex items-center gap-2"
                                                             >
+                                                                <StockIcon symbol={val as string} size={20} />
                                                                 {formatValue(val, header)}
                                                             </button>
                                                         </div>
@@ -794,9 +796,12 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                     >
                                         <Star className="h-4 w-4" />
                                     </button>
-                                    <div>
-                                        <h3 className="text-lg font-bold text-foreground">{holding.Symbol}</h3>
-                                        <p className="text-xs text-muted-foreground">{holding.Account}</p>
+                                    <div className="flex items-center gap-2">
+                                        <StockIcon symbol={holding.Symbol} size={32} />
+                                        <div>
+                                            <h3 className="text-lg font-bold text-foreground">{holding.Symbol}</h3>
+                                            <p className="text-xs text-muted-foreground">{holding.Account}</p>
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="text-right">

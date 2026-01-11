@@ -40,6 +40,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Skeleton } from './ui/skeleton';
 import { Badge } from './ui/badge';
+import StockIcon from './StockIcon';
 
 interface StockDetailModalProps {
     symbol: string;
@@ -113,13 +114,9 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     const [ratios, setRatios] = useState<RatiosResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [logoError, setLogoError] = useState(false);
-    const [logoSourceIndex, setLogoSourceIndex] = useState(0);
 
     useEffect(() => {
         if (isOpen && symbol) {
-            setLogoError(false);
-            setLogoSourceIndex(0);
             loadData();
         }
     }, [isOpen, symbol]);
@@ -180,34 +177,6 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     };
 
     const domain = getDomain(fundamentals?.website);
-
-    const getLogoUrl = () => {
-        if (logoError) return null;
-
-        // Brand mappings for improved domain lookup
-        const brandMappings: Record<string, string> = {
-            'GOOG': 'google.com',
-            'GOOGL': 'google.com',
-            'META': 'facebook.com',
-        };
-
-        const effectiveDomain = brandMappings[symbol] || domain;
-
-        const sources = [
-            `https://financialmodelingprep.com/image-stock/${symbol}.png`,
-            effectiveDomain ? `https://logo.clearbit.com/${effectiveDomain}` : null,
-            effectiveDomain ? `https://www.google.com/s2/favicons?domain=${effectiveDomain}&sz=128` : null,
-        ].filter(Boolean) as string[];
-
-        if (logoSourceIndex >= sources.length) {
-            setLogoError(true);
-            return null;
-        }
-
-        return sources[logoSourceIndex];
-    };
-
-    const logoUrl = getLogoUrl();
 
     const renderOverview = () => {
         if (!fundamentals) return null;
@@ -396,16 +365,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
                         <div className="flex items-center gap-4 sm:gap-6 relative z-10 text-foreground">
                             <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-lg sm:text-3xl font-bold shadow-lg shadow-cyan-500/20 text-white overflow-hidden flex-shrink-0">
-                                {logoUrl ? (
-                                    <img
-                                        src={logoUrl}
-                                        alt={fundamentals?.shortName || symbol}
-                                        className="w-full h-full object-cover p-2 bg-white"
-                                        onError={() => setLogoSourceIndex(prev => prev + 1)}
-                                    />
-                                ) : (
-                                    fundamentals?.shortName?.[0] || symbol[0]
-                                )}
+                                <StockIcon symbol={symbol} size="100%" className="w-full h-full p-2 bg-white" domain={domain} />
                             </div>
                             <div>
                                 <div className="flex items-center gap-2 sm:gap-3 mb-0.5 sm:mb-1">
