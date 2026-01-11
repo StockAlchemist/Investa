@@ -7,6 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LayoutDashboard } from 'lucide-react';
 
+// Lazy component import logic handled by parent or standard import above
+import RiskMetrics from './RiskMetrics';
+import { SectorAttribution, TopContributors } from './AttributionChart';
+
 interface DashboardProps {
     summary: PortfolioSummary;
     currency: string;
@@ -15,6 +19,9 @@ interface DashboardProps {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     riskMetrics?: any;
     riskMetricsLoading?: boolean;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    attributionData?: any;
+    attributionLoading?: boolean;
 }
 
 interface MetricCardProps {
@@ -98,8 +105,7 @@ const MetricCard = ({
     </Card>
 );
 
-// Lazy component import logic handled by parent or standard import above
-import RiskMetrics from './RiskMetrics';
+const COMPLEX_METRIC_IDS = ['riskMetrics', 'sectorContribution', 'topContributors'];
 
 const DEFAULT_ITEMS = [
     { id: 'portfolioValue', title: 'Total Portfolio Value', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
@@ -113,6 +119,8 @@ const DEFAULT_ITEMS = [
     { id: 'fxGL', title: 'FX Gain/Loss', colSpan: '' },
     { id: 'fees', title: 'Fees', colSpan: '' },
     { id: 'riskMetrics', title: 'Risk Analytics', colSpan: 'col-span-1 md:col-span-2 lg:col-span-4' },
+    { id: 'sectorContribution', title: 'Sector Contribution', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
+    { id: 'topContributors', title: 'Top Contributors', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
 ];
 
 export default function Dashboard({
@@ -121,7 +129,9 @@ export default function Dashboard({
     history = [],
     isLoading = false,
     riskMetrics = {},
-    riskMetricsLoading = false
+    riskMetricsLoading = false,
+    attributionData = null,
+    attributionLoading = false
 }: DashboardProps) {
     const [visibleItems, setVisibleItems] = useState<string[]>([]);
     const [isConfigOpen, setIsConfigOpen] = useState(false);
@@ -326,13 +336,20 @@ export default function Dashboard({
                 />;
             case 'riskMetrics':
                 return <RiskMetrics metrics={riskMetrics} isLoading={riskMetricsLoading!} />;
+            case 'sectorContribution':
+                return <SectorAttribution data={attributionData} isLoading={attributionLoading!} currency={currency} />;
+            case 'topContributors':
+                return <TopContributors data={attributionData} isLoading={attributionLoading!} currency={currency} />;
             default:
                 return null;
         }
     };
 
+    const visibleScalarItems = DEFAULT_ITEMS.filter(item => visibleItems.includes(item.id) && !COMPLEX_METRIC_IDS.includes(item.id));
+    const visibleComplexItems = DEFAULT_ITEMS.filter(item => visibleItems.includes(item.id) && COMPLEX_METRIC_IDS.includes(item.id));
+
     return (
-        <div className="mb-10 space-y-4">
+        <div className="mb-10 space-y-6">
             <div className="flex justify-end" ref={configRef}>
                 <div className="relative">
                     <button
@@ -389,13 +406,25 @@ export default function Dashboard({
                 </div>
             </div>
 
+            {/* Scalar Metrics Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {DEFAULT_ITEMS.filter(item => visibleItems.includes(item.id)).map((item) => (
+                {visibleScalarItems.map((item) => (
                     <div key={item.id} className={item.colSpan}>
                         {renderContent(item.id)}
                     </div>
                 ))}
             </div>
+
+            {/* Complex/Tall Metrics Grid */}
+            {visibleComplexItems.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {visibleComplexItems.map((item) => (
+                        <div key={item.id} className={item.colSpan}>
+                            {renderContent(item.id)}
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }

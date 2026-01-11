@@ -226,6 +226,8 @@ export default function Home() {
               isLoading={summaryQuery.isLoading}
               riskMetrics={riskMetricsQuery.data || {}}
               riskMetricsLoading={riskMetricsQuery.isLoading}
+              attributionData={attributionQuery.data}
+              attributionLoading={attributionQuery.isLoading}
             />
             <PerformanceGraph
               currency={currency}
@@ -233,15 +235,6 @@ export default function Home() {
               benchmarks={benchmarks}
               onBenchmarksChange={setBenchmarks}
             />
-            {attributionQuery.data && (
-              <div className="mb-6">
-                <AttributionChart
-                  data={attributionQuery.data}
-                  isLoading={attributionQuery.isLoading}
-                  currency={currency}
-                />
-              </div>
-            )}
             <HoldingsTable
               holdings={holdings}
               currency={currency}

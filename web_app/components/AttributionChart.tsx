@@ -3,7 +3,7 @@
 import StockDetailModal from './StockDetailModal';
 import { useState } from 'react';
 
-interface AttributionData {
+export interface AttributionData {
     sectors: {
         sector: string;
         gain: number;
@@ -21,79 +21,71 @@ interface AttributionData {
     total_gain: number;
 }
 
-interface AttributionChartProps {
+interface CommonProps {
     data: AttributionData;
     isLoading: boolean;
     currency: string;
 }
 
-export default function AttributionChart({ data, isLoading, currency }: AttributionChartProps) {
+const formatCurrencyHelper = (val: number, currency: string) => {
+    const symbol = currency === 'THB' ? '฿' : (new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).formatToParts(0).find(part => part.type === 'currency')?.value || currency);
+    return `${symbol}${val.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+};
+
+const formatPercentHelper = (val: number) => {
+    return `${(val * 100).toFixed(1)}%`;
+};
+
+export function SectorAttribution({ data, isLoading, currency }: CommonProps) {
+    if (isLoading) {
+        return (
+            <div className="bg-card rounded-xl p-6 shadow-sm border border-border animate-pulse h-80"></div>
+        );
+    }
+
+    const hasSectors = data?.sectors && data.sectors.length > 0;
+
+    return (
+        <div className="bg-card rounded-xl p-6 shadow-sm border border-border h-full">
+            <h3 className="text-sm font-medium text-muted-foreground mb-6 uppercase tracking-wider">Sector Contribution</h3>
+            <div className="space-y-4">
+                {hasSectors ? data.sectors.map((s) => (
+                    <div key={s.sector}>
+                        <div className="flex justify-between text-xs mb-1.5">
+                            <span className="font-medium text-foreground">{s.sector}</span>
+                            <span className={s.gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                                {formatCurrencyHelper(s.gain, currency)} ({formatPercentHelper(s.contribution)})
+                            </span>
+                        </div>
+                        <div className="w-full bg-secondary rounded-full h-1.5 overflow-hidden">
+                            <div
+                                className={`h-full ${s.gain >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                                style={{ width: `${Math.min(100, Math.abs(s.contribution * 100))}%` }}
+                            ></div>
+                        </div>
+                    </div>
+                )) : (
+                    <p className="text-sm text-muted-foreground italic">No sector data available</p>
+                )}
+            </div>
+        </div>
+    );
+}
+
+export function TopContributors({ data, isLoading, currency }: CommonProps) {
     const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
 
     if (isLoading) {
         return (
-            <div className="bg-card rounded-xl p-6 shadow-sm border border-border animate-pulse h-80">
-            </div>
+            <div className="bg-card rounded-xl p-6 shadow-sm border border-border animate-pulse h-80"></div>
         );
     }
 
-
-
-
-    const formatCurrency = (val: number) => {
-        const symbol = currency === 'THB' ? '฿' : (new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).formatToParts(0).find(part => part.type === 'currency')?.value || currency);
-        return `${symbol}${val.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-    };
-
-    const formatPercent = (val: number) => {
-        return `${(val * 100).toFixed(1)}%`;
-    };
-
-    const hasSectors = data?.sectors && data.sectors.length > 0;
     const hasStocks = data?.stocks && data.stocks.length > 0;
 
-    if (!hasSectors && !hasStocks) {
-        return (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                <div className="bg-card rounded-xl p-6 shadow-sm border border-border flex items-center justify-center h-40">
-                    <p className="text-zinc-500">No sector attribution data available</p>
-                </div>
-                <div className="bg-card rounded-xl p-6 shadow-sm border border-border flex items-center justify-center h-40">
-                    <p className="text-zinc-500">No top contributor data available</p>
-                </div>
-            </div>
-        )
-    }
-
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Sector Attribution */}
-            <div className="bg-card rounded-xl p-6 shadow-sm border border-border">
-                <h3 className="text-sm font-medium text-muted-foreground mb-6 uppercase tracking-wider">Sector Contribution</h3>
-                <div className="space-y-4">
-                    {hasSectors ? data.sectors.map((s) => (
-                        <div key={s.sector}>
-                            <div className="flex justify-between text-xs mb-1.5">
-                                <span className="font-medium text-foreground">{s.sector}</span>
-                                <span className={s.gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                                    {formatCurrency(s.gain)} ({formatPercent(s.contribution)})
-                                </span>
-                            </div>
-                            <div className="w-full bg-secondary rounded-full h-1.5 overflow-hidden">
-                                <div
-                                    className={`h-full ${s.gain >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`}
-                                    style={{ width: `${Math.min(100, Math.abs(s.contribution * 100))}%` }}
-                                ></div>
-                            </div>
-                        </div>
-                    )) : (
-                        <p className="text-sm text-muted-foreground italic">No data</p>
-                    )}
-                </div>
-            </div>
-
-            {/* Top Contributors */}
-            <div className="bg-card rounded-xl p-6 shadow-sm border border-border">
+        <>
+            <div className="bg-card rounded-xl p-6 shadow-sm border border-border h-full">
                 <h3 className="text-sm font-medium text-muted-foreground mb-6 uppercase tracking-wider">Top Contributors</h3>
                 <div className="space-y-3">
                     {hasStocks ? data.stocks.map((stock, idx) => (
@@ -126,19 +118,18 @@ export default function AttributionChart({ data, isLoading, currency }: Attribut
                             </div>
                             <div className="text-right">
                                 <p className={`text-sm font-medium ${stock.gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                                    {stock.gain >= 0 ? '+' : ''}{formatCurrency(stock.gain)}
-                                    <span className="text-xs ml-1">({formatPercent(stock.contribution)})</span>
+                                    {stock.gain >= 0 ? '+' : ''}{formatCurrencyHelper(stock.gain, currency)}
+                                    <span className="text-xs ml-1">({formatPercentHelper(stock.contribution)})</span>
                                 </p>
                                 <p className="text-[10px] text-muted-foreground uppercase">{stock.sector}</p>
                             </div>
                         </div>
                     )) : (
-                        <p className="text-sm text-muted-foreground italic">No data</p>
+                        <p className="text-sm text-muted-foreground italic">No contributor data available</p>
                     )}
                 </div>
             </div>
 
-            {/* Stock Detail Modal */}
             {selectedSymbol && (
                 <StockDetailModal
                     symbol={selectedSymbol}
@@ -147,6 +138,15 @@ export default function AttributionChart({ data, isLoading, currency }: Attribut
                     currency={currency}
                 />
             )}
+        </>
+    );
+}
+
+export default function AttributionChart({ data, isLoading, currency }: CommonProps) {
+    return (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <SectorAttribution data={data} isLoading={isLoading} currency={currency} />
+            <TopContributors data={data} isLoading={isLoading} currency={currency} />
         </div>
     );
 }
