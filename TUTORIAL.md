@@ -666,6 +666,7 @@ Investa now includes a modern Web Dashboard that allows you to view your portfol
 
 The Web Dashboard mirrors many of the key features of the desktop application:
 
+*   **Customizable Layout:** Use the "Layout" button to toggle the visibility of any dashboard metric, including "Sector Contribution" and "Top Contributors".
 *   **Dashboard Summary:** View your Net Value, Daily P&L, Total Return, and key metrics at a glance.
 *   **Performance Graph:** Interactive charts for TWR and Portfolio Value.
 *   **Markets Tab (Mobile):** Dedicated tab to track major market indices (Dow, Nasdaq, S&P 500) while on the go.

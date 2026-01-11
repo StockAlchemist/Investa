@@ -18,6 +18,7 @@ Investa is a comprehensive portfolio management solution offering both a feature
 * **Web & Mobile:** Sleek Web Dashboard with mobile-optimized navigation and market indices.
 * **Custom Groups (Tags):** Organize holdings with custom tags (e.g., "Core", "Speculative") for personalized grouping.
 * **Contribution Analysis:** See exactly how much each holding contributes to your total portfolio return.
+* **Customizable Dashboard:** Toggle visibility of widgets and view "Sector Contribution" and "Top Contributors" analysis directly on the main dashboard.
 * **Fundamental Data:** Built-in viewer for company profiles, financials, and balance sheets.
 
 ## Getting Started
