@@ -353,7 +353,7 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
             {/* Symbol Settings Section */}
             <div className="bg-white dark:bg-zinc-950 shadow-sm rounded-xl overflow-hidden border border-border">
                 <div className="px-6 py-4 border-b border-border">
-                    <h2 className="text-xl font-bold text-foreground">Symbol Settings</h2>
+                    <h2 className="text-2xl font-bold leading-none tracking-tight bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent w-fit">Symbol Settings</h2>
                     <p className="text-sm text-muted-foreground mt-1">
                         Manage price overrides, custom symbol mappings, and exclusions.
                     </p>

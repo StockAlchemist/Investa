@@ -287,7 +287,7 @@ export default function Home() {
       case 'analytics':
         return (
           <div className="space-y-6">
-            <h2 className="text-xl font-bold text-foreground">Analytics & Risk</h2>
+            <h2 className="text-2xl font-bold leading-none tracking-tight bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent w-fit">Analytics & Risk</h2>
 
             <PortfolioHealthComponent
               data={portfolioHealthQuery.data || null}
