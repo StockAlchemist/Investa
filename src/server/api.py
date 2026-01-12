@@ -1911,7 +1911,7 @@ async def get_dividend_calendar(
     data: tuple = Depends(get_transaction_data)
 ):
     """
-    Returns upcoming dividend events for the portfolio.
+    Returns confirmed AND estimated dividend events for the next 12 months.
     """
     df, _, user_symbol_map, user_excluded_symbols, _, _, _ = data
     if df.empty:
@@ -1919,81 +1919,165 @@ async def get_dividend_calendar(
 
     try:
         # Get current holdings symbols
-        summary_data = await _calculate_portfolio_summary_internal(include_accounts=accounts, show_closed_positions=False, data=data)
+        summary_data = await _calculate_portfolio_summary_internal(
+            include_accounts=accounts, 
+            show_closed_positions=False, 
+            data=data
+        )
         summary_df = summary_data.get("summary_df")
         if summary_df is None or summary_df.empty:
              return []
         rows = summary_df.to_dict(orient="records")
-        symbols = [r["Symbol"] for r in rows if r["Symbol"] != "Total" and not r.get("is_total")]
         
-        if not symbols:
+        # Map Symbol -> Quantity
+        holdings = defaultdict(float)
+        for r in rows:
+            sym = r["Symbol"]
+            if sym != "Total" and not r.get("is_total"):
+                 qty = r.get("Quantity", 0)
+                 if qty > 0:
+                     holdings[sym] += qty
+        
+        if not holdings:
             return []
 
-        # Use MarketDataProvider to get dividend info
+        # Use MarketDataProvider to get basic info efficiently
+        from market_data import MarketDataProvider, map_to_yf_symbol
+        from finutils import is_cash_symbol
+        
         provider = MarketDataProvider()
+        yf_map = {} # Internal -> YF
         yf_symbols = set()
-        from finutils import is_cash_symbol # Import here to avoid circular if top-level issues, though api imports finutils at top
         
-        for s in symbols:
-            if is_cash_symbol(s):
+        for sym in holdings.keys():
+            if is_cash_symbol(sym):
                 continue
-            yf_sym = map_to_yf_symbol(s, user_symbol_map, user_excluded_symbols)
+            yf_sym = map_to_yf_symbol(sym, user_symbol_map, user_excluded_symbols)
             if yf_sym:
+                yf_map[sym] = yf_sym
                 yf_symbols.add(yf_sym)
-        
-        # ------------------------------------------------------------------
-        # We need to fetch Ticker.calendar for each symbol
+
+        # Fetch Fundamentals & Calendar in Parallel using ThreadPoolExecutor
+        # This fixes the timeout issue of serial fetching while avoiding the data loss issue of batch fetching
         import yfinance as yf
+        from datetime import timedelta
+        import pandas as pd
+        import concurrent.futures
+
         calendar_events = []
+        today = date.today()
+        end_date = today + timedelta(days=365) # 1 Year Projection
         
-        stock_data_map = {} # To cache correct symbol casing if needed
-        # Create map of symbol -> quantity
-        symbol_quantity_map = {}
-        for r in rows:
-            if r["Symbol"] != "Total" and not r.get("is_total"):
-                 symbol_quantity_map[r["Symbol"]] = r["Quantity"]
-
-        # ...
-        
-        for sym in yf_symbols:
+        def fetch_symbol_data(sym):
+            """Helper to fetch data for a single symbol independently."""
+            yf_sym = yf_map.get(sym)
+            if not yf_sym: return []
+            
+            local_events = []
+            qty = holdings.get(sym, 0)
+            
             try:
-                t = yf.Ticker(sym)
-                cal = t.calendar
-                if cal and 'Dividend Date' in cal:
-                    # Calculate estimated total payment
-                    # dividendRate is Annual. lastDividendValue is usually the single payment amount.
-                    per_share_amt = t.info.get('lastDividendValue', 0)
-                    if per_share_amt is None or per_share_amt == 0:
-                        # Fallback: estimate from annual rate (assuming quarterly)
-                        # This is a rough fallback
-                        # print(f"DEBUG: {sym} lastDividendValue missing, using dividendRate/4")
-                        per_share_amt = t.info.get('dividendRate', 0) / 4.0
+                t = yf.Ticker(yf_sym)
+                info = t.info
+                div_rate = info.get("trailingAnnualDividendRate", 0.0)
+                last_div_val = info.get("lastDividendValue")
+                if not div_rate: div_rate = info.get("dividendRate", 0.0)
+                
+                # 1. Confirmed Events
+                try:
+                    cal = t.calendar
+                    if cal and 'Dividend Date' in cal:
+                        div_date_raw = cal['Dividend Date']
+                        if isinstance(div_date_raw, list): div_date_raw = div_date_raw[0]
+                        c_date = div_date_raw
+                        if isinstance(c_date, datetime): c_date = c_date.date()
+                        
+                        if c_date and c_date >= today:
+                            amt = last_div_val if last_div_val else (div_rate / 4 if div_rate else 0)
+                            local_events.append({
+                                "symbol": sym,
+                                "dividend_date": str(c_date),
+                                "ex_dividend_date": str(cal.get('Ex-Dividend Date', '')),
+                                "amount": amt * qty,
+                                "status": "confirmed"
+                            })
+                except Exception: pass
+                
+                # 2. Estimated Events
+                if div_rate and div_rate > 0:
+                    freq_months = 3
+                    if last_div_val and last_div_val > 0:
+                        ratio = div_rate / last_div_val
+                        if 10 <= ratio <= 14: freq_months = 1
+                        elif 3.5 <= ratio <= 5.5: freq_months = 3
+                        elif 1.5 <= ratio <= 2.5: freq_months = 6
+                        elif 0.8 <= ratio <= 1.2: freq_months = 12
                     
-                    # Find quantity
-                    qty = 0
-                    # Reconstruct map
-                    yf_to_orig = {}
-                    for s in symbols:
-                        mapped = map_to_yf_symbol(s, user_symbol_map, user_excluded_symbols)
-                        if mapped:
-                            yf_to_orig[mapped] = s
+                    # Anchor
+                    anchor = None
+                    if local_events:
+                        try:
+                            anchor = datetime.strptime(local_events[-1]["dividend_date"], "%Y-%m-%d").date()
+                        except: pass
                     
-                    orig_sym = yf_to_orig.get(sym)
-                    if orig_sym:
-                        qty = symbol_quantity_map.get(orig_sym, 0)
+                    if not anchor and info.get("lastDividendDate"):
+                        try:
+                            anchor = date.fromtimestamp(info.get("lastDividendDate"))
+                        except: pass
+                        
+                    if not anchor and info.get("exDividendDate"):
+                        try:
+                            anchor = date.fromtimestamp(info.get("exDividendDate")) + timedelta(days=21)
+                        except: pass
+                        
+                    if anchor:
+                        curr = anchor
+                        while curr < today:
+                            curr = (pd.Timestamp(curr) + pd.DateOffset(months=freq_months)).date()
+                        
+                        while curr <= end_date:
+                            is_dup = False
+                            for ce in local_events:
+                                if ce["status"] == "confirmed":
+                                    ce_date = datetime.strptime(ce["dividend_date"], "%Y-%m-%d").date()
+                                    if abs((ce_date - curr).days) < 20: 
+                                        is_dup = True
+                                        break
+                            
+                            if not is_dup and curr >= today:
+                                est_amt = (last_div_val if last_div_val else div_rate/4) * qty
+                                local_events.append({
+                                    "symbol": sym,
+                                    "dividend_date": str(curr),
+                                    "ex_dividend_date": "",
+                                    "amount": est_amt,
+                                    "status": "estimated"
+                                })
+                            
+                            curr = (pd.Timestamp(curr) + pd.DateOffset(months=freq_months)).date()
+                            
+            except Exception as e:
+                logging.warning(f"Error fetching data for {sym}: {e}")
+                
+            return local_events
 
-                    calendar_events.append({
-                        "symbol": orig_sym if orig_sym else sym,
-                        "dividend_date": str(cal['Dividend Date']),
-                        "ex_dividend_date": str(cal.get('Ex-Dividend Date', '')),
-                        "amount": (per_share_amt if per_share_amt else 0) * qty
-                    })
-            except Exception as e_cal:
-                logging.warning(f"Failed to fetch calendar for {sym}: {e_cal}")
+        # Run in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_sym = {executor.submit(fetch_symbol_data, sym): sym for sym in holdings.keys()}
+            for future in concurrent.futures.as_completed(future_to_sym):
+                try:
+                    events = future.result()
+                    calendar_events.extend(events)
+                except Exception as exc:
+                    logging.error(f"Symbol generated an exception: {exc}")
 
+        # Sort by date
+        calendar_events.sort(key=lambda x: x["dividend_date"])
+        
         return clean_nans(calendar_events)
+
     except Exception as e:
-        logging.error(f"Error fetching dividend calendar: {e}")
+        logging.error(f"Error fetching dividend calendar: {e}", exc_info=True)
         return {"error": str(e)}
 
 # --- FUNDAMENTALS & FINANCIALS ENDPOINTS ---

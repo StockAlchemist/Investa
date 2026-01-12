@@ -385,6 +385,7 @@ export interface DividendEvent {
     dividend_date: string;
     ex_dividend_date: string;
     amount: number;
+    status: 'confirmed' | 'estimated'; // Added status
 }
 
 export async function fetchDividendCalendar(accounts?: string[]): Promise<DividendEvent[]> {
