@@ -228,6 +228,7 @@ export default function Home() {
               riskMetricsLoading={riskMetricsQuery.isLoading}
               attributionData={attributionQuery.data}
               attributionLoading={attributionQuery.isLoading}
+              holdings={holdings}
             />
             <PerformanceGraph
               currency={currency}

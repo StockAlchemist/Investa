@@ -10,6 +10,8 @@ import { LayoutDashboard } from 'lucide-react';
 // Lazy component import logic handled by parent or standard import above
 import RiskMetrics from './RiskMetrics';
 import { SectorAttribution, TopContributors } from './AttributionChart';
+import PortfolioDonut from './PortfolioDonut';
+import { Holding } from '@/lib/api';
 
 interface DashboardProps {
     summary: PortfolioSummary;
@@ -22,6 +24,7 @@ interface DashboardProps {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     attributionData?: any;
     attributionLoading?: boolean;
+    holdings?: Holding[];
 }
 
 interface MetricCardProps {
@@ -105,7 +108,7 @@ const MetricCard = ({
     </Card>
 );
 
-const COMPLEX_METRIC_IDS = ['riskMetrics', 'sectorContribution', 'topContributors'];
+const COMPLEX_METRIC_IDS = ['riskMetrics', 'sectorContribution', 'topContributors', 'portfolioDonut'];
 
 const DEFAULT_ITEMS = [
     { id: 'portfolioValue', title: 'Total Portfolio Value', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
@@ -121,6 +124,7 @@ const DEFAULT_ITEMS = [
     { id: 'riskMetrics', title: 'Risk Analytics', colSpan: 'col-span-1 md:col-span-2 lg:col-span-4' },
     { id: 'sectorContribution', title: 'Sector Contribution', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
     { id: 'topContributors', title: 'Top Contributors', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
+    { id: 'portfolioDonut', title: 'Portfolio Composition', colSpan: 'col-span-1 md:col-span-2 lg:col-span-4' },
 ];
 
 export default function Dashboard({
@@ -131,7 +135,8 @@ export default function Dashboard({
     riskMetrics = {},
     riskMetricsLoading = false,
     attributionData = null,
-    attributionLoading = false
+    attributionLoading = false,
+    holdings = []
 }: DashboardProps) {
     const [visibleItems, setVisibleItems] = useState<string[]>([]);
     const [isConfigOpen, setIsConfigOpen] = useState(false);
@@ -340,6 +345,17 @@ export default function Dashboard({
                 return <SectorAttribution data={attributionData} isLoading={attributionLoading!} currency={currency} />;
             case 'topContributors':
                 return <TopContributors data={attributionData} isLoading={attributionLoading!} currency={currency} />;
+            case 'portfolioDonut':
+                return (
+                    <Card className="h-full">
+                        <CardContent className="h-full p-4 relative">
+                            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">Portfolio Composition</h3>
+                            <div className="h-[calc(100%-24px)]">
+                                <PortfolioDonut holdings={holdings} currency={currency} />
+                            </div>
+                        </CardContent>
+                    </Card>
+                );
             default:
                 return null;
         }

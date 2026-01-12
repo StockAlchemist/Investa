@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { cn } from '@/lib/utils';
 
 interface StockIconProps {
@@ -22,6 +23,68 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
 
     if (!symbol) return null;
 
+    if (symbol === 'SET') {
+        const effectiveSize = typeof size === 'number' ? size : 24; // Default to 24 if size is string for Image component
+        return (
+            <div
+                className={cn(
+                    "overflow-hidden rounded-full bg-white flex items-center justify-center",
+                    className
+                )}
+                style={{ width: effectiveSize, height: effectiveSize }}
+            >
+                <Image
+                    src="/set-logo.png"
+                    alt="SET"
+                    width={effectiveSize}
+                    height={effectiveSize}
+                    className="object-contain p-[2px]"
+                />
+            </div>
+        );
+    }
+
+    if (symbol.includes('IBKR')) {
+        const effectiveSize = typeof size === 'number' ? size : 24;
+        return (
+            <div
+                className={cn(
+                    "overflow-hidden rounded-full bg-[#D62930] flex items-center justify-center", // IBKR red background
+                    className
+                )}
+                style={{ width: effectiveSize, height: effectiveSize }}
+            >
+                <Image
+                    src="/ibkr-logo.png"
+                    alt="IBKR"
+                    width={effectiveSize}
+                    height={effectiveSize}
+                    className="object-contain" // The logo itself might act as the full fill
+                />
+            </div>
+        );
+    }
+
+    if (symbol.includes('WeBull')) {
+        const effectiveSize = typeof size === 'number' ? size : 24;
+        return (
+            <div
+                className={cn(
+                    "overflow-hidden rounded-full bg-white flex items-center justify-center",
+                    className
+                )}
+                style={{ width: effectiveSize, height: effectiveSize }}
+            >
+                <Image
+                    src="/webull-logo.png"
+                    alt="WeBull"
+                    width={effectiveSize}
+                    height={effectiveSize}
+                    className="object-contain p-[2px]"
+                />
+            </div>
+        );
+    }
     // Brand mappings for improved domain lookup (same as in StockDetailModal originally)
     const brandMappings: Record<string, string> = {
         'GOOG': 'google.com',
