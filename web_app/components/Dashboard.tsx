@@ -111,20 +111,20 @@ const MetricCard = ({
 const COMPLEX_METRIC_IDS = ['riskMetrics', 'sectorContribution', 'topContributors', 'portfolioDonut'];
 
 const DEFAULT_ITEMS = [
-    { id: 'portfolioValue', title: 'Total Portfolio Value', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
-    { id: 'dayGL', title: "Day's Gain/Loss", colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
-    { id: 'totalReturn', title: 'Total Return', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
-    { id: 'unrealizedGL', title: 'Unrealized G/L', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
-    { id: 'realizedGain', title: 'Realized Gain', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
-    { id: 'ytdDividends', title: 'Total Dividends', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
-    { id: 'annualTWR', title: 'Annual TWR', colSpan: '' },
-    { id: 'cashBalance', title: 'Cash Balance', colSpan: '' },
-    { id: 'fxGL', title: 'FX Gain/Loss', colSpan: '' },
-    { id: 'fees', title: 'Fees', colSpan: '' },
-    { id: 'riskMetrics', title: 'Risk Analytics', colSpan: 'col-span-1 md:col-span-2 lg:col-span-4' },
-    { id: 'sectorContribution', title: 'Sector Contribution', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
-    { id: 'topContributors', title: 'Top Contributors', colSpan: 'col-span-1 md:col-span-2 lg:col-span-2' },
-    { id: 'portfolioDonut', title: 'Portfolio Composition', colSpan: 'col-span-1 md:col-span-2 lg:col-span-4' },
+    { id: 'portfolioValue', title: 'Total Portfolio Value', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
+    { id: 'dayGL', title: "Day's Gain/Loss", colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
+    { id: 'totalReturn', title: 'Total Return', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
+    { id: 'unrealizedGL', title: 'Unrealized G/L', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
+    { id: 'realizedGain', title: 'Realized Gain', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
+    { id: 'ytdDividends', title: 'Total Dividends', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
+    { id: 'annualTWR', title: 'Annual TWR', colSpan: 'col-span-1' },
+    { id: 'cashBalance', title: 'Cash Balance', colSpan: 'col-span-1' },
+    { id: 'fxGL', title: 'FX Gain/Loss', colSpan: 'col-span-2 md:col-span-1' },
+    { id: 'fees', title: 'Fees', colSpan: 'col-span-2 md:col-span-1' },
+    { id: 'riskMetrics', title: 'Risk Analytics', colSpan: 'col-span-2 md:col-span-2 lg:col-span-4' },
+    { id: 'sectorContribution', title: 'Sector Contribution', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
+    { id: 'topContributors', title: 'Top Contributors', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
+    { id: 'portfolioDonut', title: 'Portfolio Composition', colSpan: 'col-span-2 md:col-span-2 lg:col-span-4' },
 ];
 
 export default function Dashboard({
@@ -277,8 +277,16 @@ export default function Dashboard({
                     isCurrency={false}
                     colorClass={m?.annualized_twr && m.annualized_twr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}
                     isLoading={isLoading}
+                // Force height or min-width? No.
                 />;
-            case 'unrealizedGL':
+            case 'cashBalance':
+                return <MetricCard
+                    title="Cash Balance"
+                    value={cashBalance}
+                    currency={currency}
+                    isLoading={isLoading}
+                // Maybe add containerClassName?
+                />;
                 return <MetricCard
                     title="Unrealized G/L"
                     value={unrealizedGL}
@@ -426,9 +434,9 @@ export default function Dashboard({
             </div>
 
             {/* Scalar Metrics Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
                 {visibleScalarItems.map((item) => (
-                    <div key={item.id} className={item.colSpan}>
+                    <div key={item.id} className={cn(item.colSpan, "w-full min-w-0")}>
                         {renderContent(item.id)}
                     </div>
                 ))}

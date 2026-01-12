@@ -42,7 +42,7 @@ const SYMBOL_MAPPING: Record<string, string> = {
 const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, payload }: any) => {
     if (percent < 0.03 || payload.name === 'Other') return null;
 
-    const radius = outerRadius * 1.25;
+    const radius = outerRadius + 36;
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
 
@@ -183,9 +183,9 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                         <Pie
                             data={data}
                             cx="50%"
-                            cy="45%"
-                            innerRadius="55%"
-                            outerRadius="75%"
+                            cy="50%"
+                            innerRadius="50%"
+                            outerRadius="70%"
                             paddingAngle={2}
                             dataKey="value"
                             onMouseEnter={onPieEnter}
@@ -208,7 +208,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                 </ResponsiveContainer>
 
                 {/* Center Content Overlay */}
-                <div className="absolute left-1/2 top-[45%] -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
                     <div className="flex flex-col items-center justify-center pointer-events-auto">
                         {activeItem ? (
                             <>
