@@ -72,8 +72,8 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                     side === 'right'
                         ? "left-full top-0 ml-4 slide-in-from-left-2"
                         : "right-0 top-full mt-2 slide-in-from-top-2",
-                    "w-48 rounded-2xl bg-white dark:bg-zinc-950 border border-border shadow-2xl shadow-black/40"
-                )}>
+                    "w-48 rounded-2xl border border-border shadow-2xl shadow-black/40"
+                )} style={{ backgroundColor: 'var(--menu-solid)' }}>
                     <div className="p-2 grid gap-1">
                         <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 border-b border-border mb-1">
                             Currencies

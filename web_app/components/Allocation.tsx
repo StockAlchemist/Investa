@@ -58,16 +58,23 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
                             outerRadius={110}
                             fill="#8884d8"
                             dataKey="value"
+                            stroke="var(--pie-stroke)"
                         >
                             {data.map((entry, index) => (
                                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                             ))}
                         </Pie>
                         <Tooltip
+                            contentStyle={{
+                                backgroundColor: 'var(--menu-solid)',
+                                border: '1px solid var(--border)',
+                                borderRadius: '0.75rem',
+                                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
+                            }}
                             content={({ active, payload }) => {
                                 if (active && payload && payload.length) {
                                     return (
-                                        <div className="bg-white dark:bg-zinc-950 border border-border p-3 rounded-lg shadow-xl">
+                                        <div className="border border-border p-3 rounded-lg shadow-xl" style={{ backgroundColor: 'var(--menu-solid)' }}>
                                             <p className="font-medium text-foreground">{payload[0].name}</p>
                                             <p className="text-sm text-muted-foreground">
                                                 {formatCurrency(payload[0].value as number, currency)}

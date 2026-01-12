@@ -1,4 +1,5 @@
 import StockDetailModal from './StockDetailModal';
+import StockIcon from './StockIcon';
 import { useState } from 'react';
 
 interface DividendEvent {
@@ -62,7 +63,10 @@ export default function DividendCalendar({ events, isLoading, currency }: Divide
                                     className="px-6 py-3 font-medium text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
                                     onClick={() => setSelectedSymbol(event.symbol)}
                                 >
-                                    {event.symbol}
+                                    <div className="flex items-center gap-2">
+                                        <StockIcon symbol={event.symbol} size={20} />
+                                        {event.symbol}
+                                    </div>
                                 </td>
                                 <td className="px-6 py-3 text-muted-foreground">
                                     {new Date(event.ex_dividend_date).toLocaleDateString()}
@@ -80,14 +84,16 @@ export default function DividendCalendar({ events, isLoading, currency }: Divide
             </div>
 
             {/* Stock Detail Modal */}
-            {selectedSymbol && (
-                <StockDetailModal
-                    symbol={selectedSymbol}
-                    isOpen={!!selectedSymbol}
-                    onClose={() => setSelectedSymbol(null)}
-                    currency={currency}
-                />
-            )}
-        </div>
+            {
+                selectedSymbol && (
+                    <StockDetailModal
+                        symbol={selectedSymbol}
+                        isOpen={!!selectedSymbol}
+                        onClose={() => setSelectedSymbol(null)}
+                        currency={currency}
+                    />
+                )
+            }
+        </div >
     );
 }

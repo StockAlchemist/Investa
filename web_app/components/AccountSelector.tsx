@@ -90,7 +90,10 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
             </button>
 
             {isOpen && (
-                <div className="absolute right-0 top-full mt-2 min-w-[200px] w-max origin-top-right bg-white dark:bg-zinc-950 border border-border rounded-xl shadow-xl outline-none z-50 overflow-hidden">
+                <div
+                    style={{ backgroundColor: 'var(--menu-solid)' }}
+                    className="absolute right-0 top-full mt-2 min-w-[200px] w-max origin-top-right border border-border rounded-xl shadow-xl outline-none z-50 overflow-hidden"
+                >
                     <div className="py-1 max-h-[80vh] overflow-y-auto">
                         {/* All Accounts Option */}
                         <button

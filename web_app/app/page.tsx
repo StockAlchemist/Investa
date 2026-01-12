@@ -381,8 +381,18 @@ export default function Home() {
           <div className="flex items-center gap-4">
             {/* Logo and App Title */}
             <div className="flex items-center gap-2 sm:gap-3 transition-all duration-300">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={mounted && resolvedTheme === 'dark' ? "/logo-dark.png" : "/logo.png"} alt="Investa Logo" className="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/20" />
+              {/* logo-dark.png is the dark mode logo, logo.png is light mode */}
+              {/* Using display classes for instant switching based on next-themes class */}
+              <img
+                src="/logo.png?v=5"
+                alt="Investa Logo"
+                className="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/20 block dark:hidden"
+              />
+              <img
+                src="/logo-dark.png?v=5"
+                alt="Investa Logo"
+                className="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/20 hidden dark:block"
+              />
               <h1 className="text-xl md:text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
                 <span className="hidden sm:block">Investa</span>
                 <span className="hidden md:inline-flex items-center rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs font-medium text-muted-foreground">
@@ -391,6 +401,7 @@ export default function Home() {
               </h1>
             </div>
           </div>
+
 
           <div className="flex items-center gap-4">
             {summary?.metrics?.indices && Object.values(summary.metrics.indices).map((index: { name: string; price: number; change: number; changesPercentage: number }) => (
@@ -432,7 +443,7 @@ export default function Home() {
           </div>
         </div>
 
-      </header>
+      </header >
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 md:pl-[72px] transition-all duration-300">
 
@@ -446,7 +457,10 @@ export default function Home() {
 
       {/* Bottom Nav (Visual only for now) */}
       {/* Bottom Nav */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-4 py-3 flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 md:hidden z-50">
+      <div
+        className="fixed bottom-0 left-0 right-0 border-t border-gray-200 dark:border-gray-700 px-4 py-3 flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 md:hidden z-50"
+        style={{ backgroundColor: 'var(--menu-solid)' }}
+      >
         <div
           className={`flex flex-col items-center flex-1 cursor-pointer transition-colors ${activeTab !== 'settings' && activeTab !== 'markets' ? 'text-cyan-600 dark:text-cyan-400' : 'hover:text-cyan-600 dark:hover:text-cyan-400'}`}
           onClick={() => { setActiveTab('performance'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
@@ -472,8 +486,8 @@ export default function Home() {
           className="flex flex-col items-center flex-1 cursor-pointer transition-colors hover:text-cyan-600 dark:hover:text-cyan-400"
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
         >
-          {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          <span className="mt-1">{theme === 'dark' ? 'Light' : 'Dark'}</span>
+          {mounted && theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          <span className="mt-1">{mounted && theme === 'dark' ? 'Light' : 'Dark'}</span>
         </div>
       </div>
     </main >

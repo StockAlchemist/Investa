@@ -199,7 +199,10 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
 
     if (!chartedData || chartedData.length === 0) {
         return (
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 h-80 flex items-center justify-center text-gray-500">
+            <div
+                className="rounded-xl p-6 shadow-sm border border-border h-80 flex items-center justify-center text-muted-foreground"
+                style={{ backgroundColor: 'var(--menu-solid)' }}
+            >
                 {loading ? 'Loading...' : 'No historical data available.'}
             </div>
         );
@@ -292,7 +295,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
             );
 
             return (
-                <div className="bg-white dark:bg-zinc-950 p-3 border border-border shadow-2xl rounded-xl min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-32px)] overflow-visible">
+                <div className="p-3 border border-border shadow-2xl rounded-xl min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-32px)] overflow-visible" style={{ backgroundColor: 'var(--menu-solid)' }}>
                     <p className="text-sm font-bold text-foreground mb-2 border-b border-border pb-1">
                         {dateStr}
                     </p>

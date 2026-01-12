@@ -102,10 +102,16 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                             width={35}
                         />
                         <Tooltip
+                            contentStyle={{
+                                backgroundColor: 'var(--menu-solid)',
+                                borderRadius: '8px',
+                                border: '1px solid var(--border)',
+                                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                            }}
                             content={({ active, payload, label }) => {
                                 if (active && payload && payload.length) {
                                     return (
-                                        <div className="bg-white dark:bg-zinc-950 border border-border p-3 rounded-lg shadow-xl">
+                                        <div className="border border-border p-3 rounded-lg shadow-xl" style={{ backgroundColor: 'var(--menu-solid)' }}>
                                             <p className="font-medium text-foreground mb-1">
                                                 {typeof label === 'string' && !isNaN(Date.parse(label))
                                                     ? new Date(label).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })

@@ -31,7 +31,8 @@ const ScoreRing = ({ score }: { score: number }) => {
                 viewBox="0 0 100 100"
             >
                 <circle
-                    className="text-gray-100 dark:text-zinc-800"
+                    className=""
+                    style={{ color: 'var(--ring-track)' }}
                     strokeWidth={stroke}
                     stroke="currentColor"
                     fill="transparent"
@@ -96,7 +97,10 @@ export function PortfolioHealthComponent({ data, isLoading }: PortfolioHealthPro
     if (!data) return null;
 
     return (
-        <Card className="bg-white dark:bg-zinc-950 border border-border">
+        <Card
+            className="border border-border"
+            style={{ backgroundColor: 'var(--menu-solid)' }}
+        >
             <CardHeader className="pb-4">
                 <CardTitle>Portfolio Health</CardTitle>
                 <CardDescription>Comprehensive risk and diversification analysis</CardDescription>

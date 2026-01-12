@@ -373,7 +373,10 @@ export default function Dashboard({
                     </button>
 
                     {isConfigOpen && (
-                        <div className="absolute right-0 top-full mt-2 min-w-[240px] w-max origin-top-right bg-white dark:bg-zinc-950 border border-border rounded-xl shadow-xl outline-none z-50 overflow-hidden">
+                        <div
+                            style={{ backgroundColor: 'var(--menu-solid)' }}
+                            className="absolute right-0 top-full mt-2 min-w-[240px] w-max origin-top-right border border-border rounded-xl shadow-xl outline-none z-50 overflow-hidden"
+                        >
                             <div className="py-1 max-h-[80vh] overflow-y-auto">
                                 <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">
                                     Dashboard Elements

@@ -350,7 +350,10 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         <div className="fixed inset-0 z-[100] flex flex-col justify-end sm:justify-center items-center p-0 sm:p-4 isolate">
             <div className="absolute inset-0 bg-black/60" onClick={onClose} />
 
-            <div className="relative bg-white dark:bg-zinc-950 w-full max-w-5xl h-[94vh] sm:h-auto sm:max-h-[90vh] rounded-t-[2.5rem] sm:rounded-[2rem] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-300">
+            <div
+                style={{ backgroundColor: 'var(--menu-solid)' }}
+                className="relative w-full max-w-5xl h-[94vh] sm:h-auto sm:max-h-[90vh] rounded-t-[2.5rem] sm:rounded-[2rem] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-300"
+            >
 
                 {/* Mobile Drag Handle */}
                 <div className="sm:hidden w-full flex justify-center pt-3 pb-1 flex-shrink-0">
@@ -517,11 +520,20 @@ function RatioChart({ data, dataKey, title, color, suffix = "" }: any) {
                             className="fill-muted-foreground"
                             tickFormatter={(val) => `${val}${suffix}`}
                         />
+                        ```
                         <Tooltip
                             content={({ active, payload, label }) => {
                                 if (active && payload && payload.length) {
                                     return (
-                                        <div className="bg-white dark:bg-zinc-950 border border-border p-3 rounded-xl shadow-xl text-xs">
+                                        <div
+                                            style={{
+                                                backgroundColor: 'var(--menu-solid)',
+                                                borderRadius: '12px',
+                                                border: '1px solid var(--border)',
+                                                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                                            }}
+                                            className="border border-border p-3 rounded-xl shadow-xl text-xs"
+                                        >
                                             <p className="font-medium text-foreground mb-1">{label}</p>
                                             <div className="flex items-center gap-2">
                                                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
