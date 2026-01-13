@@ -51,6 +51,7 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
     // Removed local settings state, loading, error, portfolioCountries, availableAccounts (now props/derived)
 
     const [activeTab, setActiveTab] = useState<Tab>('overrides');
+    const [confirmClear, setConfirmClear] = useState(false);
     const [clearStatus, setClearStatus] = useState<string | null>(null);
 
     // Webhook state
@@ -322,11 +323,15 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
     }
 
     const handleClearCache = async () => {
-        if (!confirm("Are you sure you want to clear all application caches? This will force a full recalculation of historical data and fresh market data retrieval.")) {
+        if (!confirmClear) {
+            setConfirmClear(true);
+            // Auto-reset after 3 seconds
+            setTimeout(() => setConfirmClear(false), 3000);
             return;
         }
 
         try {
+            setConfirmClear(false);
             setClearStatus("Clearing...");
             const res = await clearCache();
             setClearStatus(res.message || "Cache cleared successfully.");
@@ -861,9 +866,11 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
                         <button
                             type="button"
                             onClick={handleClearCache}
-                            className="px-4 py-2 border border-rose-500/50 rounded-md shadow-sm text-sm font-medium text-rose-500 bg-rose-500/5 hover:bg-rose-500/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 transition-colors"
+                            className={`px-4 py-2 border rounded-md shadow-sm text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${confirmClear
+                                ? 'bg-rose-600 text-white border-transparent hover:bg-rose-700 focus:ring-rose-500'
+                                : 'border-rose-500/50 text-rose-500 bg-rose-500/5 hover:bg-rose-500/10 focus:ring-rose-500'}`}
                         >
-                            Clear All Cache
+                            {confirmClear ? "Click to Confirm" : "Clear All Cache"}
                         </button>
                         {clearStatus && (
                             <p className={`text-sm ${clearStatus.startsWith('Error') ? 'text-rose-400' : 'text-emerald-400'}`}>

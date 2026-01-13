@@ -1262,7 +1262,7 @@ def get_history(
     """
     Returns historical portfolio performance (Value and TWR) and benchmarks.
     """
-    logging.info(f"get_history: period={period}, from={from_date}, to={to_date}")
+    logging.info(f"get_history: period={period}, interval={interval}, from={from_date}, to={to_date}")
     try:
         mapped_benchmarks = []
         if benchmarks:
@@ -2513,8 +2513,12 @@ async def remove_from_watchlist_api(symbol: str):
 async def clear_cache():
     """Clears all application caches (files and in-memory)."""
     try:
+        logging.info("Starting Cache Clearing Process...")
+        deleted_count = 0
+        
         # 1. Clear In-Memory Caches
         _PORTFOLIO_SUMMARY_CACHE.clear()
+        # Also try to clear MarketDataProvider's internal cache if possible (it re-reads file anyway)
         
         # 2. Identify Cache Directories
         app_data_dir = config.get_app_data_dir()
@@ -2524,65 +2528,121 @@ async def clear_cache():
         if app_cache_dir and app_cache_dir != app_data_dir:
             targets.append(app_cache_dir)
             
-        # Files that are DEFINITELY caches (often in root of directories)
-        cache_extensions = ('.json', '.feather', '.npy', '.key') 
-        cache_dir_names = ('historical_data_cache', 'fundamentals_cache', 'all_holdings_cache_new')
+            # Parent cache check (safe)
+            try:
+                parent_cache = os.path.dirname(os.path.dirname(os.path.dirname(app_cache_dir)))
+                if os.path.basename(parent_cache) == "Caches": 
+                     targets.append(parent_cache)
+                elif os.path.exists(os.path.expanduser("~/Library/Caches")):
+                     targets.append(os.path.expanduser("~/Library/Caches"))
+            except:
+                pass
+            
+        logging.info(f"Target Directories for cleanup: {targets}")
+
+        # Files/Dirs that MUST be deleted
+        # Explicit filenames to target in ANY target directory
+        EXPLICIT_FILES_TO_DELETE = {
+            "portfolio_cache_yf.json",
+            "yf_metadata_cache.json",
+            "invalid_symbols_cache.json",
+            "portfolio_cache.json", # Legacy name?
+        }
         
-        # Files/Extensions to SAFELY IGNORE (Do NOT delete from app_data_dir)
-        keep_extensions = ('.db', '.sqlite', '.sqlite3', '.json.bak')
-        keep_files = ('gui_config.json', 'manual_overrides.json')
+        # Directory names to recursively delete
+        CACHE_DIR_NAMES = {
+            'historical_data_cache', 
+            'fundamentals_cache', 
+            'all_holdings_cache_new',
+            'daily_results_cache',
+            'test_fx_cache' # Added this
+        }
         
-        deleted_count = 0
+        # Extensions that imply cache (be careful not to delete config/overrides)
+        CACHE_EXTENSIONS = ('.json', '.feather', '.npy', '.key') 
+        
+        # Safe-List (Never Delete)
+        KEEP_FILES = {'gui_config.json', 'manual_overrides.json', 'investa_transactions.db'}
+        KEEP_EXTENSIONS = ('.db', '.sqlite', '.sqlite3', '.bak')
+
         import shutil
         
         for base_dir in targets:
             if not os.path.exists(base_dir):
                 continue
                 
-            for item in os.listdir(base_dir):
+            logging.info(f"Scanning {base_dir}...")
+            
+            try:
+                items = os.listdir(base_dir)
+            except Exception as e:
+                logging.warning(f"Could not list {base_dir}: {e}")
+                continue
+
+            for item in items:
                 item_path = os.path.join(base_dir, item)
                 
+                # PROTECTED CHECKS
+                if item in KEEP_FILES:
+                    continue
+                if any(item.lower().endswith(ext) for ext in KEEP_EXTENSIONS):
+                    continue
+
                 # A. Handle Subdirectories
                 if os.path.isdir(item_path):
-                    if item in cache_dir_names:
+                    if item in CACHE_DIR_NAMES or item.startswith("yf_portfolio_hist"):
                         try:
                             # Count files inside for reporting
                             for _, _, files in os.walk(item_path):
                                 deleted_count += len(files)
                             shutil.rmtree(item_path)
                             deleted_count += 1 
+                            logging.info(f"Deleted Directory: {item}")
                         except Exception as e:
                             logging.warning(f"Failed to delete cache dir {item_path}: {e}")
                     continue
                 
                 # B. Handle Files
                 if os.path.isfile(item_path):
-                    # Skip specific protected files (only in AppData usually)
-                    if base_dir == app_data_dir and item in keep_files:
-                        continue
+                    should_delete = False
                     
-                    # Skip database files
-                    if any(item.lower().endswith(ext) for ext in keep_extensions):
-                        continue
+                    # 1. Explicit Match
+                    if item in EXPLICIT_FILES_TO_DELETE:
+                        should_delete = True
                         
-                    # Delete caches
-                    is_cache_ext = any(item.lower().endswith(ext) for ext in cache_extensions)
-                    is_cache_prefix = any(item.startswith(p) for p in [config.HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX, config.DAILY_RESULTS_CACHE_PATH_PREFIX])
-                    
-                    if is_cache_ext or is_cache_prefix:
+                    # 2. Prefix Match (High Confidence)
+                    elif any(item.startswith(p) for p in [
+                        config.HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX, 
+                        config.DAILY_RESULTS_CACHE_PATH_PREFIX,
+                        "yf_portfolio_" # Catch-all for yf caches
+                    ]):
+                        should_delete = True
+                        
+                    # 3. Extension Match (Low Confidence - only in specific dirs)
+                    # Only delete by extension if we are SURE it's a cache file
+                    elif any(item.lower().endswith(ext) for ext in CACHE_EXTENSIONS):
+                         # Extra safety: Don't delete random JSONs in app_data_dir unless they look like cache
+                         if base_dir == app_data_dir and item.endswith(".json"):
+                             if "cache" in item.lower():
+                                 should_delete = True
+                             else:
+                                 should_delete = False # Skip unknown JSONs in config dir
+                         else:
+                             should_delete = True # In Caches/ folder, delete all JSONs/Feathers
+
+                    if should_delete:
                         try:
                             os.remove(item_path)
                             deleted_count += 1
+                            logging.info(f"Deleted File: {item}")
                         except Exception as e:
                             logging.warning(f"Failed to delete cache file {item_path}: {e}")
         
         # 3. Reload Data
+        logging.info("Reloading data after cache clear...")
         reload_data()
         
         return {"status": "success", "message": f"Cache cleared. {deleted_count} items removed."}
-    except Exception as e:
-        logging.error(f"Error clearing cache: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logging.error(f"Error clearing cache: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

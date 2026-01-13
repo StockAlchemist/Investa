@@ -93,6 +93,7 @@ export async function fetchSummary(currency: string = 'USD', accounts?: string[]
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
+    params.append('_t', Date.now().toString());
     const res = await fetch(`${API_BASE_URL}/summary?${params.toString()}`);
     if (!res.ok) throw new Error('Failed to fetch summary');
     return res.json();
@@ -106,6 +107,7 @@ export async function fetchHoldings(currency: string = 'USD', accounts?: string[
     if (showClosed) {
         params.append('show_closed', 'true');
     }
+    params.append('_t', Date.now().toString());
     const res = await fetch(`${API_BASE_URL}/holdings?${params.toString()}`);
     if (!res.ok) throw new Error('Failed to fetch holdings');
     return res.json();
@@ -221,6 +223,7 @@ export async function fetchAssetChange(
     if (benchmarks) {
         benchmarks.forEach(b => params.append('benchmarks', b));
     }
+    params.append('_t', Date.now().toString());
     const res = await fetch(`${API_BASE_URL}/asset_change?${params.toString()}`);
     if (!res.ok) throw new Error('Failed to fetch asset change data');
     return res.json();
@@ -375,6 +378,7 @@ export async function fetchAttribution(currency: string = 'USD', accounts?: stri
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
+    params.append('_t', Date.now().toString());
     const res = await fetch(`${API_BASE_URL}/attribution?${params.toString()}`);
     if (!res.ok) throw new Error('Failed to fetch attribution');
     return res.json();
@@ -438,6 +442,7 @@ export async function fetchCorrelationMatrix(
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
+    params.append('_t', Date.now().toString());
     const res = await fetch(`${API_BASE_URL}/correlation?${params.toString()}`);
     if (!res.ok) throw new Error('Failed to fetch correlation matrix');
     return res.json();
@@ -457,6 +462,7 @@ export async function fetchProjectedIncome(
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
+    params.append('_t', Date.now().toString());
     const res = await fetch(`${API_BASE_URL}/projected_income?${params.toString()}`);
     if (!res.ok) throw new Error('Failed to fetch projected income');
     return res.json();
@@ -487,6 +493,7 @@ export async function fetchPortfolioHealth(
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
+    params.append('_t', Date.now().toString());
     const res = await fetch(`${API_BASE_URL}/portfolio_health?${params.toString()}`);
     if (!res.ok) {
         console.error("Failed to fetch portfolio health");

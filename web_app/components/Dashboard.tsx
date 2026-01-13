@@ -279,14 +279,7 @@ export default function Dashboard({
                     isLoading={isLoading}
                 // Force height or min-width? No.
                 />;
-            case 'cashBalance':
-                return <MetricCard
-                    title="Cash Balance"
-                    value={cashBalance}
-                    currency={currency}
-                    isLoading={isLoading}
-                // Maybe add containerClassName?
-                />;
+            case 'unrealizedGL':
                 return <MetricCard
                     title="Unrealized G/L"
                     value={unrealizedGL}

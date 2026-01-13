@@ -19,6 +19,7 @@ SPDX-License-Identifier: MIT
 # --- START OF MODIFIED portfolio_logic.py ---
 import sys
 import os
+import config # Added config import
 import math # Added math import
 from datetime import datetime, date, timedelta
 import pytz
@@ -3849,58 +3850,15 @@ def _prepare_historical_inputs(
         }
 
     # Symbols for stocks (from effective/filtered transactions)
-    # --- OPTIMIZATION: Only fetch symbols relevant to the requested period ---
-    # 1. Include symbols with ANY transactions within the requested date range
-    mask_in_range = (transactions_df_effective["Date"].dt.date >= start_date) & \
-                    (transactions_df_effective["Date"].dt.date <= end_date)
-    symbols_active_in_range = set(transactions_df_effective[mask_in_range]["Symbol"].unique())
+    # --- SIMPLIFICATION: Include ALL symbols in the effective transaction set ---
+    # Previous optimization attempted to only fetch symbols "active" or "held" in the window,
+    # but the "held" check (approximate quantity sum) was fragile and missed edge cases 
+    # (e.g. Dividend Reinvestment not being counted as Buy), leading to missing prices/value 
+    # for long-term holdings in short-term views (like 1M graph).
+    # Since yfinance calls are cached and the number of symbols is usually manageable (<500),
+    # it is safer to just include all symbols present in the filtered account's history.
     
-    # 2. Include symbols that were held AT the start_date (history before start_date)
-    # We filter by checking if the last transaction BEFORE start_date resulted in a non-zero position.
-    # To keep it efficient, we check if the max Date before start_date is not a "full exit" 
-    # (though that's hard to tell without calculating quantity).
-    # Safer fallback: if there are any transactions before start_date, check if they were already fully sold.
-    # For now, a conservative but effective filter: include if max(Date) >= start_date
-    # OR if we have ANY transactions before and we want to be sure.
-    # Actually, the most robust way is to just assume anything in transactions_df_effective 
-    # is relevant UNLESS its last transaction was long before start_date.
-    
-    all_symbols_internal_effective = []
-    potential_symbols = transactions_df_effective["Symbol"].unique()
-    for sym in potential_symbols:
-        # If any trade in range, definitely include
-        if sym in symbols_active_in_range:
-            all_symbols_internal_effective.append(sym)
-            continue
-            
-        # If all trades were before start_date, check if it was likely closed
-        sym_tx = transactions_df_effective[transactions_df_effective["Symbol"] == sym]
-        last_tx_date = sym_tx["Date"].max().date()
-        
-        if last_tx_date < start_date:
-            # It was last traded before the start of our chart/analysis.
-            # Was it closed? We can do a quick sum of quantity to check.
-            # (buy/buy-v2/etc are +, sell/sell-v2 are -)
-            try:
-                # Basic quantity check to see if position was closed
-                # Note: this doesn't handle splits perfectly but usually good enough to distinguish 0 vs non-0
-                qty_sum = 0.0
-                for _, row in sym_tx.iterrows():
-                    t_type = str(row.get("Type", "")).lower()
-                    t_qty = float(row.get("Quantity", 0))
-                    if "buy" in t_type or "in" in t_type or "split" in t_type: # Conservative
-                        qty_sum += t_qty
-                    elif "sell" in t_type or "out" in t_type:
-                        qty_sum -= t_qty
-                
-                if abs(qty_sum) > 1e-5: # Still held at start_date
-                    all_symbols_internal_effective.append(sym)
-            except Exception:
-                # Fallback: include if we can't determine
-                all_symbols_internal_effective.append(sym)
-        else:
-            # Should be covered by symbols_active_in_range, but for safety:
-            all_symbols_internal_effective.append(sym)
+    all_symbols_internal_effective = transactions_df_effective["Symbol"].unique().tolist()
     # -------------------------------------------------------------------------
     symbols_to_fetch_yf_portfolio = []
     internal_to_yf_map: Dict[str, str] = {}  # Ensure type
@@ -3952,7 +3910,13 @@ def _prepare_historical_inputs(
     if QStandardPaths:
         cache_dir_base = QStandardPaths.writableLocation(QStandardPaths.CacheLocation)
         if cache_dir_base:
-            app_cache_dir = cache_dir_base
+            # FIX: Ensure we use the proper app structure (Org/App)
+            # QStandardPaths usually returns ~/Library/Caches on macOS for python scripts not in a bundle
+            if config.APP_NAME not in cache_dir_base:
+                app_cache_dir = os.path.join(cache_dir_base, config.ORG_NAME, config.APP_NAME)
+            else:
+                app_cache_dir = cache_dir_base
+            
             os.makedirs(app_cache_dir, exist_ok=True)
 
     raw_data_cache_file_name = (
@@ -5724,7 +5688,16 @@ def calculate_historical_performance(
     # pd.DataFrame, # key_ratios_df - Ratios are not calculated here
     # Dict[str, Any] # current_valuation_ratios - Ratios are not calculated here
 ]:
-    CURRENT_HIST_VERSION = "v1.9.27_INTERPOLATION_FIX"  # Force recalculation with Interpolation Fix
+    # --- AUTO-CACHE INVALIDATION ---
+    def _get_self_hash():
+        try:
+            with open(__file__, "rb") as f:
+                return hashlib.md5(f.read()).hexdigest()[:8]
+        except Exception:
+            return "UNKNOWN"
+
+    CURRENT_HIST_VERSION = f"v2.0_AUTO_{_get_self_hash()}"
+    # -------------------------------
     start_time_hist = time.time()
     has_errors = False
     has_warnings = False

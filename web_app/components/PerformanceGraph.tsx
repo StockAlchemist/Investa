@@ -100,7 +100,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
             } else if (period === '5d') {
                 interval = '15m'; // 15m * 5 days = ~130 points
             } else if (period === '1m') {
-                interval = '60m'; // 1h * 30 days = ~200 points
+                interval = '1d'; // Use 1d to ensure consistency with 3M+ and capture official adjusted closes
             }
 
             const from = period === 'custom' ? customFromDate : undefined;
