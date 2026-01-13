@@ -594,25 +594,28 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                     <table className="min-w-full divide-y divide-black/5 dark:divide-white/5">
                         <thead className="bg-secondary/50 font-semibold border-b border-border">
                             <tr>
-                                {visibleColumns.map(header => (
-                                    <th
-                                        key={header}
-                                        scope="col"
-                                        draggable
-                                        onDragStart={(e) => handleDragStart(e, header)}
-                                        onDragOver={handleDragOver}
-                                        onDrop={(e) => handleDrop(e, header)}
-                                        className={`px-6 py-3 text-right text-xs font-semibold text-muted-foreground transition-colors select-none whitespace-nowrap group hover:bg-accent/10 cursor-pointer ${draggedColumn === header ? 'opacity-50 bg-secondary' : ''}`}
-                                        onClick={() => handleSort(header)}
-                                    >
-                                        <div className="flex items-center justify-end gap-1">
-                                            {header}
-                                            {sortConfig.key === header && (
-                                                <span className="text-cyan-500">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
-                                            )}
-                                        </div>
-                                    </th>
-                                ))}
+                                {visibleColumns.map(header => {
+                                    const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
+                                    return (
+                                        <th
+                                            key={header}
+                                            scope="col"
+                                            draggable
+                                            onDragStart={(e) => handleDragStart(e, header)}
+                                            onDragOver={handleDragOver}
+                                            onDrop={(e) => handleDrop(e, header)}
+                                            className={`px-6 py-3 text-xs font-semibold text-muted-foreground transition-colors select-none whitespace-nowrap group hover:bg-accent/10 cursor-pointer ${draggedColumn === header ? 'opacity-50 bg-secondary' : ''} ${isLeftAligned ? 'text-left' : 'text-right'}`}
+                                            onClick={() => handleSort(header)}
+                                        >
+                                            <div className={`flex items-center gap-1 ${isLeftAligned ? 'justify-start' : 'justify-end'}`}>
+                                                {header}
+                                                {sortConfig.key === header && (
+                                                    <span className="text-cyan-500">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                                                )}
+                                            </div>
+                                        </th>
+                                    );
+                                })}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border/50">
@@ -633,9 +636,10 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                             const val = getValue(holding, header);
                                             // Use tabular-nums for numeric columns to ensure digit alignment
                                             const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
+                                            const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
 
                                             return (
-                                                <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm text-right ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')}`}>
+                                                <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')}`}>
                                                     {header === '7d Trend' ? (
                                                         <div className="h-10 w-28 ml-auto">
                                                             {val && Array.isArray(val) && val.length > 1 ? (
@@ -694,7 +698,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                             )}
                                                         </div>
                                                     ) : header === 'Symbol' ? (
-                                                        <div className="flex items-center justify-end gap-2">
+                                                        <div className="flex items-center justify-start gap-2">
                                                             <button
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();

@@ -102,6 +102,7 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
         'PLTR': '/pltr.png',
         'ASML': '/asml.png',
         'UNH': '/unh.png',
+        'AAPL': '/aapl.png',
     };
 
     const sources = [

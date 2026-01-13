@@ -249,27 +249,27 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                                 </span>
                                 <span className={cn(
                                     "text-[10px] font-semibold px-1.5 py-0.5 rounded-full mt-0.5",
-                                    (metric === 'day_change' || metric === 'total_gain') ? "bg-transparent" : // Remove bg for these as they are colored text
-                                        activeDayChange >= 0 ? "bg-emerald-500/10" : "bg-rose-500/10"
+                                    (metric === 'day_change' || metric === 'total_gain') ? "bg-transparent" : "bg-secondary"
                                 )}>
                                     {renderSubtitle(false)}
                                 </span>
                             </>
                         ) : (
                             <>
-                                <div className="relative group">
+                                <div className="relative group flex items-center justify-center gap-1 cursor-pointer">
+                                    <span className="text-[10px] font-semibold text-muted-foreground group-hover:text-foreground uppercase tracking-wider transition-colors">
+                                        {METRICS.find(m => m.id === metric)?.label}
+                                    </span>
+                                    <ChevronDown className="w-2.5 h-2.5 text-muted-foreground group-hover:text-foreground transition-colors" />
                                     <select
                                         value={metric}
                                         onChange={(e) => setMetric(e.target.value)}
-                                        className="appearance-none bg-transparent text-[10px] font-semibold text-muted-foreground uppercase tracking-wider pr-4 pl-1 py-1 cursor-pointer outline-none focus:text-foreground hover:text-foreground transition-colors text-center w-full"
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                     >
                                         {METRICS.map(m => (
                                             <option key={m.id} value={m.id}>{m.label}</option>
                                         ))}
                                     </select>
-                                    <div className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none">
-                                        <ChevronDown className="w-2.5 h-2.5 text-muted-foreground group-hover:text-foreground" />
-                                    </div>
                                 </div>
 
                                 <div className="flex flex-col items-center mt-1">
@@ -277,7 +277,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                                         {renderMainValue(true)}
                                     </span>
                                     <span className={cn(
-                                        "text-[10px] font-medium mt-0.5"
+                                        "text-xs sm:text-sm font-medium mt-0.5"
                                     )}>
                                         {renderSubtitle(true)}
                                     </span>
