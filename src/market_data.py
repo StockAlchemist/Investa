@@ -2193,7 +2193,12 @@ class MarketDataProvider:
                 # FIX: For intraday updates on the SAME DAY (needs_intraday_refresh), last_d matches end_date.
                 # Standard logic sets fetch_start to Tomorrow, which skips fetch.
                 # We must allow re-fetching 'Today' to get the latest candles.
-                if interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"] and last_d >= end_date:
+                # FIX: For intraday updates, if the last available data is from TODAY (or recent),
+                # we must re-fetch 'Today' to get the latest candles.
+                # Standard logic sets fetch_start to Tomorrow, which skips fetching today's new candles.
+                # We check if last_d is >= (end_date - 1 day) to catch the "end_date is tomorrow" case used by 1D view.
+                is_intraday = interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]
+                if is_intraday and last_d >= (end_date - timedelta(days=1)):
                      fetch_start = last_d
                 
                 if fetch_start <= end_date:

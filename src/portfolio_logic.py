@@ -4570,7 +4570,8 @@ def _load_or_calculate_daily_results(
             # Determine calculation frequency range
             # If interval is intraday, we use daily for history and intraday frequency for active range
             valid_intraday = ["1h", "1m", "2m", "5m", "15m", "30m", "60m", "90m"]
-            if interval in valid_intraday:
+            is_intraday_request = interval in valid_intraday
+            if is_intraday_request:
                 freq_map = {
                     "1h": "h", "60m": "h",
                     "1m": "1min", "2m": "2min", "5m": "5min",
@@ -4588,9 +4589,23 @@ def _load_or_calculate_daily_results(
                 # FIX: Ensure range_active covers the FULL end_date day for intraday intervals
                 ts_end_of_period = pd.Timestamp(calc_end_date, tz='UTC') + timedelta(days=1)
                 
-                # FIX 2: Cap at 'now' removed. We rely on API layer to filter market hours.
-                # This prevents premature clipping if server clock is drifted or timezone issues.
-                active_end_bound = ts_end_of_period
+                # FIX 2: Check current time to prevent generating empty "future" points that get ffilled.
+                # User requested: "Do not plot a flat line where the data are not available yet"
+                now_utc = pd.Timestamp.now(tz='UTC')
+                # If the theoretical end of period is in the future, clip it to now (plus small buffer)
+                if ts_end_of_period > now_utc:
+                    # Clip to now. Ceil to next interval?
+                    # Simply using 'now' works because inclusive='left' in date_range loops until it hits end.
+                    # We remove the buffer to strictly stop at 'now' and avoid any future flatline.
+                    # Actually, if we are at 10:00:01, inclusive='left' with freq='2min' 
+                    # starting at 09:30 might generate 10:00:00 tick.
+                    # If data for 10:00:00 is not yet available/complete, it gets ffilled.
+                    # Safer to lag slightly behind 'now' to ensure we only show fully elapsed intervals.
+                    # FORCE CLIP: -5 minutes to guarantee no future flatline.
+                    active_end_bound = now_utc - timedelta(minutes=5)
+                    logging.info(f"[_load_or_calculate] 1D Graph Clip: now={now_utc}, bound={active_end_bound}")
+                else:
+                    active_end_bound = ts_end_of_period
                 
                 heading_into_future = False # logic no longer needed, we fill what we have
                 
@@ -4600,6 +4615,16 @@ def _load_or_calculate_daily_results(
                     freq=active_freq,
                     inclusive='left'
                 )
+
+                # FIX for "5D graph showing afterhours":
+                # We need to filter this range to only include market hours (9:30 - 16:00 ET).
+                # Otherwise, ffill() will bridge the overnight gap with a flat line.
+                # Only apply this if we are in an intraday mode that expects market hours.
+                if is_intraday_request and not range_active.empty:
+                     # Convert to NY time to filter by clock time
+                     range_active_ny = range_active.tz_convert('America/New_York')
+                     keep_mask = range_active_ny.indexer_between_time("09:30", "16:00")
+                     range_active = range_active[keep_mask]
                 
                 if range_historical.empty and range_active.empty:
                      date_range_for_calc = pd.DatetimeIndex([])

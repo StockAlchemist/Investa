@@ -171,7 +171,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         return Object.keys(data[0]).filter(k =>
             k !== 'date' && k !== 'value' && k !== 'twr' && k !== 'drawdown' &&
             k !== 'fx_rate' && k !== 'abs_gain' && k !== 'abs_roi' && k !== 'cum_flow' && k !== 'fx_return' &&
-            k !== 'is_baseline'
+            k !== 'is_baseline' && k !== 'timestamp'
         );
     }, [data]);
 
@@ -194,8 +194,104 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
     }, [data]);
 
     const chartedData = useMemo(() => {
-        return (processedData as any[]).filter((d: any) => !d.is_baseline);
+        const dataToPlot = (processedData as any[]).filter((d: any) => !d.is_baseline);
+        return dataToPlot.map(d => ({
+            ...d,
+            timestamp: new Date(d.date).getTime()
+        }));
     }, [processedData]);
+
+    const xDomain = useMemo(() => {
+        if (period === '1d' && chartedData.length > 0) {
+            // Robustly calculate 9:30 AM ET and 4:00 PM ET for the given day
+            try {
+                const firstTs = chartedData[0].timestamp;
+                // Create a date object in browser local time
+                const d = new Date(firstTs);
+
+                // Get the date string for New York
+                // Format: "MM/DD/YYYY"
+                const nyDateStr = d.toLocaleDateString("en-US", { timeZone: "America/New_York" });
+
+                // We need to find the timestamp corresponding to 9:30 on this NY date.
+                // Since we don't have a timezone library, we can find it by iteration or offset guessing.
+                // Heuristic:
+                // 1. Parse the NY date string as UTC.
+                // 2. Add 9.5 hours to get Open, 16 hours to get Close (assuming UTC).
+                // 3. Add 4 or 5 hours (offset) to get back to UTC.
+                // Wait, simpler:
+                // Construct a string that `Date.parse` accepts as absolute ISO? No.
+
+                // Browser-native robust way:
+                // Create a date at Noon UTC on that day.
+                // Check its NY time. Adjust.
+
+                // Let's use the explicit "EST" fallback but logging error,
+                // AND try a secondary parsing method if NaN.
+
+                const parseWithZone = (dateStr: string, timeStr: string, zone: string) => {
+                    const s = `${dateStr} ${timeStr} ${zone}`;
+                    const ts = Date.parse(s);
+                    if (!isNaN(ts)) return ts;
+                    return NaN;
+                };
+
+                let startT = parseWithZone(nyDateStr, "09:30:00", "EST");
+                let endT = parseWithZone(nyDateStr, "16:00:00", "EST");
+
+                if (isNaN(startT)) {
+                    // Try EDT
+                    startT = parseWithZone(nyDateStr, "09:30:00", "EDT");
+                    endT = parseWithZone(nyDateStr, "16:00:00", "EDT");
+                }
+
+                // If still NaN, fallback to "Assume first point is 9:30"
+                if (isNaN(startT)) {
+                    console.warn("Investa: Failed to parse xDomain dates. Using fallback.");
+                    startT = firstTs;
+                    // 6.5 hours = 23,400,000 ms
+                    endT = startT + 23400000;
+                } else {
+                    // Double check if the parsed time is actually 9:30 in NY
+                    // because "EST" might be interpreted as fixed -0500 even if it's summer.
+                    const checkD = new Date(startT);
+                    const checkTime = checkD.toLocaleTimeString("en-US", { timeZone: "America/New_York", hour12: false });
+                    if (!checkTime.startsWith("09:30")) {
+                        // Offset mismatch. Flip EST/EDT.
+                        // If we used EST and got 10:30, we need EDT (-1h).
+                        // If we used EDT and got 08:30, we need EST (+1h).
+                        // Actually easier: just adjust the timestamp by the diff.
+                        const [h, m] = checkTime.split(':').map(Number);
+                        const diffMinutes = (h * 60 + m) - (9 * 60 + 30);
+                        startT -= diffMinutes * 60 * 1000;
+                        endT -= diffMinutes * 60 * 1000;
+                    }
+                }
+
+                return [startT, endT];
+            } catch (e) {
+                console.error("Investa: Error calculating xDomain", e);
+                return ['auto', 'auto'];
+            }
+        }
+        return ['auto', 'auto'];
+    }, [period, chartedData]);
+
+    const xTicks = useMemo(() => {
+        if (period === '1d' && Array.isArray(xDomain) && typeof xDomain[0] === 'number') {
+            const start = xDomain[0] as number;
+            const end = xDomain[1] as number;
+            const ticks = [];
+            // Generate ticks every 30 minutes
+            let current = start;
+            while (current <= end) {
+                ticks.push(current);
+                current += 30 * 60 * 1000;
+            }
+            return ticks;
+        }
+        return undefined;
+    }, [xDomain, period]);
 
     if (!chartedData || chartedData.length === 0) {
         return (
@@ -291,7 +387,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                 k !== 'date' && k !== 'value' && k !== 'twr' && k !== 'drawdown' &&
                 k !== 'fx_rate' && k !== 'fx_return' &&
                 k !== 'abs_gain' && k !== 'abs_roi' && k !== 'cum_flow' &&
-                k !== 'is_baseline'
+                k !== 'is_baseline' && k !== 'timestamp'
             );
 
             return (
@@ -388,6 +484,8 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         }
         return null;
     };
+
+    const isContinuous = period === '1d';
 
     return (
         <div className="bg-card rounded-xl p-4 shadow-sm border border-border mb-6 overflow-visible">
@@ -487,44 +585,59 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                         <LineChart syncId="portfolio-sync" data={chartedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                             <XAxis
-                                dataKey="date"
+                                dataKey="timestamp"
+                                domain={isContinuous ? xDomain : undefined}
+                                ticks={isContinuous ? xTicks : undefined}
+                                type={isContinuous ? "number" : "category"}
+                                scale={isContinuous ? "time" : undefined}
                                 tickFormatter={formatXAxis}
+                                allowDataOverflow={isContinuous}
                                 tick={{ fontSize: 12, fill: '#9ca3af' }}
                                 axisLine={false}
                                 tickLine={false}
                                 minTickGap={30}
-                                interval="preserveStartEnd"
                             />
                             <YAxis
                                 tickFormatter={formatYAxis}
                                 tick={{ fontSize: 12, fill: '#9ca3af' }}
                                 axisLine={false}
                                 tickLine={false}
-                                width={60}
+                                domain={['auto', 'auto']}
+                                width={50}
                             />
-                            <Tooltip
-                                content={<CustomTooltip />}
-                                allowEscapeViewBox={{ x: false, y: false }}
-                            />
-                            <Legend wrapperStyle={{ fontSize: '12px' }} />
+                            <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '4 4' }} />
+                            <Legend />
+                            {/* Portfolio Line with Gradient or Solid color */}
+                            {/* Time-Weighted Return (TWR) */}
+                            <defs>
+                                <linearGradient id="colorTwr" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
+                                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                                </linearGradient>
+                            </defs>
                             <Line
-                                name="Portfolio"
                                 type="monotone"
                                 dataKey="twr"
-                                stroke={COLORS[0]}
+                                name="Portfolio"
+                                stroke="#3b82f6"
                                 strokeWidth={2}
                                 dot={false}
-                                activeDot={{ r: 6 }}
+                                activeDot={{ r: 4, strokeWidth: 0 }}
+                                animationDuration={800}
+                                connectNulls={true}
                             />
-                            {benchmarkKeys.map((key, index) => (
+                            {/* Benchmarks */}
+                            {benchmarkKeys.map((bKey, idx) => (
                                 <Line
-                                    key={key}
-                                    name={key}
+                                    key={bKey}
                                     type="monotone"
-                                    dataKey={key}
-                                    stroke={COLORS[(index + 1) % COLORS.length]}
+                                    dataKey={bKey}
+                                    name={bKey}
+                                    stroke={COLORS[(idx + 1) % COLORS.length]}
                                     strokeWidth={2}
                                     dot={false}
+                                    activeDot={{ r: 4, strokeWidth: 0 }}
+                                    connectNulls={true}
                                 />
                             ))}
                             {hasFXRate && (
@@ -544,19 +657,23 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                         <AreaChart syncId="portfolio-sync" data={chartedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                             <defs>
                                 <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.1} />
-                                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
+                                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                                 </linearGradient>
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                             <XAxis
-                                dataKey="date"
+                                dataKey="timestamp"
+                                domain={isContinuous ? xDomain : undefined}
+                                ticks={isContinuous ? xTicks : undefined}
+                                type={isContinuous ? "number" : "category"}
+                                scale={isContinuous ? "time" : undefined}
                                 tickFormatter={formatXAxis}
+                                allowDataOverflow={isContinuous}
                                 tick={{ fontSize: 12, fill: '#9ca3af' }}
                                 axisLine={false}
                                 tickLine={false}
                                 minTickGap={30}
-                                interval="preserveStartEnd"
                             />
                             <YAxis
                                 tickFormatter={formatYAxis}
@@ -615,13 +732,17 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                             <XAxis
-                                dataKey="date"
+                                dataKey="timestamp"
+                                domain={isContinuous ? xDomain : undefined}
+                                ticks={isContinuous ? xTicks : undefined}
+                                type={isContinuous ? "number" : "category"}
+                                scale={isContinuous ? "time" : undefined}
                                 tickFormatter={formatXAxis}
+                                allowDataOverflow={isContinuous}
                                 tick={{ fontSize: 12, fill: '#9ca3af' }}
                                 axisLine={false}
                                 tickLine={false}
                                 minTickGap={30}
-                                interval="preserveStartEnd"
                             />
                             <YAxis
                                 tickFormatter={formatYAxis}

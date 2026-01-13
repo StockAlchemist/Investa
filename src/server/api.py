@@ -1002,10 +1002,13 @@ def _calculate_historical_performance_internal(
         # If Mon(0), go back to Friday to ensure we have context if market just opened.
         if end_date.weekday() == 6: # Sunday -> Friday
              start_date = end_date - timedelta(days=2)
+             end_date = end_date + timedelta(days=1)
         elif end_date.weekday() == 5: # Saturday -> Friday
              start_date = end_date - timedelta(days=1)
-        elif end_date.weekday() == 0: # Monday -> Friday (3 days)
-             start_date = end_date - timedelta(days=3)
+             end_date = end_date + timedelta(days=1)
+        # REMOVED: Monday context logic (start_date = end_date - 3)
+        # Monday will now fall through to the 'else' block, treating it as a standard day
+        # (Start = Monday, End = Tuesday), ensuring 1D graph shows ONLY Monday.
         else:
              # Standard Weekday 1D View
              # IMPORTANT: end_date is the "Target Day" (e.g. Yesterday).

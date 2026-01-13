@@ -26,7 +26,7 @@ const COLORS = [
 const METRICS = [
     { id: 'value', label: 'Total Value', icon: DollarSign },
     { id: 'day_change', label: "Day's Change", icon: TrendingUp },
-    { id: 'total_gain', label: 'Total Gain', icon: TrendingUp },
+    { id: 'total_gain', label: 'Unrealized Gain', icon: TrendingUp },
 ];
 
 const RADIAN = Math.PI / 180;
@@ -106,6 +106,26 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
     const onPieEnter = (_: any, index: number) => setActiveIndex(index);
     const onPieLeave = () => setActiveIndex(undefined);
 
+    // Helper to get formatted value string for length calculation
+    const getMainValueString = (isTotal: boolean) => {
+        let val = 0;
+        if (metric === 'value') val = isTotal ? totalValue : (activeItem?.value || 0);
+        else if (metric === 'day_change') val = isTotal ? totalDayChange : activeDayChange;
+        else if (metric === 'total_gain') val = isTotal ? totalUnrealizedGain : activeUnrealizedGain;
+
+        const formatted = formatCurrency(val, currency);
+        // Add sign character length if not 'value' metric (approximate)
+        return (metric !== 'value' && val > 0) ? '+' + formatted : formatted;
+    };
+
+    const getFontSizeClass = (text: string) => {
+        const len = text.length;
+        if (len > 18) return "text-[10px] sm:text-xs md:text-sm";
+        if (len > 14) return "text-xs sm:text-sm md:text-base";
+        if (len > 11) return "text-sm sm:text-base md:text-lg";
+        return "text-base sm:text-lg md:text-xl";
+    };
+
     // Helper to render main value
     const renderMainValue = (isTotal: boolean) => {
         if (metric === 'value') return formatCurrency(isTotal ? totalValue : (activeItem?.value || 0), currency);
@@ -173,6 +193,8 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
         return null;
     };
 
+    const mainActiveText = activeItem ? getMainValueString(false) : '';
+    const mainTotalText = getMainValueString(true);
 
     return (
         <div className="flex flex-col h-full">
@@ -222,7 +244,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                                     )}
                                 </div>
                                 <span className="text-xs font-medium text-muted-foreground max-w-[80px] truncate text-center">{activeItem.name}</span>
-                                <span className="text-lg font-bold tracking-tight text-foreground">
+                                <span className={cn(getFontSizeClass(mainActiveText), "font-bold tracking-tight text-foreground whitespace-nowrap")}>
                                     {renderMainValue(false)}
                                 </span>
                                 <span className={cn(
@@ -251,7 +273,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                                 </div>
 
                                 <div className="flex flex-col items-center mt-1">
-                                    <span className="text-xl font-bold tracking-tight text-foreground">
+                                    <span className={cn(getFontSizeClass(mainTotalText), "font-bold tracking-tight text-foreground whitespace-nowrap")}>
                                         {renderMainValue(true)}
                                     </span>
                                     <span className={cn(
