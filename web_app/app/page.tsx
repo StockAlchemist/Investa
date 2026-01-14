@@ -21,6 +21,8 @@ import {
   fetchProjectedIncome,
   PerformanceData
 } from '@/lib/api';
+import { cn } from '@/lib/utils';
+import { DEFAULT_ITEMS } from '@/lib/dashboard_constants';
 // import { CURRENCY_SYMBOLS } from '@/lib/utils';
 import Dashboard from '@/components/Dashboard';
 import HoldingsTable from '@/components/HoldingsTable';
@@ -46,6 +48,7 @@ import Watchlist from '@/components/Watchlist';
 
 import { useTheme } from 'next-themes';
 import { Home as HomeIcon, BarChart3, Settings as SettingsIcon, Moon, Sun } from 'lucide-react';
+import LayoutConfigurator from '@/components/LayoutConfigurator';
 
 export default function Home() {
   const { theme, setTheme } = useTheme();
@@ -57,6 +60,34 @@ export default function Home() {
   const [showClosed, setShowClosed] = useState(false);
   const [capitalGainsDates, setCapitalGainsDates] = useState<{ from?: string, to?: string }>({});
   const [correlationPeriod, setCorrelationPeriod] = useState('1y');
+
+  const [visibleItems, setVisibleItems] = useState<string[]>([]);
+
+  // Initialize visibility from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('investa_dashboard_visible_items');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setVisibleItems(parsed);
+          return;
+        }
+      } catch (e) {
+        console.error("Failed to parse saved dashboard visibility", e);
+      }
+    }
+    // Default to all items
+    setVisibleItems(DEFAULT_ITEMS.map(i => i.id));
+  }, []);
+
+  // Persist visibility to localStorage
+  useEffect(() => {
+    if (visibleItems.length > 0) {
+      localStorage.setItem('investa_dashboard_visible_items', JSON.stringify(visibleItems));
+    }
+  }, [visibleItems]);
+
 
   // Initialize showClosed from localStorage
   useEffect(() => {
@@ -243,6 +274,7 @@ export default function Home() {
               attributionData={attributionQuery.data}
               attributionLoading={attributionQuery.isLoading && !attributionQuery.data}
               holdings={holdings}
+              visibleItems={visibleItems}
             />
             <PerformanceGraph
               currency={currency}
@@ -444,6 +476,13 @@ export default function Home() {
                 onChange={setSelectedAccounts}
                 accountGroups={settingsQuery.data?.account_groups}
               />
+              {activeTab === 'performance' && (
+                <LayoutConfigurator
+                  visibleItems={visibleItems}
+                  onVisibleItemsChange={setVisibleItems}
+                  className="mr-1"
+                />
+              )}
               <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} side="bottom" />
             </div>
 
@@ -455,6 +494,15 @@ export default function Home() {
                 accountGroups={settingsQuery.data?.account_groups}
               />
             </div>
+
+            {activeTab === 'performance' && (
+              <div className="hidden md:block">
+                <LayoutConfigurator
+                  visibleItems={visibleItems}
+                  onVisibleItemsChange={setVisibleItems}
+                />
+              </div>
+            )}
           </div>
         </div>
 
