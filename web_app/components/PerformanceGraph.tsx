@@ -130,33 +130,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         }
     }, [period, fetchData]);
 
-    const periodStats = useMemo(() => {
-        if (!data || data.length < 2) return null;
 
-        const start = data[0];
-        const end = data[data.length - 1];
-
-        if (view === 'return') {
-            const twr = end.twr;
-            return {
-                label: "Period TWR",
-                text: `${twr > 0 ? '+' : ''}${twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`,
-                color: twr >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
-            };
-        } else if (view === 'value') {
-            const startVal = start.value;
-            const endVal = end.value;
-            const change = endVal - startVal;
-            const changePct = startVal !== 0 ? (change / startVal) * 100 : 0;
-
-            return {
-                label: "Period Change",
-                text: `${formatCurrency(change, currency)} (${change > 0 ? '+' : ''}${changePct.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`,
-                color: change >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
-            };
-        }
-        return null;
-    }, [data, view, currency]);
 
     const hasFXRate = useMemo(() => data && data.length > 0 && data.some(d => (d as any).fx_rate != null), [data]);
 
@@ -182,16 +156,53 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         const firstValidFXPoint = data.find(d => (d as any).fx_rate != null);
         const startFX = firstValidFXPoint ? (firstValidFXPoint as any).fx_rate : undefined;
 
-        if (startFX === undefined) return data;
+        // TWR Normalization Baseline (First point / Baseline)
+        const baseline = data[0];
+        const baseTwrFactor = 1 + (baseline.twr / 100);
 
         return data.map(d => {
             const currentFX = (d as any).fx_rate;
+
+            // Normalize TWR
+            const currentTwrFactor = 1 + (d.twr / 100);
+            const adjTwr = ((currentTwrFactor / baseTwrFactor) - 1) * 100;
+
             return {
                 ...d,
-                fx_return: currentFX != null ? ((currentFX / startFX) - 1) * 100 : undefined
+                twr: adjTwr, // Override with normalized TWR
+                fx_return: startFX !== undefined && currentFX != null ? ((currentFX / startFX) - 1) * 100 : undefined
             };
         });
     }, [data]);
+
+    const periodStats = useMemo(() => {
+        if (!processedData || processedData.length < 2) return null;
+
+        // Use processedData (normalized)
+        const start = processedData[0];
+        const end = processedData[processedData.length - 1];
+
+        if (view === 'return') {
+            const twr = end.twr; // Now normalized relative to start
+            return {
+                label: "Period TWR",
+                text: `${twr > 0 ? '+' : ''}${twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`,
+                color: twr >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+            };
+        } else if (view === 'value') {
+            const startVal = start.value;
+            const endVal = end.value;
+            const change = endVal - startVal;
+            const changePct = startVal !== 0 ? (change / startVal) * 100 : 0;
+
+            return {
+                label: "Period Change",
+                text: `${formatCurrency(change, currency)} (${change > 0 ? '+' : ''}${changePct.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`,
+                color: change >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+            };
+        }
+        return null;
+    }, [processedData, view, currency]);
 
     const chartedData = useMemo(() => {
         const dataToPlot = (processedData as any[]).filter((d: any) => !d.is_baseline);
