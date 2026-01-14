@@ -195,6 +195,56 @@ class PortfolioCalculatorWorker(QRunnable):
                 combined_ignored_reasons = (
                     p_ignored_rsn if p_ignored_rsn is not None else {}
                 )
+                
+                # --- ADDED: Cash Interest Injection for Desktop App ---
+                try:
+                    from portfolio_analyzer import generate_cash_interest_events
+                    from config_manager import ConfigManager
+                    import config
+                    
+                    # Ensure configs are fresh
+                    # Instantiate ConfigManager directly to avoid server dependencies
+                    cm = ConfigManager(config.get_app_data_dir())
+                    if not cm.manual_overrides:
+                         # Force load if init didn't (though init calls load_all)
+                         cm.load_manual_overrides()
+                         
+                    interest_rates = cm.manual_overrides.get("account_interest_rates", {})
+                    thresholds = cm.manual_overrides.get("interest_free_thresholds", {})
+                    
+                    if interest_rates:
+                         # Use raw transactions df for cash calculation
+                         # It should be available in self.portfolio_kwargs.get("all_transactions_df_for_worker")
+                         # or passed as an arg.
+                         raw_df = self.portfolio_kwargs.get("all_transactions_df_for_worker")
+                         
+                         if raw_df is not None and not raw_df.empty:
+                             today = datetime.now().date()
+                             # Project for next 12 months for annual income estimation
+                             end_projection = today + timedelta(days=365)
+                             
+                             cash_events = generate_cash_interest_events(
+                                 df=raw_df,
+                                 interest_rates=interest_rates,
+                                 thresholds=thresholds,
+                                 start_date=today,
+                                 end_date=end_projection
+                             )
+                             
+                             if cash_events:
+                                 # Sum up total projected cash interest
+                                 total_cash_interest = sum(float(e.get("amount", 0.0)) for e in cash_events)
+                                 
+                                 # Inject into summary metrics
+                                 current_est_income = portfolio_summary_metrics.get("est_annual_income_display", 0.0)
+                                 portfolio_summary_metrics["est_annual_income_display"] = current_est_income + total_cash_interest
+                                 
+                                 logging.info(f"WORKER: Injected ${total_cash_interest:.2f} cash interest into est_annual_income_display.")
+                                 
+                except Exception as e_cash:
+                    logging.error(f"WORKER: Failed to inject cash interest: {e_cash}", exc_info=True)
+                # --- END ADDED ---
+
                 portfolio_status = (
                     p_status if p_status else "Error: Unknown portfolio status"
                 )

@@ -197,6 +197,8 @@ def calculate_portfolio_summary(
     account_currency_map: Optional[Dict[str, str]] = None,
     market_provider: Optional[Any] = None,  # Added for dependency injection
     calc_method: Optional[str] = None, # Added for benchmarking override
+    account_interest_rates: Optional[Dict[str, float]] = None,
+    interest_free_thresholds: Optional[Dict[str, float]] = None,
 ) -> Tuple[
     Optional[Dict[str, Any]],
     Optional[pd.DataFrame],
@@ -229,8 +231,11 @@ def calculate_portfolio_summary(
         user_symbol_map (Optional[Dict[str, str]], optional): User-defined symbol map. Defaults to None.
         user_excluded_symbols (Optional[Set[str]], optional): User-defined excluded symbols. Defaults to None.
         market_provider (MarketDataProvider): An instance of the market data provider.
+        market_provider (MarketDataProvider): An instance of the market data provider.
         default_currency (str, optional): Default currency. Defaults to DEFAULT_CURRENCY.
         account_currency_map (Optional[Dict[str, str]], optional): Account to currency map. Defaults to None (uses default).
+        account_interest_rates (Optional[Dict[str, float]], optional): Account interest rates. Defaults to None.
+        interest_free_thresholds (Optional[Dict[str, float]], optional): Account interest thresholds. Defaults to None.
 
     Returns:
         Tuple: overall_summary_metrics, summary_df_final, account_level_metrics,
@@ -944,6 +949,8 @@ def calculate_portfolio_summary(
         user_excluded_symbols=effective_user_excluded_symbols,
         user_symbol_map=effective_user_symbol_map,
         manual_prices_dict=manual_prices_for_build_rows,
+        account_interest_rates=account_interest_rates, # NEW
+        interest_free_thresholds=interest_free_thresholds, # NEW
     )
 
     if err_build:

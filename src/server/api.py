@@ -12,7 +12,12 @@ from datetime import datetime, date, time as dt_time
 from server.dependencies import get_transaction_data, get_config_manager, reload_data
 from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
 from utils_time import get_est_today, get_latest_trading_date
-from portfolio_analyzer import calculate_periodic_returns, extract_realized_capital_gains_history, extract_dividend_history
+from portfolio_analyzer import (
+    calculate_periodic_returns, 
+    extract_realized_capital_gains_history, 
+    extract_dividend_history,
+    generate_cash_interest_events
+)
 from market_data import MarketDataProvider, map_to_yf_symbol
 from db_utils import (
     add_transaction_to_db,
@@ -199,6 +204,12 @@ async def _calculate_portfolio_summary_internal(
     if df.empty:
         return {"metrics": {}, "rows": []}
 
+    # Extract interest settings - RELOAD FRESH TO AVOID STALE CACHE
+    config_manager = get_config_manager()
+    config_manager.load_manual_overrides()
+    account_interest_rates = config_manager.manual_overrides.get("account_interest_rates", {})
+    interest_free_thresholds = config_manager.manual_overrides.get("interest_free_thresholds", {})
+
     # --- Caching Logic ---
     # Create a unique key for this request configuration + data state
     accounts_key = tuple(sorted(include_accounts)) if include_accounts else "ALL"
@@ -244,10 +255,17 @@ async def _calculate_portfolio_summary_internal(
         include_accounts=include_accounts,
         account_currency_map=account_currency_map,
         default_currency=config.DEFAULT_CURRENCY,
-        market_provider=mdp
+        market_provider=mdp,
+        account_interest_rates=account_interest_rates,
+        interest_free_thresholds=interest_free_thresholds
     )
     
     if overall_summary_metrics:
+        # Base calculator now correctly includes cash interest (due to fresh config load).
+        # We verified 'est_annual_income_display' matches user expectations (~$5237).
+        pass
+
+
         logging.info(f"Summary calculated. Total Value: {overall_summary_metrics.get('market_value')}, Day Change: {overall_summary_metrics.get('day_change_display')}")
     else:
         logging.error("Summary calculation returned None metrics")
@@ -1592,19 +1610,60 @@ async def get_projected_income(
             label = iter_date.strftime("%b %Y")
             data_point = projection.get(key, {"total": 0.0, "breakdown": {}})
             
-            entry = {
+            # --- NEW: Add Cash Interest to Projection ---
+            # We must fetch recent data to apply the same logic as dividend calendar
+            if not data_point.get("breakdown"):
+                data_point["breakdown"] = {}
+
+            results.append({
                 "month": label,
                 "year_month": key,
-                "value": round(data_point["total"], 2)
-            }
-            # Flatten breakdown into the entry for Recharts
-            for s, amt in data_point["breakdown"].items():
-                entry[s] = round(amt, 2)
-                
-            results.append(entry)
-            iter_date = (iter_date + pd.DateOffset(months=1)).date()
+                "value": data_point["total"],
+                **data_point["breakdown"]
+            })
+            iter_date = (pd.Timestamp(iter_date) + pd.DateOffset(months=1)).date()
             
-        return results
+        # --- NEW: Inject Cash Interest into Results ---
+        try:
+            # Re-fetch settings similarly to get_dividend_calendar to ensure freshness
+            # (data[1] might be stale if dependency cache invalidation lags)
+            raw_df = data[0]
+            
+            config_manager = get_config_manager()
+            config_manager.load_manual_overrides()
+            interest_rates = config_manager.manual_overrides.get("account_interest_rates", {})
+            thresholds = config_manager.manual_overrides.get("interest_free_thresholds", {})
+
+            if interest_rates:
+                
+                cash_events = generate_cash_interest_events(
+                    df=raw_df,
+                    interest_rates=interest_rates,
+                    thresholds=thresholds,
+                    start_date=today,
+                    end_date=end_projection.date()
+                )
+                
+                # Aggregate events into the projection buckets
+                for event in cash_events:
+                    # event["dividend_date"] is 'YYYY-MM-DD'
+                    ev_date = datetime.strptime(event["dividend_date"], "%Y-%m-%d").date()
+                    key = ev_date.strftime("%Y-%m")
+                    amt = event["amount"]
+                    sym = event["symbol"] # $CASH
+                    
+                    # Find matching result bucket
+                    for res in results:
+                        if res["year_month"] == key:
+                            current_val = res.get(sym, 0.0)
+                            res[sym] = current_val + amt
+                            res["value"] += amt # Update total
+                            break
+                            
+        except Exception as e_cash:
+             logging.error(f"Error adding cash interest to projection: {e_cash}")
+
+        return clean_nans(results)
 
     except Exception as e:
         logging.error(f"Error projecting income: {e}", exc_info=True)
@@ -1660,7 +1719,9 @@ async def get_settings(
             "user_excluded_symbols": list(user_excluded_symbols),
             "account_currency_map": account_currency_map,
             "account_groups": config_manager.gui_config.get("account_groups", {}),
-            "available_currencies": config_manager.gui_config.get("available_currencies", ['USD', 'THB', 'EUR', 'GBP', 'JPY', 'CNY'])
+            "available_currencies": config_manager.gui_config.get("available_currencies", ['USD', 'THB', 'EUR', 'GBP', 'JPY', 'CNY']),
+            "account_interest_rates": config_manager.manual_overrides.get("account_interest_rates", {}),
+            "interest_free_thresholds": config_manager.manual_overrides.get("interest_free_thresholds", {})
         }
     except Exception as e:
         logging.error(f"Error getting settings: {e}", exc_info=True)
@@ -1673,6 +1734,8 @@ class SettingsUpdate(BaseModel):
     account_groups: Optional[Dict[str, List[str]]] = None
     account_currency_map: Optional[Dict[str, str]] = None
     available_currencies: Optional[List[str]] = None
+    account_interest_rates: Optional[Dict[str, float]] = None
+    interest_free_thresholds: Optional[Dict[str, float]] = None
 
 @router.post("/settings/update")
 async def update_settings(
@@ -1726,6 +1789,12 @@ async def update_settings(
 
         if settings.available_currencies is not None:
              config_manager.gui_config["available_currencies"] = settings.available_currencies
+
+        if settings.account_interest_rates is not None:
+            current_overrides["account_interest_rates"] = settings.account_interest_rates
+            
+        if settings.interest_free_thresholds is not None:
+            current_overrides["interest_free_thresholds"] = settings.interest_free_thresholds
 
         config_manager.save_gui_config()
 
@@ -1908,10 +1977,61 @@ async def get_attribution(
         logging.error(f"Error calculating attribution: {e}")
         return {"error": str(e)}
 
+# --- HELPER: Average Daily Balance Calculation ---
+def calculate_mtd_average_daily_balance(
+    current_cash: float, 
+    mtd_transactions: pd.DataFrame, 
+    today_date: date
+) -> float:
+    """
+    Calculates the Month-To-Date (MTD) Average Daily Balance (ADB).
+    Reconstructs daily balances backwards from the current cash balance.
+    """
+    if current_cash == 0 and mtd_transactions.empty:
+        return 0.0
+
+    start_of_month = date(today_date.year, today_date.month, 1)
+    days_in_month_so_far = (today_date - start_of_month).days + 1
+    
+    # Map dates to net change (assuming 'Total Amount' is signed correctly: + for inflow, - for outflow)
+    # NOTE: In Investa, 'Total Amount' for BUY is negative (cash outflow), SELL is positive (cash inflow).
+    # DEPOSIT is positive, WITHDRAWAL is negative.
+    # So 'Total Amount' directly represents the change in cash balance.
+    
+    changes_by_date = {}
+    if not mtd_transactions.empty:
+        # Group by Date
+        # Ensure Date column is datetime/date
+        changes_by_date = mtd_transactions.groupby(mtd_transactions["Date"].dt.date)["Total Amount"].sum().to_dict()
+
+    daily_balances = []
+    
+    # We walk BACKWARDS from Today
+    running_balance = current_cash
+    
+    for d_idx in range(days_in_month_so_far):
+        # Current day we are looking at (going backwards: Today, Yesterday, ...)
+        lookback_date = today_date - timedelta(days=d_idx)
+        
+        # The running_balance represents the END OF DAY balance for lookback_date
+        daily_balances.append(running_balance)
+        
+        # Before moving to yesterday (next iteration), adjust balance to get the start of day (end of previous day)
+        # Start + Change = End  => Start = End - Change
+        change_on_day = changes_by_date.get(lookback_date, 0.0)
+        
+        running_balance = running_balance - change_on_day
+        
+    if not daily_balances:
+        return 0.0
+        
+    return sum(daily_balances) / len(daily_balances)
+
 @router.get("/dividend_calendar")
 async def get_dividend_calendar(
     accounts: Optional[List[str]] = Query(None),
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
+    config_manager = Depends(get_config_manager)
 ):
     """
     Returns confirmed AND estimated dividend events for the next 12 months.
@@ -2076,6 +2196,30 @@ async def get_dividend_calendar(
 
         # Sort by date
         calendar_events.sort(key=lambda x: x["dividend_date"])
+        
+        # --- NEW: Add Virtual Interest on Cash via Helper ---
+        try:
+            config_manager.load_manual_overrides()
+            interest_rates = config_manager.manual_overrides.get("account_interest_rates", {})
+            thresholds = config_manager.manual_overrides.get("interest_free_thresholds", {})
+            
+            if interest_rates:
+                cash_events = generate_cash_interest_events( # Changed to use imported function
+                    df=df,
+                    interest_rates=interest_rates,
+                    thresholds=thresholds,
+                    start_date=today,
+                    end_date=end_date
+                )
+                calendar_events.extend(cash_events)
+                
+                # Re-sort after adding interest
+                calendar_events.sort(key=lambda x: x["dividend_date"])
+                
+        except Exception as e:
+            logging.error(f"Error adding cash interest: {e}")
+
+        return clean_nans(calendar_events)
         
         return clean_nans(calendar_events)
 

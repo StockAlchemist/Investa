@@ -55,29 +55,29 @@ export default function DividendCalendar({ events, isLoading, currency }: Divide
 
     return (
         <div className="bg-card rounded-xl shadow-sm border border-border overflow-hidden">
-            <div className="p-6 border-b border-border flex justify-between items-center">
-                <div className="flex items-baseline gap-3">
-                    <h3 className="text-sm font-semibold text-muted-foreground">Dividend Calendar</h3>
-                    <span className="text-xs text-muted-foreground/60">
+            <div className="p-4 sm:p-6 border-b border-border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="flex items-center justify-between w-full sm:w-auto gap-3">
+                    <h3 className="text-base font-semibold text-foreground">Dividend Calendar</h3>
+                    <span className="px-2.5 py-1 rounded-md bg-secondary text-xs font-medium text-muted-foreground border border-border">
                         {filteredEvents.length} events
                     </span>
                 </div>
 
-                <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800/50 p-1 rounded-lg">
+                <div className="flex items-center gap-1 bg-secondary/50 p-1 rounded-lg w-full sm:w-auto border border-border/50">
                     <button
                         onClick={() => setViewDuration('3m')}
-                        className={`text-xs font-medium px-3 py-1.5 rounded-md transition-all ${viewDuration === '3m'
-                            ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm ring-1 ring-black/5'
-                            : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200'
+                        className={`text-xs font-medium px-4 py-2 rounded-md transition-all flex-1 sm:flex-none text-center ${viewDuration === '3m'
+                            ? 'bg-white dark:bg-zinc-800 text-foreground shadow-sm ring-1 ring-black/5 dark:ring-white/10'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
                             }`}
                     >
                         3 Months
                     </button>
                     <button
                         onClick={() => setViewDuration('1y')}
-                        className={`text-xs font-medium px-3 py-1.5 rounded-md transition-all ${viewDuration === '1y'
-                            ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm ring-1 ring-black/5'
-                            : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200'
+                        className={`text-xs font-medium px-4 py-2 rounded-md transition-all flex-1 sm:flex-none text-center ${viewDuration === '1y'
+                            ? 'bg-white dark:bg-zinc-800 text-foreground shadow-sm ring-1 ring-black/5 dark:ring-white/10'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5'
                             }`}
                     >
                         1 Year

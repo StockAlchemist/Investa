@@ -85,6 +85,67 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
             </div>
         );
     }
+
+    if (symbol.toLowerCase().startsWith('scb')) {
+        const effectiveSize = typeof size === 'number' ? size : 24;
+        return (
+            <div
+                className={cn(
+                    "overflow-hidden rounded-full bg-[#4E2A84] flex items-center justify-center",
+                    className
+                )}
+                style={{ width: effectiveSize, height: effectiveSize }}
+            >
+                <Image
+                    src="/scb-logo.png"
+                    alt="SCB"
+                    width={effectiveSize}
+                    height={effectiveSize}
+                    className="object-cover"
+                />
+            </div>
+        );
+    }
+    if (symbol.toLowerCase().startsWith('es')) {
+        const effectiveSize = typeof size === 'number' ? size : 24;
+        return (
+            <div
+                className={cn(
+                    "overflow-hidden rounded-full bg-[#ED1C24] flex items-center justify-center",
+                    className
+                )}
+                style={{ width: effectiveSize, height: effectiveSize }}
+            >
+                <Image
+                    src="/es-logo.png"
+                    alt="ES"
+                    width={effectiveSize}
+                    height={effectiveSize}
+                    className="object-contain"
+                />
+            </div>
+        );
+    }
+    if (symbol === '$CASH' || symbol.includes('Cash ($)') || symbol === 'Cash') {
+        const effectiveSize = typeof size === 'number' ? size : 24;
+        return (
+            <div
+                className={cn(
+                    "overflow-hidden rounded-full bg-white flex items-center justify-center",
+                    className
+                )}
+                style={{ width: effectiveSize, height: effectiveSize }}
+            >
+                <Image
+                    src="/cash-logo.png"
+                    alt="CASH"
+                    width={effectiveSize}
+                    height={effectiveSize}
+                    className="object-contain p-[2px]"
+                />
+            </div>
+        );
+    }
     // Brand mappings for improved domain lookup (same as in StockDetailModal originally)
     const brandMappings: Record<string, string> = {
         'GOOG': 'google.com',

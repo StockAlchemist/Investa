@@ -7,7 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { COUNTRIES, ALL_INDUSTRIES } from '../lib/constants';
 import AccountGroupManager from './AccountGroupManager';
 
-type Tab = 'overrides' | 'mapping' | 'excluded' | 'groups' | 'currencies';
+type Tab = 'overrides' | 'mapping' | 'excluded' | 'groups' | 'currencies' | 'yield';
 
 // --- Constants (Mirrored from config.py) ---
 const ASSET_TYPES = [
@@ -312,6 +312,25 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
         }
     }
 
+    const updateAccountYield = async (account: string, rate: number, threshold: number) => {
+        if (!settings) return;
+        const currentRates = { ...(settings.account_interest_rates || {}) };
+        const currentThresholds = { ...(settings.interest_free_thresholds || {}) };
+
+        currentRates[account] = rate;
+        currentThresholds[account] = threshold;
+
+        try {
+            await updateSettings({
+                account_interest_rates: currentRates,
+                interest_free_thresholds: currentThresholds
+            });
+            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+        } catch {
+            alert('Failed to update yield settings');
+        }
+    }
+
     const handleRefresh = async () => {
         try {
             const res = await triggerRefresh(refreshSecret);
@@ -358,7 +377,7 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
             {/* Symbol Settings Section */}
             <div className="bg-white dark:bg-zinc-950 shadow-sm rounded-xl overflow-hidden border border-border">
                 <div className="px-6 py-4 border-b border-border">
-                    <h2 className="text-2xl font-bold leading-none tracking-tight bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent w-fit">Symbol Settings</h2>
+                    <h2 className="text-2xl font-bold leading-tight tracking-tight bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent w-fit pb-1">Symbol Settings</h2>
                     <p className="text-sm text-muted-foreground mt-1">
                         Manage price overrides, custom symbol mappings, and exclusions.
                     </p>
@@ -411,6 +430,15 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
                     >
                         Currencies
                     </button>
+                    <button
+                        onClick={() => setActiveTab('yield')}
+                        className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors border-b-2 whitespace-nowrap ${activeTab === 'yield'
+                            ? 'border-cyan-500 text-cyan-500 dark:text-cyan-400'
+                            : 'border-transparent text-muted-foreground hover:text-foreground hover:border-black/20 dark:hover:border-white/20'
+                            }`}
+                    >
+                        Cash Yield
+                    </button>
                 </div>
 
                 <div className="p-6 min-h-[400px]">
@@ -422,6 +450,71 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
                             availableAccounts={availableAccounts}
                             onUpdate={() => queryClient.invalidateQueries({ queryKey: ['settings'] })}
                         />
+                    )}
+
+                    {/* Cash Yield Tab */}
+                    {activeTab === 'yield' && settings && (
+                        <div>
+                            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+                                Configure annual interest rates and interest-free thresholds for cash balances in each account.
+                            </p>
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full divide-y divide-border text-sm">
+                                    <thead className="bg-secondary/50 font-semibold border-b border-border">
+                                        <tr>
+                                            <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Account</th>
+                                            <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Annual Interest Rate (%)</th>
+                                            <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Interest-Free Threshold</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border">
+                                        {availableAccounts.map(account => {
+                                            const rate = settings.account_interest_rates?.[account] ?? 0;
+                                            const threshold = settings.interest_free_thresholds?.[account] ?? 0;
+
+                                            return (
+                                                <tr key={account} className="hover:bg-accent/5 transition-colors">
+                                                    <td className="px-4 py-3 whitespace-nowrap font-medium text-foreground">{account}</td>
+                                                    <td className="px-4 py-3 whitespace-nowrap">
+                                                        <div className="relative min-w-[110px] max-w-[160px]">
+                                                            <input
+                                                                type="number"
+                                                                step="0.01"
+                                                                defaultValue={rate}
+                                                                onBlur={(e) => {
+                                                                    const val = parseFloat(e.target.value);
+                                                                    if (!isNaN(val) && val !== rate) {
+                                                                        updateAccountYield(account, val, threshold);
+                                                                    }
+                                                                }}
+                                                                className={`${inputClassName} pr-7 w-full`}
+                                                            />
+                                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs pointer-events-none">%</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-3 whitespace-nowrap">
+                                                        <div className="min-w-[110px] max-w-[160px]">
+                                                            <input
+                                                                type="number"
+                                                                step="100"
+                                                                defaultValue={threshold}
+                                                                onBlur={(e) => {
+                                                                    const val = parseFloat(e.target.value);
+                                                                    if (!isNaN(val) && val !== threshold) {
+                                                                        updateAccountYield(account, rate, val);
+                                                                    }
+                                                                }}
+                                                                className={`${inputClassName} w-full`}
+                                                            />
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     )}
 
                     {/* Manual Price Overrides Tab */}

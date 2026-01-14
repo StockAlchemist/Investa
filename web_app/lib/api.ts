@@ -306,6 +306,8 @@ export interface Settings {
     account_currency_map: Record<string, string>;
     account_groups: Record<string, string[]>;
     available_currencies: string[];
+    account_interest_rates: Record<string, number>;
+    interest_free_thresholds: Record<string, number>;
 }
 
 export async function fetchSettings(): Promise<Settings> {
@@ -321,6 +323,8 @@ export interface SettingsUpdate {
     account_groups?: Record<string, string[]>;
     account_currency_map?: Record<string, string>;
     available_currencies?: string[];
+    account_interest_rates?: Record<string, number>;
+    interest_free_thresholds?: Record<string, number>;
 }
 
 export async function updateSettings(settings: SettingsUpdate): Promise<StatusResponse> {

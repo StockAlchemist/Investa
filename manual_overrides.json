@@ -126,5 +126,13 @@
         "UOBBC",
         "UOBCG",
         "ZEN:BKK"
-    ]
+    ],
+    "account_interest_rates": {
+        "IBKR Acct. 1": 3.14,
+        "IBKR Acct. 2": 3.14
+    },
+    "interest_free_thresholds": {
+        "IBKR Acct. 1": 10000.0,
+        "IBKR Acct. 2": 10000.0
+    }
 }

@@ -69,7 +69,9 @@ class ConfigManager:
         return {
             "manual_price_overrides": {},
             "user_symbol_map": config.SYMBOL_MAP_TO_YFINANCE.copy(),
-            "user_excluded_symbols": sorted(list(config.YFINANCE_EXCLUDED_SYMBOLS.copy()))
+            "user_excluded_symbols": sorted(list(config.YFINANCE_EXCLUDED_SYMBOLS.copy())),
+            "account_interest_rates": {},
+            "interest_free_thresholds": {}
         }
 
     def load_all(self):
@@ -106,6 +108,7 @@ class ConfigManager:
             logging.error(f"Error saving GUI config: {e}")
 
     def load_manual_overrides(self):
+        loaded = {}
         if os.path.exists(self.MANUAL_OVERRIDES_FILE):
             try:
                 with open(self.MANUAL_OVERRIDES_FILE, "r", encoding="utf-8") as f:
@@ -134,6 +137,20 @@ class ConfigManager:
                         }))
             except Exception as e:
                 logging.error(f"Error loading manual overrides: {e}")
+                
+            # Load Account Interest Rates & Thresholds (ensure they exist even if file didn't have them)
+            # This handles migration for existing files
+            acc_rates = loaded.get("account_interest_rates", {})
+            if isinstance(acc_rates, dict):
+                self.manual_overrides["account_interest_rates"] = {
+                    k.strip(): float(v) for k, v in acc_rates.items() if isinstance(v, (int, float))
+                }
+                
+            thresholds = loaded.get("interest_free_thresholds", {})
+            if isinstance(thresholds, dict):
+                self.manual_overrides["interest_free_thresholds"] = {
+                    k.strip(): float(v) for k, v in thresholds.items() if isinstance(v, (int, float))
+                }
 
     def save_manual_overrides(self, overrides_data: Optional[Dict[str, Any]] = None):
         if overrides_data is not None:
