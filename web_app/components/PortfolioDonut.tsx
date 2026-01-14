@@ -252,8 +252,8 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                                     {renderMainValue(false)}
                                 </span>
                                 <span className={cn(
-                                    "text-[10px] font-semibold px-1.5 py-0.5 rounded-full mt-0.5",
-                                    (metric === 'day_change' || metric === 'total_gain') ? "bg-transparent" : "bg-secondary"
+                                    "text-sm font-bold tracking-tight mt-0.5",
+                                    (metric === 'day_change' || metric === 'total_gain') ? "" : ""
                                 )}>
                                     {renderSubtitle(false)}
                                 </span>
@@ -281,7 +281,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                                         {renderMainValue(true)}
                                     </span>
                                     <span className={cn(
-                                        "text-xs sm:text-sm font-medium mt-0.5"
+                                        "text-sm font-bold tracking-tight mt-0.5"
                                     )}>
                                         {renderSubtitle(true)}
                                     </span>

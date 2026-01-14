@@ -1062,17 +1062,20 @@ def _calculate_historical_performance_internal(
     # To support "Change relative to previous point", we expand the requested start_date 
     # back by one interval. This ensures the backend has the baseline point available 
     # for normalization and the chart can render the performance during the first day.
-    if period != "all":
-        if interval in ["D", "1d"]:
-            # For daily, go back 1 day (or 3 if 1d view hits a weekend)
-            start_date = start_date - timedelta(days=1)
-        elif interval == "W":
-            start_date = start_date - timedelta(days=7)
-        elif interval in ["M", "ME"]:
-            start_date = start_date - timedelta(days=31)
-        elif interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]:
-            # For intraday, one day back is usually enough to get the previous close
-            start_date = start_date - timedelta(days=1)
+    # --- CHANGE: Always calculate full history for Daily/Weekly/Monthly ---
+    # To ensures the portfolio state (cash, cost basis) is correctly built up from the beginning,
+    # we force the CALCULATION start date to be the earliest transaction date.
+    # The graph will be sliced back to the 'display_start_date' for the UI at the end.
+    is_intraday = interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]
+    
+    if not is_intraday:
+        if not df.empty and "Date" in df.columns:
+             # Force calculation from inception
+             start_date = df["Date"].min().date()
+    elif period != "all":
+        # For intraday, we still buffer by a small amount (e.g. 1 day) 
+        # because calculating intraday from inception would be too heavy/impossible.
+        start_date = start_date - timedelta(days=1)
             
     # --- END BASELINE BUFFERING ---
 
@@ -1139,6 +1142,33 @@ def _calculate_historical_performance_internal(
             except Exception as e_filter:
                 logging.error(f"API: Baseline filtering failed: {e_filter}")
     # --- END BASELINE FILTERING ---
+
+    # --- NEW: NORMALIZATION (Re-base to 0% at baseline) ---
+    # With full history calculation, the values at the start of a 1Y period might be 1.5 (50% gain).
+    # We must normalize so the graph starts at 1.0 (0% gain).
+    # We use iloc[0] (the baseline point t-1) as the reference.
+    if daily_df is not None and not daily_df.empty and period != "all":
+        try:
+             # 1. Normalize Portfolio TWR
+             if "Portfolio Accumulated Gain" in daily_df.columns:
+                 start_val = daily_df["Portfolio Accumulated Gain"].iloc[0]
+                 if start_val != 0:
+                     daily_df["Portfolio Accumulated Gain"] = daily_df["Portfolio Accumulated Gain"] / start_val
+                 # Optimization: No need to log every time, but good for debugging if needed
+                 # logging.debug(f"API: Normalized Portfolio TWR by factor {start_val}")
+
+             # 2. Normalize Benchmarks
+             if benchmarks:
+                 for b_ticker in benchmarks:
+                     bm_col = f"{b_ticker} Accumulated Gain"
+                     if bm_col in daily_df.columns:
+                         bm_start_val = daily_df[bm_col].iloc[0]
+                         if bm_start_val != 0:
+                             daily_df[bm_col] = daily_df[bm_col] / bm_start_val
+
+        except Exception as e_norm:
+            logging.error(f"API: Normalization failed: {e_norm}")
+    # --- END NORMALIZATION ---
 
     if return_df:
         # Standardize for internal consumers (like portfolio health)
