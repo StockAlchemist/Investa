@@ -41,6 +41,7 @@ export interface PortfolioSummary {
         [key: string]: unknown;
     } | null;
     account_metrics: Record<string, unknown> | null;
+    holdings_dict?: Record<string, any>;
 }
 
 export interface Lot {

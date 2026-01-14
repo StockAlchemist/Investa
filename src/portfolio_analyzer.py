@@ -1236,238 +1236,129 @@ def _build_summary_rows(
         )
     # --- End Stock/ETF Loop ---
 
-    # --- Loop 2: Process and Aggregate Cash Holdings ---
+    # --- Loop 2: Process Cash Holdings (Per Account - No Aggregation) ---
     for currency, holding_list in cash_holdings_by_currency.items():
         if not holding_list:
             continue
 
-        # Aggregate values from all accounts for this cash currency
-        agg_qty = sum(h.get("qty", 0.0) for h in holding_list)
+        for h in holding_list:
+            current_qty = h.get("qty", 0.0)
 
-        # --- ADDED: Skip cash rows with zero quantity ---
-        if abs(agg_qty) < STOCK_QUANTITY_CLOSE_TOLERANCE:
-            logging.debug(
-                f"Skipping cash summary for currency '{currency}' as aggregated quantity is near zero ({agg_qty:.8f})."
+            # --- Skip cash rows with zero quantity ---
+            if abs(current_qty) < STOCK_QUANTITY_CLOSE_TOLERANCE:
+                continue
+            
+            account = h.get("account", "Unknown")
+            
+            realized_gain_local = h.get("realized_gain_local", 0.0)
+            dividends_local = h.get("dividends_local", 0.0)
+            commissions_local = h.get("commissions_local", 0.0)
+            current_total_cost_local = h.get("total_cost_local", 0.0)
+            total_cost_invested_local = h.get("total_cost_invested_local", 0.0)
+            cumulative_investment_local = h.get("cumulative_investment_local", 0.0)
+            total_buy_cost_local = h.get("total_buy_cost_local", 0.0)
+            total_cost_display_historical_fx_val = h.get("total_cost_display_historical_fx", np.nan)
+            
+            local_currency = currency
+            
+            # --- Format cash symbol ---
+            currency_symbol_for_display = get_currency_symbol_from_code(local_currency)
+            cash_display_symbol = f"Cash ({currency_symbol_for_display})"
+            
+            price_source = "Internal (Cash)"
+            current_price_local = 1.0
+            day_change_local = 0.0
+            day_change_pct = 0.0
+            
+            # --- Currency Conversion ---
+            fx_rate = get_conversion_rate(
+                local_currency, display_currency, current_fx_rates_vs_usd
             )
-            continue
-        # --- END ADDED ---
-
-        agg_realized_gain_local = sum(
-            h.get("realized_gain_local", 0.0) for h in holding_list
-        )
-        agg_dividends_local = sum(h.get("dividends_local", 0.0) for h in holding_list)
-        agg_commissions_local = sum(
-            h.get("commissions_local", 0.0) for h in holding_list
-        )
-        agg_total_cost_local = sum(h.get("total_cost_local", 0.0) for h in holding_list)
-        agg_total_cost_invested_local = sum(
-            h.get("total_cost_invested_local", 0.0) for h in holding_list
-        )
-        agg_cumulative_investment_local = sum(
-            h.get("cumulative_investment_local", 0.0) for h in holding_list
-        )
-        agg_total_buy_cost_local = sum(
-            h.get("total_buy_cost_local", 0.0) for h in holding_list
-        )
-        agg_total_cost_display_historical_fx = np.nansum(
-            [h.get("total_cost_display_historical_fx", np.nan) for h in holding_list]
-        )
-
-        # For cash, local currency is the currency we grouped by
-        local_currency = currency
-        account = (
-            _AGGREGATE_CASH_ACCOUNT_NAME_  # Use the special aggregate account name
-        )
-
-        # --- NEW: Format cash symbol ---
-        currency_symbol_for_display = get_currency_symbol_from_code(local_currency)
-        cash_display_symbol = f"Cash ({currency_symbol_for_display})"
-        # --- END NEW ---
-
-        # --- Now, apply the same logic as for stocks, but with aggregated values ---
-        current_qty = agg_qty
-        realized_gain_local = agg_realized_gain_local
-        dividends_local = agg_dividends_local
-        commissions_local = agg_commissions_local
-        current_total_cost_local = agg_total_cost_local
-        total_cost_invested_local = agg_total_cost_invested_local
-        cumulative_investment_local = agg_cumulative_investment_local
-        total_buy_cost_local = agg_total_buy_cost_local
-        total_cost_display_historical_fx_val = agg_total_cost_display_historical_fx
-
-        # For cash, price is always 1.0 in its local currency
-        price_source = "Internal (Cash)"
-        current_price_local = 1.0
-        day_change_local = 0.0
-        day_change_pct = 0.0
-
-        # --- Currency Conversion ---
-        fx_rate = get_conversion_rate(
-            local_currency, display_currency, current_fx_rates_vs_usd
-        )
-        if pd.isna(fx_rate):
-            logging.error(
-                f"CRITICAL ERROR: Failed FX rate {local_currency}->{display_currency} for aggregated cash."
-            )
-            has_errors = True
-            fx_rate = np.nan
-
-        if pd.isna(fx_rate):
-            logging.error(
-                f"CRITICAL ERROR: Failed FX rate {local_currency}->{display_currency} for aggregated cash."
-            )
-            has_errors = True
-            fx_rate = np.nan
-
-        # --- Dividend Yield and Income Calculations (Not applicable for cash usually, but now YES for Interest) ---
-        div_yield_on_cost_pct_display = np.nan
-        div_yield_on_current_pct_display = np.nan
-        
-        # Calculate Estimated Annual Income (Interest)
-        agg_est_annual_income_display = 0.0
-        
-        if account_interest_rates:
-            for h in holding_list:
-                h_acct = h.get("account")
-                h_qty = h.get("qty", 0.0) # Local cash
-                
-                rate = account_interest_rates.get(h_acct, 0.0)
-                thresh = interest_free_thresholds.get(h_acct, 0.0)
-                
-                if rate > 0 and h_qty > 0:
-                    # Logic: Annual Income = max(0, Cash - Threshold) * (Rate / 100)
-                    eff_bal = max(0, h_qty - thresh)
+            
+            if pd.isna(fx_rate):
+                 logging.error(f"CRITICAL ERROR: Failed FX rate {local_currency}->{display_currency} for cash in {account}.")
+                 has_errors = True
+                 fx_rate = np.nan
+                 
+            # --- Interest Calculation ---
+            div_yield_on_current_pct_display = np.nan
+            est_annual_income_display = 0.0
+            
+            if account_interest_rates:
+                rate = account_interest_rates.get(account, 0.0)
+                thresh = interest_free_thresholds.get(account, 0.0)
+                if rate > 0 and current_qty > 0:
+                    eff_bal = max(0, current_qty - thresh)
                     annual_income_local = eff_bal * (rate / 100.0)
-                    
-                    # Store per-holding income just in case
-                    h["est_annual_income_local"] = annual_income_local
+                    h["est_annual_income_local"] = annual_income_local # Update ref for verification if needed
                     
                     if pd.notna(fx_rate):
-                        agg_est_annual_income_display += (annual_income_local * fx_rate)
-        
-        est_annual_income_display = agg_est_annual_income_display
-        
-        # Calculate Yield % on Current Value
-        # Yield = Annual Income / Market Value
-        # Market Val = aggregate qty * fx_rate
-        market_value_display_for_yield = current_qty * (fx_rate if pd.notna(fx_rate) else 0.0)
-        
-        if market_value_display_for_yield > 1e-9:
-             div_yield_on_current_pct_display = (est_annual_income_display / market_value_display_for_yield) * 100.0
-        elif est_annual_income_display > 0:
-             div_yield_on_current_pct_display = float('inf')
-        else:
-             div_yield_on_current_pct_display = 0.0
+                        est_annual_income_display = annual_income_local * fx_rate
 
-        # --- Calculate Display Currency Values ---
-        market_value_local = current_qty * current_price_local
-        market_value_display = (
-            market_value_local * fx_rate if pd.notna(fx_rate) else np.nan
-        )
-        # --- Asset Change (Day Change) with FX for Cash ---
-        # Value Today = Qty * 1.0 * FX_Today
-        # Value Yesterday = Qty * 1.0 * FX_Yesterday (Prev Close)
-        day_change_value_display = 0.0
-        day_change_pct = 0.0
-        
-        if local_currency != display_currency and pd.notna(fx_rate) and pd.notna(current_qty):
-             # 1. Get FX Previous Close
-             fx_prev = np.nan
-             # Safe fallback: if local matches display (e.g. USD cash displayed in USD), fx_prev is 1.0
-             # But the 'if' condition above handles that.
-             
-             fx_prev = get_conversion_rate(
-                local_currency, display_currency, current_fx_prev_close_vs_usd
-             )
-             
-             if pd.notna(fx_prev):
-                 val_today = current_qty * 1.0 * fx_rate
-                 val_yesterday = current_qty * 1.0 * fx_prev
-                 day_change_value_display = val_today - val_yesterday
+            market_value_display_for_yield = current_qty * (fx_rate if pd.notna(fx_rate) else 0.0)
+
+            if market_value_display_for_yield > 1e-9:
+                 div_yield_on_current_pct_display = (est_annual_income_display / market_value_display_for_yield) * 100.0
+            elif est_annual_income_display > 0:
+                 div_yield_on_current_pct_display = float('inf')
+            else:
+                 div_yield_on_current_pct_display = 0.0
                  
-                 if abs(val_yesterday) > 1e-9:
-                     day_change_pct = (day_change_value_display / val_yesterday) * 100.0
-        
-        current_price_display = (
-            current_price_local * fx_rate
-            if pd.notna(current_price_local) and pd.notna(fx_rate)
-            else np.nan
-        )
-        cost_basis_display = (
-            market_value_display  # For cash, cost basis is market value
-        )
-        avg_cost_price_display = (
-            current_price_display  # For cash, avg cost is current price
-        )
-        unrealized_gain_display = 0.0
-        unrealized_gain_pct = 0.0
+            # --- Calculate Display Currency Values ---
+            market_value_local = current_qty * current_price_local
+            market_value_display = (market_value_local * fx_rate if pd.notna(fx_rate) else np.nan)
+            
+            # Asset Change logic
+            day_change_value_display = 0.0
+            day_change_pct = 0.0
+            if local_currency != display_currency and pd.notna(fx_rate) and pd.notna(current_qty):
+                 fx_prev = get_conversion_rate(local_currency, display_currency, current_fx_prev_close_vs_usd)
+                 if pd.notna(fx_prev):
+                     val_today = current_qty * 1.0 * fx_rate
+                     val_yesterday = current_qty * 1.0 * fx_prev
+                     day_change_value_display = val_today - val_yesterday
+                     if abs(val_yesterday) > 1e-9:
+                         day_change_pct = (day_change_value_display / val_yesterday) * 100.0
+            
+            current_price_display = (current_price_local * fx_rate if pd.notna(fx_rate) else np.nan)
+            cost_basis_display = market_value_display
+            avg_cost_price_display = current_price_display
+            
+            unrealized_gain_display = 0.0
+            unrealized_gain_pct = 0.0
+            
+            realized_gain_display = (realized_gain_local * fx_rate if pd.notna(fx_rate) else np.nan)
+            dividends_display = (dividends_local * fx_rate if pd.notna(fx_rate) else np.nan)
+            commissions_display = (commissions_local * fx_rate if pd.notna(fx_rate) else np.nan)
+            total_cost_invested_display = (total_cost_invested_local * fx_rate if pd.notna(fx_rate) else np.nan)
+            cumulative_investment_display = (cumulative_investment_local * fx_rate if pd.notna(fx_rate) else np.nan)
+            total_buy_cost_display = (total_buy_cost_local * fx_rate if pd.notna(fx_rate) else np.nan)
+            
+            total_gain_display = np.nan
+            if all(pd.notna(v) for v in [realized_gain_display, dividends_display, commissions_display]):
+                total_gain_display = realized_gain_display + unrealized_gain_display + dividends_display - commissions_display
+                
+            total_return_pct = np.nan
+            stock_irr = np.nan
+            div_yield_on_cost_pct_display = np.nan
+            
+            fx_gain_loss_display_holding = np.nan
+            fx_gain_loss_pct_holding = np.nan
+            
+            if local_currency == display_currency:
+                fx_gain_loss_display_holding = 0.0
+                fx_gain_loss_pct_holding = 0.0
+            elif pd.notna(cost_basis_display) and abs(cost_basis_display) > 1e-9 and pd.notna(total_cost_display_historical_fx_val):
+                 try:
+                     fx_gain_loss_display_holding = cost_basis_display - total_cost_display_historical_fx_val
+                     if abs(total_cost_display_historical_fx_val) > 1e-9:
+                         fx_gain_loss_pct_holding = (fx_gain_loss_display_holding / total_cost_display_historical_fx_val) * 100.0
+                     elif abs(fx_gain_loss_display_holding) < 1e-9:
+                         fx_gain_loss_pct_holding = 0.0
+                 except Exception as e_fx_gl_cash:
+                     logging.error(f"Error calculating FX G/L for cash {account}: {e_fx_gl_cash}")
 
-        realized_gain_display = (
-            realized_gain_local * fx_rate if pd.notna(fx_rate) else np.nan
-        )
-        dividends_display = dividends_local * fx_rate if pd.notna(fx_rate) else np.nan
-        commissions_display = (
-            commissions_local * fx_rate if pd.notna(fx_rate) else np.nan
-        )
-        total_cost_invested_display = (
-            total_cost_invested_local * fx_rate if pd.notna(fx_rate) else np.nan
-        )
-        cumulative_investment_display = (
-            cumulative_investment_local * fx_rate if pd.notna(fx_rate) else np.nan
-        )
-        total_buy_cost_display = (
-            total_buy_cost_local * fx_rate if pd.notna(fx_rate) else np.nan
-        )
-
-        total_gain_display = (
-            (
-                realized_gain_display
-                + unrealized_gain_display
-                + dividends_display
-                - commissions_display
-            )
-            if all(
-                pd.notna(v)
-                for v in [realized_gain_display, dividends_display, commissions_display]
-            )
-            else np.nan
-        )
-
-        # Total Return % for cash is not meaningful in the same way as for stocks
-        total_return_pct = np.nan
-
-        # IRR for cash is not applicable
-        stock_irr = np.nan
-
-        # FX Gain/Loss for cash
-        fx_gain_loss_display_holding = np.nan
-        fx_gain_loss_pct_holding = np.nan
-        if local_currency == display_currency:
-            fx_gain_loss_display_holding = 0.0
-            fx_gain_loss_pct_holding = 0.0
-        elif (
-            pd.notna(cost_basis_display)
-            and abs(cost_basis_display) > 1e-9
-            and pd.notna(total_cost_display_historical_fx_val)
-        ):
-            try:
-                fx_gain_loss_display_holding = (
-                    cost_basis_display - total_cost_display_historical_fx_val
-                )
-                if abs(total_cost_display_historical_fx_val) > 1e-9:
-                    fx_gain_loss_pct_holding = (
-                        fx_gain_loss_display_holding
-                        / total_cost_display_historical_fx_val
-                    ) * 100.0
-                elif abs(fx_gain_loss_display_holding) < 1e-9:
-                    fx_gain_loss_pct_holding = 0.0
-            except Exception as e_fx_gl_cash:
-                logging.error(
-                    f"Error calculating FX G/L for cash symbol {CASH_SYMBOL_CSV} ({local_currency}): {e_fx_gl_cash}"
-                )
-
-        portfolio_summary_rows.append(
-            {
+            portfolio_summary_rows.append({
                 "Account": account,
                 "Symbol": cash_display_symbol,
                 "Quantity": current_qty,
@@ -1495,9 +1386,8 @@ def _build_summary_rows(
                 f"Est. Ann. Income ({display_currency})": est_annual_income_display,
                 f"FX Gain/Loss ({display_currency})": fx_gain_loss_display_holding,
                 "FX Gain/Loss %": fx_gain_loss_pct_holding,
-                "Name": "Cash",  # Add Name for Cash
-            }
-        )
+                "Name": "Cash",
+            })
     # --- End Cash Loop ---
 
 
@@ -1665,9 +1555,14 @@ def _calculate_aggregate_metrics(
                 account_full_df, f"Total Gain ({display_currency})"
             )
             
-            # Cash is now part of the main holdings, so total_cash_display is not needed here.
-            # It can be derived from the main market value if needed, but it's not a primary metric for an account.
-            metrics_entry["total_cash_display"] = 0.0
+            # Sum market value of rows identified as Cash
+            if "Name" in account_full_df.columns:
+                acc_cash_rows = account_full_df[account_full_df["Name"] == "Cash"]
+                metrics_entry["total_cash_display"] = safe_sum(
+                    acc_cash_rows, f"Market Value ({display_currency})"
+                )
+            else:
+                metrics_entry["total_cash_display"] = 0.0
             metrics_entry["total_cost_invested_display"] = safe_sum(
                 account_full_df, f"Total Cost Invested ({display_currency})"
             )
@@ -1849,6 +1744,17 @@ def _calculate_aggregate_metrics(
     )
     # --- END ADDED ---
 
+    # --- ADDED: Overall Cash Balance ---
+    overall_cash_balance_display = 0.0
+    if "Name" in df_for_overall_summary.columns:
+        overall_cash_rows = df_for_overall_summary[
+            df_for_overall_summary["Name"] == "Cash"
+        ]
+        overall_cash_balance_display = safe_sum(
+            overall_cash_rows, mkt_val_col
+        )
+    # --- END ADDED ---
+
     if pd.notna(overall_market_value_display) and pd.notna(overall_day_change_display):
         overall_prev_close_mv_display = (
             overall_market_value_display - overall_day_change_display
@@ -1912,6 +1818,7 @@ def _calculate_aggregate_metrics(
         "fx_gain_loss_display": overall_fx_gain_loss_display,  # ADDED
         "fx_gain_loss_pct": overall_fx_gain_loss_pct,  # ADDED
         "est_annual_income_display": overall_est_annual_income_display,  # ADDED
+        "cash_balance": overall_cash_balance_display,  # ADDED
     }
     logging.debug(
         f"--- Finished Aggregating Metrics. Overall Market Value: {overall_market_value_display} ---"

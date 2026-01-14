@@ -139,7 +139,8 @@ export default function Dashboard({
 
     // Prepare data helpers
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cashBalance = (am?.['Cash'] as any)?.['total_market_value_display'] || 0;
+    // Use the correctly aggregated cash balance from overall metrics
+    const cashBalance = m?.cash_balance || 0;
     const dayGL = (m?.day_change_display as number) || 0;
     const dayGLPct = (m?.day_change_percent as number) || 0;
     const unrealizedGL = (m?.unrealized_gain as number) || 0;

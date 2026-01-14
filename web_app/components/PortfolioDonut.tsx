@@ -39,8 +39,10 @@ const SYMBOL_MAPPING: Record<string, string> = {
 
 // Custom label component
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, payload }: any) => {
-    if (percent < 0.03 || payload.name === 'Other') return null;
+const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, payload, forceAllLabels }: any) => {
+    // If forceAllLabels is true, we skip the 3% threshold check.
+    // We strictly hide 'Other' if needed, though for Accounts it usually doesn't exist.
+    if ((!forceAllLabels && percent < 0.03) || payload.name === 'Other') return null;
 
     const radius = outerRadius + 36;
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
@@ -81,9 +83,10 @@ interface SingleDonutProps {
     totalUnrealizedGain: number;
     metric: string;
     setMetric: (m: string) => void;
+    forceAllLabels?: boolean;
 }
 
-function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalCostBasis, totalUnrealizedGain, metric, setMetric }: SingleDonutProps) {
+function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalCostBasis, totalUnrealizedGain, metric, setMetric, forceAllLabels }: SingleDonutProps) {
     const [activeIndex, setActiveIndex] = useState<number | undefined>(undefined);
 
     const activeItem = activeIndex !== undefined && data[activeIndex] ? data[activeIndex] : null;
@@ -212,7 +215,8 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                             dataKey="value"
                             onMouseEnter={onPieEnter}
                             onMouseLeave={onPieLeave}
-                            label={renderCustomizedLabel}
+                            // Pass forceAllLabels through a closure or similar
+                            label={(props) => renderCustomizedLabel({ ...props, forceAllLabels })}
                             labelLine={false}
                             isAnimationActive={false}
                         >
@@ -506,6 +510,7 @@ export default function PortfolioDonut({ holdings, currency }: PortfolioDonutPro
                 totalUnrealizedGain={totalUnrealizedGain}
                 metric={accountsMetric}
                 setMetric={setAccountsMetric}
+                forceAllLabels={true}
             />
         </div>
     );
