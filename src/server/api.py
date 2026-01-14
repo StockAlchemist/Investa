@@ -33,7 +33,8 @@ from db_utils import (
 
 from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series
 import config
-from pydantic import BaseModel, Field
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, ConfigDict
 import numpy as np # Ensure numpy is imported
 import traceback
 
@@ -741,8 +742,7 @@ class TransactionInput(BaseModel):
     To_Account: Optional[str] = Field(None, alias="To Account")
     Tags: Optional[str] = None
     
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 @router.post("/transactions")
 async def create_transaction(
@@ -888,8 +888,7 @@ class HoldingTagUpdate(BaseModel):
     symbol: str
     tags: str
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 @router.post("/holdings/update_tags")
 async def update_holding_tags(
