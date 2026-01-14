@@ -71,7 +71,7 @@ export default function TabNavigation({ activeTab, onTabChange, side = 'bottom' 
                     "border border-border shadow-sm",
                     "text-xs font-semibold tracking-tight w-[60px]",
                     isOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-foreground/80 hover:text-foreground",
-                    side === 'bottom' && "flex-row py-2 px-4 justify-center w-auto min-w-0"
+                    side === 'bottom' && "flex-row py-2 px-4 justify-center w-auto min-w-0 h-[44px]"
                 )}
                 title={activeTabObj?.label}
             >

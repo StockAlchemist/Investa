@@ -463,7 +463,7 @@ export default function Home() {
 
             <div className="h-6 w-px bg-border hidden md:block" />
 
-            <div className="md:hidden flex items-center gap-1">
+            <div className="md:hidden flex items-center gap-2">
               <CurrencySelector
                 currentCurrency={currency}
                 onChange={setCurrency}
@@ -480,7 +480,6 @@ export default function Home() {
                 <LayoutConfigurator
                   visibleItems={visibleItems}
                   onVisibleItemsChange={setVisibleItems}
-                  className="mr-1"
                 />
               )}
               <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} side="bottom" />

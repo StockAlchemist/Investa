@@ -55,7 +55,7 @@ export default function LayoutConfigurator({
                     "bg-card hover:bg-accent/10",
                     "border border-border shadow-sm",
                     isOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-cyan-500",
-                    "h-[40px] px-3"
+                    "h-[44px] px-3"
                 )}
                 title="Configure Dashboard"
                 aria-label="Configure Dashboard Layout"
