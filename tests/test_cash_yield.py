@@ -1,12 +1,17 @@
 import pytest
 import pandas as pd
 from datetime import date, timedelta
-from src.config_manager import ConfigManager
+import sys
+import os
+# Ensure src is in path so internal imports like 'import config' work
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
+
+from config_manager import ConfigManager
 import os
 import json
 
 # Mocking the helper function we plan to write
-from src.server.api import calculate_mtd_average_daily_balance 
+from server.api import calculate_mtd_average_daily_balance 
 # Note: calculate_mtd_average_daily_balance doesn't exist yet, so this test will fail initially or we need to stub it here if we want to test logic isolation first.
 # For TDD, I will define a local version or mock to verify logic, then move it to src.
 
