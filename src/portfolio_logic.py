@@ -5371,6 +5371,14 @@ def _calculate_accumulated_gains_and_resample(
 
     try:
         gain_factors_portfolio = 1 + results_df["daily_return"].fillna(0.0)
+        # --- FIX: Prevent TWR "Death" by Zero ---
+        # If any daily return is -1.0 (-100%), the factor becomes 0.0.
+        # This causes the cumprod to stay 0.0 forever, ruining the graph for all future dates.
+        # We replace factors near 0.0 with 1.0 (neutral 0% return) to bridge these data gaps/errors.
+        zero_factor_mask = gain_factors_portfolio < 1e-6
+        if zero_factor_mask.any():
+             gain_factors_portfolio[zero_factor_mask] = 1.0
+        
         results_df["Portfolio Accumulated Gain Daily"] = (
             gain_factors_portfolio.cumprod()
         )
@@ -5613,34 +5621,37 @@ def _calculate_accumulated_gains_and_resample(
                 visible_dates = available_dates[visible_mask]
                 
                 if not visible_dates.empty:
-                    t0_date = visible_dates[0]
-                    # 3. Find the index of t0 in the full (unfiltered) resampled index
-                    all_indices = resampled_naive.index.sort_values()
-                    
-                    try:
-                        # Normalize entire output relative to the FIRST point in the visible range (t0).
-                        # Since api.py shifts the start_date back by one interval, t0 is effectively t-1 
-                        # relative to the user's requested period.
-                        for col in final_df_output.columns:
-                            if "Accumulated Gain" in col:
-                                # Get t0 value from the naive resampled data 
-                                # (or directly from final_df_output if we trust it's there)
-                                try:
-                                    divisor = final_df_output.loc[t0_date, col]
-                                    if pd.notnull(divisor) and divisor != 0:
-                                        final_df_output[col] = final_df_output[col] / divisor
-                                        logging.debug(f"Normalized {col} using t0 baseline ({t0_date})")
-                                except Exception as e_norm:
-                                    logging.warning(f"Normalization failed for {col} using t0: {e_norm}")
-                    except KeyError:
-                         # Fallback to t0 normalization
-                        for col in final_df_output.columns:
-                            if "Accumulated Gain" in col:
-                                first_val = final_df_output.loc[t0_date, col]
-                                if pd.notnull(first_val) and first_val != 0:
-                                    final_df_output[col] = final_df_output[col] / first_val
-                
-                # Finally slice the output
+                    # 3. Find the first valid baseline in the visible range
+                    # Instead of just taking [0], we search for the first point where value != 0 and not NaN
+                    # This prevents "flatlining" or jumps if the start date falls on a zero-value period
+                    for col in final_df_output.columns:
+                        if "Accumulated Gain" in col:
+                            # Search for first valid baseline
+                            divisor = 0.0
+                            found_valid = False
+                            
+                            # Try t0 first
+                            t0_val = final_df_output.loc[visible_dates[0], col]
+                            if pd.notnull(t0_val) and t0_val != 0:
+                                divisor = t0_val
+                                found_valid = True
+                            else:
+                                # t0 is invalid, search forwards
+                                logging.debug(f"t0 baseline invalid for {col} (val={t0_val}). Searching forward...")
+                                for d in visible_dates:
+                                    val = final_df_output.loc[d, col]
+                                    if pd.notnull(val) and val != 0:
+                                        divisor = val
+                                        found_valid = True
+                                        logging.debug(f"Found valid baseline for {col} at {d}: {divisor}")
+                                        break
+                            
+                            if found_valid and divisor != 0:
+                                final_df_output[col] = final_df_output[col] / divisor
+                            else:
+                                logging.warning(f"Could not find ANY valid normalization baseline for {col} in range.")
+
+                # finally slice the output
                 final_df_output = final_df_output.loc[pd_start:pd_end]
                 
                 logging.debug(
