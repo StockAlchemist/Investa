@@ -16,6 +16,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
     const [filterType, setFilterType] = useState('');
     const [showFilters, setShowFilters] = useState(false);
     const [visibleRows, setVisibleRows] = useState(10);
+    const [showInternalCash, setShowInternalCash] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
     const [currentTransaction, setCurrentTransaction] = useState<Transaction | null>(null);
@@ -124,7 +125,10 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
         const symbolMatch = tx.Symbol.toLowerCase().includes(symbolFilter.toLowerCase());
         const accountMatch = tx.Account.toLowerCase().includes(accountFilter.toLowerCase());
         const typeMatch = filterType ? tx.Type === filterType : true;
-        return symbolMatch && accountMatch && typeMatch;
+        const internalCashMatch = showInternalCash
+            ? true
+            : (tx.Symbol !== '$CASH' || ['deposit', 'withdrawal', 'interest', 'dividend'].includes(tx.Type.toLowerCase()));
+        return symbolMatch && accountMatch && typeMatch && internalCashMatch;
     });
 
     const visibleTransactions = filteredTransactions.slice(0, visibleRows);
@@ -205,6 +209,15 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                             className="flex-1 md:flex-none px-4 py-2 bg-secondary border border-border text-foreground rounded-md hover:bg-accent/10 transition-colors text-sm font-medium text-center"
                         >
                             Export CSV
+                        </button>
+                        <button
+                            onClick={() => setShowInternalCash(!showInternalCash)}
+                            className={`flex justify-between w-full md:w-auto px-4 py-2 gap-3 text-sm font-medium border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-all items-center ${showInternalCash
+                                ? 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20'
+                                : 'bg-secondary text-foreground border-border hover:bg-accent/10'
+                                }`}
+                        >
+                            <span>{showInternalCash ? 'Hide Internal Cash' : 'Show Internal Cash'}</span>
                         </button>
                     </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">

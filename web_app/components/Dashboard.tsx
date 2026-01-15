@@ -178,7 +178,7 @@ export default function Dashboard({
                     subValue={dayGLPct}
                     colorClass={dayGLColor}
                     valueClassName="text-2xl sm:text-3xl"
-                    subValueClassName={cn("text-base sm:text-xl", dayGLPct >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white hover:bg-rose-700 border-none")}
+                    subValueClassName={cn("text-base sm:text-xl", dayGLPct >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white dark:text-white hover:bg-rose-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
@@ -192,7 +192,7 @@ export default function Dashboard({
                     subValue={m?.total_return_pct}
                     colorClass={totalReturnColor}
                     valueClassName="text-2xl sm:text-3xl"
-                    subValueClassName={cn("text-base sm:text-xl", (m?.total_return_pct || 0) >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white hover:bg-rose-700 border-none")}
+                    subValueClassName={cn("text-base sm:text-xl", (m?.total_return_pct || 0) >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white dark:text-white hover:bg-rose-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
@@ -214,7 +214,7 @@ export default function Dashboard({
                     subValue={unrealizedGLPct}
                     colorClass={unrealizedGLColor}
                     valueClassName="text-2xl sm:text-3xl"
-                    subValueClassName={cn("text-base sm:text-xl", unrealizedGLPct >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white hover:bg-rose-700 border-none")}
+                    subValueClassName={cn("text-base sm:text-xl", unrealizedGLPct >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white dark:text-white hover:bg-rose-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
@@ -226,7 +226,7 @@ export default function Dashboard({
                     value={fxGL}
                     subValue={fxGLPct}
                     colorClass={fxGLColor}
-                    subValueClassName={cn("text-base sm:text-xl", fxGLPct >= 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white hover:bg-rose-700 border-none")}
+                    subValueClassName={cn("text-base sm:text-xl", fxGLPct >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white dark:text-white hover:bg-rose-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}

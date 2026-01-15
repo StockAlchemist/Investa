@@ -126,6 +126,26 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
             </div>
         );
     }
+    if (symbol.startsWith('SCH')) {
+        const effectiveSize = typeof size === 'number' ? size : 24;
+        return (
+            <div
+                className={cn(
+                    "overflow-hidden rounded-full flex items-center justify-center",
+                    className
+                )}
+                style={{ width: effectiveSize, height: effectiveSize }}
+            >
+                <Image
+                    src="/schwab-logo.png"
+                    alt="Schwab"
+                    width={effectiveSize}
+                    height={effectiveSize}
+                    className="object-cover"
+                />
+            </div>
+        );
+    }
     if (symbol === '$CASH' || symbol.includes('Cash ($)') || symbol === 'Cash') {
         const effectiveSize = typeof size === 'number' ? size : 24;
         return (

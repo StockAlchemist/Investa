@@ -5,7 +5,7 @@ import { exportToCSV } from '../lib/export';
 import { Holding, Lot, addToWatchlist, removeFromWatchlist, WatchlistItem, updateHoldingTags } from '../lib/api';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { AreaChart, Area, Line, ResponsiveContainer, YAxis, ReferenceLine } from 'recharts';
-import { Star, Search, X, Filter, LayoutGrid, Eye, EyeOff, Layers, Download, Building2, UserCircle, Tag, PenLine, Save } from 'lucide-react';
+import { Star, Search, X, Filter, LayoutGrid, Eye, EyeOff, Layers, Download, Building2, UserCircle, Tag, PenLine, Save, Table as TableIcon } from 'lucide-react';
 
 import { Skeleton } from './ui/skeleton';
 import { useStockModal } from '@/context/StockModalContext';
@@ -98,6 +98,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
     const columnMenuRef = useRef<HTMLDivElement>(null);
     const isLoaded = useRef(false);
     const [visibleRows, setVisibleRows] = useState(10);
+    const [mobileViewMode, setMobileViewMode] = useState<'card' | 'table'>('card');
     const { openStockDetail } = useStockModal();
 
     // --- Search & Filter State ---
@@ -586,11 +587,21 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         >
                             <Download className="w-3.5 h-3.5" />
                         </button>
+
+                        {/* Mobile View Toggle */}
+                        <button
+                            onClick={() => setMobileViewMode(current => current === 'card' ? 'table' : 'card')}
+                            className="md:hidden flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors text-foreground bg-secondary border-border hover:bg-accent/10"
+                            title={mobileViewMode === 'card' ? 'Switch to Table View' : 'Switch to Card View'}
+                        >
+                            {mobileViewMode === 'card' ? <TableIcon className="w-3.5 h-3.5" /> : <LayoutGrid className="w-3.5 h-3.5" />}
+                            <span className="sr-only">{mobileViewMode === 'card' ? 'Table' : 'Card'}</span>
+                        </button>
                     </div>
                 </div>
 
-                {/* Desktop Table View */}
-                <div className="hidden md:block overflow-x-auto">
+                {/* Desktop Table View (also visible on mobile if toggled) */}
+                <div className={`${mobileViewMode === 'table' ? 'block' : 'hidden'} md:block overflow-x-auto`}>
                     <table className="min-w-full divide-y divide-black/5 dark:divide-white/5">
                         <thead className="bg-secondary/50 font-semibold border-b border-border">
                             <tr>
@@ -778,7 +789,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                 </div>
 
                 {/* Mobile Card View */}
-                <div className="block md:hidden space-y-4 p-4">
+                <div className={`${mobileViewMode === 'card' ? 'block' : 'hidden'} md:hidden space-y-4 p-4`}>
                     {visibleHoldings.map((holding, idx) => (
                         <div
                             key={`mobile-${holding.Symbol}-${idx}`}

@@ -49,12 +49,12 @@ const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, per
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
 
     return (
-        <foreignObject x={x - 24} y={y - 24} width={48} height={48} className="overflow-visible pointer-events-none">
+        <foreignObject x={x - 22} y={y - 26} width={44} height={52} className="overflow-visible pointer-events-none">
             <div className="flex flex-col items-center justify-center w-full h-full transform transition-transform hover:scale-110">
                 <div className="shadow-sm rounded-md bg-card p-0.5">
-                    <StockIcon symbol={payload.name} size={20} />
+                    <StockIcon symbol={payload.name} size={22} />
                 </div>
-                <span className="text-[9px] font-bold mt-0.5 text-foreground drop-shadow-md bg-background/50 backdrop-blur-sm px-1.5 py-0.5 rounded-sm border border-border/50 max-w-[60px] truncate text-center">
+                <span className="text-[10px] font-bold mt-0.5 text-foreground drop-shadow-md bg-background/50 backdrop-blur-sm px-1.5 py-0.5 rounded-sm border border-border/50 max-w-[64px] truncate text-center">
                     {payload.name}
                 </span>
             </div>
@@ -123,10 +123,10 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
 
     const getFontSizeClass = (text: string) => {
         const len = text.length;
-        if (len > 18) return "text-[10px] sm:text-xs md:text-sm";
-        if (len > 14) return "text-xs sm:text-sm md:text-base";
-        if (len > 11) return "text-sm sm:text-base md:text-lg";
-        return "text-base sm:text-lg md:text-xl";
+        if (len > 18) return "text-xs sm:text-sm md:text-base";
+        if (len > 14) return "text-sm sm:text-base md:text-lg";
+        if (len > 11) return "text-base sm:text-lg md:text-xl";
+        return "text-lg sm:text-xl md:text-2xl";
     };
 
     // Helper to render main value
@@ -162,7 +162,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                 // On hover: Show Allocation %
                 // Increased font size
                 return (
-                    <span className="text-sm font-semibold text-muted-foreground">
+                    <span className="text-xl sm:text-2xl font-bold text-muted-foreground">
                         {((activeItem?.percent || 0) * 100).toFixed(1)}%
                     </span>
                 );
@@ -208,9 +208,9 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                         <Pie
                             data={data}
                             cx="50%"
-                            cy="50%"
-                            innerRadius="50%"
-                            outerRadius="70%"
+                            cy="47%"
+                            innerRadius="55%"
+                            outerRadius="77%"
                             paddingAngle={2}
                             dataKey="value"
                             onMouseEnter={onPieEnter}
@@ -234,7 +234,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                 </ResponsiveContainer>
 
                 {/* Center Content Overlay */}
-                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+                <div className="absolute left-1/2 top-[47%] -translate-x-1/2 -translate-y-1/2 pointer-events-none">
                     <div className="flex flex-col items-center justify-center pointer-events-auto">
                         {activeItem ? (
                             <>
@@ -247,12 +247,12 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                                         </div>
                                     )}
                                 </div>
-                                <span className="text-xs font-medium text-muted-foreground max-w-[80px] truncate text-center">{activeItem.name}</span>
+                                <span className="text-sm font-medium text-muted-foreground max-w-[100px] truncate text-center">{activeItem.name}</span>
                                 <span className={cn(getFontSizeClass(mainActiveText), "font-bold tracking-tight text-foreground whitespace-nowrap")}>
                                     {renderMainValue(false)}
                                 </span>
                                 <span className={cn(
-                                    "text-sm font-bold tracking-tight mt-0.5",
+                                    "text-base sm:text-lg font-bold tracking-tight mt-0.5",
                                     (metric === 'day_change' || metric === 'total_gain') ? "" : ""
                                 )}>
                                     {renderSubtitle(false)}
@@ -261,7 +261,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                         ) : (
                             <>
                                 <div className="relative group flex items-center justify-center gap-1 cursor-pointer">
-                                    <span className="text-[10px] font-semibold text-muted-foreground group-hover:text-foreground uppercase tracking-wider transition-colors">
+                                    <span className="text-xs sm:text-sm font-semibold text-muted-foreground group-hover:text-foreground uppercase tracking-wider transition-colors">
                                         {METRICS.find(m => m.id === metric)?.label}
                                     </span>
                                     <ChevronDown className="w-2.5 h-2.5 text-muted-foreground group-hover:text-foreground transition-colors" />
@@ -281,7 +281,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                                         {renderMainValue(true)}
                                     </span>
                                     <span className={cn(
-                                        "text-sm font-bold tracking-tight mt-0.5"
+                                        "text-base sm:text-lg font-bold tracking-tight mt-0.5"
                                     )}>
                                         {renderSubtitle(true)}
                                     </span>
