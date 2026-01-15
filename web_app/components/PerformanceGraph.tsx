@@ -501,7 +501,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
     return (
         <div className="bg-card rounded-xl p-4 shadow-sm border border-border mb-6 overflow-visible">
             <div className="mb-6">
-                <div className="flex flex-col gap-1 mb-4">
+                <div className="flex flex-col items-start gap-1 md:flex-row md:justify-between md:items-center md:gap-0 mb-4">
                     <h3 className="text-lg font-medium text-muted-foreground">
                         {view === 'return' ? 'Time-Weighted Return' : view === 'value' ? 'Portfolio Value' : 'Drawdown'}
                     </h3>
