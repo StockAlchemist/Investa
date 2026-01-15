@@ -456,8 +456,16 @@ def calculate_portfolio_summary(
                     preceding_tx_mask = pd.concat(masks_to_combine, axis=1).any(axis=1)
 
             # 4. Final filter is the union of all three masks
+            # --- MODIFIED: Ensure SPLIT transactions are always included ---
+            # Splits are corporate actions that affect the stock globally, regardless of which account recorded it.
+            # If we exclude the split transaction because it's in a different account (e.g. Sharebuilder vs E*TRADE),
+            # the holdings calculation will be incorrect (missing the quantity adjustment).
+            split_mask = (
+                all_transactions_df_cleaned["Type"].astype(str).str.lower().isin(["split", "stock split"])
+            )
+            
             final_combined_mask = (
-                from_account_mask | to_account_mask | preceding_tx_mask
+                from_account_mask | to_account_mask | preceding_tx_mask | split_mask
             )
 
             transactions_df_filtered = all_transactions_df_cleaned[

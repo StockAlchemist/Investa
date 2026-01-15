@@ -476,6 +476,14 @@ def _process_transactions_to_holdings(
     
     comms = pd.to_numeric(df['Commission'], errors='coerce').fillna(0.0).astype(np.float64).values
     split_ratios = pd.to_numeric(df['Split Ratio'], errors='coerce').fillna(0.0).astype(np.float64).values
+
+    # --- Fallback: Use Quantity as Split Ratio if Split Ratio is 0 ---
+    # Some importers (e.g. Sharebuilder/E*TRADE auto-imports) put the ratio in the Quantity column
+    # while leaving the Split Ratio column empty/zero.
+    mask_split_no_ratio = (type_ids == TYPE_SPLIT) & (np.abs(split_ratios) <= 1e-9) & (np.abs(qtys) > 1e-9)
+    if np.any(mask_split_no_ratio):
+        split_ratios[mask_split_no_ratio] = qtys[mask_split_no_ratio]
+        # logging.debug(f"Used Quantity as Split Ratio for {np.sum(mask_split_no_ratio)} transactions.")
     
     to_acc_ids = np.full(n, -1, dtype=np.int64)
     if 'To Account' in df.columns:
