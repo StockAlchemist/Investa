@@ -57,9 +57,17 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                 let fromAcc = initialData.Account || '';
                 let toAcc = initialData["To Account"] || '';
 
+                // Normalize Type casing to match the select options (e.g. 'buy' -> 'Buy')
+                let initType = initialData.Type || 'Buy';
+                const matchedType = TRANSACTION_TYPES.find(t => t.toLowerCase() === initType.toLowerCase());
+                if (matchedType) {
+                    initType = matchedType;
+                }
+
                 setFormData({
                     ...initialData,
                     Date: formattedDate,
+                    Type: initType,
                     Quantity: initialData.Quantity || '',
                     "Price/Share": initialData["Price/Share"] || '',
                     Commission: initialData.Commission || '',
