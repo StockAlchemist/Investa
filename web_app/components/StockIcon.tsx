@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
+import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils';
 
 interface StockIconProps {
@@ -14,6 +15,12 @@ interface StockIconProps {
 export default function StockIcon({ symbol, size = 24, className, domain }: StockIconProps) {
     const [error, setError] = useState(false);
     const [sourceIndex, setSourceIndex] = useState(0);
+    const { resolvedTheme } = useTheme();
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     // Reset error state when symbol changes
     useEffect(() => {
@@ -183,7 +190,8 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
         'PLTR': '/pltr.png',
         'ASML': '/asml.png',
         'UNH': '/unh.png',
-        'AAPL': '/aapl.png',
+        'AAPL': (mounted && resolvedTheme === 'dark') ? '/aapl-dark.png' : '/aapl.png',
+        'SPGI': (mounted && resolvedTheme === 'dark') ? '/spgi-logo-dark.png' : '/spgi-logo.png',
     };
 
     const sources = [
@@ -238,11 +246,14 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
         );
     }
 
+    const isDarkIcon = ['SPGI'].includes(symbol) && mounted && resolvedTheme === 'dark';
+    const bgColor = isDarkIcon ? 'bg-black' : 'bg-white';
+
     return (
         <img
             src={currentSource}
             alt={symbol}
-            className={cn("rounded-md object-contain bg-white shrink-0", className)}
+            className={cn("rounded-md object-contain shrink-0", bgColor, className)}
             style={sizeStyle}
             onError={handleError}
             loading="lazy"
