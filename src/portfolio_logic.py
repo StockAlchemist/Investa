@@ -464,8 +464,15 @@ def calculate_portfolio_summary(
                 all_transactions_df_cleaned["Type"].astype(str).str.lower().isin(["split", "stock split"])
             )
             
+            # --- MODIFIED: Ensure "All Accounts" transactions are always included ---
+            # This is critical because some global actions (like splits, or manual adjustments)
+            # are recorded under "All Accounts" and must not be filtered out when viewing a specific account.
+            all_accounts_mask = (
+                all_transactions_df_cleaned["Account"].astype(str).str.lower() == "all accounts"
+            )
+            
             final_combined_mask = (
-                from_account_mask | to_account_mask | preceding_tx_mask | split_mask
+                from_account_mask | to_account_mask | preceding_tx_mask | split_mask | all_accounts_mask
             )
 
             transactions_df_filtered = all_transactions_df_cleaned[
@@ -3764,7 +3771,19 @@ def _prepare_historical_inputs(
             if masks_to_combine:
                 preceding_tx_mask = pd.concat(masks_to_combine, axis=1).any(axis=1)
 
-        final_combined_mask = from_account_mask | to_account_mask | preceding_tx_mask
+        # --- MODIFIED: Ensure SPLIT transactions and "All Accounts" are always included ---
+        # Splits are corporate actions that affect the stock globally.
+        # "All Accounts" acts as a catch-all for global or manual adjustment transactions.
+        split_mask = (
+            all_transactions_df["Type"].astype(str).str.lower().isin(["split", "stock split"])
+        )
+        all_accounts_mask = (
+            _normalize_series(all_transactions_df["Account"]) == "ALL ACCOUNTS"
+        )
+
+        final_combined_mask = (
+            from_account_mask | to_account_mask | preceding_tx_mask | split_mask | all_accounts_mask
+        )
         transactions_df_included = all_transactions_df[final_combined_mask].copy()
 
         included_accounts_list_sorted = sorted(valid_include_accounts)
@@ -5993,9 +6012,6 @@ def calculate_historical_performance(
             logging.error(f"Failed to fetch/merge intraday data: {e_intra}")
 
     
-    with open("/tmp/investa_debug.log", "a") as f_log:
-        f_log.write(f"Fetch failed: {fetch_failed_prices}\n")
-        f_log.write(f"Adjusted keys returned: {list(historical_prices_yf_adjusted.keys())}\n")
     
     # If intraday interval requested, fetch intraday data for the RECENT/ACTIVE range
     if interval in ["1h", "1m", "2m", "5m", "15m", "30m", "60m", "90m"]:
@@ -6017,10 +6033,6 @@ def calculate_historical_performance(
         # Use a case-insensitive lookup for matching symbols
         adj_prices_upper = {k.upper(): k for k in historical_prices_yf_adjusted.keys()}
         
-        with open("/tmp/investa_debug.log", "a") as f_log:
-            f_log.write(f"\n--- NEW SYMBOL MERGE (interval={interval}) ---\n")
-            f_log.write(f"Adjusted keys: {list(historical_prices_yf_adjusted.keys())}\n")
-            f_log.write(f"Intraday keys: {list(intraday_prices.keys())}\n")
 
         for s, h_df in intraday_prices.items():
             s_upper = s.upper()
@@ -6039,17 +6051,8 @@ def calculate_historical_performance(
                     combined = pd.concat([d_df[d_df.index < h_start_ts], h_df_proc]).sort_index()
                     final_df = combined[~combined.index.duplicated(keep='last')]
                     historical_prices_yf_adjusted[original_key] = final_df
-                    with open("/tmp/investa_debug.log", "a") as f_log:
-                        last_ts_str = str(final_df.index.max()) if not final_df.empty else "None"
-                        first_ts_str = str(final_df.index.min()) if not final_df.empty else "None"
-                        f_log.write(f"MERGED {original_key}: {len(h_df_proc)} points. Total {len(final_df)} points. Range: {first_ts_str} to {last_ts_str}\n")
-                else:
-                    with open("/tmp/investa_debug.log", "a") as f_log:
-                        f_log.write(f"EMPTY intraday for {original_key}\n")
             else:
                 historical_prices_yf_adjusted[s] = h_df
-                with open("/tmp/investa_debug.log", "a") as f_log:
-                    f_log.write(f"NEW ENTRY for {s}: {len(h_df)} points.\n")
 
     logging.info(
         f"Fetching/Loading historical FX rates ({len(fx_pairs_for_api_yf)} pairs)..."

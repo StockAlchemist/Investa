@@ -75,6 +75,12 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         setIsInitialized(true);
     }, []);
 
+    // Client-side header to prevent hydration mismatch with Recharts
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
     // Persist state to localStorage
     useEffect(() => {
         if (isInitialized) {
@@ -304,13 +310,18 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         return undefined;
     }, [xDomain, period]);
 
-    if (!chartedData || chartedData.length === 0) {
+    if (!mounted || !chartedData || chartedData.length === 0) {
         return (
             <div
                 className="rounded-xl p-6 shadow-sm border border-border h-80 flex items-center justify-center text-muted-foreground"
                 style={{ backgroundColor: 'var(--menu-solid)' }}
             >
-                {loading ? 'Loading...' : 'No historical data available.'}
+                {!mounted || loading ? (
+                    <div className="flex flex-col items-center gap-2">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                        <span>Loading chart...</span>
+                    </div>
+                ) : 'No historical data available.'}
             </div>
         );
     }

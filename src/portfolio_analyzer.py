@@ -178,7 +178,8 @@ def _process_numba_core(
 
         # --- SPLIT ---
         if typ == TYPE_SPLIT:
-            if split > 0:
+            # Case 1: Standard Split Ratio (Positive) -> Applies GLOBAL to all accounts
+            if split > 1e-9:
                 # Iterate all accounts for this symbol
                 for a_idx in range(num_accs):
                     h_data = state[sym, a_idx]
@@ -213,6 +214,48 @@ def _process_numba_core(
                     current_state[4] += fee_cost
                     current_state[7] += fee_cost
                     current_state[8] += fee_cost
+            
+            # Case 2: Target Quantity (Negative Encoded) -> Applies LOCAL to specific account only
+            elif split < -1e-9:
+                target_qty = abs(split)
+                # current_state is state[sym, acc]
+                if current_state[11] != -1.0:
+                    old_qty = current_state[0]
+                    # Only apply if we hold something, to calculate implied ratio
+                    if abs(old_qty) > 1e-9:
+                        # Calculate implied ratio for this specific account
+                        ratio = target_qty / old_qty
+                        
+                        # Apply ratio logic LOCALLY
+                        current_state[0] = target_qty 
+                        
+                        # Short logic
+                        # (Assume target qty is absolute hold count, logic might be complex for short)
+                        # For simplicity, scale short original qty by ratio too
+                        if abs(current_state[6]) > 1e-9:
+                             current_state[6] *= ratio
+                        
+                        # Note: We do NOT apply this to other accounts.
+                        # This safeguards against "E*TRADE reports 700 shares" blowing up "Sharebuilder" account
+                        
+                    elif abs(old_qty) < 1e-9 and target_qty > 0:
+                        # We held 0, now we hold target_qty? 
+                        # That's a "Set Quantity" or "Add" event, not really a split.
+                        # But strictly for splits usually we hold shares already.
+                        # If we had 0, and now have 700, implied ratio is infinite.
+                        # Treat as just setting quantity, but cost basis remains 0?
+                        # Probably best to leave as 0 or set as is. 
+                        # If it's a split, usually cost basis propagates.
+                        # Let's trust the logic that splits happen on existing holdings.
+                        pass
+                
+                 # Apply split fee
+                if comm != 0:
+                    fee_cost = abs(comm)
+                    current_state[4] += fee_cost
+                    current_state[7] += fee_cost
+                    current_state[8] += fee_cost
+                    
             continue
 
         # --- TRANSFER ---
@@ -445,9 +488,53 @@ def _process_transactions_to_holdings(
     num_accs = len(all_accounts)
     # --- Prepare Data for Numba ---
     df = transactions_df.copy()
+    
+    # --- Normalize Columns EARLY ---
+    # Critical: Normalize strings BEFORE deduplication to ensure matching works
     df['Symbol'] = df['Symbol'].astype(str).str.strip()
     df['Account'] = df['Account'].astype(str).str.strip()
     df['Type'] = df['Type'].astype(str).str.strip().str.lower()
+
+    # --- Deduplicate Split Transactions (Robustness Fix) ---
+    # Splits currently apply to ALL accounts in the Numba loop. 
+    # Must ensure we don't process multiple splits for the same symbol/date (e.g. one from 'All Accounts' and one from 'E*TRADE').
+    is_split_mask = df['Type'].isin(['split', 'stock split'])
+    
+    if is_split_mask.any():
+        # logging.debug("Deduplicating split transactions...")
+        splits_df = df[is_split_mask].copy()
+        other_df = df[~is_split_mask]
+        
+        # Ensure we can sort. Convert Date to datetime if not already (it should be)
+        if not pd.api.types.is_datetime64_any_dtype(splits_df['Date']):
+            splits_df['Date'] = pd.to_datetime(splits_df['Date'], errors='coerce')
+
+        # Priority: 
+        # 1. 'All Accounts' (assumed manual override/correct) -> Rank 0
+        # 2. Others -> Rank 1
+        splits_df['__split_priority'] = np.where(
+            splits_df['Account'].str.lower() == 'all accounts', 0, 1
+        )
+        
+        # --- Fuzzy Deduplication (Month-Year) ---
+        # Create a Year-Month integer for grouping (Safe for all environments)
+        # Year * 100 + Month (e.g. 201406)
+        splits_df['__split_ym'] = (splits_df['Date'].dt.year * 100 + splits_df['Date'].dt.month).astype(np.int64)
+        
+        # Sort by Date, Symbol, Priority
+        # We want to keep the highest priority (lowest rank) for each symbol/month
+        splits_df.sort_values(by=['Date', 'Symbol', '__split_priority'], inplace=True)
+        
+        # Drop duplicates based on Symbol and Year-Month
+        deduped_splits = splits_df.drop_duplicates(subset=['__split_ym', 'Symbol'], keep='first').drop(columns=['__split_priority', '__split_ym'])
+        
+        # Recombine and sort by date/index to maintain chronology
+        df = pd.concat([other_df, deduped_splits], ignore_index=True)
+        # Ensure 'Date' and 'original_index' are used for sorting
+        df.sort_values(by=['Date', 'original_index'], inplace=True)
+        # Force consolidation and new index to avoid Numba memory view issues
+        df = df.reset_index(drop=True).copy()
+        # logging.debug(f"Transactions reduced from {len(transactions_df)} to {len(df)} after split deduplication.")
     
     sym_ids = df['Symbol'].map(sym_map).fillna(-1).astype(np.int64).values
     acc_ids = df['Account'].map(acc_map).fillna(-1).astype(np.int64).values
@@ -482,8 +569,19 @@ def _process_transactions_to_holdings(
     # while leaving the Split Ratio column empty/zero.
     mask_split_no_ratio = (type_ids == TYPE_SPLIT) & (np.abs(split_ratios) <= 1e-9) & (np.abs(qtys) > 1e-9)
     if np.any(mask_split_no_ratio):
-        split_ratios[mask_split_no_ratio] = qtys[mask_split_no_ratio]
-        # logging.debug(f"Used Quantity as Split Ratio for {np.sum(mask_split_no_ratio)} transactions.")
+        # logging.debug(f"Processing {np.sum(mask_split_no_ratio)} splits with missing ratio...")
+        
+        # Case A: Quantity is "Reasonable Ratio" (<= 20). Use as Ratio.
+        mask_ratio_fallback = mask_split_no_ratio & (np.abs(qtys) <= 20.0)
+        split_ratios[mask_ratio_fallback] = qtys[mask_ratio_fallback]
+        
+        # Case B: Quantity is "Target Total Quantity" (> 20). Encode as NEGATIVE value.
+        # This signals the Numba loop to use "Target Quantity" logic instead of "Ratio" logic.
+        mask_target_qty = mask_split_no_ratio & (np.abs(qtys) > 20.0)
+        split_ratios[mask_target_qty] = -np.abs(qtys[mask_target_qty])
+        
+        # if np.any(mask_target_qty):
+        #     logging.debug(f"Identified {np.sum(mask_target_qty)} splits where Quantity (>20) is treated as Target Total Quantity.")
     
     to_acc_ids = np.full(n, -1, dtype=np.int64)
     if 'To Account' in df.columns:

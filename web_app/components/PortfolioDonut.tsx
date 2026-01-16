@@ -44,17 +44,18 @@ const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, per
     // We strictly hide 'Other' if needed, though for Accounts it usually doesn't exist.
     if ((!forceAllLabels && percent < 0.03) || payload.name === 'Other') return null;
 
-    const radius = outerRadius + 36;
+    // Push labels further out to avoid crowding
+    const radius = outerRadius + 42;
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
 
     return (
-        <foreignObject x={x - 22} y={y - 26} width={44} height={52} className="overflow-visible pointer-events-none">
+        <foreignObject x={x - 24} y={y - 28} width={48} height={56} className="overflow-visible pointer-events-none">
             <div className="flex flex-col items-center justify-center w-full h-full transform transition-transform hover:scale-110">
                 <div className="shadow-sm rounded-md bg-card p-0.5">
-                    <StockIcon symbol={payload.name} size={22} />
+                    <StockIcon symbol={payload.name} size={24} />
                 </div>
-                <span className="text-[10px] font-bold mt-0.5 text-foreground drop-shadow-md bg-background/50 backdrop-blur-sm px-1.5 py-0.5 rounded-sm border border-border/50 max-w-[64px] truncate text-center">
+                <span className="text-[10px] font-bold mt-0.5 text-foreground drop-shadow-md bg-background/50 backdrop-blur-sm px-1.5 py-0.5 rounded-sm border border-border/50 max-w-[70px] truncate text-center">
                     {payload.name}
                 </span>
             </div>
@@ -209,8 +210,8 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                             data={data}
                             cx="50%"
                             cy="47%"
-                            innerRadius="55%"
-                            outerRadius="77%"
+                            innerRadius="50%"
+                            outerRadius="70%"
                             paddingAngle={2}
                             dataKey="value"
                             onMouseEnter={onPieEnter}
