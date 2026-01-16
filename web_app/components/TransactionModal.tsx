@@ -268,7 +268,8 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
             if (!fromAcc || !toAcc) {
                 setError("From and To accounts are required for a Transfer."); setLoading(false); return;
             }
-        } else {
+        } else if (txType !== 'split' && txType !== 'stock split') {
+            // Account is required for everything EXCEPT splits/transfers
             if (!acc) {
                 setError("Account cannot be empty."); setLoading(false); return;
             }
@@ -326,7 +327,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                 "Commission": isNaN(comm) ? 0 : comm,
                 "Split Ratio": Number(formData["Split Ratio"] || 0),
                 "Total Amount": signedAmount,
-                "Account": txType === 'transfer' ? fromAcc : acc,
+                "Account": (txType === 'split' || txType === 'stock split') ? 'All Accounts' : (txType === 'transfer' ? fromAcc : acc),
                 "To Account": txType === 'transfer' ? toAcc : ''
             };
 
@@ -451,20 +452,21 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                             </div>
                         ) : (
                             <div className="relative">
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Account *</label>
+                                <label className={`block text-sm font-medium mb-1 ${isSplit ? 'text-gray-400' : 'text-gray-700 dark:text-gray-300'}`}>Account *</label>
                                 <input
                                     type="text"
                                     name="Account"
-                                    value={formData.Account}
+                                    value={isSplit ? 'All Accounts' : formData.Account}
                                     onChange={handleChange}
                                     onFocus={() => setActiveSuggestionField('Account')}
                                     onBlur={() => setTimeout(() => setActiveSuggestionField(null), 100)}
                                     placeholder="e.g. Brokerage"
                                     autoComplete="off"
-                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                                    required
+                                    disabled={isSplit}
+                                    className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 ${isSplit ? 'opacity-50 cursor-not-allowed italic' : ''}`}
+                                    required={!isSplit}
                                 />
-                                {renderSuggestions('Account', existingAccounts)}
+                                {!isSplit && renderSuggestions('Account', existingAccounts)}
                             </div>
                         )}
 

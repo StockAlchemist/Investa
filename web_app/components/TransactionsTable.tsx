@@ -164,6 +164,24 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
     const existingAccounts = Array.from(uniqueAccounts).sort();
     const existingSymbols = Array.from(uniqueSymbols).sort();
 
+    const getTransactionTypeStyle = (type: string) => {
+        const t = type.toUpperCase();
+        if (['BUY', 'DEPOSIT'].includes(t)) {
+            return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20';
+        }
+        if (['SELL', 'WITHDRAWAL'].includes(t)) {
+            return 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20';
+        }
+        if (['DIVIDEND', 'INTEREST'].includes(t)) {
+            return 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20';
+        }
+        return 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700';
+    };
+
+    const formatTransactionType = (type: string) => {
+        return type.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
+    };
+
     return (
         <div className="space-y-4">
 
@@ -269,7 +287,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                             >
                                 <option value="">All Types</option>
                                 {existingTypes.map(type => (
-                                    <option key={type} value={type}>{type}</option>
+                                    <option key={type} value={type}>{formatTransactionType(type)}</option>
                                 ))}
                             </select>
                             <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-muted-foreground">
@@ -327,11 +345,8 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                                     </td>
                                     <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">{tx.Date ? tx.Date.split('T')[0].split(' ')[0] : '-'}</td>
                                     <td className="px-4 py-3 text-sm text-muted-foreground">
-                                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${tx.Type.toUpperCase() === 'BUY' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                                            tx.Type.toUpperCase() === 'SELL' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
-                                                'bg-white/10 text-muted-foreground border border-white/10'
-                                            }`}>
-                                            {tx.Type}
+                                        <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${getTransactionTypeStyle(tx.Type)}`}>
+                                            {formatTransactionType(tx.Type)}
                                         </span>
                                     </td>
                                     <td className="px-4 py-3 whitespace-nowrap">
@@ -394,11 +409,8 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                     <div key={`mobile-tx-${index}`} className="bg-card rounded-lg border border-border shadow-sm p-4">
                         <div className="flex justify-between items-start mb-2">
                             <div>
-                                <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${tx.Type.toUpperCase() === 'BUY' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
-                                    tx.Type.toUpperCase() === 'SELL' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' :
-                                        'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                                    }`}>
-                                    {tx.Type}
+                                <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${getTransactionTypeStyle(tx.Type)}`}>
+                                    {formatTransactionType(tx.Type)}
                                 </span>
                                 <h3 className="text-lg font-bold text-foreground mt-1">
                                     <StockTicker symbol={tx.Symbol} currency={tx["Local Currency"]} />
