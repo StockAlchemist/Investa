@@ -164,7 +164,7 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
                 style={{ width: effectiveSize, height: effectiveSize }}
             >
                 <Image
-                    src="/cash-logo.png"
+                    src="/cash_icon.png"
                     alt="CASH"
                     width={effectiveSize}
                     height={effectiveSize}
