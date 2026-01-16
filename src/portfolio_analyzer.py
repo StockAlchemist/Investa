@@ -801,55 +801,61 @@ def _build_summary_rows(
                     )
 
         if pd.isna(current_price_local):
-            price_source += (
-                " - No Manual" if "Manual Fallback" not in price_source else ""
-            )
-            try:
-                fallback_tx = transactions_df[
-                    (transactions_df["Symbol"] == symbol)
-                    & (transactions_df["Account"] == account)
-                    & (transactions_df["Price/Share"].notna())
-                    & (
-                        pd.to_numeric(transactions_df["Price/Share"], errors="coerce")
-                        > 1e-9
-                    )
-                    & (transactions_df["Date"].dt.date <= report_date)
-                ].copy()
-                if not fallback_tx.empty:
-                    fallback_tx.sort_values(
-                        by=["Date", "original_index"], inplace=True, ascending=True
-                    )
-                    last_tx_row = fallback_tx.iloc[-1]
-                    last_tx_price = pd.to_numeric(
-                        last_tx_row["Price/Share"], errors="coerce"
-                    )
-                    last_tx_date = last_tx_row["Date"].date()
-                    if pd.notna(last_tx_price) and last_tx_price > 1e-9:
-                        current_price_local = float(last_tx_price)
-                        price_source += (
-                            f" - Last TX ({last_tx_price:.2f}@{last_tx_date})"
+            # If quantity is zero, we don't strictly need a price for valuation.
+            # We can skip the noisy fallback/warning and just default to 0.
+            if abs(current_qty) < 1e-9:
+                 current_price_local = 0.0
+                 price_source += " - Qty 0 (Skip)"
+            else:
+                price_source += (
+                    " - No Manual" if "Manual Fallback" not in price_source else ""
+                )
+                try:
+                    fallback_tx = transactions_df[
+                        (transactions_df["Symbol"] == symbol)
+                        & (transactions_df["Account"] == account)
+                        & (transactions_df["Price/Share"].notna())
+                        & (
+                            pd.to_numeric(transactions_df["Price/Share"], errors="coerce")
+                            > 1e-9
                         )
-                        logging.debug(
-                            f"Info: Used Last TX fallback price {current_price_local} for {symbol}/{account}"
+                        & (transactions_df["Date"].dt.date <= report_date)
+                    ].copy()
+                    if not fallback_tx.empty:
+                        fallback_tx.sort_values(
+                            by=["Date", "original_index"], inplace=True, ascending=True
                         )
+                        last_tx_row = fallback_tx.iloc[-1]
+                        last_tx_price = pd.to_numeric(
+                            last_tx_row["Price/Share"], errors="coerce"
+                        )
+                        last_tx_date = last_tx_row["Date"].date()
+                        if pd.notna(last_tx_price) and last_tx_price > 1e-9:
+                            current_price_local = float(last_tx_price)
+                            price_source += (
+                                f" - Last TX ({last_tx_price:.2f}@{last_tx_date})"
+                            )
+                            logging.debug(
+                                f"Info: Used Last TX fallback price {current_price_local} for {symbol}/{account}"
+                            )
+                        else:
+                            logging.warning(
+                                f"Warn: Fallback TX found for {symbol}/{account} but price invalid ({last_tx_price}). Using 0."
+                            )
+                            price_source += " - Last TX Invalid/Zero"
+                            current_price_local = 0.0
                     else:
                         logging.warning(
-                            f"Warn: Fallback TX found for {symbol}/{account} but price invalid ({last_tx_price}). Using 0."
+                            f"Warn: No valid prior TX found for fallback for {symbol}/{account}. Using 0."
                         )
-                        price_source += " - Last TX Invalid/Zero"
+                        price_source += " - No Last TX"
                         current_price_local = 0.0
-                else:
-                    logging.warning(
-                        f"Warn: No valid prior TX found for fallback for {symbol}/{account}. Using 0."
+                except Exception as e_fallback:
+                    logging.error(
+                        f"ERROR during last TX fallback for {symbol}/{account}: {e_fallback}"
                     )
-                    price_source += " - No Last TX"
+                    price_source += " - Fallback Error"
                     current_price_local = 0.0
-            except Exception as e_fallback:
-                logging.error(
-                    f"ERROR during last TX fallback for {symbol}/{account}: {e_fallback}"
-                )
-                price_source += " - Fallback Error"
-                current_price_local = 0.0
             day_change_local = np.nan
             day_change_pct = np.nan
 
