@@ -29,32 +29,49 @@ import HoldingsTable from '@/components/HoldingsTable';
 import AccountSelector from '@/components/AccountSelector';
 import CurrencySelector from '@/components/CurrencySelector';
 import TabNavigation from '@/components/TabNavigation';
-import TransactionsTable from '@/components/TransactionsTable';
 import PerformanceGraph from '@/components/PerformanceGraph';
-import Allocation from '@/components/Allocation';
-import AssetChange from '@/components/AssetChange';
-import CapitalGains from '@/components/CapitalGains';
-import DividendComponent from '@/components/Dividend';
-import RiskMetricsComponent from '@/components/RiskMetrics';
-import AttributionChart from '@/components/AttributionChart';
-import DividendCalendar from '@/components/DividendCalendar';
-import { IncomeProjector } from '@/components/IncomeProjector';
-import ThemeToggle from '@/components/ThemeToggle';
-import Settings from '@/components/Settings';
-import CommandPalette from '@/components/CommandPalette';
-import { CorrelationMatrix } from '@/components/CorrelationMatrix';
-import { PortfolioHealthComponent } from '@/components/PortfolioHealth';
-import Watchlist from '@/components/Watchlist';
+import dynamic from 'next/dynamic';
+
+const TransactionsTable = dynamic(() => import('@/components/TransactionsTable'));
+const Allocation = dynamic(() => import('@/components/Allocation'));
+const AssetChange = dynamic(() => import('@/components/AssetChange'));
+const CapitalGains = dynamic(() => import('@/components/CapitalGains'));
+const DividendComponent = dynamic(() => import('@/components/Dividend'));
+const DividendCalendar = dynamic(() => import('@/components/DividendCalendar'));
+const IncomeProjector = dynamic(() => import('@/components/IncomeProjector').then(mod => mod.IncomeProjector));
+const Settings = dynamic(() => import('@/components/Settings'));
+const CommandPalette = dynamic(() => import('@/components/CommandPalette'));
+const CorrelationMatrix = dynamic(() => import('@/components/CorrelationMatrix').then(mod => mod.CorrelationMatrix));
+const PortfolioHealthComponent = dynamic(() => import('@/components/PortfolioHealth').then(mod => mod.PortfolioHealthComponent));
+const Watchlist = dynamic(() => import('@/components/Watchlist'));
+
 
 import { useTheme } from 'next-themes';
 import { Home as HomeIcon, BarChart3, Settings as SettingsIcon, Moon, Sun } from 'lucide-react';
-import LayoutConfigurator from '@/components/LayoutConfigurator';
+const LayoutConfigurator = dynamic(() => import('@/components/LayoutConfigurator'));
+
+// Static import for ThemeToggle since it's in the sidebar always visible? OR lazy load it? 
+// It's small, let's lazy load if it's not critical. But wait, I removed it from the chunk above.
+// I need to add ThemeToggle back. Step 8 showed it was imported.
+// I will keep ThemeToggle as dynamic too.
+const ThemeToggle = dynamic(() => import('@/components/ThemeToggle'));
+
 
 export default function Home() {
   const { theme, setTheme } = useTheme();
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [currency, setCurrency] = useState('USD');
   const [activeTab, setActiveTab] = useState('performance');
+  const [backgroundFetchEnabled, setBackgroundFetchEnabled] = useState(false);
+
+  // Trigger background fetch after initial load
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setBackgroundFetchEnabled(true);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
 
   // Lazy init benchmarks from localStorage
   const [benchmarks, setBenchmarks] = useState<string[]>(() => {
@@ -146,6 +163,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchTransactions(selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
+    enabled: activeTab === 'transactions' || backgroundFetchEnabled,
   });
 
   const assetChangeQuery = useQuery({
@@ -153,6 +171,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchAssetChange(currency, selectedAccounts, benchmarks, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
+    enabled: activeTab === 'asset_change' || backgroundFetchEnabled,
   });
 
   const capitalGainsQuery = useQuery({
@@ -160,6 +179,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchCapitalGains(currency, selectedAccounts, capitalGainsDates.from, capitalGainsDates.to, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
+    enabled: activeTab === 'capital_gains' || backgroundFetchEnabled,
   });
 
   const dividendsQuery = useQuery({
@@ -167,6 +187,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchDividends(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
+    enabled: activeTab === 'dividend' || backgroundFetchEnabled,
   });
 
   const riskMetricsQuery = useQuery({
@@ -188,6 +209,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchDividendCalendar(selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
+    enabled: activeTab === 'dividend' || backgroundFetchEnabled,
   });
 
   const historySparklineQuery = useQuery({
@@ -202,6 +224,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchWatchlist(currency, signal),
     staleTime: 1 * 60 * 1000,
     // No keepPreviousData needed for watchlist as it's not dependent on accounts
+    enabled: activeTab === 'watchlist' || backgroundFetchEnabled,
   });
 
   const settingsQuery = useQuery({
@@ -215,6 +238,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchPortfolioHealth(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
+    enabled: activeTab === 'analytics' || backgroundFetchEnabled,
   });
 
   const correlationMatrixQuery = useQuery({
@@ -222,6 +246,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchCorrelationMatrix(correlationPeriod, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
+    enabled: activeTab === 'analytics' || backgroundFetchEnabled,
   });
 
   const incomeProjectionQuery = useQuery({
@@ -229,6 +254,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchProjectedIncome(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
+    enabled: activeTab === 'dividend' || backgroundFetchEnabled,
   });
 
   const summary = summaryQuery.data;
