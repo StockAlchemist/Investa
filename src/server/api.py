@@ -2129,31 +2129,39 @@ async def get_dividend_calendar(
             qty = holdings.get(sym, 0)
             
             try:
-                t = yf.Ticker(yf_sym)
-                info = t.info
+                # Use MarketDataProvider cache for fundamentals (lighter and cached)
+                info = provider.get_fundamental_data(yf_sym) or {}
+                
                 div_rate = info.get("trailingAnnualDividendRate", 0.0)
                 last_div_val = info.get("lastDividendValue")
                 if not div_rate: div_rate = info.get("dividendRate", 0.0)
                 
-                # 1. Confirmed Events
-                try:
-                    cal = t.calendar
-                    if cal and 'Dividend Date' in cal:
-                        div_date_raw = cal['Dividend Date']
-                        if isinstance(div_date_raw, list): div_date_raw = div_date_raw[0]
-                        c_date = div_date_raw
-                        if isinstance(c_date, datetime): c_date = c_date.date()
-                        
-                        if c_date and c_date >= today:
-                            amt = last_div_val if last_div_val else (div_rate / 4 if div_rate else 0)
-                            local_events.append({
-                                "symbol": sym,
-                                "dividend_date": str(c_date),
-                                "ex_dividend_date": str(cal.get('Ex-Dividend Date', '')),
-                                "amount": amt * qty,
-                                "status": "confirmed"
-                            })
-                except Exception: pass
+                # 1. Confirmed Events (Need live ticker for calendar, but wrap carefully)
+                # Only check calendar if we have indication of dividends
+                if div_rate > 0 or last_div_val:
+                    try:
+                        # Calendar is not cached in fundamentals, so we fetch it live
+                        # BUT we do it safely inside the thread
+                        t = yf.Ticker(yf_sym)
+                        cal = t.calendar
+                        if cal and 'Dividend Date' in cal:
+                            div_date_raw = cal['Dividend Date']
+                            if isinstance(div_date_raw, list): div_date_raw = div_date_raw[0]
+                            c_date = div_date_raw
+                            if isinstance(c_date, datetime): c_date = c_date.date()
+                            
+                            if c_date and c_date >= today:
+                                amt = last_div_val if last_div_val else (div_rate / 4 if div_rate else 0)
+                                local_events.append({
+                                    "symbol": sym,
+                                    "dividend_date": str(c_date),
+                                    "ex_dividend_date": str(cal.get('Ex-Dividend Date', '')),
+                                    "amount": amt * qty,
+                                    "status": "confirmed"
+                                })
+                    except Exception as e_cal:
+                         # logging.warning(f"  Calendar fetch failed for {sym}: {e_cal}")
+                         pass
                 
                 # 2. Estimated Events
                 if div_rate and div_rate > 0:
@@ -2214,7 +2222,9 @@ async def get_dividend_calendar(
             return local_events
 
         # Run in parallel
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        # Run SEQUENTIALLY to absolutely prevent OOM/Thread exhaustion
+        # This endpoint is a background feature, it can be slow.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future_to_sym = {executor.submit(fetch_symbol_data, sym): sym for sym in holdings.keys()}
             for future in concurrent.futures.as_completed(future_to_sym):
                 try:
