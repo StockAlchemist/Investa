@@ -902,13 +902,21 @@ def get_historical_price(
         price = None
         if isinstance(res, pd.Series):
              price = res.get('price')
+             if price is None or pd.isna(price):
+                 price = res.get('Adj Close')
+             if price is None or pd.isna(price):
+                 price = res.get('Close')
         elif isinstance(res, pd.DataFrame): 
              # Duplicate index case
              if not res.empty:
-                 price = res['price'].iloc[-1]
+                 if 'price' in res.columns:
+                     price = res['price'].iloc[-1]
+                 elif 'Adj Close' in res.columns:
+                     price = res['Adj Close'].iloc[-1]
+                 elif 'Close' in res.columns:
+                     price = res['Close'].iloc[-1]
         elif pd.notna(res):
-             # Scalar result? (DF asof returns Series/DF usually)
-             pass 
+             pass # Scalar?
 
         if price is None or pd.isna(price):
              # Check if target_date is before the start of the data (Backfill Strategy)
@@ -924,7 +932,12 @@ def get_historical_price(
                      target_ts_eval = target_ts_eval.tz_localize(None)
                  
                  if target_ts_eval < first_ts:
-                     backfill_price = df['price'].iloc[0]
+                     col = 'price'
+                     if 'price' not in df.columns:
+                         if 'Adj Close' in df.columns: col = 'Adj Close'
+                         elif 'Close' in df.columns: col = 'Close'
+                     
+                     backfill_price = df[col].iloc[0]
                      if pd.notna(backfill_price):
                          # logging.debug(f"BACKFILL: {symbol_key} using {backfill_price} for {target_date}")
                          return float(backfill_price)

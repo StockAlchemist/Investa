@@ -71,35 +71,52 @@ class MarketDatabase:
         if df.empty:
             return
 
+
         with self._get_connection() as conn:
             cursor = conn.cursor()
             for timestamp, row in df.iterrows():
                 # Ensure date is string YYYY-MM-DD
                 date_str = timestamp.strftime('%Y-%m-%d') if hasattr(timestamp, 'strftime') else str(timestamp)[:10]
                 
-                # Normalize columns
-                open_val = row.get('Open')
-                high_val = row.get('High')
-                low_val = row.get('Low')
-                close_val = row.get('Close', row.get('price'))
-                adj_close_val = row.get('Adj Close', close_val)
-                volume_val = row.get('Volume', 0)
+                # Helper to clean NaNs
+                def clean(val):
+                    if pd.isna(val): return None
+                    return float(val)
 
-                cursor.execute("""
-                    INSERT OR REPLACE INTO daily_ohlcv 
-                    (symbol, date, open, high, low, close, adj_close, volume, interval)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    symbol, 
-                    date_str, 
-                    open_val, 
-                    high_val, 
-                    low_val, 
-                    close_val, 
-                    adj_close_val, 
-                    volume_val,
-                    interval
-                ))
+                # Normalize columns
+                open_val = clean(row.get('Open'))
+                high_val = clean(row.get('High'))
+                low_val = clean(row.get('Low'))
+                close_val = clean(row.get('Close', row.get('price')))
+                adj_close_val = clean(row.get('Adj Close', close_val))
+                volume_val = int(row.get('Volume', 0)) if pd.notna(row.get('Volume', 0)) else 0
+
+                try:
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO daily_ohlcv 
+                        (symbol, date, open, high, low, close, adj_close, volume, interval)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        symbol, 
+                        date_str, 
+                        open_val, 
+                        high_val, 
+                        low_val, 
+                        close_val, 
+                        adj_close_val, 
+                        volume_val,
+                        interval
+                    ))
+                except Exception as e_ins:
+                    logging.error(f"DB Upsert Error for {symbol} on {date_str}: {e_ins}")
+            
+            conn.commit()
+            
+            # Update sync metadata
+            now = datetime.now().isoformat()
+            cursor.execute("""
+                INSERT OR REPLACE INTO sync_metadata (symbol, last_synced) VALUES (?, ?)
+            """, (symbol, now))
             conn.commit()
 
     def upsert_fx(self, pair: str, df: pd.DataFrame, interval: str = '1d'):
@@ -141,6 +158,14 @@ class MarketDatabase:
             df.set_index('date', inplace=True)
             # Rename columns to standard YF format for compatibility
             df.columns = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
+            
+            # FORCE NUMERIC TYPES
+            # This is critical because if 'Open' contains None (which sqlite returns for NULL), 
+            # pandas treats the column as 'object', causing interpolation to fail/warn.
+            cols_to_numeric = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
+            for c in cols_to_numeric:
+                df[c] = pd.to_numeric(df[c], errors='coerce')
+                
         return df
 
     def get_fx(self, pair: str, start_date: date, end_date: date, interval: str = '1d') -> pd.DataFrame:

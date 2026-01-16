@@ -30,7 +30,7 @@ def fetch_data(symbols, start_date, end_date, interval, output_file):
             interval=interval,
             progress=False,
             group_by="ticker",
-            auto_adjust=False,
+            auto_adjust=True,
             actions=False,
             timeout=30,
             prepost=False  # Explicitly disable pre/post market data

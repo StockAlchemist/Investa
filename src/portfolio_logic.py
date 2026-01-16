@@ -1465,15 +1465,28 @@ def _unadjust_prices(
                     f_log.write(f"Jan 2 first 5 index: {jan2_pts.index[:5].tolist()}\n")
 
         # --- Handle Empty/Invalid Input DataFrame ---
-        if adj_price_df.empty or "price" not in adj_price_df.columns:
+        col_to_use = None
+        if not adj_price_df.empty:
+            if "price" in adj_price_df.columns: col_to_use = "price"
+            elif "Adj Close" in adj_price_df.columns: col_to_use = "Adj Close"
+            elif "Close" in adj_price_df.columns: col_to_use = "Close"
+        
+        if not col_to_use:
             if IS_DEBUG_SYMBOL:
                 logging.debug(
-                    "    Skipping: Adjusted price DataFrame is empty or missing 'price'."
+                    "    Skipping: Adjusted price DataFrame is empty or missing 'price'/'Adj Close'."
                 )
             unadjusted_prices_yf[yf_symbol] = (
                 adj_price_df.copy()
             )  # Return copy of input
             continue
+        
+        # Renaming for internal consistency within this function
+        # We will work with a 'price' column locally
+        adj_price_df_working = adj_price_df.copy()
+        if col_to_use != "price":
+            adj_price_df_working["price"] = adj_price_df_working[col_to_use]
+        
         # --- END Handle Empty/Invalid Input ---
 
         # --- Get Splits ---
@@ -1489,7 +1502,7 @@ def _unadjust_prices(
                     f"    No splits found for internal symbol '{internal_symbol}'. Copying adjusted prices."
                 )
             unadjusted_prices_yf[yf_symbol] = (
-                adj_price_df.copy()
+                adj_price_df_working.copy()
             )  # Return copy of input
             continue
         # --- END Handle No Splits ---
@@ -1500,7 +1513,7 @@ def _unadjust_prices(
                 )
 
         # --- Prepare DataFrame for Unadjustment ---
-        unadj_df = adj_price_df.copy()
+        unadj_df = adj_price_df_working.copy()
         # FIX: Ensure index is UTC Timestamp for precise comparison and preservation
         unadj_df.index = pd.to_datetime(unadj_df.index, utc=True)
 
@@ -4081,7 +4094,10 @@ def _value_daily_holdings_vectorized(
         f_log.write(f"\n--- VALUATION START ---\n")
         f_log.write(f"num_days={num_days}, num_symbols={num_symbols}\n")
         f_log.write(f"Internal map keys: {list(internal_to_yf_map.keys())[:20]}...\n")
-        f_log.write(f"Unadjusted price keys: {list(historical_prices_yf_unadjusted.keys())}\n")
+        if historical_prices_yf_unadjusted:
+            first_key = list(historical_prices_yf_unadjusted.keys())[0]
+            f_log.write(f"Sample price keys: {list(historical_prices_yf_unadjusted.keys())[:5]}\n")
+            f_log.write(f"Sample columns for {first_key}: {historical_prices_yf_unadjusted[first_key].columns}\n")
     
     # Iterate symbols to fill prices
     # This loop is cheap (N_symbols ~ hundreds)
@@ -4093,11 +4109,20 @@ def _value_daily_holdings_vectorized(
         yf_symbol = internal_to_yf_map.get(symbol)
         if yf_symbol and yf_symbol in historical_prices_yf_unadjusted:
             price_df = historical_prices_yf_unadjusted[yf_symbol]
-            if not price_df.empty and "price" in price_df.columns:
-                # Reindex to date_range
-                price_series = price_df["price"]
-                # FIX: Ensure UTC awareness and DO NOT Normalize (preserves intraday/hourly timestamps)
-                price_series.index = pd.to_datetime(price_series.index, utc=True)
+            if not price_df.empty:
+                col_to_use = None
+                if "price" in price_df.columns:
+                    col_to_use = "price"
+                elif "Adj Close" in price_df.columns:
+                    col_to_use = "Adj Close"
+                elif "Close" in price_df.columns:
+                    col_to_use = "Close"
+                
+                if col_to_use:
+                    # Reindex to date_range
+                    price_series = price_df[col_to_use]
+                    # FIX: Ensure UTC awareness and DO NOT Normalize (preserves intraday/hourly timestamps)
+                    price_series.index = pd.to_datetime(price_series.index, utc=True)
                 
                 # Reindex using ffill
                 aligned_series = price_series.reindex(date_range, method='ffill')
@@ -4132,10 +4157,17 @@ def _value_daily_holdings_vectorized(
         target_pair = f"{target_curr_upper}=X"
         if target_pair in historical_fx_yf:
             t_df = historical_fx_yf[target_pair]
-            if not t_df.empty and "price" in t_df.columns:
-                # Reindex to date_range with ffill
-                # Reindex to date_range with ffill then bfill to cover start of history
-                t_series = t_df["price"]
+            if not t_df.empty:
+                col_to_use = None
+                if "price" in t_df.columns: col_to_use = "price"
+                elif "Adj Close" in t_df.columns: col_to_use = "Adj Close"
+                elif "Close" in t_df.columns: col_to_use = "Close"
+                elif "rate" in t_df.columns: col_to_use = "rate"
+
+                if col_to_use:
+                    # Reindex to date_range with ffill
+                    # Reindex to date_range with ffill then bfill to cover start of history
+                    t_series = t_df[col_to_use]
                 t_series.index = pd.to_datetime(t_series.index, utc=True)
                 # FIX: Ensure we have a value for the first day by bfilling, but use interpolation
                 target_rate_series = t_series.reindex(date_range).interpolate(method='linear').ffill().bfill()
@@ -4173,8 +4205,15 @@ def _value_daily_holdings_vectorized(
             local_pair = f"{local_curr_upper}=X"
             if local_pair in historical_fx_yf:
                  l_df = historical_fx_yf[local_pair]
-                 if not l_df.empty and "price" in l_df.columns:
-                    l_series = l_df["price"]
+                 if not l_df.empty:
+                    col_to_use = None
+                    if "price" in l_df.columns: col_to_use = "price"
+                    elif "Adj Close" in l_df.columns: col_to_use = "Adj Close"
+                    elif "Close" in l_df.columns: col_to_use = "Close"
+                    elif "rate" in l_df.columns: col_to_use = "rate"
+                    
+                    if col_to_use:
+                        l_series = l_df[col_to_use]
                     # FIX: Ensure UTC awareness and DO NOT Normalize (preserves intraday/hourly timestamps)
                     l_series.index = pd.to_datetime(l_series.index, utc=True)
                     # FIX: Aggressive backfill for local rates too, but smooth it
@@ -6092,7 +6131,11 @@ def calculate_historical_performance(
 
     fetch_failed = fetch_failed_prices or fetch_failed_fx
     if fetch_failed:
-        has_errors = True  # Treat critical fetch error as overall error
+        # has_errors = True  # Treat critical fetch error as overall error
+        # RELAXED: Don't fail the whole graph just because some symbols (e.g. BLV, DAL) are missing.
+        # We want to show partial data.
+        logging.warning("History: Some symbols failed to fetch, but proceeding with available data.")
+        has_errors = False
     status_parts.append("Raw adjusted data loaded/fetched")
 
     if has_errors:
@@ -6248,9 +6291,16 @@ def calculate_historical_performance(
             for bm in clean_benchmark_symbols_yf:
                 if bm in bench_prices_adj:
                     bm_df = bench_prices_adj[bm]
-                    if bm_df is not None and not bm_df.empty and 'price' in bm_df.columns:
-                        logging.info(f"Benchmark {bm}: price count={len(bm_df)}, first={bm_df.index[0]}, last={bm_df.index[-1]}")
-                        bm_series = bm_df['price'].copy()
+                    
+                    if bm_df is not None and not bm_df.empty:
+                        col_to_use = None
+                        if "price" in bm_df.columns: col_to_use = "price"
+                        elif "Adj Close" in bm_df.columns: col_to_use = "Adj Close"
+                        elif "Close" in bm_df.columns: col_to_use = "Close"
+                        
+                        if col_to_use:
+                            logging.info(f"Benchmark {bm}: Using col '{col_to_use}', count={len(bm_df)}, first={bm_df.index[0]}")
+                            bm_series = bm_df[col_to_use].copy()
                         bm_series.name = f"{bm} Price"
                         
                         # Ensure index is datetime for merging

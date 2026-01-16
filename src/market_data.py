@@ -1272,6 +1272,7 @@ class MarketDataProvider:
             if s in invalid_cache:
                 timestamp = invalid_cache[s]
                 if now_ts - timestamp < INVALID_SYMBOLS_DURATION:
+                    logging.warning(f"Hist Fetch Helper: Skipping cached invalid symbol: {s}")
                     filtered_count += 1
                     continue  # Skip this symbol
                 else:
@@ -1662,21 +1663,14 @@ class MarketDataProvider:
                                      logging.info(f"  Hist Fetch Helper: Individual retry SUCCESS for {symbol}.")
                                  else:
                                      logging.warning(f"  Hist Fetch Helper WARN: Individual retry for {symbol} returned no valid price data.")
-                                     invalid_cache[symbol] = now_ts
-                                     cache_needs_update = True
+                                     # Do not cache as invalid automatically. Let it retry next time.
                              else:
                                  logging.warning(f"  Hist Fetch Helper WARN: Individual retry for {symbol} returned no data in range.")
-                                 invalid_cache[symbol] = now_ts
-                                 cache_needs_update = True
                         else:
                              logging.warning(f"  Hist Fetch Helper WARN: Individual retry for {symbol} returned empty DataFrame.")
-                             invalid_cache[symbol] = now_ts
-                             cache_needs_update = True
                              
                     except Exception as e_retry:
                         logging.warning(f"  Hist Fetch Helper WARN: Individual retry failed for {symbol}: {e_retry}")
-                        invalid_cache[symbol] = now_ts
-                        cache_needs_update = True
 
         if cache_needs_update:
             self._save_invalid_symbols_cache(invalid_cache)
@@ -2124,6 +2118,7 @@ class MarketDataProvider:
         historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}
         for sym in symbols_yf:
             df = self.db.get_ohlcv(sym, start_date, end_date, interval=interval)
+            # logging.warning(f"DEBUG: get_ohlcv for {sym} returned {len(df)} rows. Empty? {df.empty}") 
             if not df.empty:
                 historical_prices_yf_adjusted[sym] = df
 
