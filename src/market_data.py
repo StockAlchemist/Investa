@@ -2026,23 +2026,40 @@ class MarketDataProvider:
             # Extra safety, though caller should handle this
             return self._fetch_yf_historical_data(symbols, start_date, end_date, interval=interval)
 
-        # 0. Sync Throttling
+        # 0. Sync Throttling (Batched)
         now = datetime.now()
         sync_needed = []
+        
+        if not symbols:
+            return
+
+        # Batch 1: Get Last Synced Times
+        last_synced_map = self.db.get_sync_metadata_batch(symbols)
+        
+        # Determine which symbols *might* need sync based on time threshold
+        potential_sync = []
         for sym in symbols:
-            # Check metadata for last sync
-            meta = self.db._get_connection().execute("SELECT last_synced FROM sync_metadata WHERE symbol = ?", (sym,)).fetchone()
-            if meta and meta[0]:
-                last_sync_ts = datetime.fromisoformat(meta[0])
-                if (now - last_sync_ts) < timedelta(hours=4):
-                    continue
+            last_ts = last_synced_map.get(sym)
+            if last_ts and (now - last_ts) < timedelta(hours=4):
+                continue
+            potential_sync.append(sym)
             
-            last_db_date = self.db.get_last_date(sym, table="daily_ohlcv" if not is_fx else "daily_fx")
+        if not potential_sync:
+            return
+
+        # Batch 2: Get Last Data Dates in DB
+        table_name = "daily_ohlcv" if not is_fx else "daily_fx"
+        last_db_dates_map = self.db.get_last_dates(potential_sync, table=table_name)
+        
+        for sym in potential_sync:
+            last_db_date = last_db_dates_map.get(sym)
+            
             fetch_start = start_date
             if last_db_date:
                 # 5-day overlap for integrity
                 fetch_start = min(start_date, last_db_date - timedelta(days=5))
             
+            # If we don't have data up to end_date, we need to sync
             if not last_db_date or last_db_date < end_date:
                 sync_needed.append((sym, fetch_start))
 
@@ -2114,13 +2131,12 @@ class MarketDataProvider:
                 logging.error(f"Error syncing to Market DB: {e}")
                 # Continue anyway, we'll try to pull from DB what we have or YF directly if needed
 
-        # 2. Pull everything from DB
+        # 2. Pull everything from DB (Batched)
         historical_prices_yf_adjusted: Dict[str, pd.DataFrame] = {}
-        for sym in symbols_yf:
-            df = self.db.get_ohlcv(sym, start_date, end_date, interval=interval)
-            # logging.warning(f"DEBUG: get_ohlcv for {sym} returned {len(df)} rows. Empty? {df.empty}") 
-            if not df.empty:
-                historical_prices_yf_adjusted[sym] = df
+        
+        db_results = self.db.get_ohlcv_batch(symbols_yf, start_date, end_date, interval=interval)
+        if db_results:
+            historical_prices_yf_adjusted = db_results
 
         # 3. Validation and fallback
         fetch_failed = False

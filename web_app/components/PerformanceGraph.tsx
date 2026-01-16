@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import {
     LineChart,
     Line,
@@ -50,8 +51,7 @@ const COLORS = [
 export default function PerformanceGraph({ currency, accounts, benchmarks, onBenchmarksChange }: PerformanceGraphProps) {
     const [view, setView] = useState<'return' | 'value' | 'drawdown'>('return');
     const [period, setPeriod] = useState('1y');
-    const [data, setData] = useState<PerformanceData[]>([]);
-    const [loading, setLoading] = useState(false);
+
 
     const [customFromDate, setCustomFromDate] = useState(() => {
         const d = new Date();
@@ -94,47 +94,28 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         }
     }, [view, isInitialized]);
 
-    // Fetch data when period or benchmarks change
-    // Fetch data logic
-    const fetchData = React.useCallback(async (isBackground = false) => {
-        if (!isBackground) setLoading(true);
-        try {
-            // Determine interval based on period
-            let interval = '1d';
-            if (period === '1d') {
-                interval = '2m'; // Finer granularity for 1D view
-            } else if (period === '5d') {
-                interval = '15m'; // 15m * 5 days = ~130 points
-            } else if (period === '1m') {
-                interval = '1d'; // Use 1d to ensure consistency with 3M+ and capture official adjusted closes
-            }
+    // Calculate interval based on period
+    const interval = useMemo(() => {
+        if (period === '1d') return '2m';
+        if (period === '5d') return '15m';
+        if (period === '1m') return '1d';
+        return '1d';
+    }, [period]);
 
-            const from = period === 'custom' ? customFromDate : undefined;
-            const to = period === 'custom' ? customToDate : undefined;
+    const fromDate = period === 'custom' ? customFromDate : undefined;
+    const toDate = period === 'custom' ? customToDate : undefined;
 
-            const newData = await fetchHistory(currency, accounts, period, benchmarks, interval, from, to);
-            setData(newData);
-        } catch (error) {
-            console.error("Failed to fetch history:", error);
-        } finally {
-            if (!isBackground) setLoading(false);
-        }
-    }, [currency, accounts, period, benchmarks, customFromDate, customToDate]);
+    // Use React Query for data fetching
+    const { data: queryData, isLoading: queryLoading } = useQuery({
+        queryKey: ['history', currency, accounts, period, benchmarks, interval, fromDate, toDate],
+        queryFn: ({ signal }) => fetchHistory(currency, accounts, period, benchmarks, interval, fromDate, toDate, signal),
+        placeholderData: keepPreviousData,
+        staleTime: 5 * 60 * 1000,
+        refetchInterval: period === '1d' ? 60000 : false, // Auto-refresh for 1D view
+    });
 
-    // Initial load and params change
-    useEffect(() => {
-        fetchData(false);
-    }, [fetchData]);
-
-    // Auto-refresh for 1D view (Real-time updates)
-    useEffect(() => {
-        if (period === '1d') {
-            const intervalId = setInterval(() => {
-                fetchData(true); // Background refresh
-            }, 60000); // Check every minute
-            return () => clearInterval(intervalId);
-        }
-    }, [period, fetchData]);
+    const data = queryData || [];
+    const loading = queryLoading && !queryData; // Only show loading if no data available (initial load)
 
 
 

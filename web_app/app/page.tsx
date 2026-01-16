@@ -55,31 +55,39 @@ export default function Home() {
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [currency, setCurrency] = useState('USD');
   const [activeTab, setActiveTab] = useState('performance');
-  const [benchmarks, setBenchmarks] = useState<string[]>(['S&P 500', 'Dow Jones', 'NASDAQ']);
+
+  // Lazy init benchmarks from localStorage
+  const [benchmarks, setBenchmarks] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return ['S&P 500', 'Dow Jones', 'NASDAQ'];
+    try {
+      const saved = localStorage.getItem('investa_graph_benchmarks');
+      return saved ? JSON.parse(saved) : ['S&P 500', 'Dow Jones', 'NASDAQ'];
+    } catch {
+      return ['S&P 500', 'Dow Jones', 'NASDAQ'];
+    }
+  });
+
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
-  const [showClosed, setShowClosed] = useState(false);
+
+  // Lazy init showClosed
+  const [showClosed, setShowClosed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('investa_show_closed') === 'true';
+  });
+
   const [capitalGainsDates, setCapitalGainsDates] = useState<{ from?: string, to?: string }>({});
   const [correlationPeriod, setCorrelationPeriod] = useState('1y');
 
-  const [visibleItems, setVisibleItems] = useState<string[]>([]);
-
-  // Initialize visibility from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem('investa_dashboard_visible_items');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setVisibleItems(parsed);
-          return;
-        }
-      } catch (e) {
-        console.error("Failed to parse saved dashboard visibility", e);
-      }
+  // Lazy init visibleItems
+  const [visibleItems, setVisibleItems] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return DEFAULT_ITEMS.map(i => i.id);
+    try {
+      const saved = localStorage.getItem('investa_dashboard_visible_items');
+      return saved ? JSON.parse(saved) : DEFAULT_ITEMS.map(i => i.id);
+    } catch {
+      return DEFAULT_ITEMS.map(i => i.id);
     }
-    // Default to all items
-    setVisibleItems(DEFAULT_ITEMS.map(i => i.id));
-  }, []);
+  });
 
   // Persist visibility to localStorage
   useEffect(() => {
@@ -89,41 +97,15 @@ export default function Home() {
   }, [visibleItems]);
 
 
-  // Initialize showClosed from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem('investa_show_closed');
-    if (saved) setShowClosed(saved === 'true');
-  }, []);
-
   // Persist showClosed to localStorage
   useEffect(() => {
     localStorage.setItem('investa_show_closed', showClosed.toString());
   }, [showClosed]);
 
-  const [benchmarksInitialized, setBenchmarksInitialized] = useState(false);
-
-  // Initialize benchmarks from localStorage
-  useEffect(() => {
-    const savedBenchmarks = localStorage.getItem('investa_graph_benchmarks');
-    if (savedBenchmarks) {
-      try {
-        const parsed = JSON.parse(savedBenchmarks);
-        if (Array.isArray(parsed)) {
-          setBenchmarks(parsed);
-        }
-      } catch (e) {
-        console.error("Failed to parse saved benchmarks", e);
-      }
-    }
-    setBenchmarksInitialized(true);
-  }, []);
-
   // Persist benchmarks to localStorage
   useEffect(() => {
-    if (benchmarksInitialized) {
-      localStorage.setItem('investa_graph_benchmarks', JSON.stringify(benchmarks));
-    }
-  }, [benchmarks, benchmarksInitialized]);
+    localStorage.setItem('investa_graph_benchmarks', JSON.stringify(benchmarks));
+  }, [benchmarks]);
 
   // Command Palette Keyboard Listener
   useEffect(() => {
@@ -147,77 +129,77 @@ export default function Home() {
   // Queries
   const summaryQuery = useQuery({
     queryKey: ['summary', currency, selectedAccounts],
-    queryFn: () => fetchSummary(currency, selectedAccounts),
+    queryFn: ({ signal }) => fetchSummary(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
   });
 
   const holdingsQuery = useQuery({
     queryKey: ['holdings', currency, selectedAccounts, showClosed],
-    queryFn: () => fetchHoldings(currency, selectedAccounts, showClosed),
+    queryFn: ({ signal }) => fetchHoldings(currency, selectedAccounts, showClosed, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
   });
 
   const transactionsQuery = useQuery({
     queryKey: ['transactions', selectedAccounts],
-    queryFn: () => fetchTransactions(selectedAccounts),
+    queryFn: ({ signal }) => fetchTransactions(selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
   });
 
   const assetChangeQuery = useQuery({
     queryKey: ['assetChange', currency, selectedAccounts, benchmarks],
-    queryFn: () => fetchAssetChange(currency, selectedAccounts, benchmarks),
+    queryFn: ({ signal }) => fetchAssetChange(currency, selectedAccounts, benchmarks, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
   });
 
   const capitalGainsQuery = useQuery({
     queryKey: ['capitalGains', currency, selectedAccounts, capitalGainsDates.from, capitalGainsDates.to],
-    queryFn: () => fetchCapitalGains(currency, selectedAccounts, capitalGainsDates.from, capitalGainsDates.to),
+    queryFn: ({ signal }) => fetchCapitalGains(currency, selectedAccounts, capitalGainsDates.from, capitalGainsDates.to, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
   });
 
   const dividendsQuery = useQuery({
     queryKey: ['dividends', currency, selectedAccounts],
-    queryFn: () => fetchDividends(currency, selectedAccounts),
+    queryFn: ({ signal }) => fetchDividends(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
   });
 
   const riskMetricsQuery = useQuery({
     queryKey: ['riskMetrics', currency, selectedAccounts],
-    queryFn: () => fetchRiskMetrics(currency, selectedAccounts),
+    queryFn: ({ signal }) => fetchRiskMetrics(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
   });
 
   const attributionQuery = useQuery({
     queryKey: ['attribution', currency, selectedAccounts],
-    queryFn: () => fetchAttribution(currency, selectedAccounts),
+    queryFn: ({ signal }) => fetchAttribution(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
   });
 
   const dividendCalendarQuery = useQuery({
     queryKey: ['dividendCalendar', selectedAccounts],
-    queryFn: () => fetchDividendCalendar(selectedAccounts),
+    queryFn: ({ signal }) => fetchDividendCalendar(selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
   });
 
   const historySparklineQuery = useQuery({
     queryKey: ['history', currency, selectedAccounts, 'sparkline'],
-    queryFn: () => fetchHistory(currency, selectedAccounts, '1d', [], '5m'),
+    queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, '1d', [], '5m', undefined, undefined, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
   });
 
   const watchlistQuery = useQuery({
     queryKey: ['watchlist', currency],
-    queryFn: () => fetchWatchlist(currency),
+    queryFn: ({ signal }) => fetchWatchlist(currency, signal),
     staleTime: 1 * 60 * 1000,
     // No keepPreviousData needed for watchlist as it's not dependent on accounts
   });
@@ -230,21 +212,21 @@ export default function Home() {
 
   const portfolioHealthQuery = useQuery({
     queryKey: ['portfolioHealth', currency, selectedAccounts],
-    queryFn: () => fetchPortfolioHealth(currency, selectedAccounts),
+    queryFn: ({ signal }) => fetchPortfolioHealth(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
   });
 
   const correlationMatrixQuery = useQuery({
     queryKey: ['correlationMatrix', correlationPeriod, selectedAccounts],
-    queryFn: () => fetchCorrelationMatrix(correlationPeriod, selectedAccounts),
+    queryFn: ({ signal }) => fetchCorrelationMatrix(correlationPeriod, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
   });
 
   const incomeProjectionQuery = useQuery({
     queryKey: ['incomeProjection', currency, selectedAccounts],
-    queryFn: () => fetchProjectedIncome(currency, selectedAccounts),
+    queryFn: ({ signal }) => fetchProjectedIncome(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
   });

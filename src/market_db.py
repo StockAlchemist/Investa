@@ -168,6 +168,42 @@ class MarketDatabase:
                 
         return df
 
+    def get_ohlcv_batch(self, symbols: List[str], start_date: date, end_date: date, interval: str = '1d') -> Dict[str, pd.DataFrame]:
+        """Retrieves OHLCV data for multiple symbols in a collection of DataFrames."""
+        if not symbols:
+            return {}
+            
+        placeholders = ', '.join(['?'] * len(symbols))
+        query = f"""
+            SELECT symbol, date, open, high, low, close, adj_close, volume 
+            FROM daily_ohlcv 
+            WHERE symbol IN ({placeholders}) AND interval = ? AND date BETWEEN ? AND ?
+            ORDER BY symbol, date ASC
+        """
+        
+        results = {}
+        with self._get_connection() as conn:
+            # We must pass the list of symbols first, then other params
+            params = symbols + [interval, str(start_date), str(end_date)]
+            df_all = pd.read_sql_query(query, conn, params=params)
+        
+        if not df_all.empty:
+            df_all['date'] = pd.to_datetime(df_all['date'])
+            # Group by symbol and process each
+            for sym, group in df_all.groupby('symbol'):
+                df = group.drop(columns=['symbol'])
+                df.set_index('date', inplace=True)
+                df.columns = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
+                
+                # FORCE NUMERIC
+                cols_to_numeric = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
+                for c in cols_to_numeric:
+                    df[c] = pd.to_numeric(df[c], errors='coerce')
+                
+                results[sym] = df
+                
+        return results
+
     def get_fx(self, pair: str, start_date: date, end_date: date, interval: str = '1d') -> pd.DataFrame:
         """Retrieves FX rate data for a pair within a date range."""
         query = """
@@ -194,6 +230,36 @@ class MarketDatabase:
             if res and res[0]:
                 return datetime.strptime(res[0], '%Y-%m-%d').date()
         return None
+
+    def get_last_dates(self, symbols: List[str], table: str = "daily_ohlcv") -> Dict[str, date]:
+        """Returns a dict of {symbol: last_date} for a list of symbols."""
+        col = "symbol" if table == "daily_ohlcv" else "pair"
+        placeholders = ', '.join(['?'] * len(symbols))
+        query = f"SELECT {col}, MAX(date) FROM {table} WHERE {col} IN ({placeholders}) GROUP BY {col}"
+        
+        results = {}
+        with self._get_connection() as conn:
+            cursor = conn.execute(query, symbols)
+            for row in cursor:
+                if row[1]:
+                    results[row[0]] = datetime.strptime(row[1], '%Y-%m-%d').date()
+        return results
+
+    def get_sync_metadata_batch(self, symbols: List[str]) -> Dict[str, datetime]:
+        """Returns a dict of {symbol: last_synced_datetime} for a list of symbols."""
+        placeholders = ', '.join(['?'] * len(symbols))
+        query = f"SELECT symbol, last_synced FROM sync_metadata WHERE symbol IN ({placeholders})"
+        
+        results = {}
+        with self._get_connection() as conn:
+            cursor = conn.execute(query, symbols)
+            for row in cursor:
+                if row[1]:
+                    try:
+                        results[row[0]] = datetime.fromisoformat(row[1])
+                    except ValueError:
+                        pass
+        return results
 
     def check_integrity(self, symbol: str, new_df: pd.DataFrame) -> Tuple[bool, Optional[str]]:
         """

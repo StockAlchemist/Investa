@@ -89,18 +89,17 @@ export interface Transaction {
     [key: string]: unknown;
 }
 
-export async function fetchSummary(currency: string = 'USD', accounts?: string[]): Promise<PortfolioSummary> {
+export async function fetchSummary(currency: string = 'USD', accounts?: string[], signal?: AbortSignal): Promise<PortfolioSummary> {
     const params = new URLSearchParams({ currency });
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
-    params.append('_t', Date.now().toString());
-    const res = await fetch(`${API_BASE_URL}/summary?${params.toString()}`);
+    const res = await fetch(`${API_BASE_URL}/summary?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch summary');
     return res.json();
 }
 
-export async function fetchHoldings(currency: string = 'USD', accounts?: string[], showClosed: boolean = false): Promise<Holding[]> {
+export async function fetchHoldings(currency: string = 'USD', accounts?: string[], showClosed: boolean = false, signal?: AbortSignal): Promise<Holding[]> {
     const params = new URLSearchParams({ currency });
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
@@ -108,8 +107,7 @@ export async function fetchHoldings(currency: string = 'USD', accounts?: string[
     if (showClosed) {
         params.append('show_closed', 'true');
     }
-    params.append('_t', Date.now().toString());
-    const res = await fetch(`${API_BASE_URL}/holdings?${params.toString()}`);
+    const res = await fetch(`${API_BASE_URL}/holdings?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch holdings');
     return res.json();
 }
@@ -125,12 +123,12 @@ export interface PerformanceData {
     [key: string]: number | string | undefined; // Allow dynamic keys for benchmarks
 }
 
-export async function fetchTransactions(accounts?: string[]): Promise<Transaction[]> {
+export async function fetchTransactions(accounts?: string[], signal?: AbortSignal): Promise<Transaction[]> {
     const params = new URLSearchParams();
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
-    const res = await fetch(`${API_BASE_URL}/transactions?${params.toString()}`);
+    const res = await fetch(`${API_BASE_URL}/transactions?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch transactions');
     return res.json();
 }
@@ -187,7 +185,8 @@ export async function fetchHistory(
     benchmarks?: string[],
     interval: string = '1d',
     fromDate?: string,
-    toDate?: string
+    toDate?: string,
+    signal?: AbortSignal
 ): Promise<PerformanceData[]> {
     const params = new URLSearchParams({ currency, period, interval });
     if (accounts) {
@@ -198,9 +197,8 @@ export async function fetchHistory(
     }
     if (fromDate) params.append('from', fromDate);
     if (toDate) params.append('to', toDate);
-    // Add cache buster to prevent browser caching of stale data
-    params.append('_t', Date.now().toString());
-    const res = await fetch(`${API_BASE_URL}/history?${params.toString()}`);
+
+    const res = await fetch(`${API_BASE_URL}/history?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch history');
     return res.json();
 }
@@ -215,7 +213,8 @@ export interface AssetChangeData {
 export async function fetchAssetChange(
     currency: string = 'USD',
     accounts?: string[],
-    benchmarks?: string[]
+    benchmarks?: string[],
+    signal?: AbortSignal
 ): Promise<AssetChangeData> {
     const params = new URLSearchParams({ currency });
     if (accounts) {
@@ -224,8 +223,7 @@ export async function fetchAssetChange(
     if (benchmarks) {
         benchmarks.forEach(b => params.append('benchmarks', b));
     }
-    params.append('_t', Date.now().toString());
-    const res = await fetch(`${API_BASE_URL}/asset_change?${params.toString()}`);
+    const res = await fetch(`${API_BASE_URL}/asset_change?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch asset change data');
     return res.json();
 }
@@ -253,7 +251,8 @@ export async function fetchCapitalGains(
     currency: string = 'USD',
     accounts?: string[],
     fromDate?: string,
-    toDate?: string
+    toDate?: string,
+    signal?: AbortSignal
 ): Promise<CapitalGain[]> {
     const params = new URLSearchParams({ currency });
     if (accounts) {
@@ -261,7 +260,7 @@ export async function fetchCapitalGains(
     }
     if (fromDate) params.append('from', fromDate);
     if (toDate) params.append('to', toDate);
-    const res = await fetch(`${API_BASE_URL}/capital_gains?${params.toString()}`);
+    const res = await fetch(`${API_BASE_URL}/capital_gains?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch capital gains');
     return res.json();
 }
@@ -279,13 +278,14 @@ export interface Dividend {
 
 export async function fetchDividends(
     currency: string = 'USD',
-    accounts?: string[]
+    accounts?: string[],
+    signal?: AbortSignal
 ): Promise<Dividend[]> {
     const params = new URLSearchParams({ currency });
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
-    const res = await fetch(`${API_BASE_URL}/dividends?${params.toString()}`);
+    const res = await fetch(`${API_BASE_URL}/dividends?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch dividends');
     return res.json();
 }
@@ -350,12 +350,12 @@ export interface RiskMetrics {
     'Sortino Ratio'?: number;
 }
 
-export async function fetchRiskMetrics(currency: string = 'USD', accounts?: string[]): Promise<RiskMetrics> {
+export async function fetchRiskMetrics(currency: string = 'USD', accounts?: string[], signal?: AbortSignal): Promise<RiskMetrics> {
     const params = new URLSearchParams({ currency });
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
-    const res = await fetch(`${API_BASE_URL}/risk_metrics?${params.toString()}`);
+    const res = await fetch(`${API_BASE_URL}/risk_metrics?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch risk metrics');
     return res.json();
 }
@@ -378,13 +378,12 @@ export interface AttributionData {
     total_gain: number;
 }
 
-export async function fetchAttribution(currency: string = 'USD', accounts?: string[]): Promise<AttributionData> {
+export async function fetchAttribution(currency: string = 'USD', accounts?: string[], signal?: AbortSignal): Promise<AttributionData> {
     const params = new URLSearchParams({ currency });
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
-    params.append('_t', Date.now().toString());
-    const res = await fetch(`${API_BASE_URL}/attribution?${params.toString()}`);
+    const res = await fetch(`${API_BASE_URL}/attribution?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch attribution');
     return res.json();
 }
@@ -397,12 +396,12 @@ export interface DividendEvent {
     status: 'confirmed' | 'estimated'; // Added status
 }
 
-export async function fetchDividendCalendar(accounts?: string[]): Promise<DividendEvent[]> {
+export async function fetchDividendCalendar(accounts?: string[], signal?: AbortSignal): Promise<DividendEvent[]> {
     const params = new URLSearchParams();
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
-    const res = await fetch(`${API_BASE_URL}/dividend_calendar?${params.toString()}`);
+    const res = await fetch(`${API_BASE_URL}/dividend_calendar?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch dividend calendar');
     return res.json();
 }
@@ -441,14 +440,14 @@ export interface CorrelationData {
 
 export async function fetchCorrelationMatrix(
     period: string = '1y',
-    accounts?: string[]
+    accounts?: string[],
+    signal?: AbortSignal
 ): Promise<CorrelationData> {
     const params = new URLSearchParams({ period });
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
-    params.append('_t', Date.now().toString());
-    const res = await fetch(`${API_BASE_URL}/correlation?${params.toString()}`);
+    const res = await fetch(`${API_BASE_URL}/correlation?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch correlation matrix');
     return res.json();
 }
@@ -461,14 +460,14 @@ export interface ProjectedIncome {
 
 export async function fetchProjectedIncome(
     currency: string = 'USD',
-    accounts?: string[]
+    accounts?: string[],
+    signal?: AbortSignal
 ): Promise<ProjectedIncome[]> {
     const params = new URLSearchParams({ currency });
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
-    params.append('_t', Date.now().toString());
-    const res = await fetch(`${API_BASE_URL}/projected_income?${params.toString()}`);
+    const res = await fetch(`${API_BASE_URL}/projected_income?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch projected income');
     return res.json();
 }
@@ -492,14 +491,14 @@ export interface PortfolioHealth {
 
 export async function fetchPortfolioHealth(
     currency: string = 'USD',
-    accounts?: string[]
+    accounts?: string[],
+    signal?: AbortSignal
 ): Promise<PortfolioHealth | null> {
     const params = new URLSearchParams({ currency });
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
-    params.append('_t', Date.now().toString());
-    const res = await fetch(`${API_BASE_URL}/portfolio_health?${params.toString()}`);
+    const res = await fetch(`${API_BASE_URL}/portfolio_health?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) {
         console.error("Failed to fetch portfolio health");
         return null;
@@ -519,9 +518,9 @@ export interface WatchlistItem {
     Sparkline: number[];
 }
 
-export async function fetchWatchlist(currency: string = 'USD'): Promise<WatchlistItem[]> {
+export async function fetchWatchlist(currency: string = 'USD', signal?: AbortSignal): Promise<WatchlistItem[]> {
     const params = new URLSearchParams({ currency });
-    const res = await fetch(`${API_BASE_URL}/watchlist?${params.toString()}`);
+    const res = await fetch(`${API_BASE_URL}/watchlist?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch watchlist');
     return res.json();
 }
