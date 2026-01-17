@@ -560,9 +560,13 @@ Investa packs several additional features and settings to enhance your portfolio
   * Customize the list of currencies available in the main `Display Currency` dropdown on the dashboard.
   * Select your frequently used currencies from a comprehensive list to keep the dropdown tidy and relevant.
 
-* **Data Caching & Clearing Cache:**
-  * Investa automatically caches market data (prices, FX rates, fundamental info) to speed up loading times and reduce API calls to Yahoo Finance. Cache settings (like duration) are generally managed in `config.py`.
-  * If you suspect your cached data is stale or corrupted, you can clear it via **Settings > Clear Cache Files...**. This will delete the cached market data, and Investa will fetch fresh data on the next "Refresh All".
+* **Data Caching & Integrity:**
+  * **Intelligent Caching:** Investa automatically caches market data to speed up loading. Enhanced **Intraday Caching** now stores 1-minute and 5-minute data locally. This means 1D and 5D graphs load instantly during after-hours/weekends without waiting for API fetches.
+  * **Integrity Checks:** You can verify the health of your local database at any time by running the built-in test suite:
+    ```bash
+    pytest tests/test_db_integrity.py
+    ```
+  * **Clearing Cache:** If you suspect data issues, use **Settings > Clear Cache Files...** to force a fresh fetch.
 
 * **Custom Groups (Tags):**
   * You can now organize your holdings beyond standard sectors by using **Tags**.
