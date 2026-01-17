@@ -51,3 +51,20 @@ def get_latest_trading_date() -> date:
     
     # Otherwise, it's trading hours or post-market (same day)
     return today
+
+def is_market_open() -> bool:
+    """
+    Checks if the US stock market is currently open (Monday-Friday, 09:30 - 16:00 EST).
+    Does not account for specific holidays yet (can be added later via holiday library).
+    """
+    now_est = get_est_now()
+    
+    # Check Weekend
+    if now_est.weekday() >= 5: # 5=Sat, 6=Sun
+        return False
+        
+    # Check Time
+    market_open = now_est.replace(hour=9, minute=30, second=0, microsecond=0)
+    market_close = now_est.replace(hour=16, minute=0, second=0, microsecond=0)
+    
+    return market_open <= now_est <= market_close

@@ -5,7 +5,7 @@ import logging
 import json
 import os
 from datetime import datetime, timedelta, date, UTC, timezone  # Added UTC
-from utils_time import get_est_today, get_latest_trading_date # Added for timezone enforcement
+from utils_time import get_est_today, get_latest_trading_date, is_market_open # Added for timezone enforcement
 from typing import List, Dict, Optional, Tuple, Set, Any
 import time
 import requests  # Keep for potential future use
@@ -1309,6 +1309,54 @@ class MarketDataProvider:
         # But for intraday (1m, 5m), we NEED to fetch 'today' to see the chart update.
         today = get_est_today()
         is_intraday = interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]
+
+        # --- CACHE READ (After-Hours/Weekend) ---
+        # If market is closed, try to load from local DB to avoid API latency
+        if is_intraday and not is_market_open():
+            logging.info(f"Hist Fetch Helper: Market closed. Checking Intraday DB Cache for {len(symbols_yf)} symbols...")
+            symbols_to_fetch_remote = []
+            
+            # Use timestamps for DB query
+            # yf_start_date is date, need datetime. Combine with min/max time.
+            ts_start = datetime.combine(yf_start_date, datetime.min.time())
+            ts_end = datetime.combine(yf_end_date, datetime.min.time()) # yf_end_date is usually exclusive/next day, effectively covers full range
+
+            for s in symbols_yf:
+                cached_df = self.db.get_intraday(s, ts_start, ts_end, interval)
+                
+                is_cache_valid = False
+                if not cached_df.empty:
+                    # VALIDATION: Check if cache covers the latest trading session
+                    # If we are viewing 1D/5D, we expect data up to the latest close
+                    last_trading = get_latest_trading_date()
+                    
+                    # Convert max timestamp to EST date for comparison
+                    max_ts_utc = cached_df.index.max()
+                    if max_ts_utc.tzinfo:
+                        max_ts_est = max_ts_utc.tz_convert("America/New_York")
+                    else:
+                        # Fallback if naive (shouldn't happen with DB ISO)
+                        max_ts_est = max_ts_utc.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=-5)))
+                        
+                    if max_ts_est.date() >= last_trading:
+                        is_cache_valid = True
+                        historical_data[s] = cached_df
+                    else:
+                        logging.info(f"Hist Fetch Helper: Stale cache for {s}. Max date: {max_ts_est.date()}, Expected: {last_trading}. Refetching.")
+                
+                if not is_cache_valid:
+                    symbols_to_fetch_remote.append(s)
+            
+            if len(historical_data) > 0:
+                logging.info(f"Hist Fetch Helper: Loaded {len(historical_data)} symbols from Intraday DB Cache.")
+            
+            if not symbols_to_fetch_remote:
+                 logging.info("Hist Fetch Helper: All symbols found in cache. Skipping remote fetch.")
+                 return historical_data
+            
+            # Update list to only fetch missing
+            symbols_yf = symbols_to_fetch_remote
+
         
         if not is_intraday and yf_start_date >= today:
             logging.info(f"Hist Fetch Helper: Requested start date {yf_start_date} is today or in the future. Skipping fetch.")
@@ -1674,6 +1722,17 @@ class MarketDataProvider:
 
         if cache_needs_update:
             self._save_invalid_symbols_cache(invalid_cache)
+
+        # --- CACHE WRITE (Intraday) ---
+        if is_intraday and historical_data:
+            # Save fetched data to DB for future after-hours use
+            # We do this specifically for intraday because daily is handled by history cache file
+            try:
+                # logging.info(f"Hist Fetch Helper: Saving {len(historical_data)} symbols to Intraday DB Cache...")
+                for sym, df in historical_data.items():
+                    self.db.upsert_intraday(sym, df, interval)
+            except Exception as e_db_save:
+                logging.error(f"Hist Fetch Helper: Error saving to Intraday DB: {e_db_save}")
 
         logging.info(
             f"Hist Fetch Helper: Finished fetching ({len(historical_data)} symbols successful)."

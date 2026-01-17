@@ -61,6 +61,23 @@ class MarketDatabase:
                     info_json TEXT
                 )
             """)
+
+            # Intraday OHLCV Table (High Frequency)
+            # Uses timestamp (ISO with time) instead of date
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS intraday_ohlcv (
+                    symbol TEXT,
+                    timestamp TEXT,
+                    open REAL,
+                    high REAL,
+                    low REAL,
+                    close REAL,
+                    adj_close REAL,
+                    volume INTEGER,
+                    interval TEXT,
+                    PRIMARY KEY (symbol, timestamp, interval)
+                )
+            """)
             conn.commit()
 
     def upsert_ohlcv(self, symbol: str, df: pd.DataFrame, interval: str = '1d'):
@@ -203,6 +220,86 @@ class MarketDatabase:
                 results[sym] = df
                 
         return results
+
+    def upsert_intraday(self, symbol: str, df: pd.DataFrame, interval: str):
+        """
+        Upserts Intraday OHLCV data from a DataFrame.
+        DataFrame must have a DatetimeIndex.
+        Dates are stored as ISO timestamps (YYYY-MM-DDTHH:MM:SS...).
+        """
+        if df.empty:
+            return
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            for timestamp, row in df.iterrows():
+                # Store full timestamp ISO string
+                ts_str = timestamp.isoformat() 
+                
+                # Helper to clean NaNs
+                def clean(val):
+                    if pd.isna(val): return None
+                    return float(val)
+
+                # Normalize columns
+                open_val = clean(row.get('Open'))
+                high_val = clean(row.get('High'))
+                low_val = clean(row.get('Low'))
+                close_val = clean(row.get('Close', row.get('price')))
+                # Intraday usually doesn't have Adj Close diffs, but store if present
+                adj_close_val = clean(row.get('Adj Close', close_val))
+                volume_val = int(row.get('Volume', 0)) if pd.notna(row.get('Volume', 0)) else 0
+
+                try:
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO intraday_ohlcv 
+                        (symbol, timestamp, open, high, low, close, adj_close, volume, interval)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        symbol, 
+                        ts_str, 
+                        open_val, 
+                        high_val, 
+                        low_val, 
+                        close_val, 
+                        adj_close_val, 
+                        volume_val,
+                        interval
+                    ))
+                except Exception as e_ins:
+                    logging.error(f"DB Intraday Upsert Error for {symbol} on {ts_str}: {e_ins}")
+            
+            conn.commit()
+
+    def get_intraday(self, symbol: str, start_ts: datetime, end_ts: datetime, interval: str) -> pd.DataFrame:
+        """Retrieves Intraday OHLCV data for a symbol within a timestamp range."""
+        query = """
+            SELECT timestamp, open, high, low, close, adj_close, volume 
+            FROM intraday_ohlcv 
+            WHERE symbol = ? AND interval = ? AND timestamp BETWEEN ? AND ?
+            ORDER BY timestamp ASC
+        """
+        # Convert search bounds to ISO strings for comparison
+        start_str = start_ts.isoformat()
+        end_str = end_ts.isoformat()
+        
+        with self._get_connection() as conn:
+            df = pd.read_sql_query(query, conn, params=(symbol, interval, start_str, end_str))
+        
+        if not df.empty:
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df.set_index('timestamp', inplace=True)
+            df.index.name = "Date" # Standardize name for portfolio_logic compatibility
+            
+            # Rename columns to standard YF format
+            df.columns = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
+            
+            # FORCE NUMERIC TYPES
+            cols_to_numeric = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
+            for c in cols_to_numeric:
+                df[c] = pd.to_numeric(df[c], errors='coerce')
+                
+        return df
 
     def get_fx(self, pair: str, start_date: date, end_date: date, interval: str = '1d') -> pd.DataFrame:
         """Retrieves FX rate data for a pair within a date range."""
