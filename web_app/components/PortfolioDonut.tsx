@@ -201,15 +201,15 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
     const mainTotalText = getMainValueString(true);
 
     return (
-        <div className="flex flex-col h-full">
-            <h4 className="text-xs font-semibold text-muted-foreground text-center mt-2 md:mt-8 mb-0 uppercase tracking-tight">{title}</h4>
-            <div className="relative flex-1 min-h-[320px] md:min-h-[500px]">
+        <div className="relative h-full">
+            <h4 className="absolute top-3 left-4 z-10 text-xs font-semibold text-muted-foreground uppercase tracking-tight">{title}</h4>
+            <div className="relative w-full h-full min-h-[380px] md:min-h-[550px]">
                 <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                         <Pie
                             data={data}
                             cx="50%"
-                            cy="47%"
+                            cy="53%"
                             innerRadius="50%"
                             outerRadius="70%"
                             paddingAngle={2}
@@ -235,7 +235,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                 </ResponsiveContainer>
 
                 {/* Center Content Overlay */}
-                <div className="absolute left-1/2 top-[47%] -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+                <div className="absolute left-1/2 top-[53%] -translate-x-1/2 -translate-y-1/2 pointer-events-none">
                     <div className="flex flex-col items-center justify-center pointer-events-auto">
                         {activeItem ? (
                             <>
@@ -488,7 +488,7 @@ export default function PortfolioDonut({ holdings, currency }: PortfolioDonutPro
     }, [holdings, currency, totalValue, totalUnrealizedGain]);
 
     return (
-        <div className="h-full w-full grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="h-full w-full grid grid-cols-1 md:grid-cols-2 gap-0 md:gap-4">
             <SingleDonut
                 title="By Holding"
                 data={holdingsData}
@@ -500,7 +500,7 @@ export default function PortfolioDonut({ holdings, currency }: PortfolioDonutPro
                 metric={holdingsMetric}
                 setMetric={setHoldingsMetric}
             />
-            <div className="block md:hidden h-px bg-border/50 my-2" />
+            <div className="block md:hidden h-px bg-border/50 my-1" />
             <SingleDonut
                 title="By Account"
                 data={accountsData}

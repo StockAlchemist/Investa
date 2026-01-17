@@ -165,12 +165,19 @@ export default function Home() {
     placeholderData: keepPreviousData,
   });
 
+  // --- PRIORITIZATION LOGIC ---
+  // Ensure Summary and Holdings fetch FIRST before triggering others
+  // We consider them "loaded" if they have data or successfully fetched.
+  // Using isFetched or data check.
+  const isHighPriorityLoaded = summaryQuery.isSuccess && holdingsQuery.isSuccess;
+
+
   const transactionsQuery = useQuery({
     queryKey: ['transactions', selectedAccounts],
     queryFn: ({ signal }) => fetchTransactions(selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: activeTab === 'transactions' || backgroundFetchEnabled,
+    enabled: (activeTab === 'transactions' || backgroundFetchEnabled) && isHighPriorityLoaded,
   });
 
   const assetChangeQuery = useQuery({
@@ -178,7 +185,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchAssetChange(currency, selectedAccounts, benchmarks, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: activeTab === 'asset_change' || backgroundFetchEnabled,
+    enabled: (activeTab === 'asset_change' || backgroundFetchEnabled) && isHighPriorityLoaded,
   });
 
   const capitalGainsQuery = useQuery({
@@ -186,7 +193,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchCapitalGains(currency, selectedAccounts, capitalGainsDates.from, capitalGainsDates.to, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: activeTab === 'capital_gains' || backgroundFetchEnabled,
+    enabled: (activeTab === 'capital_gains' || backgroundFetchEnabled) && isHighPriorityLoaded,
   });
 
   const dividendsQuery = useQuery({
@@ -194,7 +201,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchDividends(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: activeTab === 'dividend' || backgroundFetchEnabled,
+    enabled: (activeTab === 'dividend' || backgroundFetchEnabled) && isHighPriorityLoaded,
   });
 
   const riskMetricsQuery = useQuery({
@@ -202,6 +209,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchRiskMetrics(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
+    enabled: isHighPriorityLoaded,
   });
 
   const attributionQuery = useQuery({
@@ -209,6 +217,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchAttribution(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
+    enabled: isHighPriorityLoaded,
   });
 
   const dividendCalendarQuery = useQuery({
@@ -216,7 +225,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchDividendCalendar(selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: activeTab === 'dividend' || backgroundFetchEnabled,
+    enabled: (activeTab === 'dividend' || backgroundFetchEnabled) && isHighPriorityLoaded,
   });
 
   const historySparklineQuery = useQuery({
@@ -224,6 +233,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, '1d', [], '5m', undefined, undefined, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
+    enabled: isHighPriorityLoaded,
   });
 
   const watchlistQuery = useQuery({
@@ -231,7 +241,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchWatchlist(currency, signal),
     staleTime: 1 * 60 * 1000,
     // No keepPreviousData needed for watchlist as it's not dependent on accounts
-    enabled: activeTab === 'watchlist' || backgroundFetchEnabled,
+    enabled: (activeTab === 'watchlist' || backgroundFetchEnabled) && isHighPriorityLoaded,
   });
 
   const settingsQuery = useQuery({
@@ -245,7 +255,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchPortfolioHealth(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: activeTab === 'analytics' || backgroundFetchEnabled,
+    enabled: (activeTab === 'analytics' || backgroundFetchEnabled) && isHighPriorityLoaded,
   });
 
   const correlationMatrixQuery = useQuery({
@@ -253,7 +263,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchCorrelationMatrix(correlationPeriod, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: activeTab === 'analytics' || backgroundFetchEnabled,
+    enabled: (activeTab === 'analytics' || backgroundFetchEnabled) && isHighPriorityLoaded,
   });
 
   const incomeProjectionQuery = useQuery({
@@ -261,7 +271,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchProjectedIncome(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: activeTab === 'dividend' || backgroundFetchEnabled,
+    enabled: (activeTab === 'dividend' || backgroundFetchEnabled) && isHighPriorityLoaded,
   });
 
   const summary = summaryQuery.data;

@@ -1340,6 +1340,12 @@ class MarketDataProvider:
                         
                     if max_ts_est.date() >= last_trading:
                         is_cache_valid = True
+                        # NORMALIZATION: Ensure 'price' column exists
+                        if "Close" in cached_df.columns and "price" not in cached_df.columns:
+                            cached_df["price"] = cached_df["Close"]
+                        elif "Adj Close" in cached_df.columns and "price" not in cached_df.columns:
+                            cached_df["price"] = cached_df["Adj Close"]
+                            
                         historical_data[s] = cached_df
                     else:
                         logging.info(f"Hist Fetch Helper: Stale cache for {s}. Max date: {max_ts_est.date()}, Expected: {last_trading}. Refetching.")
@@ -1571,34 +1577,26 @@ class MarketDataProvider:
                     df_symbol = None
                     found_in_batch = False
                     try:
-                        has_multilevel = getattr(data.columns, 'nlevels', 1) > 1
-                        if len(batch_symbols) == 1 and not has_multilevel:
-                            # Single ticker, flat index
-                            if not data.empty:
-                                if any(isinstance(c, (tuple, list)) and c[0].upper() == symbol.upper() for c in data.columns):
-                                     cols_for_sym = [c for c in data.columns if isinstance(c, (tuple, list)) and c[0].upper() == symbol.upper()]
-                                     df_symbol = data[cols_for_sym]
-                                     df_symbol.columns = [c[1] for c in df_symbol.columns]
-                                else:
-                                     df_symbol = data
+                        # Robust Logic for MultiIndex (Price, Ticker) or Single Index
+                        if isinstance(data.columns, pd.MultiIndex):
+                            # Check if Ticker is level 1 (standard new yfinance)
+                            if symbol in data.columns.get_level_values(1):
+                                # Filter columns where level 1 is symbol
+                                df_symbol = data.xs(symbol, axis=1, level=1, drop_level=True)
                                 found_in_batch = True
-                        elif has_multilevel and symbol in data.columns.get_level_values(0):
-                            df_symbol = data[symbol]
-                            found_in_batch = True
-                        elif not has_multilevel and any((isinstance(c, (tuple, list)) and c[0].upper() == symbol.upper()) for c in data.columns):
-                            # Handle flattened/serialization cases (JSON often turns tuples into lists)
-                            cols_for_sym = [c for c in data.columns if isinstance(c, (tuple, list)) and c[0].upper() == symbol.upper()]
-                            df_symbol = data[cols_for_sym]
-                            df_symbol.columns = [c[1] for c in df_symbol.columns]
-                            found_in_batch = True
-                        elif len(batch_symbols) > 1 and not data.columns.nlevels > 1:
-                            # Unexpected flat structure for multi-ticker batch
-                            pass 
-                        else:  # Handle other potential structures
-                            if isinstance(data, pd.Series) and data.name == symbol:
-                                df_symbol = pd.DataFrame(data)
+                            # Check if Ticker is level 0 (older or different request)
+                            elif symbol in data.columns.get_level_values(0):
+                                df_symbol = data[symbol]
                                 found_in_batch = True
-                            elif isinstance(data, pd.DataFrame) and symbol in data.columns:
+                        else:
+                            # Flat Index
+                            # Case 1: Columns are like "Close" (single ticker)
+                            if len(batch_symbols) == 1:
+                                df_symbol = data.copy()
+                                found_in_batch = True
+                            
+                            # Case 2: Columns might be "AAPL" (if just one metric requested?) - rare for 'auto_adjust=True' usually gives OHLCV
+                            elif symbol in data.columns:
                                 df_symbol = data[[symbol]].rename(columns={symbol: "Close"})
                                 found_in_batch = True
                         
@@ -2195,19 +2193,49 @@ class MarketDataProvider:
         
         db_results = self.db.get_ohlcv_batch(symbols_yf, start_date, end_date, interval=interval)
         if db_results:
-            historical_prices_yf_adjusted = db_results
-
+             # Normalize columns to match expected 'price' format
+             for sym, df_db in db_results.items():
+                 if df_db.empty:
+                     continue
+                 
+                 price_series = None
+                 if "Adj Close" in df_db.columns:
+                     price_series = df_db["Adj Close"]
+                 elif "Close" in df_db.columns:
+                     price_series = df_db["Close"]
+                
+                 if price_series is not None:
+                     df_clean = price_series.to_frame(name="price")
+                     historical_prices_yf_adjusted[sym] = df_clean
+                     
         # 3. Validation and fallback
         fetch_failed = False
         missing = [s for s in symbols_yf if s not in historical_prices_yf_adjusted or historical_prices_yf_adjusted[s].empty]
         
         if missing:
             logging.warning(f"Hist Prices: {len(missing)} symbols missing from DB after sync: {missing}")
-            # Try direct fetch as fallback (don't save to DB here to avoid recursion, or just use _sync again with more force)
-            if use_cache:
-                  # If sync failed or YF was flakey, we might still be missing data
-                  pass
-            fetch_failed = True
+            # Try direct fetch as fallback
+            # We fetch directly using the helper which bypasses DB read but does standard processing
+            if use_cache: 
+                logging.info(f"Hist Prices: Triggering direct fallback fetch for {len(missing)} missing symbols...")
+                fallback_data = self._fetch_yf_historical_data(missing, start_date, end_date, interval=interval)
+                
+                # Merge fallback results
+                for sym, df in fallback_data.items():
+                    if not df.empty:
+                        historical_prices_yf_adjusted[sym] = df
+                        # Optional: could update DB here, but _sync_to_db already tried and presumably failed or skipped
+                        # Maybe we don't spam attempts to write if it just failed.
+                        
+                # Re-check missing
+                still_missing = [s for s in missing if s not in historical_prices_yf_adjusted or historical_prices_yf_adjusted[s].empty]
+                if still_missing:
+                     fetch_failed = True
+                     logging.warning(f"Hist Prices: Still missing {len(still_missing)} symbols after fallback: {still_missing}")
+                else:
+                     fetch_failed = False # Recovered
+            else:
+                fetch_failed = True
 
         return historical_prices_yf_adjusted, fetch_failed
 
