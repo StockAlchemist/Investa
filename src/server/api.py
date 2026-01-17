@@ -1055,6 +1055,40 @@ def _calculate_historical_performance_internal(
     else:
         start_date = end_date - timedelta(days=365)
 
+    # --- NEW: CLAMP START DATE TO ACCOUNT HISTORY ---
+    # If specific accounts are selected, or even for "All" view, 
+    # we want the graph to start where the data actually begins for those accounts,
+    # rather than showing a long flat line from the global portfolio inception (2002).
+    if not df.empty and "Date" in df.columns:
+        earliest_dt = None
+        earliest_dt = None
+        if accounts and "Account" in df.columns:
+             unique_accts = df["Account"].unique()
+             logging.info(f"DEBUG_CLAMP: Received accounts={accounts}. Available in DF: {unique_accts}")
+             
+             # Find earliest date relevant to selected accounts
+             mask = df["Account"].isin(accounts)
+             if mask.any():
+                 earliest_dt = df.loc[mask, "Date"].min().date()
+                 logging.info(f"DEBUG_CLAMP: Match found. Earliest date: {earliest_dt}")
+             else:
+                 logging.info("DEBUG_CLAMP: No transactions found for selected accounts.")
+        
+        # Fallback: if no specific accounts or filtering failed, use global min
+        
+        # Fallback: if no specific accounts or filtering failed, use global min
+        if earliest_dt is None and period == "all": 
+             earliest_dt = df["Date"].min().date()
+
+        # Apply clamp: If requested start_date (e.g. 5Y ago) is before 
+        # the account actually existed, shift to inception.
+        logging.info(f"DEBUG_CLAMP: Accounts={accounts}, Period={period}, RequestStart={start_date}, EarliestDT={earliest_dt}")
+        if earliest_dt and start_date < earliest_dt:
+             start_date = earliest_dt
+             logging.info(f"DEBUG_CLAMP: Clamped start_date to {start_date}")
+        else:
+             logging.info("DEBUG_CLAMP: No clamping applied.")
+
     # --- NEW: BASELINE BUFFERING ($t_{-1}$) ---
     # Store the intended display start date before we buffer it for calculations
     display_start_date = start_date
@@ -1119,12 +1153,33 @@ def _calculate_historical_performance_internal(
 
     # --- NEW: BASELINE FILTERING ---
     if daily_df is not None and not daily_df.empty:
+        # --- FIX: Ensure Datetime Index ---
+        # calculate_historical_performance might return a reset index with 'date' or 'Date' column
+        if not isinstance(daily_df.index, pd.DatetimeIndex):
+            logging.info(f"DEBUG_INDEX: Index is {type(daily_df.index)}. Columns: {daily_df.columns}")
+            if "Date" in daily_df.columns:
+                daily_df.set_index("Date", inplace=True)
+                logging.info("DEBUG_INDEX: Set index to 'Date'")
+            elif "date" in daily_df.columns:
+                daily_df.set_index("date", inplace=True)
+                daily_df.index.name = "Date" # Standardize name
+                logging.info("DEBUG_INDEX: Set index to 'date'")
+            else:
+                logging.warning("DEBUG_INDEX: No Date/date column found to set index!")
+        
         # Ensure UTC alignment for comparison and output
         daily_df.index = pd.to_datetime(daily_df.index, utc=True)
         
+        # --- FIX: Handle filtered history (NaNs) ---
+        # If calculating TWR for an account that didn't exist in 2002, values might be NaN. 
+        # Fill with 1.0 (baseline wealth) so graph isn't broken.
+        if "Portfolio Accumulated Gain" in daily_df.columns:
+             daily_df["Portfolio Accumulated Gain"] = daily_df["Portfolio Accumulated Gain"].fillna(1.0)
+        
         # Ensure we only have ONE baseline point before the display_start_date.
         # This prevents plotting "previous period data" while keeping the anchor.
-        if period != "all":
+        # Modified: Apply this to "all" as well so it respects the clamped display_start_date
+        if True: # period != "all":
             try:
                 # Use localized Timestamp for comparison
                 ds_ts = pd.Timestamp(display_start_date, tz='UTC')
@@ -1147,7 +1202,7 @@ def _calculate_historical_performance_internal(
     # With full history calculation, the values at the start of a 1Y period might be 1.5 (50% gain).
     # We must normalize so the graph starts at 1.0 (0% gain).
     # We use iloc[0] (the baseline point t-1) as the reference.
-    if daily_df is not None and not daily_df.empty and period != "all":
+    if daily_df is not None and not daily_df.empty: # Modified: Always normalize, even for "all"
         try:
              # 1. Normalize Portfolio TWR
              if "Portfolio Accumulated Gain" in daily_df.columns:
@@ -1158,13 +1213,20 @@ def _calculate_historical_performance_internal(
                  # logging.debug(f"API: Normalized Portfolio TWR by factor {start_val}")
 
              # 2. Normalize Benchmarks
+             # 2. Normalize Benchmarks
              if benchmarks:
                  for b_ticker in benchmarks:
                      bm_col = f"{b_ticker} Accumulated Gain"
                      if bm_col in daily_df.columns:
+                         # Backfill to ensure we have a valid start value if the exact start date is missing data
+                         daily_df[bm_col] = daily_df[bm_col].bfill()
+                         
                          bm_start_val = daily_df[bm_col].iloc[0]
-                         if bm_start_val != 0:
+                         if pd.notna(bm_start_val) and bm_start_val != 0:
                              daily_df[bm_col] = daily_df[bm_col] / bm_start_val
+                         elif pd.isna(bm_start_val):
+                              # If still NaN (empty series?), fill with 1.0
+                              daily_df[bm_col] = 1.0
 
         except Exception as e_norm:
             logging.error(f"API: Normalization failed: {e_norm}")
@@ -2711,15 +2773,8 @@ async def clear_cache():
         if app_cache_dir and app_cache_dir != app_data_dir:
             targets.append(app_cache_dir)
             
-            # Parent cache check (safe)
-            try:
-                parent_cache = os.path.dirname(os.path.dirname(os.path.dirname(app_cache_dir)))
-                if os.path.basename(parent_cache) == "Caches": 
-                     targets.append(parent_cache)
-                elif os.path.exists(os.path.expanduser("~/Library/Caches")):
-                     targets.append(os.path.expanduser("~/Library/Caches"))
-            except:
-                pass
+        # Removed broad system cache scanning for safety and performance.
+        # We only want to clear OUR app's cache.
             
         logging.info(f"Target Directories for cleanup: {targets}")
 
