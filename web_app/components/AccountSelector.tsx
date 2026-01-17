@@ -114,7 +114,7 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                         {/* Account Groups Section */}
                         {hasGroups && (
                             <>
-                                <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">
+                                <div className="px-4 py-2 text-xs font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider bg-cyan-50/50 dark:bg-cyan-950/20 border-y border-border/50">
                                     Groups
                                 </div>
                                 {Object.entries(accountGroups).map(([groupName, groupAccounts]) => {
@@ -141,38 +141,39 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                                         </button>
                                     );
                                 })}
-                                <div className="h-px bg-border my-1" />
                             </>
                         )}
 
 
                         {/* Individual Accounts Section */}
                         {hasGroups && (
-                            <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">
+                            <div className="px-4 py-2 text-xs font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider bg-cyan-50/50 dark:bg-cyan-950/20 border-y border-border/50">
                                 Individual
                             </div>
                         )}
 
-                        {availableAccounts.map((account) => {
-                            const isSelected = selectedAccounts.includes(account);
-                            return (
-                                <button
-                                    key={account}
-                                    onClick={() => toggleAccount(account)}
-                                    className={`group flex items-center justify-between w-full px-4 py-3 text-sm font-medium transition-colors ${isSelected
-                                        ? 'bg-[#0097b2] text-white shadow-sm'
-                                        : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
-                                        } last:border-0`}
-                                >
-                                    <span className="whitespace-nowrap">{account}</span>
-                                    {isSelected && (
-                                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                        </svg>
-                                    )}
-                                </button>
-                            );
-                        })}
+                        {availableAccounts
+                            .filter(account => account !== 'All Accounts')
+                            .map((account) => {
+                                const isSelected = selectedAccounts.includes(account);
+                                return (
+                                    <button
+                                        key={account}
+                                        onClick={() => toggleAccount(account)}
+                                        className={`group flex items-center justify-between w-full px-4 py-3 text-sm font-medium transition-colors ${isSelected
+                                            ? 'bg-[#0097b2] text-white shadow-sm'
+                                            : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
+                                            } last:border-0`}
+                                    >
+                                        <span className="whitespace-nowrap">{account}</span>
+                                        {isSelected && (
+                                            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                            </svg>
+                                        )}
+                                    </button>
+                                );
+                            })}
                     </div>
                 </div>
             )}
