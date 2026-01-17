@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { exportToCSV } from '../lib/export';
 import { Transaction, addTransaction, updateTransaction, deleteTransaction, addToWatchlist } from '../lib/api';
-import { Trash2, Star, Pencil } from 'lucide-react';
+import { Trash2, Star, Pencil, Plus, Filter, ChevronUp, ChevronDown, Download, Eye, EyeOff, LayoutGrid, Table as TableIcon } from 'lucide-react';
 import TransactionModal from './TransactionModal';
 import StockTicker from './StockTicker';
 
@@ -21,6 +21,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
     const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
     const [currentTransaction, setCurrentTransaction] = useState<Transaction | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+    const [mobileViewMode, setMobileViewMode] = useState<'card' | 'table'>('card');
 
     const queryClient = useQueryClient();
 
@@ -199,43 +200,58 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
 
             <div className="flex flex-col gap-4">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                    <div className="flex flex-nowrap gap-2 w-full md:w-auto">
                         <button
                             onClick={handleAdd}
-                            className="flex-1 md:flex-none px-4 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium shadow-sm flex items-center justify-center gap-2"
+                            className="flex-1 md:flex-none px-2 md:px-4 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium shadow-sm flex items-center justify-center gap-2"
                         >
-                            <span>+</span> Add Transaction
+                            <Plus className="h-4 w-4" />
+                            <span className="hidden md:inline">Add Transaction</span>
                         </button>
                         {selectedIds.size > 0 && (
                             <button
                                 onClick={handleBulkDelete}
-                                className="flex-1 md:flex-none px-4 py-2 bg-rose-600 text-white rounded-md hover:bg-rose-700 transition-colors text-sm font-medium shadow-sm flex items-center justify-center gap-2"
+                                className="flex-1 md:flex-none px-2 md:px-4 py-2 bg-rose-600 text-white rounded-md hover:bg-rose-700 transition-colors text-sm font-medium shadow-sm flex items-center justify-center gap-2"
                             >
                                 <Trash2 className="h-4 w-4" />
-                                Delete Selected ({selectedIds.size})
+                                <span className="hidden md:inline">Delete Selected ({selectedIds.size})</span>
                             </button>
                         )}
                         <button
                             onClick={() => { setShowFilters(!showFilters); if (showFilters) resetFilters(); }}
-                            className="flex justify-between w-full md:w-auto px-4 py-2 gap-3 text-sm font-medium text-foreground bg-secondary border border-border rounded-lg shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-all items-center"
+                            className="flex-1 md:flex-none flex justify-center md:justify-between w-full md:w-auto px-2 md:px-4 py-2 gap-3 text-sm font-medium text-foreground bg-secondary border border-border rounded-lg shadow-sm hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-all items-center"
                         >
-                            <span>{showFilters ? 'Hide Filters' : 'Show Filters'}</span>
-                            <span className="text-xs">{showFilters ? '▲' : '▼'}</span>
+                            <div className="flex items-center gap-2">
+                                <Filter className="h-4 w-4" />
+                                <span className="hidden md:inline">{showFilters ? 'Hide Filters' : 'Show Filters'}</span>
+                            </div>
+                            <span className="text-xs hidden md:inline">{showFilters ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}</span>
                         </button>
                         <button
                             onClick={() => exportToCSV(filteredTransactions, 'transactions.csv')}
-                            className="flex-1 md:flex-none px-4 py-2 bg-secondary border border-border text-foreground rounded-md hover:bg-accent/10 transition-colors text-sm font-medium text-center"
+                            className="flex-1 md:flex-none px-2 md:px-4 py-2 bg-secondary border border-border text-foreground rounded-md hover:bg-accent/10 transition-colors text-sm font-medium text-center flex items-center justify-center gap-2"
                         >
-                            Export CSV
+                            <Download className="h-4 w-4" />
+                            <span className="hidden md:inline">Export CSV</span>
                         </button>
                         <button
                             onClick={() => setShowInternalCash(!showInternalCash)}
-                            className={`flex justify-between w-full md:w-auto px-4 py-2 gap-3 text-sm font-medium border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-all items-center ${showInternalCash
+                            className={`flex-1 md:flex-none flex justify-center md:justify-between w-full md:w-auto px-2 md:px-4 py-2 gap-3 text-sm font-medium border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-all items-center ${showInternalCash
                                 ? 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20'
                                 : 'bg-secondary text-foreground border-border hover:bg-accent/10'
                                 }`}
                         >
-                            <span>{showInternalCash ? 'Hide Internal Cash' : 'Show Internal Cash'}</span>
+                            <div className="flex items-center gap-2">
+                                {showInternalCash ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                <span className="hidden md:inline">{showInternalCash ? 'Hide Internal Cash' : 'Show Internal Cash'}</span>
+                            </div>
+                        </button>
+                        <button
+                            onClick={() => setMobileViewMode(current => current === 'card' ? 'table' : 'card')}
+                            className="md:hidden flex-1 md:flex-none flex items-center justify-center gap-1.5 px-2 md:px-4 py-2 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors text-foreground bg-secondary border-border hover:bg-accent/10"
+                            title={mobileViewMode === 'card' ? 'Switch to Table View' : 'Switch to Card View'}
+                        >
+                            {mobileViewMode === 'card' ? <TableIcon className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
                         </button>
                     </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
@@ -305,8 +321,8 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
             </div>
 
             {/* Desktop Table View */}
-            <div className="bg-card rounded-xl shadow-sm border border-border overflow-hidden">
-                <div className="hidden md:block overflow-x-auto">
+            <div className={`bg-card rounded-xl shadow-sm border border-border overflow-hidden ${mobileViewMode === 'table' ? 'block' : 'hidden'} md:block`}>
+                <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-black/5 dark:divide-white/10">
                         <thead className="bg-secondary/50 font-semibold border-b border-border">
                             <tr>
@@ -404,7 +420,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
             </div>
 
             {/* Mobile Card View */}
-            <div className="block md:hidden space-y-4 p-4">
+            <div className={`md:hidden space-y-4 p-4 ${mobileViewMode === 'card' ? 'block' : 'hidden'}`}>
                 {visibleTransactions.map((tx, index) => (
                     <div key={`mobile-tx-${index}`} className="bg-card rounded-lg border border-border shadow-sm p-4">
                         <div className="flex justify-between items-start mb-2">

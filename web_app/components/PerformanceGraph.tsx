@@ -291,10 +291,51 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         return undefined;
     }, [xDomain, period]);
 
-    if (!mounted || !chartedData || chartedData.length === 0) {
+    // Check for valid dimensions to prevent Recharts warning
+    // We can't easily check actual DOM dimensions here without a ref and another effect,
+    // but we can ensure we don't render until we are mounted and presumably have layout.
+    // The "width(-1) and height(-1)" error usually comes from rendering inside a container that hasn't finished layout.
+    // We are already checking `mounted`.
+    // Let's add a small delay or use a ref to measure.
+    // Actually, ResponsiveContainer should handle it if 'minWith' is set?
+    // A common fix is to force a minimum height on the container or wait for a ref.
+
+    // Simplest fix: Ensure the parent div has explicit height (which it does: h-[400px]).
+    // The issue might be initial render pass. 
+    // Let's rely on the `mounted` check we already have, but maybe ensure we return null if window is undefined (SSR).
+    const containerRef = React.useRef<HTMLDivElement>(null);
+    const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
+
+    useEffect(() => {
+        if (!containerRef.current) return;
+
+        const measure = () => {
+            if (containerRef.current) {
+                const { offsetWidth, offsetHeight } = containerRef.current;
+                if (offsetWidth > 0 && offsetHeight > 0) {
+                    setDimensions({ width: offsetWidth, height: offsetHeight });
+                }
+            }
+        };
+
+        // Measure immediately
+        measure();
+
+        // Observe resize
+        const observer = new ResizeObserver(measure);
+        observer.observe(containerRef.current);
+
+        return () => observer.disconnect();
+    }, []);
+
+    // Only render chart if we have valid dimensions
+    const shouldRenderChart = mounted && dimensions && dimensions.width > 0 && dimensions.height > 0 && chartedData && chartedData.length > 0;
+
+    if (!shouldRenderChart) {
         return (
             <div
-                className="rounded-xl p-6 shadow-sm border border-border h-80 flex items-center justify-center text-muted-foreground"
+                ref={containerRef}
+                className="rounded-xl p-6 shadow-sm border border-border h-[400px] flex items-center justify-center text-muted-foreground w-full"
                 style={{ backgroundColor: 'var(--menu-solid)' }}
             >
                 {!mounted || loading ? (
@@ -491,7 +532,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
     const isContinuous = period === '1d';
 
     return (
-        <div className="bg-card rounded-xl p-4 shadow-sm border border-border mb-6 overflow-visible">
+        <div ref={containerRef} className="bg-card rounded-xl p-4 shadow-sm border border-border mb-6 overflow-visible">
             <div className="mb-6">
                 <div className="flex flex-col items-start gap-1 md:flex-row md:justify-between md:items-center md:gap-0 mb-4">
                     <h3 className="text-lg font-medium text-muted-foreground">

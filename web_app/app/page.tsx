@@ -29,8 +29,12 @@ import HoldingsTable from '@/components/HoldingsTable';
 import AccountSelector from '@/components/AccountSelector';
 import CurrencySelector from '@/components/CurrencySelector';
 import TabNavigation from '@/components/TabNavigation';
-import PerformanceGraph from '@/components/PerformanceGraph';
 import dynamic from 'next/dynamic';
+
+const PerformanceGraph = dynamic(() => import('@/components/PerformanceGraph'), {
+  loading: () => <div className="h-[400px] bg-card rounded-xl border border-border mb-6 animate-pulse" />,
+  ssr: false
+});
 
 const TransactionsTable = dynamic(() => import('@/components/TransactionsTable'));
 const Allocation = dynamic(() => import('@/components/Allocation'));
@@ -66,9 +70,12 @@ export default function Home() {
 
   // Trigger background fetch after initial load
   useEffect(() => {
+    // Start background fetch immediately after mount to speed up data availability
+    // while still allowing the main UI to paint first.
+    // We use a small timeout to let the event loop clear the render task.
     const timer = setTimeout(() => {
       setBackgroundFetchEnabled(true);
-    }, 2000);
+    }, 100);
     return () => clearTimeout(timer);
   }, []);
 
