@@ -451,7 +451,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                             </div>
                             <div className="flex items-center justify-between gap-2">
                                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">TWR</span>
-                                <span className={`font-mono font-medium ${dataPoint.twr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
+                                <span className={`text-[13px] font-bold ${dataPoint.twr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
                                     {dataPoint.twr >= 0 ? '+' : ''}{dataPoint.twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                                 </span>
                             </div>
@@ -494,7 +494,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                     {dataPoint.fx_return != null && (
                                         <div className="flex items-center justify-between gap-2">
                                             <span className="text-[10px] uppercase tracking-wider text-amber-500 font-bold">FX Ret</span>
-                                            <span className={`font-mono font-medium ${dataPoint.fx_return >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
+                                            <span className={`text-[12px] font-bold ${dataPoint.fx_return >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
                                                 {dataPoint.fx_return >= 0 ? '+' : ''}{dataPoint.fx_return.toFixed(2)}%
                                             </span>
                                         </div>
