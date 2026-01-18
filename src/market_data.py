@@ -285,7 +285,7 @@ class MarketDataProvider:
 
         # Ensure directory exists
         os.makedirs(self.fundamentals_cache_dir, exist_ok=True)
-
+        
         # logging.info("MarketDataProvider initialized.")
 
     def _get_historical_cache_dir(self) -> str:
@@ -986,6 +986,154 @@ class MarketDataProvider:
 
         # Return (fresh results)
         return results, fx_rates_vs_usd, fx_prev_close_vs_usd, has_errors, has_warnings
+
+    def get_fundamentals_batch(
+        self, 
+        symbols: List[str],
+        user_symbol_map: Dict[str, str] = None,
+        user_excluded_symbols: Set[str] = None
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Fetches fundamental data (Market Cap, PE, Dividend Yield) for a batch of symbols.
+        Uses a separate cache strategy (individual files) with longer duration.
+        """
+        _ensure_yfinance()
+        if not yf:
+            return {}
+            
+        user_symbol_map = user_symbol_map or {}
+        user_excluded_symbols = user_excluded_symbols or set()
+
+        # Cache version to ensure data compatibility/freshness
+        CACHE_VERSION = 2
+
+        results = {}
+        symbols_to_fetch = []
+        now = datetime.now(timezone.utc)
+        
+        # Check cache
+        for sym in symbols:
+            yf_sym = map_to_yf_symbol(sym, user_symbol_map, user_excluded_symbols) or sym
+            cache_file = os.path.join(self.fundamentals_cache_dir, f"{yf_sym}.json")
+            
+            loaded = False
+            if os.path.exists(cache_file):
+                try:
+                    with open(cache_file, "r") as f:
+                        data = json.load(f)
+                        ts = datetime.fromisoformat(data['timestamp'])
+                        # Check version (default 0 if missing)
+                        ver = data.get('version', 0)
+                        
+                        # If valid (age check AND version check)
+                        if ver == CACHE_VERSION and (now - ts).total_seconds() < config.FUNDAMENTALS_CACHE_DURATION_HOURS * 3600:
+                            # Use FULL data directly for result (extract what we need)
+                            info = data['data']
+                            results[sym] = {
+                                "marketCap": info.get("marketCap"),
+                                "trailingPE": info.get("trailingPE"),
+                                "forwardPE": info.get("forwardPE"),
+                                "dividendYield": info.get("dividendYield"),
+                                "dividendRate": info.get("dividendRate"),
+                                "currency": info.get("currency")
+                            }
+                            loaded = True
+                except Exception:
+                     pass
+            
+            if not loaded:
+                symbols_to_fetch.append(sym)
+                
+        # Fetch remaining
+        if symbols_to_fetch:
+             # Construct YF symbols
+             yf_map = { (map_to_yf_symbol(s, user_symbol_map, user_excluded_symbols) or s): s for s in symbols_to_fetch } # yf -> internal
+             
+             # Use Tickers to instantiate objects (does not fetch data yet)
+             try:
+                 # Note: Fetching .info is serial and slow. 
+                 # We accept this for the first load, relying on cache for subsequent loads.
+                 tickers = yf.Tickers(" ".join(yf_map.keys()))
+                 
+                 for yf_sym, ticker in tickers.tickers.items():
+                     internal_sym = yf_map.get(yf_sym, yf_sym) 
+                     
+                     if is_cash_symbol(internal_sym):
+                         continue
+
+                     try:
+                         info = ticker.info # Triggers HTTP request
+                         
+                         div_yield = info.get("yield")
+                         if div_yield is None:
+                             div_yield = info.get("dividendYield")
+                             
+                             # Normalize dividendYield if it looks like percentage (e.g. 0.41 for 0.41%)
+                             try:
+                                 div_val = float(div_yield)
+                                 rate = info.get("dividendRate")
+                                 price = info.get("currentPrice") or info.get("regularMarketPrice")
+                                 trailing = info.get("trailingAnnualDividendYield")
+                                 
+                                 normalized = False
+                                 
+                                 # Check 1: Rate / Price ratio
+                                 if rate is not None and price is not None:
+                                     try:
+                                          rate_val = float(rate)
+                                          price_val = float(price)
+                                          if price_val > 0:
+                                              ratio = rate_val / price_val
+                                              # If yield is closer to ratio*100 than to ratio, it's percentage
+                                              if abs(div_val - ratio * 100) < abs(div_val - ratio):
+                                                  div_yield = div_val / 100.0
+                                                  normalized = True
+                                     except (ValueError, TypeError):
+                                         pass
+                                         
+                                 # Check 2: Comparison with trailing yield (if not already normalized)
+                                 if not normalized and trailing is not None:
+                                     try:
+                                         trailing_val = float(trailing)
+                                         if trailing_val > 0 and div_val > trailing_val * 50:
+                                             div_yield = div_val / 100.0
+                                             normalized = True
+                                     except (ValueError, TypeError):
+                                         pass
+
+                                 # Check 3: Raw Magnitude Heuristic
+                                 if not normalized and div_val > 0.30: 
+                                      div_yield = div_val / 100.0
+                             
+                             except Exception as e_norm:
+                                 logging.warning(f"Error normalizing yield for {yf_sym}: {e_norm}")
+                                 
+                         # Update info with normalized yield
+                         if div_yield is not None:
+                             info["dividendYield"] = div_yield
+
+                         # Save FULL info to cache (Unified Cache)
+                         with open(os.path.join(self.fundamentals_cache_dir, f"{yf_sym}.json"), "w") as f:
+                             json.dump({
+                                 "timestamp": now.isoformat(),
+                                 "version": CACHE_VERSION,
+                                 "data": info
+                             }, f)
+                             
+                         results[internal_sym] = {
+                             "marketCap": info.get("marketCap"),
+                             "trailingPE": info.get("trailingPE"),
+                             "forwardPE": info.get("forwardPE"),
+                             "dividendYield": div_yield,
+                             "dividendRate": info.get("dividendRate"),
+                             "currency": info.get("currency")
+                         }
+                     except Exception as e_sym:
+                         logging.warning(f"Error fetching fundamentals for {yf_sym}: {e_sym}")
+             except Exception as e_fetch:
+                 logging.warning(f"Batch metrics fetch failed: {e_fetch}")
+                 
+        return results
 
     @profile
     def get_index_quotes(
@@ -2378,14 +2526,67 @@ class MarketDataProvider:
                     f"No fundamental data returned by yfinance for {yf_symbol}."
                 )
                 data = (
-                    {}
+                     {}
                 )  # Store empty dict to avoid refetching invalid symbol immediately
+
+            # --- NORMALIZE YIELD IN PLACE (Consistency with Watchlist) ---
+            # Define CACHE_VERSION here too if needed, or import. Using 2.
+            CACHE_VERSION = 2
+            try:
+                div_yield = data.get("yield")
+                if div_yield is None:
+                    div_yield = data.get("dividendYield")
+                    
+                    try:
+                        div_val = float(div_yield)
+                        rate = data.get("dividendRate")
+                        price = data.get("currentPrice") or data.get("regularMarketPrice")
+                        trailing = data.get("trailingAnnualDividendYield")
+                        
+                        normalized = False
+                        
+                        # Check 1: Rate / Price ratio
+                        if rate is not None and price is not None:
+                             try:
+                                  rate_val = float(rate)
+                                  price_val = float(price)
+                                  if price_val > 0:
+                                      ratio = rate_val / price_val
+                                      if abs(div_val - ratio * 100) < abs(div_val - ratio):
+                                          div_yield = div_val / 100.0
+                                          normalized = True
+                             except (ValueError, TypeError):
+                                 pass
+                                 
+                        # Check 2: Comparison with trailing yield
+                        if not normalized and trailing is not None:
+                             try:
+                                 trailing_val = float(trailing)
+                                 if trailing_val > 0 and div_val > trailing_val * 50:
+                                     div_yield = div_val / 100.0
+                                     normalized = True
+                             except (ValueError, TypeError):
+                                 pass
+
+                        # Check 3: Raw Magnitude Heuristic
+                        if not normalized and div_val > 0.30: 
+                             div_yield = div_val / 100.0
+                    
+                    except Exception:
+                        pass
+                
+                if div_yield is not None:
+                    data["dividendYield"] = div_yield
+            except Exception as e_norm_detail:
+                logging.warning(f"Error normalizing yield in detail fetch for {yf_symbol}: {e_norm_detail}")
+            # --- END NORMALIZATION ---
 
             # Save to cache (only this symbol's file)
             try:
                 # MODIFIED: Save only the specific symbol's data to its file
                 symbol_cache_content = {
                     "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "version": CACHE_VERSION,
                     "data": data,
                 }
                 # Ensure the directory exists before writing (redundant but safe)

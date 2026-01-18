@@ -516,22 +516,66 @@ export interface WatchlistItem {
     Name: string | null;
     Currency: string | null;
     Sparkline: number[];
+    "Market Cap"?: number | null;
+    "PE Ratio"?: number | null;
+    "Dividend Yield"?: number | null;
 }
 
-export async function fetchWatchlist(currency: string = 'USD', signal?: AbortSignal): Promise<WatchlistItem[]> {
-    const params = new URLSearchParams({ currency });
+
+export interface WatchlistMeta {
+    id: number;
+    name: string;
+    created_at: string;
+}
+
+export async function getWatchlists(signal?: AbortSignal): Promise<WatchlistMeta[]> {
+    const res = await fetch(`${API_BASE_URL}/watchlists`, { signal, cache: 'no-store' });
+    if (!res.ok) throw new Error('Failed to fetch watchlists');
+    return res.json();
+}
+
+export async function createWatchlist(name: string): Promise<WatchlistMeta> {
+    const res = await fetch(`${API_BASE_URL}/watchlists`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new Error('Failed to create watchlist');
+    return res.json();
+}
+
+export async function renameWatchlist(id: number, name: string): Promise<StatusResponse> {
+    const res = await fetch(`${API_BASE_URL}/watchlists/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new Error('Failed to rename watchlist');
+    return res.json();
+}
+
+export async function deleteWatchlist(id: number): Promise<StatusResponse> {
+    const res = await fetch(`${API_BASE_URL}/watchlists/${id}`, {
+        method: "DELETE",
+    });
+    if (!res.ok) throw new Error('Failed to delete watchlist');
+    return res.json();
+}
+
+export async function fetchWatchlist(currency: string = 'USD', watchlistId: number = 1, signal?: AbortSignal): Promise<WatchlistItem[]> {
+    const params = new URLSearchParams({ currency, id: watchlistId.toString() });
     const res = await fetch(`${API_BASE_URL}/watchlist?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch watchlist');
     return res.json();
 }
 
-export async function addToWatchlist(symbol: string, note: string = ""): Promise<StatusResponse> {
+export async function addToWatchlist(symbol: string, note: string = "", watchlistId: number = 1): Promise<StatusResponse> {
     const response = await fetch(`${API_BASE_URL}/watchlist`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
         },
-        body: JSON.stringify({ symbol, note }),
+        body: JSON.stringify({ symbol, note, watchlist_id: watchlistId }),
     });
     if (!response.ok) {
         throw new Error(`Failed to add to watchlist: ${response.statusText}`);
@@ -539,8 +583,8 @@ export async function addToWatchlist(symbol: string, note: string = ""): Promise
     return response.json();
 }
 
-export async function removeFromWatchlist(symbol: string): Promise<StatusResponse> {
-    const response = await fetch(`${API_BASE_URL}/watchlist/${symbol}`, {
+export async function removeFromWatchlist(symbol: string, watchlistId: number = 1): Promise<StatusResponse> {
+    const response = await fetch(`${API_BASE_URL}/watchlist/${symbol}?id=${watchlistId}`, {
         method: "DELETE",
     });
     if (!response.ok) {
@@ -551,6 +595,7 @@ export async function removeFromWatchlist(symbol: string): Promise<StatusRespons
 
 export async function updateHoldingTags(account: string, symbol: string, tags: string): Promise<StatusResponse> {
     const response = await fetch(`${API_BASE_URL}/holdings/update_tags`, {
+
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

@@ -28,7 +28,11 @@ from db_utils import (
     add_to_watchlist,
     remove_from_watchlist,
     get_watchlist,
-    update_transaction_in_db, # Ensure this is imported
+    update_transaction_in_db,
+    get_all_watchlists,
+    create_watchlist,
+    rename_watchlist,
+    delete_watchlist,
 )
 
 from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series
@@ -2655,9 +2659,70 @@ async def webhook_refresh(
 class WatchlistAdd(BaseModel):
     symbol: str
     note: Optional[str] = ""
+    watchlist_id: Optional[int] = 1
+
+class WatchlistCreate(BaseModel):
+    name: str
+
+class WatchlistRename(BaseModel):
+    name: str
+
+@router.get("/watchlists")
+async def get_watchlists_endpoint():
+    """Fetches all available watchlists."""
+    conn = get_db_connection()
+    if not conn:
+         raise HTTPException(status_code=500, detail="Database connection failed")
+    try:
+        return get_all_watchlists(conn)
+    finally:
+        conn.close()
+
+@router.post("/watchlists")
+async def create_watchlist_endpoint(item: WatchlistCreate):
+    """Creates a new watchlist."""
+    conn = get_db_connection()
+    if not conn:
+         raise HTTPException(status_code=500, detail="Database connection failed")
+    try:
+        new_id = create_watchlist(conn, item.name)
+        if not new_id:
+             raise HTTPException(status_code=500, detail="Failed to create watchlist")
+        return {"id": new_id, "name": item.name}
+    finally:
+        conn.close()
+
+@router.put("/watchlists/{watchlist_id}")
+async def rename_watchlist_endpoint(watchlist_id: int, item: WatchlistRename):
+    """Renames a watchlist."""
+    conn = get_db_connection()
+    if not conn:
+         raise HTTPException(status_code=500, detail="Database connection failed")
+    try:
+        success = rename_watchlist(conn, watchlist_id, item.name)
+        if not success:
+             raise HTTPException(status_code=404, detail="Watchlist not found or failed to rename")
+        return {"status": "success"}
+    finally:
+        conn.close()
+
+@router.delete("/watchlists/{watchlist_id}")
+async def delete_watchlist_endpoint(watchlist_id: int):
+    """Deletes a watchlist."""
+    conn = get_db_connection()
+    if not conn:
+         raise HTTPException(status_code=500, detail="Database connection failed")
+    try:
+        success = delete_watchlist(conn, watchlist_id)
+        if not success:
+             raise HTTPException(status_code=404, detail="Watchlist not found or failed to delete")
+        return {"status": "success"}
+    finally:
+        conn.close()
 
 @router.get("/watchlist")
 async def get_watchlist_endpoint(
+    watchlist_id: int = Query(1, alias="id"),
     currency: str = "USD",
     data: tuple = Depends(get_transaction_data)
 ):
@@ -2679,7 +2744,7 @@ async def get_watchlist_endpoint(
         raise HTTPException(status_code=500, detail="Database connection failed")
     
     try:
-        db_items = get_watchlist(conn)
+        db_items = get_watchlist(conn, watchlist_id=watchlist_id)
         if not db_items:
             return []
             
@@ -2701,10 +2766,22 @@ async def get_watchlist_endpoint(
             logging.error(f"Failed to fetch quotes for watchlist: {e_quotes}")
             quotes = {}
 
+        # Fetch fundamentals (Market Cap, PE, Yield)
+        try:
+            fundamentals = mdp.get_fundamentals_batch(
+                symbols, 
+                user_symbol_map=user_symbol_map, 
+                user_excluded_symbols=user_excluded_symbols
+            )
+        except Exception as e_fund:
+            logging.error(f"Failed to fetch fundamentals for watchlist: {e_fund}")
+            fundamentals = {}
+
         enriched_items = []
         for item in db_items:
             symbol = item["Symbol"]
             quote = quotes.get(symbol, {})
+            fund = fundamentals.get(symbol, {})
             
             # Sparkline data is already provided in the quote from get_current_quotes batch fetch
             sparkline = quote.get("sparkline_7d", [])
@@ -2716,7 +2793,10 @@ async def get_watchlist_endpoint(
                 "Day Change %": quote.get("changesPercentage"),
                 "Name": quote.get("name"),
                 "Currency": quote.get("currency"),
-                "Sparkline": sparkline
+                "Sparkline": sparkline,
+                "Market Cap": fund.get("marketCap"),
+                "PE Ratio": fund.get("trailingPE") or fund.get("forwardPE"),
+                "Dividend Yield": fund.get("dividendYield")
             })
         
         return clean_nans(enriched_items)
@@ -2734,7 +2814,10 @@ async def add_to_watchlist_api(item: WatchlistAdd):
         if not symbol_upper:
             raise HTTPException(status_code=400, detail="Symbol is required")
             
-        success = add_to_watchlist(conn, symbol_upper, item.note)
+        # Use provided watchlist_id or default to 1
+        wl_id = item.watchlist_id or 1
+            
+        success = add_to_watchlist(conn, symbol_upper, item.note, watchlist_id=wl_id)
         if not success:
             raise HTTPException(status_code=500, detail="Failed to add to watchlist")
         return {"status": "success"}
@@ -2742,13 +2825,13 @@ async def add_to_watchlist_api(item: WatchlistAdd):
         conn.close()
 
 @router.delete("/watchlist/{symbol}")
-async def remove_from_watchlist_api(symbol: str):
+async def remove_from_watchlist_api(symbol: str, watchlist_id: int = Query(1, alias="id")):
     """Removes a symbol from the watchlist."""
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=500, detail="Database connection failed")
     try:
-        success = remove_from_watchlist(conn, symbol.strip().upper())
+        success = remove_from_watchlist(conn, symbol.strip().upper(), watchlist_id=watchlist_id)
         if not success:
             raise HTTPException(status_code=500, detail="Failed to remove from watchlist")
         return {"status": "success"}

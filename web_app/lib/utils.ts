@@ -39,3 +39,20 @@ export function formatPercent(value: number): string {
         maximumFractionDigits: 2,
     }).format(value);
 }
+
+export function formatCompactNumber(number: number, currency?: string): string {
+    const formatter = new Intl.NumberFormat('en-US', {
+        notation: 'compact',
+        maximumFractionDigits: 2,
+        style: currency ? 'currency' : 'decimal',
+        currency: currency,
+    });
+
+    let formatted = formatter.format(number);
+
+    if (currency === 'THB') {
+        formatted = formatted.replace('THB', '฿').replace(/\s/g, '');
+    }
+
+    return formatted;
+}

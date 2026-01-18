@@ -37,7 +37,7 @@ import {
     AreaChart,
     Area
 } from 'recharts';
-import { cn } from "@/lib/utils";
+import { cn, formatPercent as formatPercentShared } from "@/lib/utils";
 import { Skeleton } from './ui/skeleton';
 import { Badge } from './ui/badge';
 import StockIcon from './StockIcon';
@@ -154,7 +154,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
     const formatPercent = (val: number | undefined) => {
         if (val === undefined || val === null) return '-';
-        return `${val.toFixed(2)}%`;
+        return formatPercentShared(val);
     };
 
     const formatCompact = (val: number | undefined) => {

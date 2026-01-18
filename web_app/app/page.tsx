@@ -237,8 +237,8 @@ export default function Home() {
   });
 
   const watchlistQuery = useQuery({
-    queryKey: ['watchlist', currency],
-    queryFn: ({ signal }) => fetchWatchlist(currency, signal),
+    queryKey: ['watchlist', currency, 1],
+    queryFn: ({ signal }) => fetchWatchlist(currency, 1, signal),
     staleTime: 1 * 60 * 1000,
     // No keepPreviousData needed for watchlist as it's not dependent on accounts
     enabled: (activeTab === 'watchlist' || backgroundFetchEnabled) && isHighPriorityLoaded,

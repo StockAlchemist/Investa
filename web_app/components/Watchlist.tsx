@@ -1,15 +1,25 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchWatchlist, addToWatchlist, removeFromWatchlist, WatchlistItem } from '@/lib/api';
+import {
+    fetchWatchlist,
+    addToWatchlist,
+    removeFromWatchlist,
+    WatchlistItem,
+    getWatchlists,
+    createWatchlist,
+    deleteWatchlist,
+    renameWatchlist,
+    WatchlistMeta
+} from '@/lib/api';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2, TrendingUp, TrendingDown, RefreshCw, Pencil, Check, X } from "lucide-react";
+import { Plus, Trash2, TrendingUp, TrendingDown, RefreshCw, Pencil, Check, X, ListPlus } from "lucide-react";
 import { AreaChart, Area, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatCurrency, formatPercent } from "@/lib/utils";
+import { formatCurrency, formatPercent, formatCompactNumber, cn } from "@/lib/utils";
 import StockTicker from './StockTicker';
 
 interface WatchlistProps {
@@ -18,18 +28,68 @@ interface WatchlistProps {
 
 export default function Watchlist({ currency }: WatchlistProps) {
     const queryClient = useQueryClient();
+    const [activeWatchlistId, setActiveWatchlistId] = useState<number>(1);
+    const [isCreating, setIsCreating] = useState(false);
+    const [newListName, setNewListName] = useState("");
+
+    // Rename State
+    const [isRenaming, setIsRenaming] = useState(false);
+    const [renameName, setRenameName] = useState("");
+
+    // Create Item States
     const [newSymbol, setNewSymbol] = useState('');
     const [newNote, setNewNote] = useState('');
 
-    const { data: watchlist, isLoading, isError, refetch } = useQuery({
-        queryKey: ['watchlist', currency],
-        queryFn: () => fetchWatchlist(currency),
+    // Fetch Watchlists Metadata
+    const { data: watchlists = [], isLoading: isLoadingLists } = useQuery({
+        queryKey: ['watchlists'],
+        queryFn: ({ signal }) => getWatchlists(signal),
+    });
+
+    // Fetch Active Watchlist Items
+    const { data: watchlist, isLoading: isLoadingItems, isError, refetch } = useQuery({
+        queryKey: ['watchlist', currency, activeWatchlistId],
+        queryFn: ({ signal }) => fetchWatchlist(currency, activeWatchlistId, signal),
+    });
+
+    // Find current watchlist object for display name usually
+    const currentList = watchlists.find(w => w.id === activeWatchlistId) || { name: 'Watchlist', id: 1 };
+
+    // Mutations
+    const createListMutation = useMutation({
+        mutationFn: createWatchlist,
+        onSuccess: (newItem) => {
+            queryClient.invalidateQueries({ queryKey: ['watchlists'] });
+            setIsCreating(false);
+            setNewListName("");
+            setActiveWatchlistId(newItem.id);
+        },
+        onError: (err: any) => alert(`Failed to create list: ${err.message}`)
+    });
+
+    const renameListMutation = useMutation({
+        mutationFn: ({ id, name }: { id: number, name: string }) => renameWatchlist(id, name),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['watchlists'] });
+            setIsRenaming(false);
+            setRenameName("");
+        },
+        onError: (err: any) => alert(`Failed to rename list: ${err.message}`)
+    });
+
+    const deleteListMutation = useMutation({
+        mutationFn: deleteWatchlist,
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['watchlists'] });
+            setActiveWatchlistId(1); // Switch to default
+        },
+        onError: (err: any) => alert(`Failed to delete list: ${err.message}`)
     });
 
     const addMutation = useMutation({
-        mutationFn: ({ symbol, note }: { symbol: string, note: string }) => addToWatchlist(symbol, note),
+        mutationFn: ({ symbol, note }: { symbol: string, note: string }) => addToWatchlist(symbol, note, activeWatchlistId),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['watchlist'] });
+            queryClient.invalidateQueries({ queryKey: ['watchlist', currency, activeWatchlistId] });
             setNewSymbol('');
             setNewNote('');
         },
@@ -39,9 +99,9 @@ export default function Watchlist({ currency }: WatchlistProps) {
     });
 
     const removeMutation = useMutation({
-        mutationFn: (symbol: string) => removeFromWatchlist(symbol),
+        mutationFn: (symbol: string) => removeFromWatchlist(symbol, activeWatchlistId),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['watchlist'] });
+            queryClient.invalidateQueries({ queryKey: ['watchlist', currency, activeWatchlistId] });
         },
     });
 
@@ -72,7 +132,42 @@ export default function Watchlist({ currency }: WatchlistProps) {
         }
     };
 
-    if (isLoading) {
+    const handleCreateList = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (newListName.trim()) {
+            createListMutation.mutate(newListName.trim());
+        }
+    }
+
+    const handleRenameList = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (renameName.trim()) {
+            renameListMutation.mutate({ id: activeWatchlistId, name: renameName.trim() });
+        }
+    }
+
+    const startRenaming = () => {
+        setRenameName(currentList.name || "");
+        setIsRenaming(true);
+    }
+
+    const handleDeleteList = () => {
+        if (watchlists.length <= 1) {
+            alert("At least one watchlist must exist.");
+            return;
+        }
+        if (confirm(`Delete watchlist "${currentList.name}"? This action cannot be undone.`)) {
+            // If deleting active list, switch to another one first (optimistically) or let query error handle it?
+            // Better to switch to first available that is NOT this one.
+            const nextList = watchlists.find(w => w.id !== activeWatchlistId) || { id: 1 };
+            setActiveWatchlistId(nextList.id);
+            deleteListMutation.mutate(activeWatchlistId);
+        }
+    }
+
+    const isLoading = isLoadingItems || isLoadingLists;
+
+    if (isLoading && !watchlists.length) {
         return (
             <div className="space-y-4">
                 <Card className="bg-card border-border">
@@ -91,13 +186,108 @@ export default function Watchlist({ currency }: WatchlistProps) {
 
     return (
         <div className="space-y-6">
+            {/* Watchlist Selector Tabs */}
+            <div className="flex flex-wrap items-center gap-2 pb-2 overflow-x-auto no-scrollbar mask-grad-right">
+                {watchlists.map((wl) => (
+                    <button
+                        key={wl.id}
+                        onClick={() => setActiveWatchlistId(wl.id)}
+                        className={cn(
+                            "px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500",
+                            activeWatchlistId === wl.id
+                                ? "bg-[#0097b2] text-white border-transparent shadow-sm"
+                                : "text-foreground bg-secondary border-border hover:bg-accent/10"
+                        )}
+                    >
+                        {wl.name}
+                    </button>
+                ))}
+
+                {isCreating ? (
+                    <form onSubmit={handleCreateList} className="flex items-center gap-1 animate-in fade-in slide-in-from-left-2">
+                        <Input
+                            value={newListName}
+                            onChange={(e) => setNewListName(e.target.value)}
+                            placeholder="List Name"
+                            className="h-8 w-32 text-xs bg-background text-foreground border-border focus-visible:ring-1"
+                            autoFocus
+                        />
+                        <Button type="submit" size="icon" variant="ghost" className="h-8 w-8 hover:bg-green-500/10 hover:text-green-500">
+                            <Check className="h-4 w-4" />
+                        </Button>
+                        <Button type="button" onClick={() => setIsCreating(false)} size="icon" variant="ghost" className="h-8 w-8 hover:bg-red-500/10 hover:text-red-500">
+                            <X className="h-4 w-4" />
+                        </Button>
+                    </form>
+                ) : (
+                    <button
+                        onClick={() => setIsCreating(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-foreground bg-secondary border border-border rounded-md shadow-sm hover:bg-accent/10 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500"
+                    >
+                        <Plus className="h-3.5 w-3.5" />
+                        <span>New List</span>
+                    </button>
+                )}
+            </div>
+
             <Card className="bg-card border-border">
-                <CardHeader className="flex flex-row items-center justify-between">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
                     <div>
-                        <CardTitle className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-                            My Watchlist
-                        </CardTitle>
-                        <p className="text-sm text-muted-foreground mt-1">Track assets you're interested in</p>
+                        <div className="flex items-center gap-3">
+                            {isRenaming ? (
+                                <form onSubmit={handleRenameList} className="flex items-center gap-2">
+                                    <Input
+                                        key={activeWatchlistId} // Force remount on list switch
+                                        value={renameName}
+                                        onChange={(e) => setRenameName(e.target.value)}
+                                        className="h-9 w-48 text-lg font-bold bg-background text-foreground border-border focus-visible:ring-1"
+                                        autoFocus
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Escape') setIsRenaming(false);
+                                        }}
+                                    />
+                                    <Button type="submit" size="icon" variant="ghost" className="h-8 w-8 hover:bg-green-500/10 hover:text-green-500">
+                                        <Check className="h-4 w-4" />
+                                    </Button>
+                                    <Button type="button" onClick={() => setIsRenaming(false)} size="icon" variant="ghost" className="h-8 w-8 hover:bg-red-500/10 hover:text-red-500">
+                                        <X className="h-4 w-4" />
+                                    </Button>
+                                </form>
+                            ) : (
+                                <>
+                                    <CardTitle className="text-xl font-bold text-foreground">
+                                        {currentList.name}
+                                    </CardTitle>
+
+                                    <div className="flex items-center gap-0.5">
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 ml-1"
+                                            onClick={startRenaming}
+                                            title="Rename Watchlist"
+                                        >
+                                            <Pencil className="h-4 w-4" />
+                                        </Button>
+
+                                        {(watchlists.length > 1) && ( // Allow delete if more than 1 list
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                                onClick={handleDeleteList}
+                                                title="Delete Watchlist"
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1">
+                            {watchlist?.length || 0} items tracked
+                        </p>
                     </div>
                     <Button
                         variant="ghost"
@@ -140,6 +330,9 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                     <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Name</th>
                                     <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Price</th>
                                     <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Day Change</th>
+                                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Mkt Cap</th>
+                                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">PE</th>
+                                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Div Yield</th>
                                     <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">7D Trend</th>
                                     <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Note</th>
                                     <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Actions</th>
@@ -148,7 +341,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                             <tbody className="divide-y divide-border/50 bg-transparent">
                                 {watchlist?.length === 0 ? (
                                     <tr>
-                                        <td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
+                                        <td colSpan={10} className="text-center py-12 text-muted-foreground text-sm">
                                             No symbols in your watchlist yet.
                                         </td>
                                     </tr>
@@ -168,6 +361,19 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                     {(item["Day Change"] || 0) >= 0 ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
                                                     {item["Day Change %"] ? formatPercent(item["Day Change %"] / 100) : '-'}
                                                 </div>
+                                            </td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-right text-sm tabular-nums">
+                                                {item["Market Cap"] ? formatCompactNumber(item["Market Cap"], item.Currency || 'USD') : '-'}
+                                            </td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-right text-sm tabular-nums">
+                                                {item["PE Ratio"] ? item["PE Ratio"].toFixed(2) : '-'}
+                                            </td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-right text-sm tabular-nums">
+                                                {(() => {
+                                                    let y = item["Dividend Yield"];
+                                                    if (y && y > 1) y = y / 100;
+                                                    return y ? formatPercent(y) : '-';
+                                                })()}
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap w-28">
                                                 <div className="h-8 w-24">
@@ -283,6 +489,6 @@ export default function Watchlist({ currency }: WatchlistProps) {
                     </div>
                 </CardContent>
             </Card>
-        </div>
+        </div >
     );
 }
