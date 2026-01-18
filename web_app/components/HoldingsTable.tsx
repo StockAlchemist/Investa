@@ -287,8 +287,94 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
         });
     }, [holdings, searchQuery, selectedSectors, selectedAccounts]);
 
+    const aggregatedHoldings = useMemo(() => {
+        if (visibleColumns.includes('Account')) {
+            return filteredHoldings;
+        }
+
+        const grouped = new Map<string, Holding>();
+
+        // Helper to safely get numeric value
+        const getRawVal = (h: Holding, key: string): number => {
+            const val = getValue(h, key);
+            return typeof val === 'number' ? val : 0;
+        };
+
+        filteredHoldings.forEach(h => {
+            if (!grouped.has(h.Symbol)) {
+                // Clone holding (shallow copy + lots copy)
+                grouped.set(h.Symbol, { ...h, lots: h.lots ? [...h.lots] : [] });
+            } else {
+                const current = grouped.get(h.Symbol)!;
+
+                // Merge lots
+                if (h.lots) {
+                    current.lots = (current.lots || []).concat(h.lots);
+                }
+
+                // Sum numeric fields
+                const keysToSum = [
+                    "Quantity", "Mkt Val", "Cost Basis", "Day Chg",
+                    "Unreal. G/L", "Real. G/L", "Divs", "Fees",
+                    "Total G/L", "Total Buy Cost", "Est. Income",
+                    "Contribution %", "FX G/L"
+                ];
+
+                keysToSum.forEach(header => {
+                    const def = COLUMN_DEFINITIONS[header];
+                    if (def) {
+                        const valA = getRawVal(current, header);
+                        const valB = getRawVal(h, header);
+                        (current as any)[def] = valA + valB;
+                    }
+                });
+
+                // Merge Tags
+                const currentTags = Array.isArray(getValue(current, "Tags")) ? getValue(current, "Tags") as string[] : [];
+                const newTags = Array.isArray(getValue(h, "Tags")) ? getValue(h, "Tags") as string[] : [];
+                const mergedTags = Array.from(new Set([...currentTags, ...newTags]));
+                (current as any)["Tags"] = mergedTags;
+            }
+        });
+
+        return Array.from(grouped.values()).map(h => {
+            // Recalculate derived fields
+            const qty = getRawVal(h, 'Quantity');
+            const mktVal = getRawVal(h, 'Mkt Val');
+            const costBasis = getRawVal(h, 'Cost Basis');
+            const dayChg = getRawVal(h, 'Day Chg');
+            const unrealGl = getRawVal(h, 'Unreal. G/L');
+            const estIncome = getRawVal(h, 'Est. Income');
+            const totalGl = getRawVal(h, 'Total G/L');
+
+            if (qty !== 0) {
+                (h as any)['Price'] = mktVal / qty;
+                (h as any)['Avg Cost'] = costBasis / qty;
+            }
+
+            if (mktVal - dayChg !== 0) {
+                (h as any)['Day Change %'] = (dayChg / (mktVal - dayChg)) * 100;
+            } else {
+                (h as any)['Day Change %'] = 0;
+            }
+
+            if (costBasis !== 0) {
+                (h as any)['Unreal. Gain %'] = (unrealGl / costBasis) * 100;
+                (h as any)['Div. Yield (Cost) %'] = (estIncome / costBasis) * 100;
+                (h as any)['Total Return %'] = (totalGl / costBasis) * 100;
+            }
+
+            if (mktVal !== 0) {
+                (h as any)['Div. Yield (Current) %'] = (estIncome / mktVal) * 100;
+            }
+
+            return h;
+        });
+
+    }, [filteredHoldings, visibleColumns, getValue]);
+
     const sortedHoldings = useMemo(() => {
-        return [...filteredHoldings].sort((a, b) => { // Use filteredHoldings here
+        return [...aggregatedHoldings].sort((a, b) => {
             const valA = getValue(a, sortConfig.key);
             const valB = getValue(b, sortConfig.key);
 
@@ -305,7 +391,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
             const numB = typeof valB === 'number' ? valB : 0;
             return sortConfig.direction === 'asc' ? (numA - numB) : (numB - numA);
         });
-    }, [filteredHoldings, sortConfig, getValue]);
+    }, [aggregatedHoldings, sortConfig, getValue]);
 
     if (!holdings || holdings.length === 0) {
         return <div className="p-4 text-center text-gray-500">No holdings found.</div>;
@@ -405,6 +491,17 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
         setVisibleRows(sortedHoldings.length);
     };
 
+    const totalItemsCount = useMemo(() => {
+        if (visibleColumns.includes('Account')) {
+            return holdings.length;
+        }
+        // In aggregated mode (no Account column), count unique symbols in the *original* holdings
+        // Note: Use a set of symbols from the raw 'holdings' prop
+        return new Set(holdings.map(h => h.Symbol)).size;
+    }, [holdings, visibleColumns]);
+
+    // ... (existing code)
+
     return (
         <>
             <div className="bg-card border border-border rounded-xl shadow-sm mt-4 overflow-hidden scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800 scrollbar-track-transparent">
@@ -414,7 +511,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         <div className="flex items-center gap-3">
                             <h2 className="text-lg font-bold text-foreground">Holdings</h2>
                             <span className="text-xs font-medium text-muted-foreground bg-secondary px-2 py-0.5 rounded-full border border-border">
-                                {filteredHoldings.length} / {holdings.length}
+                                {aggregatedHoldings.length} / {totalItemsCount}
                             </span>
                         </div>
 

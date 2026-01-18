@@ -16,7 +16,7 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2, TrendingUp, TrendingDown, RefreshCw, Pencil, Check, X, ListPlus } from "lucide-react";
+import { Plus, Trash2, TrendingUp, TrendingDown, RefreshCw, Pencil, Check, X, ListPlus, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { AreaChart, Area, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatPercent, formatCompactNumber, cn } from "@/lib/utils";
@@ -24,6 +24,13 @@ import StockTicker from './StockTicker';
 
 interface WatchlistProps {
     currency: string;
+}
+
+type SortDirection = 'asc' | 'desc';
+
+interface SortConfig {
+    key: string;
+    direction: SortDirection;
 }
 
 export default function Watchlist({ currency }: WatchlistProps) {
@@ -39,6 +46,16 @@ export default function Watchlist({ currency }: WatchlistProps) {
     // Create Item States
     const [newSymbol, setNewSymbol] = useState('');
     const [newNote, setNewNote] = useState('');
+
+    // Sorting State
+    const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'Symbol', direction: 'asc' });
+
+    const handleSort = (key: string) => {
+        setSortConfig(current => ({
+            key,
+            direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+        }));
+    };
 
     // Fetch Watchlists Metadata
     const { data: watchlists = [], isLoading: isLoadingLists } = useQuery({
@@ -166,6 +183,38 @@ export default function Watchlist({ currency }: WatchlistProps) {
     }
 
     const isLoading = isLoadingItems || isLoadingLists;
+
+    // --- Sorting Logic ---
+    const sortedWatchlist = React.useMemo(() => {
+        if (!watchlist) return [];
+        return [...watchlist].sort((a, b) => {
+            const getValue = (item: WatchlistItem, key: string) => {
+                switch (key) {
+                    case 'Symbol': return item.Symbol;
+                    case 'Name': return item.Name || '';
+                    case 'Price': return item.Price || 0;
+                    case 'Day Change': return item["Day Change"] || 0;
+                    case 'Mkt Cap': return item["Market Cap"] || 0;
+                    case 'PE': return item["PE Ratio"] || 0;
+                    case 'Div Yield': return item["Dividend Yield"] || 0;
+                    case 'Note': return item.Note || '';
+                    default: return 0;
+                }
+            };
+
+            const valA = getValue(a, sortConfig.key);
+            const valB = getValue(b, sortConfig.key);
+
+            if (typeof valA === 'string' && typeof valB === 'string') {
+                return sortConfig.direction === 'asc'
+                    ? valA.localeCompare(valB)
+                    : valB.localeCompare(valA);
+            }
+            return sortConfig.direction === 'asc'
+                ? (valA as number) - (valB as number)
+                : (valB as number) - (valA as number);
+        });
+    }, [watchlist, sortConfig]);
 
     if (isLoading && !watchlists.length) {
         return (
@@ -326,15 +375,36 @@ export default function Watchlist({ currency }: WatchlistProps) {
                         <table className="min-w-full divide-y divide-border/50">
                             <thead className="bg-secondary/50 font-semibold border-b border-border">
                                 <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Symbol</th>
-                                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Name</th>
-                                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Price</th>
-                                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Day Change</th>
-                                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Mkt Cap</th>
-                                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">PE</th>
-                                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Div Yield</th>
-                                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">7D Trend</th>
-                                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Note</th>
+                                    {[
+                                        { key: 'Symbol', label: 'Symbol', align: 'left' },
+                                        { key: 'Name', label: 'Name', align: 'left' },
+                                        { key: 'Price', label: 'Price', align: 'right' },
+                                        { key: 'Day Change', label: 'Day Change', align: 'right' },
+                                        { key: 'Mkt Cap', label: 'Mkt Cap', align: 'right' },
+                                        { key: 'PE', label: 'PE', align: 'right' },
+                                        { key: 'Div Yield', label: 'Div Yield', align: 'right' },
+                                        { key: '7D Trend', label: '7D Trend', align: 'left', disableSort: true },
+                                        { key: 'Note', label: 'Note', align: 'left' },
+                                    ].map((col) => (
+                                        <th
+                                            key={col.key}
+                                            className={`px-4 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap ${col.align === 'right' ? 'text-right' : 'text-left'} ${!col.disableSort ? 'cursor-pointer hover:text-foreground hover:bg-muted/50 transition-colors select-none' : ''}`}
+                                            onClick={() => !col.disableSort && handleSort(col.key)}
+                                        >
+                                            <div className={`flex items-center gap-1 ${col.align === 'right' ? 'justify-end' : 'justify-start'}`}>
+                                                {col.label}
+                                                {!col.disableSort && (
+                                                    <span className="text-muted-foreground/50">
+                                                        {sortConfig.key === col.key ? (
+                                                            sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                                                        ) : (
+                                                            <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-50" />
+                                                        )}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </th>
+                                    ))}
                                     <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Actions</th>
                                 </tr>
                             </thead>
@@ -346,7 +416,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                         </td>
                                     </tr>
                                 ) : (
-                                    watchlist?.map((item) => (
+                                    sortedWatchlist?.map((item) => (
                                         <tr key={item.Symbol} className="hover:bg-accent/5 transition-colors">
                                             <td className="px-4 py-3 whitespace-nowrap text-sm">
                                                 <StockTicker symbol={item.Symbol} currency={currency} />
