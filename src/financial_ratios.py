@@ -16,6 +16,8 @@ import pandas as pd
 import numpy as np
 import logging
 from typing import Dict, Optional, Tuple, List, Any
+from datetime import datetime
+from io import StringIO
 
 
 def _get_statement_value(
@@ -303,3 +305,258 @@ def calculate_current_valuation_ratios(
 
     ratios["Enterprise Value to EBITDA"] = ticker_info.get("enterpriseToEbitda")
     return ratios
+
+
+def calculate_wacc(
+    ticker_info: Dict[str, Any],
+    financials_df: Optional[pd.DataFrame] = None,
+    balance_sheet_df: Optional[pd.DataFrame] = None,
+    risk_free_rate: float = 0.045,  # Default to ~4.5% if not provided
+    market_return: float = 0.09,    # Default to 9%
+    default_tax_rate: float = 0.21
+) -> Dict[str, Any]:
+    """
+    Calculates the Weighted Average Cost of Capital (WACC).
+    """
+    try:
+        # 1. Cost of Equity (CAPM)
+        beta = ticker_info.get("beta")
+        if beta is None or pd.isna(beta):
+            beta = 1.0  # Default to market beta
+            logging.debug(f"Beta missing for {ticker_info.get('symbol')}, using 1.0")
+            
+        cost_of_equity = risk_free_rate + beta * (market_return - risk_free_rate)
+        
+        # 2. Cost of Debt
+        cost_of_debt = 0.05 # Default 5%
+        tax_rate = default_tax_rate
+        
+        total_debt = ticker_info.get("totalDebt")
+        interest_expense = None
+        income_tax_expense = None
+        pretax_income = None
+        
+        if financials_df is not None and not financials_df.empty:
+            latest_period = financials_df.columns[0]
+            interest_expense = _get_statement_value(financials_df, "Interest Expense", latest_period)
+            income_tax_expense = _get_statement_value(financials_df, "Tax Provision", latest_period)
+            pretax_income = _get_statement_value(financials_df, "Pretax Income", latest_period)
+            
+            if interest_expense and total_debt and total_debt > 0:
+                cost_of_debt = abs(interest_expense) / total_debt
+            
+            if income_tax_expense and pretax_income and pretax_income > 0:
+                tax_rate = income_tax_expense / pretax_income
+        
+        # 3. Weights
+        market_cap = ticker_info.get("marketCap")
+        if not market_cap:
+            return {"wacc": cost_of_equity, "method": "Cost of Equity (No Market Cap)"}
+            
+        total_value = market_cap + (total_debt or 0)
+        weight_equity = market_cap / total_value
+        weight_debt = (total_debt or 0) / total_value
+        
+        wacc = (weight_equity * cost_of_equity) + (weight_debt * cost_of_debt * (1 - tax_rate))
+        
+        return {
+            "wacc": wacc,
+            "cost_of_equity": cost_of_equity,
+            "cost_of_debt": cost_of_debt,
+            "tax_rate": tax_rate,
+            "weight_equity": weight_equity,
+            "weight_debt": weight_debt,
+            "beta": beta,
+            "method": "WACC"
+        }
+    except Exception as e:
+        logging.error(f"Error calculating WACC: {e}")
+        return {"wacc": 0.10, "method": "Default (10%) due to error"}
+
+
+def estimate_growth_rate(
+    financials_df: Optional[pd.DataFrame],
+    item_name: str = "Net Income",
+    years: int = 5
+) -> float:
+    """Attempts to estimate a historical growth rate for a financial item."""
+    if financials_df is None or financials_df.empty:
+        return 0.05 # Default 5%
+        
+    try:
+        # Sort columns to be chronological
+        cols = sorted(financials_df.columns, key=lambda x: pd.to_datetime(x, errors="coerce"))
+        values = []
+        for col in cols:
+            val = _get_statement_value(financials_df, item_name, col)
+            if val is not None and val > 0:
+                values.append(val)
+        
+        if len(values) < 2:
+            return 0.05
+            
+        # Simplistic CAGR
+        start_val = values[0]
+        end_val = values[-1]
+        n_periods = len(values) - 1
+        
+        cagr = (end_val / start_val) ** (1/n_periods) - 1
+        # Cap growth rate between 0% and 15% for conservative intrinsic value
+        return max(0.0, min(0.15, cagr))
+    except Exception:
+        return 0.05
+
+
+def calculate_intrinsic_value_dcf(
+    ticker_info: Dict[str, Any],
+    financials_df: Optional[pd.DataFrame],
+    balance_sheet_df: Optional[pd.DataFrame],
+    cashflow_df: Optional[pd.DataFrame],
+    discount_rate: Optional[float] = None,
+    growth_rate: Optional[float] = None,
+    projection_years: int = 5,
+    terminal_growth_rate: float = 0.02
+) -> Dict[str, Any]:
+    """
+    Performs a Discounted Cash Flow (DCF) valuation.
+    """
+    try:
+        # 1. Base FCF
+        fcf = ticker_info.get("freeCashflow")
+        if fcf is None and cashflow_df is not None and not cashflow_df.empty:
+            latest_cf_period = cashflow_df.columns[0]
+            ocf = _get_statement_value(cashflow_df, "Operating Cash Flow", latest_cf_period)
+            capex = _get_statement_value(cashflow_df, "Capital Expenditure", latest_cf_period)
+            if ocf is not None and capex is not None:
+                fcf = ocf + capex # Capex is usually negative in YF
+        
+        if fcf is None or fcf <= 0:
+            return {"error": "Negative or missing Free Cash Flow"}
+            
+        # 2. Discount Rate (WACC)
+        if discount_rate is None:
+            wacc_res = calculate_wacc(ticker_info, financials_df, balance_sheet_df)
+            discount_rate = wacc_res["wacc"]
+            
+        # 3. Growth Rate
+        if growth_rate is None:
+            growth_rate = estimate_growth_rate(financials_df, "Net Income")
+            
+        # 4. Projections
+        projected_fcf = []
+        pv_fcf = []
+        current_fcf = fcf
+        for y in range(1, projection_years + 1):
+            next_fcf = current_fcf * (1 + growth_rate)
+            projected_fcf.append(next_fcf)
+            pv_fcf.append(next_fcf / ((1 + discount_rate) ** y))
+            current_fcf = next_fcf
+            
+        # 5. Terminal Value
+        terminal_value = (current_fcf * (1 + terminal_growth_rate)) / (discount_rate - terminal_growth_rate)
+        pv_terminal_value = terminal_value / ((1 + discount_rate) ** projection_years)
+        
+        # 6. Enterprise Value to Equity Value
+        enterprise_value = sum(pv_fcf) + pv_terminal_value
+        cash = ticker_info.get("totalCash") or 0
+        debt = ticker_info.get("totalDebt") or 0
+        equity_value = enterprise_value + cash - debt
+        
+        shares_outstanding = ticker_info.get("sharesOutstanding")
+        if not shares_outstanding:
+            return {"error": "Missing shares outstanding"}
+            
+        intrinsic_value = equity_value / shares_outstanding
+        
+        return {
+            "intrinsic_value": intrinsic_value,
+            "model": "DCF",
+            "parameters": {
+                "discount_rate": discount_rate,
+                "growth_rate": growth_rate,
+                "terminal_growth_rate": terminal_growth_rate,
+                "projection_years": projection_years,
+                "base_fcf": fcf
+            }
+        }
+    except Exception as e:
+        return {"error": f"DCF calculation failed: {str(e)}"}
+
+
+def calculate_intrinsic_value_graham(
+    ticker_info: Dict[str, Any],
+    financials_df: Optional[pd.DataFrame],
+    growth_rate: Optional[float] = None
+) -> Dict[str, Any]:
+    """
+    Calculates intrinsic value using Benjamin Graham's Revised Formula:
+    V = (EPS * (8.5 + 2g) * 4.4) / Y
+    Where:
+    - EPS: Trailing 12 months Earnings Per Share
+    - 8.5: P/E base for a no-growth company
+    - g: Reasonably expected 7 to 10 year growth rate
+    - 4.4: Average yield of high-grade corporate bonds in 1962
+    - Y: Current yield on AAA corporate bonds (using 10Y Treasury yield as proxy)
+    """
+    try:
+        eps = ticker_info.get("trailingEps")
+        if eps is None or eps <= 0:
+            return {"error": "Negative or missing EPS"}
+            
+        if growth_rate is None:
+            growth_rate = estimate_growth_rate(financials_df, "Net Income") * 100 # Convert to percentage
+            
+        # Risk-free rate (10Y Treasury) as proxy for Y
+        y = 4.5 # Default 4.5%
+        
+        intrinsic_value = (eps * (8.5 + 2 * growth_rate) * 4.4) / y
+        
+        return {
+            "intrinsic_value": intrinsic_value,
+            "model": "Graham's Revised Formula",
+            "parameters": {
+                "eps": eps,
+                "growth_rate_pct": growth_rate,
+                "bond_yield_proxy": y
+            }
+        }
+    except Exception as e:
+        return {"error": f"Graham calculation failed: {str(e)}"}
+
+
+def get_comprehensive_intrinsic_value(
+    ticker_info: Dict[str, Any],
+    financials_df: Optional[pd.DataFrame] = None,
+    balance_sheet_df: Optional[pd.DataFrame] = None,
+    cashflow_df: Optional[pd.DataFrame] = None
+) -> Dict[str, Any]:
+    """
+    Consolidates multiple intrinsic value models into a single advice object.
+    """
+    dcf_res = calculate_intrinsic_value_dcf(ticker_info, financials_df, balance_sheet_df, cashflow_df)
+    graham_res = calculate_intrinsic_value_graham(ticker_info, financials_df)
+    
+    current_price = ticker_info.get("currentPrice") or ticker_info.get("regularMarketPrice")
+    
+    results = {
+        "current_price": current_price,
+        "models": {
+            "dcf": dcf_res,
+            "graham": graham_res
+        }
+    }
+    
+    # Calculate a simple average if both succeeded
+    valid_values = []
+    if "intrinsic_value" in dcf_res:
+        valid_values.append(dcf_res["intrinsic_value"])
+    if "intrinsic_value" in graham_res:
+        valid_values.append(graham_res["intrinsic_value"])
+        
+    if valid_values:
+        avg_intrinsic = sum(valid_values) / len(valid_values)
+        results["average_intrinsic_value"] = avg_intrinsic
+        if current_price:
+            results["margin_of_safety_pct"] = (1 - (current_price / avg_intrinsic)) * 100
+            
+    return results

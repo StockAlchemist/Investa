@@ -661,6 +661,23 @@ export interface RatiosResponse {
     valuation: Record<string, number | null>;
 }
 
+export interface IntrinsicValueModel {
+    intrinsic_value?: number;
+    error?: string;
+    model: string;
+    parameters: Record<string, any>;
+}
+
+export interface IntrinsicValueResponse {
+    current_price: number | null;
+    models: {
+        dcf: IntrinsicValueModel;
+        graham: IntrinsicValueModel;
+    };
+    average_intrinsic_value?: number;
+    margin_of_safety_pct?: number;
+}
+
 export async function fetchFundamentals(symbol: string): Promise<Fundamentals> {
     const res = await fetch(`${API_BASE_URL}/fundamentals/${symbol}`);
     if (!res.ok) throw new Error(`Failed to fetch fundamentals for ${symbol}`);
@@ -677,6 +694,12 @@ export async function fetchFinancials(symbol: string, periodType: 'annual' | 'qu
 export async function fetchRatios(symbol: string): Promise<RatiosResponse> {
     const res = await fetch(`${API_BASE_URL}/ratios/${symbol}`);
     if (!res.ok) throw new Error(`Failed to fetch ratios for ${symbol}`);
+    return res.json();
+}
+
+export async function fetchIntrinsicValue(symbol: string): Promise<IntrinsicValueResponse> {
+    const res = await fetch(`${API_BASE_URL}/intrinsic_value/${symbol}`);
+    if (!res.ok) throw new Error(`Failed to fetch intrinsic value for ${symbol}`);
     return res.json();
 }
 export async function clearCache(): Promise<StatusResponse> {

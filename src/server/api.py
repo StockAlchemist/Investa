@@ -46,7 +46,8 @@ import traceback
 try:
     from financial_ratios import (
         calculate_key_ratios_timeseries,
-        calculate_current_valuation_ratios
+        calculate_current_valuation_ratios,
+        get_comprehensive_intrinsic_value
     )
     FINANCIAL_RATIOS_AVAILABLE = True
 except ImportError:
@@ -2464,6 +2465,42 @@ async def get_ratios_endpoint(
         })
     except Exception as e:
         logging.error(f"Error calculating ratios for {yf_symbol}: {e}")
+        logging.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/intrinsic_value/{symbol}")
+async def get_intrinsic_value_endpoint(
+    symbol: str,
+    data: tuple = Depends(get_transaction_data)
+):
+    """Returns calculated intrinsic value results for a symbol."""
+    if not FINANCIAL_RATIOS_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Financial ratios module not available.")
+
+    (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
+    yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
+    if not yf_symbol:
+        if symbol.upper() in user_excluded_symbols:
+             raise HTTPException(status_code=400, detail=f"Symbol {symbol} is currently in the exclusion list.")
+        raise HTTPException(status_code=400, detail=f"Could not map {symbol} to Yahoo Finance symbol.")
+    
+    try:
+        mdp = get_mdp()
+        # Fetch data needed for models
+        info = mdp.get_fundamental_data(yf_symbol)
+        financials = mdp.get_financials(yf_symbol, "annual")
+        balance_sheet = mdp.get_balance_sheet(yf_symbol, "annual")
+        cashflow = mdp.get_cashflow(yf_symbol, "annual")
+        
+        # Calculate comprehensive intrinsic value
+        results = get_comprehensive_intrinsic_value(
+            info, financials, balance_sheet, cashflow
+        )
+        
+        return clean_nans(results)
+    except Exception as e:
+        logging.error(f"Error calculating intrinsic value for {yf_symbol}: {e}")
         logging.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 

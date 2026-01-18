@@ -6,9 +6,11 @@ import {
     fetchFundamentals,
     fetchFinancials,
     fetchRatios,
+    fetchIntrinsicValue,
     Fundamentals,
     FinancialsResponse,
-    RatiosResponse
+    RatiosResponse,
+    IntrinsicValueResponse
 } from '../lib/api';
 import {
     X,
@@ -56,7 +58,7 @@ interface StockDetailModalProps {
     currency: string;
 }
 
-type TabType = 'overview' | 'financials' | 'ratios' | 'holdings';
+type TabType = 'overview' | 'financials' | 'ratios' | 'valuation' | 'holdings';
 
 // Importance ranking for financial rows
 const RANKING_CONFIG: Record<string, string[]> = {
@@ -119,6 +121,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     const [fundamentals, setFundamentals] = useState<Fundamentals | null>(null);
     const [financials, setFinancials] = useState<FinancialsResponse | null>(null);
     const [ratios, setRatios] = useState<RatiosResponse | null>(null);
+    const [intrinsicValue, setIntrinsicValue] = useState<IntrinsicValueResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -132,14 +135,16 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         setLoading(true);
         setError(null);
         try {
-            const [fundRes, finRes, ratioRes] = await Promise.all([
+            const [fundRes, finRes, ratioRes, ivRes] = await Promise.all([
                 fetchFundamentals(symbol),
                 fetchFinancials(symbol),
-                fetchRatios(symbol)
+                fetchRatios(symbol),
+                fetchIntrinsicValue(symbol)
             ]);
             setFundamentals(fundRes);
             setFinancials(finRes);
             setRatios(ratioRes);
+            setIntrinsicValue(ivRes);
         } catch (err: any) {
             console.error(err);
             setError(err.message || "Failed to load stock details");
@@ -150,7 +155,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
     if (!isOpen) return null;
 
-    const formatCurrency = (val: number | undefined) => {
+    const formatCurrency = (val: number | null | undefined) => {
         if (val === undefined || val === null) return '-';
         return new Intl.NumberFormat('en-US', {
             style: 'currency',
@@ -461,6 +466,113 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         )
     };
 
+    const renderValuation = () => {
+        if (!intrinsicValue) return null;
+        const { models, average_intrinsic_value, margin_of_safety_pct, current_price } = intrinsicValue;
+
+        return (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                {/* Summary Header */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="bg-muted border border-border p-6 rounded-2xl flex flex-col items-center justify-center text-center">
+                        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Average Intrinsic Value</p>
+                        <p className="text-3xl font-bold text-cyan-500">{formatCurrency(average_intrinsic_value)}</p>
+                    </div>
+                    <div className="bg-muted border border-border p-6 rounded-2xl flex flex-col items-center justify-center text-center">
+                        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Current Price</p>
+                        <p className="text-3xl font-bold">{formatCurrency(current_price)}</p>
+                    </div>
+                    <div className={cn(
+                        "border p-6 rounded-2xl flex flex-col items-center justify-center text-center",
+                        (margin_of_safety_pct || 0) > 0 ? "bg-emerald-500/10 border-emerald-500/30" : "bg-destructive/10 border-destructive/30"
+                    )}>
+                        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Margin of Safety</p>
+                        <p className={cn(
+                            "text-3xl font-bold",
+                            (margin_of_safety_pct || 0) > 0 ? "text-emerald-500" : "text-destructive"
+                        )}>
+                            {margin_of_safety_pct?.toFixed(2)}%
+                        </p>
+                    </div>
+                </div>
+
+                {/* Models Detail */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* DCF Model */}
+                    <div className="bg-muted border border-border rounded-2xl p-6">
+                        <div className="flex items-center justify-between mb-6">
+                            <h3 className="text-lg font-semibold flex items-center gap-2">
+                                <TrendingUp className="w-5 h-5 text-emerald-500" />
+                                DCF Model
+                            </h3>
+                            {models.dcf.intrinsic_value && (
+                                <Badge className="bg-emerald-500/20 text-emerald-500 border-none">
+                                    {formatCurrency(models.dcf.intrinsic_value)}
+                                </Badge>
+                            )}
+                        </div>
+                        {models.dcf.error ? (
+                            <p className="text-sm text-destructive bg-destructive/5 p-4 rounded-xl border border-destructive/20">{models.dcf.error}</p>
+                        ) : (
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <ParamItem label="Discount Rate (WACC)" value={formatPercentShared(models.dcf.parameters.discount_rate)} />
+                                    <ParamItem label="Growth Rate" value={formatPercentShared(models.dcf.parameters.growth_rate)} />
+                                    <ParamItem label="Terminal Growth" value={formatPercentShared(models.dcf.parameters.terminal_growth_rate)} />
+                                    <ParamItem label="Projection Years" value={models.dcf.parameters.projection_years} />
+                                </div>
+                                <div className="pt-4 border-t border-border/50">
+                                    <ParamItem label="Base Free Cash Flow" value={formatCurrency(models.dcf.parameters.base_fcf)} />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Graham Model */}
+                    <div className="bg-muted border border-border rounded-2xl p-6">
+                        <div className="flex items-center justify-between mb-6">
+                            <h3 className="text-lg font-semibold flex items-center gap-2">
+                                <Scale className="w-5 h-5 text-amber-500" />
+                                Graham's Formula
+                            </h3>
+                            {models.graham.intrinsic_value && (
+                                <Badge className="bg-amber-500/20 text-amber-500 border-none">
+                                    {formatCurrency(models.graham.intrinsic_value)}
+                                </Badge>
+                            )}
+                        </div>
+                        {models.graham.error ? (
+                            <p className="text-sm text-destructive bg-destructive/5 p-4 rounded-xl border border-destructive/20">{models.graham.error}</p>
+                        ) : (
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <ParamItem label="Trailing EPS" value={models.graham.parameters.eps?.toFixed(2)} />
+                                    <ParamItem label="Growth Rate (g)" value={`${models.graham.parameters.growth_rate_pct?.toFixed(2)}%`} />
+                                    <ParamItem label="Bond Yield (Y)" value={`${models.graham.parameters.bond_yield_proxy?.toFixed(2)}%`} />
+                                </div>
+                                <div className="mt-4 p-4 bg-secondary/30 rounded-xl text-[10px] text-muted-foreground leading-relaxed">
+                                    V = (EPS × (8.5 + 2g) × 4.4) / Y
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="bg-secondary/20 rounded-2xl p-6 border border-border/50 italic text-sm text-muted-foreground text-center">
+                    Note: Intrinsic value calculations are estimates based on various assumptions.
+                    Actual stock performance may vary significantly.
+                </div>
+            </div>
+        );
+    };
+
+    const ParamItem = ({ label, value }: { label: string, value: any }) => (
+        <div>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold mb-1">{label}</p>
+            <p className="text-sm font-semibold">{value ?? '-'}</p>
+        </div>
+    );
+
     return createPortal(
         <div className="fixed inset-0 z-[100] flex flex-col justify-end sm:justify-center items-center p-0 sm:p-4 isolate">
             <div className="absolute inset-0 bg-black/60" onClick={onClose} />
@@ -529,6 +641,12 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                     icon={BarChart3}
                                     label="Ratios & Trends"
                                 />
+                                <TabButton
+                                    active={activeTab === 'valuation'}
+                                    onClick={() => setActiveTab('valuation')}
+                                    icon={DollarSign}
+                                    label="Valuation"
+                                />
                             </>
                         )}
                         {fundamentals?.etf_data && (
@@ -570,6 +688,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             {activeTab === 'overview' && renderOverview()}
                             {activeTab === 'financials' && renderFinancials()}
                             {activeTab === 'ratios' && renderRatios()}
+                            {activeTab === 'valuation' && renderValuation()}
                             {activeTab === 'holdings' && renderHoldings()}
                         </>
                     )}
