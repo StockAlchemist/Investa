@@ -91,7 +91,7 @@ const MetricCard = ({
                             <Line
                                 type="monotone"
                                 dataKey="value"
-                                stroke={subValue && subValue >= 0 ? "#10b981" : "#f43f5e"}
+                                stroke={subValue && subValue >= 0 ? "#10b981" : "#ef4444"}
                                 strokeWidth={2}
                                 dot={false}
                                 isAnimationActive={false}
@@ -148,15 +148,15 @@ export default function Dashboard({
     const fxGL = (m?.fx_gain_loss_display as number) || 0;
     const fxGLPct = (m?.fx_gain_loss_pct as number) || 0;
 
-    const dayGLColor = dayGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
-    const unrealizedGLColor = unrealizedGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
-    const fxGLColor = fxGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
+    const dayGLColor = dayGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500';
+    const unrealizedGLColor = unrealizedGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500';
+    const fxGLColor = fxGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500';
 
     const totalGain = (m?.total_gain as number) || 0;
     const realizedGain = (m?.realized_gain as number) || 0;
 
-    const totalReturnColor = totalGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
-    const realizedGainColor = realizedGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
+    const totalReturnColor = totalGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500';
+    const realizedGainColor = realizedGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500';
 
     // Render helper same as before
     const renderContent = (id: string) => {
@@ -178,7 +178,7 @@ export default function Dashboard({
                     subValue={dayGLPct}
                     colorClass={dayGLColor}
                     valueClassName="text-2xl sm:text-3xl"
-                    subValueClassName={cn("text-base sm:text-xl", dayGLPct >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white dark:text-white hover:bg-rose-700 border-none")}
+                    subValueClassName={cn("text-base sm:text-xl", dayGLPct >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-red-600 text-white dark:text-white hover:bg-red-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
@@ -192,7 +192,7 @@ export default function Dashboard({
                     subValue={m?.total_return_pct}
                     colorClass={totalReturnColor}
                     valueClassName="text-2xl sm:text-3xl"
-                    subValueClassName={cn("text-base sm:text-xl", (m?.total_return_pct || 0) >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white dark:text-white hover:bg-rose-700 border-none")}
+                    subValueClassName={cn("text-base sm:text-xl", (m?.total_return_pct || 0) >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-red-600 text-white dark:text-white hover:bg-red-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
@@ -203,7 +203,7 @@ export default function Dashboard({
                     title="Annual TWR"
                     value={m?.annualized_twr !== undefined && m?.annualized_twr !== null ? `${m.annualized_twr.toFixed(2)}%` : '-'}
                     isCurrency={false}
-                    colorClass={m?.annualized_twr && m.annualized_twr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}
+                    colorClass={m?.annualized_twr && m.annualized_twr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
                     isLoading={isLoading}
                 // Force height or min-width? No.
                 />;
@@ -214,7 +214,7 @@ export default function Dashboard({
                     subValue={unrealizedGLPct}
                     colorClass={unrealizedGLColor}
                     valueClassName="text-2xl sm:text-3xl"
-                    subValueClassName={cn("text-base sm:text-xl", unrealizedGLPct >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white dark:text-white hover:bg-rose-700 border-none")}
+                    subValueClassName={cn("text-base sm:text-xl", unrealizedGLPct >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-red-600 text-white dark:text-white hover:bg-red-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
@@ -226,7 +226,7 @@ export default function Dashboard({
                     value={fxGL}
                     subValue={fxGLPct}
                     colorClass={fxGLColor}
-                    subValueClassName={cn("text-base sm:text-xl", fxGLPct >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-rose-600 text-white dark:text-white hover:bg-rose-700 border-none")}
+                    subValueClassName={cn("text-base sm:text-xl", fxGLPct >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-red-600 text-white dark:text-white hover:bg-red-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
@@ -264,7 +264,7 @@ export default function Dashboard({
                 return <MetricCard
                     title="Fees"
                     value={m?.commissions ?? 0}
-                    colorClass="text-rose-600 dark:text-rose-400"
+                    colorClass="text-red-600 dark:text-red-500"
                     currency={currency}
                     isLoading={isLoading}
                 />;

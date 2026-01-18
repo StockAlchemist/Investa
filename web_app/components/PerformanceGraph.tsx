@@ -174,7 +174,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
             return {
                 label: "Period TWR",
                 text: `${twr > 0 ? '+' : ''}${twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`,
-                color: twr >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                color: twr >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-500"
             };
         } else if (view === 'value') {
             const startVal = start.value;
@@ -185,7 +185,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
             return {
                 label: "Period Change",
                 text: `${formatCurrency(change, currency)} (${change > 0 ? '+' : ''}${changePct.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`,
-                color: change >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                color: change >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-500"
             };
         }
         return null;
@@ -451,13 +451,13 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                             </div>
                             <div className="flex items-center justify-between gap-2">
                                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">TWR</span>
-                                <span className={`text-[13px] font-bold ${dataPoint.twr >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                <span className={`font-mono font-medium ${dataPoint.twr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
                                     {dataPoint.twr >= 0 ? '+' : ''}{dataPoint.twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                                 </span>
                             </div>
                             <div className="flex items-center justify-between gap-2">
                                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Drawdown</span>
-                                <span className="text-[13px] font-bold text-rose-500">
+                                <span className="text-[13px] font-bold text-red-500">
                                     {dataPoint.drawdown.toFixed(2)}%
                                 </span>
                             </div>
@@ -467,7 +467,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                         <div className="space-y-0.5">
                             <div className="flex items-center justify-between gap-2">
                                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Gain</span>
-                                <span className={`text-[13px] font-bold ${dataPoint.abs_gain >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                <span className={`text-[13px] font-bold ${dataPoint.abs_gain >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
                                     {formatCurrency(dataPoint.abs_gain, currency)}
                                 </span>
                             </div>
@@ -494,7 +494,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                     {dataPoint.fx_return != null && (
                                         <div className="flex items-center justify-between gap-2">
                                             <span className="text-[10px] uppercase tracking-wider text-amber-500 font-bold">FX Ret</span>
-                                            <span className={`text-[12px] font-bold ${dataPoint.fx_return >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                            <span className={`font-mono font-medium ${dataPoint.fx_return >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
                                                 {dataPoint.fx_return >= 0 ? '+' : ''}{dataPoint.fx_return.toFixed(2)}%
                                             </span>
                                         </div>
@@ -513,7 +513,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                                 <span className="text-[10px] truncate max-w-[80px] font-bold uppercase tracking-wider" style={{ color: color }}>
                                                     {bKey}
                                                 </span>
-                                                <span className={`text-[12px] font-bold ${dataPoint[bKey] >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                <span className={`text-[12px] font-bold ${dataPoint[bKey] >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
                                                     {dataPoint[bKey] >= 0 ? '+' : ''}{Number(dataPoint[bKey]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                                                 </span>
                                             </div>

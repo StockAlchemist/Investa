@@ -70,11 +70,11 @@ export function CorrelationMatrix({ data, isLoading, period, onPeriodChange }: C
         // Strong negative (-1) = Blue/Green (120deg or 200deg)
 
         // Let's stick to a robust simple scale:
-        if (value >= 0.8) return "bg-rose-500/90 text-white";
-        if (value >= 0.5) return "bg-rose-500/60 text-white";
-        if (value >= 0.2) return "bg-rose-500/30 text-rose-100";
+        if (value >= 0.8) return "bg-red-500/90 text-white";
+        if (value >= 0.5) return "bg-red-500/60 text-white";
+        if (value >= 0.2) return "bg-red-500/30 text-red-900 dark:text-red-100";
         if (value >= -0.2) return "bg-muted/50 text-muted-foreground"; // Neutral
-        if (value >= -0.5) return "bg-emerald-500/30 text-emerald-100";
+        if (value >= -0.5) return "bg-emerald-500/30 text-emerald-900 dark:text-emerald-100";
         return "bg-emerald-500/70 text-white";
     };
 
@@ -192,7 +192,7 @@ export function CorrelationMatrix({ data, isLoading, period, onPeriodChange }: C
                                     <span>Neutral</span>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <div className="w-3 h-3 rounded bg-rose-500/90"></div>
+                                    <div className="w-3 h-3 rounded bg-red-500/90"></div>
                                     <span>Positive (Correlated)</span>
                                 </div>
                             </div>

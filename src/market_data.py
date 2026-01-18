@@ -1813,7 +1813,7 @@ class MarketDataProvider:
                     try:
                         # Individual fetch
                         data_ind = yf.download(
-                            tickers=symbol,
+                            tickers=[symbol],
                             start=yf_start_date,
                             end=yf_end_date,
                             progress=False,

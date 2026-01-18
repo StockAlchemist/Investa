@@ -171,7 +171,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
             return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20';
         }
         if (['SELL', 'WITHDRAWAL'].includes(t)) {
-            return 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20';
+            return 'bg-red-500/10 text-red-600 dark:text-red-500 border border-red-500/20';
         }
         if (['DIVIDEND', 'INTEREST'].includes(t)) {
             return 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20';
@@ -211,7 +211,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                         {selectedIds.size > 0 && (
                             <button
                                 onClick={handleBulkDelete}
-                                className="flex-1 md:flex-none px-2 md:px-4 py-2 bg-rose-600 text-white rounded-md hover:bg-rose-700 transition-colors text-sm font-medium shadow-sm flex items-center justify-center gap-2"
+                                className="flex-1 md:flex-none px-2 md:px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium shadow-sm flex items-center justify-center gap-2"
                             >
                                 <Trash2 className="h-4 w-4" />
                                 <span className="hidden md:inline">Delete Selected ({selectedIds.size})</span>
@@ -406,7 +406,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                                         </button>
                                         <button
                                             onClick={() => handleDelete(tx)}
-                                            className="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded transition-colors"
+                                            className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-2 rounded transition-colors"
                                             title="Delete"
                                         >
                                             <Trash2 className="w-4 h-4" />
@@ -476,7 +476,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                             </button>
                             <button
                                 onClick={() => handleDelete(tx)}
-                                className="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded transition-colors"
+                                className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-2 rounded transition-colors"
                                 title="Delete"
                             >
                                 <Trash2 className="w-5 h-5" />

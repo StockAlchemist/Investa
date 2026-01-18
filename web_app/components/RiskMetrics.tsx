@@ -56,7 +56,7 @@ export default function RiskMetrics({ metrics, isLoading }: RiskMetricsProps) {
             label: 'Max Drawdown',
             value: formatPercent(metrics['Max Drawdown']),
             description: 'Peak to trough decline',
-            color: 'text-rose-500',
+            color: 'text-red-500',
         },
         {
             label: 'Sortino Ratio',

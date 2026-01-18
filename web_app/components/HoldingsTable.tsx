@@ -390,7 +390,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
         if (typeof val !== 'number') return '';
         if (['Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Real. G/L', 'Total G/L', 'Total Ret %', 'FX G/L', 'FX G/L %', 'IRR (%)', 'Contribution %'].includes(header)) {
             if (Math.abs(val) < 0.001) return 'text-muted-foreground';
-            return val > 0 ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-rose-600 dark:text-rose-400 font-medium';
+            return val > 0 ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-red-600 dark:text-red-500 font-medium';
         }
         return '';
     };
@@ -668,11 +668,11 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                                     <>
                                                                                         <linearGradient id={`splitFill-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
                                                                                             <stop offset={off} stopColor="#10b981" stopOpacity={0.15} />
-                                                                                            <stop offset={off} stopColor="#f43f5e" stopOpacity={0.15} />
+                                                                                            <stop offset={off} stopColor="#ef4444" stopOpacity={0.15} />
                                                                                         </linearGradient>
                                                                                         <linearGradient id={`splitStroke-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
                                                                                             <stop offset={off} stopColor="#10b981" stopOpacity={1} />
-                                                                                            <stop offset={off} stopColor="#f43f5e" stopOpacity={1} />
+                                                                                            <stop offset={off} stopColor="#ef4444" stopOpacity={1} />
                                                                                         </linearGradient>
                                                                                     </>
                                                                                 );
@@ -692,7 +692,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                                 const { cx, cy, index } = props;
                                                                                 if (index === val.length - 1) {
                                                                                     // Calculate color for dot based on value vs baseline
-                                                                                    const color = val[val.length - 1] >= val[0] ? "#10b981" : "#f43f5e";
+                                                                                    const color = val[val.length - 1] >= val[0] ? "#10b981" : "#ef4444";
                                                                                     return (
                                                                                         <circle key="dot" cx={cx} cy={cy} r={2} fill={color} stroke="none" />
                                                                                     );

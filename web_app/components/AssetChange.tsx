@@ -121,7 +121,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                                                 <div key={index} className="flex items-center gap-2 text-sm">
                                                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
                                                     <span className="text-muted-foreground">{entry.name}:</span>
-                                                    <span className={`font-medium ${Number(entry.value) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                                                    <span className={`font-medium ${Number(entry.value) >= 0 ? "text-emerald-500" : "text-red-500"}`}>
                                                         {formatValue(entry.value)}
                                                     </span>
                                                 </div>
@@ -140,7 +140,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                                                             <div className="flex items-center gap-2 text-sm mt-1 pt-1 border-t border-border/50">
                                                                 <span className="w-2 h-2 rounded-full bg-cyan-500" />
                                                                 <span className="text-muted-foreground">Net Flow:</span>
-                                                                <span className={`font-medium ${Number(netFlow) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                                                                <span className={`font-medium ${Number(netFlow) >= 0 ? "text-emerald-500" : "text-red-500"}`}>
                                                                     {formatValue(netFlow)}
                                                                 </span>
                                                             </div>
@@ -148,7 +148,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                                                                 <div className="flex items-center gap-2 text-sm">
                                                                     <span className="w-2 h-2 rounded-full bg-transparent" />
                                                                     <span className="text-muted-foreground">Total Change:</span>
-                                                                    <span className={`font-medium ${Number(totalChange) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                                                                    <span className={`font-medium ${Number(totalChange) >= 0 ? "text-emerald-500" : "text-red-500"}`}>
                                                                         {formatValue(totalChange)}
                                                                     </span>
                                                                 </div>
@@ -177,7 +177,7 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                                 {viewMode === 'value' && displayData.map((entry: Record<string, number>, i: number) => (
                                     <Cell
                                         key={`cell-${i}`}
-                                        fill={entry[key] >= 0 ? '#10b981' : '#e11d48'}
+                                        fill={entry[key] >= 0 ? '#10b981' : '#ef4444'}
                                     />
                                 ))}
                             </Bar>

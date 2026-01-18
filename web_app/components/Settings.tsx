@@ -702,7 +702,7 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => removeOverride(symbol)}
-                                                                    className="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded transition-colors"
+                                                                    className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-2 rounded transition-colors"
                                                                     title="Remove"
                                                                 >
                                                                     <Trash2 className="w-4 h-4" />
@@ -789,7 +789,7 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
                                                             <button
                                                                 type="button"
                                                                 onClick={() => removeMapping(from)}
-                                                                className="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded transition-colors"
+                                                                className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-2 rounded transition-colors"
                                                                 title="Remove"
                                                             >
                                                                 <Trash2 className="w-4 h-4" />
@@ -826,7 +826,7 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
                                         type="button"
                                         onClick={addExcluded}
                                         disabled={!excludeSymbol}
-                                        className="w-full md:w-auto px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                        className="w-full md:w-auto px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                     >
                                         Exclude Symbol
                                     </button>
@@ -846,7 +846,7 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
                                                 <button
                                                     type="button"
                                                     onClick={() => removeExcluded(sym)}
-                                                    className="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded transition-colors"
+                                                    className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-2 rounded transition-colors"
                                                     title="Remove from exclusion list"
                                                 >
                                                     <Trash2 className="w-4 h-4" />
@@ -895,7 +895,7 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
                                                     <span className="font-medium text-foreground">{curr}</span>
                                                     <button
                                                         onClick={() => removeCurrency(curr)}
-                                                        className="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded transition-colors"
+                                                        className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-2 rounded transition-colors"
                                                         title="Remove"
                                                     >
                                                         <Trash2 className="w-4 h-4" />
@@ -968,7 +968,7 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
                         </button>
                     </div>
                     {refreshStatus && (
-                        <p className={`text-sm ${refreshStatus.startsWith('Error') ? 'text-rose-400' : 'text-emerald-400'}`}>
+                        <p className={`text-sm ${refreshStatus.startsWith('Error') ? 'text-red-500' : 'text-emerald-400'}`}>
                             {refreshStatus}
                         </p>
                     )}
@@ -976,7 +976,7 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
             </div>
 
             {/* Cache Management Section */}
-            <div className="bg-white dark:bg-zinc-950 shadow-sm rounded-xl p-6 border border-border border-l-4 border-l-rose-500">
+            <div className="bg-white dark:bg-zinc-950 shadow-sm rounded-xl p-6 border border-border border-l-4 border-l-red-500">
                 <h2 className="text-lg font-bold mb-4 text-foreground">Cache Management</h2>
                 <div className="space-y-4">
                     <p className="text-sm text-muted-foreground">
@@ -987,13 +987,13 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
                             type="button"
                             onClick={handleClearCache}
                             className={`px-4 py-2 border rounded-md shadow-sm text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${confirmClear
-                                ? 'bg-rose-600 text-white border-transparent hover:bg-rose-700 focus:ring-rose-500'
-                                : 'border-rose-500/50 text-rose-500 bg-rose-500/5 hover:bg-rose-500/10 focus:ring-rose-500'}`}
+                                ? 'bg-red-600 text-white border-transparent hover:bg-red-700 focus:ring-red-500'
+                                : 'border-red-500/50 text-red-500 bg-red-500/5 hover:bg-red-500/10 focus:ring-red-500'}`}
                         >
                             {confirmClear ? "Click to Confirm" : "Clear All Cache"}
                         </button>
                         {clearStatus && (
-                            <p className={`text-sm ${clearStatus.startsWith('Error') ? 'text-rose-400' : 'text-emerald-400'}`}>
+                            <p className={`text-sm ${clearStatus.startsWith('Error') ? 'text-red-500' : 'text-emerald-400'}`}>
                                 {clearStatus}
                             </p>
                         )}

@@ -54,13 +54,13 @@ export function SectorAttribution({ data, isLoading, currency }: CommonProps) {
                     <div key={s.sector}>
                         <div className="flex justify-between text-xs mb-1.5">
                             <span className="font-medium text-foreground">{s.sector}</span>
-                            <span className={s.gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                            <span className={s.gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}>
                                 {formatCurrencyHelper(s.gain, currency)} ({formatPercentHelper(s.contribution)})
                             </span>
                         </div>
                         <div className="w-full bg-secondary rounded-full h-1.5 overflow-hidden">
                             <div
-                                className={`h-full ${s.gain >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                                className={`h-full ${s.gain >= 0 ? 'bg-emerald-500' : 'bg-red-500'}`}
                                 style={{ width: `${Math.min(100, Math.abs(s.contribution * 100))}%` }}
                             ></div>
                         </div>
@@ -119,7 +119,7 @@ export function TopContributors({ data, isLoading, currency }: CommonProps) {
                                 <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{stock.name}</span>
                             </div>
                             <div className="text-right">
-                                <p className={`text-sm font-medium ${stock.gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                <p className={`text-sm font-medium ${stock.gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
                                     {stock.gain >= 0 ? '+' : ''}{formatCurrencyHelper(stock.gain, currency)}
                                     <span className="text-xs ml-1">({formatPercentHelper(stock.contribution)})</span>
                                 </p>

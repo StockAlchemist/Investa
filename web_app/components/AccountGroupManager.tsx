@@ -144,7 +144,7 @@ export default function AccountGroupManager({ settings, availableAccounts, onUpd
                             </div>
                             <button
                                 onClick={() => handleDeleteGroup(name)}
-                                className="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded transition-colors"
+                                className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-2 rounded transition-colors"
                                 title="Delete Group"
                             >
                                 <Trash2 className="w-5 h-5" />

@@ -117,7 +117,7 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-card p-4 rounded-xl shadow-sm border border-border">
                     <h3 className="text-sm font-medium text-muted-foreground">Total Realized Gain</h3>
-                    <p className={`text-2xl font-bold ${totalRealizedGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                    <p className={`text-2xl font-bold ${totalRealizedGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
                         {formatCurrency(totalRealizedGain, currency)}
                     </p>
                 </div>
@@ -229,7 +229,7 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                                     </div>
                                 </div>
                                 <div className="text-right">
-                                    <div className={`text-lg font-bold ${(item['Realized Gain (Display)'] || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                    <div className={`text-lg font-bold ${(item['Realized Gain (Display)'] || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
                                         {formatCurrency(item['Realized Gain (Display)'] || 0, currency)}
                                     </div>
                                     <div className="text-xs text-muted-foreground uppercase tracking-wider">
@@ -303,7 +303,7 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
                                     <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-muted-foreground tabular-nums">
                                         {formatCurrency(item["Total Cost Basis (Display)"] || 0, currency)}
                                     </td>
-                                    <td className={`px-6 py-3 whitespace-nowrap text-sm text-right font-medium tabular-nums ${(item['Realized Gain (Display)'] || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                                    <td className={`px-6 py-3 whitespace-nowrap text-sm text-right font-medium tabular-nums ${(item['Realized Gain (Display)'] || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'
                                         }`}>
                                         {formatCurrency(item['Realized Gain (Display)'] || 0, currency)}
                                     </td>

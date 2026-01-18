@@ -356,7 +356,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                 {item.Price ? formatCurrency(item.Price, item.Currency || 'USD') : '-'}
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-right text-sm">
-                                                <div className={`flex items-center justify-end font-mono tabular-nums ${(item["Day Change"] || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                                                <div className={`flex items-center justify-end font-mono tabular-nums ${(item["Day Change"] || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'
                                                     }`}>
                                                     {(item["Day Change"] || 0) >= 0 ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
                                                     {item["Day Change %"] ? formatPercent(item["Day Change %"] / 100) : '-'}
@@ -393,11 +393,11 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                                             <>
                                                                                 <linearGradient id={`splitFill-wl-${item.Symbol}`} x1="0" y1="0" x2="0" y2="1">
                                                                                     <stop offset={off} stopColor="#10b981" stopOpacity={0.15} />
-                                                                                    <stop offset={off} stopColor="#f43f5e" stopOpacity={0.15} />
+                                                                                    <stop offset={off} stopColor="#ef4444" stopOpacity={0.15} />
                                                                                 </linearGradient>
                                                                                 <linearGradient id={`splitStroke-wl-${item.Symbol}`} x1="0" y1="0" x2="0" y2="1">
                                                                                     <stop offset={off} stopColor="#10b981" stopOpacity={1} />
-                                                                                    <stop offset={off} stopColor="#f43f5e" stopOpacity={1} />
+                                                                                    <stop offset={off} stopColor="#ef4444" stopOpacity={1} />
                                                                                 </linearGradient>
                                                                             </>
                                                                         );
@@ -473,7 +473,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                                 variant="ghost"
                                                                 size="icon"
                                                                 onClick={() => removeMutation.mutate(item.Symbol)}
-                                                                className="h-8 w-8 text-rose-500 hover:text-rose-400 hover:bg-rose-500/10"
+                                                                className="h-8 w-8 text-red-500 hover:text-red-400 hover:bg-red-500/10"
                                                             >
                                                                 <Trash2 className="h-4 w-4" />
                                                             </Button>

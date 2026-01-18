@@ -138,7 +138,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
             const val = isTotal ? totalDayChange : activeDayChange;
             const isPositive = val >= 0;
             return (
-                <span className={isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
+                <span className={isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"}>
                     {val > 0 ? '+' : ''}{formatCurrency(val, currency)}
                 </span>
             );
@@ -148,7 +148,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
             const val = isTotal ? totalUnrealizedGain : activeUnrealizedGain;
             const isPositive = val >= 0;
             return (
-                <span className={isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
+                <span className={isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"}>
                     {val > 0 ? '+' : ''}{formatCurrency(val, currency)}
                 </span>
             );
@@ -171,7 +171,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
             // Total: Show Day Change $
             const val = totalDayChange;
             return (
-                <span className={val >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
+                <span className={val >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"}>
                     {val > 0 ? '+' : ''}{formatCurrency(val, currency)}
                 </span>
             );
@@ -180,7 +180,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
             // Show Day Change %
             const val = isTotal ? totalDayChangePct : activeDayChangePct;
             return (
-                <span className={val >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
+                <span className={val >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"}>
                     {val > 0 ? '+' : ''}{val.toFixed(2)}%
                 </span>
             );
@@ -189,7 +189,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
             // Show Total Gain %
             const val = isTotal ? totalGainPct : activeTotalGainPct;
             return (
-                <span className={val >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
+                <span className={val >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"}>
                     {val > 0 ? '+' : ''}{val.toFixed(2)}%
                 </span>
             );
