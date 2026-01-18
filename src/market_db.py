@@ -4,6 +4,7 @@ import logging
 import os
 from datetime import datetime, date, timedelta
 from typing import List, Dict, Optional, Tuple, Any
+import threading
 import config
 
 class MarketDatabase:
@@ -18,7 +19,35 @@ class MarketDatabase:
         self._init_db()
 
     def _get_connection(self):
-        return sqlite3.connect(self.db_path)
+        # Use thread-local storage for DB connections
+        if not hasattr(self, '_local_storage'):
+            self._local_storage = threading.local()
+        
+        if not hasattr(self._local_storage, 'conn'):
+            import time
+            retries = 5
+            last_error = None
+            for i in range(retries):
+                try:
+                    # check_same_thread=False is needed if the connection is passed between threads,
+                    # but here we use thread-local so it should be fine with default True.
+                    # However, timeout=30 is good for concurrent writes.
+                    self._local_storage.conn = sqlite3.connect(self.db_path, timeout=30)
+                    # Enable WAL mode for better concurrency
+                    self._local_storage.conn.execute("PRAGMA journal_mode=WAL;")
+                    self._local_storage.conn.execute("PRAGMA synchronous=NORMAL;")
+                    return self._local_storage.conn
+                except sqlite3.OperationalError as e:
+                    last_error = e
+                    if "unable to open database file" in str(e) or "database is locked" in str(e):
+                        if i < retries - 1:
+                            time.sleep(0.1 * (i + 1))
+                            continue
+                    raise e
+            if last_error:
+                raise last_error
+        
+        return self._local_storage.conn
 
     def _init_db(self):
         """Initializes the database schema if it doesn't exist."""
@@ -287,7 +316,10 @@ class MarketDatabase:
             df = pd.read_sql_query(query, conn, params=(symbol, interval, start_str, end_str))
         
         if not df.empty:
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            # Fix for parsing mixed format ISO strings with timezone info
+            # "YYYY-MM-DDTHH:MM:SS+00:00" might fail with default parser in some pandas versions
+            # Enforce utc=True to avoid mixed naive/aware comparisons and FutureWarnings
+            df['timestamp'] = pd.to_datetime(df['timestamp'], format='ISO8601', errors='coerce', utc=True)
             df.set_index('timestamp', inplace=True)
             df.index.name = "Date" # Standardize name for portfolio_logic compatibility
             

@@ -131,7 +131,7 @@ except ImportError:
 
 # --- Import the NEW Market Data Provider ---
 try:
-    from market_data import MarketDataProvider
+    from market_data import MarketDataProvider, get_shared_mdp
 
     MARKET_PROVIDER_AVAILABLE = True
 except ImportError:
@@ -5953,7 +5953,7 @@ def calculate_historical_performance(
         fetch_end_date = end_date
 
     # --- 2. Instantiate MarketDataProvider ---
-    market_provider = MarketDataProvider(
+    market_provider = get_shared_mdp(
         hist_data_cache_dir_name="historical_data_cache"
     )
 
@@ -6599,7 +6599,7 @@ if __name__ == "__main__":
         ) = prep_result_profile
 
         if profile_tx_df_effective is not None and not profile_tx_df_effective.empty:
-            profile_market_provider = MarketDataProvider()
+            profile_market_provider = get_shared_mdp()
             # ... (rest of data fetching and unadjustment as before) ...
             profile_prices_adj, _ = profile_market_provider.get_historical_data(
                 symbols_yf=profile_symbols_yf,

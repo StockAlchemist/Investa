@@ -5,6 +5,7 @@ import pandas as pd
 import traceback
 import os
 import tempfile
+from datetime import datetime, date
 
 # Setup explicit logging
 # Setup explicit logging
@@ -18,23 +19,148 @@ def log(msg):
     except:
         pass
 
-def fetch_data(symbols, start_date, end_date, interval, output_file):
+def fetch_info(symbols, output_file):
     try:
-        log(f"Starting fetch for {len(symbols)} symbols. Range: {start_date}-{end_date}, Int: {interval}")
+        log(f"Starting info fetch for {len(symbols)} symbols.")
+        results = {}
+        for sym in symbols:
+            try:
+                ticker = yf.Ticker(sym)
+                info = ticker.info
+                
+                # --- ETF DATA EXTRACTION ---
+                try:
+                    if hasattr(ticker, 'funds_data'):
+                        fd = ticker.funds_data
+                        if fd:
+                             etf_data = {}
+                             th = getattr(fd, 'top_holdings', None)
+                             if th is not None:
+                                 etf_data['top_holdings'] = []
+                                 if hasattr(th, 'iterrows'): 
+                                     for s, row in th.iterrows():
+                                         etf_data['top_holdings'].append({
+                                             "symbol": str(s), "name": str(row.get('Name', s)), "percent": float(row.get('Holding Percent', 0))
+                                         })
+                             if hasattr(fd, 'sector_weightings') and fd.sector_weightings:
+                                 etf_data['sector_weightings'] = fd.sector_weightings
+                             if hasattr(fd, 'asset_classes') and fd.asset_classes:
+                                 etf_data['asset_classes'] = fd.asset_classes
+                             if etf_data:
+                                 info['etf_data'] = etf_data
+                except Exception as e_etf:
+                    log(f"Error extracting ETF data for {sym}: {e_etf}")
+                
+                results[sym] = info
+            except Exception as e:
+                log(f"Error fetching info for {sym}: {e}")
+                results[sym] = None
         
-        # Configure yf - Enable threads for speed since we are isolated
-        data = yf.download(
-            tickers=symbols,
-            start=start_date,
-            end=end_date,
-            interval=interval,
-            progress=False,
-            group_by="ticker",
-            auto_adjust=True,
-            actions=False,
-            timeout=30,
-            prepost=False  # Explicitly disable pre/post market data
-        )
+        with open(output_file, "w") as f:
+            json.dump({"status": "success", "data": results}, f)
+        return {"status": "success", "file": output_file}
+    except Exception as e:
+        log(f"Error in fetch_info: {e}\n{traceback.format_exc()}")
+        return {"status": "error", "message": str(e)}
+
+def fetch_statement(symbol, statement_type, period_type, output_file):
+    try:
+        log(f"Starting statement fetch for {symbol}: {statement_type} ({period_type})")
+        ticker = yf.Ticker(symbol)
+        df = pd.DataFrame()
+        if period_type == "quarterly":
+            if statement_type == "financials": df = ticker.quarterly_financials
+            elif statement_type == "balance_sheet": df = ticker.quarterly_balance_sheet
+            elif statement_type == "cashflow": df = ticker.quarterly_cashflow
+        else:
+            if statement_type == "financials": df = ticker.financials
+            elif statement_type == "balance_sheet": df = ticker.balance_sheet
+            elif statement_type == "cashflow": df = ticker.cashflow
+        
+        if df is not None and not df.empty:
+            json_str = df.to_json(orient='split', date_format='iso')
+            with open(output_file, "w") as f: f.write(json_str)
+            return {"status": "success", "file": output_file}
+        else:
+            return {"status": "success", "data": None}
+    except Exception as e:
+        log(f"Error in fetch_statement: {e}\n{traceback.format_exc()}")
+        return {"status": "error", "message": str(e)}
+
+def fetch_dividends(symbol, output_file):
+    try:
+        log(f"Starting dividends fetch for {symbol}")
+        ticker = yf.Ticker(symbol)
+        divs = ticker.dividends
+        if divs is not None and not divs.empty:
+            # Convert Series to DataFrame to ensure consistent 'split' format
+            df = divs.to_frame(name="Dividends")
+            json_str = df.to_json(orient='split', date_format='iso')
+            with open(output_file, "w") as f: f.write(json_str)
+            return {"status": "success", "file": output_file}
+
+        else:
+            return {"status": "success", "data": None}
+    except Exception as e:
+        log(f"Error in fetch_dividends: {e}\n{traceback.format_exc()}")
+        return {"status": "error", "message": str(e)}
+
+def fetch_calendar(symbol, output_file):
+    try:
+        log(f"Starting calendar fetch for {symbol}")
+        ticker = yf.Ticker(symbol)
+        cal = ticker.calendar
+        if cal:
+            # Convert any datetime/date objects to strings for JSON
+            processed_cal = {}
+            for k, v in cal.items():
+                if isinstance(v, (datetime, pd.Timestamp, date)):
+                    processed_cal[k] = str(v)
+                elif isinstance(v, list):
+                    processed_cal[k] = [str(i) if isinstance(i, (datetime, pd.Timestamp, date)) else i for i in v]
+                else:
+                    processed_cal[k] = v
+            
+            with open(output_file, "w") as f:
+                json.dump({"status": "success", "data": processed_cal}, f)
+            return {"status": "success", "file": output_file}
+        else:
+            return {"status": "success", "data": None}
+    except Exception as e:
+        log(f"Error in fetch_calendar: {e}\n{traceback.format_exc()}")
+        return {"status": "error", "message": str(e)}
+
+
+
+def fetch_data(symbols, start_date, end_date, interval, output_file, period=None):
+    try:
+        if period:
+             log(f"Starting fetch for {len(symbols)} symbols. Period: {period}, Int: {interval}")
+             data = yf.download(
+                tickers=symbols,
+                period=period,
+                interval=interval,
+                progress=False,
+                group_by="ticker",
+                auto_adjust=True,
+                actions=False,
+                timeout=30,
+                threads=False
+            )
+        else:
+            log(f"Starting fetch for {len(symbols)} symbols. Range: {start_date}-{end_date}, Int: {interval}")
+            data = yf.download(
+                tickers=symbols,
+                start=start_date,
+                end=end_date,
+                interval=interval,
+                progress=False,
+                group_by="ticker",
+                auto_adjust=True,
+                actions=False,
+                timeout=30,
+                threads=False
+            )
         
         # NOTE: We previously attempted manual filtering (9:30-16:00) but it caused issues
         # with UTC vs Local timezones (pruning valid data).
@@ -114,10 +240,12 @@ if __name__ == "__main__":
         input_json = sys.stdin.read()
         request = json.loads(input_json)
         
+        task = request.get("task", "history")
         symbols = request.get("symbols", [])
         start = request.get("start")
         end = request.get("end")
-        interval = request.get("interval")
+        period = request.get("period")
+        interval = request.get("interval", "1d")
         output_file = request.get("output_file")
         
         if not output_file:
@@ -125,7 +253,18 @@ if __name__ == "__main__":
             fd, output_file = tempfile.mkstemp(suffix=".json")
             os.close(fd)
         
-        result = fetch_data(symbols, start, end, interval, output_file)
+        if task == "info":
+            result = fetch_info(symbols, output_file)
+        elif task == "statement":
+            result = fetch_statement(symbols[0], request.get("statement_type"), request.get("period_type"), output_file)
+        elif task == "dividends":
+            result = fetch_dividends(symbols[0], output_file)
+        elif task == "calendar":
+            result = fetch_calendar(symbols[0], output_file)
+        else:
+            result = fetch_data(symbols, start, end, interval, output_file, period=period)
+
+
         
         # Print result metadata to stdout (path to file)
         print(json.dumps(result))

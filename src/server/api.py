@@ -65,6 +65,13 @@ project_root = os.path.dirname(src_dir)
 # Global Cache for Portfolio Summary Calculations to avoid redundant processing per-request
 _PORTFOLIO_SUMMARY_CACHE = {}
 
+# Global Market Data Provider to share DB connections and cache across requests
+_MDP_INSTANCE = None
+
+def get_mdp():
+    from market_data import get_shared_mdp
+    return get_shared_mdp()
+
 @router.get("/asset_change")
 async def get_asset_change(
     currency: str = "USD",
@@ -237,7 +244,7 @@ async def _calculate_portfolio_summary_internal(
         
     logging.info(f"Summary Cache Miss. Calculating summary. Time key: {time_key}")
 
-    mdp = MarketDataProvider()
+    mdp = get_mdp()
     (
         overall_summary_metrics,
         summary_df,
@@ -387,7 +394,7 @@ async def get_portfolio_summary(
 
             # --- Fetch Market Indices ---
             try:
-                mdp = MarketDataProvider()
+                mdp = get_mdp()
                 indices_data = mdp.get_index_quotes(config.INDICES_FOR_HEADER)
                 overall_summary_metrics["indices"] = indices_data
             except Exception as e_indices:
@@ -510,7 +517,7 @@ async def get_correlation_matrix(
             start_date = end_date - timedelta(days=365)
             
         # 4. Fetch Historical Data
-        mdp = MarketDataProvider()
+        mdp = get_mdp()
         hist_data, _ = mdp.get_historical_data(
             symbols_yf=yf_symbols_to_fetch,
             start_date=start_date,
@@ -1631,7 +1638,7 @@ async def get_projected_income(
                 yf_symbols.add(yf_sym)
                 sym_map[sym] = yf_sym
                 
-        provider = MarketDataProvider()
+        provider = get_mdp()
         fundamentals = provider.get_fundamental_data_batch(yf_symbols)
         
         # 4. Project Income
@@ -2160,10 +2167,10 @@ async def get_dividend_calendar(
             return []
 
         # Use MarketDataProvider to get basic info efficiently
-        from market_data import MarketDataProvider, map_to_yf_symbol
+        from market_data import MarketDataProvider, map_to_yf_symbol, _run_isolated_fetch
         from finutils import is_cash_symbol
         
-        provider = MarketDataProvider()
+        provider = get_mdp()
         yf_map = {} # Internal -> YF
         yf_symbols = set()
         
@@ -2205,32 +2212,37 @@ async def get_dividend_calendar(
                 # 1. Confirmed Events (Need live ticker for calendar, but wrap carefully)
                 # Only check calendar if we have indication of dividends
                 if div_rate > 0 or last_div_val:
-                    try:
-                        # Calendar is not cached in fundamentals, so we fetch it live
-                        # BUT we do it safely inside the thread
-                        t = yf.Ticker(yf_sym)
-                        cal = t.calendar
-                        if cal and 'Dividend Date' in cal:
-                            div_date_raw = cal['Dividend Date']
-                            if isinstance(div_date_raw, list): div_date_raw = div_date_raw[0]
+                    # Use isolated fetch for calendar data
+                    cal = _run_isolated_fetch([yf_sym], task="calendar")
+                    if cal and 'Dividend Date' in cal:
+                        div_date_raw = cal['Dividend Date']
+                        # Dates were stringified in the worker
+                        if isinstance(div_date_raw, str):
+                            try:
+                                c_date = datetime.fromisoformat(div_date_raw).date()
+                            except ValueError:
+                                # Fallback if it's just 'YYYY-MM-DD'
+                                try:
+                                    c_date = datetime.strptime(div_date_raw, "%Y-%m-%d").date()
+                                except ValueError:
+                                    c_date = None
+                        else:
                             c_date = div_date_raw
                             if isinstance(c_date, datetime): c_date = c_date.date()
-                            
-                            if c_date and c_date >= today:
-                                amt = last_div_val if last_div_val else (div_rate / 4 if div_rate else 0)
-                                local_events.append({
-                                    "symbol": sym,
-                                    "dividend_date": str(c_date),
-                                    "ex_dividend_date": str(cal.get('Ex-Dividend Date', '')),
-                                    "amount": amt * qty,
-                                    "status": "confirmed"
-                                })
-                    except Exception as e_cal:
-                         # logging.warning(f"  Calendar fetch failed for {sym}: {e_cal}")
-                         pass
+                        
+                        if c_date and c_date >= today:
+                            amt = last_div_val if last_div_val else (div_rate / 4 if div_rate else 0)
+                            local_events.append({
+                                "symbol": sym,
+                                "dividend_date": str(c_date),
+                                "ex_dividend_date": str(cal.get('Ex-Dividend Date', '')),
+                                "amount": amt * qty,
+                                "status": "confirmed"
+                            })
                 
                 # 2. Estimated Events
                 if div_rate and div_rate > 0:
+
                     freq_months = 3
                     if last_div_val and last_div_val > 0:
                         ratio = div_rate / last_div_val
@@ -2348,7 +2360,7 @@ async def get_fundamentals_endpoint(
         raise HTTPException(status_code=400, detail=f"Could not map {symbol} to Yahoo Finance symbol.")
     
     try:
-        mdp = MarketDataProvider()
+        mdp = get_mdp()
         fundamental_data = mdp.get_fundamental_data(yf_symbol)
         if fundamental_data is None:
              raise HTTPException(status_code=404, detail=f"No fundamental data found for {yf_symbol}")
@@ -2372,7 +2384,7 @@ async def get_financials_endpoint(
         raise HTTPException(status_code=400, detail=f"Could not map {symbol} to Yahoo Finance symbol.")
     
     try:
-        mdp = MarketDataProvider()
+        mdp = get_mdp()
         financials = mdp.get_financials(yf_symbol, period_type)
         balance_sheet = mdp.get_balance_sheet(yf_symbol, period_type)
         cashflow = mdp.get_cashflow(yf_symbol, period_type)
@@ -2425,7 +2437,7 @@ async def get_ratios_endpoint(
         raise HTTPException(status_code=400, detail=f"Could not map {symbol} to Yahoo Finance symbol.")
     
     try:
-        mdp = MarketDataProvider()
+        mdp = get_mdp()
         # Fetch data needed for ratios
         info = mdp.get_fundamental_data(yf_symbol)
         financials = mdp.get_financials(yf_symbol, "annual")
@@ -2748,7 +2760,7 @@ async def get_watchlist_endpoint(
         if not db_items:
             return []
             
-        mdp = MarketDataProvider()
+        mdp = get_mdp()
         
         # Extract symbols for batch fetching
         symbols = [item["Symbol"] for item in db_items]

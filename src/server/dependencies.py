@@ -31,6 +31,14 @@ _DB_MTIME: float = 0.0
 _OVERRIDES_PATH: Optional[str] = None
 _OVERRIDES_MTIME: float = 0.0
 
+# Added caches for config files to avoid redundant I/O
+_GUI_CONFIG_CACHE: Optional[Dict[str, Any]] = None
+_GUI_CONFIG_LOADED_PATH: Optional[str] = None
+_GUI_CONFIG_MTIME: float = 0.0
+_MANUAL_OVERRIDES_FILE_CACHE: Optional[Dict[str, Any]] = None
+_MANUAL_OVERRIDES_MTIME: float = 0.0
+
+
 def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str], Set[str], Dict[str, str], str, float]:
     """
     Loads transaction data from the database.
@@ -39,34 +47,46 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
     global _TRANSACTIONS_CACHE, _IGNORED_INDICES, _IGNORED_REASONS, _MANUAL_OVERRIDES, _USER_SYMBOL_MAP, _USER_EXCLUDED_SYMBOLS, _ACCOUNT_CURRENCY_MAP, _DB_PATH, _DB_MTIME, _OVERRIDES_PATH, _OVERRIDES_MTIME
     
     # --- 1. Load Configuration First ---
-    # We need to know the DB path from config if it exists
-    gui_config = {}
+    # Cached loading of gui_config.json
+    global _GUI_CONFIG_CACHE, _GUI_CONFIG_LOADED_PATH, _GUI_CONFIG_MTIME
     
     # Define system config path using centralized logic from config.py
-    # This ensures consistency with the Desktop App (main_gui.py)
     app_data_dir = config.get_app_data_dir()
     system_config_path = os.path.join(app_data_dir, "gui_config.json")
     
     config_paths_to_try = [
-        system_config_path,  # Priority 1: System/User path (consistent with Desktop)
+        system_config_path,
         os.path.join(project_root, "gui_config.json"),
         os.path.join(src_dir, "gui_config.json"),
         os.path.join(src_dir, "Investa", "gui_config.json"),
     ]
     
-    config_loaded_path = None
+    current_gui_config_path = None
     for cp in config_paths_to_try:
         if os.path.exists(cp):
+            current_gui_config_path = cp
+            break
+            
+    if current_gui_config_path:
+        st = os.stat(current_gui_config_path)
+        if _GUI_CONFIG_CACHE is None or current_gui_config_path != _GUI_CONFIG_LOADED_PATH or st.st_mtime != _GUI_CONFIG_MTIME:
             try:
-                with open(cp, "r") as f:
-                    gui_config = json.load(f)
-                config_loaded_path = cp
-                logging.info(f"Loaded gui_config.json from: {cp}")
-                break
+                with open(current_gui_config_path, "r") as f:
+                    _GUI_CONFIG_CACHE = json.load(f)
+                _GUI_CONFIG_LOADED_PATH = current_gui_config_path
+                _GUI_CONFIG_MTIME = st.st_mtime
+                logging.info(f"Loaded/Reloaded gui_config.json from: {current_gui_config_path}")
             except Exception as e:
-                logging.warning(f"Found gui_config.json at {cp} but failed to load: {e}")
-        else:
-             logging.info(f"Config path does not exist: {cp}")
+                logging.warning(f"Found gui_config.json at {current_gui_config_path} but failed to load: {e}")
+                if _GUI_CONFIG_CACHE is None: _GUI_CONFIG_CACHE = {}
+    else:
+        _GUI_CONFIG_CACHE = {}
+        _GUI_CONFIG_LOADED_PATH = None
+        _GUI_CONFIG_MTIME = 0.0
+
+    gui_config = _GUI_CONFIG_CACHE
+    config_loaded_path = _GUI_CONFIG_LOADED_PATH
+
 
     # --- 1b. Defaults from config.py ---
     account_currency_map = {"SET": "THB"}
@@ -143,8 +163,9 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
         
         logging.info(f"Loading transactions from: {db_path}")
         
-        # Load manual_overrides.json if it exists
-        # Priority: Look in the same directory where gui_config.json was found
+        # --- 2b. Load manual_overrides.json ---
+        global _MANUAL_OVERRIDES_FILE_CACHE, _MANUAL_OVERRIDES_MTIME
+        
         manual_overrides = {} 
         full_overrides_json = {} 
         
@@ -153,31 +174,38 @@ def get_transaction_data() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, str]
             config_dir = os.path.dirname(config_loaded_path)
             overrides_paths_to_try.append(os.path.join(config_dir, "manual_overrides.json"))
 
-        # Always check the standard app data directory (where ConfigManager likely writes)
         overrides_paths_to_try.append(os.path.join(config.get_app_data_dir(), "manual_overrides.json"))
-        
-        # Also check project root as fallback
         overrides_paths_to_try.append(os.path.join(project_root, "manual_overrides.json"))
         
-        loaded_overrides_path = None
+        current_overrides_path = None
         for op in overrides_paths_to_try:
             if os.path.exists(op):
+                current_overrides_path = op
+                break
+        
+        if current_overrides_path:
+            st_ov = os.stat(current_overrides_path)
+            if _MANUAL_OVERRIDES_FILE_CACHE is None or current_overrides_path != _OVERRIDES_PATH or st_ov.st_mtime != _MANUAL_OVERRIDES_MTIME:
                 try:
-                    with open(op, "r") as f:
-                        full_overrides_json = json.load(f)
-                        if "manual_price_overrides" in full_overrides_json:
-                            manual_overrides = full_overrides_json["manual_price_overrides"]
-                        else:
-                            # It might be the old format or just the dict itself (less likely for full file)
-                            # But based on file inspection, it has "manual_price_overrides" key.
-                            # Start with empty if key not found but file matches structure
-                            pass
-                    
-                    logging.info(f"Loaded manual overrides from {op}")
-                    loaded_overrides_path = op
-                    break
+                    with open(current_overrides_path, "r") as f:
+                        _MANUAL_OVERRIDES_FILE_CACHE = json.load(f)
+                    _OVERRIDES_PATH = current_overrides_path
+                    _MANUAL_OVERRIDES_MTIME = st_ov.st_mtime
+                    logging.info(f"Loaded/Reloaded manual overrides from {current_overrides_path}")
                 except Exception as e:
-                    logging.warning(f"Found overrides at {op} but failed to load: {e}")
+                    logging.warning(f"Found overrides at {current_overrides_path} but failed to load: {e}")
+                    if _MANUAL_OVERRIDES_FILE_CACHE is None: _MANUAL_OVERRIDES_FILE_CACHE = {}
+        else:
+            _MANUAL_OVERRIDES_FILE_CACHE = {}
+            _OVERRIDES_PATH = None
+            _MANUAL_OVERRIDES_MTIME = 0.0
+
+        full_overrides_json = _MANUAL_OVERRIDES_FILE_CACHE
+        if "manual_price_overrides" in full_overrides_json:
+            manual_overrides = full_overrides_json["manual_price_overrides"]
+        
+        loaded_overrides_path = _OVERRIDES_PATH
+
         
         # --- CHANGED: JSON overrides are the ONLY authority ---
         # We no longer merge from config.

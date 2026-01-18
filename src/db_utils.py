@@ -21,6 +21,7 @@ import logging
 from typing import Optional, Dict, Any, Tuple, Union, List
 import pandas as pd
 import traceback
+import threading
 import config
 
 DB_FILENAME = "investa_transactions.db"
@@ -47,19 +48,51 @@ def get_database_path(db_filename: str = DB_FILENAME) -> str:
     return app_data_path
 
 
+_DB_CONN_CACHE = threading.local()
+
 def get_db_connection(db_path: Optional[str] = None) -> Optional[sqlite3.Connection]:
-    """Establishes a connection to the SQLite database."""
+    """Establishes a connection to the SQLite database, with thread-local caching."""
     if db_path is None:
         db_path = get_database_path()
+    
+    if not hasattr(_DB_CONN_CACHE, 'connections'):
+        _DB_CONN_CACHE.connections = {}
+    
+    if db_path in _DB_CONN_CACHE.connections:
+        # Verify connection is still open
+        try:
+            _DB_CONN_CACHE.connections[db_path].execute("SELECT 1")
+            return _DB_CONN_CACHE.connections[db_path]
+        except (sqlite3.ProgrammingError, sqlite3.Error):
+            del _DB_CONN_CACHE.connections[db_path]
+
     try:
         db_dir = os.path.dirname(db_path)
         if db_dir:
             os.makedirs(db_dir, exist_ok=True)
 
-        conn = sqlite3.connect(db_path)
-        conn.execute("PRAGMA foreign_keys = ON;")
-        logging.info(f"Successfully connected to database: {db_path}")
-        return conn
+        import time
+        retries = 5
+        conn = None
+        for i in range(retries):
+            try:
+                conn = sqlite3.connect(db_path, timeout=30)
+                conn.execute("PRAGMA foreign_keys = ON;")
+                conn.execute("PRAGMA journal_mode=WAL;")
+                conn.execute("PRAGMA synchronous=NORMAL;")
+                break
+            except sqlite3.OperationalError as e:
+                if "unable to open database file" in str(e) or "database is locked" in str(e):
+                    if i < retries - 1:
+                        time.sleep(0.1 * (i + 1))
+                        continue
+                raise e
+        
+        if conn:
+            _DB_CONN_CACHE.connections[db_path] = conn
+            logging.info(f"Successfully connected to database (cached): {db_path}")
+            return conn
+        return None
     except sqlite3.Error as e:
         logging.error(f"Error connecting to database at {db_path}: {e}", exc_info=True)
         return None
