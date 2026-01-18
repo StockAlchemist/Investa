@@ -401,8 +401,8 @@ def estimate_growth_rate(
         n_periods = len(values) - 1
         
         cagr = (end_val / start_val) ** (1/n_periods) - 1
-        # Cap growth rate between 0% and 15% for conservative intrinsic value
-        return max(0.0, min(0.15, cagr))
+        # Remove 15% cap at user request. Keeping floor at 0% for stability.
+        return max(0.0, cagr)
     except Exception:
         return 0.05
 
