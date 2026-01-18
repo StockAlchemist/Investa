@@ -63,19 +63,20 @@ export function CorrelationMatrix({ data, isLoading, period, onPeriodChange }: C
 
     // Better color scale for dark mode
     const getCellColor = (value: number) => {
-        // Using distinct classes or strict colors might be better than rgba for dark mode contrast.
-        // But let's try computed HSL.
-        // Strong positive (1) = Red (0deg)
+        // Updated Logic: Positive = Green (Standard Math), Negative = Red
+        // Strong positive (1) = Green
         // Neutral (0) = Gray/Transparent
-        // Strong negative (-1) = Blue/Green (120deg or 200deg)
+        // Strong negative (-1) = Red
 
-        // Let's stick to a robust simple scale:
-        if (value >= 0.8) return "bg-red-500/90 text-white";
-        if (value >= 0.5) return "bg-red-500/60 text-white";
-        if (value >= 0.2) return "bg-red-500/30 text-red-900 dark:text-red-100";
+        if (value >= 0.8) return "bg-emerald-500/90 text-white";
+        if (value >= 0.5) return "bg-emerald-500/60 text-white";
+        if (value >= 0.2) return "bg-emerald-500/30 text-emerald-900 dark:text-emerald-100";
+
         if (value >= -0.2) return "bg-muted/50 text-muted-foreground"; // Neutral
-        if (value >= -0.5) return "bg-emerald-500/30 text-emerald-900 dark:text-emerald-100";
-        return "bg-emerald-500/70 text-white";
+
+        // Negative (Red)
+        if (value >= -0.5) return "bg-red-500/30 text-red-900 dark:text-red-100";
+        return "bg-red-500/80 text-white";
     };
 
     /* Error handling handled by parent or empty state */
@@ -184,16 +185,16 @@ export function CorrelationMatrix({ data, isLoading, period, onPeriodChange }: C
                             {/* Simple Legend */}
                             <div className="mt-6 flex items-center justify-center gap-6 text-xs text-muted-foreground">
                                 <div className="flex items-center gap-2">
-                                    <div className="w-3 h-3 rounded bg-emerald-500/70"></div>
-                                    <span>Negative (Diversifier)</span>
+                                    <div className="w-3 h-3 rounded bg-red-500/80"></div>
+                                    <span>Negative Correlation</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <div className="w-3 h-3 rounded bg-muted/50 border border-border"></div>
                                     <span>Neutral</span>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <div className="w-3 h-3 rounded bg-red-500/90"></div>
-                                    <span>Positive (Correlated)</span>
+                                    <div className="w-3 h-3 rounded bg-emerald-500/90"></div>
+                                    <span>Positive Correlation</span>
                                 </div>
                             </div>
                         </div>

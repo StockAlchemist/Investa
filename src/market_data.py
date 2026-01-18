@@ -1846,18 +1846,20 @@ class MarketDataProvider:
                              if not df_filtered.empty:
                                  price_col = "Close" if "Close" in df_filtered.columns else df_filtered.columns[0]
                                  df_cleaned = df_filtered[[price_col]].copy()
-                                 df_cleaned.rename(columns={price_col: "price"}, inplace=True)
-                                 
-                                 df_cleaned["price"] = pd.to_numeric(df_cleaned["price"], errors="coerce")
-                                 df_cleaned.dropna(subset=["price"], inplace=True)
-                                 df_cleaned = df_cleaned[df_cleaned["price"] > 1e-6]
-                                 
                                  if not df_cleaned.empty:
-                                     historical_data[symbol] = df_cleaned.sort_index()
-                                     logging.info(f"  Hist Fetch Helper: Individual retry SUCCESS for {symbol}.")
-                                 else:
-                                     logging.warning(f"  Hist Fetch Helper WARN: Individual retry for {symbol} returned no valid price data.")
-                                     # Do not cache as invalid automatically. Let it retry next time.
+                                     # Force flatten columns to just ["price"] to avoid MultiIndex issues
+                                     df_cleaned.columns = ["price"]
+                                     
+                                     df_cleaned["price"] = pd.to_numeric(df_cleaned["price"], errors="coerce")
+                                     df_cleaned.dropna(subset=["price"], inplace=True)
+                                     df_cleaned = df_cleaned[df_cleaned["price"] > 1e-6]
+                                 
+                                     if not df_cleaned.empty:
+                                         historical_data[symbol] = df_cleaned.sort_index()
+                                         logging.info(f"  Hist Fetch Helper: Individual retry SUCCESS for {symbol}.")
+                                     else:
+                                         logging.warning(f"  Hist Fetch Helper WARN: Individual retry for {symbol} returned no valid price data.")
+                                         # Do not cache as invalid automatically. Let it retry next time.
                              else:
                                  logging.warning(f"  Hist Fetch Helper WARN: Individual retry for {symbol} returned no data in range.")
                         else:
@@ -1865,6 +1867,7 @@ class MarketDataProvider:
                              
                     except Exception as e_retry:
                         logging.warning(f"  Hist Fetch Helper WARN: Individual retry failed for {symbol}: {e_retry}")
+                        logging.warning(traceback.format_exc())
 
         if cache_needs_update:
             self._save_invalid_symbols_cache(invalid_cache)
