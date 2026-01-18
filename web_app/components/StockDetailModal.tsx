@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
 import {
     fetchFundamentals,
@@ -38,6 +38,7 @@ import {
     ResponsiveContainer,
     AreaChart,
     Area,
+    ReferenceLine,
     PieChart,
     Pie,
     Cell,
@@ -693,40 +694,56 @@ function RatioChart({ data, dataKey, title, color, suffix = "" }: any) {
 }
 
 function Sparkline({ data }: { data: number[] }) {
+    const id = useId();
     if (!data || data.length < 2) return null;
 
     // Filter out null/undefined and reverse to chronological order (oldest to newest)
     const values = [...data].filter(v => v !== null && v !== undefined).reverse();
     if (values.length < 2) return null;
 
+    const baseline = values[0];
     const min = Math.min(...values);
     const max = Math.max(...values);
-    const range = max - min || 1;
-
-    const width = 80;
-    const height = 30;
-    const padding = 2;
-
-    const points = values.map((val, i) => {
-        const x = (i / (values.length - 1)) * (width - 2 * padding) + padding;
-        const y = height - ((val - min) / range) * (height - 2 * padding) - padding;
-        return `${x},${y}`;
-    }).join(' ');
-
-    const trendColor = values[values.length - 1] >= values[0] ? '#10b981' : '#ef4444';
+    const range = max - min;
+    const off = range <= 0 ? 0 : (max - baseline) / range;
 
     return (
-        <div className="flex items-center justify-center">
-            <svg width={width} height={height} className="overflow-visible">
-                <polyline
-                    fill="none"
-                    stroke={trendColor}
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    points={points}
-                />
-            </svg>
+        <div className="h-10 w-28 mx-auto">
+            <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={values.map((v, i) => ({ value: v, index: i }))}>
+                    <defs>
+                        <linearGradient id={`splitFill-${id}`} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset={off} stopColor="#10b981" stopOpacity={0.15} />
+                            <stop offset={off} stopColor="#ef4444" stopOpacity={0.15} />
+                        </linearGradient>
+                        <linearGradient id={`splitStroke-${id}`} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset={off} stopColor="#10b981" stopOpacity={1} />
+                            <stop offset={off} stopColor="#ef4444" stopOpacity={1} />
+                        </linearGradient>
+                    </defs>
+                    <YAxis hide domain={['dataMin', 'dataMax']} />
+                    <ReferenceLine y={baseline} stroke="#71717a" strokeDasharray="2 2" strokeOpacity={0.3} />
+                    <Area
+                        type="monotone"
+                        dataKey="value"
+                        baseValue={baseline}
+                        stroke={`url(#splitStroke-${id})`}
+                        fill={`url(#splitFill-${id})`}
+                        strokeWidth={1.5}
+                        isAnimationActive={false}
+                        dot={(props: any) => {
+                            const { cx, cy, index } = props;
+                            if (index === values.length - 1) {
+                                const color = values[values.length - 1] >= baseline ? "#10b981" : "#ef4444";
+                                return (
+                                    <circle key="dot" cx={cx} cy={cy} r={2} fill={color} stroke="none" />
+                                );
+                            }
+                            return <React.Fragment key={index} />;
+                        }}
+                    />
+                </AreaChart>
+            </ResponsiveContainer>
         </div>
     );
 }
