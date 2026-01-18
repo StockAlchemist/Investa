@@ -2505,6 +2505,18 @@ class MarketDataProvider:
                             logging.info(
                                 f"Fundamentals cache expired for {yf_symbol} (file: {symbol_cache_file})."
                             )
+                    
+                    # --- ETF CACHE FRESHNESS CHECK ---
+                    if cache_valid and cached_data:
+                         qt = str(cached_data.get('quoteType', '')).upper()
+                         if qt in ('ETF', 'MUTUALFUND') and 'etf_data' not in cached_data:
+                             # If cache is valid (within 24h) but missing ETF data, force refresh
+                             # UNLESS it's very recent (< 5 mins), implying we just tried and failed.
+                             age = datetime.now(timezone.utc) - cache_timestamp
+                             if age > timedelta(minutes=5):
+                                 logging.info(f"Cache valid but missing ETF data for {yf_symbol} ({qt}). Forcing refresh (age: {age}).")
+                                 cache_valid = False
+                    # ---------------------------------
                     else:
                         logging.warning(
                             f"Fundamentals cache file for {yf_symbol} missing timestamp: {symbol_cache_file}"
@@ -2531,6 +2543,52 @@ class MarketDataProvider:
                 data = (
                      {}
                 )  # Store empty dict to avoid refetching invalid symbol immediately
+
+            # --- ETF DATA EXTRACTION (Added) ---
+            try:
+                if hasattr(ticker, 'funds_data'):
+                    fd = ticker.funds_data
+                    if fd:
+                         etf_data = {}
+                         # Top Holdings
+                         th = getattr(fd, 'top_holdings', None)
+                         if th is not None:
+                             etf_data['top_holdings'] = []
+                             
+                             # Handle DataFrame (yfinance >= 0.2.x common format)
+                             if hasattr(th, 'iterrows'): 
+                                 if not th.empty:
+                                     for sym, row in th.iterrows():
+                                         name = row.get('Name', sym)
+                                         percent = row.get('Holding Percent', 0)
+                                         etf_data['top_holdings'].append({
+                                             "symbol": str(sym),
+                                             "name": str(name),
+                                             "percent": float(percent)
+                                         })
+                             # Handle Dict (fallback or older versions)
+                             elif isinstance(th, dict):
+                                 for h_sym, h_pct in th.items():
+                                     etf_data['top_holdings'].append({
+                                         "symbol": h_sym,
+                                         "name": h_sym,
+                                         "percent": h_pct
+                                     })
+                         
+                         # Sector Weightings
+                         if hasattr(fd, 'sector_weightings') and fd.sector_weightings:
+                             etf_data['sector_weightings'] = fd.sector_weightings
+                             
+                         # Asset Classes
+                         if hasattr(fd, 'asset_classes') and fd.asset_classes:
+                             etf_data['asset_classes'] = fd.asset_classes
+                             
+                         if etf_data:
+                             data['etf_data'] = etf_data
+                             logging.info(f"Extracted ETF data for {yf_symbol}")
+            except Exception as e_etf:
+                logging.warning(f"Error extracting ETF data for {yf_symbol}: {e_etf}")
+            # --- END ETF DATA EXTRACTION ---
 
             # --- NORMALIZE YIELD IN PLACE (Consistency with Watchlist) ---
             # Define CACHE_VERSION here too if needed, or import. Using 2.

@@ -24,7 +24,9 @@ import {
     Receipt,
     Scale,
     Users,
-    Wallet
+    Wallet,
+    PieChart as PieChartIcon,
+    List
 } from 'lucide-react';
 import {
     LineChart,
@@ -35,7 +37,11 @@ import {
     Tooltip,
     ResponsiveContainer,
     AreaChart,
-    Area
+    Area,
+    PieChart,
+    Pie,
+    Cell,
+    Legend
 } from 'recharts';
 import { cn, formatPercent as formatPercentShared } from "@/lib/utils";
 import { Skeleton } from './ui/skeleton';
@@ -49,7 +55,7 @@ interface StockDetailModalProps {
     currency: string;
 }
 
-type TabType = 'overview' | 'financials' | 'ratios';
+type TabType = 'overview' | 'financials' | 'ratios' | 'holdings';
 
 // Importance ranking for financial rows
 const RANKING_CONFIG: Record<string, string[]> = {
@@ -188,7 +194,21 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     <StatCard label="Dividend Yield" value={formatPercent(fundamentals.dividendYield)} icon={DollarSign} color="text-amber-400" />
                     <StatCard label="52W High" value={formatCurrency(fundamentals.fiftyTwoWeekHigh)} icon={TrendingUp} color="text-blue-400" />
                     <StatCard label="52W Low" value={formatCurrency(fundamentals.fiftyTwoWeekLow)} icon={TrendingUp} color="text-pink-400" className="rotate-180" />
-                    <StatCard label="Beta" value={fundamentals.beta?.toFixed(2)} icon={Activity} color="text-purple-400" />
+                    {!fundamentals.etf_data && (
+                        <StatCard label="Beta" value={fundamentals.beta?.toFixed(2)} icon={Activity} color="text-purple-400" />
+                    )}
+                    {/* Expense Ratio for ETFs - check multiple potential keys. 
+                        netExpenseRatio usually comes as percentage number (e.g. 0.04 for 0.04%), 
+                        so we divide by 100 for formatPercent which expects decimal (0.0004 for 0.04%) 
+                    */}
+                    {(fundamentals.expenseRatio || fundamentals.annualReportExpenseRatio || fundamentals.netExpenseRatio) && (
+                        <StatCard
+                            label="Expense Ratio"
+                            value={formatPercent((fundamentals.expenseRatio || fundamentals.annualReportExpenseRatio || fundamentals.netExpenseRatio) / 100)}
+                            icon={Receipt}
+                            color="text-orange-400"
+                        />
+                    )}
                 </div>
 
                 <div className="bg-muted rounded-2xl p-6 border border-border shadow-md">
@@ -346,6 +366,100 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         );
     };
 
+    const renderHoldings = () => {
+        if (!fundamentals?.etf_data) return null;
+        const { top_holdings, sector_weightings } = fundamentals.etf_data;
+
+        // Prepare sector data for chart
+        const sectorData = Object.entries(sector_weightings || {}).map(([name, value]) => ({
+            name: name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+            value: value * 100
+        })).sort((a, b) => b.value - a.value);
+
+        const COLORS = ['#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#f59e0b', '#10b981', '#6366f1'];
+
+        return (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* Top Holdings Table */}
+                    <div className="bg-muted border border-border rounded-2xl p-6">
+                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                            <List className="w-5 h-5 text-cyan-500" />
+                            Top Holdings
+                        </h3>
+                        <div className="overflow-hidden rounded-xl border border-border/50">
+                            <table className="w-full text-sm">
+                                <thead className="bg-secondary/50">
+                                    <tr>
+                                        <th className="px-4 py-2 text-left font-medium text-muted-foreground">Symbol</th>
+                                        <th className="px-4 py-2 text-right font-medium text-muted-foreground">% Assets</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border/30">
+                                    {top_holdings?.map((h, i) => (
+                                        <tr key={i} className="hover:bg-accent/5">
+                                            <td className="px-4 py-2 font-medium">{h.symbol}</td>
+                                            <td className="px-4 py-2 text-right tabular-nums">{(h.percent * 100).toFixed(2)}%</td>
+                                        </tr>
+                                    ))}
+                                    {(!top_holdings || top_holdings.length === 0) && (
+                                        <tr>
+                                            <td colSpan={2} className="px-4 py-8 text-center text-muted-foreground">No holdings data available</td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* Sector Allocation Chart */}
+                    <div className="bg-muted border border-border rounded-2xl p-6">
+                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                            <PieChartIcon className="w-5 h-5 text-cyan-500" />
+                            Sector Allocation
+                        </h3>
+                        {sectorData.length > 0 ? (
+                            <div className="h-[300px] w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={sectorData}
+                                            cx="50%"
+                                            cy="50%"
+                                            innerRadius={60}
+                                            outerRadius={80}
+                                            paddingAngle={2}
+                                            dataKey="value"
+                                        >
+                                            {sectorData.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="rgba(0,0,0,0.1)" />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip
+                                            formatter={(value: any) => `${Number(value).toFixed(2)}%`}
+                                            contentStyle={{ borderRadius: '12px', border: '1px solid var(--border)', backgroundColor: 'var(--menu-solid)' }}
+                                            labelStyle={{ color: 'var(--foreground)' }}
+                                        />
+                                        <Legend
+                                            layout="vertical"
+                                            verticalAlign="middle"
+                                            align="right"
+                                            formatter={(value, entry: any) => <span className="text-xs text-muted-foreground ml-1">{value}</span>}
+                                        />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                        ) : (
+                            <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                                No sector data available
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        )
+    };
+
     return createPortal(
         <div className="fixed inset-0 z-[100] flex flex-col justify-end sm:justify-center items-center p-0 sm:p-4 isolate">
             <div className="absolute inset-0 bg-black/60" onClick={onClose} />
@@ -400,18 +514,30 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             icon={LayoutDashboard}
                             label="Overview"
                         />
-                        <TabButton
-                            active={activeTab === 'financials'}
-                            onClick={() => setActiveTab('financials')}
-                            icon={FileText}
-                            label="Financials"
-                        />
-                        <TabButton
-                            active={activeTab === 'ratios'}
-                            onClick={() => setActiveTab('ratios')}
-                            icon={BarChart3}
-                            label="Ratios & Trends"
-                        />
+                        {!fundamentals?.etf_data && (
+                            <>
+                                <TabButton
+                                    active={activeTab === 'financials'}
+                                    onClick={() => setActiveTab('financials')}
+                                    icon={FileText}
+                                    label="Financials"
+                                />
+                                <TabButton
+                                    active={activeTab === 'ratios'}
+                                    onClick={() => setActiveTab('ratios')}
+                                    icon={BarChart3}
+                                    label="Ratios & Trends"
+                                />
+                            </>
+                        )}
+                        {fundamentals?.etf_data && (
+                            <TabButton
+                                active={activeTab === 'holdings'}
+                                onClick={() => setActiveTab('holdings')}
+                                icon={PieChartIcon}
+                                label="Holdings"
+                            />
+                        )}
                     </div>
                 </div>
 
@@ -443,6 +569,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             {activeTab === 'overview' && renderOverview()}
                             {activeTab === 'financials' && renderFinancials()}
                             {activeTab === 'ratios' && renderRatios()}
+                            {activeTab === 'holdings' && renderHoldings()}
                         </>
                     )}
                 </div>

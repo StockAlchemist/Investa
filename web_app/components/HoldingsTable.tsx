@@ -393,6 +393,16 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
         });
     }, [aggregatedHoldings, sortConfig, getValue]);
 
+    const totalItemsCount = useMemo(() => {
+        if (!holdings) return 0;
+        if (visibleColumns.includes('Account')) {
+            return holdings.length;
+        }
+        // In aggregated mode (no Account column), count unique symbols in the *original* holdings
+        // Note: Use a set of symbols from the raw 'holdings' prop
+        return new Set(holdings.map(h => h.Symbol)).size;
+    }, [holdings, visibleColumns]);
+
     if (!holdings || holdings.length === 0) {
         return <div className="p-4 text-center text-gray-500">No holdings found.</div>;
     }
@@ -491,14 +501,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
         setVisibleRows(sortedHoldings.length);
     };
 
-    const totalItemsCount = useMemo(() => {
-        if (visibleColumns.includes('Account')) {
-            return holdings.length;
-        }
-        // In aggregated mode (no Account column), count unique symbols in the *original* holdings
-        // Note: Use a set of symbols from the raw 'holdings' prop
-        return new Set(holdings.map(h => h.Symbol)).size;
-    }, [holdings, visibleColumns]);
+
 
     // ... (existing code)
 

@@ -629,6 +629,12 @@ export interface Fundamentals {
     regularMarketPrice?: number;
     currency?: string;
     exchange?: string;
+    netExpenseRatio?: number;
+    etf_data?: {
+        top_holdings: { symbol: string; name: string; percent: number }[];
+        sector_weightings: Record<string, number>;
+        asset_classes: Record<string, number>;
+    };
     [key: string]: any;
 }
 
