@@ -346,9 +346,9 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                 <table className="w-full text-sm">
                     <thead>
                         <tr className="border-b border-border">
-                            <th className="text-left py-3 px-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider">Symbol</th>
-                            <th className="text-left py-3 px-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider">Parameters</th>
-                            <th className="text-right py-3 px-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider">Actions</th>
+                            <th className="text-left py-3 px-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider w-[15%]">Symbol</th>
+                            <th className="text-left py-3 px-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider w-[65%]">Parameters</th>
+                            <th className="text-right py-3 px-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider w-[20%]">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
@@ -359,21 +359,78 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                         ) : (
                             Object.entries(valuationOverrides).map(([sym, data]: [string, any]) => (
                                 <tr key={sym} className="group hover:bg-secondary/10 transition-colors">
-                                    <td className="py-4 px-4 font-bold text-cyan-500">{sym}</td>
+                                    <td className="py-4 px-4 font-bold text-cyan-500 align-toppt-6">{sym}</td>
                                     <td className="py-4 px-4">
-                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                            {Object.entries(data).map(([key, val]: [string, any]) => {
-                                                const info = PARAM_INFO[key as keyof typeof PARAM_INFO];
-                                                if (!info) return null;
-                                                return (
-                                                    <div key={key} className="bg-secondary/40 p-2 rounded border border-border/30">
-                                                        <div className="text-[9px] text-muted-foreground uppercase font-bold truncate">{info.label}</div>
-                                                        <div className="text-xs font-mono">
-                                                            {info.isPercent ? `${(val * 100).toFixed(2)}%` : val.toLocaleString()}
-                                                        </div>
+                                        <div className="flex flex-col md:flex-row gap-4">
+                                            {/* DCF Group */}
+                                            {Object.entries(data).some(([k]) => k.startsWith('dcf')) && (
+                                                <div className="flex-1 bg-cyan-500/5 rounded-lg border border-cyan-500/10 p-3 min-w-[200px]">
+                                                    <div className="text-[9px] font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
+                                                        DCF Model
                                                     </div>
-                                                );
-                                            })}
+                                                    <div className="flex flex-col gap-1.5">
+                                                        {Object.entries(data).filter(([k]) => k.startsWith('dcf')).map(([key, val]: [string, any]) => {
+                                                            const info = PARAM_INFO[key as keyof typeof PARAM_INFO];
+                                                            if (!info) return null;
+
+                                                            let label = info.label.replace(' (DCF)', '');
+                                                            let displayVal = info.isPercent ? `${(val * 100).toFixed(2)}%` : val.toLocaleString();
+
+                                                            // Short names overrides
+                                                            if (key === 'dcf_fcf') {
+                                                                label = 'Base FCF';
+                                                                displayVal = `${(val / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`;
+                                                            } else if (key === 'dcf_terminal_growth') {
+                                                                label = 'Term. Growth';
+                                                            } else if (key === 'dcf_projection_years') {
+                                                                label = 'Proj. Years';
+                                                            }
+
+                                                            return (
+                                                                <div key={key} className="flex justify-between items-center text-xs">
+                                                                    <span className="text-muted-foreground font-medium">{label}</span>
+                                                                    <span className="font-mono font-bold text-foreground">{displayVal}</span>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Graham Group */}
+                                            {Object.entries(data).some(([k]) => k.startsWith('graham')) && (
+                                                <div className="flex-1 bg-amber-500/5 rounded-lg border border-amber-500/10 p-3 min-w-[200px]">
+                                                    <div className="text-[9px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                                        Graham's Formula
+                                                    </div>
+                                                    <div className="flex flex-col gap-1.5">
+                                                        {Object.entries(data).filter(([k]) => k.startsWith('graham')).map(([key, val]: [string, any]) => {
+                                                            const info = PARAM_INFO[key as keyof typeof PARAM_INFO];
+                                                            if (!info) return null;
+
+                                                            let label = info.label.replace('Graham ', '').replace(' (Y)', '');
+                                                            let displayVal = info.isPercent ? `${(val * 100).toFixed(2)}%` : val.toLocaleString();
+
+                                                            // Short names overrides and formatting
+                                                            if (key === 'graham_bond_yield') {
+                                                                label = 'Bond Yield';
+                                                                displayVal = `${val}%`;
+                                                            } else if (key === 'graham_growth_rate') {
+                                                                displayVal = `${Number(val).toFixed(2)}%`;
+                                                            }
+
+                                                            return (
+                                                                <div key={key} className="flex justify-between items-center text-xs">
+                                                                    <span className="text-muted-foreground font-medium">{label}</span>
+                                                                    <span className="font-mono font-bold text-foreground">{displayVal}</span>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     </td>
                                     <td className="py-4 px-4 text-right">

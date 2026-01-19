@@ -145,6 +145,16 @@
             "graham_eps": 7.46,
             "graham_growth_rate": 3.9212592033254,
             "graham_bond_yield": 4.5
+        },
+        "AMZN": {
+            "dcf_discount_rate": 0.1014,
+            "dcf_growth_rate": 0.3326,
+            "dcf_terminal_growth": 0.02,
+            "dcf_projection_years": 15,
+            "dcf_fcf": 26080000000,
+            "graham_eps": 7.08,
+            "graham_growth_rate": 33.259380842116215,
+            "graham_bond_yield": 4.5
         }
     }
 }

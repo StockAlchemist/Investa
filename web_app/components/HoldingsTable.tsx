@@ -98,7 +98,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
     const columnMenuRef = useRef<HTMLDivElement>(null);
     const isLoaded = useRef(false);
     const [visibleRows, setVisibleRows] = useState(10);
-    const [mobileViewMode, setMobileViewMode] = useState<'card' | 'table'>('card');
+    const [mobileViewMode, setMobileViewMode] = useState<'card' | 'table'>('table');
     const { openStockDetail } = useStockModal();
 
     // --- Search & Filter State ---

@@ -21,7 +21,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
     const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
     const [currentTransaction, setCurrentTransaction] = useState<Transaction | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-    const [mobileViewMode, setMobileViewMode] = useState<'card' | 'table'>('card');
+    const [mobileViewMode, setMobileViewMode] = useState<'card' | 'table'>('table');
 
     const queryClient = useQueryClient();
 
