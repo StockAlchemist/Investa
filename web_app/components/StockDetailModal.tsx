@@ -558,13 +558,15 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         <p className="text-3xl font-bold">{formatCurrency(current_price)}</p>
                     </div>
                     <div className={cn(
-                        "border p-6 rounded-2xl flex flex-col items-center justify-center text-center",
-                        (margin_of_safety_pct || 0) > 0 ? "bg-emerald-500/10 border-emerald-500/30" : "bg-destructive/10 border-destructive/30"
+                        "border p-6 rounded-2xl flex flex-col items-center justify-center text-center transition-all",
+                        (margin_of_safety_pct || 0) > 0
+                            ? "bg-emerald-500/10 border-emerald-500/30 dark:bg-emerald-500/5 dark:border-emerald-500/20"
+                            : "bg-rose-500/10 border-rose-500/30 dark:bg-rose-500/5 dark:border-rose-500/20"
                     )}>
                         <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Margin of Safety</p>
                         <p className={cn(
-                            "text-3xl font-bold",
-                            (margin_of_safety_pct || 0) > 0 ? "text-emerald-500" : "text-destructive"
+                            "text-3xl font-bold tracking-tight",
+                            (margin_of_safety_pct || 0) > 0 ? "text-emerald-500" : "text-rose-500"
                         )}>
                             {margin_of_safety_pct?.toFixed(2)}%
                         </p>
