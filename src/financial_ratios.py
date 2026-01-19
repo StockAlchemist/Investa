@@ -415,20 +415,22 @@ def calculate_intrinsic_value_dcf(
     discount_rate: Optional[float] = None,
     growth_rate: Optional[float] = None,
     projection_years: int = 5,
-    terminal_growth_rate: float = 0.02
+    terminal_growth_rate: float = 0.02,
+    fcf: Optional[float] = None
 ) -> Dict[str, Any]:
     """
     Performs a Discounted Cash Flow (DCF) valuation.
     """
     try:
         # 1. Base FCF
-        fcf = ticker_info.get("freeCashflow")
-        if fcf is None and cashflow_df is not None and not cashflow_df.empty:
-            latest_cf_period = cashflow_df.columns[0]
-            ocf = _get_statement_value(cashflow_df, "Operating Cash Flow", latest_cf_period)
-            capex = _get_statement_value(cashflow_df, "Capital Expenditure", latest_cf_period)
-            if ocf is not None and capex is not None:
-                fcf = ocf + capex # Capex is usually negative in YF
+        if fcf is None:
+            fcf = ticker_info.get("freeCashflow")
+            if fcf is None and cashflow_df is not None and not cashflow_df.empty:
+                latest_cf_period = cashflow_df.columns[0]
+                ocf = _get_statement_value(cashflow_df, "Operating Cash Flow", latest_cf_period)
+                capex = _get_statement_value(cashflow_df, "Capital Expenditure", latest_cf_period)
+                if ocf is not None and capex is not None:
+                    fcf = ocf + capex # Capex is usually negative in YF
         
         if fcf is None or fcf <= 0:
             return {"error": "Negative or missing Free Cash Flow"}
@@ -486,7 +488,9 @@ def calculate_intrinsic_value_dcf(
 def calculate_intrinsic_value_graham(
     ticker_info: Dict[str, Any],
     financials_df: Optional[pd.DataFrame],
-    growth_rate: Optional[float] = None
+    growth_rate: Optional[float] = None,
+    eps: Optional[float] = None,
+    bond_yield: Optional[float] = None
 ) -> Dict[str, Any]:
     """
     Calculates intrinsic value using Benjamin Graham's Revised Formula:
@@ -499,17 +503,20 @@ def calculate_intrinsic_value_graham(
     - Y: Current yield on AAA corporate bonds (using 10Y Treasury yield as proxy)
     """
     try:
-        eps = ticker_info.get("trailingEps")
-        if eps is None or eps <= 0:
-            return {"error": "Negative or missing EPS"}
-            
         if growth_rate is None:
             growth_rate = estimate_growth_rate(financials_df, "Net Income") * 100 # Convert to percentage
             
         # Risk-free rate (10Y Treasury) as proxy for Y
-        y = 4.5 # Default 4.5%
+        if bond_yield is None:
+            bond_yield = 4.5 # Default 4.5%
         
-        intrinsic_value = (eps * (8.5 + 2 * growth_rate) * 4.4) / y
+        if eps is None:
+            eps = ticker_info.get("trailingEps")
+            
+        if eps is None or eps <= 0:
+            return {"error": "Negative or missing EPS"}
+        
+        intrinsic_value = (eps * (8.5 + 2 * growth_rate) * 4.4) / bond_yield
         
         return {
             "intrinsic_value": intrinsic_value,
@@ -517,7 +524,7 @@ def calculate_intrinsic_value_graham(
             "parameters": {
                 "eps": eps,
                 "growth_rate_pct": growth_rate,
-                "bond_yield_proxy": y
+                "bond_yield_proxy": bond_yield
             }
         }
     except Exception as e:
@@ -528,13 +535,41 @@ def get_comprehensive_intrinsic_value(
     ticker_info: Dict[str, Any],
     financials_df: Optional[pd.DataFrame] = None,
     balance_sheet_df: Optional[pd.DataFrame] = None,
-    cashflow_df: Optional[pd.DataFrame] = None
+    cashflow_df: Optional[pd.DataFrame] = None,
+    overrides: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Consolidates multiple intrinsic value models into a single advice object.
     """
-    dcf_res = calculate_intrinsic_value_dcf(ticker_info, financials_df, balance_sheet_df, cashflow_df)
-    graham_res = calculate_intrinsic_value_graham(ticker_info, financials_df)
+    overrides = overrides or {}
+    
+    # Extract DCF overrides
+    dcf_discount = overrides.get("dcf_discount_rate")
+    dcf_growth = overrides.get("dcf_growth_rate")
+    dcf_terminal = overrides.get("dcf_terminal_growth", 0.02)
+    dcf_projection = int(overrides.get("dcf_projection_years", 5))
+    dcf_fcf = overrides.get("dcf_fcf")
+    
+    # Extract Graham overrides
+    graham_growth = overrides.get("graham_growth_rate")
+    graham_eps = overrides.get("graham_eps")
+    graham_bond_yield = overrides.get("graham_bond_yield")
+
+    dcf_res = calculate_intrinsic_value_dcf(
+        ticker_info, financials_df, balance_sheet_df, cashflow_df,
+        discount_rate=dcf_discount,
+        growth_rate=dcf_growth,
+        projection_years=dcf_projection,
+        terminal_growth_rate=dcf_terminal,
+        fcf=dcf_fcf
+    )
+    
+    graham_res = calculate_intrinsic_value_graham(
+        ticker_info, financials_df,
+        growth_rate=graham_growth,
+        eps=graham_eps,
+        bond_yield=graham_bond_yield
+    )
     
     current_price = ticker_info.get("currentPrice") or ticker_info.get("regularMarketPrice")
     

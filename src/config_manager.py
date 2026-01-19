@@ -71,7 +71,8 @@ class ConfigManager:
             "user_symbol_map": config.SYMBOL_MAP_TO_YFINANCE.copy(),
             "user_excluded_symbols": sorted(list(config.YFINANCE_EXCLUDED_SYMBOLS.copy())),
             "account_interest_rates": {},
-            "interest_free_thresholds": {}
+            "interest_free_thresholds": {},
+            "valuation_overrides": {}
         }
 
     def load_all(self):
@@ -150,6 +151,12 @@ class ConfigManager:
             if isinstance(thresholds, dict):
                 self.manual_overrides["interest_free_thresholds"] = {
                     k.strip(): float(v) for k, v in thresholds.items() if isinstance(v, (int, float))
+                }
+                
+            val_overrides = loaded.get("valuation_overrides", {})
+            if isinstance(val_overrides, dict):
+                self.manual_overrides["valuation_overrides"] = {
+                    k.upper().strip(): v for k, v in val_overrides.items() if isinstance(v, dict)
                 }
 
     def save_manual_overrides(self, overrides_data: Optional[Dict[str, Any]] = None):

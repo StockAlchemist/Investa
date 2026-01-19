@@ -37,6 +37,7 @@ from db_utils import (
 
 from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series
 import config
+from config_manager import ConfigManager
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ConfigDict
 import numpy as np # Ensure numpy is imported
@@ -1824,7 +1825,8 @@ async def get_settings(
             "account_groups": config_manager.gui_config.get("account_groups", {}),
             "available_currencies": config_manager.gui_config.get("available_currencies", ['USD', 'THB', 'EUR', 'GBP', 'JPY', 'CNY']),
             "account_interest_rates": config_manager.manual_overrides.get("account_interest_rates", {}),
-            "interest_free_thresholds": config_manager.manual_overrides.get("interest_free_thresholds", {})
+            "interest_free_thresholds": config_manager.manual_overrides.get("interest_free_thresholds", {}),
+            "valuation_overrides": config_manager.manual_overrides.get("valuation_overrides", {})
         }
     except Exception as e:
         logging.error(f"Error getting settings: {e}", exc_info=True)
@@ -1839,6 +1841,7 @@ class SettingsUpdate(BaseModel):
     available_currencies: Optional[List[str]] = None
     account_interest_rates: Optional[Dict[str, float]] = None
     interest_free_thresholds: Optional[Dict[str, float]] = None
+    valuation_overrides: Optional[Dict[str, Any]] = None
 
 @router.post("/settings/update")
 async def update_settings(
@@ -1898,6 +1901,9 @@ async def update_settings(
             
         if settings.interest_free_thresholds is not None:
             current_overrides["interest_free_thresholds"] = settings.interest_free_thresholds
+
+        if settings.valuation_overrides is not None:
+            current_overrides["valuation_overrides"] = settings.valuation_overrides
 
         config_manager.save_gui_config()
 
@@ -2472,7 +2478,8 @@ async def get_ratios_endpoint(
 @router.get("/intrinsic_value/{symbol}")
 async def get_intrinsic_value_endpoint(
     symbol: str,
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
+    config_manager: ConfigManager = Depends(get_config_manager)
 ):
     """Returns calculated intrinsic value results for a symbol."""
     if not FINANCIAL_RATIOS_AVAILABLE:
@@ -2494,8 +2501,16 @@ async def get_intrinsic_value_endpoint(
         cashflow = mdp.get_cashflow(yf_symbol, "annual")
         
         # Calculate comprehensive intrinsic value
+        # Get overrides for this specific symbol
+        val_overrides = config_manager.manual_overrides.get("valuation_overrides", {})
+        symbol_overrides = val_overrides.get(yf_symbol.upper(), {})
+        if not symbol_overrides:
+             # Try mapped symbol
+             symbol_overrides = val_overrides.get(symbol.upper(), {})
+
         results = get_comprehensive_intrinsic_value(
-            info, financials, balance_sheet, cashflow
+            info, financials, balance_sheet, cashflow,
+            overrides=symbol_overrides
         )
         
         return clean_nans(results)

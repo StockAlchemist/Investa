@@ -28,7 +28,8 @@ import {
     Users,
     Wallet,
     PieChart as PieChartIcon,
-    List
+    List,
+    HelpCircle
 } from 'lucide-react';
 import {
     LineChart,
@@ -466,6 +467,41 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         )
     };
 
+    const VALUATION_INFO = {
+        discount_rate: {
+            description: "The rate used to discount future cash flows to their present value. High rate = lower valuation.",
+            default: "Calculated WACC (~10%)"
+        },
+        growth_rate: {
+            description: "Expected annual growth of cash flows during the projection years.",
+            default: "Historical CAGR"
+        },
+        terminal_growth: {
+            description: "Long-term growth rate after the projection period (stable stage).",
+            default: "2.0%"
+        },
+        projection_years: {
+            description: "Number of years to forecast explicit free cash flows.",
+            default: "5 Years"
+        },
+        base_fcf: {
+            description: "The starting free cash flow value for DCF projections.",
+            default: "Latest TTM FCF"
+        },
+        eps: {
+            description: "Earnings per share used as the base for the Graham Formula.",
+            default: "TTM EPS"
+        },
+        graham_growth: {
+            description: "Expected annual growth (g) used in Graham's Formula.",
+            default: "Historical CAGR"
+        },
+        bond_yield: {
+            description: "Current yield on high-quality bonds (proxy for risk-free rate).",
+            default: "10Y Treasury (~4.5%)"
+        }
+    };
+
     const renderValuation = () => {
         if (!intrinsicValue) return null;
         const { models, average_intrinsic_value, margin_of_safety_pct, current_price } = intrinsicValue;
@@ -516,13 +552,33 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         ) : (
                             <div className="space-y-4">
                                 <div className="grid grid-cols-2 gap-4">
-                                    <ParamItem label="Discount Rate (WACC)" value={formatPercentShared(models.dcf.parameters.discount_rate)} />
-                                    <ParamItem label="Growth Rate" value={formatPercentShared(models.dcf.parameters.growth_rate)} />
-                                    <ParamItem label="Terminal Growth" value={formatPercentShared(models.dcf.parameters.terminal_growth_rate)} />
-                                    <ParamItem label="Projection Years" value={models.dcf.parameters.projection_years} />
+                                    <ParamItem
+                                        label="Discount Rate (WACC)"
+                                        value={formatPercentShared(models.dcf.parameters.discount_rate)}
+                                        info={VALUATION_INFO.discount_rate}
+                                    />
+                                    <ParamItem
+                                        label="Growth Rate"
+                                        value={formatPercentShared(models.dcf.parameters.growth_rate)}
+                                        info={VALUATION_INFO.growth_rate}
+                                    />
+                                    <ParamItem
+                                        label="Terminal Growth"
+                                        value={formatPercentShared(models.dcf.parameters.terminal_growth_rate)}
+                                        info={VALUATION_INFO.terminal_growth}
+                                    />
+                                    <ParamItem
+                                        label="Projection Years"
+                                        value={models.dcf.parameters.projection_years}
+                                        info={VALUATION_INFO.projection_years}
+                                    />
                                 </div>
                                 <div className="pt-4 border-t border-border/50">
-                                    <ParamItem label="Base Free Cash Flow" value={formatCurrency(models.dcf.parameters.base_fcf)} />
+                                    <ParamItem
+                                        label="Base Free Cash Flow"
+                                        value={formatCurrency(models.dcf.parameters.base_fcf)}
+                                        info={VALUATION_INFO.base_fcf}
+                                    />
                                 </div>
                             </div>
                         )}
@@ -546,12 +602,67 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         ) : (
                             <div className="space-y-4">
                                 <div className="grid grid-cols-2 gap-4">
-                                    <ParamItem label="Trailing EPS" value={models.graham.parameters.eps?.toFixed(2)} />
-                                    <ParamItem label="Growth Rate (g)" value={`${models.graham.parameters.growth_rate_pct?.toFixed(2)}%`} />
-                                    <ParamItem label="Bond Yield (Y)" value={`${models.graham.parameters.bond_yield_proxy?.toFixed(2)}%`} />
+                                    <ParamItem
+                                        label="Trailing EPS"
+                                        value={models.graham.parameters.eps?.toFixed(2)}
+                                        info={VALUATION_INFO.eps}
+                                    />
+                                    <ParamItem
+                                        label="Growth Rate (g)"
+                                        value={`${models.graham.parameters.growth_rate_pct?.toFixed(2)}%`}
+                                        info={VALUATION_INFO.graham_growth}
+                                    />
+                                    <ParamItem
+                                        label="Bond Yield (Y)"
+                                        value={`${models.graham.parameters.bond_yield_proxy?.toFixed(2)}%`}
+                                        info={VALUATION_INFO.bond_yield}
+                                    />
                                 </div>
-                                <div className="mt-4 p-4 bg-secondary/30 rounded-xl text-[10px] text-muted-foreground leading-relaxed">
-                                    V = (EPS × (8.5 + 2g) × 4.4) / Y
+                                <div className="mt-4 p-4 bg-secondary/5 rounded-xl flex flex-col items-center select-none border border-border/20 overflow-visible">
+                                    <div className="flex items-center gap-2">
+                                        <div className="flex items-baseline gap-1">
+                                            <div className="group relative">
+                                                <span className="text-lg font-bold text-foreground cursor-help decoration-dotted decoration-border/50 underline-offset-4 hover:text-cyan-500 transition-colors">V</span>
+                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
+                                                    Intrinsic Value
+                                                </div>
+                                            </div>
+                                            <span className="text-lg font-light opacity-30">=</span>
+                                        </div>
+                                        <div className="flex flex-col items-center">
+                                            <div className="px-4 pb-1.5 border-b-2 border-muted-foreground/10 flex items-center gap-1.5">
+                                                <div className="group relative">
+                                                    <span className="text-xs font-bold text-foreground cursor-help hover:text-cyan-500 transition-colors">EPS</span>
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
+                                                        Trailing 12-Month Earnings Per Share
+                                                    </div>
+                                                </div>
+                                                <span className="text-[9px] opacity-40">×</span>
+                                                <div className="group relative">
+                                                    <span className="px-1.5 py-0.5 bg-secondary/30 rounded-md border border-border/30 text-[10px] font-bold text-foreground cursor-help hover:border-cyan-500/50 transition-colors">
+                                                        8.5 + 2g
+                                                    </span>
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2.5 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-relaxed text-center font-medium">
+                                                        <div className="mb-0.5"><span className="font-bold">8.5</span>: Base P/E for zero growth</div>
+                                                        <div><span className="font-bold">g</span>: Expected long-term growth rate</div>
+                                                    </div>
+                                                </div>
+                                                <span className="text-[9px] opacity-40">×</span>
+                                                <div className="group relative">
+                                                    <span className="text-xs font-bold text-foreground cursor-help hover:text-cyan-500 transition-colors">4.4</span>
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
+                                                        Average yield of high-grade corporate bonds in 1962
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="group relative pt-1.5">
+                                                <span className="text-lg font-bold text-amber-500/80 cursor-help hover:text-amber-500 transition-colors">Y</span>
+                                                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
+                                                    Current yield on high-quality bonds
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -566,9 +677,20 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         );
     };
 
-    const ParamItem = ({ label, value }: { label: string, value: any }) => (
+    const ParamItem = ({ label, value, info }: { label: string, value: any, info?: { description: string, default: string } }) => (
         <div>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold mb-1">{label}</p>
+            <div className="flex items-center gap-1 mb-1">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">{label}</p>
+                {info && (
+                    <div className="group relative">
+                        <HelpCircle className="w-2.5 h-2.5 text-muted-foreground/50 hover:text-cyan-500 cursor-help" />
+                        <div className="absolute bottom-full left-0 mb-2 w-48 p-3 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[10px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100]">
+                            {info.description}
+                            <div className="mt-1 pt-1 border-t border-slate-100 dark:border-white/10 font-bold text-cyan-600 dark:text-cyan-400">Default: {info.default}</div>
+                        </div>
+                    </div>
+                )}
+            </div>
             <p className="text-sm font-semibold">{value ?? '-'}</p>
         </div>
     );

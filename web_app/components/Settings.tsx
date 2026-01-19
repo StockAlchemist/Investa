@@ -6,8 +6,9 @@ import { updateSettings, triggerRefresh, clearCache, Settings as SettingsType, M
 import { useQueryClient } from '@tanstack/react-query';
 import { COUNTRIES, ALL_INDUSTRIES } from '../lib/constants';
 import AccountGroupManager from './AccountGroupManager';
+import ManualValuationSettings from './ManualValuationSettings';
 
-type Tab = 'overrides' | 'mapping' | 'excluded' | 'groups' | 'currencies' | 'yield';
+type Tab = 'overrides' | 'mapping' | 'excluded' | 'groups' | 'currencies' | 'yield' | 'valuation';
 
 // --- Constants (Mirrored from config.py) ---
 const ASSET_TYPES = [
@@ -439,6 +440,15 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
                     >
                         Cash Yield
                     </button>
+                    <button
+                        onClick={() => setActiveTab('valuation')}
+                        className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors border-b-2 whitespace-nowrap ${activeTab === 'valuation'
+                            ? 'border-cyan-500 text-cyan-500 dark:text-cyan-400'
+                            : 'border-transparent text-muted-foreground hover:text-foreground hover:border-black/20 dark:hover:border-white/20'
+                            }`}
+                    >
+                        Valuation Overrides
+                    </button>
                 </div>
 
                 <div className="p-6 min-h-[400px]">
@@ -542,6 +552,11 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
                                 </table>
                             </div>
                         </div>
+                    )}
+
+                    {/* Valuation Overrides Tab */}
+                    {activeTab === 'valuation' && settings && (
+                        <ManualValuationSettings settings={settings} />
                     )}
 
                     {/* Manual Price Overrides Tab */}
