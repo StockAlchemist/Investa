@@ -18,6 +18,17 @@ import os
 import platform
 from datetime import date
 from typing import Optional
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+# --- API Keys ---
+# FMP API Key is managed here but can also be overridden by env
+FMP_API_KEY = os.getenv("FMP_API_KEY") # Prioritize ENV
+
+# Gemini API Key for AI Stock Analysis
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # --- Cache Configuration ---
 HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = "yf_portfolio_hist_raw_adjusted_v2"
@@ -29,6 +40,7 @@ FUNDAMENTALS_CACHE_DURATION_HOURS = 24 * 30 * 3  # Cache fundamentals for 3 mont
 CURRENT_QUOTE_CACHE_DURATION_MINUTES = 1  # For current stock/index quotes (prices, fx)
 METADATA_CACHE_FILE_NAME = "yf_metadata_cache.json"  # Long-lived cache for static data (Name, Currency)
 METADATA_CACHE_DURATION_DAYS = 30
+AI_REVIEW_CACHE_TTL = 604800  # 1 week for AI stock analysis
 
 # --- Logging Configuration ---
 # This level is a default; main_gui.py might override it for its own logging.

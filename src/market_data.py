@@ -2512,21 +2512,33 @@ class MarketDataProvider:
                     cache_timestamp_str = symbol_cache_entry.get("timestamp")
                     if cache_timestamp_str:
                         cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
-                        if datetime.now(timezone.utc) - cache_timestamp < timedelta(
-                            hours=FUNDAMENTALS_CACHE_DURATION_HOURS
-                        ):
-                            cached_data = symbol_cache_entry.get("data")
-                            if (
-                                cached_data is not None
-                            ):  # Could be an empty dict if that was cached
-                                cache_valid = True
-                                logging.debug(
-                                    f"Using valid fundamentals cache for {yf_symbol} from file: {symbol_cache_file}"
-                                )
+                        
+                        # --- SMART CACHING ---
+                        valid_until_str = symbol_cache_entry.get("valid_until")
+                        is_valid = False
+                        
+                        if valid_until_str:
+                            try:
+                                valid_until = datetime.fromisoformat(valid_until_str)
+                                if datetime.now(timezone.utc) < valid_until:
+                                    is_valid = True
+                                else:
+                                    logging.info(f"Fundamentals smart cache expired for {yf_symbol} (Valid until: {valid_until})")
+                            except ValueError:
+                                is_valid = False # Corrupt timestamp
                         else:
-                            logging.info(
-                                f"Fundamentals cache expired for {yf_symbol} (file: {symbol_cache_file})."
-                            )
+                            # Fallback to standard duration if no specific expiry
+                            if datetime.now(timezone.utc) - cache_timestamp < timedelta(hours=FUNDAMENTALS_CACHE_DURATION_HOURS):
+                                is_valid = True
+                        
+                        if is_valid:
+                            cached_data = symbol_cache_entry.get("data")
+                            if cached_data is not None:
+                                cache_valid = True
+                                logging.debug(f"Using valid fundamentals cache for {yf_symbol} from file")
+                        else:
+                            if not valid_until_str: # Only log standard expiry if not smart
+                                 logging.info(f"Fundamentals cache expired for {yf_symbol} (Standard duration)")
                     
                     # --- ETF CACHE FRESHNESS CHECK ---
                     if cache_valid and cached_data:
@@ -2632,11 +2644,39 @@ class MarketDataProvider:
             if data.get("expenseRatio") is None and data.get("netExpenseRatio") is not None:
                 data["expenseRatio"] = data.get("netExpenseRatio")
 
+            # --- SMART CACHING CALCULATION ---
+            now_ts = datetime.now(timezone.utc)
+            earnings_ts = data.get("earningsTimestamp")
+            valid_until = now_ts + timedelta(hours=FUNDAMENTALS_CACHE_DURATION_HOURS) # Default
+
+            if earnings_ts:
+                try:
+                    # earningsTimestamp is epoch seconds
+                    earnings_date = datetime.fromtimestamp(earnings_ts, tz=timezone.utc)
+                    
+                    if earnings_date > now_ts:
+                         # Earnings in the future: Valid until 24H after earnings
+                         valid_until = earnings_date + timedelta(hours=24)
+                         logging.info(f"Smart Caching {yf_symbol}: Earnings at {earnings_date}. Cache valid until {valid_until}")
+                    else:
+                         # Earnings passed, data is fresh (presumably). Keep default long cache.
+                         # Unless it was VERY recent (e.g. yesterday)? 
+                         # If earnings were yesterday, yf might not have updated yet?
+                         # yf usually updates quickly. Let's stick to standard duration if past.
+                         pass
+                except Exception as e_smart:
+                    logging.warning(f"Error calculating smart cache expiry for {yf_symbol}: {e_smart}")
+            
+            # Use data.get('_fetch_timestamp') if provided, else use now. 
+            # In this isolated fetch context, we just fetched it.
+            data['_fetch_timestamp'] = now_ts.isoformat()
+
             # Save to cache (only this symbol's file)
             try:
                 # MODIFIED: Save only the specific symbol's data to its file
                 symbol_cache_content = {
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": now_ts.isoformat(),
+                    "valid_until": valid_until.isoformat(),
                     "version": CACHE_VERSION,
                     "data": data,
                 }

@@ -55,6 +55,8 @@ except ImportError:
     logging.warning("financial_ratios.py not found or import failed. Ratios will be disabled.")
     FINANCIAL_RATIOS_AVAILABLE = False
 
+from server.ai_analyzer import generate_stock_review
+
 router = APIRouter()
 
 current_file_path = os.path.abspath(__file__)
@@ -1772,6 +1774,48 @@ async def get_projected_income(
     except Exception as e:
         logging.error(f"Error projecting income: {e}", exc_info=True)
         return []
+
+@router.get("/stock-analysis/{symbol}")
+async def get_stock_analysis(
+    symbol: str,
+    data: tuple = Depends(get_transaction_data)
+):
+    """
+    Returns AI-powered stock analysis for a given symbol.
+    """
+    try:
+        (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
+        yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols) or symbol
+        
+        mdp = get_mdp()
+        # 1. Fetch Fundamentals
+        fund_data = mdp.get_fundamental_data(yf_symbol)
+        if not fund_data:
+            fund_data = {}
+            
+        # 2. Fetch Statements and calculate ratios
+        financials_df = mdp.get_financials(yf_symbol, "annual")
+        balance_sheet_df = mdp.get_balance_sheet(yf_symbol, "annual")
+        
+        ratios = {}
+        if financials_df is not None and not financials_df.empty and balance_sheet_df is not None and not balance_sheet_df.empty:
+            try:
+                ratios_df = calculate_key_ratios_timeseries(
+                    financials_df,
+                    balance_sheet_df
+                )
+                if not ratios_df.empty:
+                    # Take the most recent period ratios
+                    ratios = ratios_df.iloc[0].to_dict()
+            except Exception as e_ratio:
+                logging.warning(f"Ratio calculation failed for analysis: {e_ratio}")
+
+        # 3. Generate AI Review
+        analysis = generate_stock_review(symbol, fund_data, ratios)
+        return clean_nans(analysis)
+    except Exception as e:
+        logging.error(f"Error in stock analysis for {symbol}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/settings")
 async def get_settings(

@@ -715,6 +715,30 @@ export async function fetchIntrinsicValue(symbol: string): Promise<IntrinsicValu
     if (!res.ok) throw new Error(`Failed to fetch intrinsic value for ${symbol}`);
     return res.json();
 }
+
+export interface StockAnalysisResponse {
+    scorecard?: {
+        moat: number;
+        financial_strength: number;
+        predictability: number;
+        growth: number;
+    };
+    analysis?: {
+        moat: string;
+        financial_strength: string;
+        predictability: string;
+        growth_perspective: string;
+    };
+    summary?: string;
+    error?: string;
+}
+
+export async function fetchStockAnalysis(symbol: string): Promise<StockAnalysisResponse> {
+    const res = await fetch(`${API_BASE_URL}/stock-analysis/${symbol}`);
+    if (!res.ok) throw new Error(`Failed to fetch AI analysis for ${symbol}`);
+    return res.json();
+}
+
 export async function clearCache(): Promise<StatusResponse> {
     const response = await fetch(`${API_BASE_URL}/clear_cache`, {
         method: "POST",

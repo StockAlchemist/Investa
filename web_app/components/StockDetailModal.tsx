@@ -8,10 +8,12 @@ import {
     fetchFinancials,
     fetchRatios,
     fetchIntrinsicValue,
+    fetchStockAnalysis,
     Fundamentals,
     FinancialsResponse,
     RatiosResponse,
-    IntrinsicValueResponse
+    IntrinsicValueResponse,
+    StockAnalysisResponse
 } from '../lib/api';
 import {
     X,
@@ -30,7 +32,13 @@ import {
     Wallet,
     PieChart as PieChartIcon,
     List,
-    HelpCircle
+    HelpCircle,
+    Sparkles,
+    Shield,
+    Zap,
+    Target,
+    Activity as LucideActivity,
+    CheckCircle2
 } from 'lucide-react';
 import {
     LineChart,
@@ -60,7 +68,7 @@ interface StockDetailModalProps {
     currency: string;
 }
 
-type TabType = 'overview' | 'financials' | 'ratios' | 'valuation' | 'holdings';
+type TabType = 'overview' | 'financials' | 'ratios' | 'valuation' | 'holdings' | 'analysis';
 
 // Importance ranking for financial rows
 const RANKING_CONFIG: Record<string, string[]> = {
@@ -127,8 +135,34 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [viewingDistribution, setViewingDistribution] = useState<'dcf' | 'graham' | null>(null);
+    const [analysis, setAnalysis] = useState<any>(null);
+    const [analysisLoading, setAnalysisLoading] = useState(false);
+    const [analysisError, setAnalysisError] = useState<string | null>(null);
     const { resolvedTheme } = useTheme();
     const isDarkMode = resolvedTheme === 'dark';
+
+    useEffect(() => {
+        if (activeTab === 'analysis' && !analysis && !analysisLoading && !analysisError) {
+            const getAnalysis = async () => {
+                setAnalysisLoading(true);
+                try {
+                    setAnalysisError(null);
+                    const data = await fetchStockAnalysis(symbol);
+                    if (data && data.error) {
+                        setAnalysisError(data.error);
+                    } else {
+                        setAnalysis(data);
+                    }
+                } catch (err: any) {
+                    console.error("Analysis fetch error:", err);
+                    setAnalysisError(err.message || "Failed to load AI analysis.");
+                } finally {
+                    setAnalysisLoading(false);
+                }
+            };
+            getAnalysis();
+        }
+    }, [activeTab, symbol, analysis, analysisLoading, analysisError]);
 
     useEffect(() => {
         if (isOpen && symbol) {
@@ -415,6 +449,127 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         title="Asset Turnover"
                         color="#f59e0b"
                     />
+                </div>
+            </div>
+        );
+    };
+
+    const renderAnalysis = () => {
+        if (analysisLoading) {
+            return (
+                <div className="space-y-6 animate-in fade-in duration-500">
+                    <Skeleton className="h-32 w-full rounded-2xl" />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <Skeleton className="h-48 rounded-2xl" />
+                        <Skeleton className="h-48 rounded-2xl" />
+                        <Skeleton className="h-48 rounded-2xl" />
+                        <Skeleton className="h-48 rounded-2xl" />
+                    </div>
+                </div>
+            );
+        }
+
+        if (analysisError) {
+            const isRateLimit = analysisError.includes('429') || analysisError.toLowerCase().includes('too many requests');
+            let displayError = analysisError.includes('Failed to resolve')
+                ? 'Network connection issue. Please check your internet or DNS settings.'
+                : analysisError.length > 200 ? analysisError.substring(0, 200) + '...' : analysisError;
+
+            if (isRateLimit) {
+                displayError = "Gemini API rate limit reached. The AI model is currently busy. Please wait a minute and try again.";
+            }
+
+            return (
+                <div className="flex flex-col items-center justify-center py-20 text-center animate-in fade-in duration-500">
+                    <div className="w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center mb-4">
+                        <Info className="w-8 h-8 text-destructive" />
+                    </div>
+                    <h3 className="text-xl font-bold mb-2">{isRateLimit ? 'Rate Limit Reached' : 'Analysis Failed'}</h3>
+                    <p className="text-muted-foreground max-w-md">{displayError}</p>
+                    <button
+                        onClick={() => {
+                            setAnalysis(null);
+                            setAnalysisError(null);
+                        }}
+                        className="mt-6 px-6 py-2 bg-secondary hover:bg-muted rounded-full transition-colors font-medium"
+                    >
+                        Try Again
+                    </button>
+                </div>
+            );
+        }
+
+        if (!analysis) return (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+                <Sparkles className="w-12 h-12 text-purple-500/20 mb-4" />
+                <p className="text-muted-foreground">No analysis data available.</p>
+            </div>
+        );
+
+        const topics = [
+            { id: 'moat', title: 'Moat & Edge', icon: Shield, color: 'text-blue-500', bg: 'bg-blue-500/10', content: analysis?.analysis?.moat, score: analysis?.scorecard?.moat },
+            { id: 'strength', title: 'Financial Strength', icon: Zap, color: 'text-amber-500', bg: 'bg-amber-500/10', content: analysis?.analysis?.financial_strength, score: analysis?.scorecard?.financial_strength },
+            { id: 'predictability', title: 'Predictability', icon: Target, color: 'text-emerald-500', bg: 'bg-emerald-500/10', content: analysis?.analysis?.predictability, score: analysis?.scorecard?.predictability },
+            { id: 'growth', title: 'Growth Perspective', icon: LucideActivity, color: 'text-purple-500', bg: 'bg-purple-500/10', content: analysis?.analysis?.growth_perspective, score: analysis?.scorecard?.growth }
+        ];
+
+        return (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                {/* Scorecard Header */}
+                <div className={cn(
+                    "p-6 rounded-[2rem] border overflow-hidden relative",
+                    isDarkMode ? "bg-slate-900/50 border-slate-800" : "bg-white border-slate-200 shadow-sm"
+                )}>
+                    <div className="flex items-center gap-4 relative z-10">
+                        <div className="w-12 h-12 rounded-2xl bg-purple-500 flex items-center justify-center shadow-lg shadow-purple-500/20 shrink-0">
+                            <Sparkles className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-bold">AI Fundamental Review</h3>
+                            <p className="text-sm text-muted-foreground leading-relaxed mt-1">{analysis.summary}</p>
+                        </div>
+                    </div>
+                    {/* Decorative background element */}
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/5 rounded-full blur-3xl -mr-32 -mt-32" />
+                </div>
+
+                {/* Score Grid */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {topics.map(t => (
+                        <div key={t.id} className={cn(
+                            "p-4 rounded-3xl border flex flex-col items-center justify-center gap-2",
+                            isDarkMode ? "bg-slate-900/30 border-slate-800" : "bg-white border-slate-200 shadow-sm"
+                        )}>
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{t.id}</span>
+                            <div className={cn("text-3xl font-black", t.color)}>{t.score}<span className="text-sm opacity-50 font-normal">/10</span></div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Narrative Details */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {topics.map(t => (
+                        <div key={t.id} className={cn(
+                            "p-6 rounded-[2rem] border transition-all hover:shadow-xl group",
+                            isDarkMode ? "bg-slate-900/30 border-slate-800 hover:bg-slate-900/50" : "bg-white border-slate-200 hover:border-slate-300 shadow-sm"
+                        )}>
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className={cn("p-2.5 rounded-xl", t.bg)}>
+                                    <t.icon className={cn("w-5 h-5", t.color)} />
+                                </div>
+                                <h4 className="font-bold text-lg">{t.title}</h4>
+                            </div>
+                            <p className="text-sm leading-relaxed text-muted-foreground group-hover:text-foreground transition-colors">
+                                {t.content}
+                            </p>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="text-center pb-8">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-[0.2em] font-medium opacity-50">
+                        Generated by Google Gemini 3 Flash
+                    </p>
                 </div>
             </div>
         );
@@ -870,6 +1025,12 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             icon={LayoutDashboard}
                             label="Overview"
                         />
+                        <TabButton
+                            active={activeTab === 'analysis'}
+                            onClick={() => setActiveTab('analysis')}
+                            icon={Sparkles}
+                            label="Analysis"
+                        />
                         {!fundamentals?.etf_data && (
                             <>
                                 <TabButton
@@ -928,6 +1089,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         </div>
                     ) : (
                         <>
+                            {activeTab === 'analysis' && renderAnalysis()}
                             {activeTab === 'overview' && renderOverview()}
                             {activeTab === 'financials' && renderFinancials()}
                             {activeTab === 'ratios' && renderRatios()}
@@ -979,16 +1141,25 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
                                             const minPrice = histogram[0].price;
                                             const maxPrice = histogram[histogram.length - 1].price;
+                                            const currentPrice = intrinsicValue.current_price || fundamentals?.regularMarketPrice || 0;
+
+                                            // Ensure the domain includes the current price
+                                            const domainMin = Math.min(minPrice, currentPrice > 0 ? currentPrice * 0.95 : minPrice);
+                                            const domainMax = Math.max(maxPrice, currentPrice > 0 ? currentPrice * 1.05 : maxPrice);
+
                                             const range = maxPrice - minPrice;
 
-                                            // Calculate percentage offsets for the gradient stops
+                                            // Calculate percentage offsets for the gradient stops (relative to the histogram data range, not the visual domain)
+                                            // Actually, for the gradient to match the bell curve shape, we should stick to using the data points.
+                                            // But for the ReferenceLine to show, the visual XAxis needs the full domain.
+
                                             const bearOffset = Math.max(0, Math.min(100, ((mc.bear - minPrice) / range) * 100));
                                             const bullOffset = Math.max(0, Math.min(100, ((mc.bull - minPrice) / range) * 100));
 
                                             return (
                                                 <AreaChart
                                                     data={histogram}
-                                                    margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                                                    margin={{ top: 35, right: 20, left: 20, bottom: 0 }}
                                                 >
                                                     <defs>
                                                         <linearGradient id="colorBell" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse">
@@ -1029,6 +1200,8 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                     />
                                                     <XAxis
                                                         dataKey="price"
+                                                        type="number"
+                                                        domain={[domainMin, domainMax]}
                                                         tickFormatter={(val) => formatCurrency(val)}
                                                         fontSize={10}
                                                         tickLine={false}
@@ -1116,12 +1289,20 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                                         </>
                                                     )}
                                                     {/* Current Price Reference */}
-                                                    {intrinsicValue.current_price && (
+                                                    {(intrinsicValue.current_price || fundamentals?.regularMarketPrice) && (
                                                         <ReferenceLine
-                                                            x={intrinsicValue.current_price}
+                                                            x={intrinsicValue.current_price || fundamentals?.regularMarketPrice}
                                                             stroke={isDarkMode ? "#cbd5e1" : "#475569"}
-                                                            strokeWidth={3}
-                                                            label={{ value: 'PRICE', position: 'bottom', fill: isDarkMode ? "#cbd501" : "#475569", fontSize: 9, fontWeight: '900' }}
+                                                            strokeWidth={2}
+                                                            strokeDasharray="3 3"
+                                                            label={{
+                                                                value: 'CURRENT',
+                                                                position: 'top',
+                                                                fill: isDarkMode ? "#cbd5e1" : "#475569",
+                                                                fontSize: 9,
+                                                                fontWeight: '900',
+                                                                dy: -12
+                                                            }}
                                                         />
                                                     )}
                                                 </AreaChart>
