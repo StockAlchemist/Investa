@@ -193,6 +193,26 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
     const renderOverview = () => {
         if (!fundamentals) return null;
+
+        const getUpsidePercentage = (iv?: number) => {
+            if (!iv || !intrinsicValue?.current_price) return null;
+            return (iv / intrinsicValue.current_price) - 1;
+        };
+
+        const formatUpside = (upside: number | null) => {
+            if (upside === null) return null;
+            const prefix = upside > 0 ? '+' : '';
+            return `${prefix}${formatPercentShared(upside)}`;
+        };
+
+        const getUpsideColor = (upside: number | null) => {
+            if (upside === null) return "";
+            return upside > 0 ? "text-emerald-500 font-bold" : "text-rose-500 font-bold";
+        };
+
+        const dcfUpside = getUpsidePercentage(intrinsicValue?.models?.dcf?.intrinsic_value);
+        const grahamUpside = getUpsidePercentage(intrinsicValue?.models?.graham?.intrinsic_value);
+
         return (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -204,16 +224,35 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     {!fundamentals.etf_data && (
                         <StatCard label="Beta" value={fundamentals.beta?.toFixed(2)} icon={Activity} color="text-purple-400" />
                     )}
-                    {/* Expense Ratio for ETFs - check multiple potential keys. 
-                        netExpenseRatio usually comes as percentage number (e.g. 0.04 for 0.04%), 
-                        so we divide by 100 for formatPercent which expects decimal (0.0004 for 0.04%) 
-                    */}
                     {(fundamentals.expenseRatio || fundamentals.annualReportExpenseRatio || fundamentals.netExpenseRatio) && (
                         <StatCard
                             label="Expense Ratio"
                             value={formatPercent((fundamentals.expenseRatio || fundamentals.annualReportExpenseRatio || fundamentals.netExpenseRatio) / 100)}
                             icon={Receipt}
                             color="text-orange-400"
+                        />
+                    )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                    {intrinsicValue?.models?.dcf?.intrinsic_value && (
+                        <StatCard
+                            label="DCF Intrinsic Value"
+                            value={formatCurrency(intrinsicValue.models.dcf.intrinsic_value)}
+                            subValue={formatUpside(dcfUpside)}
+                            subValueColor={getUpsideColor(dcfUpside)}
+                            icon={TrendingUp}
+                            color="text-emerald-400"
+                        />
+                    )}
+                    {intrinsicValue?.models?.graham?.intrinsic_value && (
+                        <StatCard
+                            label="Graham Intrinsic Value"
+                            value={formatCurrency(intrinsicValue.models.graham.intrinsic_value)}
+                            subValue={formatUpside(grahamUpside)}
+                            subValueColor={getUpsideColor(grahamUpside)}
+                            icon={Scale}
+                            color="text-amber-400"
                         />
                     )}
                 </div>
@@ -715,14 +754,23 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     <div className="p-5 sm:p-8 pb-3 sm:pb-4 flex justify-between items-start relative">
                         <div className="hidden sm:block absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-[100px] -mr-32 -mt-32" />
 
-                        <div className="flex items-center gap-4 sm:gap-6 relative z-10 text-foreground">
+                        <div className="flex items-center gap-4 sm:gap-6 relative z-10 text-foreground flex-1">
                             <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-lg sm:text-3xl font-bold shadow-lg shadow-cyan-500/20 text-white overflow-hidden flex-shrink-0">
                                 <StockIcon symbol={symbol} size="100%" className="w-full h-full p-2 bg-white" domain={domain} />
                             </div>
-                            <div>
-                                <div className="flex items-center gap-2 sm:gap-3 mb-0.5 sm:mb-1">
-                                    <h2 className="text-lg sm:text-3xl font-bold tracking-tight truncate max-w-[140px] sm:max-w-none">{fundamentals?.shortName || symbol}</h2>
-                                    <Badge className="bg-secondary text-secondary-foreground border-none font-mono text-[9px] sm:text-xs">{symbol}</Badge>
+                            <div className="flex-1 min-w-0 pr-4">
+                                <div className="flex items-center justify-between gap-2 mb-0.5 sm:mb-1">
+                                    <div className="flex items-center gap-2 sm:gap-3 truncate">
+                                        <h2 className="text-lg sm:text-3xl font-bold tracking-tight truncate max-w-[140px] sm:max-w-none">{fundamentals?.shortName || symbol}</h2>
+                                        <Badge className="bg-secondary text-secondary-foreground border-none font-mono text-[9px] sm:text-xs">{symbol}</Badge>
+                                    </div>
+                                    {fundamentals?.regularMarketPrice && (
+                                        <div className="flex items-baseline gap-1 text-cyan-600 dark:text-cyan-400">
+                                            <span className="text-xl sm:text-4xl font-bold tracking-tight">
+                                                {formatCurrency(fundamentals.regularMarketPrice)}
+                                            </span>
+                                        </div>
+                                    )}
                                 </div>
                                 <p className="text-muted-foreground flex items-center gap-1.5 sm:gap-2 text-[9px] sm:text-sm">
                                     <span className="font-semibold text-cyan-500">{fundamentals?.sector}</span>
@@ -830,15 +878,22 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     );
 }
 
-function StatCard({ label, value, icon: Icon, color, className, rotate }: any) {
+function StatCard({ label, value, icon: Icon, color, className, rotate, subValue, subValueColor }: any) {
     return (
         <div className="bg-muted border border-border p-5 rounded-2xl flex items-center gap-4 transition-all hover:bg-muted/50 hover:border-accent group">
             <div className={cn("p-3 rounded-xl bg-card border border-border", color, rotate)}>
                 <Icon className="w-5 h-5" />
             </div>
-            <div>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-0.5">{label}</p>
-                <p className="text-lg font-bold text-foreground tracking-tight">{value}</p>
+            <div className="flex-1 overflow-hidden">
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-0.5 truncate">{label}</p>
+                <div className="flex items-baseline gap-2">
+                    <p className="text-lg font-bold text-foreground tracking-tight whitespace-nowrap">{value}</p>
+                    {subValue && (
+                        <span className={cn("text-xs whitespace-nowrap", subValueColor)}>
+                            {subValue}
+                        </span>
+                    )}
+                </div>
             </div>
         </div>
     );
