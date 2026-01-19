@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useId } from 'react';
+import { useTheme } from 'next-themes';
 import { createPortal } from 'react-dom';
 import {
     fetchFundamentals,
@@ -125,6 +126,9 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     const [intrinsicValue, setIntrinsicValue] = useState<IntrinsicValueResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [viewingDistribution, setViewingDistribution] = useState<'dcf' | 'graham' | null>(null);
+    const { resolvedTheme } = useTheme();
+    const isDarkMode = resolvedTheme === 'dark';
 
     useEffect(() => {
         if (isOpen && symbol) {
@@ -215,6 +219,33 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
         return (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                    {intrinsicValue?.models?.dcf?.intrinsic_value && (
+                        <StatCard
+                            label="DCF Intrinsic Value"
+                            value={formatCurrency(intrinsicValue.models.dcf.intrinsic_value)}
+                            subValue={formatUpside(dcfUpside)}
+                            subValueColor={getUpsideColor(dcfUpside)}
+                            rangeMin={formatCurrency(intrinsicValue.models.dcf.mc?.bear)}
+                            rangeMax={formatCurrency(intrinsicValue.models.dcf.mc?.bull)}
+                            icon={TrendingUp}
+                            color="text-emerald-400"
+                        />
+                    )}
+                    {intrinsicValue?.models?.graham?.intrinsic_value && (
+                        <StatCard
+                            label="Graham Intrinsic Value"
+                            value={formatCurrency(intrinsicValue.models.graham.intrinsic_value)}
+                            subValue={formatUpside(grahamUpside)}
+                            subValueColor={getUpsideColor(grahamUpside)}
+                            rangeMin={formatCurrency(intrinsicValue.models.graham.mc?.bear)}
+                            rangeMax={formatCurrency(intrinsicValue.models.graham.mc?.bull)}
+                            icon={Scale}
+                            color="text-amber-400"
+                        />
+                    )}
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <StatCard label="Market Cap" value={formatCurrency(fundamentals.marketCap)} icon={Globe} color="text-cyan-400" />
                     <StatCard label="P/E Ratio (TTM)" value={fundamentals.trailingPE?.toFixed(2)} icon={TrendingUp} color="text-emerald-400" />
@@ -230,29 +261,6 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             value={formatPercent((fundamentals.expenseRatio || fundamentals.annualReportExpenseRatio || fundamentals.netExpenseRatio) / 100)}
                             icon={Receipt}
                             color="text-orange-400"
-                        />
-                    )}
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
-                    {intrinsicValue?.models?.dcf?.intrinsic_value && (
-                        <StatCard
-                            label="DCF Intrinsic Value"
-                            value={formatCurrency(intrinsicValue.models.dcf.intrinsic_value)}
-                            subValue={formatUpside(dcfUpside)}
-                            subValueColor={getUpsideColor(dcfUpside)}
-                            icon={TrendingUp}
-                            color="text-emerald-400"
-                        />
-                    )}
-                    {intrinsicValue?.models?.graham?.intrinsic_value && (
-                        <StatCard
-                            label="Graham Intrinsic Value"
-                            value={formatCurrency(intrinsicValue.models.graham.intrinsic_value)}
-                            subValue={formatUpside(grahamUpside)}
-                            subValueColor={getUpsideColor(grahamUpside)}
-                            icon={Scale}
-                            color="text-amber-400"
                         />
                     )}
                 </div>
@@ -552,6 +560,11 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     <div className="bg-muted border border-border p-6 rounded-2xl flex flex-col items-center justify-center text-center">
                         <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Average Intrinsic Value</p>
                         <p className="text-3xl font-bold text-cyan-500">{formatCurrency(average_intrinsic_value)}</p>
+                        {intrinsicValue.range && (
+                            <p className="text-xs text-muted-foreground mt-2 font-medium">
+                                Range: {formatCurrency(intrinsicValue.range.bear)} - {formatCurrency(intrinsicValue.range.bull)}
+                            </p>
+                        )}
                     </div>
                     <div className="bg-muted border border-border p-6 rounded-2xl flex flex-col items-center justify-center text-center">
                         <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Current Price</p>
@@ -621,6 +634,35 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                         info={VALUATION_INFO.base_fcf}
                                     />
                                 </div>
+                                {models.dcf.mc && (
+                                    <div className="pt-4 border-t border-border/50">
+                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-3">Probabilistic Scenarios (Monte Carlo)</p>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            <div
+                                                className="bg-rose-500/5 border border-rose-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-rose-500/10 transition-colors group/mc"
+                                                onClick={() => setViewingDistribution('dcf')}
+                                            >
+                                                <p className="text-[10px] text-rose-500 font-bold uppercase mb-1">Bear (10th)</p>
+                                                <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.bear)}</p>
+                                            </div>
+                                            <div
+                                                className="bg-cyan-500/5 border border-cyan-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-cyan-500/10 transition-colors group/mc"
+                                                onClick={() => setViewingDistribution('dcf')}
+                                            >
+                                                <p className="text-[10px] text-cyan-500 font-bold uppercase mb-1">Median (50th)</p>
+                                                <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.base)}</p>
+                                            </div>
+                                            <div
+                                                className="bg-emerald-500/5 border border-emerald-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-emerald-500/10 transition-colors group/mc"
+                                                onClick={() => setViewingDistribution('dcf')}
+                                            >
+                                                <p className="text-[10px] text-emerald-500 font-bold uppercase mb-1">Bull (90th)</p>
+                                                <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.bull)}</p>
+                                            </div>
+                                        </div>
+                                        <p className="text-[9px] text-muted-foreground mt-2 text-center opacity-50 group-hover/mc:opacity-100 transition-opacity">Click to view distribution</p>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -670,41 +712,70 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                             </div>
                                             <span className="text-lg font-light opacity-30">=</span>
                                         </div>
-                                        <div className="flex flex-col items-center">
-                                            <div className="px-4 pb-1.5 border-b-2 border-muted-foreground/10 flex items-center gap-1.5">
-                                                <div className="group relative">
-                                                    <span className="text-xs font-bold text-foreground cursor-help hover:text-cyan-500 transition-colors">EPS</span>
-                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
-                                                        Trailing 12-Month Earnings Per Share
-                                                    </div>
-                                                </div>
-                                                <span className="text-[9px] opacity-40">×</span>
-                                                <div className="group relative">
-                                                    <span className="px-1.5 py-0.5 bg-secondary/30 rounded-md border border-border/30 text-[10px] font-bold text-foreground cursor-help hover:border-cyan-500/50 transition-colors">
-                                                        8.5 + 2g
-                                                    </span>
-                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2.5 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-relaxed text-center font-medium">
-                                                        <div className="mb-0.5"><span className="font-bold">8.5</span>: Base P/E for zero growth</div>
-                                                        <div><span className="font-bold">g</span>: Expected long-term growth rate</div>
-                                                    </div>
-                                                </div>
-                                                <span className="text-[9px] opacity-40">×</span>
-                                                <div className="group relative">
-                                                    <span className="text-xs font-bold text-foreground cursor-help hover:text-cyan-500 transition-colors">4.4</span>
-                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
-                                                        Average yield of high-grade corporate bonds in 1962
-                                                    </div>
+                                        <div className="flex items-center gap-1.5 px-4">
+                                            <div className="group relative">
+                                                <span className="text-xs font-bold text-foreground cursor-help hover:text-cyan-500 transition-colors">EPS</span>
+                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
+                                                    Trailing 12-Month Earnings Per Share
                                                 </div>
                                             </div>
-                                            <div className="group relative pt-1.5">
-                                                <span className="text-lg font-bold text-amber-500/80 cursor-help hover:text-amber-500 transition-colors">Y</span>
-                                                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
-                                                    Current yield on high-quality bonds
+                                            <span className="text-[9px] opacity-40">×</span>
+                                            <div className="group relative">
+                                                <span className="px-1.5 py-0.5 bg-secondary/30 rounded-md border border-border/30 text-[10px] font-bold text-foreground cursor-help hover:border-cyan-500/50 transition-colors">
+                                                    8.5 + 2G
+                                                </span>
+                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2.5 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-relaxed text-center font-medium">
+                                                    <div className="mb-0.5"><span className="font-bold">8.5</span>: Base P/E for zero growth</div>
+                                                    <div><span className="font-bold">G</span>: Expected long-term growth rate</div>
+                                                </div>
+                                            </div>
+                                            <span className="text-[9px] opacity-40">×</span>
+                                            <div className="group relative">
+                                                <span className="text-xs font-bold text-foreground cursor-help hover:text-cyan-500 transition-colors">4.4</span>
+                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
+                                                    Average yield of high-grade corporate bonds in 1962
+                                                </div>
+                                            </div>
+                                            <span className="text-[10px] opacity-40 mx-0.5">/</span>
+                                            <div className="group relative">
+                                                <span className="text-xs font-bold text-foreground cursor-help hover:text-cyan-500 transition-colors">Y</span>
+                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-44 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
+                                                    <div className="font-bold mb-1">Y = {models.graham.parameters?.bond_yield_proxy || '4.5'}%</div>
+                                                    Current yield on AAA corporate bonds
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
+                                {models.graham.mc && (
+                                    <div className="mt-8 pt-4 border-t border-border/50">
+                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-3">Probabilistic Scenarios (Monte Carlo)</p>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            <div
+                                                className="bg-rose-500/5 border border-rose-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-rose-500/10 transition-colors group/mc"
+                                                onClick={() => setViewingDistribution('graham')}
+                                            >
+                                                <p className="text-[10px] text-rose-500 font-bold uppercase mb-1">Bear (10th)</p>
+                                                <p className="text-sm font-bold">{formatCurrency(models.graham.mc.bear)}</p>
+                                            </div>
+                                            <div
+                                                className="bg-amber-500/5 border border-amber-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-amber-500/10 transition-colors group/mc"
+                                                onClick={() => setViewingDistribution('graham')}
+                                            >
+                                                <p className="text-[10px] text-amber-500 font-bold uppercase mb-1">Median (50th)</p>
+                                                <p className="text-sm font-bold">{formatCurrency(models.graham.mc.base)}</p>
+                                            </div>
+                                            <div
+                                                className="bg-emerald-500/5 border border-emerald-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-emerald-500/10 transition-colors group/mc"
+                                                onClick={() => setViewingDistribution('graham')}
+                                            >
+                                                <p className="text-[10px] text-emerald-500 font-bold uppercase mb-1">Bull (90th)</p>
+                                                <p className="text-sm font-bold">{formatCurrency(models.graham.mc.bull)}</p>
+                                            </div>
+                                        </div>
+                                        <p className="text-[9px] text-muted-foreground mt-2 text-center opacity-50 group-hover/mc:opacity-100 transition-opacity">Click to view distribution</p>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -866,6 +937,217 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     )}
                 </div>
 
+                {/* Distribution Modal */}
+                {viewingDistribution && intrinsicValue && (
+                    <div className={cn(
+                        "fixed inset-0 z-[110] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-300",
+                        isDarkMode ? "bg-black/60" : "bg-slate-500/20"
+                    )}>
+                        <div className={cn(
+                            "w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 border",
+                            isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-900"
+                        )}>
+                            <div className={cn(
+                                "p-6 border-b flex items-center justify-between",
+                                isDarkMode ? "bg-muted/30 border-slate-800" : "bg-slate-50/50 border-slate-100"
+                            )}>
+                                <div>
+                                    <h3 className="text-xl font-bold flex items-center gap-2 text-inherit">
+                                        <BarChart3 className="w-5 h-5 text-cyan-500" />
+                                        {viewingDistribution === 'dcf' ? 'DCF' : 'Graham'} Probabilistic Distribution
+                                    </h3>
+                                    <p className={isDarkMode ? "text-slate-400 text-sm" : "text-slate-500 text-sm"}>Monte Carlo Simulation (10,000 iterations)</p>
+                                </div>
+                                <button
+                                    onClick={() => setViewingDistribution(null)}
+                                    className={cn(
+                                        "p-2 rounded-full transition-colors",
+                                        isDarkMode ? "hover:bg-slate-800" : "hover:bg-slate-100"
+                                    )}
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                            <div className="p-6">
+                                <div className="h-[300px] w-full">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        {(() => {
+                                            const histogram = intrinsicValue.models[viewingDistribution].mc?.histogram || [];
+                                            const mc = intrinsicValue.models[viewingDistribution].mc;
+
+                                            if (histogram.length === 0 || !mc) return null;
+
+                                            const minPrice = histogram[0].price;
+                                            const maxPrice = histogram[histogram.length - 1].price;
+                                            const range = maxPrice - minPrice;
+
+                                            // Calculate percentage offsets for the gradient stops
+                                            const bearOffset = Math.max(0, Math.min(100, ((mc.bear - minPrice) / range) * 100));
+                                            const bullOffset = Math.max(0, Math.min(100, ((mc.bull - minPrice) / range) * 100));
+
+                                            return (
+                                                <AreaChart
+                                                    data={histogram}
+                                                    margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                                                >
+                                                    <defs>
+                                                        <linearGradient id="colorBell" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse">
+                                                            {/* We use userSpaceOnUse to map exactly to the X-axis values, 
+                                                                but Recharts often works better with objectBoundingBox for horizontal gradients.
+                                                                Actually, simple 0-1 offsets work for x1=0, x2=1. 
+                                                            */}
+                                                        </linearGradient>
+
+                                                        {/* Horizontal Gradient for the categories */}
+                                                        <linearGradient id="colorBellFill" x1="0" y1="0" x2="1" y2="0">
+                                                            <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.4} />
+                                                            <stop offset={`${bearOffset}%`} stopColor="#f43f5e" stopOpacity={0.4} />
+
+                                                            <stop offset={`${bearOffset}%`} stopColor="#06b6d4" stopOpacity={0.4} />
+                                                            <stop offset={`${bullOffset}%`} stopColor="#06b6d4" stopOpacity={0.4} />
+
+                                                            <stop offset={`${bullOffset}%`} stopColor="#10b981" stopOpacity={0.4} />
+                                                            <stop offset="100%" stopColor="#10b981" stopOpacity={0.4} />
+                                                        </linearGradient>
+
+                                                        {/* Vertical Gradient for the "fade out" effect */}
+                                                        <linearGradient id="colorBellFade" x1="0" y1="0" x2="0" y2="1">
+                                                            <stop offset="5%" stopColor="white" stopOpacity={1} />
+                                                            <stop offset="95%" stopColor="white" stopOpacity={0} />
+                                                        </linearGradient>
+
+                                                        {/* Masking the categories with the fade gradient */}
+                                                        <mask id="bellMask">
+                                                            <rect x="0" y="0" width="100%" height="100%" fill="url(#colorBellFade)" />
+                                                        </mask>
+                                                    </defs>
+                                                    <CartesianGrid
+                                                        strokeDasharray="3 3"
+                                                        vertical={false}
+                                                        stroke={isDarkMode ? "#334155" : "#e2e8f0"}
+                                                        opacity={isDarkMode ? 0.3 : 0.8}
+                                                    />
+                                                    <XAxis
+                                                        dataKey="price"
+                                                        tickFormatter={(val) => formatCurrency(val)}
+                                                        fontSize={10}
+                                                        tickLine={false}
+                                                        axisLine={false}
+                                                        minTickGap={30}
+                                                        stroke={isDarkMode ? "#94a3b8" : "#64748b"}
+                                                    />
+                                                    <YAxis hide />
+                                                    <Tooltip
+                                                        content={({ active, payload }) => {
+                                                            if (active && payload && payload.length) {
+                                                                const count = payload[0].value;
+                                                                const probability = (count / 10000) * 100;
+                                                                return (
+                                                                    <div className={cn(
+                                                                        "p-3 rounded-xl shadow-2xl outline-none border scale-105 transition-transform",
+                                                                        isDarkMode
+                                                                            ? "bg-slate-900 border-slate-700"
+                                                                            : "bg-white border-slate-200"
+                                                                    )}>
+                                                                        <p className={cn(
+                                                                            "text-[10px] uppercase font-bold mb-1 tracking-wider",
+                                                                            isDarkMode ? "text-slate-500" : "text-slate-400"
+                                                                        )}>Estimated Value</p>
+                                                                        <p className={cn(
+                                                                            "text-lg font-black",
+                                                                            isDarkMode ? "text-white" : "text-slate-900"
+                                                                        )}>{formatCurrency(payload[0].payload.price)}</p>
+
+                                                                        <div className="flex flex-col gap-1 mt-3 pt-2 border-t border-border/50">
+                                                                            <div className="flex items-center justify-between gap-4">
+                                                                                <div className="flex items-center gap-1.5">
+                                                                                    <div className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
+                                                                                    <span className={cn("text-[10px] font-bold uppercase", isDarkMode ? "text-slate-400" : "text-slate-500")}>Probability</span>
+                                                                                </div>
+                                                                                <span className="text-[10px] font-black text-cyan-500">{probability.toFixed(2)}%</span>
+                                                                            </div>
+                                                                            <div className="flex items-center justify-between gap-4">
+                                                                                <div className="flex items-center gap-1.5">
+                                                                                    <div className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                                                                                    <span className={cn("text-[10px] font-bold uppercase", isDarkMode ? "text-slate-400" : "text-slate-500")}>Frequency</span>
+                                                                                </div>
+                                                                                <span className={cn("text-[10px] font-black", isDarkMode ? "text-slate-300" : "text-slate-700")}>{count.toLocaleString()} Iterations</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            return null;
+                                                        }}
+                                                    />
+                                                    <Area
+                                                        type="basis"
+                                                        dataKey="count"
+                                                        stroke="#06b6d4"
+                                                        strokeWidth={4}
+                                                        fill="url(#colorBellFill)"
+                                                        mask="url(#bellMask)"
+                                                        animationDuration={1500}
+                                                    />
+                                                    {/* Reference Lines for Bear, Base, Bull */}
+                                                    {intrinsicValue.models[viewingDistribution].mc && (
+                                                        <>
+                                                            <ReferenceLine
+                                                                x={intrinsicValue.models[viewingDistribution].mc!.bear}
+                                                                stroke="#f43f5e"
+                                                                strokeDasharray="4 4"
+                                                                strokeWidth={2}
+                                                                label={{ value: 'BEAR', position: 'top', fill: '#f43f5e', fontSize: 9, fontWeight: '900' }}
+                                                            />
+                                                            <ReferenceLine
+                                                                x={intrinsicValue.models[viewingDistribution].mc!.base}
+                                                                stroke="#06b6d4"
+                                                                strokeDasharray="4 4"
+                                                                strokeWidth={2}
+                                                                label={{ value: 'MEDIAN', position: 'top', fill: '#06b6d4', fontSize: 9, fontWeight: '900' }}
+                                                            />
+                                                            <ReferenceLine
+                                                                x={intrinsicValue.models[viewingDistribution].mc!.bull}
+                                                                stroke="#10b981"
+                                                                strokeDasharray="4 4"
+                                                                strokeWidth={2}
+                                                                label={{ value: 'BULL', position: 'top', fill: '#10b981', fontSize: 9, fontWeight: '900' }}
+                                                            />
+                                                        </>
+                                                    )}
+                                                    {/* Current Price Reference */}
+                                                    {intrinsicValue.current_price && (
+                                                        <ReferenceLine
+                                                            x={intrinsicValue.current_price}
+                                                            stroke={isDarkMode ? "#cbd5e1" : "#475569"}
+                                                            strokeWidth={3}
+                                                            label={{ value: 'PRICE', position: 'bottom', fill: isDarkMode ? "#cbd501" : "#475569", fontSize: 9, fontWeight: '900' }}
+                                                        />
+                                                    )}
+                                                </AreaChart>
+                                            );
+                                        })()}
+                                    </ResponsiveContainer>
+                                </div>
+                                <div className={cn(
+                                    "mt-6 flex items-center justify-between text-[10px] font-bold uppercase tracking-widest p-4 rounded-2xl",
+                                    isDarkMode ? "bg-slate-800/50 text-slate-400" : "bg-slate-50 text-slate-500"
+                                )}>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-sm shadow-rose-500/20" /> Bear: <span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.bear)}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-2.5 h-2.5 rounded-full bg-cyan-500 shadow-sm shadow-cyan-500/20" /> Median: <span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.base)}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/20" /> Bull: <span className={isDarkMode ? "text-white" : "text-slate-900"}>{formatCurrency(intrinsicValue.models[viewingDistribution].mc?.bull)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Footer */}
                 <div className="px-4 sm:px-8 py-3 sm:py-4 bg-muted/30 border-t border-border flex flex-col sm:flex-row justify-between items-center gap-2 text-[9px] sm:text-[10px] text-muted-foreground uppercase tracking-widest font-bold pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:pb-4">
                     <div className="flex gap-4">
@@ -880,7 +1162,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     );
 }
 
-function StatCard({ label, value, icon: Icon, color, className, rotate, subValue, subValueColor }: any) {
+function StatCard({ label, value, icon: Icon, color, className, rotate, subValue, subValueColor, rangeMin, rangeMax }: any) {
     return (
         <div className="bg-muted border border-border p-5 rounded-2xl flex items-center gap-4 transition-all hover:bg-muted/50 hover:border-accent group">
             <div className={cn("p-3 rounded-xl bg-card border border-border", color, rotate)}>
@@ -896,6 +1178,11 @@ function StatCard({ label, value, icon: Icon, color, className, rotate, subValue
                         </span>
                     )}
                 </div>
+                {(rangeMin && rangeMax) && (
+                    <p className="text-[10px] text-muted-foreground mt-0.5 font-medium">
+                        Range: {rangeMin} - {rangeMax}
+                    </p>
+                )}
             </div>
         </div>
     );

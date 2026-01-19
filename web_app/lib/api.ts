@@ -668,6 +668,13 @@ export interface IntrinsicValueModel {
     error?: string;
     model: string;
     parameters: Record<string, any>;
+    mc?: {
+        bear: number;
+        base: number;
+        bull: number;
+        std_dev: number;
+        histogram?: { price: number; count: number }[];
+    };
 }
 
 export interface IntrinsicValueResponse {
@@ -677,6 +684,10 @@ export interface IntrinsicValueResponse {
         graham: IntrinsicValueModel;
     };
     average_intrinsic_value?: number;
+    range?: {
+        bear: number;
+        bull: number;
+    };
     margin_of_safety_pct?: number;
 }
 

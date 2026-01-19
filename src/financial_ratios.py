@@ -407,6 +407,132 @@ def estimate_growth_rate(
         return 0.05
 
 
+def run_monte_carlo_dcf(
+    ticker_info: Dict[str, Any],
+    base_fcf: float,
+    base_growth: float,
+    base_discount: float,
+    projection_years: int = 5,
+    terminal_growth: float = 0.02,
+    iterations: int = 10000
+) -> Dict[str, Any]:
+    """Runs a vectorized Monte Carlo simulation for DCF."""
+    try:
+        shares = ticker_info.get("sharesOutstanding")
+        if not shares:
+            return {}
+
+        # 1. Generate stochastic variables
+        # Growth Rate: Normal distribution (20% relative std dev)
+        growth_samples = np.random.normal(base_growth, abs(base_growth) * 0.2, iterations)
+        # Discount Rate: Normal distribution (10% relative std dev)
+        discount_samples = np.random.normal(base_discount, abs(base_discount) * 0.1, iterations)
+        
+        # Ensure rates are sensible (floor at 0.1% for discount, 0% for growth)
+        growth_samples = np.maximum(0.0, growth_samples)
+        discount_samples = np.maximum(0.001, discount_samples)
+
+        # 2. Vectorized Projections
+        # Shape: (iterations, projection_years)
+        years = np.arange(1, projection_years + 1)
+        
+        # Calculate FCF for each year: FCF * (1 + g)^n
+        # growth_samples[:, None] adds an axis to allow broadcasting with years
+        fcf_projections = base_fcf * (1 + growth_samples[:, None]) ** years
+        
+        # 3. Present Value of FCFs
+        # PV = FCF / (1 + r)^n
+        pv_projections = fcf_projections / (1 + discount_samples[:, None]) ** years
+        sum_pv_fcf = np.sum(pv_projections, axis=1)
+
+        # 4. Terminal Value
+        # TV = (FCF_last * (1 + g_term)) / (r - g_term)
+        last_fcf = fcf_projections[:, -1]
+        terminal_values = (last_fcf * (1 + terminal_growth)) / (discount_samples - terminal_growth)
+        # PV of TV
+        pv_terminal_values = terminal_values / (1 + discount_samples) ** projection_years
+
+        # 5. Equity Value to Intrinsic Value
+        cash = ticker_info.get("totalCash") or 0
+        debt = ticker_info.get("totalDebt") or 0
+        enterprise_values = sum_pv_fcf + pv_terminal_values
+        equity_values = enterprise_values + cash - debt
+        intrinsic_values = equity_values / shares
+
+        # 6. Generate Histogram for Probability Plot
+        counts, edges = np.histogram(intrinsic_values, bins=40)
+        midpoints = (edges[:-1] + edges[1:]) / 2
+        
+        # Apply Gaussian smoothing to make it look like a "bell curve"
+        # 7-point Gaussian kernel for better smoothness
+        kernel = np.array([0.05, 0.1, 0.2, 0.3, 0.2, 0.1, 0.05])
+        smoothed_counts = np.convolve(counts, kernel, mode='same')
+
+        histogram = [
+            {"price": float(p), "count": float(c)}
+            for p, c in zip(midpoints, smoothed_counts)
+        ]
+
+        # 7. Extract Percentiles
+        return {
+            "bear": float(np.percentile(intrinsic_values, 10)),
+            "base": float(np.percentile(intrinsic_values, 50)),
+            "bull": float(np.percentile(intrinsic_values, 90)),
+            "std_dev": float(np.std(intrinsic_values)),
+            "histogram": histogram
+        }
+    except Exception as e:
+        logging.error(f"Monte Carlo DCF failed: {e}")
+        return {}
+
+
+def run_monte_carlo_graham(
+    eps: float,
+    base_growth: float,
+    base_bond_yield: float,
+    iterations: int = 10000
+) -> Dict[str, Any]:
+    """Runs a vectorized Monte Carlo simulation for Graham's Formula."""
+    try:
+        # 1. Stochastic Variables
+        # Growth Rate: 20% relative std dev
+        growth_samples = np.random.normal(base_growth, abs(base_growth) * 0.2, iterations)
+        # Bond Yield: 10% relative std dev
+        yield_samples = np.random.normal(base_bond_yield, abs(base_bond_yield) * 0.1, iterations)
+        
+        # Floor for stability
+        growth_samples = np.maximum(0.0, growth_samples)
+        yield_samples = np.maximum(0.5, yield_samples)
+
+        # 2. Vectorized Formula: V = (EPS * (8.5 + 2g) * 4.4) / Y
+        # Note: base_growth for graham is usually passed as percentage (e.g. 5.0 for 5%)
+        intrinsic_values = (eps * (8.5 + 2 * growth_samples) * 4.4) / yield_samples
+
+        # 3. Generate Histogram
+        counts, edges = np.histogram(intrinsic_values, bins=40)
+        midpoints = (edges[:-1] + edges[1:]) / 2
+        
+        # Apply smoothing
+        kernel = np.array([0.05, 0.1, 0.2, 0.3, 0.2, 0.1, 0.05])
+        smoothed_counts = np.convolve(counts, kernel, mode='same')
+
+        histogram = [
+            {"price": float(p), "count": float(c)}
+            for p, c in zip(midpoints, smoothed_counts)
+        ]
+
+        return {
+            "bear": float(np.percentile(intrinsic_values, 10)),
+            "base": float(np.percentile(intrinsic_values, 50)),
+            "bull": float(np.percentile(intrinsic_values, 90)),
+            "std_dev": float(np.std(intrinsic_values)),
+            "histogram": histogram
+        }
+    except Exception as e:
+        logging.error(f"Monte Carlo Graham failed: {e}")
+        return {}
+
+
 def calculate_intrinsic_value_dcf(
     ticker_info: Dict[str, Any],
     financials_df: Optional[pd.DataFrame],
@@ -573,6 +699,30 @@ def get_comprehensive_intrinsic_value(
     
     current_price = ticker_info.get("currentPrice") or ticker_info.get("regularMarketPrice")
     
+    # --- Monte Carlo Simulations ---
+    dcf_mc = {}
+    if "intrinsic_value" in dcf_res:
+        params = dcf_res["parameters"]
+        dcf_mc = run_monte_carlo_dcf(
+            ticker_info,
+            params["base_fcf"],
+            params["growth_rate"],
+            params["discount_rate"],
+            params["projection_years"],
+            params["terminal_growth_rate"]
+        )
+        dcf_res["mc"] = dcf_mc
+
+    graham_mc = {}
+    if "intrinsic_value" in graham_res:
+        params = graham_res["parameters"]
+        graham_mc = run_monte_carlo_graham(
+            params["eps"],
+            params["growth_rate_pct"],
+            params["bond_yield_proxy"]
+        )
+        graham_res["mc"] = graham_mc
+
     results = {
         "current_price": current_price,
         "models": {
@@ -581,16 +731,34 @@ def get_comprehensive_intrinsic_value(
         }
     }
     
-    # Calculate a simple average if both succeeded
+    # Calculate weighted average and range
     valid_values = []
+    bear_values = []
+    bull_values = []
+    
     if "intrinsic_value" in dcf_res:
         valid_values.append(dcf_res["intrinsic_value"])
+        if dcf_mc:
+            bear_values.append(dcf_mc["bear"])
+            bull_values.append(dcf_mc["bull"])
+            
     if "intrinsic_value" in graham_res:
         valid_values.append(graham_res["intrinsic_value"])
+        if graham_mc:
+            bear_values.append(graham_mc["bear"])
+            bull_values.append(graham_mc["bull"])
         
     if valid_values:
         avg_intrinsic = sum(valid_values) / len(valid_values)
         results["average_intrinsic_value"] = avg_intrinsic
+        
+        # Probabilistic range
+        if bear_values and bull_values:
+            results["range"] = {
+                "bear": sum(bear_values) / len(bear_values),
+                "bull": sum(bull_values) / len(bull_values)
+            }
+            
         if current_price:
             results["margin_of_safety_pct"] = (1 - (current_price / avg_intrinsic)) * 100
             
