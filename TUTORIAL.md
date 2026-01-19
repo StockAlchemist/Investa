@@ -673,12 +673,54 @@ The Web Dashboard mirrors many of the key features of the desktop application:
 *   **Customizable Layout:** Use the "Layout" button to toggle the visibility of any dashboard metric, including "Sector Contribution" and "Top Contributors".
 *   **Dashboard Summary:** View your Net Value, Daily P&L, Total Return, and key metrics at a glance.
 *   **Performance Graph:** Interactive charts for TWR and Portfolio Value.
+*   **Mobile-Optimized Tables:** Toggle between "Card" and "Table" views for Holdings and Transactions on mobile devices for better readability.
 *   **Markets Tab (Mobile):** Dedicated tab to track major market indices (Dow, Nasdaq, S&P 500) while on the go.
 *   **Holdings:** A sorted list of your current positions.
 *   **Transactions Log:** View your history of trades and cash movements.
 *   **Asset Allocation & Analysis:** Visual breakdowns of your portfolio.
 
 *Note: Currently, the Web Dashboard is primarily for **viewing** and **analyzing** your data. For heavy transaction management (bulk imports, editing past records), we recommend using the Desktop Application.*
+
+## Part 14: Intrinsic Value Analysis
+
+Investa now includes powerful tools to help you estimate the **Intrinsic Value** of your stocks, giving you a fundamental perspective on whether they might be undervalued or overvalued.
+
+### What is Intrinsic Value?
+Intrinsic value is an estimate of the actual true value of a company based on its underlying financial strength and future earnings potential, regardless of its current stock market price.
+
+Investa calculates this using two classic models:
+1. **Discounted Cash Flow (DCF):** Projects future free cash flows and discounts them back to the present value. Ideal for consistent, cash-flow-generating companies.
+2. **Graham's Formula:** A simpler formula derived by Benjamin Graham, suitable for stable growth companies.
+
+### Probability Distributions (Monte Carlo)
+Because predicting the future is uncertain, Investa doesn't just give you one number. It runs **Monte Carlo simulations** (thousands of scenarios) with slight variations in growth rates and discount rates to provide a range of probable outcomes:
+* **Bear Case (10th percentile):** A conservative estimate.
+* **Base Case (Median):** The most likely value.
+* **Bull Case (90th percentile):** An optimistic estimate.
+
+### Viewing Valuation Data
+To see the valuation analysis for any stock:
+1. Go to the **Holdings Table** on the Dashboard or Web App.
+2. Click on the **stock symbol** (usually styled as a link) or right-click and select **"View Details"**.
+3. In the modal that appears, switch to the **"Valuation"** tab.
+4. You will see:
+    * The **Intrinsic Value Range** vs. **Current Price**.
+    * A **"Margin of Safety"** gauge (Green = Undervalued, Red = Overvalued).
+    * Detailed parameters used for the calculation (Growth Rate, Discount Rate, etc.).
+
+### Customizing Valuation Parameters (Overrides)
+Investa automatically fetches default parameters (like Beta, WACC/Discount Rate, Growth estimates) from financial APIs. However, you might disagree with these defaults.
+
+**To customize the model for any stock:**
+1. Go to **Settings > Valuation Overrides**.
+2. **Add New Override:**
+    * Select the **Symbol** (e.g., AAPL).
+    * Choose the **Parameter** you want to change (e.g., `Growth Rate (DCF)`, `Discount Rate (DCF)`, `Growth Rate (Graham)`).
+    * Enter your **Custom Value** (e.g., `0.12` for 12% growth).
+    * Click **Add Parameter**.
+3. The new value will be saved and immediately applied to the valuation calculations the next time you view that stock.
+
+**Note:** You can also manage these parameters directly from the **Valuation Tab** in the stock detail view by clicking the "Edit" (pencil) icon next to the parameters list.
 
 ---
 

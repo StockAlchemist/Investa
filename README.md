@@ -20,6 +20,8 @@ Investa is a comprehensive portfolio management solution offering both a feature
 * **Contribution Analysis:** See exactly how much each holding contributes to your total portfolio return.
 * **Customizable Dashboard:** Toggle visibility of widgets and view "Sector Contribution" and "Top Contributors" analysis directly on the main dashboard.
 * **Fundamental Data:** Built-in viewer for company profiles, financials, and balance sheets.
+* **Intrinsic Value Analysis:** Automated DCF and Graham's Formula calculations with Monte Carlo simulations to estimate fair value and margin of safety.
+* **Valuation Overrides:** Fully customizable valuation parameters (growth rates, discount rates, etc.) for each stock via the Settings menu.
 
 ## Getting Started
 
