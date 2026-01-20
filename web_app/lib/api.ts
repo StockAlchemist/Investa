@@ -733,8 +733,10 @@ export interface StockAnalysisResponse {
     error?: string;
 }
 
-export async function fetchStockAnalysis(symbol: string): Promise<StockAnalysisResponse> {
-    const res = await fetch(`${API_BASE_URL}/stock-analysis/${symbol}`);
+export async function fetchStockAnalysis(symbol: string, force: boolean = false): Promise<StockAnalysisResponse> {
+    const params = new URLSearchParams();
+    if (force) params.append('force', 'true');
+    const res = await fetch(`${API_BASE_URL}/stock-analysis/${symbol}?${params.toString()}`);
     if (!res.ok) throw new Error(`Failed to fetch AI analysis for ${symbol}`);
     return res.json();
 }

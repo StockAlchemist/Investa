@@ -1780,6 +1780,7 @@ async def get_projected_income(
 @router.get("/stock-analysis/{symbol}")
 async def get_stock_analysis(
     symbol: str,
+    force: bool = False,
     data: tuple = Depends(get_transaction_data)
 ):
     """
@@ -1813,7 +1814,7 @@ async def get_stock_analysis(
                 logging.warning(f"Ratio calculation failed for analysis: {e_ratio}")
 
         # 3. Generate AI Review
-        analysis = generate_stock_review(symbol, fund_data, ratios)
+        analysis = generate_stock_review(symbol, fund_data, ratios, force_refresh=force)
         return clean_nans(analysis)
     except Exception as e:
         logging.error(f"Error in stock analysis for {symbol}: {e}", exc_info=True)

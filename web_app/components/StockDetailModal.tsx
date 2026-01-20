@@ -38,7 +38,9 @@ import {
     Zap,
     Target,
     Activity as LucideActivity,
-    CheckCircle2
+    CheckCircle2,
+    RotateCcw,
+    Loader2
 } from 'lucide-react';
 import {
     LineChart,
@@ -189,6 +191,28 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
             setError(err.message || "Failed to load stock details");
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleRegenerateAnalysis = async () => {
+        setAnalysisLoading(true);
+        setAnalysisError(null);
+        try {
+            const data = await fetchStockAnalysis(symbol, true);
+            if (data && data.error) {
+                setAnalysisError(data.error);
+            } else {
+                setAnalysis(data);
+                // Dispatch event so screener can update live
+                window.dispatchEvent(new CustomEvent('stock-analysis-updated', {
+                    detail: { symbol, analysis: data }
+                }));
+            }
+        } catch (err: any) {
+            console.error("Analysis regeneration error:", err);
+            setAnalysisError(err.message || "Failed to regenerate AI analysis.");
+        } finally {
+            setAnalysisLoading(false);
         }
     };
 
@@ -524,8 +548,23 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         <div className="w-12 h-12 rounded-2xl bg-purple-500 flex items-center justify-center shadow-lg shadow-purple-500/20 shrink-0">
                             <Sparkles className="w-6 h-6 text-white" />
                         </div>
-                        <div>
-                            <h3 className="text-xl font-bold">AI Fundamental Review</h3>
+                        <div className="flex flex-col">
+                            <div className="flex items-center gap-3">
+                                <h3 className="text-xl font-bold">AI Fundamental Review</h3>
+                                <button
+                                    onClick={handleRegenerateAnalysis}
+                                    disabled={analysisLoading}
+                                    className="flex items-center gap-1.5 text-[10px] font-bold text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 transition-colors uppercase tracking-wider mt-0.5"
+                                    title="Regenerate AI Analysis"
+                                >
+                                    {analysisLoading ? (
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                        <RotateCcw className="w-3 h-3" />
+                                    )}
+                                    Regenerate
+                                </button>
+                            </div>
                             <p className="text-sm text-muted-foreground leading-relaxed mt-1">{analysis.summary}</p>
                         </div>
                     </div>

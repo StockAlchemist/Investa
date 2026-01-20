@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import ScreenerInput from './ScreenerInput';
 import ScreenerResults from './ScreenerResults';
 import { Telescope } from 'lucide-react';
@@ -14,6 +14,29 @@ const ScreenerView: React.FC<ScreenerViewProps> = ({ currency }) => {
     const [results, setResults] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [reviewingSymbol, setReviewingSymbol] = useState<string | null>(null);
+    const [isInitialized, setIsInitialized] = useState(false);
+
+    useEffect(() => {
+        const handleUpdate = (e: any) => {
+            const { symbol, analysis } = e.detail;
+
+            // Calculate average AI score live
+            let aiScore = null;
+            if (analysis && analysis.scorecard) {
+                const vals = Object.values(analysis.scorecard).filter(v => typeof v === 'number') as number[];
+                if (vals.length > 0) {
+                    aiScore = vals.reduce((a, b) => a + b, 0) / vals.length;
+                }
+            }
+
+            setResults(prev => prev.map(item =>
+                item.symbol === symbol ? { ...item, has_ai_review: true, ai_score: aiScore } : item
+            ));
+        };
+
+        window.addEventListener('stock-analysis-updated', handleUpdate as EventListener);
+        return () => window.removeEventListener('stock-analysis-updated', handleUpdate as EventListener);
+    }, []);
 
     const handleRunScreener = async (universeType: string, universeId: string | null, manualSymbols: string[]) => {
         setIsLoading(true);
@@ -36,20 +59,10 @@ const ScreenerView: React.FC<ScreenerViewProps> = ({ currency }) => {
         try {
             const data = await fetchScreenerReview(symbol, force);
             if (data) {
-                // Calculate average AI score live
-                let aiScore = null;
-                if (data.scorecard) {
-                    const vals = Object.values(data.scorecard).filter(v => typeof v === 'number') as number[];
-                    if (vals.length > 0) {
-                        aiScore = vals.reduce((a, b) => a + b, 0) / vals.length;
-                    }
-                }
-
-                // Update local results state so the button changes from "Analyze" to "Review"
-                // AND the AI Score column updates live
-                setResults(prev => prev.map(item =>
-                    item.symbol === symbol ? { ...item, has_ai_review: true, ai_score: aiScore } : item
-                ));
+                // Dispatch event so all components (and our own listener) update live
+                window.dispatchEvent(new CustomEvent('stock-analysis-updated', {
+                    detail: { symbol, analysis: data }
+                }));
             }
             return data;
         } catch (e) {
