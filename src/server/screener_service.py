@@ -305,6 +305,7 @@ def process_screener_results(
             })
         else:
             # Report changed or no cache -> Full Re-calculation
+            # Now with improved growth estimation by passing 'info' (ticker_info)
             iv_res = get_comprehensive_intrinsic_value(info, None, None, None)
             
             avg_iv = iv_res.get("average_intrinsic_value")

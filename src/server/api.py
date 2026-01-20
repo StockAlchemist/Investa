@@ -34,6 +34,7 @@ from db_utils import (
     rename_watchlist,
     delete_watchlist,
     update_intrinsic_value_in_cache,
+    upsert_screener_results
 )
 
 from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series

@@ -376,6 +376,7 @@ def calculate_wacc(
 
 def estimate_growth_rate(
     financials_df: Optional[pd.DataFrame],
+    ticker_info: Optional[Dict[str, Any]] = None,
     item_name: str = "Net Income",
     years: int = 5
 ) -> float:
@@ -393,6 +394,15 @@ def estimate_growth_rate(
                 values.append(val)
         
         if len(values) < 2:
+            # FALLBACK to ticker_info growth rates
+            if ticker_info:
+                # Prioritize earnings growth, then revenue growth
+                g = ticker_info.get("earningsGrowth") or ticker_info.get("revenueGrowth") or ticker_info.get("earningsQuarterlyGrowth")
+                if g is not None:
+                    # yfinance often returns decimal (0.25 for 25%), sometimes percentage. 
+                    # Usually if it's > 1, it might be a percentage, but 100% is also 1.
+                    # We assume decimal for these fields as per yfinance standard.
+                    return max(0.0, float(g))
             return 0.05
             
         # Simplistic CAGR
@@ -401,9 +411,12 @@ def estimate_growth_rate(
         n_periods = len(values) - 1
         
         cagr = (end_val / start_val) ** (1/n_periods) - 1
-        # Remove 15% cap at user request. Keeping floor at 0% for stability.
         return max(0.0, cagr)
     except Exception:
+        # Final fallback
+        if ticker_info:
+             g = ticker_info.get("earningsGrowth") or ticker_info.get("revenueGrowth")
+             if g is not None: return max(0.0, float(g))
         return 0.05
 
 
@@ -568,7 +581,7 @@ def calculate_intrinsic_value_dcf(
             
         # 3. Growth Rate
         if growth_rate is None:
-            growth_rate = estimate_growth_rate(financials_df, "Net Income")
+            growth_rate = estimate_growth_rate(financials_df, ticker_info=ticker_info, item_name="Net Income")
             
         # 4. Projections
         projected_fcf = []
@@ -630,7 +643,8 @@ def calculate_intrinsic_value_graham(
     """
     try:
         if growth_rate is None:
-            growth_rate = estimate_growth_rate(financials_df, "Net Income") * 100 # Convert to percentage
+            # Estimate growth pct for Graham (expecting percentage e.g. 5.0 for 5%)
+            growth_rate = estimate_growth_rate(financials_df, ticker_info=ticker_info, item_name="Net Income") * 100 
             
         # Risk-free rate (10Y Treasury) as proxy for Y
         if bond_yield is None:
@@ -760,6 +774,6 @@ def get_comprehensive_intrinsic_value(
             }
             
         if current_price:
-            results["margin_of_safety_pct"] = (1 - (current_price / avg_intrinsic)) * 100
+            results["margin_of_safety_pct"] = ((avg_intrinsic - current_price) / current_price) * 100
             
     return results
