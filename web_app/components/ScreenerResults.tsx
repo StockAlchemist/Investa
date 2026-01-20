@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
-import { BrainCircuit, Loader2, Sparkles, ChevronRight, BarChart3, TrendingUp, TrendingDown, Target, ChevronUp } from 'lucide-react';
+import { BrainCircuit, Loader2, Sparkles, ChevronRight, BarChart3, TrendingUp, TrendingDown, Target, ChevronUp, RotateCcw } from 'lucide-react';
 import StockIcon from './StockIcon';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { formatCurrency, formatCompactNumber, formatPercent, cn } from "@/lib/utils";
@@ -23,7 +23,7 @@ interface ScreenResult {
 
 interface ScreenerResultsProps {
     results: ScreenResult[];
-    onReview: (symbol: string) => Promise<any>;
+    onReview: (symbol: string, force?: boolean) => Promise<any>;
     reviewingSymbol: string | null;
     currency: string;
 }
@@ -78,6 +78,13 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
         if (data) {
             setReviews(prev => ({ ...prev, [symbol]: data }));
             setExpandedReview(symbol);
+        }
+    };
+
+    const handleRegenerate = async (symbol: string) => {
+        const data = await onReview(symbol, true);
+        if (data) {
+            setReviews(prev => ({ ...prev, [symbol]: data }));
         }
     };
 
@@ -253,7 +260,21 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                                                 <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500">
                                                                     <Sparkles className="w-5 h-5" />
                                                                 </div>
-                                                                <h3 className="text-lg font-bold text-foreground">AI Technical & Fundamental Audit</h3>
+                                                                <div className="flex flex-col">
+                                                                    <h3 className="text-lg font-bold text-foreground">AI Technical & Fundamental Audit</h3>
+                                                                    <button
+                                                                        onClick={() => handleRegenerate(row.symbol)}
+                                                                        disabled={reviewingSymbol === row.symbol}
+                                                                        className="flex items-center gap-1.5 text-[10px] font-bold text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 transition-colors uppercase tracking-wider mt-0.5"
+                                                                    >
+                                                                        {reviewingSymbol === row.symbol ? (
+                                                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                                                        ) : (
+                                                                            <RotateCcw className="w-3 h-3" />
+                                                                        )}
+                                                                        Regenerate Analysis
+                                                                    </button>
+                                                                </div>
                                                             </div>
                                                             <div className="flex flex-wrap gap-3">
                                                                 {Object.entries(reviews[row.symbol].scorecard || {}).map(([k, v]: [string, any]) => (

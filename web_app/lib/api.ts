@@ -779,8 +779,10 @@ export async function runScreener(request: ScreenerRequest): Promise<ScreenerRes
     return res.json();
 }
 
-export async function fetchScreenerReview(symbol: string): Promise<StockAnalysisResponse> {
-    const res = await fetch(`${API_BASE_URL}/screener/review/${symbol}`, {
+export async function fetchScreenerReview(symbol: string, force: boolean = false): Promise<StockAnalysisResponse> {
+    const params = new URLSearchParams();
+    if (force) params.append('force', 'true');
+    const res = await fetch(`${API_BASE_URL}/screener/review/${symbol}?${params.toString()}`, {
         method: "POST"
     });
     if (!res.ok) throw new Error(`Failed to fetch AI review for ${symbol}`);

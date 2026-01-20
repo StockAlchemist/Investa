@@ -3112,7 +3112,7 @@ async def run_screener(request: ScreenerRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/screener/review/{symbol}")
-async def trigger_ai_review(symbol: str):
+async def trigger_ai_review(symbol: str, force: bool = False):
     """
     Triggers (or retrieves cached) AI review for a specific stock.
     """
@@ -3144,7 +3144,7 @@ async def trigger_ai_review(symbol: str):
             "Current Ratio": fund_data.get("currentRatio"),
         }
         
-        review = generate_stock_review(symbol, fund_data, ratios_data)
+        review = generate_stock_review(symbol, fund_data, ratios_data, force_refresh=force)
         return clean_nans(review)
         
     except Exception as e:

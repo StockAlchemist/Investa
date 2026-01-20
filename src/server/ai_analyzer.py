@@ -18,7 +18,7 @@ FALLBACK_MODELS = [
     "gemma-3-12b"
 ]
 
-def generate_stock_review(symbol: str, fund_data: dict, ratios_data: dict) -> dict:
+def generate_stock_review(symbol: str, fund_data: dict, ratios_data: dict, force_refresh: bool = False) -> dict:
     """
     Generates a comprehensive stock review using Gemini/Gemma models.
     Includes file-based caching and a fallback chain to handle rate limits.
@@ -28,7 +28,7 @@ def generate_stock_review(symbol: str, fund_data: dict, ratios_data: dict) -> di
     os.makedirs(cache_dir, exist_ok=True)
     cache_path = os.path.join(cache_dir, f"{symbol.upper()}_analysis.json")
     
-    if os.path.exists(cache_path):
+    if os.path.exists(cache_path) and not force_refresh:
         try:
             with open(cache_path, "r") as f:
                 cached_data = json.load(f)

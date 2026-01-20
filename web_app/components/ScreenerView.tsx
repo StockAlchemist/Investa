@@ -31,10 +31,10 @@ const ScreenerView: React.FC<ScreenerViewProps> = ({ currency }) => {
         }
     };
 
-    const handleReview = async (symbol: string) => {
+    const handleReview = async (symbol: string, force: boolean = false) => {
         setReviewingSymbol(symbol);
         try {
-            const data = await fetchScreenerReview(symbol);
+            const data = await fetchScreenerReview(symbol, force);
             if (data) {
                 // Calculate average AI score live
                 let aiScore = null;
