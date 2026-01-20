@@ -134,7 +134,7 @@ Do not include any other markdown formatting or explanations outside the JSON bl
 
     for model in FALLBACK_MODELS:
         base_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-        max_retries_per_model = 3
+        max_retries_per_model = 1
         base_delay = 5 # Reduced base delay since we have fallbacks
         
         logging.info(f"AI Analysis: Attempting review for {symbol} using model '{model}'...")
@@ -156,7 +156,7 @@ Do not include any other markdown formatting or explanations outside the JSON bl
                         time.sleep(delay)
                         continue
                     else:
-                        logging.warning(f"AI Analysis: Model '{model}' exhausted after {max_retries_per_model} attempts. Falling back...")
+                        logging.warning(f"AI Analysis: Model '{model}' failed (status {response.status_code}). Falling back to next model in chain...")
                         break # Try next model
                 
                 response.raise_for_status()
