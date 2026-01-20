@@ -153,7 +153,7 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
                 auto_adjust=True,
                 actions=False,
                 timeout=30,
-                threads=False
+                threads=True
             )
         else:
             log(f"Starting fetch for {len(symbols)} symbols. Range: {start_date}-{end_date}, Int: {interval}")
@@ -167,7 +167,7 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
                 auto_adjust=True,
                 actions=False,
                 timeout=30,
-                threads=False
+                threads=True
             )
         
         # NOTE: We previously attempted manual filtering (9:30-16:00) but it caused issues

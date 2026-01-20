@@ -105,35 +105,66 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
     if universe_type == "watchlist" and universe_id:
         universe_tag = f"watchlist_{universe_id}"
         
-    # --- HYBRID FAST-PATH / SLOW-PATH ---
+    # --- SMART HYBRID FAST-PATH ---
+    # Goal: If we have a fresh cache (< 10 mins), return instantly.
+    # If we have a stale-today cache (> 10 mins), only refresh prices.
     cached_results = []
+    use_pure_fast_path = False
+    
     if universe_type in ["sp500", "watchlist"]:
         conn = get_db_connection()
         if conn:
             try:
                 raw_cached = get_screener_results_by_universe(conn, universe_tag)
                 if raw_cached:
-                    # Check if the cache is from today
-                    latest_update_str = raw_cached[0].get("updated_at")
-                    if latest_update_str:
-                        latest_update = datetime.fromisoformat(latest_update_str).date()
-                        if latest_update == datetime.now().date():
+                    # Find the MOST RECENT update in this entire batch
+                    all_timestamps = []
+                    for r in raw_cached:
+                        ts_str = r.get("updated_at")
+                        if ts_str:
+                            try:
+                                all_timestamps.append(datetime.fromisoformat(ts_str))
+                            except ValueError:
+                                pass
+                    
+                    if all_timestamps:
+                        latest_update_ts = max(all_timestamps)
+                        now_ts = datetime.now()
+                        
+                        if latest_update_ts.date() == now_ts.date():
                             cached_results = raw_cached
-                            logging.info(f"Screener: Hybrid Fast-path found {len(cached_results)} cached items for '{universe_tag}'")
+                            # Increase TTL to 1 hour (3600s) for better "reload" experience
+                            age_seconds = (now_ts - latest_update_ts).total_seconds()
+                            if age_seconds < 3600: # 1 hour
+                                logging.info(f"Screener: Pure Fast-path load for '{universe_tag}' ({len(cached_results)} items, {age_seconds:.0f}s old)")
+                                use_pure_fast_path = True
+                            else:
+                                logging.info(f"Screener: Stale Fast-path found {len(cached_results)} items. Age: {age_seconds:.0f}s. Refreshing.")
             except Exception as e:
                 logging.error(f"Error in hybrid fast-path: {e}")
             finally:
                 if conn: conn.close()
 
-    # Determine what's missing from today's cache
+    if use_pure_fast_path:
+        # Sort just in case (though DB should be sorted)
+        cached_results.sort(key=lambda x: (x.get("margin_of_safety") is not None, x.get("margin_of_safety")), reverse=True)
+        return cached_results
+
+    # Determine what's missing from today's cache (Gaps)
     cached_symbols = {r['symbol'] for r in cached_results}
+    missing_symbols = [s for s in symbols if s not in cached_symbols]
     
-    # --- FETCH LIVE METADATA FOR ALL SYMBOLS ---
-    # We ALWAYS fetch price/PE for everyone to ensure completeness and accuracy.
+    # --- FETCH LIVE METADATA ---
+    # If we have cached_results from today, we only NEED quotes for them.
+    # For missing symbols, we need BOTH quotes and details.
+    
     mdp = get_shared_mdp()
     dummy_map = {} 
     dummy_excluded = set()
     
+    # If we have a lot of cached results, we might want to prioritize quotes for everyone
+    # but only details for the gaps.
+    logging.info(f"Screener: Fetching quotes for {len(symbols)} symbols...")
     quotes, _, _, _, _ = mdp.get_current_quotes(
         internal_stock_symbols=symbols,
         required_currencies={"USD"},
@@ -142,6 +173,10 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
     )
     
     # Fundamentals are cached for 24h inside market_data.py
+    # ONLY FETCH DETAILS FOR MISSING SYMBOLS OR IF CACHE IS STALE
+    # Actually, we need details for process_screener_results to work correctly
+    # but we can try to minimize it. 
+    # For now, let's fetch for all if missing > 0, otherwise it's fast anyway from MD cache.
     details_map = mdp.get_ticker_details_batch(set(symbols))
     
     # Check DB for individual caches (Smart Invalidation lookup)
@@ -149,15 +184,13 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
     cached_map = {}
     if conn:
         try:
-            # We fetch individual caches to see if we can reuse their IV/AI info 
-            # (even if they weren't in the specific universe-tag list today)
             cached_map = get_cached_screener_results(conn, symbols)
         except Exception as e:
             logging.error(f"Error loading screener cache map: {e}")
         finally:
             if conn: conn.close()
             
-    # Always process everything through process_screener_results to merge live quotes
+    # Process everything to merge live quotes
     final_results = process_screener_results(symbols, quotes, details_map, cached_map, universe_tag)
     
     # Final Sort
@@ -175,6 +208,17 @@ def process_screener_results(
     results = []
     cached_map = cached_map or {}
     
+    # Pre-scan AI review directory to avoid 500+ repeated disk lookups (slow on OneDrive)
+    ai_cache_dir = os.path.join(config.get_app_data_dir(), "ai_analysis_cache")
+    existing_reviews = set()
+    if os.path.exists(ai_cache_dir):
+        try:
+            # Get list of symbols that have a .json review
+            files = os.listdir(ai_cache_dir)
+            existing_reviews = {f.split("_")[0].upper() for f in files if f.endswith("_analysis.json")}
+        except Exception:
+            pass
+
     for sym in symbols:
         # Get Price (Live)
         quote = quotes.get(sym, {})
@@ -222,27 +266,28 @@ def process_screener_results(
             has_ai = cached.get("ai_summary") is not None
             ai_score = cached.get("ai_score")
             
-            # --- FALLBACK: If DB has no AI info, check file system ---
+            # --- FALLBACK: If DB has no AI info, check pre-scanned list ---
             if not has_ai or ai_score is None:
-                ai_cache_path = os.path.join(config.get_app_data_dir(), "ai_analysis_cache", f"{sym.upper()}_analysis.json")
-                if os.path.exists(ai_cache_path):
-                    try:
-                        with open(ai_cache_path, 'r') as f:
-                            ai_data = json.load(f)
-                            analysis_obj = ai_data.get("analysis", {})
-                            scorecard = analysis_obj.get("scorecard", {})
-                            
-                            moat = scorecard.get("moat")
-                            fin = scorecard.get("financial_strength")
-                            pred = scorecard.get("predictability")
-                            growth = scorecard.get("growth")
-                            
-                            vals = [v for v in [moat, fin, pred, growth] if isinstance(v, (int, float))]
-                            if vals:
-                                ai_score = sum(vals) / len(vals)
-                                has_ai = True
-                    except Exception:
-                        pass
+                if sym.upper() in existing_reviews:
+                    ai_cache_path = os.path.join(ai_cache_dir, f"{sym.upper()}_analysis.json")
+                    if os.path.exists(ai_cache_path):
+                        try:
+                            with open(ai_cache_path, 'r') as f:
+                                ai_data = json.load(f)
+                                analysis_obj = ai_data.get("analysis", {})
+                                scorecard = analysis_obj.get("scorecard", {})
+                                
+                                moat = scorecard.get("moat")
+                                fin = scorecard.get("financial_strength")
+                                pred = scorecard.get("predictability")
+                                growth = scorecard.get("growth")
+                                
+                                vals = [v for v in [moat, fin, pred, growth] if isinstance(v, (int, float))]
+                                if vals:
+                                    ai_score = sum(vals) / len(vals)
+                                    has_ai = True
+                        except Exception:
+                            pass
 
             results.append({
                 "symbol": sym,

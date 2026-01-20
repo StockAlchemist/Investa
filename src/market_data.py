@@ -714,21 +714,35 @@ class MarketDataProvider:
             # --- 3b. Batch Fetch Sparklines (and fallback prices) using yf.download ---
             logging.info(f"Batch fetching sparklines/history for {len(yf_symbols_to_fetch)} symbols...")
             try:
-                # Use download for speed
-                # threads=True is default but explicit is good.
-                # progress=False suppresses stdout.
-                # timeout=30 (seconds) explicitly to avoid default 10s failures on slow nets
-                # Use isolated fetch for current quotes (sparklines)
-                df = _run_isolated_fetch(
-                    list(yf_symbols_to_fetch),
-                    period="10d",
-                    interval="1d", # Quotes usually need 1d for sparkline, but we could use 1h too
-                    task="history" # We use history task with period
-                )
+                # Use chunked download for reliability and to avoid process/memory limits with 500+ symbols
+                all_dfs = []
+                yf_symbols_list = list(yf_symbols_to_fetch)
+                chunk_size = 250
+                
+                for i in range(0, len(yf_symbols_list), chunk_size):
+                    chunk = yf_symbols_list[i:i+chunk_size]
+                    logging.info(f"Batch Quote Fetch: Processing chunk {i//chunk_size + 1} ({len(chunk)} symbols)")
+                    
+                    df_chunk = _run_isolated_fetch(
+                        chunk,
+                        period="10d",
+                        interval="1d",
+                        task="history"
+                    )
+                    
+                    if not df_chunk.empty:
+                        all_dfs.append(df_chunk)
+                
+                if not all_dfs:
+                     logging.warning("Batch price fetch returned empty DataFrames for all chunks.")
+                     df = pd.DataFrame()
+                else:
+                    # Concatenate all chunks
+                    # Note: axis=1 for columns (different symbols)
+                    df = pd.concat(all_dfs, axis=1)
                 
                 if df.empty:
-                     logging.warning("Batch price fetch returned empty DataFrame.")
-                     # Don't set error yet, wait for fast_info
+                    logging.warning("Combined batch price fetch resulted in empty DataFrame.")
                 else:
                     # Robust check for MultiIndex or flat tuple index (Moved here for scope)
                     has_multilevel = getattr(df.columns, 'nlevels', 1) > 1
