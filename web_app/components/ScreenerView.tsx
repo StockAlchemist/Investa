@@ -6,7 +6,11 @@ import ScreenerResults from './ScreenerResults';
 import { Telescope } from 'lucide-react';
 import { runScreener, fetchScreenerReview } from '@/lib/api';
 
-const ScreenerView = () => {
+interface ScreenerViewProps {
+    currency: string;
+}
+
+const ScreenerView: React.FC<ScreenerViewProps> = ({ currency }) => {
     const [results, setResults] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [reviewingSymbol, setReviewingSymbol] = useState<string | null>(null);
@@ -74,6 +78,7 @@ const ScreenerView = () => {
                     results={results}
                     onReview={handleReview}
                     reviewingSymbol={reviewingSymbol}
+                    currency={currency}
                 />
             </div>
         </div>

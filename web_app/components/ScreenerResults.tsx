@@ -6,6 +6,8 @@ import StockIcon from './StockIcon';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { formatCurrency, formatCompactNumber, formatPercent, cn } from "@/lib/utils";
 
+import { useStockModal } from '@/context/StockModalContext';
+
 interface ScreenResult {
     symbol: string;
     name: string;
@@ -23,6 +25,7 @@ interface ScreenerResultsProps {
     results: ScreenResult[];
     onReview: (symbol: string) => Promise<any>;
     reviewingSymbol: string | null;
+    currency: string;
 }
 
 type SortKey = 'symbol' | 'price' | 'intrinsic_value' | 'margin_of_safety' | 'pe_ratio' | 'ai_score';
@@ -33,10 +36,11 @@ interface SortConfig {
     direction: SortDirection;
 }
 
-const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, reviewingSymbol }) => {
+const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, reviewingSymbol, currency }) => {
     const [expandedReview, setExpandedReview] = useState<string | null>(null);
     const [reviews, setReviews] = useState<Record<string, any>>({});
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'margin_of_safety', direction: 'desc' });
+    const { openStockDetail } = useStockModal();
 
     const sortedResults = useMemo(() => {
         const sorted = [...results];
@@ -159,10 +163,13 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
                                                 <StockIcon symbol={row.symbol} size="sm" className="w-9 h-9 rounded-lg bg-white dark:bg-gray-800 shadow-sm p-1 border border-border" />
-                                                <div>
-                                                    <div className="font-bold text-foreground text-sm tracking-tight">{row.symbol}</div>
-                                                    <div className="text-[11px] font-medium text-muted-foreground truncate max-w-[160px]">{row.name}</div>
-                                                </div>
+                                                <button
+                                                    onClick={() => openStockDetail(row.symbol, currency)}
+                                                    className="flex flex-col items-start hover:text-cyan-500 transition-colors text-left group"
+                                                >
+                                                    <div className="font-bold text-foreground text-sm tracking-tight group-hover:text-cyan-500">{row.symbol}</div>
+                                                    <div className="text-[11px] font-medium text-muted-foreground truncate max-w-[160px] group-hover:text-cyan-500/80">{row.name}</div>
+                                                </button>
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-right font-mono font-medium text-sm text-foreground tabular-nums">

@@ -321,7 +321,7 @@ export default function Home() {
       case 'watchlist':
         return <Watchlist currency={currency} />;
       case 'screener':
-        return <ScreenerView />;
+        return <ScreenerView currency={currency} />;
       case 'transactions':
         return <TransactionsTable transactions={transactions} />;
       case 'markets':
