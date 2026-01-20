@@ -748,3 +748,41 @@ export async function clearCache(): Promise<StatusResponse> {
     }
     return response.json();
 }
+
+// --- Screener API ---
+
+export interface ScreenerResult {
+    symbol: string;
+    name: string;
+    price: number;
+    intrinsic_value: number | null;
+    margin_of_safety: number | null;
+    pe_ratio: number | null;
+    market_cap: number | null;
+    sector: string | null;
+    has_ai_review: boolean;
+}
+
+export interface ScreenerRequest {
+    universe_type: string;
+    universe_id: string | null;
+    manual_symbols: string[];
+}
+
+export async function runScreener(request: ScreenerRequest): Promise<ScreenerResult[]> {
+    const res = await fetch(`${API_BASE_URL}/screener/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request)
+    });
+    if (!res.ok) throw new Error('Failed to run stock screen');
+    return res.json();
+}
+
+export async function fetchScreenerReview(symbol: string): Promise<StockAnalysisResponse> {
+    const res = await fetch(`${API_BASE_URL}/screener/review/${symbol}`, {
+        method: "POST"
+    });
+    if (!res.ok) throw new Error(`Failed to fetch AI review for ${symbol}`);
+    return res.json();
+}

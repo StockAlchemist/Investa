@@ -48,6 +48,7 @@ const CommandPalette = dynamic(() => import('@/components/CommandPalette'));
 const CorrelationMatrix = dynamic(() => import('@/components/CorrelationMatrix').then(mod => mod.CorrelationMatrix));
 const PortfolioHealthComponent = dynamic(() => import('@/components/PortfolioHealth').then(mod => mod.PortfolioHealthComponent));
 const Watchlist = dynamic(() => import('@/components/Watchlist'));
+const ScreenerView = dynamic(() => import('@/components/ScreenerView'));
 
 
 import { useTheme } from 'next-themes';
@@ -319,6 +320,8 @@ export default function Home() {
         );
       case 'watchlist':
         return <Watchlist currency={currency} />;
+      case 'screener':
+        return <ScreenerView />;
       case 'transactions':
         return <TransactionsTable transactions={transactions} />;
       case 'markets':

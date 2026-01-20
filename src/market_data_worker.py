@@ -19,15 +19,17 @@ def log(msg):
     except:
         pass
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 def fetch_info(symbols, output_file):
     try:
-        log(f"Starting info fetch for {len(symbols)} symbols.")
+        log(f"Starting info fetch for {len(symbols)} symbols with parallel threads.")
         results = {}
-        for sym in symbols:
+        
+        def get_single_info(sym):
             try:
                 ticker = yf.Ticker(sym)
                 info = ticker.info
-                
                 # --- ETF DATA EXTRACTION ---
                 try:
                     if hasattr(ticker, 'funds_data'):
@@ -50,11 +52,17 @@ def fetch_info(symbols, output_file):
                                  info['etf_data'] = etf_data
                 except Exception as e_etf:
                     log(f"Error extracting ETF data for {sym}: {e_etf}")
-                
-                results[sym] = info
+                return sym, info
             except Exception as e:
                 log(f"Error fetching info for {sym}: {e}")
-                results[sym] = None
+                return sym, None
+
+        # Use 10 threads for info fetching
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_sym = {executor.submit(get_single_info, sym): sym for sym in symbols}
+            for future in as_completed(future_to_sym):
+                sym, info = future.result()
+                results[sym] = info
         
         with open(output_file, "w") as f:
             json.dump({"status": "success", "data": results}, f)

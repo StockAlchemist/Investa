@@ -33,6 +33,7 @@ from db_utils import (
     create_watchlist,
     rename_watchlist,
     delete_watchlist,
+    update_intrinsic_value_in_cache,
 )
 
 from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series
@@ -56,6 +57,7 @@ except ImportError:
     FINANCIAL_RATIOS_AVAILABLE = False
 
 from server.ai_analyzer import generate_stock_review
+from server.screener_service import screen_stocks
 
 router = APIRouter()
 
@@ -2557,6 +2559,22 @@ async def get_intrinsic_value_endpoint(
             overrides=symbol_overrides
         )
         
+        # Sync to screener cache
+        try:
+            db_conn = get_db_connection()
+            if db_conn:
+                update_intrinsic_value_in_cache(
+                    db_conn,
+                    symbol,
+                    results.get("average_intrinsic_value"),
+                    results.get("margin_of_safety_pct"),
+                    info.get("lastFiscalYearEnd"),
+                    info.get("mostRecentQuarter"),
+                    info=info
+                )
+        except Exception as e_sync:
+            logging.warning(f"Failed to sync intrinsic value to cache for {symbol}: {e_sync}")
+
         return clean_nans(results)
     except Exception as e:
         logging.error(f"Error calculating intrinsic value for {yf_symbol}: {e}")
@@ -3074,4 +3092,61 @@ async def clear_cache():
         return {"status": "success", "message": f"Cache cleared. {deleted_count} items removed."}
     except Exception as e:
         logging.error(f"Error clearing cache: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+class ScreenerRequest(BaseModel):
+    universe_type: str = Field(..., description="watchlist, manual, or sp500")
+    universe_id: Optional[str] = None
+    manual_symbols: Optional[List[str]] = None
+
+@router.post("/screener/run")
+async def run_screener(request: ScreenerRequest):
+    """
+    Runs the stock screener based on the selected universe.
+    """
+    try:
+        results = screen_stocks(request.universe_type, request.universe_id, request.manual_symbols)
+        return clean_nans(results)
+    except Exception as e:
+        logging.error(f"Screener error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/screener/review/{symbol}")
+async def trigger_ai_review(symbol: str):
+    """
+    Triggers (or retrieves cached) AI review for a specific stock.
+    """
+    try:
+        # We need to fetch data first to pass to AI
+        mdp = get_mdp()
+        # Ensure data exists
+        quotes, _, _, _, _ = mdp.get_current_quotes([symbol], {"USD"}, {}, set())
+        details = mdp.get_ticker_details_batch({symbol})
+        
+        fund_data = details.get(symbol, {})
+        # Merge price
+        if symbol in quotes:
+            fund_data["currentPrice"] = quotes[symbol].get("price")
+            
+        if not fund_data:
+             raise HTTPException(status_code=404, detail=f"Data not found for {symbol}")
+        
+        # Ratios data - we can pass empty or minimal if we don't have full ratios calculated.
+        # AI Analyzer expects 'ratios_data' dict with keys like 'Return on Equity (ROE) (%)'
+        # We can extract some from fund_data if available (trailingPE etc are in fund_data)
+        
+        # Map info keys to ratio keys - simplified for Screen context
+        ratios_data = {
+            "Return on Equity (ROE) (%)": fund_data.get("returnOnEquity", 0) * 100 if fund_data.get("returnOnEquity") else None,
+            "Gross Profit Margin (%)": fund_data.get("grossMargins", 0) * 100 if fund_data.get("grossMargins") else None,
+            "Net Profit Margin (%)": fund_data.get("profitMargins", 0) * 100 if fund_data.get("profitMargins") else None,
+            "Debt-to-Equity Ratio": fund_data.get("debtToEquity", 0) / 100 if fund_data.get("debtToEquity") else None,
+            "Current Ratio": fund_data.get("currentRatio"),
+        }
+        
+        review = generate_stock_review(symbol, fund_data, ratios_data)
+        return clean_nans(review)
+        
+    except Exception as e:
+        logging.error(f"AI Review error for {symbol}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

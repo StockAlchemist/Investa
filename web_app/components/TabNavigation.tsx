@@ -11,7 +11,8 @@ import {
     Activity,
     Coins,
     Settings as SettingsIcon,
-    Menu
+    Menu,
+    ScanSearch
 } from 'lucide-react';
 
 interface TabNavigationProps {
@@ -23,6 +24,7 @@ interface TabNavigationProps {
 const TABS = [
     { id: 'performance', label: 'Performance', icon: LayoutDashboard },
     { id: 'watchlist', label: 'Watchlist', icon: Eye },
+    { id: 'screener', label: 'Screener', icon: ScanSearch },
     { id: 'transactions', label: 'Transactions', icon: History },
     { id: 'allocation', label: 'Allocation', icon: PieChart },
     { id: 'asset_change', label: 'Asset Change', icon: TrendingUp },

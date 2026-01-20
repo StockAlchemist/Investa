@@ -7,7 +7,7 @@ import os
 import sys
 import threading # Added for _SHARED_MDP_LOCK
 from datetime import datetime, timedelta, date, UTC, timezone  # Added UTC
-from utils_time import get_est_today, get_latest_trading_date, is_market_open # Added for timezone enforcement
+from utils_time import get_est_today, get_latest_trading_date, is_market_open, get_nyse_calendar # Added for holiday/timezone awareness
 from typing import List, Dict, Optional, Tuple, Set, Any
 import time
 import requests  # Keep for potential future use
@@ -560,6 +560,67 @@ class MarketDataProvider:
             self._save_fundamentals_cache(cache)
             
         return cache
+
+    def get_ticker_details_batch(self, yf_symbols: Set[str]) -> Dict[str, Dict]:
+        """
+        Fetches detailed ticker info (for screener) and caches it.
+        Uses fundamentals cache as storage.
+        """
+        cache = self._load_fundamentals_cache()
+        now_ts = datetime.now(timezone.utc)
+        missing_symbols = []
+        
+        # Ensure yfinance is available
+        _ensure_yfinance()
+        if not YFINANCE_AVAILABLE:
+            return {sym: cache.get(sym, {}).get("ticker_info", {}) for sym in yf_symbols}
+
+        for sym in yf_symbols:
+            entry = cache.get(sym)
+            if not entry or "ticker_info" not in entry:
+                missing_symbols.append(sym)
+                continue
+            
+            ts_str = entry.get("timestamp")
+            if not ts_str:
+                missing_symbols.append(sym)
+                continue
+            
+            try:
+                entry_ts = datetime.fromisoformat(ts_str)
+                if (now_ts - entry_ts).days >= 1: 
+                     missing_symbols.append(sym)
+            except ValueError:
+                missing_symbols.append(sym)
+        
+        if missing_symbols:
+            logging.info(f"TickerDetails: Fetching for {len(missing_symbols)} symbols...")
+            try:
+                chunk_size = 50
+                for i in range(0, len(missing_symbols), chunk_size):
+                    chunk = list(missing_symbols)[i:i+chunk_size]
+                    info_batch = _run_isolated_fetch(chunk, task="info")
+                    
+                    for sym in chunk:
+                        info = info_batch.get(sym)
+                        if info:
+                            entry = cache.get(sym, {})
+                            entry["ticker_info"] = info
+                            entry["timestamp"] = now_ts.isoformat()
+                            if "trailingAnnualDividendRate" not in entry:
+                                entry["trailingAnnualDividendRate"] = info.get("dividendRate", 0.0)
+                            if "dividendYield" not in entry:
+                                entry["dividendYield"] = info.get("dividendYield", 0.0)
+                            cache[sym] = entry
+                        else:
+                            cache[sym] = cache.get(sym, {"timestamp": now_ts.isoformat()})
+            except Exception as e:
+                logging.error(f"Error in ticker details fetch: {e}")
+            
+            self._save_fundamentals_cache(cache)
+            
+        return {sym: cache.get(sym, {}).get("ticker_info", {}) for sym in yf_symbols}
+
     @profile
     def get_current_quotes(
         self,
@@ -1556,30 +1617,24 @@ class MarketDataProvider:
         # This check happens AFTER clamping to today, to ensure we don't try to fetch
         # ranges that become Saturday-Sunday after clamping.
         try:
-             # Hybrid approach: Numpy first, then Python fallback
-             bus_days = -1
-             try:
-                 d1 = np.datetime64(yf_start_date)
-                 d2 = np.datetime64(yf_end_date)
-                 bus_days = np.busday_count(d1, d2)
-             except Exception:
-                 # Fallback to pure python
-                 bus_days = 0
-                 curr = yf_start_date
-                 while curr < yf_end_date:
-                     if curr.weekday() < 5: # 0-4 are Mon-Fri
-                         bus_days += 1
-                     curr += timedelta(days=1)
-                     curr += timedelta(days=1)
+             # Use the holiday-aware calendar for counting business days
+             cal = get_nyse_calendar()
+             schedule = cal.schedule(start_date=yf_start_date, end_date=yf_end_date - timedelta(days=1))
+             bus_days = len(schedule)
              
              if bus_days == 0:
-                 # FIX: If 0 business days (e.g. weekend request) but we want intraday data,
-                 # shift START date back to Friday to ensure we get *some* data for the chart.
-                 # Otherwise we return empty and the UI shows "No Data".
+                 # FIX: If 0 business days (e.g. holiday/weekend) but we want intraday data,
+                 # shift START date back to include the last trading session.
                  if "m" in interval or "h" in interval:
-                     logging.info(f"Hist Fetch Helper: 0 bus days for {yf_start_date}-{yf_end_date}. Extending start back by 2 days to capture Friday.")
-                     yf_start_date = yf_start_date - timedelta(days=3)
-                     # Re-run check logically (or just let it proceed, worst case it fetches 3 days of nothing if holidays)
+                     # For intraday, we want to see the last session's chart
+                     last_trading = get_latest_trading_date()
+                     if yf_start_date > last_trading:
+                         logging.info(f"Hist Fetch Helper: 0 bus days for {yf_start_date}-{yf_end_date}. Shifting start to {last_trading} to capture last session.")
+                         yf_start_date = last_trading
+                     else:
+                         # Already at/before last trading but still 0 bus days? 
+                         # Maybe it's a long holiday. Back up more.
+                         yf_start_date = yf_start_date - timedelta(days=3)
                  else:
                      logging.info(f"Hist Fetch Helper: Skipping fetch for {yf_start_date} to {yf_end_date} (0 business days).")
                      return {}
@@ -1655,14 +1710,23 @@ class MarketDataProvider:
                     # yfinance prints its own errors for failed tickers. If the whole batch fails,
                     # it might return an empty DataFrame.
                     if data.empty and len(batch_symbols) > 0:
+                        # yfinance returns empty for non-trading days without raising.
+                        # If we have 0 bus days (double check here), don't retry.
+                        try:
+                            cal = get_nyse_calendar()
+                            # Check if at least one day in the range was a trading day
+                            # yf_end_date is exclusive, so we check up to yf_end_date - 1d
+                            sch_check = cal.schedule(start_date=yf_start_date, end_date=yf_end_date - timedelta(days=1))
+                            is_trading_range = not sch_check.empty
+                        except:
+                            is_trading_range = True # Assume it might be trading if calendar fails
+                            
+                        if not is_trading_range:
+                            logging.info(f"  Hist Fetch Helper: No trading days in range {yf_start_date} to {yf_end_date}. Avoiding retries.")
+                            break # Exit retry loop, return empty
+                            
                         logging.warning(
-                            f"  Hist Fetch Helper WARN (Attempt {attempt + 1}/{retries}): yf.download returned empty DataFrame for batch: {', '.join(batch_symbols)}. This likely means no data for the range {yf_start_date} to {yf_end_date} (e.g. weekend)."
-                        )
-                        # Do NOT break immediately on empty data.
-                        # Transient network errors (DNS) can cause yfinance to return empty without raising.
-                        # We should retry to be robust.
-                        logging.warning(
-                            f"  Hist Fetch Helper WARN (Attempt {attempt + 1}/{retries}): yf.download returned empty DataFrame. Retrying..."
+                            f"  Hist Fetch Helper WARN (Attempt {attempt + 1}/{retries}): yf.download returned empty DataFrame. Retrying (Potential transient error)..."
                         )
                         time.sleep(1)
                         continue # FORCE RETRY

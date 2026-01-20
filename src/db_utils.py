@@ -25,7 +25,7 @@ import threading
 import config
 
 DB_FILENAME = "investa_transactions.db"
-DB_SCHEMA_VERSION = 5
+DB_SCHEMA_VERSION = 8
 
 
 def get_database_path(db_filename: str = DB_FILENAME) -> str:
@@ -269,6 +269,112 @@ def create_transactions_table(conn: sqlite3.Connection):
                 (5, datetime.now().isoformat()),
             )
             logging.info("Updated schema_version to 5 (pending commit).")
+
+        if current_db_version < 6:
+            logging.info("Schema version is less than 6. Creating screener_cache table.")
+            try:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS screener_cache (
+                        symbol TEXT PRIMARY KEY,
+                        name TEXT,
+                        price REAL,
+                        intrinsic_value REAL,
+                        margin_of_safety REAL,
+                        pe_ratio REAL,
+                        market_cap REAL,
+                        sector TEXT,
+                        ai_moat REAL,
+                        ai_financial_strength REAL,
+                        ai_predictability REAL,
+                        ai_growth REAL,
+                        ai_summary TEXT,
+                        last_fiscal_year_end INTEGER,
+                        most_recent_quarter INTEGER,
+                        updated_at TEXT NOT NULL
+                    );
+                """)
+                cursor.execute(
+                    "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
+                    (6, datetime.now().isoformat()),
+                )
+                logging.info("Updated schema_version to 6.")
+            except sqlite3.Error as e:
+                logging.error(f"Error during migration v6: {e}")
+                raise
+
+        if current_db_version < 7:
+            logging.info("Schema version is less than 7. Adding 'universe' column to screener_cache.")
+            try:
+                cursor.execute('ALTER TABLE screener_cache ADD COLUMN universe TEXT;')
+                cursor.execute(
+                    "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
+                    (7, datetime.now().isoformat()),
+                )
+                logging.info("Updated schema_version to 7.")
+            except sqlite3.Error as e:
+                if "duplicate column name" in str(e):
+                    logging.info("'universe' column already exists.")
+                else:
+                    logging.error(f"Error during migration v7: {e}")
+                    raise
+
+        if current_db_version < 8:
+            logging.info("Schema version is less than 8. Migrating screener_cache to composite PK (symbol, universe).")
+            try:
+                # 1. Rename old table
+                cursor.execute("ALTER TABLE screener_cache RENAME TO screener_cache_old;")
+                
+                # 2. Create new table with composite PK and universe NOT NULL
+                cursor.execute("""
+                    CREATE TABLE screener_cache (
+                        symbol TEXT NOT NULL,
+                        name TEXT,
+                        price REAL,
+                        intrinsic_value REAL,
+                        margin_of_safety REAL,
+                        pe_ratio REAL,
+                        market_cap REAL,
+                        sector TEXT,
+                        ai_moat REAL,
+                        ai_financial_strength REAL,
+                        ai_predictability REAL,
+                        ai_growth REAL,
+                        ai_summary TEXT,
+                        last_fiscal_year_end INTEGER,
+                        most_recent_quarter INTEGER,
+                        universe TEXT NOT NULL DEFAULT 'manual',
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY (symbol, universe)
+                    );
+                """)
+                
+                # 3. Copy data, filling NULL universes with 'manual'
+                cursor.execute("""
+                    INSERT INTO screener_cache (
+                        symbol, name, price, intrinsic_value, margin_of_safety,
+                        pe_ratio, market_cap, sector, ai_moat, ai_financial_strength,
+                        ai_predictability, ai_growth, ai_summary, last_fiscal_year_end,
+                        most_recent_quarter, universe, updated_at
+                    )
+                    SELECT 
+                        symbol, name, price, intrinsic_value, margin_of_safety,
+                        pe_ratio, market_cap, sector, ai_moat, ai_financial_strength,
+                        ai_predictability, ai_growth, ai_summary, last_fiscal_year_end,
+                        most_recent_quarter, COALESCE(universe, 'manual'), updated_at
+                    FROM screener_cache_old;
+                """)
+                
+                # 4. Drop old table
+                cursor.execute("DROP TABLE screener_cache_old;")
+                
+                cursor.execute(
+                    "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
+                    (8, datetime.now().isoformat()),
+                )
+                logging.info("Updated schema_version to 8.")
+            except sqlite3.Error as e:
+                logging.error(f"Error during migration v8: {e}")
+                raise
 
         conn.commit()
         logging.info(
@@ -786,6 +892,289 @@ def get_watchlist(db_conn: sqlite3.Connection, watchlist_id: int = 1) -> List[Di
         # Fallback for transient state or error
         logging.error(f"Error fetching watchlist {watchlist_id}: {e}")
         return []
+
+def upsert_screener_results(db_conn: sqlite3.Connection, results: List[Dict[str, Any]], universe: Optional[str] = None):
+    """Batch updates/inserts screener results into the cache."""
+    if not results:
+        return
+        
+    sql = """
+    INSERT INTO screener_cache (
+        symbol, name, price, intrinsic_value, margin_of_safety, 
+        pe_ratio, market_cap, sector, 
+        ai_moat, ai_financial_strength, ai_predictability, ai_growth, ai_summary,
+        last_fiscal_year_end, most_recent_quarter, universe, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(symbol, universe) DO UPDATE SET
+        name=excluded.name,
+        price=excluded.price,
+        intrinsic_value=excluded.intrinsic_value,
+        margin_of_safety=excluded.margin_of_safety,
+        pe_ratio=excluded.pe_ratio,
+        market_cap=excluded.market_cap,
+        sector=excluded.sector,
+        ai_moat=COALESCE(excluded.ai_moat, screener_cache.ai_moat),
+        ai_financial_strength=COALESCE(excluded.ai_financial_strength, screener_cache.ai_financial_strength),
+        ai_predictability=COALESCE(excluded.ai_predictability, screener_cache.ai_predictability),
+        ai_growth=COALESCE(excluded.ai_growth, screener_cache.ai_growth),
+        ai_summary=COALESCE(excluded.ai_summary, screener_cache.ai_summary),
+        last_fiscal_year_end=excluded.last_fiscal_year_end,
+        most_recent_quarter=excluded.most_recent_quarter,
+        updated_at=excluded.updated_at
+    """
+    
+    now_str = datetime.now().isoformat()
+    data = []
+    for r in results:
+        data.append((
+            r.get("symbol"),
+            r.get("name"),
+            r.get("price"),
+            r.get("intrinsic_value"),
+            r.get("margin_of_safety"),
+            r.get("pe_ratio"),
+            r.get("market_cap"),
+            r.get("sector"),
+            r.get("ai_moat"),
+            r.get("ai_financial_strength"),
+            r.get("ai_predictability"),
+            r.get("ai_growth"),
+            r.get("ai_summary"),
+            r.get("last_fiscal_year_end"),
+            r.get("most_recent_quarter"),
+            universe,
+            now_str
+        ))
+        
+    try:
+        cursor = db_conn.cursor()
+        cursor.executemany(sql, data)
+        db_conn.commit()
+        logging.info(f"Upserted {len(results)} screener results to DB cache.")
+    except sqlite3.Error as e:
+        logging.error(f"Error upserting screener results: {e}")
+        db_conn.rollback()
+
+def get_cached_screener_results(db_conn: sqlite3.Connection, symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Retrieves cached screener data for a list of symbols."""
+    if not symbols:
+        return {}
+        
+    placeholders = ",".join(["?"] * len(symbols))
+    sql = f"SELECT * FROM screener_cache WHERE symbol IN ({placeholders})"
+    
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute(sql, symbols)
+        rows = cursor.fetchall()
+        
+        # Get column names
+        cols = [description[0] for description in cursor.description]
+        
+        results = {}
+        for row in rows:
+            row_dict = dict(zip(cols, row))
+            
+            # Calculate average AI score if available
+            ai_scores = [
+                row_dict.get("ai_moat"),
+                row_dict.get("ai_financial_strength"),
+                row_dict.get("ai_predictability"),
+                row_dict.get("ai_growth")
+            ]
+            valid_scores = [s for s in ai_scores if s is not None]
+            if valid_scores:
+                row_dict["ai_score"] = sum(valid_scores) / len(valid_scores)
+            else:
+                row_dict["ai_score"] = None
+                
+            results[row_dict["symbol"]] = row_dict
+        return results
+    except sqlite3.Error as e:
+        logging.error(f"Error fetching cached screener results: {e}")
+        return {}
+
+def get_screener_results_by_universe(db_conn: sqlite3.Connection, universe: str) -> List[Dict[str, Any]]:
+    """Retrieves all cached screener results for a specific universe tag."""
+    sql = "SELECT * FROM screener_cache WHERE universe = ? ORDER BY margin_of_safety DESC"
+    
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute(sql, (universe,))
+        rows = cursor.fetchall()
+        
+        cols = [description[0] for description in cursor.description]
+        results = []
+        for row in rows:
+            row_dict = dict(zip(cols, row))
+            
+            # Cleanup for frontend consistency
+            if "ai_summary" in row_dict:
+                row_dict["has_ai_review"] = row_dict["ai_summary"] is not None
+            
+            # Calculate average AI score if available
+            ai_scores = [
+                row_dict.get("ai_moat"),
+                row_dict.get("ai_financial_strength"),
+                row_dict.get("ai_predictability"),
+                row_dict.get("ai_growth")
+            ]
+            valid_scores = [s for s in ai_scores if s is not None]
+            if valid_scores:
+                row_dict["ai_score"] = sum(valid_scores) / len(valid_scores)
+            else:
+                row_dict["ai_score"] = None
+                
+            results.append(row_dict)
+        return results
+    except sqlite3.Error as e:
+        logging.error(f"Error fetching screener results for universe {universe}: {e}")
+        return []
+def update_ai_review_in_cache(db_conn: sqlite3.Connection, symbol: str, ai_data: Dict[str, Any], info: Optional[Dict[str, Any]] = None):
+    """
+    Specifically updates the AI review portions of the screener cache.
+    Targets ALL universes for the given symbol to keep them in sync.
+    If no entries exist, creates a 'manual' universe entry.
+    Also syncs metadata from 'info' if provided.
+    """
+    now_str = datetime.now().isoformat()
+    scorecard = ai_data.get("scorecard", {})
+    
+    # 1. Update all existing entries
+    update_sql = """
+    UPDATE screener_cache SET
+        ai_moat = ?,
+        ai_financial_strength = ?,
+        ai_predictability = ?,
+        ai_growth = ?,
+        ai_summary = ?,
+        name = COALESCE(?, name),
+        price = COALESCE(?, price),
+        pe_ratio = COALESCE(?, pe_ratio),
+        market_cap = COALESCE(?, market_cap),
+        sector = COALESCE(?, sector),
+        updated_at = ?
+    WHERE symbol = ?
+    """
+    
+    name = info.get("shortName") if info else None
+    price = info.get("currentPrice") if info else None
+    pe = info.get("trailingPE") if info else None
+    mcap = info.get("marketCap") if info else None
+    sector = info.get("sector") if info else None
+
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute(update_sql, (
+            scorecard.get("moat"),
+            scorecard.get("financial_strength"),
+            scorecard.get("predictability"),
+            scorecard.get("growth"),
+            ai_data.get("summary"),
+            name, price, pe, mcap, sector,
+            now_str,
+            symbol.upper()
+        ))
+        
+        # 2. If no rows affected, create new 'manual' entry
+        if cursor.rowcount == 0:
+            insert_sql = """
+            INSERT INTO screener_cache (
+                symbol, universe, ai_moat, ai_financial_strength, 
+                ai_predictability, ai_growth, ai_summary, 
+                name, price, pe_ratio, market_cap, sector, updated_at
+            ) VALUES (?, 'manual', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            cursor.execute(insert_sql, (
+                symbol.upper(),
+                scorecard.get("moat"),
+                scorecard.get("financial_strength"),
+                scorecard.get("predictability"),
+                scorecard.get("growth"),
+                ai_data.get("summary"),
+                name, price, pe, mcap, sector,
+                now_str
+            ))
+        
+        db_conn.commit()
+    except sqlite3.Error as e:
+        logging.error(f"Error updating AI review in cache for {symbol}: {e}")
+        db_conn.rollback()
+
+def update_intrinsic_value_in_cache(
+    db_conn: sqlite3.Connection, 
+    symbol: str, 
+    intrinsic_value: Optional[float],
+    margin_of_safety: Optional[float],
+    last_fiscal_year_end: Optional[int] = None,
+    most_recent_quarter: Optional[int] = None,
+    info: Optional[Dict[str, Any]] = None
+):
+    """
+    Updates intrinsic value and related metrics in the screener cache.
+    Targets ALL universes for the given symbol to keep them in sync.
+    If no entries exist, creates a 'manual' universe entry.
+    Also syncs metadata from 'info' if provided.
+    """
+    now_str = datetime.now().isoformat()
+    
+    # 1. Update all existing entries
+    update_sql = """
+    UPDATE screener_cache SET
+        intrinsic_value = ?,
+        margin_of_safety = ?,
+        last_fiscal_year_end = COALESCE(?, last_fiscal_year_end),
+        most_recent_quarter = COALESCE(?, most_recent_quarter),
+        name = COALESCE(?, name),
+        price = COALESCE(?, price),
+        pe_ratio = COALESCE(?, pe_ratio),
+        market_cap = COALESCE(?, market_cap),
+        sector = COALESCE(?, sector),
+        updated_at = ?
+    WHERE symbol = ?
+    """
+    
+    name = info.get("shortName") if info else None
+    price = info.get("currentPrice") if info else None
+    pe = info.get("trailingPE") if info else None
+    mcap = info.get("marketCap") if info else None
+    sector = info.get("sector") if info else None
+
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute(update_sql, (
+            intrinsic_value,
+            margin_of_safety,
+            last_fiscal_year_end,
+            most_recent_quarter,
+            name, price, pe, mcap, sector,
+            now_str,
+            symbol.upper()
+        ))
+        
+        # 2. If no rows affected, create new 'manual' entry
+        if cursor.rowcount == 0:
+            insert_sql = """
+            INSERT INTO screener_cache (
+                symbol, universe, intrinsic_value, margin_of_safety, 
+                last_fiscal_year_end, most_recent_quarter, 
+                name, price, pe_ratio, market_cap, sector, updated_at
+            ) VALUES (?, 'manual', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            cursor.execute(insert_sql, (
+                symbol.upper(),
+                intrinsic_value,
+                margin_of_safety,
+                last_fiscal_year_end,
+                most_recent_quarter,
+                name, price, pe, mcap, sector,
+                now_str
+            ))
+            
+        db_conn.commit()
+    except sqlite3.Error as e:
+        logging.error(f"Error updating intrinsic value in cache for {symbol}: {e}")
+        db_conn.rollback()
 
 
 def initialize_database(db_path: Optional[str] = None) -> Optional[sqlite3.Connection]:
