@@ -1780,7 +1780,7 @@ async def get_projected_income(
 @router.get("/stock-analysis/{symbol}")
 async def get_stock_analysis(
     symbol: str,
-    force: bool = False,
+    force: bool = Query(False),
     data: tuple = Depends(get_transaction_data)
 ):
     """
@@ -3113,7 +3113,7 @@ async def run_screener(request: ScreenerRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/screener/review/{symbol}")
-async def trigger_ai_review(symbol: str, force: bool = False):
+async def trigger_ai_review(symbol: str, force: bool = Query(False)):
     """
     Triggers (or retrieves cached) AI review for a specific stock.
     """

@@ -736,7 +736,7 @@ export interface StockAnalysisResponse {
 export async function fetchStockAnalysis(symbol: string, force: boolean = false): Promise<StockAnalysisResponse> {
     const params = new URLSearchParams();
     if (force) params.append('force', 'true');
-    const res = await fetch(`${API_BASE_URL}/stock-analysis/${symbol}?${params.toString()}`);
+    const res = await fetch(`${API_BASE_URL}/stock-analysis/${symbol}?${params.toString()}`, { cache: 'no-store' });
     if (!res.ok) throw new Error(`Failed to fetch AI analysis for ${symbol}`);
     return res.json();
 }
@@ -785,7 +785,8 @@ export async function fetchScreenerReview(symbol: string, force: boolean = false
     const params = new URLSearchParams();
     if (force) params.append('force', 'true');
     const res = await fetch(`${API_BASE_URL}/screener/review/${symbol}?${params.toString()}`, {
-        method: "POST"
+        method: "POST",
+        cache: 'no-store'
     });
     if (!res.ok) throw new Error(`Failed to fetch AI review for ${symbol}`);
     return res.json();

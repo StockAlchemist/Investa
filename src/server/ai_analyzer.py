@@ -23,6 +23,8 @@ def generate_stock_review(symbol: str, fund_data: dict, ratios_data: dict, force
     Generates a comprehensive stock review using Gemini/Gemma models.
     Includes file-based caching and a fallback chain to handle rate limits.
     """
+    logging.info(f"AI Analysis: Generating review for {symbol} (force_refresh={force_refresh})")
+    
     # --- Caching Logic ---
     cache_dir = os.path.join(config.get_app_data_dir(), "ai_analysis_cache")
     os.makedirs(cache_dir, exist_ok=True)
