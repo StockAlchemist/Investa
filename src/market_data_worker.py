@@ -14,6 +14,9 @@ import tempfile
 LOG_FILE = os.path.join(tempfile.gettempdir(), "worker_debug_investa.log")
 def log(msg):
     try:
+        logging.info(msg)
+        # sys.stderr.write(f"WORKER: {msg}\n")
+        # sys.stderr.flush()
         with open(LOG_FILE, "a") as f:
             f.write(f"{pd.Timestamp.now()} - {msg}\n")
     except:
@@ -170,6 +173,21 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
                 threads=True
             )
         
+        # DIAGNOSTIC LOGGING
+        log(f"Raw yf.download result: Shape={data.shape}, Columns={list(data.columns[:10])}")
+        if not data.empty:
+            log(f"Raw yf.download index range: {data.index[0]} to {data.index[-1]} (TZ: {data.index.tz})")
+            for s in symbols[:2]: # Log first 2 symbols as sample
+                 if isinstance(data.columns, pd.MultiIndex):
+                     # Check if the symbol exists in the MultiIndex at level 1
+                     if s in data.columns.get_level_values(1):
+                         s_data = data.xs(s, axis=1, level=1, drop_level=False) # Keep level for consistency in shape check
+                     else:
+                         s_data = pd.DataFrame() # Symbol not found
+                 else:
+                     s_data = data[s] if s in data.columns else pd.DataFrame()
+                 log(f"  Symbol {s}: {len(s_data)} rows. Tuesday rows: {len(s_data[s_data.index.date == date(2026, 1, 20)]) if not s_data.empty else 0}")
+        
         # NOTE: We previously attempted manual filtering (9:30-16:00) but it caused issues
         # with UTC vs Local timezones (pruning valid data).
         # Since 'prepost=False' returns exactly 78 rows (6.5 hours) for 5m interval,
@@ -181,33 +199,38 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
                 # Normalize timezone to US/Eastern for consistent 9:30-16:00 filtering
                 # This handles both UTC-aware and naive (assumed NY) data
                 if data.index.tz is None:
-                     # Assume NY if naive (common for yf)
-                     data_local = data.index.tz_localize("America/New_York", ambiguous='infer')
+                     # Check if it looks like UTC or NY
+                     # 14:30 UTC is usually the open for NY markets.
+                     # 09:30 NY is usually the open.
+                     # If the first timestamp is >= 13:00, it's likely UTC.
+                     first_h = data.index[0].hour
+                     if first_h >= 12:
+                         log(f"Assuming naive index is UTC based on first hour {first_h}")
+                         data_local = data.index.tz_localize("UTC").tz_convert("America/New_York")
+                     else:
+                         log(f"Assuming naive index is NY based on first hour {first_h}")
+                         data_local = data.index.tz_localize("America/New_York", ambiguous='infer')
                 else:
-                     # Convert to NY if aware
+                     # Convert to NY if already aware
                      data_local = data.index.tz_convert("America/New_York")
                 
-                # Apply filter on the localized index
-                # We need to reconstruct the dataframe with the filtered index, or use boolean mask
-                # using between_time on the Frame directly is easiest, but strict on index type
-                
-                # Create a copy with the local index to filter
+                # Apply localized index for filtering
                 df_local = data.copy()
                 df_local.index = data_local
                 
                 original_len = len(df_local)
                 # FILTERING: Only for intraday
                 if interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]:
-                    df_filtered_local = df_local.between_time("09:30", "16:00")
-                    # Convert back to UTC
+                    # Filter for market hours (09:30 - 16:15)
+                    df_filtered_local = df_local.between_time("09:30", "16:15")
+                    
                     if not df_filtered_local.empty:
+                        # Convert back to UTC for the consumer
                         data = df_filtered_local.tz_convert("UTC")
-                        log(f"Filtered (NY time 9:30-16:00): {original_len} -> {len(data)}")
-                        log(f"Filtered Start (NY): {df_filtered_local.index[0]}")
-                        log(f"Filtered End (NY): {df_filtered_local.index[-1]}")
+                        log(f"Filtered (NY time 09:30-16:15): {original_len} -> {len(data)}. Tuesday rows: {len(data[data.index.date == date(2026, 1, 20)])}")
                     else:
-                        data = df_filtered_local # Still empty but avoids log errors
-                        log(f"Filtered (NY time 9:30-16:00): {original_len} -> 0 (EMPTY)")
+                        data = df_filtered_local # Still empty
+                        log(f"Filtered (NY time 09:30-16:15): {original_len} -> 0 (EMPTY)")
                 else:
                      # For Daily/Weekly/Monthly, DO NOT FILTER TIME.
                      # Timestamps are often 00:00 UTC, which would be filtered out.
@@ -218,7 +241,14 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
                 log(f"Timezone filtering error: {e}")
                 # Fallback: don't filter if error
                 pass
-                 
+            
+            # DEDUPLICATION: Ensure unique timestamps before returning
+            # Duplicate timestamps can cause a 500 error in alignment logic (reindex)
+            if not data.empty:
+                original_len = len(data)
+                data = data[~data.index.duplicated(keep='last')]
+                if len(data) < original_len:
+                    log(f"Deduplicated index: {original_len} -> {len(data)}")
         log(f"Fetch completed. Data shape: {data.shape}")
         
         if data.empty:

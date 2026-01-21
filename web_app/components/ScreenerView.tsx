@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import ScreenerInput from './ScreenerInput';
 import ScreenerResults from './ScreenerResults';
 import { Telescope } from 'lucide-react';
-import { runScreener, fetchScreenerReview } from '@/lib/api';
+import { runScreener, fetchScreenerReview, fetchWatchlist, addToWatchlist, removeFromWatchlist, getWatchlists } from '@/lib/api';
+import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query';
 
 interface ScreenerViewProps {
     currency: string;
@@ -15,6 +16,62 @@ const ScreenerView: React.FC<ScreenerViewProps> = ({ currency }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [reviewingSymbol, setReviewingSymbol] = useState<string | null>(null);
     const [isInitialized, setIsInitialized] = useState(false);
+    const queryClient = useQueryClient();
+
+    // Fetch all watchlists metadata
+    const { data: watchlists = [] } = useQuery({
+        queryKey: ['watchlists'],
+        queryFn: ({ signal }) => getWatchlists(signal),
+    });
+
+    // Fetch all items from all watchlists to build a symbol mapping
+    const watchlistQueries = useQueries({
+        queries: watchlists.map(wl => ({
+            queryKey: ['watchlist', currency, wl.id],
+            queryFn: ({ signal }: { signal?: AbortSignal }) => fetchWatchlist(currency, wl.id, signal),
+            staleTime: 1000 * 60 * 5, // 5 minutes
+        }))
+    });
+
+    const symbolWatchlistMap = React.useMemo(() => {
+        const map: Record<string, Set<number>> = {};
+        watchlistQueries.forEach((query, index) => {
+            if (query.data) {
+                const watchlistId = watchlists[index].id;
+                query.data.forEach(item => {
+                    if (!map[item.Symbol]) map[item.Symbol] = new Set();
+                    map[item.Symbol].add(watchlistId);
+                });
+            }
+        });
+        return map;
+    }, [watchlistQueries, watchlists]);
+
+    const starredSymbols = React.useMemo(() => {
+        return new Set(Object.keys(symbolWatchlistMap));
+    }, [symbolWatchlistMap]);
+
+    const addMutation = useMutation({
+        mutationFn: ({ symbol, watchlistId }: { symbol: string, watchlistId: number }) => addToWatchlist(symbol, "", watchlistId),
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['watchlist', currency, variables.watchlistId] });
+        },
+    });
+
+    const removeMutation = useMutation({
+        mutationFn: ({ symbol, watchlistId }: { symbol: string, watchlistId: number }) => removeFromWatchlist(symbol, watchlistId),
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['watchlist', currency, variables.watchlistId] });
+        },
+    });
+
+    const handleToggleWatchlist = (symbol: string, watchlistId: number) => {
+        if (symbolWatchlistMap[symbol]?.has(watchlistId)) {
+            removeMutation.mutate({ symbol, watchlistId });
+        } else {
+            addMutation.mutate({ symbol, watchlistId });
+        }
+    };
 
     useEffect(() => {
         const handleUpdate = (e: any) => {
@@ -92,6 +149,10 @@ const ScreenerView: React.FC<ScreenerViewProps> = ({ currency }) => {
                     onReview={handleReview}
                     reviewingSymbol={reviewingSymbol}
                     currency={currency}
+                    starredSymbols={starredSymbols}
+                    symbolWatchlistMap={symbolWatchlistMap}
+                    watchlists={watchlists}
+                    onToggleWatchlist={handleToggleWatchlist}
                 />
             </div>
         </div>

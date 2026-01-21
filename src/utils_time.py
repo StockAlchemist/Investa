@@ -102,3 +102,18 @@ def is_market_open() -> bool:
         market_open = now_est.replace(hour=9, minute=30, second=0, microsecond=0)
         market_close = now_est.replace(hour=16, minute=0, second=0, microsecond=0)
         return market_open <= now_est <= market_close
+def is_tradable_day(dt: date | datetime | pd.Timestamp) -> bool:
+    """
+    Checks if a given date is a valid trading day on the NYSE.
+    Skips weekends and market holidays.
+    """
+    if isinstance(dt, (datetime, pd.Timestamp)):
+        check_date = dt.date()
+    else:
+        check_date = dt
+        
+    cal = get_nyse_calendar()
+    # schedule() returns a DataFrame with trading days as the index
+    # We check if the specific date exists in the schedule
+    schedule = cal.schedule(start_date=check_date, end_date=check_date)
+    return not schedule.empty

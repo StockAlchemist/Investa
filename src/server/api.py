@@ -39,6 +39,7 @@ from db_utils import (
 
 from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series
 import config
+from config import YFINANCE_INDEX_TICKER_MAP, BENCHMARK_MAPPING
 from config_manager import ConfigManager
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ConfigDict
@@ -1021,12 +1022,14 @@ def _calculate_historical_performance_internal(
     # 2. For other views (1m, 1y, etc): Use get_est_today().
     #    This ensures "Today" is included as the last data point, capturing international markets (SET) 
     #    that may have already closed/traded, matching the Summary Card total.
-    from utils_time import get_est_today, get_latest_trading_date
+    from utils_time import get_est_today, get_latest_trading_date, is_tradable_day, get_nyse_calendar
     
-    if period == "1d":
-        end_date = to_date_custom if to_date_custom else get_latest_trading_date()
+    # UNIFIED: Use get_est_today() + 1 day as the exclusive end_date for all relative periods.
+    # This ensures yfinance includes today's data (if available) and the graph isn't truncated.
+    if to_date_custom:
+        end_date = to_date_custom
     else:
-        end_date = to_date_custom if to_date_custom else get_est_today()
+        end_date = get_est_today() + timedelta(days=1)
     
     # Calculate start_date based on period (legacy logic still valid, relative to end_date)
     if period == "custom" and from_date_custom:
@@ -1044,14 +1047,13 @@ def _calculate_historical_performance_internal(
         # REMOVED: Monday context logic (start_date = end_date - 3)
         # Monday will now fall through to the 'else' block, treating it as a standard day
         # (Start = Monday, End = Tuesday), ensuring 1D graph shows ONLY Monday.
+        if to_date_custom:
+             start_date = end_date
         else:
              # Standard Weekday 1D View
-             # IMPORTANT: end_date is the "Target Day" (e.g. Yesterday).
-             # We want start_date to be that day.
-             # AND we must extend end_date by 1 day to be an exclusive upper bound [Start, End) header
-             # ensuring we capture the intraday data (09:30 > 00:00).
-             start_date = end_date
-             end_date = end_date + timedelta(days=1)
+             # end_date is already Today+1. We want start_date to be "Latest Trading Date".
+             start_date = get_latest_trading_date()
+             # Keep end_date as Today+1 (exclusive)
     elif period == "5d" or period == "7d":
         start_date = end_date - timedelta(days=7)
     elif period == "1m":
@@ -1136,6 +1138,35 @@ def _calculate_historical_performance_internal(
     # --- MODIFIED: Use provided interval or default ---
     # Force "D" for "all" period to match Desktop App (main_gui.py) logic exactly
     # This ensures they share the exact same cache file (which is known to be clean).
+    # --- MAPPING: Convert benchmark display names to YF tickers ---
+    ticker_to_name = {}
+    if benchmarks:
+        mapped_benchmarks = []
+        # Create a lowercase mapping for case-insensitive lookup
+        bm_mapping_lower = {k.lower(): v for k, v in BENCHMARK_MAPPING.items()}
+        yf_map_lower = {k.lower(): v for k, v in YFINANCE_INDEX_TICKER_MAP.items()}
+        
+        for b in benchmarks:
+            b_lower = b.lower()
+            # Check full names (from UI) first
+            if b_lower in bm_mapping_lower:
+                ticker = bm_mapping_lower[b_lower]
+                mapped_benchmarks.append(ticker)
+                ticker_to_name[ticker] = b
+            # Check short codes (legacy)
+            elif b_lower in yf_map_lower:
+                ticker = yf_map_lower[b_lower]
+                mapped_benchmarks.append(ticker)
+                ticker_to_name[ticker] = b
+            else:
+                # If already a ticker or unknown, keep as is
+                mapped_benchmarks.append(b)
+        benchmarks = mapped_benchmarks
+
+    logging.info(f"API History: Mapped benchmarks: {benchmarks}. TickerToName: {ticker_to_name}")
+
+    logging.info(f"API History: Fetching period='{period}', interval='{interval}', start={start_date}, end={end_date}, benchmarks={benchmarks}")
+    
     calc_interval = "D" if period == "all" else interval
     
     t_start = time.time()
@@ -1146,18 +1177,21 @@ def _calculate_historical_performance_internal(
             ignored_indices_from_load=set(),
             ignored_reasons_from_load={},
             start_date=start_date,
-        end_date=end_date,
-        display_currency=currency,
-        manual_overrides_dict=manual_overrides,
-        user_symbol_map=user_symbol_map,
-        user_excluded_symbols=user_excluded_symbols,
-        include_accounts=accounts,
-        benchmark_symbols_yf=benchmarks,
-        account_currency_map=account_currency_map,
-        default_currency=config.DEFAULT_CURRENCY,
-        interval=calc_interval,
-        original_csv_file_path=original_csv_path
-    )
+            end_date=end_date,
+            display_currency=currency,
+            manual_overrides_dict=manual_overrides,
+            user_symbol_map=user_symbol_map,
+            user_excluded_symbols=user_excluded_symbols,
+            include_accounts=accounts,
+            benchmark_symbols_yf=benchmarks,
+            account_currency_map=account_currency_map,
+            default_currency=config.DEFAULT_CURRENCY,
+            interval=calc_interval,
+            original_csv_file_path=original_csv_path
+        )
+        logging.info(f"API History: Calc returned daily_df with {len(daily_df)} rows. Columns: {list(daily_df.columns)}")
+        if not daily_df.empty:
+            logging.info(f"API History: daily_df tail:\n{daily_df.tail(3).to_string()}")
     except Exception as e:
         logging.error(f"API Error in calculate_historical_performance: {e}")
         import traceback
@@ -1245,6 +1279,11 @@ def _calculate_historical_performance_internal(
                          elif pd.isna(bm_start_val):
                               # If still NaN (empty series?), fill with 1.0
                               daily_df[bm_col] = 1.0
+                     # Add logging for benchmark price series alignment and Tuesday data
+                     bm_price_col = f"{b_ticker} Price"
+                     if bm_price_col in daily_df.columns:
+                         num_tuesday = daily_df.loc[daily_df.index.date == date(2026, 1, 20), bm_price_col].notna().sum()
+                         logging.info(f"Benchmark {b_ticker}: Aligned. Tuesday points: {num_tuesday}")
 
         except Exception as e_norm:
             logging.error(f"API: Normalization failed: {e_norm}")
@@ -1299,19 +1338,26 @@ def _calculate_historical_performance_internal(
     # ds_ts is used to identify baseline points
     ds_ts = pd.Timestamp(display_start_date, tz='UTC')
     
+    # Pre-calculate tradable days for the range to optimize the loop
+    # (Avoids calling cal.schedule thousands of times for intraday data)
+    try:
+        cal = get_nyse_calendar()
+        tradable_days = set(cal.schedule(start_date=start_date, end_date=end_date).index.date)
+    except Exception as e_cal:
+        logging.warning(f"API: Failed to pre-calculate tradable days: {e_cal}")
+        tradable_days = None
+
     for i, (dt, row) in enumerate(daily_df.iterrows()):
         # Ensure the FIRST point (the baseline t-1) is correctly identified.
         # It's only a baseline if it's before the intended display range.
         is_baseline = (i == 0 and period != "all" and dt < ds_ts)
         
         if not is_baseline:
-            # Skip weekends (Saturday=5, Sunday=6) to avoid flat lines in graph
-            # Use .dayofweek which is standard for pd.Timestamp
-            if hasattr(dt, 'dayofweek') and dt.dayofweek >= 5:
-                continue
-            elif hasattr(dt, 'weekday') and dt.weekday() >= 5:
-                continue
-            elif isinstance(dt, (date, datetime)) and dt.weekday() >= 5:
+            # Skip weekends and market holidays to avoid flat lines in graph
+            if tradable_days is not None:
+                if dt.date() not in tradable_days:
+                    continue
+            elif not is_tradable_day(dt):
                 continue
         # Strict market hours filter for intraday (09:30 - 16:00 EST)
         # We only apply this to intraday intervals.
@@ -1427,7 +1473,7 @@ async def get_capital_gains(
 
     Args:
         currency (str): The display currency.
-        accounts (List[str], optional): List of account names.
+        accounts (List[str]): List of account names.
         data (tuple): Dependency injection.
 
     Returns:

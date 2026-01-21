@@ -5666,7 +5666,7 @@ def _calculate_accumulated_gains_and_resample(
         if start_date_filter and end_date_filter:
             try:
                 pd_start = pd.Timestamp(start_date_filter)
-                pd_end = pd.Timestamp(end_date_filter)
+                pd_end = pd.Timestamp(end_date_filter) + pd.Timedelta(hours=23, minutes=59, seconds=59)
                 
                 # Ensure index is timezone-naive before comparison if needed
                 if final_df_output.index.tz is not None:
@@ -6270,6 +6270,10 @@ def calculate_historical_performance(
         if daily_df.index.tz is None:
             daily_df.index = daily_df.index.tz_localize('UTC')
             
+        # DEDUPLICATION: Ensure portfolio index is unique before benchmark alignment
+        if daily_df.index.duplicated().any():
+            logging.info(f"Deduplicating portfolio daily_df.index: {len(daily_df)} -> {len(daily_df[~daily_df.index.duplicated()])}")
+            daily_df = daily_df[~daily_df.index.duplicated(keep='last')]
         # FIX: For intraday intervals, don't fetch from full_start_date (too long)
         # Instead, fetch from start_date - 1 day to get a baseline for returns.
         benchmark_fetch_start = full_start_date
@@ -6307,11 +6311,16 @@ def calculate_historical_performance(
                         if not isinstance(bm_series.index, pd.DatetimeIndex) or bm_series.index.tz is None:
                             bm_series.index = pd.to_datetime(bm_series.index, utc=True)
                         
+                        # DEDUPLICATION: Ensure benchmark series index is unique before reindexing
+                        if bm_series.index.duplicated().any():
+                            logging.info(f"Deduplicating benchmark {bm} index: {len(bm_series)} -> {len(bm_series[~bm_series.index.duplicated()])}")
+                            bm_series = bm_series[~bm_series.index.duplicated(keep='last')]
                         # Merge into daily_df using reindex with 'ffill' to handle timestamp mismatches
                         # and overnight gaps. method='nearest' with tight tolerance often misses morning data.
                         try:
                             # Use generous tolerance to bridge overnight/weekend gaps
-                            tol = pd.Timedelta('48h')
+                            # MLK Day holiday requires > 72h (Fri 4pm to Tue 9:30am is ~90h)
+                            tol = pd.Timedelta('120h')
 
                             bm_series_aligned = bm_series.reindex(
                                 daily_df.index, 
@@ -6319,6 +6328,9 @@ def calculate_historical_performance(
                                 tolerance=tol
                             )
                             daily_df[f"{bm} Price"] = bm_series_aligned
+                            # ADDED: Diagnostic logging for Tuesday data
+                            num_tuesday = daily_df.loc[daily_df.index.date == date(2026, 1, 20), f"{bm} Price"].notna().sum()
+                            logging.info(f"Benchmark {bm}: Aligned. Tuesday points: {num_tuesday}")
                             
                         except Exception as e_align:
                             logging.warning(f"Benchmark alignment failed for {bm}: {e_align}. Falling back to strict join.")

@@ -249,13 +249,15 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwar
                         # history or statement (DataFrame orient='split')
                         df = pd.read_json(file_path, orient='split')
                         if not df.empty and task == "history":
+                            logging.info(f"Isolated fetch: Deserialized raw result columns: {list(df.columns[:5])} (Type: {type(df.columns[0]) if not df.empty else 'N/A'})")
                             df.index = pd.to_datetime(df.index, utc=True)
                             # Reconstruct MultiIndex if it was flattened to tuples during JSON serialization
                             if len(df.columns) > 0 and isinstance(df.columns[0], (list, tuple)):
                                 try:
                                     df.columns = pd.MultiIndex.from_tuples(df.columns)
+                                    logging.info("Isolated fetch: Reconstructed MultiIndex successfully.")
                                 except Exception as e_mi:
-                                    logging.debug(f"Could not reconstruct MultiIndex: {e_mi}")
+                                    logging.warning(f"Isolated fetch: Could not reconstruct MultiIndex: {e_mi}")
                         return df
 
                 except Exception as e_read:
@@ -1465,6 +1467,33 @@ class MarketDataProvider:
         # Normalize interval for yfinance
         if interval == "D":
             interval = "1d"
+        
+        # NORMALIZATION HELPER
+        def normalize_df(df_raw, sym):
+            if df_raw is None or df_raw.empty:
+                return df_raw
+            df_clean = df_raw.copy()
+            
+            # For intraday intervals, prefer 'Close' over 'Adj Close' 
+            # as yfinance often returns NaNs in Adj Close for short intervals.
+            is_intraday_local = any(x in interval for x in ["m", "h"])
+            
+            primary = "Close" if is_intraday_local else "Adj Close"
+            secondary = "Adj Close" if is_intraday_local else "Close"
+            
+            if primary in df_clean.columns and df_clean[primary].notna().any():
+                df_clean["price"] = df_clean[primary]
+            elif secondary in df_clean.columns and df_clean[secondary].notna().any():
+                df_clean["price"] = df_clean[secondary]
+            elif primary in df_clean.columns: # fallback if all NaN but column exists
+                df_clean["price"] = df_clean[primary]
+            elif secondary in df_clean.columns:
+                df_clean["price"] = df_clean[secondary]
+            
+            num_nans = df_clean["price"].isna().sum() if "price" in df_clean.columns else "N/A"
+            logging.info(f"Hist Fetch Helper: Normalized symbol {sym} (Intraday={is_intraday_local}) with {len(df_clean)} rows. NaNs: {num_nans}. Source: {primary if 'price' in df_clean.columns and df_clean['price'].equals(df_clean.get(primary)) else secondary}")
+            return df_clean
+
         _ensure_yfinance()
         if not YFINANCE_AVAILABLE:
             logging.error("Error: yfinance not available for historical fetch.")
@@ -1550,28 +1579,43 @@ class MarketDataProvider:
                 is_cache_valid = False
                 if not cached_df.empty:
                     # VALIDATION: Check if cache covers the latest trading session
-                    # If we are viewing 1D/5D, we expect data up to the latest close
                     last_trading = get_latest_trading_date()
                     
-                    # Convert max timestamp to EST date for comparison
+                    # Convert max timestamp to EST date/time for comparison
                     max_ts_utc = cached_df.index.max()
                     if max_ts_utc.tzinfo:
                         max_ts_est = max_ts_utc.tz_convert("America/New_York")
                     else:
-                        # Fallback if naive (shouldn't happen with DB ISO)
                         max_ts_est = max_ts_utc.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=-5)))
                         
-                    if max_ts_est.date() >= last_trading:
-                        is_cache_valid = True
-                        # NORMALIZATION: Ensure 'price' column exists
-                        if "Close" in cached_df.columns and "price" not in cached_df.columns:
-                            cached_df["price"] = cached_df["Close"]
-                        elif "Adj Close" in cached_df.columns and "price" not in cached_df.columns:
-                            cached_df["price"] = cached_df["Adj Close"]
-                            
-                        historical_data[s] = cached_df
+                    # 1. Date check
+                    if max_ts_est.date() > last_trading:
+                        # Future data or error in clock, refetch
+                        is_cache_valid = False
+                    elif max_ts_est.date() < last_trading:
+                        # Stale (old day), refetch
+                        is_cache_valid = False
                     else:
-                        logging.info(f"Hist Fetch Helper: Stale cache for {s}. Max date: {max_ts_est.date()}, Expected: {last_trading}. Refetching.")
+                        # Same day as last_trading. Now check for SESSION COMPLETENESS.
+                        if last_trading < today:
+                            # It's a past trading day (e.g. yesterday). 
+                            # Session must extend near market close (e.g. after 15:45 EST) to be "complete".
+                            if max_ts_est.hour > 15 or (max_ts_est.hour == 15 and max_ts_est.minute >= 45):
+                                is_cache_valid = True
+                            else:
+                                logging.info(f"Hist Fetch Helper: Cache for {s} is Jan 20 but incomplete (ends {max_ts_est.time()}). Refetching.")
+                        else:
+                            # It's today's trading day. Refetch if cache is older than 15 mins.
+                            # We check the actual retrieval time (sync_metadata) or just the max point
+                            # Usually, we want real-time-ish data for today.
+                            time_diff = datetime.now(timezone.utc) - max_ts_utc
+                            if time_diff.total_seconds() < 900: # 15 mins
+                                is_cache_valid = True
+                            else:
+                                logging.info(f"Hist Fetch Helper: Cache for {s} is today but {time_diff.total_seconds()/60:.1f}m old. Refetching.")
+
+                    if is_cache_valid:
+                        historical_data[s] = normalize_df(cached_df, s)
                 
                 if not is_cache_valid:
                     symbols_to_fetch_remote.append(s)
@@ -1719,6 +1763,10 @@ class MarketDataProvider:
                             task="history" # Added task
                         )
                     
+                    logging.info(f"  Hist Fetch Helper: Batch result for {batch_symbols[:3]}...: Shape={data.shape}, Columns={list(data.columns[:5])}, Types={type(data.columns)}")
+                    if not data.empty:
+                        logging.info(f"  Hist Fetch Helper: Index Range: {data.index[0]} to {data.index[-1]}")
+                    
                     elapsed = time.time() - t0
                     logging.debug(f"  Batch fetch took {elapsed:.2f}s for {len(batch_symbols)} symbols (Attempt {attempt + 1}).")
                     # yfinance prints its own errors for failed tickers. If the whole batch fails,
@@ -1804,99 +1852,89 @@ class MarketDataProvider:
             else:
 
                 for symbol in batch_symbols:
-                    df_symbol = None
-                    found_in_batch = False
                     try:
-                        # Robust Logic for MultiIndex (Price, Ticker) or Flat Index with Tuples
-                        if isinstance(data.columns, pd.MultiIndex):
-                            # Check if Ticker is level 1 (standard new yfinance)
-                            if symbol in data.columns.get_level_values(1):
-                                df_symbol = data.xs(symbol, axis=1, level=1, drop_level=True)
-                                found_in_batch = True
-                            # Check if Ticker is level 0
-                            elif symbol in data.columns.get_level_values(0):
-                                df_symbol = data[symbol]
-                                found_in_batch = True
-                        else:
-                            # Flat Index: Check if it's an index of tuples like ('AAPL', 'Close')
-                            # or just a list of ticker-prefixed strings
-                            matching_cols = [c for c in data.columns if (isinstance(c, (list, tuple)) and c[0] == symbol) or (isinstance(c, str) and c.startswith(f"{symbol}"))]
-                            if matching_cols:
-                                df_symbol = data[matching_cols]
-                                # Rename columns to remove symbol prefix/level if needed
-                                if isinstance(matching_cols[0], (list, tuple)):
-                                    df_symbol.columns = [c[1] for c in df_symbol.columns]
-                                else:
-                                    df_symbol.columns = [c.replace(f"{symbol}_", "") for c in df_symbol.columns]
-                                found_in_batch = True
-                            
-                            # Case 1: Columns are like "Close" (single ticker)
-                            elif len(batch_symbols) == 1:
-                                df_symbol = data.copy()
-                                found_in_batch = True
-                            
-                            # Case 2: Columns might be "AAPL" (singular match)
-                            elif symbol in data.columns:
-                                df_symbol = data[[symbol]].rename(columns={symbol: "Close"})
-                                found_in_batch = True
-
+                        df_symbol = None
+                        found_in_batch = False
                         
-                        if not found_in_batch:
-                            missing_symbols_in_batch.append(symbol)
-                            continue
-
-                        if df_symbol is None or df_symbol.empty:
-                            missing_symbols_in_batch.append(symbol)
-                            continue
-
-                        price_col = "Close"
-                        if price_col not in df_symbol.columns:
-                             # Try to find it or just mark as missing?
-                             # If 'Close' is missing, maybe it's single column?
-                             if len(df_symbol.columns) == 1:
-                                 df_symbol.columns = ["Close"]
-                             else:
-                                 logging.warning(f"  Hist Fetch Helper WARN: Expected 'Close' column not found for {symbol}. Columns: {df_symbol.columns}")
-                                 missing_symbols_in_batch.append(symbol)
-                                 continue
-
-                        # Ensure index is datetime
-                        if not isinstance(df_symbol.index, pd.DatetimeIndex):
-                            df_symbol.index = pd.to_datetime(df_symbol.index, utc=True)
-
-                        # Filter for requested range
-                        mask = (df_symbol.index.date >= start_date) & (
-                            df_symbol.index.date <= end_date
-                        )
-                        df_filtered = df_symbol.loc[mask]
-
-                        # --- RESTORED CLEANING LOGIC ---
-                        if not df_filtered.empty:
-                            # Keep only the price column and rename to 'price'
-                            df_cleaned = df_filtered[[price_col]].copy()
-                            df_cleaned.rename(columns={price_col: "price"}, inplace=True)
-                            
-                            # Ensure numeric and drop NaNs
-                            df_cleaned["price"] = pd.to_numeric(df_cleaned["price"], errors="coerce")
-                            df_cleaned.dropna(subset=["price"], inplace=True)
-                            
-                            # Remove zero/negative prices
-                            df_cleaned = df_cleaned[df_cleaned["price"] > 1e-6]
-
-                            if not df_cleaned.empty:
-                                historical_data[symbol] = df_cleaned.sort_index()
-                            else:
-                                # If empty after cleaning, it's effectively missing valid data
-                                # We retry if we have no valid data.
-                                missing_symbols_in_batch.append(symbol)
+                        # Symbols to try (original and stripped caret)
+                        symbols_to_try = [symbol]
+                        if symbol.startswith("^"):
+                             symbols_to_try.append(symbol[1:])
+                        
+                        # Robust Logic for MultiIndex (Price, Ticker)
+                        if isinstance(data.columns, pd.MultiIndex):
+                            for s_to_try in symbols_to_try:
+                                if s_to_try in data.columns.get_level_values(1):
+                                    df_symbol = data.xs(s_to_try, axis=1, level=1, drop_level=True)
+                                    found_in_batch = True
+                                    break
+                                elif s_to_try in data.columns.get_level_values(0):
+                                    df_symbol = data[s_to_try]
+                                    found_in_batch = True
+                                    break
                         else:
-                             # Empty after date filter
-                             pass
+                            # Flat Index matching
+                            for s_to_try in symbols_to_try:
+                                matching_cols = []
+                                for c in data.columns:
+                                    if isinstance(c, (list, tuple)):
+                                         if len(c) > 1 and c[1] == s_to_try:
+                                              matching_cols.append(c)
+                                         elif c[0] == s_to_try:
+                                              matching_cols.append(c)
+                                    elif isinstance(c, str):
+                                         # Match stringified tuple or simple name
+                                         if s_to_try in c:
+                                              matching_cols.append(c)
+                                
+                                if matching_cols:
+                                    df_symbol = data[matching_cols]
+                                    # Rename columns
+                                    new_cols = []
+                                    for c in df_symbol.columns:
+                                         if isinstance(c, (list, tuple)):
+                                              new_cols.append(c[1] if c[1] != s_to_try else c[0])
+                                         elif isinstance(c, str) and "(" in c and "," in c:
+                                              parts = c.replace("(","").replace(")","").replace("'","").replace("\"","").split(",")
+                                              p0, p1 = parts[0].strip(), parts[1].strip()
+                                              new_cols.append(p0 if p1 == s_to_try else p1)
+                                         else:
+                                              new_cols.append(c)
+                                    df_symbol.columns = new_cols
+                                    found_in_batch = True
+                                    break
+
+                        if not found_in_batch or df_symbol is None or df_symbol.empty:
+                            logging.warning(f"  Hist Fetch Helper: {symbol} NOT found or empty in batch result.")
+                            missing_symbols_in_batch.append(symbol)
+                            continue
+
+                        # --- NORMALIZATION & CLEANING ---
+                        # 1. Ensure 'price' column exists
+                        df_norm = normalize_df(df_symbol, symbol)
+                        if df_norm is None or "price" not in df_norm.columns:
+                            logging.warning(f"  Hist Fetch Helper: Could not normalize {symbol}. Columns: {list(df_norm.columns if df_norm is not None else [])}")
+                            missing_symbols_in_batch.append(symbol)
+                            continue
+
+                        # 2. Filter for requested range
+                        mask = (df_norm.index.date >= start_date) & (df_norm.index.date <= end_date)
+                        df_filtered = df_norm.loc[mask].copy()
+
+                        # 3. Final cleanup (numeric, NaNs, zero-prices)
+                        df_filtered["price"] = pd.to_numeric(df_filtered["price"], errors="coerce")
+                        df_filtered.dropna(subset=["price"], inplace=True)
+                        df_filtered = df_filtered[df_filtered["price"] > 1e-6]
+
+                        if not df_filtered.empty:
+                            historical_data[symbol] = df_filtered.sort_index()
+                            logging.info(f"  Hist Fetch Helper: Successfully extracted & cleaned {symbol} ({len(df_filtered)} rows).")
+                        else:
+                            logging.warning(f"  Hist Fetch Helper: {symbol} empty after date filter/cleanup.")
+                            missing_symbols_in_batch.append(symbol)
 
                     except Exception as e_sym:
-                        logging.warning(
-                            f"  Hist Fetch Helper ERROR processing symbol {symbol} within batch: {e_sym}"
-                        )
+                        logging.error(f"  Hist Fetch Helper ERROR: Failed to process {symbol}: {e_sym}")
                         missing_symbols_in_batch.append(symbol)
 
             # --- Collect Missing Symbols for Final Cleanup ---
