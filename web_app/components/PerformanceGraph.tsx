@@ -361,7 +361,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
             // Hourly for 1 month. Date + maybe Hour? Too crowded.
             // Just Date is probably fine, or Day.
             return date.toLocaleDateString(undefined, { timeZone: 'America/New_York', month: 'short', day: 'numeric' });
-        } else if (['3y', '5y', 'all', 'custom'].includes(period)) {
+        } else if (['3y', '5y', '10y', 'all', 'custom'].includes(period)) {
             // Long periods or custom range: Show Month + Year if range is large
             const showYear = period !== 'custom' || (new Date(customToDate).getTime() - new Date(customFromDate).getTime() > 1000 * 60 * 60 * 24 * 365);
             if (showYear) {

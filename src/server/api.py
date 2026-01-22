@@ -1068,6 +1068,8 @@ def _calculate_historical_performance_internal(
         start_date = end_date - timedelta(days=365 * 3)
     elif period == "5y":
         start_date = end_date - timedelta(days=365 * 5)
+    elif period == "10y":
+        start_date = end_date - timedelta(days=365 * 10)
     elif period == "ytd":
         start_date = date(end_date.year, 1, 1)
     elif period == "all":

@@ -15,6 +15,7 @@ const PERIODS = [
     { label: '1Y', value: '1y' },
     { label: '3Y', value: '3y' },
     { label: '5Y', value: '5y' },
+    { label: '10Y', value: '10y' },
     { label: 'All', value: 'all' },
     { label: 'Custom', value: 'custom' },
 ];
