@@ -47,5 +47,10 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
+    
+    log_config = uvicorn.config.LOGGING_CONFIG
+    log_config["formatters"]["access"]["fmt"] = "%(asctime)s - " + log_config["formatters"]["access"]["fmt"]
+    log_config["formatters"]["default"]["fmt"] = "%(asctime)s - " + log_config["formatters"]["default"]["fmt"]
+
     # reload=False for debugging stability vs potential thread deadlock issues with StatReload
-    uvicorn.run("server.main:app", host="0.0.0.0", port=8000, reload=False, workers=1)
+    uvicorn.run("server.main:app", host="0.0.0.0", port=8000, reload=False, workers=1, log_config=log_config)
