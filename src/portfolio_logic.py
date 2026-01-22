@@ -23,7 +23,7 @@ import config # Added config import
 import math # Added math import
 from datetime import datetime, date, timedelta
 import pytz
-from utils_time import get_est_today
+from utils_time import get_est_today, get_latest_trading_date
 import json
 from typing import List, Dict, Tuple, Optional, Set, Any, Union
 
@@ -5519,7 +5519,7 @@ def _calculate_accumulated_gains_and_resample(
             # Fill NaNs with 0.0
             results_df["drawdown"] = results_df["drawdown"].fillna(0.0)
 
-        if interval == "D":
+        if interval in ["D", "1d"]:
             final_df_resampled = results_df
             final_df_resampled.rename(
                 columns={
@@ -5534,6 +5534,22 @@ def _calculate_accumulated_gains_and_resample(
                     final_df_resampled.rename(
                         columns={accum_col_daily: accum_col_final}, inplace=True
                     )
+            
+            # --- FIX: Shift timestamp to Market Close (16:00 EST) ---
+            # Standard YF data is 00:00 UTC, which equals 19:00 EST of the PREVIOUS day.
+            # This causes the frontend to display Tuesday's data as Monday.
+            # We shift it to 16:00 EST (21:00 UTC) so it falls correctly on the trading day.
+            if not final_df_resampled.empty:
+                 try:
+                     dates = final_df_resampled.index.date
+                     naive_dti = pd.DatetimeIndex(dates)
+                     ny_midnight = naive_dti.tz_localize('America/New_York')
+                     ny_close = ny_midnight + pd.Timedelta(hours=16)
+                     final_df_resampled.index = ny_close.tz_convert('UTC')
+                     logging.info("Shifted Daily index to 16:00 EST to correct visual date alignment.")
+                 except Exception as e_shift:
+                     logging.error(f"Failed to shift daily index: {e_shift}")
+
         elif (
             interval in ["W", "M", "ME"] and not results_df.empty
         ):  # <-- ADD 'M' to the check
@@ -5952,7 +5968,31 @@ def calculate_historical_performance(
         full_start_date = start_date
         fetch_end_date = end_date
 
-    # --- 2. Instantiate MarketDataProvider ---
+    # --- FIX: Clamp end_date to latest_trading_date for Daily/Weekly/Monthly to avoid flat lines "Today" ---
+    # Only clamp if the user asked for a future/today date that hasn't closed yet,
+    # AND there are no transactions forcing us to show that future date.
+    clamped_end_date = end_date
+    if interval in ["D", "1d", "W", "M", "ME"]:
+         latest_trading = get_latest_trading_date()
+         if end_date > latest_trading and full_end_date_tx <= latest_trading:
+             logging.info(f"Clamping end_date from {end_date} to {latest_trading} (Latest Trading Date).")
+             clamped_end_date = latest_trading
+    
+    # fetch_end_date must be at least clamped_end_date + 1 day (because YF is exclusive)
+    # AND cover any transactions
+    min_fetch_end = max(clamped_end_date + timedelta(days=1), full_end_date_tx + timedelta(days=1))
+    # We also respect the original end_date if it was larger (e.g. for some reason needed?)
+    # But usually we just need to cover the clamped range + buffer.
+    # Let's just ensure we capture up to 'today' if needed for checking.
+    # Actually, simplistic logic:
+    fetch_end_date = max(end_date, date.today()) # Ensure we fetch up to today to populate cache correctly?
+    # Better:
+    fetch_end_date = max(end_date, full_end_date_tx)
+    if fetch_end_date <= clamped_end_date:
+         fetch_end_date = clamped_end_date + timedelta(days=1)
+    
+    logging.info(f"Date Range Config: Request={start_date}..{end_date}, ClampedEnd={clamped_end_date}, FetchEnd={fetch_end_date}")
+
     market_provider = get_shared_mdp(
         hist_data_cache_dir_name="historical_data_cache"
     )
@@ -6220,7 +6260,7 @@ def calculate_historical_performance(
             ),
             transactions_df_effective=transactions_df_effective,
             start_date=start_date,  # FIX: Pass requested view start (2026), not loaded history start (2002)
-            end_date=fetch_end_date,
+            end_date=clamped_end_date,
             historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,
             historical_prices_yf_adjusted=historical_prices_yf_adjusted,
             historical_fx_yf=historical_fx_yf,
@@ -6351,7 +6391,7 @@ def calculate_historical_performance(
         benchmark_symbols_yf=clean_benchmark_symbols_yf,
         interval=interval,
         start_date_filter=start_date,
-        end_date_filter=end_date,
+        end_date_filter=clamped_end_date,
     )
     if status_update_resample:
         status_parts.append(status_update_resample.strip())
