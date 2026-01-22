@@ -1030,11 +1030,11 @@ def get_screener_results_by_universe(db_conn: sqlite3.Connection, universe: str)
     except sqlite3.Error as e:
         logging.error(f"Error fetching screener results for universe {universe}: {e}")
         return []
-def update_ai_review_in_cache(db_conn: sqlite3.Connection, symbol: str, ai_data: Dict[str, Any], info: Optional[Dict[str, Any]] = None):
+def update_ai_review_in_cache(db_conn: sqlite3.Connection, symbol: str, ai_data: Dict[str, Any], info: Optional[Dict[str, Any]] = None, universe: str = 'manual'):
     """
     Specifically updates the AI review portions of the screener cache.
     Targets ALL universes for the given symbol to keep them in sync.
-    If no entries exist, creates a 'manual' universe entry.
+    If no entries exist, creates a new entry with the specified universe.
     Also syncs metadata from 'info' if provided.
     """
     now_str = datetime.now().isoformat()
@@ -1076,17 +1076,18 @@ def update_ai_review_in_cache(db_conn: sqlite3.Connection, symbol: str, ai_data:
             symbol.upper()
         ))
         
-        # 2. If no rows affected, create new 'manual' entry
+        # 2. If no rows affected, create new entry using the provided universe
         if cursor.rowcount == 0:
             insert_sql = """
             INSERT INTO screener_cache (
                 symbol, universe, ai_moat, ai_financial_strength, 
                 ai_predictability, ai_growth, ai_summary, 
                 name, price, pe_ratio, market_cap, sector, updated_at
-            ) VALUES (?, 'manual', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             cursor.execute(insert_sql, (
                 symbol.upper(),
+                universe,
                 scorecard.get("moat"),
                 scorecard.get("financial_strength"),
                 scorecard.get("predictability"),

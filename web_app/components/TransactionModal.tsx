@@ -409,7 +409,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                                 value={formData.Symbol}
                                 onChange={handleChange}
                                 onFocus={() => setActiveSuggestionField('Symbol')}
-                                onBlur={() => setTimeout(() => setActiveSuggestionField(null), 100)}
+                                onBlur={() => setTimeout(() => setActiveSuggestionField(curr => curr === 'Symbol' ? null : curr), 100)}
                                 placeholder="e.g. AAPL"
                                 autoComplete="off"
                                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 uppercase"
@@ -429,7 +429,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                                         value={formData['From Account']}
                                         onChange={handleChange}
                                         onFocus={() => setActiveSuggestionField('From Account')}
-                                        onBlur={() => setTimeout(() => setActiveSuggestionField(null), 100)}
+                                        onBlur={() => setTimeout(() => setActiveSuggestionField(curr => curr === 'From Account' ? null : curr), 100)}
                                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                                         required
                                     />
@@ -443,7 +443,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                                         value={formData['To Account']}
                                         onChange={handleChange}
                                         onFocus={() => setActiveSuggestionField('To Account')}
-                                        onBlur={() => setTimeout(() => setActiveSuggestionField(null), 100)}
+                                        onBlur={() => setTimeout(() => setActiveSuggestionField(curr => curr === 'To Account' ? null : curr), 100)}
                                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                                         required
                                     />
@@ -459,7 +459,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                                     value={isSplit ? 'All Accounts' : formData.Account}
                                     onChange={handleChange}
                                     onFocus={() => setActiveSuggestionField('Account')}
-                                    onBlur={() => setTimeout(() => setActiveSuggestionField(null), 100)}
+                                    onBlur={() => setTimeout(() => setActiveSuggestionField(curr => curr === 'Account' ? null : curr), 100)}
                                     placeholder="e.g. Brokerage"
                                     autoComplete="off"
                                     disabled={isSplit}
