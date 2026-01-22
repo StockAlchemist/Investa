@@ -236,7 +236,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                         </PieChart>
                     </ResponsiveContainer>
                 ) : (
-                    <div className="flex items-center justify-center w-full h-full text-muted-foreground text-sm">
+                    <div className="flex items-center justify-center w-full h-full text-muted-foreground text-sm pb-24">
                         Loading...
                     </div>
                 )}
