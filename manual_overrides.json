@@ -138,7 +138,7 @@
     "valuation_overrides": {
         "AAPL": {
             "dcf_discount_rate": 0.09269999999999999,
-            "dcf_growth_rate": 0.0392,
+            "dcf_growth_rate": 0.039212592033254,
             "dcf_terminal_growth": 0.02,
             "dcf_projection_years": 5,
             "dcf_fcf": 78862254080,

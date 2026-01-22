@@ -3049,7 +3049,7 @@ async def clear_cache():
         # Directory names to recursively delete
         CACHE_DIR_NAMES = {
             'historical_data_cache', 
-            'fundamentals_cache', 
+            # 'fundamentals_cache', # Preserved by user request
             'all_holdings_cache_new',
             'daily_results_cache',
             'test_fx_cache' # Added this
