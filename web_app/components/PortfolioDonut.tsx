@@ -204,35 +204,42 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
         <div className="relative h-full">
             <h4 className="absolute top-3 left-4 z-10 text-xs font-semibold text-muted-foreground uppercase tracking-tight">{title}</h4>
             <div className="relative w-full h-full min-h-[380px] md:min-h-[550px]">
-                <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                        <Pie
-                            data={data}
-                            cx="50%"
-                            cy="53%"
-                            innerRadius="50%"
-                            outerRadius="70%"
-                            paddingAngle={2}
-                            dataKey="value"
-                            onMouseEnter={onPieEnter}
-                            onMouseLeave={onPieLeave}
-                            // Pass forceAllLabels through a closure or similar
-                            label={(props) => renderCustomizedLabel({ ...props, forceAllLabels })}
-                            labelLine={false}
-                            isAnimationActive={false}
-                        >
-                            {data.map((entry, index) => (
-                                <Cell
-                                    key={`cell-${index}`}
-                                    fill={entry.color}
-                                    strokeWidth={2}
-                                    stroke={index === activeIndex ? "rgba(255,255,255,0.8)" : "transparent"}
-                                    className="transition-all duration-300 outline-none"
-                                />
-                            ))}
-                        </Pie>
-                    </PieChart>
-                </ResponsiveContainer>
+                {/* Only render ResponsiveContainer when we have valid data, otherwise it might error with width -1 */}
+                {(data && data.length > 0) ? (
+                    <ResponsiveContainer width="100%" height="100%" debounce={50}>
+                        <PieChart>
+                            <Pie
+                                data={data}
+                                cx="50%"
+                                cy="53%"
+                                innerRadius="50%"
+                                outerRadius="70%"
+                                paddingAngle={2}
+                                dataKey="value"
+                                onMouseEnter={onPieEnter}
+                                onMouseLeave={onPieLeave}
+                                // Pass forceAllLabels through a closure or similar
+                                label={(props) => renderCustomizedLabel({ ...props, forceAllLabels })}
+                                labelLine={false}
+                                isAnimationActive={false}
+                            >
+                                {data.map((entry, index) => (
+                                    <Cell
+                                        key={`cell-${index}`}
+                                        fill={entry.color}
+                                        strokeWidth={2}
+                                        stroke={index === activeIndex ? "rgba(255,255,255,0.8)" : "transparent"}
+                                        className="transition-all duration-300 outline-none"
+                                    />
+                                ))}
+                            </Pie>
+                        </PieChart>
+                    </ResponsiveContainer>
+                ) : (
+                    <div className="flex items-center justify-center w-full h-full text-muted-foreground text-sm">
+                        Loading...
+                    </div>
+                )}
 
                 {/* Center Content Overlay */}
                 <div className="absolute left-1/2 top-[53%] -translate-x-1/2 -translate-y-1/2 pointer-events-none">

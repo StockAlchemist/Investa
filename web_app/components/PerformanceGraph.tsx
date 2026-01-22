@@ -329,7 +329,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
     }, []);
 
     // Only render chart if we have valid dimensions
-    const shouldRenderChart = mounted && dimensions && dimensions.width > 0 && dimensions.height > 0 && chartedData && chartedData.length > 0;
+    const shouldRenderChart = mounted && dimensions && dimensions.width > 0 && dimensions.height > 0 && processedData.length > 0;
 
     if (!shouldRenderChart) {
         return (

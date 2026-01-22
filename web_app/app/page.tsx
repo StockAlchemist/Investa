@@ -82,15 +82,20 @@ export default function Home() {
 
 
   // Lazy init benchmarks from localStorage
-  const [benchmarks, setBenchmarks] = useState<string[]>(() => {
-    if (typeof window === 'undefined') return ['S&P 500', 'Dow Jones', 'NASDAQ'];
+  // Initialize with defaults to match server-side rendering, avoiding hydration mismatch.
+  const [benchmarks, setBenchmarks] = useState<string[]>(['S&P 500', 'Dow Jones', 'NASDAQ']);
+
+  // Load benchmarks from localStorage on mount
+  useEffect(() => {
     try {
       const saved = localStorage.getItem('investa_graph_benchmarks');
-      return saved ? JSON.parse(saved) : ['S&P 500', 'Dow Jones', 'NASDAQ'];
-    } catch {
-      return ['S&P 500', 'Dow Jones', 'NASDAQ'];
+      if (saved) {
+        setBenchmarks(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.error("Failed to load benchmarks", e);
     }
-  });
+  }, []);
 
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
@@ -104,15 +109,21 @@ export default function Home() {
   const [correlationPeriod, setCorrelationPeriod] = useState('1y');
 
   // Lazy init visibleItems
-  const [visibleItems, setVisibleItems] = useState<string[]>(() => {
-    if (typeof window === 'undefined') return DEFAULT_ITEMS.map(i => i.id);
+  // Initialize with defaults to match server-side rendering, avoiding hydration mismatch.
+  // We update from localStorage in useEffect.
+  const [visibleItems, setVisibleItems] = useState<string[]>(DEFAULT_ITEMS.map(i => i.id));
+
+  // Load visibleItems from localStorage on mount
+  useEffect(() => {
     try {
       const saved = localStorage.getItem('investa_dashboard_visible_items');
-      return saved ? JSON.parse(saved) : DEFAULT_ITEMS.map(i => i.id);
-    } catch {
-      return DEFAULT_ITEMS.map(i => i.id);
+      if (saved) {
+        setVisibleItems(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.error("Failed to load visible items", e);
     }
-  });
+  }, []);
 
   // Persist visibility to localStorage
   useEffect(() => {
@@ -234,7 +245,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, '1d', [], '5m', undefined, undefined, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: isHighPriorityLoaded,
+    // enabled: isHighPriorityLoaded, // Allow history to fetch in parallel with summary
   });
 
   const watchlistQuery = useQuery({
@@ -538,11 +549,7 @@ export default function Home() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 md:pl-[72px] transition-all duration-300">
 
 
-        {loading && !summaryQuery.data ? (
-          <div className="p-4 text-center text-gray-500">Loading...</div>
-        ) : (
-          renderTabContent()
-        )}
+        {renderTabContent()}
       </div>
 
       {/* Bottom Nav (Visual only for now) */}
