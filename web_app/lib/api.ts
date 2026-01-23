@@ -203,6 +203,31 @@ export async function fetchHistory(
     return res.json();
 }
 
+export interface StockHistoryData {
+    date: string;
+    value: number;
+    volume: number;
+    return_pct: number;
+    [key: string]: number | string | undefined; // For benchmarks
+}
+
+export async function fetchStockHistory(
+    symbol: string,
+    period: string = '1y',
+    interval: string = '1d',
+    benchmarks?: string[],
+    signal?: AbortSignal
+): Promise<StockHistoryData[]> {
+    const params = new URLSearchParams({ period, interval });
+    if (benchmarks) {
+        benchmarks.forEach(b => params.append('benchmarks', b));
+    }
+
+    const res = await fetch(`${API_BASE_URL}/stock_history/${symbol}?${params.toString()}`, { signal, cache: 'no-store' });
+    if (!res.ok) throw new Error('Failed to fetch stock history');
+    return res.json();
+}
+
 export interface AssetChangeData {
     [period: string]: {
         Date: string;

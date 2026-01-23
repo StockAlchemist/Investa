@@ -722,6 +722,31 @@ Investa automatically fetches default parameters (like Beta, WACC/Discount Rate,
 
 **Note:** You can also manage these parameters directly from the **Valuation Tab** in the stock detail view by clicking the "Edit" (pencil) icon next to the parameters list.
 
+## Part 15: Interactive Stock Charts
+
+Investa's Web Dashboard now features a rich, interactive **Stock Price Chart** to help you analyze price movements and trends for individual holdings.
+
+### Accessing the Chart
+1.  Navigate to the **Holdings Table** on the Web Dashboard.
+2.  Click on any **Stock Symbol**.
+3.  In the detail modal that opens, select the **"Chart"** tab.
+
+### Chart Features
+*   **Time Ranges:** Switch effortlessly between different historical periods: `1D`, `5D`, `1M`, `6M`, `YTD`, `1Y`, `3Y`, `5Y`, `10Y`, and `Max`.
+    *   **Gapless Intraday:** The `1D` and `5D` views automatically filter out non-market hours, showing you a continuous stream of price action from 09:30 to 16:00 EST.
+    *   **Long-Term History:** View price history going back decades for a comprehensive perspective.
+
+*   **View Modes:** Toggle between two primary visualizations:
+    *   **Price:** Displays the raw stock price over time (e.g., in USD).
+    *   **Return %:** Shows the percentage gain or loss relative to the start of the selected period. This view includes **Dynamic Gain/Loss Shading** (Green for gains, Red for losses) to instantly visualize performance.
+
+*   **Technical Indicators (Moving Averages):**
+    *   **SMA 50:** Toggle the 50-day Simple Moving Average line (orange) to spot medium-term trends.
+    *   **SMA 200:** Toggle the 200-day Simple Moving Average line (purple) to identify long-term trends and potential support/resistance levels.
+    *   *Note: SMAs are calculated based on the available historical data for the selected period.*
+
+*   **Responsive Design:** The chart controls are optimized for both desktop and mobile use, ensuring you have full analytical power whether you're at your desk or on the go.
+
 ---
 
 That's the grand tour of Investa! It's a powerful tool designed to give you deep insights into your investments. Take your time, ensure your data is accurate, and explore all the features to make the most of your portfolio analysis. Happy investing!

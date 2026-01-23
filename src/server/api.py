@@ -80,6 +80,85 @@ def get_mdp():
     from market_data import get_shared_mdp
     return get_shared_mdp()
 
+@router.get("/capital_gains")
+async def get_capital_gains(
+    currency: str = "USD",
+    accounts: Optional[List[str]] = Query(None),
+    year: Optional[int] = None,
+    data: tuple = Depends(get_transaction_data)
+):
+    """
+    Returns realized capital gains history.
+    """
+    (
+        df,
+        manual_overrides,
+        user_symbol_map,
+        user_excluded_symbols,
+        user_currency_map,
+        _, # db_path
+        _  # db_mtime
+    ) = data
+
+    if df.empty:
+        return []
+
+    try:
+        # Load fx history
+        mdp = get_mdp()
+        # We need historical FX for accuracy. 
+        # For now, let's assume the analyzer handles the fetching or uses a fallback?
+        # extract_realized_capital_gains_history signature requires historical_fx_yf
+        
+        # We need to fetch historical FX for all currencies involved... 
+        # This might be heavy if not cached. 
+        # Let's see if we can get it from mdp.
+        
+        # For simplicity/speed in this endpoints, we might rely on the analyzer's internal logic 
+        # if it fetches it, OR we pass an empty dict and let it use current rates/estimates if needed?
+        # Actually `extract_realized_capital_gains_history` takes `historical_fx_yf`.
+        
+        # Let's fetch relevant FX pairs based on the transaction currencies.
+        currencies = df['Local Currency'].unique()
+        fx_pairs = []
+        for c in currencies:
+            if c != "USD": # Assuming base is USD for store? Or display currency?
+                # The logic usually needs XXXUSD
+                 fx_pairs.append(f"{c}USD=X")
+        
+        hist_fx = {}
+        if fx_pairs:
+             # Fetch 20 years?
+             start_date = date(2000, 1, 1)
+             end_date = date.today()
+             hist_fx, _ = mdp.get_historical_fx_rates(fx_pairs, start_date, end_date)
+             
+        # Also need current rates
+        current_quotes, current_fx, _, _, _ = mdp.get_current_quotes([], set(currencies), user_symbol_map, user_excluded_symbols)
+        
+        gains_df = extract_realized_capital_gains_history(
+            all_transactions_df=df,
+            display_currency=currency,
+            historical_fx_yf=hist_fx,
+            default_currency=config.DEFAULT_CURRENCY,
+            shortable_symbols=config.SHORTABLE_SYMBOLS,
+            include_accounts=accounts,
+            current_fx_rates_vs_usd=current_fx,
+            # Filter by year if needed
+            from_date=date(year, 1, 1) if year else None,
+            to_date=date(year, 12, 31) if year else None
+        )
+        
+        if gains_df.empty:
+            return []
+            
+        return clean_nans(gains_df.to_dict(orient="records"))
+
+    except Exception as e:
+        logging.error(f"Error calculating capital gains: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/asset_change")
 async def get_asset_change(
     currency: str = "USD",
@@ -1462,7 +1541,181 @@ def get_history(
         logging.error(f"Error getting history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/capital_gains")
+@router.get("/stock_history/{symbol}")
+async def get_stock_history(
+    symbol: str,
+    period: str = "1y",
+    interval: str = "1d",
+    benchmarks: Optional[List[str]] = Query(None),
+    data: tuple = Depends(get_transaction_data)
+):
+    """
+    Returns historical price data for a single stock, with optional benchmarks.
+    """
+    try:
+        _, _, user_symbol_map, user_excluded_symbols, _, _, _ = data
+        mdp = get_mdp()
+        
+        # 1. Map Symbol
+        yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
+        if not yf_symbol:
+            # Try as direct ticker if not found in map (e.g. for benchmarks or unheld stocks)
+            yf_symbol = symbol 
+
+        # 2. Map Benchmarks
+        mapped_benchmarks = []
+        if benchmarks:
+            for b in benchmarks:
+                if b in config.BENCHMARK_MAPPING:
+                    mapped_benchmarks.append(config.BENCHMARK_MAPPING[b])
+                else:
+                    mapped_benchmarks.append(b)
+        
+        # 3. Determine Date Range
+        # Using helper logic similar to _calculate_historical_performance_internal
+        from utils_time import get_est_today, get_latest_trading_date
+        
+        # End Date: Today + 1 (exclusive) to ensure we get today's data
+        end_date = get_est_today() + timedelta(days=1)
+        
+        # Start Date
+        if period == "1d":
+            interval = "2m" # Force Intraday
+            # For 1D, we want the last trading session.
+            # If today is trading, get today. If weekend, get Friday.
+            latest_trading = get_latest_trading_date()
+            start_date = latest_trading
+            # For intraday '1d', end_date logic in market_data handles the "up to now"
+            # But let's be explicit: start at latest_trading, end at latest_trading + 1
+            end_date = latest_trading + timedelta(days=1)
+        elif period == "5d":
+            start_date = end_date - timedelta(days=7) # Go back a week to cover 5 trading days
+            interval = "15m" # Higher res for 5d
+        elif period == "1m":
+            start_date = end_date - timedelta(days=30)
+            interval = "1d" # Daily is fine, or 60m? Daily is standard for 1M.
+        elif period == "3m":
+            start_date = end_date - timedelta(days=90)
+        elif period == "6m":
+            start_date = end_date - timedelta(days=180)
+        elif period == "1y":
+            start_date = end_date - timedelta(days=365)
+        elif period == "3y":
+            start_date = end_date - timedelta(days=365*3)
+        elif period == "5y":
+            start_date = end_date - timedelta(days=365*5)
+        elif period == "10y":
+            start_date = end_date - timedelta(days=365*10)
+        elif period == "ytd":
+            # start_date = date(end_date.year, 1, 1) 
+            # Better YTD: Start of current year
+            today = get_est_today()
+            start_date = date(today.year, 1, 1)
+        elif period == "max" or period == "all":
+             # Arbitrary long history
+             start_date = date(1980, 1, 1)
+        else:
+            # Default to 1y if unknown
+            start_date = end_date - timedelta(days=365)
+
+        # 4. Fetch Data (Main Symbol + Benchmarks)
+        symbols_to_fetch = [yf_symbol] + mapped_benchmarks
+        
+        # Use get_historical_data (handles DB sync and cache)
+        # Note: For intraday (1m, 5m etc), get_historical_data bypasses DB write usually/reads from special table
+        # We need to make sure interval is passed correct.
+        
+        hist_data, _ = mdp.get_historical_data(
+            symbols_to_fetch,
+            start_date,
+            end_date,
+            interval=interval
+        )
+        
+        if yf_symbol not in hist_data or hist_data[yf_symbol].empty:
+            # Fallback: Maybe it's a crypto or something that failed mapping?
+            # Or just no data.
+            return []
+
+        # 5. Align and Process
+        # We want a single list of dicts: { date, price, volume, bm1, bm2... }
+        # Merge on index (Date)
+        
+        main_df = hist_data[yf_symbol].copy()
+        main_df.rename(columns={"price": "value", "Volume": "volume"}, inplace=True)
+        
+        if "value" not in main_df.columns:
+            # Fallback if rename failed or price missing
+            if "price" in main_df.columns:
+                main_df["value"] = main_df["price"]
+            else:
+                # Last resort: use first column
+                if not main_df.empty:
+                    main_df["value"] = main_df.iloc[:, 0]
+                else:
+                    return [] # Should be caught above
+
+        if "volume" not in main_df.columns:
+            main_df["volume"] = 0.0
+
+        # --- NEW: Filter Intraday Data (Market Hours Only: 09:30 - 16:00 EST) ---
+        if period in ["1d", "5d"] and not main_df.empty:
+            try:
+                # Ensure index is timezone-aware. yfinance usually returns tz-aware (America/New_York) for intraday.
+                if main_df.index.tz is None:
+                    main_df.index = main_df.index.tz_localize("America/New_York", ambiguous='infer')
+                else:
+                    main_df.index = main_df.index.tz_convert("America/New_York")
+                
+                # Filter strictly between 09:30 and 16:00
+                main_df = main_df.between_time("09:30", "16:00")
+            except Exception as e:
+                logging.warning(f"Error filtering market hours for {symbol}: {e}")
+
+        # Calculate Return % (Normalized to start)
+        if not main_df.empty and "value" in main_df.columns:
+            first_val = main_df["value"].iloc[0]
+            if first_val and first_val > 0:
+                main_df["return_pct"] = (main_df["value"] / first_val - 1) * 100
+            else:
+                main_df["return_pct"] = 0.0
+                
+        # Join Benchmarks
+        cols_to_keep = ["value", "volume", "return_pct"]
+        result_df = main_df[cols_to_keep].copy()
+        
+        for bm in mapped_benchmarks:
+            if bm in hist_data and not hist_data[bm].empty:
+                bm_df = hist_data[bm].copy()
+                # Normalize benchmark
+                if "price" in bm_df.columns:
+                    bm_start = bm_df["price"].iloc[0]
+                    if bm_start and bm_start > 0:
+                         bm_series = (bm_df["price"] / bm_start - 1) * 100
+                    else:
+                         bm_series = 0.0
+                         
+                    # Reindex to match main_df (ffill for missing days if mismatched trading cals)
+                    aligned_bm = bm_series.reindex(result_df.index, method='ffill')
+                    result_df[bm] = aligned_bm
+
+        # 6. Format for JSON
+        # Reset index to get Date/timestamp column
+        result_df = result_df.reset_index()
+        # Rename index col to 'date' usually
+        date_col = "date" if "date" in result_df.columns else ("Date" if "Date" in result_df.columns else "index")
+        result_df.rename(columns={date_col: "date"}, inplace=True)
+        
+        # Convert date to isoformat
+        result_df["date"] = result_df["date"].apply(lambda x: x.isoformat())
+        
+        records = result_df.to_dict(orient="records")
+        return clean_nans(records)
+
+    except Exception as e:
+        logging.error(f"Error serving stock history: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 async def get_capital_gains(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),

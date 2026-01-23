@@ -62,6 +62,7 @@ import { cn, formatPercent as formatPercentShared } from "@/lib/utils";
 import { Skeleton } from './ui/skeleton';
 import { Badge } from './ui/badge';
 import StockIcon from './StockIcon';
+import StockPriceChart from './StockPriceChart';
 
 interface StockDetailModalProps {
     symbol: string;
@@ -70,7 +71,7 @@ interface StockDetailModalProps {
     currency: string;
 }
 
-type TabType = 'overview' | 'financials' | 'ratios' | 'valuation' | 'holdings' | 'analysis';
+type TabType = 'overview' | 'chart' | 'financials' | 'ratios' | 'valuation' | 'holdings' | 'analysis';
 
 // Importance ranking for financial rows
 const RANKING_CONFIG: Record<string, string[]> = {
@@ -708,6 +709,12 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         )
     };
 
+    const renderChart = () => (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <StockPriceChart symbol={symbol} currency={currency} />
+        </div>
+    );
+
     const VALUATION_INFO = {
         discount_rate: {
             description: "The rate used to discount future cash flows to their present value. High rate = lower valuation.",
@@ -1065,6 +1072,12 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             label="Overview"
                         />
                         <TabButton
+                            active={activeTab === 'chart'}
+                            onClick={() => setActiveTab('chart')}
+                            icon={TrendingUp}
+                            label="Chart"
+                        />
+                        <TabButton
                             active={activeTab === 'analysis'}
                             onClick={() => setActiveTab('analysis')}
                             icon={Sparkles}
@@ -1130,6 +1143,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         <>
                             {activeTab === 'analysis' && renderAnalysis()}
                             {activeTab === 'overview' && renderOverview()}
+                            {activeTab === 'chart' && renderChart()}
                             {activeTab === 'financials' && renderFinancials()}
                             {activeTab === 'ratios' && renderRatios()}
                             {activeTab === 'valuation' && renderValuation()}

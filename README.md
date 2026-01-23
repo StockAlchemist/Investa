@@ -12,6 +12,7 @@ Investa is a comprehensive portfolio management solution offering both a feature
 * **Transactions:** Direct database editing, CSV import/export, and full history log.
 * **Multi-Currency:** converting all assets to your preferred display currency (e.g. USD, EUR, JPY).
 * **Performance Charts:** Time-Weighted Return (TWR) vs. Benchmarks (SPY, QQQ) and Portfolio Value over time, including **gapless intraday views** (1D, 5D) with **intelligent caching** for instant after-hours loading.
+* **Interactive Price Charts:** Detailed stock price charts with **Moving Averages (SMA 50/200)**, configurable time ranges (1D to Max), and gain/loss shading.
 * **Dividend Tracking:** Charts and tables for annual/quarterly/monthly dividend income.
 * **Advanced Analysis:** Asset allocation, Correlation Matrix, Factor Analysis, and Scenario Analysis.
 * **Rebalancing:** Calculator to help you rebalance portfolio to target allocations.
