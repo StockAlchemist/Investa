@@ -2127,6 +2127,14 @@ async def get_stock_analysis(
                 fund_data, financials_df, balance_sheet_df, cashflow_df
             )
             
+            # Serialize the entire result for storage
+            iv_json = json.dumps(iv_results, default=str)
+            
+            # Inject into info dict so it gets picked up by update_intrinsic_value_in_cache
+            # We copy it to avoid mutating the original fund_data for other uses if any
+            info_for_update = fund_data.copy()
+            info_for_update["valuation_details"] = iv_json
+
             # Update cache so screener table reads it next time (or live update listens to it)
             db_conn = get_db_connection()
             if db_conn:
@@ -2137,7 +2145,7 @@ async def get_stock_analysis(
                     iv_results.get("margin_of_safety_pct"),
                     fund_data.get("lastFiscalYearEnd"),
                     fund_data.get("mostRecentQuarter"),
-                    info=fund_data
+                    info=info_for_update
                 )
             
             # Inject into response so frontend event can carry it
@@ -2734,6 +2742,7 @@ async def get_dividend_calendar(
 @router.get("/fundamentals/{symbol}")
 async def get_fundamentals_endpoint(
     symbol: str,
+    force: bool = Query(False),
     data: tuple = Depends(get_transaction_data)
 ):
     """Returns fundamental data (ticker.info) for a symbol."""
@@ -2746,7 +2755,7 @@ async def get_fundamentals_endpoint(
     
     try:
         mdp = get_mdp()
-        fundamental_data = mdp.get_fundamental_data(yf_symbol)
+        fundamental_data = mdp.get_fundamental_data(yf_symbol, force_refresh=force)
         if fundamental_data is None:
              raise HTTPException(status_code=404, detail=f"No fundamental data found for {yf_symbol}")
         return clean_nans(fundamental_data)

@@ -33,14 +33,89 @@ try:
     from server.screener_service import get_sp500_tickers
     from server.ai_analyzer import generate_stock_review
     from financial_ratios import calculate_key_ratios_timeseries, get_comprehensive_intrinsic_value
-    from db_utils import get_db_connection, upsert_screener_results, update_intrinsic_value_in_cache
+    from db_utils import get_db_connection, upsert_screener_results, update_intrinsic_value_in_cache, get_cached_screener_results, update_ai_review_in_cache
 except ImportError as e:
     print(f"CRITICAL: Failed to import modules. Make sure you are running with 'src' in PYTHONPATH. Error: {e}")
     sys.exit(1)
 
-# ... (Previous code)
+BATCH_DELAY_SECONDS = 2
+MAX_CONSECUTIVE_FAILURES = 5
+RATE_LIMIT_WAIT_SECONDS = 24 * 3600 # 24 hours
 
-def process_stock(symbol: str, mdp) -> bool:
+def check_if_review_exists(symbol: str, fund_data: dict = None) -> bool:
+    """
+    Checks if a valid AI review already exists for the symbol in the cache.
+    Performs smart invalidation based on fiscal year/quarter data.
+    """
+    conn = get_db_connection()
+    if not conn:
+        return False
+        
+    try:
+        # We can use get_cached_screener_results to check
+        results = get_cached_screener_results(conn, [symbol])
+        conn.close()
+        
+        if symbol in results:
+            data = results[symbol]
+            # Check if ai_summary is present and not empty
+            summary_text = data.get("ai_summary", "")
+            has_review = bool(summary_text)
+            
+            # --- FAILURE DETECTION ---
+            # If review exists but looks like an error or is empty/too short, force regeneration
+            if has_review:
+                if "error" in summary_text.lower() or len(summary_text) < 20:
+                    logging.warning(f"Invalidating cache for {symbol}: AI Summary indicates failure or is too short.")
+                    return False
+            
+            if has_review and fund_data:
+                # --- SMART INVALIDATION ---
+                cached_fy_end = data.get("last_fiscal_year_end")
+                cached_mrq = data.get("most_recent_quarter")
+                
+                live_fy_end = fund_data.get("lastFiscalYearEnd")
+                live_mrq = fund_data.get("mostRecentQuarter")
+                
+                # If cached data timestamp identifiers are stale compared to live data,
+                # we declare the review as "not existing" to force a refresh.
+                if cached_fy_end != live_fy_end or cached_mrq != live_mrq:
+                    logging.info(f"Invalidating cache for {symbol}: New financial data detected. Cached(FY={cached_fy_end}, Q={cached_mrq}) vs Live(FY={live_fy_end}, Q={live_mrq})")
+                    return False
+            
+            return has_review
+        return False
+    except Exception as e:
+        logging.error(f"Error checking review existence for {symbol}: {e}")
+        if conn:
+            conn.close()
+        return False
+
+def save_review_to_screener(symbol: str, review: dict, fund_data: dict):
+    """
+    Saves the generated AI review to the screener cache with universe='sp500'.
+    """
+    conn = get_db_connection()
+    if not conn:
+        return
+
+    try:
+        # update_ai_review_in_cache handles the logic of updating or creating new entry
+        update_ai_review_in_cache(
+            conn, 
+            symbol, 
+            review, 
+            info=fund_data, 
+            universe='sp500'
+        )
+        conn.close()
+        logging.info(f"Saved review to screener cache for {symbol} (universe='sp500').")
+    except Exception as e:
+        logging.error(f"Error saving review to screener for {symbol}: {e}")
+        if conn:
+            conn.close()
+
+def process_stock(symbol: str, mdp, fund_data: dict) -> bool:
     """
     Fetches data and generates review for a single stock.
     Returns True if successful (or skipped), False if failed.
@@ -52,8 +127,7 @@ def process_stock(symbol: str, mdp) -> bool:
         yf_symbol = symbol 
         # Note: get_sp500_tickers returns sanitized separate tickers usually
         
-        # 2. Fetch Fundamentals
-        fund_data = mdp.get_fundamental_data(yf_symbol)
+        # 2. Validate Fundamentals
         if not fund_data:
             logging.warning(f"Skipping {symbol}: No fundamental data found.")
             return True # Treat as "done" so we don't retry endlessly
@@ -117,6 +191,14 @@ def process_stock(symbol: str, mdp) -> bool:
         return False
 
 def main():
+    # Configure logging to ensure output is visible
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
     logging.info("Starting AI Review Worker...")
     
     # Get Market Data Provider
@@ -146,13 +228,20 @@ def main():
             processed_count = 0
             
             for symbol in tickers:
-                # check cache first to avoid API calls
-                if check_if_review_exists(symbol):
-                    # logging.info(f"Skipping {symbol} - Valid review exists.")
+                # 1. Fetch Fundamentals FIRST (Needed for Smart Cache Check)
+                # Note: This increases API usage slightly (fetching funds for skipped items), 
+                # but is required for 'smart' invalidation.
+                # However, mdp caches fundamentals for 12h-24h so it's efficient.
+                yf_symbol = symbol 
+                fund_data = mdp.get_fundamental_data(yf_symbol)
+                
+                # Check cache with smart invalidation
+                if check_if_review_exists(symbol, fund_data):
+                    # logging.info(f"Skipping {symbol} - Valid & Fresh review exists.")
                     continue
                 
                 logging.info(f"Review needed for {symbol}. Starting generation.")
-                success = process_stock(symbol, mdp)
+                success = process_stock(symbol, mdp, fund_data)
                 
                 if success:
                     consecutive_failures = 0

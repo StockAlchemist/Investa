@@ -2583,13 +2583,14 @@ class MarketDataProvider:
         return historical_fx_yf, fetch_failed
 
     @profile
-    def get_fundamental_data(self, yf_symbol: str) -> Optional[Dict[str, Any]]:
+    def get_fundamental_data(self, yf_symbol: str, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
         """
         Fetches fundamental data (ticker.info) for a given Yahoo Finance symbol.
         Uses a directory of JSON files for caching (one file per symbol).
 
         Args:
             yf_symbol (str): The Yahoo Finance ticker symbol (e.g., "AAPL").
+            force_refresh (bool): If True, bypasses cache and forces a fresh fetch.
 
         Returns:
             Optional[Dict[str, Any]]: A dictionary containing the fundamental data,
@@ -2603,7 +2604,7 @@ class MarketDataProvider:
             logging.warning(f"Invalid yf_symbol provided for fundamentals: {yf_symbol}")
             return None
 
-        logging.debug(f"Requesting fundamental data for YF symbol: {yf_symbol}")
+        logging.debug(f"Requesting fundamental data for YF symbol: {yf_symbol} (force_refresh={force_refresh})")
 
         # --- Construct cache file path for this specific symbol ---
         # Ensure the cache directory exists (already done in __init__, but safe to repeat)
@@ -2617,7 +2618,7 @@ class MarketDataProvider:
         cached_data = None
         cache_valid = False  # Flag for the *specific symbol's file*
 
-        if os.path.exists(symbol_cache_file):
+        if not force_refresh and os.path.exists(symbol_cache_file):
             try:
                 # MODIFIED: Load only the specific symbol's cache file
                 with open(symbol_cache_file, "r", encoding="utf-8") as f:

@@ -41,6 +41,12 @@ const PARAM_INFO = {
         default: "Latest TTM FCF",
         isPercent: false
     },
+    target_fcf_margin: {
+        label: "Target FCF Margin",
+        description: "Override estimated margin for Revenue-based DCF.",
+        default: "Historical Avg",
+        isPercent: true
+    },
     graham_eps: {
         label: "Graham EPS",
         description: "Earnings per share used as the base for the Graham Formula.",
@@ -88,7 +94,9 @@ export default function ManualValuationSettings({ settings }: ManualValuationSet
                         defaults.dcf_growth_rate = dcf.growth_rate;
                         defaults.dcf_terminal_growth = dcf.terminal_growth_rate;
                         defaults.dcf_projection_years = dcf.projection_years;
+                        defaults.dcf_projection_years = dcf.projection_years;
                         defaults.dcf_fcf = dcf.base_fcf;
+                        defaults.target_fcf_margin = dcf.fcf_margin;
                     }
 
                     if (graham) {

@@ -716,8 +716,10 @@ export interface IntrinsicValueResponse {
     margin_of_safety_pct?: number;
 }
 
-export async function fetchFundamentals(symbol: string): Promise<Fundamentals> {
-    const res = await fetch(`${API_BASE_URL}/fundamentals/${symbol}`);
+export async function fetchFundamentals(symbol: string, force: boolean = false): Promise<Fundamentals> {
+    const params = new URLSearchParams();
+    if (force) params.append('force', 'true');
+    const res = await fetch(`${API_BASE_URL}/fundamentals/${symbol}?${params.toString()}`);
     if (!res.ok) throw new Error(`Failed to fetch fundamentals for ${symbol}`);
     return res.json();
 }

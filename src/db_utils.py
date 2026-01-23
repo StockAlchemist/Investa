@@ -25,7 +25,7 @@ import threading
 import config
 
 DB_FILENAME = "investa_transactions.db"
-DB_SCHEMA_VERSION = 8
+DB_SCHEMA_VERSION = 9
 
 
 def get_database_path(db_filename: str = DB_FILENAME) -> str:
@@ -375,6 +375,22 @@ def create_transactions_table(conn: sqlite3.Connection):
             except sqlite3.Error as e:
                 logging.error(f"Error during migration v8: {e}")
                 raise
+
+        if current_db_version < 9:
+            logging.info("Schema version is less than 9. Adding 'valuation_details' column to screener_cache.")
+            try:
+                cursor.execute('ALTER TABLE screener_cache ADD COLUMN valuation_details TEXT;')
+                cursor.execute(
+                    "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
+                    (9, datetime.now().isoformat()),
+                )
+                logging.info("Updated schema_version to 9.")
+            except sqlite3.Error as e:
+                if "duplicate column name" in str(e):
+                    logging.info("'valuation_details' column already exists.")
+                else:
+                    logging.error(f"Error during migration v9: {e}")
+                    raise
 
         conn.commit()
         logging.info(
@@ -903,8 +919,8 @@ def upsert_screener_results(db_conn: sqlite3.Connection, results: List[Dict[str,
         symbol, name, price, intrinsic_value, margin_of_safety, 
         pe_ratio, market_cap, sector, 
         ai_moat, ai_financial_strength, ai_predictability, ai_growth, ai_summary,
-        last_fiscal_year_end, most_recent_quarter, universe, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        last_fiscal_year_end, most_recent_quarter, universe, updated_at, valuation_details
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(symbol, universe) DO UPDATE SET
         name=excluded.name,
         price=excluded.price,
@@ -920,7 +936,8 @@ def upsert_screener_results(db_conn: sqlite3.Connection, results: List[Dict[str,
         ai_summary=COALESCE(excluded.ai_summary, screener_cache.ai_summary),
         last_fiscal_year_end=excluded.last_fiscal_year_end,
         most_recent_quarter=excluded.most_recent_quarter,
-        updated_at=excluded.updated_at
+        updated_at=excluded.updated_at,
+        valuation_details=COALESCE(excluded.valuation_details, screener_cache.valuation_details)
     """
     
     now_str = datetime.now().isoformat()
@@ -943,7 +960,8 @@ def upsert_screener_results(db_conn: sqlite3.Connection, results: List[Dict[str,
             r.get("last_fiscal_year_end"),
             r.get("most_recent_quarter"),
             universe,
-            now_str
+            now_str,
+            r.get("valuation_details")
         ))
         
     try:
@@ -1053,6 +1071,8 @@ def update_ai_review_in_cache(db_conn: sqlite3.Connection, symbol: str, ai_data:
         pe_ratio = COALESCE(?, pe_ratio),
         market_cap = COALESCE(?, market_cap),
         sector = COALESCE(?, sector),
+        last_fiscal_year_end = COALESCE(?, last_fiscal_year_end),
+        most_recent_quarter = COALESCE(?, most_recent_quarter),
         updated_at = ?
     WHERE symbol = ?
     """
@@ -1062,6 +1082,8 @@ def update_ai_review_in_cache(db_conn: sqlite3.Connection, symbol: str, ai_data:
     pe = info.get("trailingPE") if info else None
     mcap = info.get("marketCap") if info else None
     sector = info.get("sector") if info else None
+    fy_end = info.get("lastFiscalYearEnd") if info else None
+    mrq = info.get("mostRecentQuarter") if info else None
 
     try:
         cursor = db_conn.cursor()
@@ -1072,6 +1094,7 @@ def update_ai_review_in_cache(db_conn: sqlite3.Connection, symbol: str, ai_data:
             scorecard.get("growth"),
             ai_data.get("summary"),
             name, price, pe, mcap, sector,
+            fy_end, mrq,
             now_str,
             symbol.upper()
         ))
@@ -1082,8 +1105,9 @@ def update_ai_review_in_cache(db_conn: sqlite3.Connection, symbol: str, ai_data:
             INSERT INTO screener_cache (
                 symbol, universe, ai_moat, ai_financial_strength, 
                 ai_predictability, ai_growth, ai_summary, 
-                name, price, pe_ratio, market_cap, sector, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                name, price, pe_ratio, market_cap, sector, 
+                last_fiscal_year_end, most_recent_quarter, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             cursor.execute(insert_sql, (
                 symbol.upper(),
@@ -1094,6 +1118,7 @@ def update_ai_review_in_cache(db_conn: sqlite3.Connection, symbol: str, ai_data:
                 scorecard.get("growth"),
                 ai_data.get("summary"),
                 name, price, pe, mcap, sector,
+                fy_end, mrq,
                 now_str
             ))
         
@@ -1131,7 +1156,8 @@ def update_intrinsic_value_in_cache(
         pe_ratio = COALESCE(?, pe_ratio),
         market_cap = COALESCE(?, market_cap),
         sector = COALESCE(?, sector),
-        updated_at = ?
+        updated_at = ?,
+        valuation_details = COALESCE(?, valuation_details)
     WHERE symbol = ?
     """
     
@@ -1140,6 +1166,9 @@ def update_intrinsic_value_in_cache(
     pe = info.get("trailingPE") if info else None
     mcap = info.get("marketCap") if info else None
     sector = info.get("sector") if info else None
+    
+    # Check if info contains valuation_details
+    valuation_details = info.get("valuation_details") if info else None
 
     try:
         cursor = db_conn.cursor()
@@ -1150,6 +1179,7 @@ def update_intrinsic_value_in_cache(
             most_recent_quarter,
             name, price, pe, mcap, sector,
             now_str,
+            valuation_details,
             symbol.upper()
         ))
         
@@ -1159,8 +1189,8 @@ def update_intrinsic_value_in_cache(
             INSERT INTO screener_cache (
                 symbol, universe, intrinsic_value, margin_of_safety, 
                 last_fiscal_year_end, most_recent_quarter, 
-                name, price, pe_ratio, market_cap, sector, updated_at
-            ) VALUES (?, 'manual', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                name, price, pe_ratio, market_cap, sector, updated_at, valuation_details
+            ) VALUES (?, 'manual', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             cursor.execute(insert_sql, (
                 symbol.upper(),
@@ -1169,7 +1199,8 @@ def update_intrinsic_value_in_cache(
                 last_fiscal_year_end,
                 most_recent_quarter,
                 name, price, pe, mcap, sector,
-                now_str
+                now_str,
+                valuation_details
             ))
             
         db_conn.commit()

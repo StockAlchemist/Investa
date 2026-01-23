@@ -427,6 +427,49 @@ def estimate_growth_rate(
     # 4. Final Default
     return 0.05
 
+def estimate_fcf_margin(
+    financials_df: Optional[pd.DataFrame],
+    cashflow_df: Optional[pd.DataFrame],
+    years: int = 5
+) -> float:
+    """
+    Estimates a normalized Free Cash Flow margin based on historical data.
+    """
+    if (
+        financials_df is None
+        or financials_df.empty
+        or cashflow_df is None
+        or cashflow_df.empty
+    ):
+        return 0.05  # Default conservative 5%
+
+    try:
+        # Find common columns/periods
+        common_cols = sorted(
+            list(set(financials_df.columns).intersection(set(cashflow_df.columns))),
+            key=lambda x: pd.to_datetime(x, errors="coerce")
+        )
+        
+        margins = []
+        for col in common_cols[-years:]: # Look at last N years
+            rev = _get_statement_value(financials_df, "Total Revenue", col)
+            ocf = _get_statement_value(cashflow_df, "Operating Cash Flow", col)
+            capex = _get_statement_value(cashflow_df, "Capital Expenditure", col)
+            
+            if rev and rev > 0 and ocf is not None and capex is not None:
+                # Capex is usually negative
+                fcf = ocf + capex 
+                margin = fcf / rev
+                if margin > 0:
+                    margins.append(margin)
+        
+        if margins:
+            return sum(margins) / len(margins)
+            
+    except Exception as e:
+        logging.warning(f"Failed to estimate FCF margin: {e}")
+        
+    return 0.05  # Fallback
 
 def run_monte_carlo_dcf(
     ticker_info: Dict[str, Any],
@@ -563,12 +606,16 @@ def calculate_intrinsic_value_dcf(
     growth_rate: Optional[float] = None,
     projection_years: int = 5,
     terminal_growth_rate: float = 0.02,
+    target_fcf_margin: Optional[float] = None,
     fcf: Optional[float] = None
 ) -> Dict[str, Any]:
     """
     Performs a Discounted Cash Flow (DCF) valuation.
     """
     try:
+        current_revenue = ticker_info.get("totalRevenue")
+        model_method = "DCF"
+        
         # 1. Base FCF
         if fcf is None:
             fcf = ticker_info.get("freeCashflow")
@@ -579,6 +626,16 @@ def calculate_intrinsic_value_dcf(
                 if ocf is not None and capex is not None:
                     fcf = ocf + capex # Capex is usually negative in YF
         
+        # Fallback for Negative FCF: Revenue-based estimation
+        used_fcf_margin = None
+        if (fcf is None or fcf <= 0) and current_revenue and current_revenue > 0:
+            if target_fcf_margin is None:
+                target_fcf_margin = estimate_fcf_margin(financials_df, cashflow_df)
+            
+            fcf = current_revenue * target_fcf_margin
+            model_method = "Revenue-based DCF"
+            used_fcf_margin = target_fcf_margin
+
         if fcf is None or fcf <= 0:
             return {"error": "Negative or missing Free Cash Flow"}
             
@@ -619,13 +676,14 @@ def calculate_intrinsic_value_dcf(
         
         return {
             "intrinsic_value": intrinsic_value,
-            "model": "DCF",
+            "model": model_method,
             "parameters": {
                 "discount_rate": discount_rate,
                 "growth_rate": growth_rate,
                 "terminal_growth_rate": terminal_growth_rate,
                 "projection_years": projection_years,
-                "base_fcf": fcf
+                "base_fcf": fcf,
+                "fcf_margin": used_fcf_margin
             }
         }
     except Exception as e:
@@ -635,6 +693,7 @@ def calculate_intrinsic_value_dcf(
 def calculate_intrinsic_value_graham(
     ticker_info: Dict[str, Any],
     financials_df: Optional[pd.DataFrame],
+    balance_sheet_df: Optional[pd.DataFrame] = None,
     growth_rate: Optional[float] = None,
     eps: Optional[float] = None,
     bond_yield: Optional[float] = None
@@ -661,6 +720,25 @@ def calculate_intrinsic_value_graham(
         if eps is None:
             eps = ticker_info.get("trailingEps")
             
+        # Fallback for Negative EPS: Book Value
+        if (eps is None or eps <= 0) and balance_sheet_df is not None and not balance_sheet_df.empty:
+            latest_bs_period = balance_sheet_df.columns[0]
+            total_equity = _get_statement_value(balance_sheet_df, "Total Stockholder Equity", latest_bs_period) or \
+                           _get_statement_value(balance_sheet_df, "Total Equity Gross Minority Interest", latest_bs_period)
+            shares = ticker_info.get("sharesOutstanding")
+            
+            if total_equity and shares and shares > 0:
+                book_value = total_equity / shares
+                if book_value > 0:
+                    return {
+                        "intrinsic_value": book_value,
+                        "model": "Book Value",
+                        "parameters": {
+                            "book_value_per_share": book_value,
+                            "note": "Used because EPS is negative/missing"
+                        }
+                    }
+
         if eps is None or eps <= 0:
             return {"error": "Negative or missing EPS"}
         
@@ -697,6 +775,7 @@ def get_comprehensive_intrinsic_value(
     dcf_terminal = overrides.get("dcf_terminal_growth", 0.02)
     dcf_projection = int(overrides.get("dcf_projection_years", 5))
     dcf_fcf = overrides.get("dcf_fcf")
+    target_fcf_margin = overrides.get("target_fcf_margin")
     
     # Extract Graham overrides
     graham_growth = overrides.get("graham_growth_rate")
@@ -709,11 +788,12 @@ def get_comprehensive_intrinsic_value(
         growth_rate=dcf_growth,
         projection_years=dcf_projection,
         terminal_growth_rate=dcf_terminal,
-        fcf=dcf_fcf
+        fcf=dcf_fcf,
+        target_fcf_margin=target_fcf_margin
     )
     
     graham_res = calculate_intrinsic_value_graham(
-        ticker_info, financials_df,
+        ticker_info, financials_df, balance_sheet_df,
         growth_rate=graham_growth,
         eps=graham_eps,
         bond_yield=graham_bond_yield
@@ -738,12 +818,13 @@ def get_comprehensive_intrinsic_value(
     graham_mc = {}
     if "intrinsic_value" in graham_res:
         params = graham_res["parameters"]
-        graham_mc = run_monte_carlo_graham(
-            params["eps"],
-            params["growth_rate_pct"],
-            params["bond_yield_proxy"]
-        )
-        graham_res["mc"] = graham_mc
+        if "eps" in params:
+            graham_mc = run_monte_carlo_graham(
+                params["eps"],
+                params["growth_rate_pct"],
+                params["bond_yield_proxy"]
+            )
+            graham_res["mc"] = graham_mc
 
     results = {
         "current_price": current_price,

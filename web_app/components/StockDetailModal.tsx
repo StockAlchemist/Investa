@@ -173,13 +173,13 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         }
     }, [isOpen, symbol]);
 
-    const loadData = async () => {
+    const loadData = async (force: boolean = false) => {
         setLoading(true);
         setError(null);
 
         try {
             // Priority 1: Fetch Fundamentals (Required for initial render)
-            const fundRes = await fetchFundamentals(symbol);
+            const fundRes = await fetchFundamentals(symbol, force);
             setFundamentals(fundRes);
             setLoading(false); // Unblock UI immediately after fundamentals
 
@@ -291,6 +291,21 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
 
         return (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold flex items-center gap-2">
+                        <LayoutDashboard className="w-5 h-5 text-cyan-500" />
+                        Market Overview
+                    </h3>
+                    <button
+                        onClick={() => loadData(true)}
+                        disabled={loading}
+                        className="flex items-center gap-1.5 text-[10px] font-bold text-cyan-600 hover:text-cyan-700 dark:text-cyan-400 dark:hover:text-cyan-300 transition-colors uppercase tracking-wider"
+                        title="Force Refresh Data"
+                    >
+                        <RotateCcw className="w-3 h-3" />
+                        Refresh Data
+                    </button>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
                     {intrinsicValue?.models?.dcf?.intrinsic_value && (
                         <StatCard
@@ -760,6 +775,10 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         bond_yield: {
             description: "Current yield on high-quality bonds (proxy for risk-free rate).",
             default: "10Y Treasury (~4.5%)"
+        },
+        fcf_margin: {
+            description: "Estimated Free Cash Flow margin (FCF / Revenue) used for normalization.",
+            default: "Historical Average"
         }
     };
 
@@ -807,12 +826,19 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="text-lg font-semibold flex items-center gap-2">
                                 <TrendingUp className="w-5 h-5 text-emerald-500" />
-                                DCF Model
+                                {models.dcf.model}
                             </h3>
                             {models.dcf.intrinsic_value && (
-                                <Badge className="bg-emerald-500/20 text-emerald-500 border-none">
-                                    {formatCurrency(models.dcf.intrinsic_value)}
-                                </Badge>
+                                <div className="flex flex-col items-end">
+                                    <Badge className="bg-emerald-500/20 text-emerald-500 border-none">
+                                        {formatCurrency(models.dcf.intrinsic_value)}
+                                    </Badge>
+                                    {models.dcf.model !== 'DCF' && (
+                                        <span className="text-[9px] text-muted-foreground mt-1">
+                                            (Fallback Used)
+                                        </span>
+                                    )}
+                                </div>
                             )}
                         </div>
                         {models.dcf.error ? (
@@ -847,6 +873,13 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                         value={formatCurrency(models.dcf.parameters.base_fcf)}
                                         info={VALUATION_INFO.base_fcf}
                                     />
+                                    {models.dcf.parameters.fcf_margin && (
+                                        <ParamItem
+                                            label="Est. FCF Margin"
+                                            value={formatPercentShared(models.dcf.parameters.fcf_margin)}
+                                            info={VALUATION_INFO.fcf_margin}
+                                        />
+                                    )}
                                 </div>
                                 {models.dcf.mc && (
                                     <div className="pt-4 border-t border-border/50">
@@ -886,12 +919,19 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="text-lg font-semibold flex items-center gap-2">
                                 <Scale className="w-5 h-5 text-amber-500" />
-                                Graham's Formula
+                                {models.graham.model}
                             </h3>
                             {models.graham.intrinsic_value && (
-                                <Badge className="bg-amber-500/20 text-amber-500 border-none">
-                                    {formatCurrency(models.graham.intrinsic_value)}
-                                </Badge>
+                                <div className="flex flex-col items-end">
+                                    <Badge className="bg-amber-500/20 text-amber-500 border-none">
+                                        {formatCurrency(models.graham.intrinsic_value)}
+                                    </Badge>
+                                    {models.graham.model !== "Graham's Revised Formula" && (
+                                        <span className="text-[9px] text-muted-foreground mt-1">
+                                            (Fallback Used)
+                                        </span>
+                                    )}
+                                </div>
                             )}
                         </div>
                         {models.graham.error ? (
@@ -914,6 +954,11 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                         value={`${models.graham.parameters.bond_yield_proxy?.toFixed(2)}%`}
                                         info={VALUATION_INFO.bond_yield}
                                     />
+                                    {models.graham.parameters.note && (
+                                        <div className="col-span-2 text-xs text-muted-foreground italic bg-secondary/30 p-2 rounded">
+                                            Note: {models.graham.parameters.note}
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="mt-4 p-4 bg-secondary/5 rounded-xl flex flex-col items-center select-none border border-border/20 overflow-visible">
                                     <div className="flex items-center gap-2">
@@ -1148,7 +1193,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                             </div>
                             <h3 className="text-xl font-bold mb-2">Something went wrong</h3>
                             <p className="text-muted-foreground max-w-md">{error}</p>
-                            <button onClick={loadData} className="mt-6 px-6 py-2 bg-secondary hover:bg-muted rounded-full transition-colors">
+                            <button onClick={() => loadData()} className="mt-6 px-6 py-2 bg-secondary hover:bg-muted rounded-full transition-colors">
                                 Try Again
                             </button>
                         </div>

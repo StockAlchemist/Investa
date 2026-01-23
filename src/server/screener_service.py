@@ -256,6 +256,14 @@ def process_screener_results(
         
         if can_use_cache:
             avg_iv = cached.get("intrinsic_value")
+            valuation_details_str = cached.get("valuation_details")
+            valuation_details = None
+            if valuation_details_str and isinstance(valuation_details_str, str):
+                try:
+                    valuation_details = json.loads(valuation_details_str)
+                except Exception:
+                    pass
+
             # Recalculate MOS since price changes daily
             if avg_iv and price:
                 mos = ((avg_iv - price) / price) * 100 if price > 0 else 0
@@ -300,6 +308,7 @@ def process_screener_results(
                 "sector": info.get("sector"),
                 "has_ai_review": has_ai,
                 "ai_score": ai_score,
+                "valuation_details": valuation_details, # Pass through loaded details
                 "last_fiscal_year_end": live_fy_end,
                 "most_recent_quarter": live_quarter
             })
@@ -310,6 +319,9 @@ def process_screener_results(
             
             avg_iv = iv_res.get("average_intrinsic_value")
             mos = iv_res.get("margin_of_safety_pct")
+            
+            # Serialize breakdown for storage
+            valuation_details_json = json.dumps(iv_res, default=str)
             
             # AI Review Check (File based for compatibility with existing analyzer)
             ai_cache_path = os.path.join(config.get_app_data_dir(), "ai_analysis_cache", f"{sym.upper()}_analysis.json")
@@ -359,6 +371,7 @@ def process_screener_results(
                 "ai_predictability": ai_pred,
                 "ai_growth": ai_growth,
                 "ai_summary": ai_summary,
+                "valuation_details": valuation_details_json, # Save strict JSON string
                 "last_fiscal_year_end": live_fy_end,
                 "most_recent_quarter": live_quarter
             })
