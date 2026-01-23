@@ -176,21 +176,26 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
     const loadData = async () => {
         setLoading(true);
         setError(null);
+
         try {
-            const [fundRes, finRes, ratioRes, ivRes] = await Promise.all([
-                fetchFundamentals(symbol),
-                fetchFinancials(symbol),
-                fetchRatios(symbol),
-                fetchIntrinsicValue(symbol)
-            ]);
+            // Priority 1: Fetch Fundamentals (Required for initial render)
+            const fundRes = await fetchFundamentals(symbol);
             setFundamentals(fundRes);
-            setFinancials(finRes);
-            setRatios(ratioRes);
-            setIntrinsicValue(ivRes);
+            setLoading(false); // Unblock UI immediately after fundamentals
+
+            // Priority 2: Fetch everything else in parallel
+            // We don't await these for the main loading state
+            Promise.allSettled([
+                fetchFinancials(symbol).then(setFinancials),
+                fetchRatios(symbol).then(setRatios),
+                fetchIntrinsicValue(symbol).then(setIntrinsicValue)
+            ]).catch(err => {
+                console.error("Background data fetch error:", err);
+            });
+
         } catch (err: any) {
             console.error(err);
             setError(err.message || "Failed to load stock details");
-        } finally {
             setLoading(false);
         }
     };
