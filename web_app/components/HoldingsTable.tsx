@@ -403,8 +403,8 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
         return new Set(holdings.map(h => h.Symbol)).size;
     }, [holdings, visibleColumns]);
 
-    if (!holdings || holdings.length === 0) {
-        return <div className="p-4 text-center text-gray-500">No holdings found.</div>;
+    if (!isLoading && (!holdings || holdings.length === 0)) {
+        return <div className="p-4 text-center text-muted-foreground">No holdings found.</div>;
     }
 
     const toggleColumn = (header: string) => {
