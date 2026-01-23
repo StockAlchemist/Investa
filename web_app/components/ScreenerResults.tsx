@@ -1,9 +1,12 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { BrainCircuit, Loader2, Sparkles, ChevronRight, BarChart3, TrendingUp, TrendingDown, Target, ChevronUp, RotateCcw, Star, Check } from 'lucide-react';
+import { BrainCircuit, Loader2, Sparkles, ChevronRight, BarChart3, TrendingUp, TrendingDown, Target, ChevronUp, RotateCcw, Star, Check, Search, SlidersHorizontal, X, Filter } from 'lucide-react';
 import StockIcon from './StockIcon';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatCompactNumber, formatPercent, cn } from "@/lib/utils";
 
 import { useStockModal } from '@/context/StockModalContext';
@@ -48,6 +51,14 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'margin_of_safety', direction: 'desc' });
     const { openStockDetail } = useStockModal();
 
+    // Filter States
+    const [searchQuery, setSearchQuery] = useState("");
+    const [minMOS, setMinMOS] = useState<number | "">("");
+    const [maxPE, setMaxPE] = useState<number | "">("");
+    const [marketCapCategory, setMarketCapCategory] = useState<string>("all");
+    const [onlyAI, setOnlyAI] = useState(false);
+    const [showFilters, setShowFilters] = useState(false);
+
     const [localResults, setLocalResults] = useState<ScreenResult[]>(results);
 
     // Sync local state with props when results change (e.g. new scan)
@@ -78,8 +89,47 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
         };
     }, []);
 
+    const filteredResults = useMemo(() => {
+        return localResults.filter(item => {
+            // Search Filter
+            if (searchQuery) {
+                const query = searchQuery.toLowerCase();
+                if (!item.symbol.toLowerCase().includes(query) && !item.name.toLowerCase().includes(query)) {
+                    return false;
+                }
+            }
+
+            // MOS Filter
+            if (minMOS !== "" && (item.margin_of_safety === null || item.margin_of_safety < minMOS)) {
+                return false;
+            }
+
+            // PE Filter
+            if (maxPE !== "" && (item.pe_ratio === null || item.pe_ratio > maxPE)) {
+                return false;
+            }
+
+            // AI Filter
+            if (onlyAI && !item.has_ai_review) {
+                return false;
+            }
+
+            // Market Cap Filter
+            if (marketCapCategory !== "all") {
+                const cap = item.market_cap || 0;
+                if (marketCapCategory === "micro" && cap >= 300000000) return false;
+                if (marketCapCategory === "small" && (cap < 300000000 || cap >= 2000000000)) return false;
+                if (marketCapCategory === "mid" && (cap < 2000000000 || cap >= 10000000000)) return false;
+                if (marketCapCategory === "large" && (cap < 10000000000 || cap >= 200000000000)) return false;
+                if (marketCapCategory === "mega" && cap < 200000000000) return false;
+            }
+
+            return true;
+        });
+    }, [localResults, searchQuery, minMOS, maxPE, onlyAI, marketCapCategory]);
+
     const sortedResults = useMemo(() => {
-        const sorted = [...localResults];
+        const sorted = [...filteredResults];
         sorted.sort((a, b) => {
             const aVal = a[sortConfig.key];
             const bVal = b[sortConfig.key];
@@ -95,7 +145,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
             }
         });
         return sorted;
-    }, [localResults, sortConfig]);
+    }, [filteredResults, sortConfig]);
 
     const handleSort = (key: SortKey) => {
         setSortConfig(prev => ({
@@ -152,8 +202,119 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                     <div className="flex items-center gap-2">
                         <Target className="w-5 h-5 text-purple-500" />
                         <CardTitle className="text-xl font-bold text-foreground">Scan Results</CardTitle>
+                        <Badge variant="secondary" className="ml-2 bg-secondary/50 text-muted-foreground border-none">
+                            {filteredResults.length} of {localResults.length}
+                        </Badge>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <div className="relative group">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-cyan-500 transition-colors" />
+                            <Input
+                                placeholder="Search symbol or name..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="pl-9 h-9 w-[240px] bg-secondary/50 border-border focus:ring-cyan-500/20 text-foreground"
+                            />
+                            {searchQuery && (
+                                <button
+                                    onClick={() => setSearchQuery("")}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                        </div>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setShowFilters(!showFilters)}
+                            className={cn(
+                                "h-9 gap-2 border-border",
+                                showFilters && "bg-secondary border-cyan-500/50 text-cyan-500"
+                            )}
+                        >
+                            <SlidersHorizontal className="w-4 h-4" />
+                            <span>Filters</span>
+                        </Button>
                     </div>
                 </div>
+
+                {showFilters && (
+                    <div className="mt-4 p-4 rounded-xl bg-secondary/20 border border-border/50 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                            {/* MOS Filter */}
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Min Margin of Safety (%)</label>
+                                <Input
+                                    type="number"
+                                    placeholder="e.g. 15"
+                                    value={minMOS}
+                                    onChange={(e) => setMinMOS(e.target.value === "" ? "" : Number(e.target.value))}
+                                    className="h-9 bg-background/50 border-border text-foreground"
+                                />
+                            </div>
+
+                            {/* PE Filter */}
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Max P/E Ratio</label>
+                                <Input
+                                    type="number"
+                                    placeholder="e.g. 25"
+                                    value={maxPE}
+                                    onChange={(e) => setMaxPE(e.target.value === "" ? "" : Number(e.target.value))}
+                                    className="h-9 bg-background/50 border-border text-foreground"
+                                />
+                            </div>
+
+                            {/* Market Cap Filter */}
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Market Cap</label>
+                                <select
+                                    value={marketCapCategory}
+                                    onChange={(e) => setMarketCapCategory(e.target.value)}
+                                    className="w-full h-9 px-3 bg-background/50 border border-border rounded-md text-sm font-medium focus:outline-none focus:ring-1 focus:ring-cyan-500/50 text-foreground"
+                                >
+                                    <option value="all">All Sizes</option>
+                                    <option value="micro">Micro Cap (&lt; $300M)</option>
+                                    <option value="small">Small Cap ($300M - $2B)</option>
+                                    <option value="mid">Mid Cap ($2B - $10B)</option>
+                                    <option value="large">Large Cap ($10B - $200B)</option>
+                                    <option value="mega">Mega Cap (&gt; $200B)</option>
+                                </select>
+                            </div>
+
+                            {/* AI Filter & Reset */}
+                            <div className="flex items-end gap-3">
+                                <button
+                                    onClick={() => setOnlyAI(!onlyAI)}
+                                    className={cn(
+                                        "flex-1 h-9 px-3 rounded-md border text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2",
+                                        onlyAI
+                                            ? "bg-purple-500/10 border-purple-500/30 text-purple-500"
+                                            : "bg-background/50 border-border text-muted-foreground hover:bg-muted"
+                                    )}
+                                >
+                                    <BrainCircuit className="w-3.5 h-3.5" />
+                                    AI Reviewed
+                                </button>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                        setSearchQuery("");
+                                        setMinMOS("");
+                                        setMaxPE("");
+                                        setMarketCapCategory("all");
+                                        setOnlyAI(false);
+                                    }}
+                                    className="h-9 text-muted-foreground hover:text-red-500"
+                                >
+                                    Reset
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </CardHeader>
             <CardContent className="p-0">
                 <div className="overflow-x-auto">
