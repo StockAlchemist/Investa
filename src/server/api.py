@@ -249,9 +249,18 @@ async def get_asset_change(
         for period, p_df in periodic_returns.items():
             if not p_df.empty:
                 # Reset index to include the date/period in the records
+                # FIX: Ensure index is named 'Date' before resetting so it doesn't default to 'index'
+                if p_df.index.name is None:
+                    p_df.index.name = 'Date'
+                
                 p_df_reset = p_df.reset_index()
-                # Convert dates to strings
+                
+                # Convert dates to strings and handle 'index' fallback if needed
                 if 'Date' in p_df_reset.columns:
+                    p_df_reset['Date'] = p_df_reset['Date'].astype(str)
+                elif 'index' in p_df_reset.columns:
+                    # Fallback rename if for some reason it's still called 'index'
+                    p_df_reset.rename(columns={'index': 'Date'}, inplace=True)
                     p_df_reset['Date'] = p_df_reset['Date'].astype(str)
                 
                 result[period] = clean_nans(p_df_reset.to_dict(orient="records"))

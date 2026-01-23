@@ -14,6 +14,7 @@
 SPDX-License-Identifier: MIT
 """
 import sqlite3
+import json
 from datetime import datetime, date
 import numpy as np
 import os
@@ -26,6 +27,19 @@ import config
 
 DB_FILENAME = "investa_transactions.db"
 DB_SCHEMA_VERSION = 9
+
+# --- Helper for JSON serialization with NaNs ---
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            # Convert NaN to None for JSON compatibility
+            return float(obj) if np.isfinite(obj) else None
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        # Let the base class default method raise the TypeError
+        return super(NpEncoder, self).default(obj)
 
 
 def get_database_path(db_filename: str = DB_FILENAME) -> str:
@@ -961,7 +975,8 @@ def upsert_screener_results(db_conn: sqlite3.Connection, results: List[Dict[str,
             r.get("most_recent_quarter"),
             universe,
             now_str,
-            r.get("valuation_details")
+            # FIX: Serialize valuation_details if it's a dict
+            json.dumps(r.get("valuation_details"), cls=NpEncoder) if isinstance(r.get("valuation_details"), dict) else r.get("valuation_details")
         ))
         
     try:
@@ -1179,7 +1194,8 @@ def update_intrinsic_value_in_cache(
             most_recent_quarter,
             name, price, pe, mcap, sector,
             now_str,
-            valuation_details,
+            # FIX: Serialize valuation_details if it's a dict
+            json.dumps(valuation_details, cls=NpEncoder) if isinstance(valuation_details, dict) else valuation_details,
             symbol.upper()
         ))
         
@@ -1200,7 +1216,8 @@ def update_intrinsic_value_in_cache(
                 most_recent_quarter,
                 name, price, pe, mcap, sector,
                 now_str,
-                valuation_details
+                # FIX: Serialize valuation_details if it's a dict
+                json.dumps(valuation_details, cls=NpEncoder) if isinstance(valuation_details, dict) else valuation_details
             ))
             
         db_conn.commit()

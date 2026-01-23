@@ -719,7 +719,7 @@ class MarketDataProvider:
                 # Use chunked download for reliability and to avoid process/memory limits with 500+ symbols
                 all_dfs = []
                 yf_symbols_list = list(yf_symbols_to_fetch)
-                chunk_size = 250
+                chunk_size = 50 # REDUCED: Was 250, causing OOM (Code -9) on some systems
                 
                 for i in range(0, len(yf_symbols_list), chunk_size):
                     chunk = yf_symbols_list[i:i+chunk_size]

@@ -60,8 +60,8 @@ def fetch_info(symbols, output_file):
                 log(f"Error fetching info for {sym}: {e}")
                 return sym, None
 
-        # Use 10 threads for info fetching
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        # REDUCED: Use 4 threads for info fetching instead of 10 to save memory
+        with ThreadPoolExecutor(max_workers=4) as executor:
             future_to_sym = {executor.submit(get_single_info, sym): sym for sym in symbols}
             for future in as_completed(future_to_sym):
                 sym, info = future.result()
@@ -156,7 +156,7 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
                 auto_adjust=True,
                 actions=False,
                 timeout=30,
-                threads=True
+                threads=4 # REDUCED: Was True
             )
         else:
             log(f"Starting fetch for {len(symbols)} symbols. Range: {start_date}-{end_date}, Int: {interval}")
@@ -170,7 +170,7 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
                 auto_adjust=True,
                 actions=False,
                 timeout=30,
-                threads=True
+                threads=4 # REDUCED: Was True
             )
         
         # DIAGNOSTIC LOGGING

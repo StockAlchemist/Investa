@@ -481,9 +481,6 @@ export default function Home() {
               />
               <h1 className="text-xl md:text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
                 <span className="hidden sm:block">Investa</span>
-                <span className="hidden md:inline-flex items-center rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                  ⌘K
-                </span>
               </h1>
             </div>
           </div>
