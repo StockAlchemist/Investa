@@ -32,94 +32,13 @@ try:
     from market_data import get_shared_mdp, map_to_yf_symbol
     from server.screener_service import get_sp500_tickers
     from server.ai_analyzer import generate_stock_review
-    from financial_ratios import calculate_key_ratios_timeseries
-    from db_utils import get_db_connection, upsert_screener_results
+    from financial_ratios import calculate_key_ratios_timeseries, get_comprehensive_intrinsic_value
+    from db_utils import get_db_connection, upsert_screener_results, update_intrinsic_value_in_cache
 except ImportError as e:
     print(f"CRITICAL: Failed to import modules. Make sure you are running with 'src' in PYTHONPATH. Error: {e}")
     sys.exit(1)
 
-# Configure Logging
-log_dir = os.path.join(os.path.dirname(config.get_app_data_dir()), "logs")
-if not os.path.exists(log_dir):
-    try:
-        os.makedirs(log_dir)
-    except Exception:
-        log_dir = "." # Fallback
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(os.path.join(log_dir, "ai_worker.log")),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-
-# Configuration
-RATE_LIMIT_WAIT_SECONDS = 24 * 60 * 60  # 24 Hours
-BATCH_DELAY_SECONDS = 5  # Delay between successful requests to be nice to APIs
-MAX_CONSECUTIVE_FAILURES = 5
-
-def check_if_review_exists(symbol: str) -> bool:
-    """
-    Checks if a valid AI review already exists for the symbol.
-    Checks mostly the file cache as that's what ai_analyzer uses primarily.
-    """
-    # 1. Check File Cache
-    cache_dir = os.path.join(config.get_app_data_dir(), "ai_analysis_cache")
-    cache_path = os.path.join(cache_dir, f"{symbol.upper()}_analysis.json")
-    
-    if os.path.exists(cache_path):
-        try:
-            # Check age
-            import json
-            with open(cache_path, "r") as f:
-                data = json.load(f)
-                timestamp = data.get("timestamp", 0)
-                # Check TTL (using same TTL as config)
-                if time.time() - timestamp < config.AI_REVIEW_CACHE_TTL:
-                    return True
-        except Exception as e:
-            logging.warning(f"Error checking cache for {symbol}: {e}")
-            
-    return False
-
-def save_review_to_screener(symbol: str, review: dict, fund_data: dict, universe: str = "sp500"):
-    """
-    Adds/Updates the AI review in the screener table.
-    """
-    try:
-        scorecard = review.get("scorecard", {})
-        summary = review.get("summary")
-        
-        # Prepare data for upsert
-        # Note: We might be missing Intrinsic Value / MOS here if we didn't calculate it.
-        # But upsert_screener_results expects a dict.
-        
-        result_entry = {
-            "symbol": symbol.upper(),
-            "name": fund_data.get("shortName"),
-            "price": fund_data.get("currentPrice"),
-            "market_cap": fund_data.get("marketCap"),
-            "sector": fund_data.get("sector"),
-            "pe_ratio": fund_data.get("trailingPE"),
-            "ai_moat": scorecard.get("moat"),
-            "ai_financial_strength": scorecard.get("financial_strength"),
-            "ai_predictability": scorecard.get("predictability"),
-            "ai_growth": scorecard.get("growth"),
-            "ai_summary": summary,
-            "last_fiscal_year_end": fund_data.get("lastFiscalYearEnd"),
-            "most_recent_quarter": fund_data.get("mostRecentQuarter")
-        }
-        
-        conn = get_db_connection()
-        if conn:
-            upsert_screener_results(conn, [result_entry], universe=universe)
-            conn.close()
-            logging.info(f"Saved {symbol} review to screener table (universe={universe}).")
-            
-    except Exception as e:
-        logging.error(f"Failed to save review to screener for {symbol}: {e}")
+# ... (Previous code)
 
 def process_stock(symbol: str, mdp) -> bool:
     """
@@ -139,9 +58,10 @@ def process_stock(symbol: str, mdp) -> bool:
             logging.warning(f"Skipping {symbol}: No fundamental data found.")
             return True # Treat as "done" so we don't retry endlessly
             
-        # 3. Fetch Financials for Ratios
+        # 3. Fetch Financials for Ratios AND Intrinsic Value
         financials_df = mdp.get_financials(yf_symbol, "annual")
         balance_sheet_df = mdp.get_balance_sheet(yf_symbol, "annual")
+        cashflow_df = mdp.get_cashflow(yf_symbol, "annual")
         
         ratios = {}
         if financials_df is not None and not financials_df.empty and balance_sheet_df is not None and not balance_sheet_df.empty:
@@ -163,7 +83,31 @@ def process_stock(symbol: str, mdp) -> bool:
             
         logging.info(f"Successfully generated/retrieved review for {symbol}.")
         
-        # 5. Save to Screener Table
+        # 5. Calculate Intrinsic Value (Detailed Mode)
+        try:
+            logging.info(f"Calculating intrinsic value for {symbol}...")
+            iv_results = get_comprehensive_intrinsic_value(
+                fund_data, financials_df, balance_sheet_df, cashflow_df
+            )
+            
+            # 6. Update Cache with Intrinsic Value
+            conn = get_db_connection()
+            if conn:
+                update_intrinsic_value_in_cache(
+                    conn,
+                    symbol,
+                    iv_results.get("average_intrinsic_value"),
+                    iv_results.get("margin_of_safety_pct"),
+                    fund_data.get("lastFiscalYearEnd"),
+                    fund_data.get("mostRecentQuarter"),
+                    info=fund_data
+                )
+                conn.close()
+                logging.info(f"Updated intrinsic value cache for {symbol}.")
+        except Exception as iv_e:
+            logging.error(f"Failed to calculate/update intrinsic value for {symbol}: {iv_e}")
+
+        # 7. Save Review to Screener Table
         save_review_to_screener(symbol, review, fund_data)
         
         return True

@@ -86,9 +86,23 @@ const ScreenerView: React.FC<ScreenerViewProps> = ({ currency }) => {
                 }
             }
 
-            setResults(prev => prev.map(item =>
-                item.symbol === symbol ? { ...item, has_ai_review: true, ai_score: aiScore } : item
-            ));
+            // If intrinsic value data was returned (from backend manual analysis), update it too
+            const ivData = analysis?.intrinsic_value_data;
+
+            setResults(prev => prev.map(item => {
+                if (item.symbol === symbol) {
+                    return {
+                        ...item,
+                        has_ai_review: true,
+                        ai_score: aiScore,
+                        ...(ivData ? {
+                            intrinsic_value: ivData.average_intrinsic_value,
+                            margin_of_safety: ivData.margin_of_safety_pct
+                        } : {})
+                    };
+                }
+                return item;
+            }));
         };
 
         window.addEventListener('stock-analysis-updated', handleUpdate as EventListener);

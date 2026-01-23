@@ -188,7 +188,15 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
             Promise.allSettled([
                 fetchFinancials(symbol).then(setFinancials),
                 fetchRatios(symbol).then(setRatios),
-                fetchIntrinsicValue(symbol).then(setIntrinsicValue)
+                fetchIntrinsicValue(symbol).then((data) => {
+                    setIntrinsicValue(data);
+                    // Dispatch event for live updates in ScreenerResults
+                    if (data) {
+                        window.dispatchEvent(new CustomEvent('stock-intrinsic-value-updated', {
+                            detail: { symbol, data }
+                        }));
+                    }
+                })
             ]).catch(err => {
                 console.error("Background data fetch error:", err);
             });

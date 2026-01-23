@@ -381,43 +381,51 @@ def estimate_growth_rate(
     years: int = 5
 ) -> float:
     """Attempts to estimate a historical growth rate for a financial item."""
-    if financials_df is None or financials_df.empty:
-        return 0.05 # Default 5%
-        
-    try:
-        # Sort columns to be chronological
-        cols = sorted(financials_df.columns, key=lambda x: pd.to_datetime(x, errors="coerce"))
-        values = []
-        for col in cols:
-            val = _get_statement_value(financials_df, item_name, col)
-            if val is not None and val > 0:
-                values.append(val)
-        
-        if len(values) < 2:
-            # FALLBACK to ticker_info growth rates
-            if ticker_info:
-                # Prioritize earnings growth, then revenue growth
-                g = ticker_info.get("earningsGrowth") or ticker_info.get("revenueGrowth") or ticker_info.get("earningsQuarterlyGrowth")
-                if g is not None:
-                    # yfinance often returns decimal (0.25 for 25%), sometimes percentage. 
-                    # Usually if it's > 1, it might be a percentage, but 100% is also 1.
-                    # We assume decimal for these fields as per yfinance standard.
-                    return max(0.0, float(g))
-            return 0.05
-            
-        # Simplistic CAGR
-        start_val = values[0]
-        end_val = values[-1]
-        n_periods = len(values) - 1
-        
-        cagr = (end_val / start_val) ** (1/n_periods) - 1
-        return max(0.0, cagr)
-    except Exception:
-        # Final fallback
-        if ticker_info:
-             g = ticker_info.get("earningsGrowth") or ticker_info.get("revenueGrowth")
-             if g is not None: return max(0.0, float(g))
-        return 0.05
+    values = []
+    
+    # 1. Try to get historical values if dataframe is available
+    if financials_df is not None and not financials_df.empty:
+        try:
+            # Sort columns to be chronological
+            cols = sorted(financials_df.columns, key=lambda x: pd.to_datetime(x, errors="coerce"))
+            for col in cols:
+                val = _get_statement_value(financials_df, item_name, col)
+                if val is not None and val > 0:
+                    values.append(val)
+        except Exception:
+            pass # Continue to fallback
+
+    # 2. Check if we have enough data points for CAGR
+    if len(values) >= 2:
+        try:
+            start_val = values[0]
+            end_val = values[-1]
+            n_periods = len(values) - 1
+            cagr = (end_val / start_val) ** (1/n_periods) - 1
+            return max(0.0, cagr)
+        except Exception:
+            pass # Continue to fallback
+
+    # 3. Fallback: Use ticker_info estimates
+    if ticker_info:
+         # Prioritize REVENUE growth as it's more stable for long-term projection
+         g = ticker_info.get("revenueGrowth")
+         
+         if g is None:
+             # Fallback to earnings, but cap it because quarterly earnings can be volatile (e.g. +100%)
+             eg = ticker_info.get("earningsGrowth") or ticker_info.get("earningsQuarterlyGrowth")
+             if eg is not None:
+                 # Cap at 25% for safety in fallback mode
+                 g = min(float(eg), 0.25)
+         
+         if g is not None:
+             # yfinance often returns decimal (0.25 for 25%).
+             # We assume decimal for these fields as per yfinance standard.
+             # Floor at 0.5% to avoid zeros or negatives breaking DCF
+             return max(0.005, float(g))
+
+    # 4. Final Default
+    return 0.05
 
 
 def run_monte_carlo_dcf(

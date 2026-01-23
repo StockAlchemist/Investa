@@ -2098,9 +2098,10 @@ async def get_stock_analysis(
         if not fund_data:
             fund_data = {}
             
-        # 2. Fetch Statements and calculate ratios
+        # 2. Fetch Release Statements and calculate ratios
         financials_df = mdp.get_financials(yf_symbol, "annual")
         balance_sheet_df = mdp.get_balance_sheet(yf_symbol, "annual")
+        cashflow_df = mdp.get_cashflow(yf_symbol, "annual")
         
         ratios = {}
         if financials_df is not None and not financials_df.empty and balance_sheet_df is not None and not balance_sheet_df.empty:
@@ -2117,6 +2118,34 @@ async def get_stock_analysis(
 
         # 3. Generate AI Review
         analysis = generate_stock_review(symbol, fund_data, ratios, force_refresh=force)
+        
+        # 4. Interactive Calculation of Intrinsic Value & Cache Update
+        try:
+            # We calculate this ON THE FLY to ensure the frontend gets the detailed value
+            # immediately when "Analyze" is clicked, updating the screener row live.
+            iv_results = get_comprehensive_intrinsic_value(
+                fund_data, financials_df, balance_sheet_df, cashflow_df
+            )
+            
+            # Update cache so screener table reads it next time (or live update listens to it)
+            db_conn = get_db_connection()
+            if db_conn:
+                update_intrinsic_value_in_cache(
+                    db_conn,
+                    symbol,
+                    iv_results.get("average_intrinsic_value"),
+                    iv_results.get("margin_of_safety_pct"),
+                    fund_data.get("lastFiscalYearEnd"),
+                    fund_data.get("mostRecentQuarter"),
+                    info=fund_data
+                )
+            
+            # Inject into response so frontend event can carry it
+            analysis["intrinsic_value_data"] = iv_results
+
+        except Exception as iv_e:
+            logging.error(f"Failed to calculate IV during stock analysis for {symbol}: {iv_e}")
+
         return clean_nans(analysis)
     except Exception as e:
         logging.error(f"Error in stock analysis for {symbol}: {e}", exc_info=True)

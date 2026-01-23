@@ -48,8 +48,38 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'margin_of_safety', direction: 'desc' });
     const { openStockDetail } = useStockModal();
 
+    const [localResults, setLocalResults] = useState<ScreenResult[]>(results);
+
+    // Sync local state with props when results change (e.g. new scan)
+    useEffect(() => {
+        setLocalResults(results);
+    }, [results]);
+
+    // Listen for live updates from StockDetailModal
+    useEffect(() => {
+        const handleIntrinsicUpdate = (event: CustomEvent) => {
+            const { symbol, data } = event.detail;
+            setLocalResults(prev => prev.map(item => {
+                if (item.symbol === symbol) {
+                    return {
+                        ...item,
+                        intrinsic_value: data.average_intrinsic_value,
+                        margin_of_safety: data.margin_of_safety_pct,
+                        // Update PE if it comes back (it might not be in IV response directly, but usually we just want IV/MOS)
+                    };
+                }
+                return item;
+            }));
+        };
+
+        window.addEventListener('stock-intrinsic-value-updated' as any, handleIntrinsicUpdate as any);
+        return () => {
+            window.removeEventListener('stock-intrinsic-value-updated' as any, handleIntrinsicUpdate as any);
+        };
+    }, []);
+
     const sortedResults = useMemo(() => {
-        const sorted = [...results];
+        const sorted = [...localResults];
         sorted.sort((a, b) => {
             const aVal = a[sortConfig.key];
             const bVal = b[sortConfig.key];
@@ -65,7 +95,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
             }
         });
         return sorted;
-    }, [results, sortConfig]);
+    }, [localResults, sortConfig]);
 
     const handleSort = (key: SortKey) => {
         setSortConfig(prev => ({
