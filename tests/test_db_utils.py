@@ -65,7 +65,7 @@ def test_initialize_database(temp_db_path):
     assert cursor.fetchone() is not None
     
     # Check schema_version table
-    cursor.execute("SELECT version FROM schema_version;")
+    cursor.execute("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1;")
     row = cursor.fetchone()
     assert row is not None
     assert row[0] == DB_SCHEMA_VERSION
