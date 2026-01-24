@@ -22,7 +22,7 @@ const PERIODS = [
 
 export default function PeriodSelector({ selectedPeriod, onPeriodChange }: PeriodSelectorProps) {
     return (
-        <div className="flex shrink-0 space-x-1 bg-secondary rounded-lg p-1 border border-border">
+        <div className="flex shrink-0 w-fit space-x-1 bg-secondary rounded-lg p-1 border border-border">
             {PERIODS.map((period) => (
                 <button
                     key={period.value}

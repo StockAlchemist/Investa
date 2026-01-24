@@ -198,7 +198,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
     return (
         <Card className="bg-card border-border shadow-sm overflow-hidden">
             <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-2">
                         <Target className="w-5 h-5 text-purple-500" />
                         <CardTitle className="text-xl font-bold text-foreground">Scan Results</CardTitle>
@@ -206,14 +206,14 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                             {filteredResults.length} of {localResults.length}
                         </Badge>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <div className="relative group">
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <div className="relative group flex-1 sm:flex-initial">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-cyan-500 transition-colors" />
                             <Input
                                 placeholder="Search symbol or name..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-9 h-9 w-[240px] bg-secondary/50 border-border focus:ring-cyan-500/20 text-foreground"
+                                className="pl-9 h-9 w-full sm:w-[240px] bg-secondary/50 border-border focus:ring-cyan-500/20 text-foreground"
                             />
                             {searchQuery && (
                                 <button
@@ -229,12 +229,12 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                             size="sm"
                             onClick={() => setShowFilters(!showFilters)}
                             className={cn(
-                                "h-9 gap-2 border-border",
+                                "h-9 gap-2 border-border shrink-0",
                                 showFilters && "bg-secondary border-cyan-500/50 text-cyan-500"
                             )}
                         >
                             <SlidersHorizontal className="w-4 h-4" />
-                            <span>Filters</span>
+                            <span className="inline">Filters</span>
                         </Button>
                     </div>
                 </div>

@@ -326,32 +326,23 @@ export default function StockPriceChart({ symbol, currency }: StockPriceChartPro
         <div ref={containerRef} className="bg-card rounded-xl p-4 shadow-sm border border-border mb-6 overflow-visible">
             {/* Header Layout (Matches PerformanceGraph) */}
             <div className="mb-6">
-                <div className="flex flex-col items-start gap-1 md:flex-row md:justify-between md:items-center md:gap-0 mb-4">
-                    <h3 className="text-lg font-medium text-muted-foreground">Price History</h3>
+                <div className="flex flex-col items-start gap-4 md:flex-row md:justify-between md:items-center md:gap-0 mb-4">
+                    {/* Price and Stats (Top Left) */}
                     {stats ? (
-                        <div className="flex items-baseline gap-2">
-                            <span className="text-xl font-bold tracking-tight text-foreground">
+                        <div className="flex items-baseline gap-3">
+                            <span className="text-3xl font-bold tracking-tight text-foreground">
                                 {formatCurrency(stats.currentPrice, currency)}
                             </span>
-                            <span className={`text-sm font-medium ${stats.change >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
+                            <span className={`text-base font-medium ${stats.change >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
                                 {stats.change >= 0 ? '+' : ''}{formatCurrency(stats.change, currency)} ({stats.changePct.toFixed(2)}%)
                             </span>
                         </div>
                     ) : (
                         <div className="h-9" />
                     )}
-                </div>
 
-                <div className="flex flex-col xl:flex-row justify-between items-end xl:items-center gap-4 min-w-0">
-
-                    {/* Period Selector - Order 2 on mobile (below controls), Order 1 on Desktop */}
-                    <div className="w-full xl:w-auto overflow-x-auto no-scrollbar pb-1 -mx-1 px-1 order-2 xl:order-1">
-                        <PeriodSelector selectedPeriod={period} onPeriodChange={setPeriod} />
-                    </div>
-
-                    {/* Toggles & Benchmark - Order 1 on mobile (top), Order 2 on Desktop */}
-                    <div className="flex items-center gap-3 w-full xl:w-auto justify-between xl:justify-end order-1 xl:order-2">
-                        {/* SMA Toggles (Only in Price View) */}
+                    {/* Toggles (Top Right) */}
+                    <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
                         <div className="flex items-center gap-2">
                             {view === 'price' && (
                                 <div className="flex bg-secondary rounded-lg p-1 border border-border shrink-0 gap-1">
@@ -398,6 +389,11 @@ export default function StockPriceChart({ symbol, currency }: StockPriceChartPro
                             </div>
                         </div>
                     </div>
+                </div>
+
+                {/* Second Row: Period Selector */}
+                <div className="w-full overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
+                    <PeriodSelector selectedPeriod={period} onPeriodChange={setPeriod} />
                 </div>
             </div>
 
