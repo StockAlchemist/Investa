@@ -2675,9 +2675,13 @@ class MarketDataProvider:
                         
                         if is_valid:
                             cached_data = symbol_cache_entry.get("data")
-                            if cached_data is not None:
+                            # CRITICAL: Reject "empty" or "poisoned" cache entries
+                            if cached_data is not None and len(cached_data) > 3: # symbol, quoteType, etc.
                                 cache_valid = True
                                 logging.debug(f"Using valid fundamentals cache for {yf_symbol} from file")
+                            else:
+                                logging.warning(f"Rejecting poisoned/empty fundamentals cache for {yf_symbol}")
+                                cache_valid = False
                         else:
                             if not valid_until_str: # Only log standard expiry if not smart
                                  logging.info(f"Fundamentals cache expired for {yf_symbol} (Standard duration)")
@@ -2814,50 +2818,38 @@ class MarketDataProvider:
             data['_fetch_timestamp'] = now_ts.isoformat()
 
             # Save to cache (only this symbol's file)
-            try:
-                # MODIFIED: Save only the specific symbol's data to its file
-                symbol_cache_content = {
-                    "timestamp": now_ts.isoformat(),
-                    "valid_until": valid_until.isoformat(),
-                    "version": CACHE_VERSION,
-                    "data": data,
-                }
-                # Ensure the directory exists before writing (redundant but safe)
-                os.makedirs(self.fundamentals_cache_dir, exist_ok=True)
-                with open(symbol_cache_file, "w", encoding="utf-8") as f_write:
-                    json.dump(
-                        symbol_cache_content, f_write, indent=2, cls=NpEncoder
-                    )  # Use NpEncoder for numpy types
-                logging.debug(
-                    f"Saved fundamentals for {yf_symbol} to cache file: {symbol_cache_file}"
-                )
-            except Exception as e_cache_write:
-                logging.warning(
-                    f"Failed to write fundamentals cache file for {yf_symbol} ('{symbol_cache_file}'): {e_cache_write}"
-                )
+            # CRITICAL: Validate data before saving to prevent cache poisoning
+            # A valid info dict should have at least a few keys like 'symbol', 'quoteType', 'longName'
+            if data and len(data) > 3:
+                try:
+                    # MODIFIED: Save only the specific symbol's data to its file
+                    symbol_cache_content = {
+                        "timestamp": now_ts.isoformat(),
+                        "valid_until": valid_until.isoformat(),
+                        "version": CACHE_VERSION,
+                        "data": data,
+                    }
+                    # Ensure the directory exists before writing (redundant but safe)
+                    os.makedirs(self.fundamentals_cache_dir, exist_ok=True)
+                    with open(symbol_cache_file, "w", encoding="utf-8") as f_write:
+                        json.dump(
+                            symbol_cache_content, f_write, indent=2, cls=NpEncoder
+                        )  # Use NpEncoder for numpy types
+                    logging.debug(
+                        f"Saved fundamentals for {yf_symbol} to cache file: {symbol_cache_file}"
+                    )
+                except Exception as e_cache_write:
+                    logging.warning(
+                        f"Failed to write fundamentals cache file for {yf_symbol} ('{symbol_cache_file}'): {e_cache_write}"
+                    )
+            else:
+                logging.warning(f"Not saving fundamentals for {yf_symbol} - insufficient data (poison check failed)")
+
             return data
         except Exception as e_fetch:
             logging.error(f"Error fetching fundamental data for {yf_symbol}: {e_fetch}")
-            traceback.print_exc()
-            # --- ADDED: Cache empty data on fetch error ---
-            try:
-                logging.info(
-                    f"Caching empty fundamental data for {yf_symbol} due to fetch error."
-                )
-                error_cache_content = {
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "data": {},  # Cache an empty dictionary
-                }
-                # symbol_cache_file is defined earlier in this method
-                os.makedirs(self.fundamentals_cache_dir, exist_ok=True)
-                with open(symbol_cache_file, "w", encoding="utf-8") as f_write_err:
-                    json.dump(error_cache_content, f_write_err, indent=2, cls=NpEncoder)
-            except Exception as e_cache_err_write:
-                logging.warning(
-                    f"Failed to write error cache for fundamentals of {yf_symbol} ('{symbol_cache_file}'): {e_cache_err_write}"
-                )
-            # --- END ADDED ---
-            return None  # Still return None to indicate failure to the caller for this attempt
+            # traceback.print_exc()
+            return None
 
     def _get_cached_statement_data(
         self, yf_symbol: str, statement_type: str, period_type: str = "annual"

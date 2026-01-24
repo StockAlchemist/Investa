@@ -394,7 +394,12 @@ def estimate_growth_rate(
             for p in ["0y", "+1y"]:
                 row = analyst_ee.get(p)
                 if row and "growth" in row and row["growth"] is not None:
-                    expected_rates.append(float(row["growth"]))
+                    try:
+                        g_val = float(row["growth"])
+                        if not np.isnan(g_val) and not np.isinf(g_val):
+                            expected_rates.append(g_val)
+                    except (ValueError, TypeError):
+                        pass
             
             if expected_rates:
                 avg_expected = sum(expected_rates) / len(expected_rates)
@@ -403,7 +408,12 @@ def estimate_growth_rate(
         # Fallback to standard info fields if specific estimates missing
         g = ticker_info.get("earningsGrowth") or ticker_info.get("revenueGrowth")
         if g is not None:
-            return float(g)
+            try:
+                g_val = float(g)
+                if not np.isnan(g_val) and not np.isinf(g_val):
+                    return g_val
+            except (ValueError, TypeError):
+                pass
 
     # 2. Try to calculate historical CAGR if analyst data is not available
     # ... (keeping existing historical CAGR logic as fallback)
@@ -435,12 +445,80 @@ def estimate_growth_rate(
                 # Calculate CAGR
                 n_years = (end_date - start_date).days / 365.25
                 if n_years > 0.5: 
-                    return (end_val / start_val) ** (1 / n_years) - 1
+                    res = (end_val / start_val) ** (1 / n_years) - 1
+                    # Protect against NaN or Infinity
+                    if np.isnan(res) or np.isinf(res):
+                        return 0.05
+                    return res
         except Exception:
             pass
 
     # 3. Final Default
     return 0.05
+
+
+def _enrich_ticker_info(
+    ticker_info: Dict[str, Any],
+    financials_df: Optional[pd.DataFrame],
+    balance_sheet_df: Optional[pd.DataFrame],
+    cashflow_df: Optional[pd.DataFrame]
+) -> Dict[str, Any]:
+    """
+    Fills in missing critical data in ticker_info using financial statements.
+    Ensures DCF/Graham models have necessary inputs even if 'info' is sparse.
+    """
+    enriched = ticker_info.copy()
+    
+    # Check 1: Shares Outstanding
+    if not enriched.get("sharesOutstanding"):
+        # Try Balance Sheet (Ordinary Shares Number or Share Issued)
+        if balance_sheet_df is not None and not balance_sheet_df.empty:
+            latest_col = balance_sheet_df.columns[0]
+            shares = _get_statement_value(balance_sheet_df, "Ordinary Shares Number", latest_col)
+            if not shares:
+                shares = _get_statement_value(balance_sheet_df, "Share Issued", latest_col)
+            
+            if shares:
+                enriched["sharesOutstanding"] = shares
+        
+        # Try Income Statement (Average Shares)
+        if not enriched.get("sharesOutstanding") and financials_df is not None and not financials_df.empty:
+            latest_col = financials_df.columns[0]
+            shares = _get_statement_value(financials_df, "Diluted Average Shares", latest_col)
+            if not shares:
+                shares = _get_statement_value(financials_df, "Basic Average Shares", latest_col)
+            
+            if shares:
+                enriched["sharesOutstanding"] = shares
+
+    # Check 2: Total Revenue
+    if not enriched.get("totalRevenue") and financials_df is not None and not financials_df.empty:
+        latest_col = financials_df.columns[0]
+        rev = _get_statement_value(financials_df, "Total Revenue", latest_col)
+        if rev:
+            enriched["totalRevenue"] = rev
+
+    # Check 3: Total Cash / Debt
+    if enriched.get("totalCash") is None and balance_sheet_df is not None and not balance_sheet_df.empty:
+        latest_col = balance_sheet_df.columns[0]
+        cash = _get_statement_value(balance_sheet_df, "Cash And Cash Equivalents", latest_col)
+        if cash:
+            enriched["totalCash"] = cash
+
+    if enriched.get("totalDebt") is None and balance_sheet_df is not None and not balance_sheet_df.empty:
+        latest_col = balance_sheet_df.columns[0]
+        debt = _get_statement_value(balance_sheet_df, "Total Debt", latest_col)
+        if debt:
+            enriched["totalDebt"] = debt
+
+    # Check 4: EPS (Trailing)
+    if not enriched.get("trailingEps") and financials_df is not None and not financials_df.empty:
+        latest_col = financials_df.columns[0]
+        eps = _get_statement_value(financials_df, "Diluted EPS", latest_col)
+        if eps:
+            enriched["trailingEps"] = eps
+
+    return enriched
 
 def estimate_fcf_margin(
     financials_df: Optional[pd.DataFrame],
@@ -475,11 +553,13 @@ def estimate_fcf_margin(
                 # Capex is usually negative
                 fcf = ocf + capex 
                 margin = fcf / rev
-                if margin > 0:
+                # Only include reasonable positive margins (0% to 50%)
+                if 0 < margin < 0.5:
                     margins.append(margin)
         
         if margins:
-            return sum(margins) / len(margins)
+            # Use median for better robustness against outliers
+            return float(np.median(margins))
             
     except Exception as e:
         logging.warning(f"Failed to estimate FCF margin: {e}")
@@ -640,13 +720,27 @@ def calculate_intrinsic_value_dcf(
         
         # 1. Base FCF
         if fcf is None:
-            fcf = ticker_info.get("freeCashflow")
-            if fcf is None and cashflow_df is not None and not cashflow_df.empty:
+            # Prioritize Cash Flow Statement for consistency and reliability
+            if cashflow_df is not None and not cashflow_df.empty:
                 latest_cf_period = cashflow_df.columns[0]
                 ocf = _get_statement_value(cashflow_df, "Operating Cash Flow", latest_cf_period)
                 capex = _get_statement_value(cashflow_df, "Capital Expenditure", latest_cf_period)
                 if ocf is not None and capex is not None:
                     fcf = ocf + capex # Capex is usually negative in YF
+            
+            # Fallback to TTM summary if statement data is missing
+            if fcf is None:
+                fcf = ticker_info.get("freeCashflow")
+
+            # Sanity Check for TTM Summary FCF
+            if fcf and current_revenue and current_revenue > 0:
+                implied_margin = fcf / current_revenue
+                if implied_margin > 0.4: # Erroneous data protection
+                     # If the implied margin is unrealistically high (>40%), 
+                     # we suspect data error (like PSKY $15B vs $29B revenue)
+                     # and fallback to revenue-based estimation.
+                     logging.warning(f"Discarding unrealistic TTM FCF margin for {ticker_info.get('symbol')}: {implied_margin:.2f}")
+                     fcf = None 
         
         # Fallback for Negative FCF: Revenue-based estimation
         used_fcf_margin = None
@@ -709,6 +803,10 @@ def calculate_intrinsic_value_dcf(
             
         intrinsic_value = equity_value / shares_outstanding
         
+        # Protect against NaN in final DCF result
+        if np.isnan(intrinsic_value) or np.isinf(intrinsic_value):
+            return {"error": "DCF resulted in invalid NaN/Inf value"}
+            
         res = {
             "intrinsic_value": intrinsic_value,
             "model": model_method,
@@ -817,6 +915,9 @@ def get_comprehensive_intrinsic_value(
     """
     Consolidates multiple intrinsic value models into a single advice object.
     """
+    # 0. Enrich data with statement fallbacks to maximize coverage
+    ticker_info = _enrich_ticker_info(ticker_info, financials_df, balance_sheet_df, cashflow_df)
+    
     overrides = overrides or {}
     
     # Extract DCF overrides
@@ -907,6 +1008,33 @@ def get_comprehensive_intrinsic_value(
         
     if valid_values:
         avg_intrinsic = sum(valid_values) / len(valid_values)
+        
+        # BUSINESS LOGIC: If DCF and Graham differ by > 50%, prioritize the value closer to current price
+        # This fulfills the USER requirement to be "closer to zero" (closer to current price).
+        if "intrinsic_value" in dcf_res and "intrinsic_value" in graham_res and current_price:
+            dcf_val = dcf_res["intrinsic_value"]
+            graham_val = graham_res["intrinsic_value"]
+            
+            # Allow negative values by checking absolute magnitude to avoid zero division
+            if abs(dcf_val) > 0.001:
+                diff_pct = abs(dcf_val - graham_val) / abs(dcf_val)
+                if diff_pct > 0.50:
+                    dcf_dist = abs(dcf_val - current_price)
+                    graham_dist = abs(graham_val - current_price)
+                    
+                    if dcf_dist < graham_dist:
+                        avg_intrinsic = dcf_val
+                        picked = "DCF"
+                    else:
+                        avg_intrinsic = graham_val
+                        picked = "Graham"
+                        
+                    results["valuation_note"] = f"Models show a large discrepancy ({diff_pct*100:.1f}%). Priority given to {picked} Model ({avg_intrinsic:.2f}) as it is closer to current price."
+        
+        # FINAL SANITY CHECK: Replace NaN or Inf with None for JSON compatibility
+        if avg_intrinsic is not None and (np.isnan(avg_intrinsic) or np.isinf(avg_intrinsic)):
+            avg_intrinsic = None
+            
         results["average_intrinsic_value"] = avg_intrinsic
         
         # Probabilistic range
@@ -915,8 +1043,87 @@ def get_comprehensive_intrinsic_value(
                 "bear": sum(bear_values) / len(bear_values),
                 "bull": sum(bull_values) / len(bull_values)
             }
+            # Sanitize range
+            for k, v in results["range"].items():
+                if v is not None and (np.isnan(v) or np.isinf(v)):
+                    results["range"][k] = None
             
-        if current_price:
-            results["margin_of_safety_pct"] = ((avg_intrinsic - current_price) / current_price) * 100
+        if current_price and avg_intrinsic:
+            mos = ((avg_intrinsic - current_price) / current_price) * 100
+            if mos is not None and (np.isnan(mos) or np.isinf(mos)):
+                mos = None
+            results["margin_of_safety_pct"] = mos
             
     return results
+
+
+def get_intrinsic_value_for_symbol(
+    symbol: str,
+    mdp: Any,
+    config_manager: Optional[Any] = None
+) -> Dict[str, Any]:
+    """
+    Higher-level helper to calculate intrinsic value with full data and overrides.
+    Ensures consistency across API, scripts, and workers.
+    
+    CRITICAL: This always fetches complete statements to ensure high-quality calculations.
+    """
+    # Use local imports to avoid potential circular dependencies
+    from finutils import map_to_yf_symbol
+    import config
+    
+    # 1. Map symbol
+    user_symbol_map = {}
+    user_excluded_symbols = set()
+    
+    if config_manager:
+        user_symbol_map = config_manager.manual_overrides.get("user_symbol_map", {})
+        user_excluded_symbols = set(config_manager.manual_overrides.get("user_excluded_symbols", []))
+    else:
+        # Fallback to config defaults if no manager provided
+        user_symbol_map = getattr(config, "SYMBOL_MAP_TO_YFINANCE", {})
+        user_excluded_symbols = set(getattr(config, "YFINANCE_EXCLUDED_SYMBOLS", []))
+
+    yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
+    if not yf_symbol:
+        if symbol.upper() in user_excluded_symbols:
+             return {"error": f"Symbol {symbol} is in the exclusion list."}
+        return {"error": f"Could not map {symbol} to Yahoo Finance symbol"}
+
+    # 2. Fetch COMPLETE data 
+    # This fulfills the USER requirement: "Always fetch complete statements"
+    try:
+        info = mdp.get_fundamental_data(yf_symbol)
+        
+        # CRITICAL: Detect "poisoned" or insufficient info and force fresh fetch
+        if not info or len(info) <= 3:
+            logging.warning(f"Detected invalid/insufficient fundamental info for {yf_symbol} in get_intrinsic_value_for_symbol. Forcing refresh.")
+            info = mdp.get_fundamental_data(yf_symbol, force_refresh=True)
+
+        if not info:
+             return {"error": f"No fundamental data found for {yf_symbol}"}
+             
+        # Force fetching statements
+        financials = mdp.get_financials(yf_symbol, "annual")
+        balance_sheet = mdp.get_balance_sheet(yf_symbol, "annual")
+        cashflow = mdp.get_cashflow(yf_symbol, "annual")
+        
+        # 3. Handle Overrides
+        symbol_overrides = {}
+        if config_manager:
+            val_overrides = config_manager.manual_overrides.get("valuation_overrides", {})
+            symbol_overrides = val_overrides.get(yf_symbol.upper(), {})
+            if not symbol_overrides:
+                 # Try mapped symbol (original)
+                 symbol_overrides = val_overrides.get(symbol.upper(), {})
+        
+        # 4. Calculate
+        results = get_comprehensive_intrinsic_value(
+            info, financials, balance_sheet, cashflow,
+            overrides=symbol_overrides
+        )
+        
+        return results
+    except Exception as e:
+        logging.error(f"Error in get_intrinsic_value_for_symbol for {yf_symbol}: {e}")
+        return {"error": str(e)}

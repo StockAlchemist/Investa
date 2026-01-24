@@ -9,8 +9,9 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 
 from market_data import get_shared_mdp
 from server.screener_service import get_sp500_tickers
-from financial_ratios import get_comprehensive_intrinsic_value
+from financial_ratios import get_intrinsic_value_for_symbol
 from db_utils import get_db_connection, update_intrinsic_value_in_cache
+from config_manager import ConfigManager
 
 def recalculate_sp500():
     # Configure logging
@@ -23,6 +24,7 @@ def recalculate_sp500():
     logging.info("Starting S&P 500 Intrinsic Value Recalculation...")
     
     mdp = get_shared_mdp()
+    cm = ConfigManager(config.get_app_data_dir())
     tickers = get_sp500_tickers()
     
     if not tickers:
@@ -44,32 +46,27 @@ def recalculate_sp500():
         try:
             logging.info(f"[{i+1}/{len(tickers)}] Recalculating {symbol}...")
             
-            # Fetch fresh data
-            fund_data = mdp.get_fundamental_data(symbol)
-            if not fund_data:
-                logging.warning(f"  No fundamental data for {symbol}. Skipping.")
+            # Use the high-quality centralized helper (Always fetches statements)
+            iv_results = get_intrinsic_value_for_symbol(symbol, mdp, cm)
+            
+            if "error" in iv_results:
+                logging.warning(f"  Calculation failed for {symbol}: {iv_results['error']}")
                 fail_count += 1
                 continue
-                
-            financials_df = mdp.get_financials(symbol, "annual")
-            balance_sheet_df = mdp.get_balance_sheet(symbol, "annual")
-            cashflow_df = mdp.get_cashflow(symbol, "annual")
-            
-            # Calculate IV with new logic (already updated in financial_ratios.py)
-            iv_results = get_comprehensive_intrinsic_value(
-                fund_data, financials_df, balance_sheet_df, cashflow_df
-            )
+
+            # Fetch info for cache sync (required for timestamps)
+            # This uses the mdp cache if already fetched by the helper
+            info = mdp.get_fundamental_data(symbol)
             
             # Update cache
-            fund_data["valuation_details"] = iv_results
             update_intrinsic_value_in_cache(
                 conn,
                 symbol,
                 iv_results.get("average_intrinsic_value"),
                 iv_results.get("margin_of_safety_pct"),
-                fund_data.get("lastFiscalYearEnd"),
-                fund_data.get("mostRecentQuarter"),
-                info=fund_data
+                info.get("lastFiscalYearEnd") if info else None,
+                info.get("mostRecentQuarter") if info else None,
+                info=info
             )
             
             success_count += 1

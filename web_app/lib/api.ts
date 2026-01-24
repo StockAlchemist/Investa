@@ -714,6 +714,7 @@ export interface IntrinsicValueResponse {
         bull: number;
     };
     margin_of_safety_pct?: number;
+    valuation_note?: string;
 }
 
 export async function fetchFundamentals(symbol: string, force: boolean = false): Promise<Fundamentals> {

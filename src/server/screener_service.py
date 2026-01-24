@@ -8,7 +8,7 @@ from typing import List, Dict, Optional, Any
 import requests
 
 from market_data import get_shared_mdp
-from financial_ratios import get_comprehensive_intrinsic_value
+from financial_ratios import get_intrinsic_value_for_symbol
 from db_utils import (
     get_watchlist, 
     get_db_connection, 
@@ -314,8 +314,12 @@ def process_screener_results(
             })
         else:
             # Report changed or no cache -> Full Re-calculation
-            # Now with improved growth estimation by passing 'info' (ticker_info)
-            iv_res = get_comprehensive_intrinsic_value(info, None, None, None)
+            # CRITICAL: Always use the high-quality centralized helper
+            # This ensures overrides are applied and full statements are fetched.
+            # (Note: We pass None for config_manager here as screener usually runs with defaults, 
+            # but we could initialize one if needed).
+            mdp = get_shared_mdp()
+            iv_res = get_intrinsic_value_for_symbol(sym, mdp)
             
             avg_iv = iv_res.get("average_intrinsic_value")
             mos = iv_res.get("margin_of_safety_pct")

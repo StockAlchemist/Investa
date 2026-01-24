@@ -820,6 +820,16 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     </div>
                 </div>
 
+                {intrinsicValue.valuation_note && (
+                    <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-500">
+                        <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                        <div className="flex flex-col gap-1">
+                            <p className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Model Discrepancy Note</p>
+                            <p className="text-sm text-amber-700 dark:text-amber-500 leading-relaxed italic">{intrinsicValue.valuation_note}</p>
+                        </div>
+                    </div>
+                )}
+
                 {/* Models Detail */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     {/* DCF Model */}

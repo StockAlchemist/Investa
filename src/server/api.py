@@ -51,7 +51,8 @@ try:
     from financial_ratios import (
         calculate_key_ratios_timeseries,
         calculate_current_valuation_ratios,
-        get_comprehensive_intrinsic_value
+        get_comprehensive_intrinsic_value,
+        get_intrinsic_value_for_symbol
     )
     FINANCIAL_RATIOS_AVAILABLE = True
 except ImportError:
@@ -2891,29 +2892,21 @@ async def get_intrinsic_value_endpoint(
     
     try:
         mdp = get_mdp()
-        # Fetch data needed for models
-        info = mdp.get_fundamental_data(yf_symbol)
-        financials = mdp.get_financials(yf_symbol, "annual")
-        balance_sheet = mdp.get_balance_sheet(yf_symbol, "annual")
-        cashflow = mdp.get_cashflow(yf_symbol, "annual")
+        results = get_intrinsic_value_for_symbol(symbol, mdp, config_manager)
         
-        # Calculate comprehensive intrinsic value
-        # Get overrides for this specific symbol
-        val_overrides = config_manager.manual_overrides.get("valuation_overrides", {})
-        symbol_overrides = val_overrides.get(yf_symbol.upper(), {})
-        if not symbol_overrides:
-             # Try mapped symbol
-             symbol_overrides = val_overrides.get(symbol.upper(), {})
-
-        results = get_comprehensive_intrinsic_value(
-            info, financials, balance_sheet, cashflow,
-            overrides=symbol_overrides
-        )
+        if "error" in results:
+             raise HTTPException(status_code=500, detail=results["error"])
+        
+        # We still need info for the sync function below
+        yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
+        info = mdp.get_fundamental_data(yf_symbol)
         
         # Sync to screener cache
         try:
             db_conn = get_db_connection()
             if db_conn:
+                if info:
+                    info["valuation_details"] = results
                 update_intrinsic_value_in_cache(
                     db_conn,
                     symbol,

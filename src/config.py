@@ -95,6 +95,16 @@ def get_app_data_dir() -> str:
             except Exception:
                 pass
 
+    # Priority 2b: macOS Standard Library Path (Fallback if PySide is not available)
+    if system == "Darwin":
+        home = os.path.expanduser("~")
+        mac_path = os.path.join(home, "Library", "Application Support", ORG_NAME, APP_NAME)
+        try:
+            os.makedirs(mac_path, exist_ok=True)
+            return mac_path
+        except Exception:
+            pass
+
     # Priority 3: Cross-platform fallback based on HOME
     home = os.path.expanduser("~")
     fallback_path = os.path.join(home, f".{APP_NAME.lower()}")
