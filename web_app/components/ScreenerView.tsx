@@ -163,10 +163,6 @@ const ScreenerView: React.FC<ScreenerViewProps> = ({ currency }) => {
                     onReview={handleReview}
                     reviewingSymbol={reviewingSymbol}
                     currency={currency}
-                    starredSymbols={starredSymbols}
-                    symbolWatchlistMap={symbolWatchlistMap}
-                    watchlists={watchlists}
-                    onToggleWatchlist={handleToggleWatchlist}
                 />
             </div>
         </div>

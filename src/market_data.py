@@ -1332,6 +1332,15 @@ class MarketDataProvider:
             try:
                 # Use isolated fetch for index info
                 index_info_batch = _run_isolated_fetch(yf_tickers_to_fetch, task="info")
+                
+                # Fetch 7 days of history for sparklines
+                index_hist_df = _run_isolated_fetch(
+                    yf_tickers_to_fetch,
+                    period="7d",
+                    interval="1d",
+                    task="history"
+                )
+
                 for (
                     yf_symbol,
                     ticker_info,
@@ -1375,6 +1384,29 @@ class MarketDataProvider:
                                         ).isoformat(),
                                     }
                                 )
+                                
+                                # Extract sparkline from history
+                                if not index_hist_df.empty:
+                                    has_multilevel = getattr(index_hist_df.columns, 'nlevels', 1) > 1
+                                    try:
+                                        sym_df = pd.DataFrame()
+                                        if len(yf_tickers_to_fetch) > 1:
+                                            if has_multilevel and yf_symbol in index_hist_df.columns.get_level_values(0):
+                                                sym_df = index_hist_df[yf_symbol]
+                                            elif not has_multilevel and any(isinstance(c, (tuple, list)) and c[0].upper() == yf_symbol.upper() for c in index_hist_df.columns):
+                                                cols_for_sym = [c for c in index_hist_df.columns if isinstance(c, (tuple, list)) and c[0].upper() == yf_symbol.upper()]
+                                                sym_df = index_hist_df[cols_for_sym]
+                                                sym_df.columns = [c[1] for c in sym_df.columns]
+                                        else:
+                                            sym_df = index_hist_df
+                                        
+                                        if not sym_df.empty:
+                                            close_col = "Close" if "Close" in sym_df.columns else sym_df.columns[0]
+                                            sparkline = sym_df[close_col].dropna().tolist()
+                                            results[internal_result_key]["sparkline"] = sparkline
+                                    except Exception as e_hist:
+                                        logging.warning(f"Error extracting sparkline for {yf_symbol}: {e_hist}")
+
                             else:
                                 logging.warning(
                                     f"Could not get price for index {yf_symbol} (Internal: {internal_result_key}) from info."
@@ -1385,23 +1417,16 @@ class MarketDataProvider:
                             )
 
                     except AttributeError as ae:
-                        # Specifically catch potential AttributeError if 'info' is called incorrectly or object is bad
                         logging.error(
                             f"AttributeError processing info for index {yf_symbol}: {ae}"
                         )
-                        # Continue to next symbol, don't abort all
                     except Exception as e_ticker:
                         logging.error(
                             f"Error processing info for index {yf_symbol}: {e_ticker}"
                         )
-                        # Continue trying other symbols
-
-                    # time.sleep(0.05)  # Add small delay after each index info fetch
-                    # time.sleep(0.1)  # Add small delay after each index info fetch
 
             except Exception as e_indices:
                 logging.error(f"Error fetching index quotes batch: {e_indices}")
-                # Return cached data if available, otherwise empty
                 return cached_results or {}
 
 

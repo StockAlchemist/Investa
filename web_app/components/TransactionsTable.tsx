@@ -366,23 +366,7 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
                                         </span>
                                     </td>
                                     <td className="px-4 py-3 whitespace-nowrap">
-                                        <div className="flex items-center gap-2">
-                                            <button
-                                                onClick={async (e) => {
-                                                    e.stopPropagation();
-                                                    try {
-                                                        await addToWatchlist(tx.Symbol);
-                                                    } catch (err) {
-                                                        console.error("Failed to add to watchlist", err);
-                                                    }
-                                                }}
-                                                className="text-muted-foreground/30 hover:text-yellow-500 transition-colors"
-                                                title="Add to Watchlist"
-                                            >
-                                                <Star className="h-3 w-3" />
-                                            </button>
-                                            <StockTicker symbol={tx.Symbol} currency={tx["Local Currency"]} />
-                                        </div>
+                                        <StockTicker symbol={tx.Symbol} currency={tx["Local Currency"]} />
                                     </td>
                                     <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">{tx.Quantity}</td>
                                     <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">{tx["Price/Share"]?.toFixed(2)}</td>

@@ -22,6 +22,7 @@ import {
   PerformanceData
 } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { AreaChart, Area, YAxis, ResponsiveContainer } from 'recharts';
 import { DEFAULT_ITEMS } from '@/lib/dashboard_constants';
 // import { CURRENCY_SYMBOLS } from '@/lib/utils';
 import Dashboard from '@/components/Dashboard';
@@ -325,7 +326,6 @@ export default function Home() {
               isLoading={holdingsQuery.isLoading && !holdingsQuery.data}
               showClosed={showClosed}
               onToggleShowClosed={setShowClosed}
-              watchlist={watchlistQuery.data}
             />
           </>
         );
@@ -338,20 +338,57 @@ export default function Home() {
       case 'markets':
         return (
           <div className="space-y-6">
-            <h2 className="text-xl font-bold text-foreground">Market Indices</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold tracking-tight text-foreground">Market Indices</h2>
+              <div className="text-xs text-muted-foreground">7D Trend</div>
+            </div>
             {!summary?.metrics?.indices ? (
               <p className="text-muted-foreground">Market data unavailable.</p>
             ) : (
-              <div className="grid grid-cols-1 gap-4">
-                {Object.values(summary.metrics.indices).map((index: { name: string; price: number; change: number; changesPercentage: number }) => (
-                  <div key={index.name} className="flex items-center justify-between p-4 rounded-xl bg-card border border-border">
-                    <span className="font-medium text-foreground text-lg">{index.name}</span>
-                    <div className="flex flex-col items-end">
-                      <span className="text-foreground font-medium text-lg">{index.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                      <span className={`text-sm ${index.change >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
-                        {index.change >= 0 ? "+" : ""}{index.change.toFixed(2)} ({index.changesPercentage.toFixed(2)}%)
-                      </span>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {Object.values(summary.metrics.indices).map((index: any) => (
+                  <div key={index.name} className="flex flex-col p-5 rounded-2xl bg-card border border-border bg-gradient-to-b from-card to-card/50 shadow-sm hover:shadow-md hover:border-cyan-500/30 transition-all duration-300 group">
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <span className="text-muted-foreground text-[10px] font-bold uppercase tracking-widest">{index.name}</span>
+                        <h3 className="text-2xl font-bold text-foreground mt-1 tabular-nums">
+                          {index.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </h3>
+                      </div>
+                      <div className={`flex flex-col items-end font-bold tabular-nums ${index.change >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                        <div className="flex items-center text-lg">
+                          {index.change >= 0 ? "+" : ""}{index.change.toFixed(2)}
+                        </div>
+                        <div className="text-sm">
+                          {index.changesPercentage.toFixed(2)}%
+                        </div>
+                      </div>
                     </div>
+
+                    {index.sparkline && index.sparkline.length > 1 && (
+                      <div className="h-16 w-full mt-2 filter drop-shadow-sm opacity-90 group-hover:opacity-100 transition-opacity">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={index.sparkline.map((v: number) => ({ value: v }))}>
+                            <defs>
+                              <linearGradient id={`splitFill-${index.name.replace(/[^a-zA-Z]/g, '')}`} x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor={index.change >= 0 ? "#10b981" : "#ef4444"} stopOpacity={0.25} />
+                                <stop offset="95%" stopColor={index.change >= 0 ? "#10b981" : "#ef4444"} stopOpacity={0} />
+                              </linearGradient>
+                            </defs>
+                            <YAxis hide domain={['dataMin', 'dataMax']} />
+                            <Area
+                              type="monotone"
+                              dataKey="value"
+                              stroke={index.change >= 0 ? "#10b981" : "#ef4444"}
+                              fill={`url(#splitFill-${index.name.replace(/[^a-zA-Z]/g, '')})`}
+                              strokeWidth={2.5}
+                              dot={false}
+                              isAnimationActive={false}
+                            />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -487,13 +524,36 @@ export default function Home() {
 
 
           <div className="flex items-center gap-4">
-            {summary?.metrics?.indices && Object.values(summary.metrics.indices).map((index: { name: string; price: number; change: number; changesPercentage: number }) => (
-              <div key={index.name} className="hidden md:flex items-center space-x-2 text-xs font-medium px-3 py-1.5 rounded-full bg-card border border-border hover:bg-accent/10 transition-colors">
-                <span className="text-muted-foreground">{index.name}</span>
-                <span className="text-foreground">{index.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? "0.00"}</span>
-                <span className={(index.change || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}>
-                  {(index.change || 0) >= 0 ? "+" : ""}{(index.change || 0).toFixed(2)} ({(index.changesPercentage || 0).toFixed(2)}%)
-                </span>
+            {summary?.metrics?.indices && Object.values(summary.metrics.indices).map((index: any) => (
+              <div key={index.name} className="hidden lg:flex flex-col items-start px-3 py-1.5 rounded-xl bg-card/40 border border-border/50 hover:bg-accent/10 hover:border-border transition-all duration-300 group overflow-hidden relative min-w-[120px]">
+                <div className="flex items-center justify-between w-full gap-2">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">{index.name}</span>
+                  <span className={`text-[9px] font-bold tabular-nums ${(index.change || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                    {(index.changesPercentage || 0).toFixed(2)}%
+                  </span>
+                </div>
+                <div className="text-xs font-bold text-foreground tabular-nums">
+                  {index.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? "0.00"}
+                </div>
+
+                {index.sparkline && index.sparkline.length > 1 && (
+                  <div className="absolute bottom-0 left-0 right-0 h-[3px] pointer-events-none opacity-40 group-hover:opacity-100 transition-opacity">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={index.sparkline.map((v: number) => ({ value: v }))}>
+                        <YAxis hide domain={['dataMin', 'dataMax']} />
+                        <Area
+                          type="monotone"
+                          dataKey="value"
+                          stroke={index.change >= 0 ? "#10b981" : "#ef4444"}
+                          fill="transparent"
+                          strokeWidth={1.5}
+                          dot={false}
+                          isAnimationActive={false}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </div>
             ))}
 

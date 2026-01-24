@@ -5,11 +5,11 @@ import { exportToCSV } from '../lib/export';
 import { Holding, Lot, addToWatchlist, removeFromWatchlist, WatchlistItem, updateHoldingTags } from '../lib/api';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { AreaChart, Area, Line, ResponsiveContainer, YAxis, ReferenceLine } from 'recharts';
-import { Star, Search, X, Filter, LayoutGrid, Eye, EyeOff, Layers, Download, Building2, UserCircle, Tag, PenLine, Save, Table as TableIcon } from 'lucide-react';
+import { Search, X, Filter, LayoutGrid, Eye, EyeOff, Layers, Download, Building2, UserCircle, Tag, PenLine, Save, Table as TableIcon } from 'lucide-react';
 
 import { Skeleton } from './ui/skeleton';
 import { useStockModal } from '@/context/StockModalContext';
-import StockIcon from './StockIcon';
+import WatchlistStar from './WatchlistStar';
 
 interface HoldingsTableProps {
     holdings: Holding[];
@@ -17,7 +17,6 @@ interface HoldingsTableProps {
     isLoading?: boolean;
     showClosed?: boolean;
     onToggleShowClosed?: (val: boolean) => void;
-    watchlist?: WatchlistItem[];
 }
 
 // Mapping from UI Header to Data Key Prefix (or exact key)
@@ -64,9 +63,11 @@ interface SortConfig {
     direction: SortDirection;
 }
 
-export default function HoldingsTable({ holdings, currency, isLoading = false, showClosed = false, onToggleShowClosed, watchlist = [] }: HoldingsTableProps) {
+export default function HoldingsTable({ holdings, currency, isLoading = false, showClosed = false, onToggleShowClosed }: HoldingsTableProps) {
     const queryClient = useQueryClient();
 
+    // Watchlist state now handled by WatchlistStar context
+    /*
     const addWatchlistMutation = useMutation({
         mutationFn: ({ symbol, note }: { symbol: string, note: string }) => addToWatchlist(symbol, note),
         onSuccess: () => {
@@ -89,6 +90,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
             addWatchlistMutation.mutate({ symbol, note: '' });
         }
     };
+    */
 
     const [visibleColumns, setVisibleColumns] = useState<string[]>(DEFAULT_VISIBLE_COLUMNS);
     const [showLots, setShowLots] = useState(false);
@@ -809,25 +811,12 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                             )}
                                                         </div>
                                                     ) : header === 'Symbol' ? (
-                                                        <div className="flex items-center justify-start gap-2">
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    toggleWatchlist(val as string);
-                                                                }}
-                                                                className={`transition-colors ${watchlist.some(item => item.Symbol === val)
-                                                                    ? 'text-yellow-500 fill-yellow-500'
-                                                                    : 'text-muted-foreground/30 hover:text-yellow-500'
-                                                                    }`}
-                                                                title={watchlist.some(item => item.Symbol === val) ? "Remove from Watchlist" : "Add to Watchlist"}
-                                                            >
-                                                                <Star className="h-3 w-3" />
-                                                            </button>
+                                                        <div className="flex items-center justify-start gap-3">
+                                                            <WatchlistStar symbol={val as string} size="md" />
                                                             <button
                                                                 onClick={() => openStockDetail(val as string, currency)}
-                                                                className="font-semibold text-foreground hover:text-cyan-500 transition-colors cursor-pointer flex items-center gap-2"
+                                                                className="font-semibold text-foreground hover:text-cyan-500 transition-colors cursor-pointer"
                                                             >
-                                                                <StockIcon symbol={val as string} size={20} />
                                                                 {formatValue(val, header)}
                                                             </button>
                                                         </div>
@@ -897,26 +886,11 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                             onClick={() => openStockDetail(holding.Symbol, currency)}
                         >
                             <div className="flex justify-between items-start mb-2">
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            toggleWatchlist(holding.Symbol);
-                                        }}
-                                        className={`transition-colors ${watchlist.some(item => item.Symbol === holding.Symbol)
-                                            ? 'text-yellow-500 fill-yellow-500'
-                                            : 'text-muted-foreground/30 hover:text-yellow-500'
-                                            }`}
-                                        title={watchlist.some(item => item.Symbol === holding.Symbol) ? "Remove from Watchlist" : "Add to Watchlist"}
-                                    >
-                                        <Star className="h-4 w-4" />
-                                    </button>
-                                    <div className="flex items-center gap-2">
-                                        <StockIcon symbol={holding.Symbol} size={32} />
-                                        <div>
-                                            <h3 className="text-lg font-bold text-foreground">{holding.Symbol}</h3>
-                                            <p className="text-xs text-muted-foreground">{holding.Account}</p>
-                                        </div>
+                                <div className="flex items-center gap-3">
+                                    <WatchlistStar symbol={holding.Symbol} size="md" />
+                                    <div>
+                                        <h3 className="text-lg font-bold text-foreground">{holding.Symbol}</h3>
+                                        <p className="text-xs text-muted-foreground">{holding.Account}</p>
                                     </div>
                                 </div>
                                 <div className="text-right">

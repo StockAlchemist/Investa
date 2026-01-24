@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { BrainCircuit, Loader2, Sparkles, ChevronRight, BarChart3, TrendingUp, TrendingDown, Target, ChevronUp, RotateCcw, Star, Check, Search, SlidersHorizontal, X, Filter } from 'lucide-react';
-import StockIcon from './StockIcon';
+import { BrainCircuit, Loader2, Sparkles, ChevronRight, BarChart3, TrendingUp, TrendingDown, Target, ChevronUp, RotateCcw, Search, SlidersHorizontal, X, Filter } from 'lucide-react';
+import WatchlistStar from './WatchlistStar';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -29,10 +29,6 @@ interface ScreenerResultsProps {
     onReview: (symbol: string, force?: boolean) => Promise<any>;
     reviewingSymbol: string | null;
     currency: string;
-    starredSymbols?: Set<string>;
-    symbolWatchlistMap?: Record<string, Set<number>>;
-    watchlists?: { id: number, name: string }[];
-    onToggleWatchlist?: (symbol: string, watchlistId: number) => void;
 }
 
 type SortKey = 'symbol' | 'price' | 'intrinsic_value' | 'margin_of_safety' | 'pe_ratio' | 'ai_score';
@@ -43,10 +39,8 @@ interface SortConfig {
     direction: SortDirection;
 }
 
-const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, reviewingSymbol, currency, starredSymbols, symbolWatchlistMap, watchlists, onToggleWatchlist }) => {
+const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, reviewingSymbol, currency }) => {
     const [expandedReview, setExpandedReview] = useState<string | null>(null);
-    const [openWatchlistDropdown, setOpenWatchlistDropdown] = useState<string | null>(null);
-    const dropdownRef = React.useRef<HTMLDivElement>(null);
     const [reviews, setReviews] = useState<Record<string, any>>({});
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'margin_of_safety', direction: 'desc' });
     const { openStockDetail } = useStockModal();
@@ -181,6 +175,8 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
             : <ChevronUp className="w-3 h-3 ml-1 text-primary rotate-180 transition-transform" />;
     };
 
+    // No longer need click outside here, handled by WatchlistStar
+    /*
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -192,6 +188,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
             document.removeEventListener("mousedown", handleClickOutside);
         };
     }, []);
+    */
 
     if (!results || results.length === 0) return null;
 
@@ -378,50 +375,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                     <tr className="hover:bg-secondary/20 transition-all group border-b border-border/10">
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
-                                                <div className="relative group/star" ref={openWatchlistDropdown === row.symbol ? dropdownRef : null}>
-                                                    <StockIcon symbol={row.symbol} size="sm" className="w-9 h-9 rounded-lg bg-white dark:bg-gray-800 shadow-sm p-1 border border-border" />
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setOpenWatchlistDropdown(openWatchlistDropdown === row.symbol ? null : row.symbol);
-                                                        }}
-                                                        className={cn(
-                                                            "absolute -top-2 -right-2 p-1 rounded-full border bg-background shadow-sm transition-all z-10",
-                                                            starredSymbols?.has(row.symbol)
-                                                                ? "text-yellow-500 border-yellow-200 dark:border-yellow-900 bg-yellow-50 dark:bg-yellow-950/30 scale-100"
-                                                                : "text-muted-foreground/30 opacity-0 group-hover/star:opacity-100 hover:text-yellow-500 hover:scale-110"
-                                                        )}
-                                                    >
-                                                        <Star className={cn("h-3 w-3", starredSymbols?.has(row.symbol) && "fill-current")} />
-                                                    </button>
-
-                                                    {openWatchlistDropdown === row.symbol && watchlists && (
-                                                        <div
-                                                            className="absolute left-0 top-full mt-2 w-48 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden py-1 animate-in fade-in zoom-in-95 duration-200"
-                                                            style={{ backgroundColor: 'var(--menu-solid)' }}
-                                                        >
-                                                            <div className="px-3 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider border-b border-border/50">
-                                                                Add to Watchlist
-                                                            </div>
-                                                            {watchlists.map((wl: { id: number, name: string }) => {
-                                                                const isInList = symbolWatchlistMap?.[row.symbol]?.has(wl.id);
-                                                                return (
-                                                                    <button
-                                                                        key={wl.id}
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            onToggleWatchlist?.(row.symbol, wl.id);
-                                                                        }}
-                                                                        className="w-full px-3 py-2 text-xs font-medium flex items-center justify-between hover:bg-accent/5 transition-colors text-foreground"
-                                                                    >
-                                                                        <span>{wl.name}</span>
-                                                                        {isInList && <Check className="h-3 w-3 text-cyan-500" />}
-                                                                    </button>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    )}
-                                                </div>
+                                                <WatchlistStar symbol={row.symbol} />
                                                 <button
                                                     onClick={() => openStockDetail(row.symbol, currency)}
                                                     className="flex flex-col items-start hover:text-cyan-500 transition-colors text-left group"

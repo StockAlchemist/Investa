@@ -50,13 +50,23 @@ start_backend() {
     }
 
     TS_IP=$(get_tailscale_ip)
+    LOCAL_IP=$(ifconfig | grep "inet " | grep -v 127.0.0.1 | grep -v "100\." | awk '{print $2}' | head -n 1)
 
     echo "=================================================="
     if [ -n "$TS_IP" ] && [ "$TS_IP" != "Tailscale not found." ]; then
         echo "Tailscale IP: $TS_IP"
-        echo "You can access the API at: http://$TS_IP:8000/api/"
-    else
-        echo "Tailscale IP not found. Server will still run on 0.0.0.0"
+        echo "Web App: http://$TS_IP:3000"
+        echo "API:     http://$TS_IP:8000/api/"
+    fi
+    
+    if [ -n "$LOCAL_IP" ]; then
+        echo "Local IP:     $LOCAL_IP"
+        echo "Web App: http://$LOCAL_IP:3000"
+        echo "API:     http://$LOCAL_IP:8000/api/"
+    fi
+
+    if [ -z "$TS_IP" ] && [ -z "$LOCAL_IP" ]; then
+        echo "IP addresses not found. Server will still run on 0.0.0.0"
     fi
     echo "=================================================="
 
