@@ -981,6 +981,35 @@ def get_comprehensive_intrinsic_value(
             )
             graham_res["mc"] = graham_mc
 
+    
+    # --- ETF Valuation Logic ---
+    quote_type = ticker_info.get("quoteType", "").upper()
+    if quote_type == "ETF" or quote_type == "MUTUALFUND":
+        nav_price = ticker_info.get("navPrice")
+        
+        # If no explicit NAV, current price is the best proxy for ETFs
+        if (nav_price is None or nav_price == 0) and current_price:
+            nav_price = current_price
+            
+        if nav_price:
+            results = {
+                "current_price": current_price,
+                "average_intrinsic_value": nav_price,
+                "valuation_note": f"Valuation based on Net Asset Value (NAV) for {quote_type}.",
+                "models": {
+                    "dcf": {"model": "N/A (ETF/Fund)", "intrinsic_value": None},
+                    "graham": {"model": "N/A (ETF/Fund)", "intrinsic_value": None}
+                }
+            }
+            
+            if current_price:
+                mos = ((nav_price - current_price) / current_price) * 100
+                if mos is not None and (np.isnan(mos) or np.isinf(mos)):
+                    mos = None
+                results["margin_of_safety_pct"] = mos
+            
+            return results
+
     results = {
         "current_price": current_price,
         "models": {

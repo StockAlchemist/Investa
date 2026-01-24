@@ -831,247 +831,276 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 )}
 
                 {/* Models Detail */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {/* DCF Model */}
-                    <div className="bg-muted border border-border rounded-2xl p-6">
-                        <div className="flex items-center justify-between mb-6">
-                            <h3 className="text-lg font-semibold flex items-center gap-2">
-                                <TrendingUp className="w-5 h-5 text-emerald-500" />
-                                {models.dcf.model}
-                            </h3>
-                            {models.dcf.intrinsic_value && (
-                                <div className="flex flex-col items-end">
-                                    <Badge className="bg-emerald-500/20 text-emerald-500 border-none">
-                                        {formatCurrency(models.dcf.intrinsic_value)}
-                                    </Badge>
-                                    {models.dcf.model !== 'DCF' && (
-                                        <span className="text-[9px] text-muted-foreground mt-1">
-                                            (Fallback Used)
-                                        </span>
-                                    )}
-                                </div>
-                            )}
+                {!models.dcf.parameters && !models.graham.parameters ? (
+                    <div className="bg-muted border border-border rounded-2xl p-8 text-center animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        <div className="w-16 h-16 bg-cyan-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <Info className="w-8 h-8 text-cyan-500" />
                         </div>
-                        {models.dcf.error ? (
-                            <p className="text-sm text-destructive bg-destructive/5 p-4 rounded-xl border border-destructive/20">{models.dcf.error}</p>
-                        ) : (
-                            <div className="space-y-4">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <ParamItem
-                                        label="Discount Rate (WACC)"
-                                        value={formatPercentShared(models.dcf.parameters.discount_rate)}
-                                        info={VALUATION_INFO.discount_rate}
-                                    />
-                                    <ParamItem
-                                        label="Growth Rate"
-                                        value={formatPercentShared(models.dcf.parameters.growth_rate)}
-                                        info={VALUATION_INFO.growth_rate}
-                                    />
-                                    {models.dcf.parameters.applied_growth !== undefined && models.dcf.parameters.applied_growth !== models.dcf.parameters.growth_rate && (
-                                        <ParamItem
-                                            label="Applied Growth"
-                                            value={formatPercentShared(models.dcf.parameters.applied_growth)}
-                                            className="text-cyan-500 font-bold"
-                                            info={{ description: "The growth rate actually used in the projection after applying physical reality caps.", default: "100% Max" }}
-                                        />
-                                    )}
-                                    <ParamItem
-                                        label="Terminal Growth"
-                                        value={formatPercentShared(models.dcf.parameters.terminal_growth_rate)}
-                                        info={VALUATION_INFO.terminal_growth}
-                                    />
-                                    <ParamItem
-                                        label="Projection Years"
-                                        value={models.dcf.parameters.projection_years}
-                                        info={VALUATION_INFO.projection_years}
-                                    />
-                                    {models.dcf.parameters.note && (
-                                        <div className="col-span-2 text-xs text-muted-foreground italic bg-secondary/30 p-2 rounded">
-                                            Note: {models.dcf.parameters.note}
-                                        </div>
-                                    )}
+                        <h3 className="text-xl font-bold mb-3">Why standard models aren't shown?</h3>
+                        <p className="text-muted-foreground text-sm leading-relaxed max-w-xl mx-auto mb-6">
+                            Traditional valuation methods like <strong>Discounted Cash Flow (DCF)</strong> and <strong>Graham's Formula</strong> rely on free cash flow and earnings growth, which are company-specific metrics.
+                            <br /><br />
+                            For <strong>ETFs and Mutual Funds</strong>, the intrinsic value is best represented by the <strong>Net Asset Value (NAV)</strong>, which is the total value of the fund's assets minus its liabilities, divided by the number of outstanding shares.
+                        </p>
+                        <div className="inline-flex items-center gap-2 px-4 py-2 bg-background border border-border rounded-full text-xs font-medium text-foreground">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                            Using Industry Standard NAV Valuation
+                        </div>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        {/* DCF Model */}
+                        <div className="bg-muted border border-border rounded-2xl p-6">
+                            <div className="flex items-center justify-between mb-6">
+                                <h3 className="text-lg font-semibold flex items-center gap-2">
+                                    <TrendingUp className="w-5 h-5 text-emerald-500" />
+                                    {models.dcf.model}
+                                </h3>
+                                {models.dcf.intrinsic_value && (
+                                    <div className="flex flex-col items-end">
+                                        <Badge className="bg-emerald-500/20 text-emerald-500 border-none">
+                                            {formatCurrency(models.dcf.intrinsic_value)}
+                                        </Badge>
+                                        {models.dcf.model !== 'DCF' && (
+                                            <span className="text-[9px] text-muted-foreground mt-1">
+                                                (Fallback Used)
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                            {models.dcf.error ? (
+                                <p className="text-sm text-destructive bg-destructive/5 p-4 rounded-xl border border-destructive/20">{models.dcf.error}</p>
+                            ) : !models.dcf.parameters ? (
+                                <div className="flex flex-col items-center justify-center py-10 text-center opacity-50">
+                                    <Info className="w-8 h-8 mb-2" />
+                                    <p className="text-sm">Not applicable for this asset type.</p>
                                 </div>
-                                <div className="pt-4 border-t border-border/50">
-                                    <ParamItem
-                                        label="Base Free Cash Flow"
-                                        value={formatCurrency(models.dcf.parameters.base_fcf)}
-                                        info={VALUATION_INFO.base_fcf}
-                                    />
-                                    {models.dcf.parameters.fcf_margin && (
+                            ) : (
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-2 gap-4">
                                         <ParamItem
-                                            label="Est. FCF Margin"
-                                            value={formatPercentShared(models.dcf.parameters.fcf_margin)}
-                                            info={VALUATION_INFO.fcf_margin}
+                                            label="Discount Rate (WACC)"
+                                            value={formatPercentShared(models.dcf.parameters.discount_rate)}
+                                            info={VALUATION_INFO.discount_rate}
                                         />
-                                    )}
-                                </div>
-                                {models.dcf.mc && (
+                                        <ParamItem
+                                            label="Growth Rate"
+                                            value={formatPercentShared(models.dcf.parameters.growth_rate)}
+                                            info={VALUATION_INFO.growth_rate}
+                                        />
+                                        {models.dcf.parameters.applied_growth !== undefined && models.dcf.parameters.applied_growth !== models.dcf.parameters.growth_rate && (
+                                            <ParamItem
+                                                label="Applied Growth"
+                                                value={formatPercentShared(models.dcf.parameters.applied_growth)}
+                                                className="text-cyan-500 font-bold"
+                                                info={{ description: "The growth rate actually used in the projection after applying physical reality caps.", default: "100% Max" }}
+                                            />
+                                        )}
+                                        <ParamItem
+                                            label="Terminal Growth"
+                                            value={formatPercentShared(models.dcf.parameters.terminal_growth_rate)}
+                                            info={VALUATION_INFO.terminal_growth}
+                                        />
+                                        <ParamItem
+                                            label="Projection Years"
+                                            value={models.dcf.parameters.projection_years}
+                                            info={VALUATION_INFO.projection_years}
+                                        />
+                                        {models.dcf.parameters.note && (
+                                            <div className="col-span-2 text-xs text-muted-foreground italic bg-secondary/30 p-2 rounded">
+                                                Note: {models.dcf.parameters.note}
+                                            </div>
+                                        )}
+                                    </div>
                                     <div className="pt-4 border-t border-border/50">
-                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-3">Probabilistic Scenarios (Monte Carlo)</p>
-                                        <div className="grid grid-cols-3 gap-2">
-                                            <div
-                                                className="bg-rose-500/5 border border-rose-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-rose-500/10 transition-colors group/mc"
-                                                onClick={() => setViewingDistribution('dcf')}
-                                            >
-                                                <p className="text-[10px] text-rose-500 font-bold uppercase mb-1">Bear (10th)</p>
-                                                <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.bear)}</p>
-                                            </div>
-                                            <div
-                                                className="bg-cyan-500/5 border border-cyan-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-cyan-500/10 transition-colors group/mc"
-                                                onClick={() => setViewingDistribution('dcf')}
-                                            >
-                                                <p className="text-[10px] text-cyan-500 font-bold uppercase mb-1">Median (50th)</p>
-                                                <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.base)}</p>
-                                            </div>
-                                            <div
-                                                className="bg-emerald-500/5 border border-emerald-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-emerald-500/10 transition-colors group/mc"
-                                                onClick={() => setViewingDistribution('dcf')}
-                                            >
-                                                <p className="text-[10px] text-emerald-500 font-bold uppercase mb-1">Bull (90th)</p>
-                                                <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.bull)}</p>
-                                            </div>
-                                        </div>
-                                        <p className="text-[9px] text-muted-foreground mt-2 text-center opacity-50 group-hover/mc:opacity-100 transition-opacity">Click to view distribution</p>
+                                        <ParamItem
+                                            label="Base Free Cash Flow"
+                                            value={formatCurrency(models.dcf.parameters.base_fcf)}
+                                            info={VALUATION_INFO.base_fcf}
+                                        />
+                                        {models.dcf.parameters.fcf_margin && (
+                                            <ParamItem
+                                                label="Est. FCF Margin"
+                                                value={formatPercentShared(models.dcf.parameters.fcf_margin)}
+                                                info={VALUATION_INFO.fcf_margin}
+                                            />
+                                        )}
                                     </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Graham Model */}
-                    <div className="bg-muted border border-border rounded-2xl p-6">
-                        <div className="flex items-center justify-between mb-6">
-                            <h3 className="text-lg font-semibold flex items-center gap-2">
-                                <Scale className="w-5 h-5 text-amber-500" />
-                                {models.graham.model}
-                            </h3>
-                            {models.graham.intrinsic_value && (
-                                <div className="flex flex-col items-end">
-                                    <Badge className="bg-amber-500/20 text-amber-500 border-none">
-                                        {formatCurrency(models.graham.intrinsic_value)}
-                                    </Badge>
-                                    {models.graham.model !== "Graham's Revised Formula" && (
-                                        <span className="text-[9px] text-muted-foreground mt-1">
-                                            (Fallback Used)
-                                        </span>
+                                    {models.dcf.mc && (
+                                        <div className="pt-4 border-t border-border/50">
+                                            <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-3">Probabilistic Scenarios (Monte Carlo)</p>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                <div
+                                                    className="bg-rose-500/5 border border-rose-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-rose-500/10 transition-colors group/mc"
+                                                    onClick={() => setViewingDistribution('dcf')}
+                                                >
+                                                    <p className="text-[10px] text-rose-500 font-bold uppercase mb-1">Bear (10th)</p>
+                                                    <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.bear)}</p>
+                                                </div>
+                                                <div
+                                                    className="bg-cyan-500/5 border border-cyan-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-cyan-500/10 transition-colors group/mc"
+                                                    onClick={() => setViewingDistribution('dcf')}
+                                                >
+                                                    <p className="text-[10px] text-cyan-500 font-bold uppercase mb-1">Median (50th)</p>
+                                                    <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.base)}</p>
+                                                </div>
+                                                <div
+                                                    className="bg-emerald-500/5 border border-emerald-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-emerald-500/10 transition-colors group/mc"
+                                                    onClick={() => setViewingDistribution('dcf')}
+                                                >
+                                                    <p className="text-[10px] text-emerald-500 font-bold uppercase mb-1">Bull (90th)</p>
+                                                    <p className="text-sm font-bold">{formatCurrency(models.dcf.mc.bull)}</p>
+                                                </div>
+                                            </div>
+                                            <p className="text-[9px] text-muted-foreground mt-2 text-center opacity-50 group-hover/mc:opacity-100 transition-opacity">Click to view distribution</p>
+                                        </div>
                                     )}
                                 </div>
                             )}
                         </div>
-                        {models.graham.error ? (
-                            <p className="text-sm text-destructive bg-destructive/5 p-4 rounded-xl border border-destructive/20">{models.graham.error}</p>
-                        ) : (
-                            <div className="space-y-4">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <ParamItem
-                                        label="Trailing EPS"
-                                        value={models.graham.parameters.eps?.toFixed(2)}
-                                        info={VALUATION_INFO.eps}
-                                    />
-                                    <ParamItem
-                                        label="Growth Rate (g)"
-                                        value={`${models.graham.parameters.growth_rate_pct?.toFixed(2)}%`}
-                                        info={VALUATION_INFO.graham_growth}
-                                    />
-                                    {models.graham.parameters.applied_growth_pct !== undefined && models.graham.parameters.applied_growth_pct !== models.graham.parameters.growth_rate_pct && (
-                                        <ParamItem
-                                            label="Applied Growth"
-                                            value={`${models.graham.parameters.applied_growth_pct?.toFixed(2)}%`}
-                                            className="text-amber-500 font-bold"
-                                            info={{ description: "The growth rate actually used in the formula after applying stability caps.", default: "30% Max" }}
-                                        />
-                                    )}
-                                    <ParamItem
-                                        label="Bond Yield (Y)"
-                                        value={`${models.graham.parameters.bond_yield_proxy?.toFixed(2)}%`}
-                                        info={VALUATION_INFO.bond_yield}
-                                    />
-                                    {models.graham.parameters.note && (
-                                        <div className="col-span-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 p-3 rounded-xl border border-amber-500/20 flex items-start gap-2">
-                                            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                                            <span>{models.graham.parameters.note}</span>
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="mt-4 p-4 bg-secondary/5 rounded-xl flex flex-col items-center select-none border border-border/20 overflow-visible">
-                                    <div className="flex items-center gap-2">
-                                        <div className="flex items-baseline gap-1">
-                                            <div className="group relative">
-                                                <span className="text-lg font-bold text-foreground cursor-help decoration-dotted decoration-border/50 underline-offset-4 hover:text-cyan-500 transition-colors">V</span>
-                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
-                                                    Intrinsic Value
-                                                </div>
-                                            </div>
-                                            <span className="text-lg font-light opacity-30">=</span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5 px-4">
-                                            <div className="group relative">
-                                                <span className="text-xs font-bold text-foreground cursor-help hover:text-cyan-500 transition-colors">EPS</span>
-                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
-                                                    Trailing 12-Month Earnings Per Share
-                                                </div>
-                                            </div>
-                                            <span className="text-[9px] opacity-40">×</span>
-                                            <div className="group relative">
-                                                <span className="px-1.5 py-0.5 bg-secondary/30 rounded-md border border-border/30 text-[10px] font-bold text-foreground cursor-help hover:border-cyan-500/50 transition-colors">
-                                                    8.5 + 2G
-                                                </span>
-                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2.5 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-relaxed text-center font-medium">
-                                                    <div className="mb-0.5"><span className="font-bold">8.5</span>: Base P/E for zero growth</div>
-                                                    <div><span className="font-bold">G</span>: Expected long-term growth rate</div>
-                                                </div>
-                                            </div>
-                                            <span className="text-[9px] opacity-40">×</span>
-                                            <div className="group relative">
-                                                <span className="text-xs font-bold text-foreground cursor-help hover:text-cyan-500 transition-colors">4.4</span>
-                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
-                                                    Average yield of high-grade corporate bonds in 1962
-                                                </div>
-                                            </div>
-                                            <span className="text-[10px] opacity-40 mx-0.5">/</span>
-                                            <div className="group relative">
-                                                <span className="text-xs font-bold text-foreground cursor-help hover:text-cyan-500 transition-colors">Y</span>
-                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-44 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
-                                                    <div className="font-bold mb-1">Y = {models.graham.parameters?.bond_yield_proxy || '4.5'}%</div>
-                                                    Current yield on AAA corporate bonds
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                {models.graham.mc && (
-                                    <div className="mt-8 pt-4 border-t border-border/50">
-                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-3">Probabilistic Scenarios (Monte Carlo)</p>
-                                        <div className="grid grid-cols-3 gap-2">
-                                            <div
-                                                className="bg-rose-500/5 border border-rose-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-rose-500/10 transition-colors group/mc"
-                                                onClick={() => setViewingDistribution('graham')}
-                                            >
-                                                <p className="text-[10px] text-rose-500 font-bold uppercase mb-1">Bear (10th)</p>
-                                                <p className="text-sm font-bold">{formatCurrency(models.graham.mc.bear)}</p>
-                                            </div>
-                                            <div
-                                                className="bg-amber-500/5 border border-amber-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-amber-500/10 transition-colors group/mc"
-                                                onClick={() => setViewingDistribution('graham')}
-                                            >
-                                                <p className="text-[10px] text-amber-500 font-bold uppercase mb-1">Median (50th)</p>
-                                                <p className="text-sm font-bold">{formatCurrency(models.graham.mc.base)}</p>
-                                            </div>
-                                            <div
-                                                className="bg-emerald-500/5 border border-emerald-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-emerald-500/10 transition-colors group/mc"
-                                                onClick={() => setViewingDistribution('graham')}
-                                            >
-                                                <p className="text-[10px] text-emerald-500 font-bold uppercase mb-1">Bull (90th)</p>
-                                                <p className="text-sm font-bold">{formatCurrency(models.graham.mc.bull)}</p>
-                                            </div>
-                                        </div>
-                                        <p className="text-[9px] text-muted-foreground mt-2 text-center opacity-50 group-hover/mc:opacity-100 transition-opacity">Click to view distribution</p>
+
+                        {/* Graham Model */}
+                        <div className="bg-muted border border-border rounded-2xl p-6">
+                            <div className="flex items-center justify-between mb-6">
+                                <h3 className="text-lg font-semibold flex items-center gap-2">
+                                    <Scale className="w-5 h-5 text-amber-500" />
+                                    {models.graham.model}
+                                </h3>
+                                {models.graham.intrinsic_value && (
+                                    <div className="flex flex-col items-end">
+                                        <Badge className="bg-amber-500/20 text-amber-500 border-none">
+                                            {formatCurrency(models.graham.intrinsic_value)}
+                                        </Badge>
+                                        {models.graham.model !== "Graham's Revised Formula" && (
+                                            <span className="text-[9px] text-muted-foreground mt-1">
+                                                (Fallback Used)
+                                            </span>
+                                        )}
                                     </div>
                                 )}
                             </div>
-                        )}
+                            {models.graham.error ? (
+                                <p className="text-sm text-destructive bg-destructive/5 p-4 rounded-xl border border-destructive/20">{models.graham.error}</p>
+                            ) : !models.graham.parameters ? (
+                                <div className="flex flex-col items-center justify-center py-10 text-center opacity-50">
+                                    <Info className="w-8 h-8 mb-2" />
+                                    <p className="text-sm">Not applicable for this asset type.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <ParamItem
+                                            label="Trailing EPS"
+                                            value={models.graham.parameters.eps?.toFixed(2)}
+                                            info={VALUATION_INFO.eps}
+                                        />
+                                        <ParamItem
+                                            label="Growth Rate (g)"
+                                            value={`${models.graham.parameters.growth_rate_pct?.toFixed(2)}%`}
+                                            info={VALUATION_INFO.graham_growth}
+                                        />
+                                        {models.graham.parameters.applied_growth_pct !== undefined && models.graham.parameters.applied_growth_pct !== models.graham.parameters.growth_rate_pct && (
+                                            <ParamItem
+                                                label="Applied Growth"
+                                                value={`${models.graham.parameters.applied_growth_pct?.toFixed(2)}%`}
+                                                className="text-amber-500 font-bold"
+                                                info={{ description: "The growth rate actually used in the formula after applying stability caps.", default: "30% Max" }}
+                                            />
+                                        )}
+                                        <ParamItem
+                                            label="Bond Yield (Y)"
+                                            value={`${models.graham.parameters.bond_yield_proxy?.toFixed(2)}%`}
+                                            info={VALUATION_INFO.bond_yield}
+                                        />
+                                        {models.graham.parameters.note && (
+                                            <div className="col-span-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 p-3 rounded-xl border border-amber-500/20 flex items-start gap-2">
+                                                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                                <span>{models.graham.parameters.note}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="mt-4 p-4 bg-secondary/5 rounded-xl flex flex-col items-center select-none border border-border/20 overflow-visible">
+                                        <div className="flex items-center gap-2">
+                                            <div className="flex items-baseline gap-1">
+                                                <div className="group relative">
+                                                    <span className="text-lg font-bold text-foreground cursor-help decoration-dotted decoration-border/50 underline-offset-4 hover:text-cyan-500 transition-colors">V</span>
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
+                                                        Intrinsic Value
+                                                    </div>
+                                                </div>
+                                                <span className="text-lg font-light opacity-30">=</span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 px-4">
+                                                <div className="group relative">
+                                                    <span className="text-xs font-bold text-foreground cursor-help hover:text-cyan-500 transition-colors">EPS</span>
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
+                                                        Trailing 12-Month Earnings Per Share
+                                                    </div>
+                                                </div>
+                                                <span className="text-[9px] opacity-40">×</span>
+                                                <div className="group relative">
+                                                    <span className="px-1.5 py-0.5 bg-secondary/30 rounded-md border border-border/30 text-[10px] font-bold text-foreground cursor-help hover:border-cyan-500/50 transition-colors">
+                                                        8.5 + 2G
+                                                    </span>
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2.5 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-relaxed text-center font-medium">
+                                                        <div className="mb-0.5"><span className="font-bold">8.5</span>: Base P/E for zero growth</div>
+                                                        <div><span className="font-bold">G</span>: Expected long-term growth rate</div>
+                                                    </div>
+                                                </div>
+                                                <span className="text-[9px] opacity-40">×</span>
+                                                <div className="group relative">
+                                                    <span className="text-xs font-bold text-foreground cursor-help hover:text-cyan-500 transition-colors">4.4</span>
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
+                                                        Average yield of high-grade corporate bonds in 1962
+                                                    </div>
+                                                </div>
+                                                <span className="text-[10px] opacity-40 mx-0.5">/</span>
+                                                <div className="group relative">
+                                                    <span className="text-xs font-bold text-foreground cursor-help hover:text-cyan-500 transition-colors">Y</span>
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-44 p-2 bg-white dark:bg-[#1e293b] text-slate-900 dark:text-white text-[9px] rounded-lg shadow-2xl border border-slate-200 dark:border-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] leading-tight text-center font-medium">
+                                                        <div className="font-bold mb-1">Y = {models.graham.parameters?.bond_yield_proxy || '4.5'}%</div>
+                                                        Current yield on AAA corporate bonds
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {models.graham.mc && (
+                                        <div className="mt-8 pt-4 border-t border-border/50">
+                                            <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-3">Probabilistic Scenarios (Monte Carlo)</p>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                <div
+                                                    className="bg-rose-500/5 border border-rose-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-rose-500/10 transition-colors group/mc"
+                                                    onClick={() => setViewingDistribution('graham')}
+                                                >
+                                                    <p className="text-[10px] text-rose-500 font-bold uppercase mb-1">Bear (10th)</p>
+                                                    <p className="text-sm font-bold">{formatCurrency(models.graham.mc.bear)}</p>
+                                                </div>
+                                                <div
+                                                    className="bg-amber-500/5 border border-amber-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-amber-500/10 transition-colors group/mc"
+                                                    onClick={() => setViewingDistribution('graham')}
+                                                >
+                                                    <p className="text-[10px] text-amber-500 font-bold uppercase mb-1">Median (50th)</p>
+                                                    <p className="text-sm font-bold">{formatCurrency(models.graham.mc.base)}</p>
+                                                </div>
+                                                <div
+                                                    className="bg-emerald-500/5 border border-emerald-500/10 p-2 rounded-lg text-center cursor-pointer hover:bg-emerald-500/10 transition-colors group/mc"
+                                                    onClick={() => setViewingDistribution('graham')}
+                                                >
+                                                    <p className="text-[10px] text-emerald-500 font-bold uppercase mb-1">Bull (90th)</p>
+                                                    <p className="text-sm font-bold">{formatCurrency(models.graham.mc.bull)}</p>
+                                                </div>
+                                            </div>
+                                            <p className="text-[9px] text-muted-foreground mt-2 text-center opacity-50 group-hover/mc:opacity-100 transition-opacity">Click to view distribution</p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     </div>
-                </div>
+                )}
 
                 <div className="bg-secondary/20 rounded-2xl p-6 border border-border/50 italic text-sm text-muted-foreground text-center">
                     Note: Intrinsic value calculations are estimates based on various assumptions.
@@ -1188,14 +1217,14 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                     icon={BarChart3}
                                     label="Ratios & Trends"
                                 />
-                                <TabButton
-                                    active={activeTab === 'valuation'}
-                                    onClick={() => setActiveTab('valuation')}
-                                    icon={DollarSign}
-                                    label="Valuation"
-                                />
                             </>
                         )}
+                        <TabButton
+                            active={activeTab === 'valuation'}
+                            onClick={() => setActiveTab('valuation')}
+                            icon={DollarSign}
+                            label="Valuation"
+                        />
                         {fundamentals?.etf_data && (
                             <TabButton
                                 active={activeTab === 'holdings'}
@@ -1482,7 +1511,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     <span className="text-center sm:text-right">Data by Yahoo Finance & Stock Alchemist</span>
                 </div>
             </div>
-        </div>,
+        </div >,
         document.body
     );
 }
