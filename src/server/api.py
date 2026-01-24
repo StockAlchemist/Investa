@@ -2878,6 +2878,7 @@ async def get_intrinsic_value_endpoint(
     config_manager: ConfigManager = Depends(get_config_manager)
 ):
     """Returns calculated intrinsic value results for a symbol."""
+    logging.info(f"CALCULATING INTRINSIC VALUE FOR {symbol} - CODE VERSION: 1.1 (CAPS ENABLED)")
     if not FINANCIAL_RATIOS_AVAILABLE:
         raise HTTPException(status_code=501, detail="Financial ratios module not available.")
 

@@ -135,7 +135,7 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
                             cached_results = raw_cached
                             # Increase TTL to 1 hour (3600s) for better "reload" experience
                             age_seconds = (now_ts - latest_update_ts).total_seconds()
-                            if age_seconds < 3600: # 1 hour
+                            if age_seconds < 30: # Reduced from 1h for transition
                                 logging.info(f"Screener: Pure Fast-path load for '{universe_tag}' ({len(cached_results)} items, {age_seconds:.0f}s old)")
                                 use_pure_fast_path = True
                             else:

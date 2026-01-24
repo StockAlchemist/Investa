@@ -40,7 +40,8 @@ import {
     Activity as LucideActivity,
     CheckCircle2,
     RotateCcw,
-    Loader2
+    Loader2,
+    AlertCircle
 } from 'lucide-react';
 import {
     LineChart,
@@ -856,6 +857,14 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                         value={formatPercentShared(models.dcf.parameters.growth_rate)}
                                         info={VALUATION_INFO.growth_rate}
                                     />
+                                    {models.dcf.parameters.applied_growth !== undefined && models.dcf.parameters.applied_growth !== models.dcf.parameters.growth_rate && (
+                                        <ParamItem
+                                            label="Applied Growth"
+                                            value={formatPercentShared(models.dcf.parameters.applied_growth)}
+                                            className="text-cyan-500 font-bold"
+                                            info={{ description: "The growth rate actually used in the projection after applying physical reality caps.", default: "100% Max" }}
+                                        />
+                                    )}
                                     <ParamItem
                                         label="Terminal Growth"
                                         value={formatPercentShared(models.dcf.parameters.terminal_growth_rate)}
@@ -866,6 +875,11 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                         value={models.dcf.parameters.projection_years}
                                         info={VALUATION_INFO.projection_years}
                                     />
+                                    {models.dcf.parameters.note && (
+                                        <div className="col-span-2 text-xs text-muted-foreground italic bg-secondary/30 p-2 rounded">
+                                            Note: {models.dcf.parameters.note}
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="pt-4 border-t border-border/50">
                                     <ParamItem
@@ -949,14 +963,23 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                         value={`${models.graham.parameters.growth_rate_pct?.toFixed(2)}%`}
                                         info={VALUATION_INFO.graham_growth}
                                     />
+                                    {models.graham.parameters.applied_growth_pct !== undefined && models.graham.parameters.applied_growth_pct !== models.graham.parameters.growth_rate_pct && (
+                                        <ParamItem
+                                            label="Applied Growth"
+                                            value={`${models.graham.parameters.applied_growth_pct?.toFixed(2)}%`}
+                                            className="text-amber-500 font-bold"
+                                            info={{ description: "The growth rate actually used in the formula after applying stability caps.", default: "30% Max" }}
+                                        />
+                                    )}
                                     <ParamItem
                                         label="Bond Yield (Y)"
                                         value={`${models.graham.parameters.bond_yield_proxy?.toFixed(2)}%`}
                                         info={VALUATION_INFO.bond_yield}
                                     />
                                     {models.graham.parameters.note && (
-                                        <div className="col-span-2 text-xs text-muted-foreground italic bg-secondary/30 p-2 rounded">
-                                            Note: {models.graham.parameters.note}
+                                        <div className="col-span-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 p-3 rounded-xl border border-amber-500/20 flex items-start gap-2">
+                                            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                            <span>{models.graham.parameters.note}</span>
                                         </div>
                                     )}
                                 </div>
@@ -1048,7 +1071,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
         );
     };
 
-    const ParamItem = ({ label, value, info }: { label: string, value: any, info?: { description: string, default: string } }) => (
+    const ParamItem = ({ label, value, info, className }: { label: string, value: any, info?: { description: string, default: string }, className?: string }) => (
         <div>
             <div className="flex items-center gap-1 mb-1">
                 <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">{label}</p>
@@ -1062,7 +1085,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                     </div>
                 )}
             </div>
-            <p className="text-sm font-semibold">{value ?? '-'}</p>
+            <p className={cn("text-sm font-semibold", className)}>{value ?? '-'}</p>
         </div>
     );
 

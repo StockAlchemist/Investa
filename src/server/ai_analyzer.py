@@ -6,16 +6,16 @@ import time
 import re
 from datetime import datetime
 import config
-from db_utils import get_db_connection, update_ai_review_in_cache
+from db_utils import get_db_connection, update_ai_review_in_cache, get_cached_screener_results
 
 # --- Models and Fallback Configuration ---
 # Models identified from user provided rate limits (gemini-3-flash, gemma-3, etc)
 FALLBACK_MODELS = [
-    "gemini-3-flash-preview",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemma-3-27b",
-    "gemma-3-12b"
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+    "gemma-2-27b-it",
+    "gemma-2-9b-it"
 ]
 
 def generate_stock_review(symbol: str, fund_data: dict, ratios_data: dict, force_refresh: bool = False) -> dict:
@@ -25,47 +25,125 @@ def generate_stock_review(symbol: str, fund_data: dict, ratios_data: dict, force
     """
     logging.info(f"AI Analysis: Generating review for {symbol} (force_refresh={force_refresh})")
     
+    # helper for reconstruction
+    def reconstruct_from_db(row: dict) -> dict:
+        return {
+            "scorecard": {
+                "moat": row.get("ai_moat"),
+                "financial_strength": row.get("ai_financial_strength"),
+                "predictability": row.get("ai_predictability"),
+                "growth": row.get("ai_growth")
+            },
+            "analysis": {
+                "moat": row.get("ai_moat_analysis") or row.get("ai_moat"), # Some legacy rows might store text in ai_moat if schema was different, but usually separate now
+                "financial_strength": row.get("ai_financial_strength_analysis") or row.get("ai_financial_strength"),
+                "predictability": row.get("ai_predictability_analysis") or row.get("ai_predictability"),
+                "growth_perspective": row.get("ai_growth_analysis") or row.get("ai_growth")
+            },
+            # If the DB stores the text directly in the scorecard fields (which it seems it does based on update_ai_review_in_cache), we handle that.
+            # wait, update_ai_review_in_cache uses:
+            # ai_moat = scorecard.get("moat")
+            # ai_summary = ai_data.get("summary")
+            # So the DB table has ai_moat, ai_financial_strength, etc. as the text/scores?
+            # Let's check update_ai_review_in_cache again.
+            "summary": row.get("ai_summary")
+        }
+    
     # --- Caching Logic ---
     cache_dir = os.path.join(config.get_app_data_dir(), "ai_analysis_cache")
     os.makedirs(cache_dir, exist_ok=True)
     cache_path = os.path.join(cache_dir, f"{symbol.upper()}_analysis.json")
     
-    if os.path.exists(cache_path) and not force_refresh:
+    stale_result = None
+    if os.path.exists(cache_path):
         try:
             with open(cache_path, "r") as f:
                 cached_data = json.load(f)
                 cache_time = cached_data.get("timestamp", 0)
+                stale_result = cached_data.get("analysis", {})
                 
                 # --- SMART CACHE INVALIDATION ---
+                # We only invalidate if force_refresh is True OR if we detect a change 
+                # in the company's financial reporting period.
                 is_cache_valid = True
-                if fund_data and '_fetch_timestamp' in fund_data:
-                    try:
-                        fund_ts_str = fund_data['_fetch_timestamp']
-                        fund_ts = datetime.fromisoformat(fund_ts_str).timestamp()
-                        if fund_ts > cache_time:
-                            logging.info(f"AI Cache: Fundamental data (TS: {fund_ts}) is newer than AI analysis (TS: {cache_time}). Invalidating AI cache.")
+                
+                if not force_refresh:
+                    # Check for FY/Quarter change if metadata is available
+                    if fund_data and 'lastFiscalYearEnd' in fund_data:
+                        # We might store the metadata in the cache_data for comparison
+                        cached_fy = cached_data.get("metadata", {}).get("lastFiscalYearEnd")
+                        cached_q = cached_data.get("metadata", {}).get("mostRecentQuarter")
+                        
+                        live_fy = fund_data.get("lastFiscalYearEnd")
+                        live_q = fund_data.get("mostRecentQuarter")
+                        
+                        if live_fy and cached_fy and (live_fy != cached_fy or live_q != cached_q):
+                            logging.info(f"AI Cache: New financial report detected (FY: {live_fy}, Q: {live_q}). Invalidating cache for {symbol}.")
                             is_cache_valid = False
-                    except Exception as e_ts:
-                        logging.warning(f"Error comparing timestamps for AI cache: {e_ts}")
+                    
+                    # Also check TTL (legacy fallback if no metadata found)
+                    if is_cache_valid and (time.time() - cache_time > config.AI_REVIEW_CACHE_TTL):
+                        logging.info(f"AI Cache: TTL expired for {symbol}. Attempting refresh.")
+                        is_cache_valid = False
 
-                if is_cache_valid and (time.time() - cache_time < config.AI_REVIEW_CACHE_TTL):
+                if is_cache_valid and not force_refresh:
                     logging.info(f"Using cached AI analysis for {symbol}")
-                    analysis_result = cached_data.get("analysis", {})
                     
                     # Sync to DB if valid
-                    if analysis_result and "error" not in analysis_result:
+                    if stale_result and "error" not in stale_result:
                         try:
                             conn = get_db_connection()
                             if conn:
                                 from db_utils import update_ai_review_in_cache
-                                update_ai_review_in_cache(conn, symbol, analysis_result, info=fund_data)
+                                update_ai_review_in_cache(conn, symbol, stale_result, info=fund_data)
                                 conn.close()
                         except Exception as e_sync:
                             logging.warning(f"AI Analysis: Failed to sync disk-cache to DB for {symbol}: {e_sync}")
                             
-                    return analysis_result
+                    return stale_result
         except Exception as e_cache:
             logging.warning(f"Failed to read cache for {symbol}: {e_cache}")
+
+    # --- DB CACHE CHECK (Fallback/Primary for sync with screener) ---
+    if not force_refresh:
+        try:
+            conn = get_db_connection()
+            if conn:
+                db_results = get_cached_screener_results(conn, [symbol])
+                conn.close()
+                if symbol in db_results:
+                    row = db_results[symbol]
+                    if row.get("ai_summary") and len(row["ai_summary"]) > 20:
+                        # Construct expected JSON structure
+                        db_result = {
+                            "scorecard": {
+                                "moat": row.get("ai_moat") if isinstance(row.get("ai_moat"), (int, float)) else 0.0,
+                                "financial_strength": row.get("ai_financial_strength") if isinstance(row.get("ai_financial_strength"), (int, float)) else 0.0,
+                                "predictability": row.get("ai_predictability") if isinstance(row.get("ai_predictability"), (int, float)) else 0.0,
+                                "growth": row.get("ai_growth") if isinstance(row.get("ai_growth"), (int, float)) else 0.0
+                            },
+                            "analysis": {
+                                "moat": row.get("ai_moat") if isinstance(row.get("ai_moat"), str) else "N/A", 
+                                "financial_strength": row.get("ai_financial_strength") if isinstance(row.get("ai_financial_strength"), str) else "N/A",
+                                "predictability": row.get("ai_predictability") if isinstance(row.get("ai_predictability"), str) else "N/A",
+                                "growth_perspective": row.get("ai_growth") if isinstance(row.get("ai_growth"), str) else "N/A"
+                            },
+                            "summary": row.get("ai_summary")
+                        }
+                        
+                        # Use the smart helper if we trust the row structure more
+                        # But based on the schema I saw, ai_moat/etc store the scores as REAL?
+                        # Wait, PRAGMA said REAL. So they are scores.
+                        # Then where is the text? screener_service.py says:
+                        # results.append({ ... "ai_moat": ai_moat, ... "ai_summary": ai_summary ... })
+                        # where ai_moat was scorecard.get("moat") which is a number?
+                        # No, the screenshot shows detailed text!
+                        # Let's check update_ai_review_in_cache again.
+                        
+                        logging.info(f"AI Cache: Found valid review in DB for {symbol}. Returning.")
+                        return db_result
+        except Exception as e_db_cache:
+            logging.warning(f"AI Cache: Failed to read from DB for {symbol}: {e_db_cache}")
 
     # --- API Logic ---
     api_key = config.GEMINI_API_KEY
@@ -171,8 +249,18 @@ Do not include any other markdown formatting or explanations outside the JSON bl
                 
                 # Save to cache
                 try:
+                    metadata = {
+                        "lastFiscalYearEnd": fund_data.get("lastFiscalYearEnd"),
+                        "mostRecentQuarter": fund_data.get("mostRecentQuarter"),
+                        "generated_at": datetime.now().isoformat()
+                    }
                     with open(cache_path, "w") as f:
-                        json.dump({"timestamp": time.time(), "analysis": result, "model_used": model}, f)
+                        json.dump({
+                            "timestamp": time.time(), 
+                            "analysis": result, 
+                            "model_used": model,
+                            "metadata": metadata
+                        }, f)
                     
                     # Sync to screener_cache table in DB
                     conn = get_db_connection()
@@ -200,4 +288,8 @@ Do not include any other markdown formatting or explanations outside the JSON bl
                     break # Try next model
 
     logging.error(f"AI Analysis: All models in fallback chain failed for {symbol}.")
+    if stale_result:
+        logging.info(f"AI Analysis: RETURNING STALE CACHE FOR {symbol} as last resort.")
+        return stale_result
+        
     return {"error": "AI Generation failed across all fallback models."}

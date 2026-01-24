@@ -677,50 +677,60 @@ The Web Dashboard mirrors many of the key features of the desktop application:
 *   **Markets Tab (Mobile):** Dedicated tab to track major market indices (Dow, Nasdaq, S&P 500) while on the go.
 *   **Holdings:** A sorted list of your current positions.
 *   **Transactions Log:** View your history of trades and cash movements.
-*   **Asset Allocation & Analysis:** Visual breakdowns of your portfolio.
+    *   **Asset Allocation & Analysis:** Visual breakdowns of your portfolio.
 
 *Note: Currently, the Web Dashboard is primarily for **viewing** and **analyzing** your data. For heavy transaction management (bulk imports, editing past records), we recommend using the Desktop Application.*
 
 ## Part 14: Intrinsic Value Analysis
-
-Investa now includes powerful tools to help you estimate the **Intrinsic Value** of your stocks, giving you a fundamental perspective on whether they might be undervalued or overvalued.
-
+ 
+Investa includes a powerful valuation engine to help you estimate the **Intrinsic Value** of your stocks—the "true" worth based on financial fundamentals rather than market sentiment.
+ 
 ### What is Intrinsic Value?
-Intrinsic value is an estimate of the actual true value of a company based on its underlying financial strength and future earnings potential, regardless of its current stock market price.
-
-Investa calculates this using two classic models:
-1. **Discounted Cash Flow (DCF):** Projects future free cash flows and discounts them back to the present value. Ideal for consistent, cash-flow-generating companies.
-2. **Graham's Formula:** A simpler formula derived by Benjamin Graham, suitable for stable growth companies.
-
+Intrinsic value is an estimate of a company's actual value based on its underlying financial strength and future earnings potential.
+ 
+Investa calculates this using two primary models:
+1. **Discounted Cash Flow (DCF):** Projects future free cash flows and discounts them back to the present value.
+    * **Income-based:** The standard model using Free Cash Flow.
+    * **Revenue-based Fallback:** If a company has negative or volatile FCF, Investa estimates value based on Revenue and historical FCF margins.
+2. **Graham's Revised Formula:** A simplified formula for stable growth companies, based on Earnings Per Share (EPS) and expected growth ($V = \frac{EPS \times (8.5 + 2g) \times 4.4}{Y}$).
+ 
 ### Probability Distributions (Monte Carlo)
-Because predicting the future is uncertain, Investa doesn't just give you one number. It runs **Monte Carlo simulations** (thousands of scenarios) with slight variations in growth rates and discount rates to provide a range of probable outcomes:
-* **Bear Case (10th percentile):** A conservative estimate.
+To account for uncertainty, Investa runs **10,000 Monte Carlo simulations** for each stock, varying growth rates and discount rates (WACC) within a normal distribution. This provides a range of probable outcomes:
+* **Bear Case (10th percentile):** A conservative "worst-case" scenario.
 * **Base Case (Median):** The most likely value.
-* **Bull Case (90th percentile):** An optimistic estimate.
-
+* **Bull Case (90th percentile):** An optimistic "best-case" scenario.
+ 
+### 🛡️ Valuation Stability: Cap & Fade
+To prevent unrealistic "infinite" valuations, Investa uses two built-in safety mechanisms:
+* **Cap Growth Rate:** No matter how high analyst estimates are, the models cap growth at **40% (DCF)** or **30% (Graham)**. This ensures that a single outlier estimate doesn't warp the entire valuation.
+* **Faded Growth Rate:** In the real world, hyper-growth eventually slows down as a company matures. Investa uses a **Linear Fade**, gradually reducing the starting growth rate down to a stable **2% (Terminal Growth)** over the 10-year projection period. This mimics the natural lifecycle of a maturing business.
+ 
+### ⚠️ Understanding Negative Intrinsic Values
+Sometimes, a model may return a negative value (e.g., -$25.00). This isn't a bug; it is a mathematical result of specific financial conditions:
+* **DCF Negative Value:** Most often caused by **High Debt**. If a company's total debt exceeds its current cash plus the present value of all its future earnings, the remaining value for equity holders is technically negative.
+* **Graham Negative Value:** Occurs when **Growth Estimates are Deeply Negative**. If the formula assumes a company will shrink rapidly (e.g., growth < -4.25%), the math produces a negative valuation.
+* **Signal:** A negative value is often a warning sign of high leverage (debt) or a business in significant structural decline.
+ 
 ### Viewing Valuation Data
 To see the valuation analysis for any stock:
 1. Go to the **Holdings Table** on the Dashboard or Web App.
 2. Click on the **stock symbol** (usually styled as a link) or right-click and select **"View Details"**.
 3. In the modal that appears, switch to the **"Valuation"** tab.
-4. You will see:
-    * The **Intrinsic Value Range** vs. **Current Price**.
-    * A **"Margin of Safety"** gauge (Green = Undervalued, Red = Overvalued).
-    * Detailed parameters used for the calculation (Growth Rate, Discount Rate, etc.).
-
+ 
 ### Customizing Valuation Parameters (Overrides)
-Investa automatically fetches default parameters (like Beta, WACC/Discount Rate, Growth estimates) from financial APIs. However, you might disagree with these defaults.
-
-**To customize the model for any stock:**
+Investa automatically fetches default parameters (like Beta, WACC, and analyst growth estimates). If you have different assumptions, you can override them:
+ 
+**To customize the model:**
 1. Go to **Settings > Valuation Overrides**.
-2. **Add New Override:**
-    * Select the **Symbol** (e.g., AAPL).
-    * Choose the **Parameter** you want to change (e.g., `Growth Rate (DCF)`, `Discount Rate (DCF)`, `Growth Rate (Graham)`).
-    * Enter your **Custom Value** (e.g., `0.12` for 12% growth).
-    * Click **Add Parameter**.
-3. The new value will be saved and immediately applied to the valuation calculations the next time you view that stock.
-
-**Note:** You can also manage these parameters directly from the **Valuation Tab** in the stock detail view by clicking the "Edit" (pencil) icon next to the parameters list.
+2. Select the **Symbol** and the **Parameter** (e.g., `Growth Rate (DCF)`, `Discount Rate (DCF)`).
+3. Enter your value (e.g., `0.10` for 10%) and click **Add Parameter**.
+ 
+### Batch Processing (S&P 500)
+For users tracking a wide universe of stocks, you can run a batch recalculation for the entire S&P 500 using the provided script:
+```bash
+python scripts/recalculate_sp500_valuations.py
+```
+This will fetch fresh financials for all 500 companies and update your local database with fresh intrinsic values.
 
 ## Part 15: Interactive Stock Charts
 

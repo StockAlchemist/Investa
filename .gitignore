@@ -10,7 +10,7 @@ src/Investa/
 data/
 profiling/
 docs/plans/
-scripts/
+# scripts/
 my_transactions.db
 
 src/Investa.spec

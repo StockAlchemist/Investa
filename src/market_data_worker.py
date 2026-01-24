@@ -55,6 +55,24 @@ def fetch_info(symbols, output_file):
                                  info['etf_data'] = etf_data
                 except Exception as e_etf:
                     log(f"Error extracting ETF data for {sym}: {e_etf}")
+                
+                # --- ANALYST ESTIMATES ---
+                try:
+                    # Fetching these DataFrames and converting to dict
+                    ee = ticker.earnings_estimate
+                    if not ee.empty:
+                        info['_earnings_estimate'] = ee.to_dict(orient='index')
+                    
+                    re = ticker.revenue_estimate
+                    if not re.empty:
+                        info['_revenue_estimate'] = re.to_dict(orient='index')
+                    
+                    ge = ticker.growth_estimates
+                    if not ge.empty:
+                        info['_growth_estimates'] = ge.to_dict(orient='index')
+                except Exception as e_analyst:
+                    log(f"Error fetching analyst estimates for {sym}: {e_analyst}")
+                
                 return sym, info
             except Exception as e:
                 log(f"Error fetching info for {sym}: {e}")

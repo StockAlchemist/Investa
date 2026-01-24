@@ -351,13 +351,14 @@ def calculate_wacc(
         # 3. Weights
         market_cap = ticker_info.get("marketCap")
         if not market_cap:
-            return {"wacc": cost_of_equity, "method": "Cost of Equity (No Market Cap)"}
+            return {"wacc": max(0.075, cost_of_equity), "method": "Cost of Equity (No Market Cap)"}
             
         total_value = market_cap + (total_debt or 0)
         weight_equity = market_cap / total_value
         weight_debt = (total_debt or 0) / total_value
         
         wacc = (weight_equity * cost_of_equity) + (weight_debt * cost_of_debt * (1 - tax_rate))
+        wacc = max(0.075, wacc)
         
         return {
             "wacc": wacc,
@@ -383,48 +384,62 @@ def estimate_growth_rate(
     """Attempts to estimate a historical growth rate for a financial item."""
     values = []
     
-    # 1. Try to get historical values if dataframe is available
+    # 1. Try to get ANALYST EXPECTED GROWTH (Priority)
+    if ticker_info:
+        # Check for our injected analyst data
+        # We average '0y' (Current Year) and '+1y' (Next Year) estimates
+        analyst_ee = ticker_info.get("_earnings_estimate", {})
+        if analyst_ee:
+            expected_rates = []
+            for p in ["0y", "+1y"]:
+                row = analyst_ee.get(p)
+                if row and "growth" in row and row["growth"] is not None:
+                    expected_rates.append(float(row["growth"]))
+            
+            if expected_rates:
+                avg_expected = sum(expected_rates) / len(expected_rates)
+                return avg_expected
+        
+        # Fallback to standard info fields if specific estimates missing
+        g = ticker_info.get("earningsGrowth") or ticker_info.get("revenueGrowth")
+        if g is not None:
+            return float(g)
+
+    # 2. Try to calculate historical CAGR if analyst data is not available
+    # ... (keeping existing historical CAGR logic as fallback)
     if financials_df is not None and not financials_df.empty:
         try:
             # Sort columns to be chronological
             cols = sorted(financials_df.columns, key=lambda x: pd.to_datetime(x, errors="coerce"))
+            recent_dated = []
             for col in cols:
                 val = _get_statement_value(financials_df, item_name, col)
                 if val is not None and val > 0:
-                    values.append(val)
+                    recent_dated.append((pd.to_datetime(col), val))
+            
+            if len(recent_dated) >= 2:
+                # Target window: last 3 years
+                end_date, end_val = recent_dated[-1]
+                
+                # Find the starting point ~3 years before the end point
+                start_idx = 0
+                for i in range(len(recent_dated) - 2, -1, -1):
+                    d, v = recent_dated[i]
+                    years_diff = (end_date - d).days / 365.25
+                    if years_diff >= 2.5: # approx 3 years
+                        start_idx = i
+                        break
+                
+                start_date, start_val = recent_dated[start_idx]
+                
+                # Calculate CAGR
+                n_years = (end_date - start_date).days / 365.25
+                if n_years > 0.5: 
+                    return (end_val / start_val) ** (1 / n_years) - 1
         except Exception:
-            pass # Continue to fallback
+            pass
 
-    # 2. Check if we have enough data points for CAGR
-    if len(values) >= 2:
-        try:
-            start_val = values[0]
-            end_val = values[-1]
-            n_periods = len(values) - 1
-            cagr = (end_val / start_val) ** (1/n_periods) - 1
-            return max(0.0, cagr)
-        except Exception:
-            pass # Continue to fallback
-
-    # 3. Fallback: Use ticker_info estimates
-    if ticker_info:
-         # Prioritize REVENUE growth as it's more stable for long-term projection
-         g = ticker_info.get("revenueGrowth")
-         
-         if g is None:
-             # Fallback to earnings, but cap it because quarterly earnings can be volatile (e.g. +100%)
-             eg = ticker_info.get("earningsGrowth") or ticker_info.get("earningsQuarterlyGrowth")
-             if eg is not None:
-                 # Cap at 25% for safety in fallback mode
-                 g = min(float(eg), 0.25)
-         
-         if g is not None:
-             # yfinance often returns decimal (0.25 for 25%).
-             # We assume decimal for these fields as per yfinance standard.
-             # Floor at 0.5% to avoid zeros or negatives breaking DCF
-             return max(0.005, float(g))
-
-    # 4. Final Default
+    # 3. Final Default
     return 0.05
 
 def estimate_fcf_margin(
@@ -476,7 +491,7 @@ def run_monte_carlo_dcf(
     base_fcf: float,
     base_growth: float,
     base_discount: float,
-    projection_years: int = 5,
+    projection_years: int = 10,
     terminal_growth: float = 0.02,
     iterations: int = 10000
 ) -> Dict[str, Any]:
@@ -492,17 +507,24 @@ def run_monte_carlo_dcf(
         # Discount Rate: Normal distribution (10% relative std dev)
         discount_samples = np.random.normal(base_discount, abs(base_discount) * 0.1, iterations)
         
-        # Ensure rates are sensible (floor at 0.1% for discount, 0% for growth)
+        # Ensure rates are sensible (floor at 7.5% for discount, 0% for growth)
         growth_samples = np.maximum(0.0, growth_samples)
-        discount_samples = np.maximum(0.001, discount_samples)
+        discount_samples = np.maximum(0.075, discount_samples)
+        
+        # Apply 40% cap to growth samples for stability
+        growth_samples = np.minimum(0.40, growth_samples)
 
         # 2. Vectorized Projections
         # Shape: (iterations, projection_years)
         years = np.arange(1, projection_years + 1)
         
-        # Calculate FCF for each year: FCF * (1 + g)^n
-        # growth_samples[:, None] adds an axis to allow broadcasting with years
-        fcf_projections = base_fcf * (1 + growth_samples[:, None]) ** years
+        # Linear Fade: Growth trends from growth_sample to terminal_growth over projection period
+        fade_factors = (years - 1) / (projection_years - 1) if projection_years > 1 else np.array([0])
+        # yearly_growths shape: (iterations, projection_years)
+        yearly_growths = growth_samples[:, None] - (growth_samples[:, None] - terminal_growth) * fade_factors
+        
+        # Calculate FCF for each year: base_fcf * cumprod(1 + g_i)
+        fcf_projections = base_fcf * np.cumprod(1 + yearly_growths, axis=1)
         
         # 3. Present Value of FCFs
         # PV = FCF / (1 + r)^n
@@ -604,7 +626,7 @@ def calculate_intrinsic_value_dcf(
     cashflow_df: Optional[pd.DataFrame],
     discount_rate: Optional[float] = None,
     growth_rate: Optional[float] = None,
-    projection_years: int = 5,
+    projection_years: int = 10,
     terminal_growth_rate: float = 0.02,
     target_fcf_margin: Optional[float] = None,
     fcf: Optional[float] = None
@@ -643,23 +665,36 @@ def calculate_intrinsic_value_dcf(
         if discount_rate is None:
             wacc_res = calculate_wacc(ticker_info, financials_df, balance_sheet_df)
             discount_rate = wacc_res["wacc"]
+        else:
+            # Apply stability floor even to provided discount rate
+            discount_rate = max(0.075, discount_rate)
             
         # 3. Growth Rate
         if growth_rate is None:
             growth_rate = estimate_growth_rate(financials_df, ticker_info=ticker_info, item_name="Net Income")
             
-        # 4. Projections
+        # We cap the input growth at 40% for multi-year CAGR stability.
+        # This prevents astronomical valuations that assume physical impossibilities.
+        applied_growth = min(growth_rate, 0.40)
+        
         projected_fcf = []
         pv_fcf = []
         current_fcf = fcf
+        
         for y in range(1, projection_years + 1):
-            next_fcf = current_fcf * (1 + growth_rate)
+            # Linear Fade: Growth trends from applied_growth to terminal_rate over projection period
+            fade_factor = (y - 1) / (projection_years - 1) if projection_years > 1 else 0
+            yearly_growth = applied_growth - (applied_growth - terminal_growth_rate) * fade_factor
+            
+            next_fcf = current_fcf * (1 + yearly_growth)
             projected_fcf.append(next_fcf)
             pv_fcf.append(next_fcf / ((1 + discount_rate) ** y))
             current_fcf = next_fcf
             
         # 5. Terminal Value
-        terminal_value = (current_fcf * (1 + terminal_growth_rate)) / (discount_rate - terminal_growth_rate)
+        # Ensure denominator is positive
+        safe_discount = max(discount_rate, terminal_growth_rate + 0.01)
+        terminal_value = (current_fcf * (1 + terminal_growth_rate)) / (safe_discount - terminal_growth_rate)
         pv_terminal_value = terminal_value / ((1 + discount_rate) ** projection_years)
         
         # 6. Enterprise Value to Equity Value
@@ -674,18 +709,24 @@ def calculate_intrinsic_value_dcf(
             
         intrinsic_value = equity_value / shares_outstanding
         
-        return {
+        res = {
             "intrinsic_value": intrinsic_value,
             "model": model_method,
             "parameters": {
                 "discount_rate": discount_rate,
                 "growth_rate": growth_rate,
+                "applied_growth": applied_growth,
                 "terminal_growth_rate": terminal_growth_rate,
                 "projection_years": projection_years,
                 "base_fcf": fcf,
                 "fcf_margin": used_fcf_margin
             }
         }
+        if growth_rate > 0.40:
+            res["parameters"]["note"] = f"Growth capped at 40% for DCF stability; linear fade over {projection_years}y applied"
+        else:
+            res["parameters"]["note"] = f"Linear growth fade over {projection_years}y applied towards terminal rate"
+        return res
     except Exception as e:
         return {"error": f"DCF calculation failed: {str(e)}"}
 
@@ -742,17 +783,26 @@ def calculate_intrinsic_value_graham(
         if eps is None or eps <= 0:
             return {"error": "Negative or missing EPS"}
         
-        intrinsic_value = (eps * (8.5 + 2 * growth_rate) * 4.4) / bond_yield
+        # Graham's formula is extremely sensitive to hyper-growth.
+        # We cap the 'g' used in the FORMULA to 30% for mathematical logic,
+        # otherwise the intrinsic value becomes infinite.
+        applied_growth = min(growth_rate, 30.0)
+        intrinsic_value = (eps * (8.5 + 2 * applied_growth) * 4.4) / bond_yield
         
-        return {
+        res = {
             "intrinsic_value": intrinsic_value,
             "model": "Graham's Revised Formula",
             "parameters": {
                 "eps": eps,
                 "growth_rate_pct": growth_rate,
+                "applied_growth_pct": applied_growth,
                 "bond_yield_proxy": bond_yield
             }
         }
+        if growth_rate > 30.0:
+            res["parameters"]["note"] = "Growth capped at 30% for Graham formula sanity"
+            
+        return res
     except Exception as e:
         return {"error": f"Graham calculation failed: {str(e)}"}
 
@@ -773,7 +823,7 @@ def get_comprehensive_intrinsic_value(
     dcf_discount = overrides.get("dcf_discount_rate")
     dcf_growth = overrides.get("dcf_growth_rate")
     dcf_terminal = overrides.get("dcf_terminal_growth", 0.02)
-    dcf_projection = int(overrides.get("dcf_projection_years", 5))
+    dcf_projection = int(overrides.get("dcf_projection_years", 10))
     dcf_fcf = overrides.get("dcf_fcf")
     target_fcf_margin = overrides.get("target_fcf_margin")
     
@@ -805,10 +855,12 @@ def get_comprehensive_intrinsic_value(
     dcf_mc = {}
     if "intrinsic_value" in dcf_res:
         params = dcf_res["parameters"]
+        # Use applied growth for MC if available
+        mc_growth = params.get("applied_growth", params["growth_rate"])
         dcf_mc = run_monte_carlo_dcf(
             ticker_info,
             params["base_fcf"],
-            params["growth_rate"],
+            mc_growth,
             params["discount_rate"],
             params["projection_years"],
             params["terminal_growth_rate"]
@@ -819,9 +871,11 @@ def get_comprehensive_intrinsic_value(
     if "intrinsic_value" in graham_res:
         params = graham_res["parameters"]
         if "eps" in params:
+            # Use applied growth for MC if available
+            mc_growth_pct = params.get("applied_growth_pct", params.get("growth_rate_pct", 0))
             graham_mc = run_monte_carlo_graham(
                 params["eps"],
-                params["growth_rate_pct"],
+                mc_growth_pct,
                 params["bond_yield_proxy"]
             )
             graham_res["mc"] = graham_mc
