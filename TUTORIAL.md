@@ -691,8 +691,9 @@ Intrinsic value is an estimate of a company's actual value based on its underlyi
 Investa calculates this using two primary models:
 1. **Discounted Cash Flow (DCF):** Projects future free cash flows and discounts them back to the present value.
     * **Income-based:** The standard model using Free Cash Flow.
-    * **Revenue-based Fallback:** If a company has negative or volatile FCF, Investa estimates value based on Revenue and historical FCF margins.
-2. **Graham's Revised Formula:** A simplified formula for stable growth companies, based on Earnings Per Share (EPS) and expected growth ($V = \frac{EPS \times (8.5 + 2g) \times 4.4}{Y}$).
+    *   **Revenue-based Fallback:** If a company has negative or volatile FCF, Investa estimates value based on Revenue and historical FCF margins.
+2.  **Graham's Revised Formula:** A simplified formula for stable growth companies, based on Earnings Per Share (EPS) and expected growth ($V = \frac{EPS \times (8.5 + 2g) \times 4.4}{Y}$).
+3.  **Net Asset Value (NAV) for ETFs/Funds:** For ETFs and Mutual Funds, standard models like DCF/Graham are often inapplicable. Investa automatically defaults to the fund's **Net Asset Value (NAV)** as the most accurate representation of intrinsic value.
  
 ### Probability Distributions (Monte Carlo)
 To account for uncertainty, Investa runs **10,000 Monte Carlo simulations** for each stock, varying growth rates and discount rates (WACC) within a normal distribution. This provides a range of probable outcomes:
