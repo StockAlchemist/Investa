@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>The company logo database and API</title>
+
+<link rel="apple-touch-icon" sizes="180x180" href="https://companieslogo.com/img/icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/icons/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/img/icons/favicon-16x16.png">
+<link rel="manifest" href="/img/icons/site.webmanifest">
+<link rel="shortcut icon" href="https://companieslogo.com/favicon.ico" type="image/x-icon">
+
+<link rel="canonical" href="https://companieslogo.com/error/404/" />
+<meta property="og:url" content="https://companieslogo.com/error/404/" />
+
+<meta name="robots" content="INDEX,FOLLOW">
+<meta name="msapplication-TileColor" content="#ffffff">
+<meta name="theme-color" content="#ffffff">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta property="og:title" content="The company logo database and API">
+<meta property="og:type" content="website">
+
+<meta property="og:image" content="https://companieslogo.com/companies-logo.svg">
+
+<link rel="stylesheet" type="text/css" href="/css/style.css?v=101">
+
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9546025474036748"
+     crossorigin="anonymous"></script></head>
+<body>
+
+<div class="header-container" style="position: relative;">
+<div class="row site-header-row">
+<div class="site-header">
+total logos: <span class="font-weight-bold">12,531</span> &nbsp;&nbsp;&nbsp;
+logos in SVG format: <span class="font-weight-bold">10,744</span>
+
+<div class="header-actions responsive-hidden">
+        <div class="option-item">
+                        <div class="dropdown-container" style="position: relative;">
+                                <div class="dropdown">
+                                        <span class="dropdown-toggle">🇺🇸 ENG</span>
+                                        <div class="clear-both">
+                                        </div>
+
+                                        <div class="dropdown-menu" style="right: 0; left: auto;">
+                                                <a class="dropdown-item" href="/de/" onclick="document.cookie = 'prefered_language=EUR;  max-age=91536000000; path=/;';"><div><span>🇩🇪 German</span></div></a><a class="dropdown-item" href="/fr/" onclick="document.cookie = 'prefered_language=EUR;  max-age=91536000000; path=/;';"><div><span>🇫🇷 French</span></div></a>    
+                                        </div>
+
+                                        </div>
+                        </div>
+                </div>
+        </div>
+</div>
+
+</div>
+<nav class="navbar nav-bar-companiesmarketcap navbar-expand-lg navbar-light">
+<div class="navbar-collapse-container">
+<button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+<span class="navbar-toggler-icon"></span>
+</button>
+<form class="search-form form-inline">
+<input id="search-input" class="form-control search-input" type="search" placeholder="Company name" aria-label="Company name" autocomplete="off">
+<button onclick="return false;" aria-label="search" class="btn-search" type="submit" disabled=""><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" width="18" height="18"><g stroke-width="2" stroke="#6c6c6c" fill="none"><path d="M11.29 11.71l-4-4"></path><circle cx="5" cy="5" r="4"></circle></g></svg></button>
+<div id="typeahead-search-results" class="typeahead-search-results"></div>
+</form>
+<div class="collapse navbar-collapse" id="navbarSupportedContent">
+<a href="/" title="CompaniesLogo.com - public company logo database" class="responsive-hidden">
+	<img alt="companieslogo.com logo" src="/companies-logo.svg" style="height: 40px;padding-top: 5px;width: 30px;" class="logo">
+</a>
+<ul class="navbar-nav">
+<li class="nav-item">
+<a class="nav-link nav-link-companiesmarketcap" href="/" style="color: #007bff;">Companies Logo</a>
+</li>
+<li class="nav-item dropdown megamenu-li">
+<a class="nav-link nav-link-companiesmarketcap dropdown-toggle" href="#" id="dropdown-countries" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">Logo index A-Z</a>
+<div class="dropdown-menu megamenu" aria-labelledby="dropdown-countries">
+<div class="row">
+<div class="col-sm-6 col-lg-3">
+<a class="dropdown-item" href="/logos/a/">A</a>
+<a class="dropdown-item" href="/logos/b/">B</a>
+<a class="dropdown-item" href="/logos/c/">C</a>
+<a class="dropdown-item" href="/logos/d/">D</a>
+<a class="dropdown-item" href="/logos/e/">E</a>
+<a class="dropdown-item" href="/logos/f/">F</a>
+<a class="dropdown-item" href="/logos/g/">G</a>
+<a class="dropdown-item" href="/logos/h/">H</a>
+<a class="dropdown-item" href="/logos/i/">I</a>
+</div>
+<div class="col-sm-6 col-lg-3 border-left">
+<a class="dropdown-item" href="/logos/j/">J</a>
+<a class="dropdown-item" href="/logos/k/">K</a>
+<a class="dropdown-item" href="/logos/l/">L</a>
+<a class="dropdown-item" href="/logos/m/">M</a>
+<a class="dropdown-item" href="/logos/n/">N</a>
+<a class="dropdown-item" href="/logos/o/">O</a>
+<a class="dropdown-item" href="/logos/p/">P</a>
+<a class="dropdown-item" href="/logos/q/">Q</a>
+<a class="dropdown-item" href="/logos/r/">R</a>
+</div>
+<div class="col-sm-6 col-lg-3 border-left">
+<a class="dropdown-item" href="/logos/s/">S</a>
+<a class="dropdown-item" href="/logos/t/">T</a>
+<a class="dropdown-item" href="/logos/u/">U</a>
+<a class="dropdown-item" href="/logos/v/">V</a>
+<a class="dropdown-item" href="/logos/w/">W</a>
+<a class="dropdown-item" href="/logos/x/">X</a>
+<a class="dropdown-item" href="/logos/y/">Y</a>
+<a class="dropdown-item" href="/logos/z/">Z</a>
+</div>
+<div class="col-sm-6 col-lg-3 border-left">
+<a class="dropdown-item" href="/logos/etfs-and-etns/">ETFs and ETNs</a>
+</div>
+</div>
+</div>
+</li>
+
+<li class="nav-item">
+<a class="nav-link nav-link-companiesmarketcap" href="/stock-logo-api/" title="Add Stock Market logos to your Apps or Websites">Stock logo API</a>
+</li>
+
+<li class="nav-item">
+<a class="nav-link nav-link-sign-in" href="/sign-in/"><button class="sign-in"><img alt="account icon" src="/img/account.svg">Sign in</button></a></li>
+
+</ul>
+</div>
+</div>
+</nav>
+</div>
+
+<div style="text-align:center;">
+<div style="font-size:120px;">
+404
+</div>
+<div style="font-size:80px;">
+Page not found :-(
+</div>
+</div>
+
+<div class="footer-container">
+<div class="footer-section">
+<div class="footer row">
+<div class="col-sm-6">
+<h4>About CompaniesLogo</h4>
+<p class="no-margin-top">CompaniesLogo.com is maintaining an up to date database containing the logos of publicly listed companies and ETFs.</p>
+<h4>Disclaimer</h4>
+<p class="no-margin-top"> CompaniesLogo is neither affiliated nor sponsored by companies whose logos are displayed on this site, the logos belong to their respective copyright holders and are displayed solely for editorial and informational purposes.</p>
+</div>
+<div class="col-sm-6">
+<h4>Contact</h4>
+<p class="no-margin-top">For inquiries or if you want to report a problem write to <span class="contact-email">inf<span class="hidden">nospam</span>o@companies<span class="hidden">(nospam)</span>logo.com</span></p>
+
+<h4>Links</h4>
+<ul class="footer-links">
+<li><a href="/api-documentation/">API documentation</a></li>
+<li><a href="/stock-logo-api/#pricing">API Pricing</a></li>
+<li><a href="/terms-and-conditions/">API Terms of Service</a></li>
+<li><a href="/privacy/">Privacy Policy</a></li>
+<li><a href="/about/">About Us</a></li>
+
+<li><a href="/imprint/">Imprint</a></li>
+   
+</ul>
+<p>
+&#169; 2025 CompaniesLogo.com
+</p>
+</div>
+</div>
+</div>
+</div>
+<script>
+isLoggedIn = 0;
+</script>
+<script src="/js/script.js?v=57"></script>
+<script src="/clever_ads.js"></script>
+<script src="/js/lut.js?v=3"></script>
+</body></html>

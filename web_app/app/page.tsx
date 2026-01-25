@@ -332,7 +332,8 @@ export default function Home() {
       case 'watchlist':
         return <Watchlist currency={currency} />;
       case 'screener':
-        return <ScreenerView currency={currency} />;
+        return null;
+
       case 'transactions':
         return <TransactionsTable transactions={transactions} />;
       case 'markets':
@@ -607,6 +608,9 @@ export default function Home() {
 
 
         {renderTabContent()}
+        <div className={activeTab === 'screener' ? 'block' : 'hidden'}>
+          <ScreenerView currency={currency} />
+        </div>
       </div>
 
       {/* Bottom Nav (Visual only for now) */}

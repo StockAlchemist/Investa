@@ -187,11 +187,70 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
 
     // Manual overrides for specific symbols to use local images
     const localOverrides: Record<string, string> = {
-        'PLTR': '/pltr.png',
-        'ASML': '/asml.png',
-        'UNH': '/unh.png',
+        'ABBV': (mounted && resolvedTheme === 'dark') ? '/abbv-dark.png' : '/abbv.png',
+        'ACGL': '/acgl.png',
+        'ADI': '/adi.png',
+        'ADSK': '/adsk.png',
+        'AIG': '/aig.png',
+        'ALB': '/alb.png',
+        'ALL': '/all.png',
+        'AMP': '/amp.png',
+        'AMZN': '/amzn.png',
+        'ANET': '/anet.png',
+        'APO': '/apo.png',
+        'APP': '/app.png',
         'AAPL': (mounted && resolvedTheme === 'dark') ? '/aapl-dark.png' : '/aapl.png',
+        'APH': '/aph.png',
+        'APTV': '/aptv.png',
+        'ARE': '/are.png',
+        'ARES': '/ares.png',
+        'ASML': '/asml.png',
+        'ATO': '/ato.png',
+        'AVB': '/avb.png',
+        'AWK': '/awk.png',
+        'AXON': '/axon.png',
+        'BA': '/ba.png',
+        'BAX': '/bax.png',
+        'BLK': '/blk.png',
+        'CBOE': '/cboe.png',
+        'CDNS': '/cdns.png',
+        'CEG': '/ceg.png',
+        'CSX': '/csx.png',
+        'CTAS': '/ctas.png',
+        'DDOG': '/ddog.png',
+        'DHI': '/dhi.png',
+        'DIS': '/dis.png',
+        'EXE': '/exe.png',
+        'EXPE': '/expe.png',
+        'FAST': '/fast.png',
+        'GEN': '/gen.png',
+        'HSY': '/hsy.png',
+        'IBM': '/ibm.png',
+        'INTC': '/intc.png',
+        'JBL': '/jbl.png',
+        'KR': '/kr.png',
+        'LMT': '/lmt.png',
+        'MRSH': '/mrsh.png',
+        'NKE': '/nke.png',
+        'NTAP': '/ntap.png',
+        'ON': '/on.png',
+        'PLTR': '/pltr.png',
+        'PSKY': '/psky.png',
+        'Q': '/q.png',
+        'RCL': '/rcl.png',
+        'REGN': '/regn.png',
+        'SLB': '/slb.png',
+        'SNDK': '/sndk.png',
         'SPGI': (mounted && resolvedTheme === 'dark') ? '/spgi-logo-dark.png' : '/spgi-logo.png',
+        'STT': '/stt.png',
+        'SW': '/sw.png',
+        'UBER': '/uber.png',
+        'ULTA': '/ulta.png',
+        'UNH': '/unh.png',
+        'V': '/v.png',
+        'VRTX': '/vrtx.png',
+        'WSM': '/wsm.png',
+        'WYNN': '/wynn.png',
     };
 
     const sources = [
@@ -247,13 +306,18 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
     }
 
     const isDarkIcon = ['SPGI'].includes(symbol) && mounted && resolvedTheme === 'dark';
-    const bgColor = isDarkIcon ? 'bg-black' : 'bg-white';
+
+    // Some icons are white/transparent and need a dark background even in light mode
+    const forcedDarkBackgrounds = ['CBOE', 'SLB', 'UBER', 'V', 'ULTA', 'WSM', 'WYNN', 'NKE', 'ORCL'];
+    const needsDarkBg = forcedDarkBackgrounds.includes(symbol);
+
+    const bgColor = isDarkIcon || needsDarkBg ? 'bg-black' : 'bg-white';
 
     return (
         <img
             src={currentSource}
             alt={symbol}
-            className={cn("rounded-md object-contain shrink-0", bgColor, className)}
+            className={cn("rounded-md object-contain shrink-0", className, bgColor)}
             style={sizeStyle}
             onError={handleError}
             loading="lazy"
