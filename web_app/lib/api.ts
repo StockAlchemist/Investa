@@ -358,6 +358,9 @@ export interface Settings {
     visible_items?: string[];
     benchmarks?: string[];
     show_closed?: boolean;
+    display_currency?: string;
+    selected_accounts?: string[];
+    active_tab?: string;
 }
 
 export async function fetchSettings(): Promise<Settings> {
@@ -379,6 +382,9 @@ export interface SettingsUpdate {
     visible_items?: string[];
     benchmarks?: string[];
     show_closed?: boolean;
+    display_currency?: string;
+    selected_accounts?: string[];
+    active_tab?: string;
 }
 
 export async function updateSettings(settings: SettingsUpdate): Promise<StatusResponse> {

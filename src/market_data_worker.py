@@ -1,11 +1,11 @@
 import sys
 import json
-import yfinance as yf
-import pandas as pd
 import traceback
 import os
 import tempfile
+import logging # Added missing import
 from datetime import datetime, date
+import gc
 
 # Setup explicit logging
 # Setup explicit logging
@@ -18,24 +18,30 @@ def log(msg):
         # sys.stderr.write(f"WORKER: {msg}\n")
         # sys.stderr.flush()
         with open(LOG_FILE, "a") as f:
-            f.write(f"{pd.Timestamp.now()} - {msg}\n")
+            f.write(f"{datetime.now()} - {msg}\n")
     except:
         pass
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+# Removed ThreadPoolExecutor to save memory
 
 def fetch_info(symbols, output_file):
     try:
-        log(f"Starting info fetch for {len(symbols)} symbols with parallel threads.")
+        log(f"Starting info fetch for {len(symbols)} symbols. Sequential mode.")
+        import yfinance as yf # Lazy import
         results = {}
         
         def get_single_info(sym):
             try:
+                import yfinance as yf # Redundant but safe
+                log(f"Fetching .info for {sym}...")
                 ticker = yf.Ticker(sym)
                 info = ticker.info
+                log(f"Received .info for {sym}. Keys: {len(info) if info else 0}")
+
                 # --- ETF DATA EXTRACTION ---
                 try:
                     if hasattr(ticker, 'funds_data'):
+                        log(f"Fetching funds_data for {sym}...")
                         fd = ticker.funds_data
                         if fd:
                              etf_data = {}
@@ -53,37 +59,44 @@ def fetch_info(symbols, output_file):
                                  etf_data['asset_classes'] = fd.asset_classes
                              if etf_data:
                                  info['etf_data'] = etf_data
+                        log(f"funds_data processed for {sym}")
                 except Exception as e_etf:
                     log(f"Error extracting ETF data for {sym}: {e_etf}")
                 
                 # --- ANALYST ESTIMATES ---
                 try:
-                    # Fetching these DataFrames and converting to dict
+                    log(f"Fetching earnings_estimate for {sym}...")
                     ee = ticker.earnings_estimate
                     if not ee.empty:
                         info['_earnings_estimate'] = ee.to_dict(orient='index')
                     
+                    log(f"Fetching revenue_estimate for {sym}...")
                     re = ticker.revenue_estimate
                     if not re.empty:
                         info['_revenue_estimate'] = re.to_dict(orient='index')
                     
+                    log(f"Fetching growth_estimates for {sym}...")
                     ge = ticker.growth_estimates
                     if not ge.empty:
                         info['_growth_estimates'] = ge.to_dict(orient='index')
+                    log(f"Analyst estimates processed for {sym}")
                 except Exception as e_analyst:
                     log(f"Error fetching analyst estimates for {sym}: {e_analyst}")
                 
                 return sym, info
             except Exception as e:
-                log(f"Error fetching info for {sym}: {e}")
+                log(f"CRITICAL Error fetching {sym}: {e}")
                 return sym, None
 
-        # REDUCED: Use 4 threads for info fetching instead of 10 to save memory
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            future_to_sym = {executor.submit(get_single_info, sym): sym for sym in symbols}
-            for future in as_completed(future_to_sym):
-                sym, info = future.result()
-                results[sym] = info
+        # SEQUENTIAL: Removed ThreadPoolExecutor to minimize peak memory (prevent OOM)
+        for i, sym in enumerate(symbols):
+            log(f"Processing symbol {i+1}/{len(symbols)}: {sym}")
+            sym, info = get_single_info(sym)
+            results[sym] = info
+            # Explicitly clear temporary objects and collect garbage after each symbol
+            log(f"Collecting garbage after {sym}...")
+            gc.collect()
+            log(f"Memory cleared for {sym}")
         
         with open(output_file, "w") as f:
             json.dump({"status": "success", "data": results}, f)
@@ -94,6 +107,8 @@ def fetch_info(symbols, output_file):
 
 def fetch_statement(symbol, statement_type, period_type, output_file):
     try:
+        import yfinance as yf # Lazy import
+        import pandas as pd  # Lazy import
         log(f"Starting statement fetch for {symbol}: {statement_type} ({period_type})")
         ticker = yf.Ticker(symbol)
         df = pd.DataFrame()
@@ -118,6 +133,7 @@ def fetch_statement(symbol, statement_type, period_type, output_file):
 
 def fetch_dividends(symbol, output_file):
     try:
+        import yfinance as yf # Lazy import
         log(f"Starting dividends fetch for {symbol}")
         ticker = yf.Ticker(symbol)
         divs = ticker.dividends
@@ -136,6 +152,7 @@ def fetch_dividends(symbol, output_file):
 
 def fetch_calendar(symbol, output_file):
     try:
+        import yfinance as yf # Lazy import
         log(f"Starting calendar fetch for {symbol}")
         ticker = yf.Ticker(symbol)
         cal = ticker.calendar
@@ -163,6 +180,8 @@ def fetch_calendar(symbol, output_file):
 
 def fetch_data(symbols, start_date, end_date, interval, output_file, period=None):
     try:
+        import yfinance as yf # Lazy import
+        import pandas as pd  # Lazy import
         if period:
              log(f"Starting fetch for {len(symbols)} symbols. Period: {period}, Int: {interval}")
              data = yf.download(

@@ -2290,7 +2290,10 @@ async def get_settings(
             "valuation_overrides": config_manager.manual_overrides.get("valuation_overrides", {}),
             "visible_items": config_manager.gui_config.get("visible_items", []),
             "benchmarks": config_manager.gui_config.get("benchmarks", ['S&P 500', 'Dow Jones', 'NASDAQ']),
-            "show_closed": config_manager.gui_config.get("show_closed", False)
+            "show_closed": config_manager.gui_config.get("show_closed", False),
+            "display_currency": config_manager.gui_config.get("display_currency", "USD"),
+            "selected_accounts": config_manager.gui_config.get("selected_accounts", []),
+            "active_tab": config_manager.gui_config.get("active_tab", "performance")
         }
     except Exception as e:
         logging.error(f"Error getting settings: {e}", exc_info=True)
@@ -2309,6 +2312,9 @@ class SettingsUpdate(BaseModel):
     visible_items: Optional[List[str]] = None
     benchmarks: Optional[List[str]] = None
     show_closed: Optional[bool] = None
+    display_currency: Optional[str] = None
+    selected_accounts: Optional[List[str]] = None
+    active_tab: Optional[str] = None
 
 @router.post("/settings/update")
 async def update_settings(
@@ -2367,6 +2373,18 @@ async def update_settings(
 
         if settings.available_currencies is not None:
              config_manager.gui_config["available_currencies"] = settings.available_currencies
+             gui_config_changed = True
+
+        if settings.display_currency is not None:
+             config_manager.gui_config["display_currency"] = settings.display_currency
+             gui_config_changed = True
+
+        if settings.selected_accounts is not None:
+             config_manager.gui_config["selected_accounts"] = settings.selected_accounts
+             gui_config_changed = True
+
+        if settings.active_tab is not None:
+             config_manager.gui_config["active_tab"] = settings.active_tab
              gui_config_changed = True
 
         if gui_config_changed:

@@ -2,6 +2,7 @@ import sys
 import os
 
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -25,7 +26,14 @@ logging.basicConfig(
 
 import portfolio_analyzer
 
-app = FastAPI(title="Investa API", description="Backend for Investa PWA")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from db_utils import initialize_database, get_db_connection
+    # Ensure DB is initialized
+    initialize_database()
+    yield
+
+app = FastAPI(title="Investa API", description="Backend for Investa PWA", lifespan=lifespan)
 
 # Configure CORS to allow requests from the frontend (likely localhost:3000)
 # Configure CORS to allow requests from the frontend
@@ -39,11 +47,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.on_event("startup")
-def on_startup():
-    from db_utils import initialize_database, get_db_connection
-    # Ensure DB is initialized
-    initialize_database()
+# API Routes
 
 app.include_router(api_router, prefix="/api")
 

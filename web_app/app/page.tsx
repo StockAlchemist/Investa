@@ -78,9 +78,21 @@ export default function Home() {
     }
   }, [user, authLoading, router]);
 
-  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
-  const [currency, setCurrency] = useState('USD');
-  const [activeTab, setActiveTab] = useState('performance');
+  const [selectedAccounts, setSelectedAccounts] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const saved = localStorage.getItem('investa_selected_accounts');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) { return []; }
+  });
+  const [currency, setCurrency] = useState(() => {
+    if (typeof window === 'undefined') return 'USD';
+    return localStorage.getItem('investa_currency') || 'USD';
+  });
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window === 'undefined') return 'performance';
+    return localStorage.getItem('investa_active_tab') || 'performance';
+  });
   const [backgroundFetchEnabled, setBackgroundFetchEnabled] = useState(false);
 
   // Trigger background fetch after initial load
@@ -113,6 +125,15 @@ export default function Home() {
       }
       if (typeof settingsQuery.data.show_closed === 'boolean') {
         setShowClosed(settingsQuery.data.show_closed);
+      }
+      if (settingsQuery.data.display_currency) {
+        setCurrency(settingsQuery.data.display_currency);
+      }
+      if (settingsQuery.data.selected_accounts) {
+        setSelectedAccounts(settingsQuery.data.selected_accounts);
+      }
+      if (settingsQuery.data.active_tab) {
+        setActiveTab(settingsQuery.data.active_tab);
       }
     }
   }, [settingsQuery.data]);
@@ -195,6 +216,30 @@ export default function Home() {
       }
     }
   }, [benchmarks, settingsQuery.data]);
+
+  // Persist currency
+  useEffect(() => {
+    localStorage.setItem('investa_currency', currency);
+    if (settingsQuery.data && settingsQuery.data.display_currency !== currency) {
+      updateServerSettings({ display_currency: currency });
+    }
+  }, [currency, settingsQuery.data]);
+
+  // Persist selected accounts
+  useEffect(() => {
+    localStorage.setItem('investa_selected_accounts', JSON.stringify(selectedAccounts));
+    if (settingsQuery.data && JSON.stringify(settingsQuery.data.selected_accounts) !== JSON.stringify(selectedAccounts)) {
+      updateServerSettings({ selected_accounts: selectedAccounts });
+    }
+  }, [selectedAccounts, settingsQuery.data]);
+
+  // Persist active tab
+  useEffect(() => {
+    localStorage.setItem('investa_active_tab', activeTab);
+    if (settingsQuery.data && settingsQuery.data.active_tab !== activeTab) {
+      updateServerSettings({ active_tab: activeTab });
+    }
+  }, [activeTab, settingsQuery.data]);
 
   // Command Palette Keyboard Listener
   useEffect(() => {

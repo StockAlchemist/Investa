@@ -198,6 +198,7 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwar
         payload.update(kwargs)
         
         # Run subprocess
+        logging.info(f"WORKER START ATTEMPT: Task={task}, Tickers={tickers[:3]}...")
         result = subprocess.run(
             [sys.executable, script_path],
             input=json.dumps(payload),
@@ -211,7 +212,10 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwar
              logging.info(f"Isolated fetch STDERR: {result.stderr}")
 
         if result.returncode != 0:
-            logging.error(f"Isolated fetch failed (Code {result.returncode}): {result.stderr}")
+            err_msg = f"Isolated fetch failed (Code {result.returncode})"
+            if result.returncode == -9:
+                err_msg += " - Process KILLED (Likely Memory Exhaustion/OOM)"
+            logging.error(f"{err_msg}: {result.stderr}")
             if os.path.exists(temp_output): os.remove(temp_output)
             return pd.DataFrame() if task not in ["info", "calendar"] else {}
             
@@ -286,7 +290,7 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwar
 # --- Main Class ---
 class MarketDataProvider:
     """
-    Provides methods to fetch and cache market data (stocks, FX, indices, historical)
+    Provides methods to fetch and cache market data (prices, FX, indices, historical)
     primarily using the yfinance library.
     """
 
@@ -520,7 +524,7 @@ class MarketDataProvider:
         if missing_symbols:
             logging.info(f"Fundamentals: Fetching missing data for {len(missing_symbols)} symbols...")
             try:
-                # Use isolated batch fetch for fundamentals
+                # Use isolated batch fetch
                 chunk_size = 50
                 for i in range(0, len(missing_symbols), chunk_size):
                     chunk = list(missing_symbols)[i:i+chunk_size] # Convert to list for slicing
@@ -598,9 +602,11 @@ class MarketDataProvider:
         if missing_symbols:
             logging.info(f"TickerDetails: Fetching for {len(missing_symbols)} symbols...")
             try:
-                chunk_size = 50
-                for i in range(0, len(missing_symbols), chunk_size):
+                # REDUCED: Was 10. Tiny chunk size to survive extreme memory constraints.
+                chunk_size = 5
+                for i in range(0, len(internal_stock_symbols), chunk_size):
                     chunk = list(missing_symbols)[i:i+chunk_size]
+                    logging.info(f"TickerDetails Fetch: Processing isolated batch {i//chunk_size + 1}. Symbols: {len(chunk)}")
                     info_batch = _run_isolated_fetch(chunk, task="info")
                     
                     for sym in chunk:
@@ -719,7 +725,8 @@ class MarketDataProvider:
                 # Use chunked download for reliability and to avoid process/memory limits with 500+ symbols
                 all_dfs = []
                 yf_symbols_list = list(yf_symbols_to_fetch)
-                chunk_size = 50 # REDUCED: Was 250, causing OOM (Code -9) on some systems
+                # REDUCED: Was 50. Tiny chunk size to survive extreme memory constraints (especially on OneDrive paths).
+                chunk_size = 5
                 
                 for i in range(0, len(yf_symbols_list), chunk_size):
                     chunk = yf_symbols_list[i:i+chunk_size]

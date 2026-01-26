@@ -66,6 +66,7 @@ class ConfigManager:
             "visible_items": [],
             "benchmarks": ['S&P 500', 'Dow Jones', 'NASDAQ'],
             "show_closed": False,
+            "active_tab": "performance",
         }
 
     def _get_default_manual_overrides(self) -> Dict[str, Any]:
