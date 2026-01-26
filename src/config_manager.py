@@ -63,6 +63,9 @@ class ConfigManager:
             "theme": "light",
             "account_groups": {},
             "available_currencies": ["USD", "THB", "EUR", "GBP", "JPY", "CNY"],
+            "visible_items": [],
+            "benchmarks": ['S&P 500', 'Dow Jones', 'NASDAQ'],
+            "show_closed": False,
         }
 
     def _get_default_manual_overrides(self) -> Dict[str, Any]:

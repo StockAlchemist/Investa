@@ -355,6 +355,9 @@ export interface Settings {
     account_interest_rates: Record<string, number>;
     interest_free_thresholds: Record<string, number>;
     valuation_overrides: Record<string, any>;
+    visible_items?: string[];
+    benchmarks?: string[];
+    show_closed?: boolean;
 }
 
 export async function fetchSettings(): Promise<Settings> {
@@ -373,6 +376,9 @@ export interface SettingsUpdate {
     account_interest_rates?: Record<string, number>;
     interest_free_thresholds?: Record<string, number>;
     valuation_overrides?: Record<string, any>;
+    visible_items?: string[];
+    benchmarks?: string[];
+    show_closed?: boolean;
 }
 
 export async function updateSettings(settings: SettingsUpdate): Promise<StatusResponse> {

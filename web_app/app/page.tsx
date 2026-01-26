@@ -18,6 +18,8 @@ import {
   fetchWatchlist,
 
   fetchSettings,
+  updateSettings,
+  SettingsUpdate,
   fetchPortfolioHealth,
   fetchCorrelationMatrix,
   fetchProjectedIncome,
@@ -93,11 +95,32 @@ export default function Home() {
   }, []);
 
 
-  // Lazy init benchmarks from localStorage
-  // Initialize with defaults to match server-side rendering, avoiding hydration mismatch.
+  const settingsQuery = useQuery({
+    queryKey: ['settings'],
+    queryFn: fetchSettings,
+    staleTime: 5 * 60 * 1000,
+    enabled: !!user,
+  });
+
+  // Sync state from server settings
+  useEffect(() => {
+    if (settingsQuery.data) {
+      if (settingsQuery.data.visible_items && settingsQuery.data.visible_items.length > 0) {
+        setVisibleItems(settingsQuery.data.visible_items);
+      }
+      if (settingsQuery.data.benchmarks && settingsQuery.data.benchmarks.length > 0) {
+        setBenchmarks(settingsQuery.data.benchmarks);
+      }
+      if (typeof settingsQuery.data.show_closed === 'boolean') {
+        setShowClosed(settingsQuery.data.show_closed);
+      }
+    }
+  }, [settingsQuery.data]);
+
+  // Lazy init benchmarks from localStorage (fallback)
   const [benchmarks, setBenchmarks] = useState<string[]>(['S&P 500', 'Dow Jones', 'NASDAQ']);
 
-  // Load benchmarks from localStorage on mount
+  // Load benchmarks from localStorage on mount (initial fallback before server load)
   useEffect(() => {
     try {
       const saved = localStorage.getItem('investa_graph_benchmarks');
@@ -121,11 +144,9 @@ export default function Home() {
   const [correlationPeriod, setCorrelationPeriod] = useState('1y');
 
   // Lazy init visibleItems
-  // Initialize with defaults to match server-side rendering, avoiding hydration mismatch.
-  // We update from localStorage in useEffect.
   const [visibleItems, setVisibleItems] = useState<string[]>(DEFAULT_ITEMS.map(i => i.id));
 
-  // Load visibleItems from localStorage on mount
+  // Load visibleItems from localStorage on mount (initial fallback before server load)
   useEffect(() => {
     try {
       const saved = localStorage.getItem('investa_dashboard_visible_items');
@@ -137,23 +158,43 @@ export default function Home() {
     }
   }, []);
 
-  // Persist visibility to localStorage
+  // Update helper to sync with server
+  const updateServerSettings = async (updates: Partial<SettingsUpdate>) => {
+    try {
+      await updateSettings(updates);
+    } catch (e) {
+      console.error("Failed to update server settings", e);
+    }
+  };
+
+  // Persist visibility 
   useEffect(() => {
     if (visibleItems.length > 0) {
       localStorage.setItem('investa_dashboard_visible_items', JSON.stringify(visibleItems));
+      // Only sync if different from server data (to avoid loops)
+      if (settingsQuery.data && JSON.stringify(settingsQuery.data.visible_items) !== JSON.stringify(visibleItems)) {
+        updateServerSettings({ visible_items: visibleItems });
+      }
     }
-  }, [visibleItems]);
+  }, [visibleItems, settingsQuery.data]);
 
-
-  // Persist showClosed to localStorage
+  // Persist showClosed
   useEffect(() => {
     localStorage.setItem('investa_show_closed', showClosed.toString());
-  }, [showClosed]);
+    if (settingsQuery.data && settingsQuery.data.show_closed !== showClosed) {
+      updateServerSettings({ show_closed: showClosed });
+    }
+  }, [showClosed, settingsQuery.data]);
 
-  // Persist benchmarks to localStorage
+  // Persist benchmarks
   useEffect(() => {
-    localStorage.setItem('investa_graph_benchmarks', JSON.stringify(benchmarks));
-  }, [benchmarks]);
+    if (benchmarks.length > 0) {
+      localStorage.setItem('investa_graph_benchmarks', JSON.stringify(benchmarks));
+      if (settingsQuery.data && JSON.stringify(settingsQuery.data.benchmarks) !== JSON.stringify(benchmarks)) {
+        updateServerSettings({ benchmarks: benchmarks });
+      }
+    }
+  }, [benchmarks, settingsQuery.data]);
 
   // Command Palette Keyboard Listener
   useEffect(() => {
@@ -266,12 +307,6 @@ export default function Home() {
     staleTime: 1 * 60 * 1000,
     // No keepPreviousData needed for watchlist as it's not dependent on accounts
     enabled: (activeTab === 'watchlist' || backgroundFetchEnabled) && isHighPriorityLoaded,
-  });
-
-  const settingsQuery = useQuery({
-    queryKey: ['settings'],
-    queryFn: fetchSettings,
-    staleTime: 5 * 60 * 1000,
   });
 
   const portfolioHealthQuery = useQuery({

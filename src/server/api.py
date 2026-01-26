@@ -2287,7 +2287,10 @@ async def get_settings(
             "available_currencies": config_manager.gui_config.get("available_currencies", ['USD', 'THB', 'EUR', 'GBP', 'JPY', 'CNY']),
             "account_interest_rates": config_manager.manual_overrides.get("account_interest_rates", {}),
             "interest_free_thresholds": config_manager.manual_overrides.get("interest_free_thresholds", {}),
-            "valuation_overrides": config_manager.manual_overrides.get("valuation_overrides", {})
+            "valuation_overrides": config_manager.manual_overrides.get("valuation_overrides", {}),
+            "visible_items": config_manager.gui_config.get("visible_items", []),
+            "benchmarks": config_manager.gui_config.get("benchmarks", ['S&P 500', 'Dow Jones', 'NASDAQ']),
+            "show_closed": config_manager.gui_config.get("show_closed", False)
         }
     except Exception as e:
         logging.error(f"Error getting settings: {e}", exc_info=True)
@@ -2303,6 +2306,9 @@ class SettingsUpdate(BaseModel):
     account_interest_rates: Optional[Dict[str, float]] = None
     interest_free_thresholds: Optional[Dict[str, float]] = None
     valuation_overrides: Optional[Dict[str, Any]] = None
+    visible_items: Optional[List[str]] = None
+    benchmarks: Optional[List[str]] = None
+    show_closed: Optional[bool] = None
 
 @router.post("/settings/update")
 async def update_settings(
@@ -2320,27 +2326,7 @@ async def update_settings(
         
         # Update Manual Price Overrides
         if settings.manual_price_overrides is not None:
-             # If sending a full dict, replace. If we want partial update, we need logic.
-             # Let's assume the UI sends the FULL set of overrides for that category usually,
-             # OR we implement partial update logic.
-             # Given "add option... consistency", usually these UIs show a list and you save.
-             # For safety with concurrent edits (unlikely here), let's just merge specific keys if provided,
-             # BUT simpler is to let frontend manage the state and send the full dict for that section.
-             # However, ConfigManager.save_manual_overrides expects the FULL structure of all 3 categories
-             # passed as one dict, OR it updates `self.manual_overrides` with the dict passed.
-             
-             # Let's see ConfigManager.save_manual_overrides:
-             # if overrides_data is not None: self.manual_overrides = overrides_data
-             
-             # So we need to construct the full new state.
-             
-             new_price_overrides = current_overrides.get("manual_price_overrides", {}).copy()
-             # We can't just merge if the user DELETED something.
-             # So if the user sends `manual_price_overrides` we should probably treat it as the "new state" for that key,
-             # i.e. REPLACE the `manual_price_overrides` section, but keep others.
-             new_price_overrides = settings.manual_price_overrides
-             
-             current_overrides["manual_price_overrides"] = new_price_overrides
+             current_overrides["manual_price_overrides"] = settings.manual_price_overrides
 
         if settings.user_symbol_map is not None:
             current_overrides["user_symbol_map"] = settings.user_symbol_map
@@ -2348,15 +2334,6 @@ async def update_settings(
         if settings.user_excluded_symbols is not None:
             current_overrides["user_excluded_symbols"] = sorted(list(set(settings.user_excluded_symbols)))
             
-        if settings.account_groups is not None:
-             config_manager.gui_config["account_groups"] = settings.account_groups
-             
-        if settings.account_currency_map is not None:
-             config_manager.gui_config["account_currency_map"] = settings.account_currency_map
-
-        if settings.available_currencies is not None:
-             config_manager.gui_config["available_currencies"] = settings.available_currencies
-
         if settings.account_interest_rates is not None:
             current_overrides["account_interest_rates"] = settings.account_interest_rates
             
@@ -2366,7 +2343,34 @@ async def update_settings(
         if settings.valuation_overrides is not None:
             current_overrides["valuation_overrides"] = settings.valuation_overrides
 
-        config_manager.save_gui_config()
+        # Update GUI Config (Dashboard persistence)
+        gui_config_changed = False
+        if settings.visible_items is not None:
+            config_manager.gui_config["visible_items"] = settings.visible_items
+            gui_config_changed = True
+        
+        if settings.benchmarks is not None:
+            config_manager.gui_config["benchmarks"] = settings.benchmarks
+            gui_config_changed = True
+            
+        if settings.show_closed is not None:
+            config_manager.gui_config["show_closed"] = settings.show_closed
+            gui_config_changed = True
+
+        if settings.account_groups is not None:
+            config_manager.gui_config["account_groups"] = settings.account_groups
+            gui_config_changed = True
+            
+        if settings.account_currency_map is not None:
+             config_manager.gui_config["account_currency_map"] = settings.account_currency_map
+             gui_config_changed = True
+
+        if settings.available_currencies is not None:
+             config_manager.gui_config["available_currencies"] = settings.available_currencies
+             gui_config_changed = True
+
+        if gui_config_changed:
+            config_manager.save_gui_config()
 
         # Save to AppData
         if config_manager.save_manual_overrides(current_overrides):

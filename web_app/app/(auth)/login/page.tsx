@@ -47,11 +47,27 @@ export default function LoginPage() {
     return (
         <div className="flex items-center justify-center min-h-screen bg-background">
             <Card className="w-[350px] shadow-lg">
-                <CardHeader className="space-y-1">
-                    <CardTitle className="text-2xl text-center">Investa</CardTitle>
-                    <CardDescription className="text-center">
-                        Login to access your portfolio
-                    </CardDescription>
+                <CardHeader className="space-y-4 flex flex-col items-center">
+                    <div className="flex items-center gap-3">
+                        <img
+                            src="/logo.png?v=5"
+                            alt="Investa Logo"
+                            className="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/20 block dark:hidden"
+                        />
+                        <img
+                            src="/logo-dark.png?v=5"
+                            alt="Investa Logo"
+                            className="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/20 hidden dark:block"
+                        />
+                        <div className="flex flex-col -space-y-0.5">
+                            <CardTitle className="text-2xl font-bold tracking-tight text-foreground leading-none">
+                                Investa
+                            </CardTitle>
+                            <span className="text-[10px] text-muted-foreground font-medium tracking-wider">
+                                by StockAlchemist
+                            </span>
+                        </div>
+                    </div>
                 </CardHeader>
                 <CardContent>
                     <form onSubmit={handleSubmit} className="space-y-4">
