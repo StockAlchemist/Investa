@@ -104,18 +104,21 @@ def main():
                 print(info)
         elif status.startswith("⏳"):
             # Estimate renewal time (Midnight PT)
-            # PT is UTC-8 (PST) or UTC-7 (PDT). Let's assume PST for Jan.
-            now_gmt = datetime.datetime.now(datetime.timezone.utc)
-            # Midnight PT is 08:00 GMT
-            reset_gmt = now_gmt.replace(hour=8, minute=0, second=0, microsecond=0)
-            if now_gmt >= reset_gmt:
-                reset_gmt += datetime.timedelta(days=1)
+            # PT is UTC-8 (PST) or UTC-7 (PDT). 
+            # Midnight PT is 08:00 GMT.
+            # Local time is UTC+7, so Midnight PT is 15:00 local time.
+            now_local = datetime.datetime.now()
+            reset_local = now_local.replace(hour=15, minute=0, second=0, microsecond=0)
+            
+            if now_local >= reset_local:
+                reset_local += datetime.timedelta(days=1)
                 
-            wait_time = reset_gmt - now_gmt
+            wait_time = reset_local - now_local
             hours, remainder = divmod(wait_time.seconds, 3600)
             minutes, _ = divmod(remainder, 60)
             
-            print(f"  -> Estimated daily reset in: {hours}h {minutes}m (approx. 00:00 Pacific Time)")
+            reset_time_str = reset_local.strftime("%H:%M")
+            print(f"  -> Estimated daily reset in: {hours}h {minutes}m (approx. {reset_time_str} local time)")
             print("  -> Note: If this is a minute-based limit, it may reset in < 1 minute.")
         
         results.append((model, status))
