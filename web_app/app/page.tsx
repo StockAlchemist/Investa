@@ -511,10 +511,12 @@ export default function Home() {
         <div className="mt-auto flex flex-col items-center gap-4 pb-4">
           <button
             onClick={() => user && logout()}
-            className="p-2 text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all duration-300"
+            className="flex flex-col items-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group bg-card hover:bg-accent/10 border border-border shadow-sm w-[60px]"
             title="Log Out"
           >
-            <LogOut className="w-5 h-5" />
+            <div className="p-2 rounded-xl transition-all duration-300 bg-secondary text-cyan-500 group-hover:scale-110">
+              <LogOut className="w-5 h-5" />
+            </div>
           </button>
           <ThemeToggle />
         </div>
