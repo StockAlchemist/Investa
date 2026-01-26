@@ -1,15 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from typing import List, Dict, Any, Optional
 from collections import defaultdict
 import pandas as pd
 import logging
 import os
 import time
+import sqlite3
 from datetime import datetime, date, time as dt_time
 
 
 
-from server.dependencies import get_transaction_data, get_config_manager, reload_data
+from server.dependencies import get_transaction_data, get_config_manager, reload_data, get_global_db_connection, get_user_db_connection
 from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
 from utils_time import get_est_today, get_latest_trading_date
 from portfolio_analyzer import (
@@ -61,6 +62,12 @@ except ImportError:
 
 from server.ai_analyzer import generate_stock_review
 from server.screener_service import screen_stocks
+from server.auth import (
+    Token, User, create_access_token, get_password_hash, verify_password
+)
+from server.dependencies import get_current_user
+from datetime import timedelta
+from pydantic import BaseModel
 
 router = APIRouter()
 
@@ -81,83 +88,102 @@ def get_mdp():
     from market_data import get_shared_mdp
     return get_shared_mdp()
 
-@router.get("/capital_gains")
-async def get_capital_gains(
-    currency: str = "USD",
-    accounts: Optional[List[str]] = Query(None),
-    year: Optional[int] = None,
-    data: tuple = Depends(get_transaction_data)
-):
-    """
-    Returns realized capital gains history.
-    """
-    (
-        df,
-        manual_overrides,
-        user_symbol_map,
-        user_excluded_symbols,
-        user_currency_map,
-        _, # db_path
-        _  # db_mtime
-    ) = data
+# --- Auth Routes ---
 
-    if df.empty:
-        return []
+class UserCreate(BaseModel):
+    username: str
+    password: str
 
+from fastapi.security import OAuth2PasswordRequestForm
+
+@router.post("/auth/register", response_model=User)
+async def register(user: UserCreate, conn: sqlite3.Connection = Depends(get_global_db_connection)):
+    # conn obtained from dependency is for GLOBAL DB (Users)
+    
     try:
-        # Load fx history
-        mdp = get_mdp()
-        # We need historical FX for accuracy. 
-        # For now, let's assume the analyzer handles the fetching or uses a fallback?
-        # extract_realized_capital_gains_history signature requires historical_fx_yf
+        cursor = conn.cursor()
         
-        # We need to fetch historical FX for all currencies involved... 
-        # This might be heavy if not cached. 
-        # Let's see if we can get it from mdp.
+        # Check if username exists
+        cursor.execute("SELECT id FROM users WHERE username = ?", (user.username,))
+        if cursor.fetchone():
+            raise HTTPException(status_code=400, detail="Username already registered")
         
-        # For simplicity/speed in this endpoints, we might rely on the analyzer's internal logic 
-        # if it fetches it, OR we pass an empty dict and let it use current rates/estimates if needed?
-        # Actually `extract_realized_capital_gains_history` takes `historical_fx_yf`.
+        # Hash password
+        hashed_pw = get_password_hash(user.password)
+        created_at = datetime.now().isoformat()
         
-        # Let's fetch relevant FX pairs based on the transaction currencies.
-        currencies = df['Local Currency'].unique()
-        fx_pairs = []
-        for c in currencies:
-            if c != "USD": # Assuming base is USD for store? Or display currency?
-                # The logic usually needs XXXUSD
-                 fx_pairs.append(f"{c}USD=X")
-        
-        hist_fx = {}
-        if fx_pairs:
-             # Fetch 20 years?
-             start_date = date(2000, 1, 1)
-             end_date = date.today()
-             hist_fx, _ = mdp.get_historical_fx_rates(fx_pairs, start_date, end_date)
-             
-        # Also need current rates
-        current_quotes, current_fx, _, _, _ = mdp.get_current_quotes([], set(currencies), user_symbol_map, user_excluded_symbols)
-        
-        gains_df = extract_realized_capital_gains_history(
-            all_transactions_df=df,
-            display_currency=currency,
-            historical_fx_yf=hist_fx,
-            default_currency=config.DEFAULT_CURRENCY,
-            shortable_symbols=config.SHORTABLE_SYMBOLS,
-            include_accounts=accounts,
-            current_fx_rates_vs_usd=current_fx,
-            # Filter by year if needed
-            from_date=date(year, 1, 1) if year else None,
-            to_date=date(year, 12, 31) if year else None
+        cursor.execute(
+            "INSERT INTO users (username, hashed_password, created_at) VALUES (?, ?, ?)",
+            (user.username, hashed_pw, created_at)
         )
+        new_user_id = cursor.lastrowid
+        conn.commit()
         
-        if gains_df.empty:
-            return []
-            
-        return clean_nans(gains_df.to_dict(orient="records"))
+        # --- Initialize User Isolation ---
+        # Create user directory and initialize their portfolio DB
+        user_data_dir = os.path.join(config.get_app_data_dir(), "users", user.username)
+        try:
+             os.makedirs(user_data_dir, exist_ok=True)
+             
+             # Initialize Portfolio DB
+             user_db_path = os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
+             from db_utils import initialize_database
+             
+             # We initialize the DB (creates tables)
+             user_conn = initialize_database(user_db_path)
+             if user_conn:
+                 user_conn.close()
+                 
+             logging.info(f"Initialized isolated environment for user {user.username}")
+             
+        except Exception as e:
+             # Rollback user creation if environment setup fails?
+             # Ideally yes, but global DB commit already happened.
+             # We log critical error.
+             logging.error(f"Failed to initialize user environment for {user.username}: {e}")
+             # Proceed? Or fail? The user exists but has no DB.
+             # Let's try to fail harder or just logging.
+             # Re-raising might be better so user knows it failed.
+             raise HTTPException(status_code=500, detail="Failed to initialize user data environment")
 
+        return User(id=new_user_id, username=user.username, is_active=True, created_at=created_at)
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logging.error(f"Error calculating capital gains: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        # conn via dependency is closed by dependency, but we can try rollback if active transaction
+        # But usually exception triggers 500.
+        logging.error(f"Registration error: {e}")
+        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
+
+@router.post("/auth/login", response_model=Token)
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), conn: sqlite3.Connection = Depends(get_global_db_connection)):
+    # conn is GLOBAL DB
+    
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, username, hashed_password FROM users WHERE username = ?", (form_data.username,))
+    row = cursor.fetchone()
+    
+    if not row or not verify_password(form_data.password, row[2]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token_expires = timedelta(minutes=config.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": row[1], "id": row[0]}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@router.get("/auth/me", response_model=User)
+async def read_users_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+# --- End Auth Routes ---
+
+
 
 
 @router.get("/asset_change")
@@ -297,7 +323,8 @@ async def _calculate_portfolio_summary_internal(
     currency: str = "USD",
     include_accounts: Optional[List[str]] = None,
     show_closed_positions: bool = True,
-    data: tuple = None
+    data: tuple = None,
+    current_user: User = None
 ) -> Dict[str, Any]:
     """Internal helper to calculate portfolio summary data."""
     (
@@ -314,10 +341,27 @@ async def _calculate_portfolio_summary_internal(
         return {"metrics": {}, "rows": []}
 
     # Extract interest settings - RELOAD FRESH TO AVOID STALE CACHE
-    config_manager = get_config_manager()
-    config_manager.load_manual_overrides()
-    account_interest_rates = config_manager.manual_overrides.get("account_interest_rates", {})
-    interest_free_thresholds = config_manager.manual_overrides.get("interest_free_thresholds", {})
+    # Extract interest settings - RELOAD FRESH TO AVOID STALE CACHE
+    if current_user:
+        config_manager = get_config_manager(current_user)
+    else:
+        # Fallback if no user passed (should not happen in protected routes)
+        # We rely on default behavior of get_config_manager ONLY if called via dependency injection context which is not here.
+        # So we must raise error or handle it.
+        # But wait, get_config_manager default IS Depends(get_current_user).
+        # We cannot call it without arguments here.
+        logging.error("Missing current_user in _calculate_portfolio_summary_internal")
+        # Attempt to recover or fail?
+        # Let's try to get it from data if possible? No.
+        # We will assume callers always pass it. But for safety, we return empty config if missing.
+        account_interest_rates = {}
+        interest_free_thresholds = {}
+        config_manager = None
+    
+    if config_manager:
+        config_manager.load_manual_overrides()
+        account_interest_rates = config_manager.manual_overrides.get("account_interest_rates", {})
+        interest_free_thresholds = config_manager.manual_overrides.get("interest_free_thresholds", {})
 
     # --- Caching Logic ---
     # Create a unique key for this request configuration + data state
@@ -403,7 +447,8 @@ async def _calculate_portfolio_summary_internal(
 async def get_portfolio_summary(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Returns the high-level portfolio summary (Total Value, G/L, etc.).
@@ -434,7 +479,8 @@ async def get_portfolio_summary(
         summary_data = await _calculate_portfolio_summary_internal(
             currency=currency,
             include_accounts=accounts,
-            data=data
+            data=data,
+            current_user=current_user
         )
         
         overall_summary_metrics = summary_data["metrics"]
@@ -527,7 +573,8 @@ async def get_portfolio_summary(
 async def get_correlation_matrix(
     period: str = "1y",
     accounts: Optional[List[str]] = Query(None),
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Returns the correlation matrix for the current portfolio holdings.
@@ -568,7 +615,8 @@ async def get_correlation_matrix(
             currency="USD", 
             include_accounts=accounts,
             show_closed_positions=False,
-            data=data
+            data=data,
+            current_user=current_user
         )
         
         holdings_dict = summary_data.get("holdings_dict", {})
@@ -706,7 +754,8 @@ async def get_holdings(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),
     show_closed: bool = Query(False),
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Returns the list of current holdings.
@@ -741,7 +790,8 @@ async def get_holdings(
             currency=currency,
             include_accounts=accounts,
             show_closed_positions=show_closed, # Pass the parameter
-            data=data
+            data=data,
+            current_user=current_user
         )
         
         summary_df = summary_data.get("summary_df")
@@ -1726,6 +1776,7 @@ async def get_stock_history(
         logging.error(f"Error serving stock history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/capital_gains")
 async def get_capital_gains(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),
@@ -1909,7 +1960,8 @@ async def get_dividends(
 async def get_projected_income(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Returns projected monthly dividend income for the next 12 months.
@@ -1920,7 +1972,8 @@ async def get_projected_income(
             currency=currency,
             include_accounts=accounts,
             show_closed_positions=False,
-            data=data
+            data=data,
+            current_user=current_user
         )
         summary_df = summary_data.get("summary_df")
         if summary_df is None or summary_df.empty:
@@ -2049,7 +2102,7 @@ async def get_projected_income(
             # (data[1] might be stale if dependency cache invalidation lags)
             raw_df = data[0]
             
-            config_manager = get_config_manager()
+            config_manager = get_config_manager(current_user)
             config_manager.load_manual_overrides()
             interest_rates = config_manager.manual_overrides.get("account_interest_rates", {})
             thresholds = config_manager.manual_overrides.get("interest_free_thresholds", {})
@@ -2093,7 +2146,8 @@ async def get_projected_income(
 async def get_stock_analysis(
     symbol: str,
     force: bool = Query(False),
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
+    db_conn: sqlite3.Connection = Depends(get_user_db_connection)
 ):
     """
     Returns AI-powered stock analysis for a given symbol.
@@ -2101,6 +2155,17 @@ async def get_stock_analysis(
     try:
         (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
         yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols) or symbol
+        
+        # ... logic ...
+        # Note: I am replacing the header + the call site? 
+        # Multi-replace works on blocks. 
+        # I cannot easily replace header AND call site if they are far apart (2194 vs 2250).
+        # Ah. 2194 and 2250 are 50 lines apart.
+        # I should split this into 2 chunks.
+        pass
+
+# Chunk 1: Header
+
         
         mdp = get_mdp()
         # 1. Fetch Fundamentals
@@ -2146,7 +2211,7 @@ async def get_stock_analysis(
             info_for_update["valuation_details"] = iv_json
 
             # Update cache so screener table reads it next time (or live update listens to it)
-            db_conn = get_db_connection()
+            # db_conn is injected
             if db_conn:
                 update_intrinsic_value_in_cache(
                     db_conn,
@@ -2377,7 +2442,8 @@ async def get_risk_metrics(
 async def get_attribution(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Returns performance attribution by sector and stock.
@@ -2391,7 +2457,8 @@ async def get_attribution(
         summary_data = await _calculate_portfolio_summary_internal(
             currency=currency,
             include_accounts=accounts,
-            data=data
+            data=data,
+            current_user=current_user
         )
         
         summary_df = summary_data.get("summary_df")
@@ -2536,7 +2603,8 @@ def calculate_mtd_average_daily_balance(
 async def get_dividend_calendar(
     accounts: Optional[List[str]] = Query(None),
     data: tuple = Depends(get_transaction_data),
-    config_manager = Depends(get_config_manager)
+    config_manager = Depends(get_config_manager),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Returns confirmed AND estimated dividend events for the next 12 months.
@@ -2550,7 +2618,8 @@ async def get_dividend_calendar(
         summary_data = await _calculate_portfolio_summary_internal(
             include_accounts=accounts, 
             show_closed_positions=False, 
-            data=data
+            data=data,
+            current_user=current_user
         )
         summary_df = summary_data.get("summary_df")
         if summary_df is None or summary_df.empty:
@@ -2876,7 +2945,8 @@ async def get_ratios_endpoint(
 async def get_intrinsic_value_endpoint(
     symbol: str,
     data: tuple = Depends(get_transaction_data),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    config_manager: ConfigManager = Depends(get_config_manager),
+    db_conn: sqlite3.Connection = Depends(get_user_db_connection)
 ):
     """Returns calculated intrinsic value results for a symbol."""
     logging.info(f"CALCULATING INTRINSIC VALUE FOR {symbol} - CODE VERSION: 1.1 (CAPS ENABLED)")
@@ -2903,7 +2973,7 @@ async def get_intrinsic_value_endpoint(
         
         # Sync to screener cache
         try:
-            db_conn = get_db_connection()
+            # db_conn injected
             if db_conn:
                 if info:
                     info["valuation_details"] = results
@@ -2939,6 +3009,7 @@ class ManualOverrideRequest(BaseModel):
 @router.post("/settings/manual_overrides")
 async def update_manual_override(
     override: ManualOverrideRequest,
+    current_user: User = Depends(get_current_user),
     config_manager: ConfigManager = Depends(get_config_manager)
 ):
     """
@@ -3018,7 +3089,8 @@ class WebhookRefreshRequest(BaseModel):
 async def get_portfolio_health(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Returns a comprehensive portfolio health score and breakdown.
@@ -3029,7 +3101,8 @@ async def get_portfolio_health(
             currency=currency,
             include_accounts=accounts,
             show_closed_positions=False,
-            data=data
+            data=data,
+            current_user=current_user
         )
         summary_df = summary_data.get("summary_df")
         
@@ -3138,63 +3211,61 @@ class WatchlistRename(BaseModel):
     name: str
 
 @router.get("/watchlists")
-async def get_watchlists_endpoint():
+async def get_watchlists_endpoint(
+    current_user: User = Depends(get_current_user), 
+    conn: sqlite3.Connection = Depends(get_user_db_connection)
+):
     """Fetches all available watchlists."""
-    conn = get_db_connection()
-    if not conn:
-         raise HTTPException(status_code=500, detail="Database connection failed")
-    try:
-        return get_all_watchlists(conn)
-    finally:
-        conn.close()
+    # conn injected
+    return get_all_watchlists(conn, user_id=current_user.id)
 
 @router.post("/watchlists")
-async def create_watchlist_endpoint(item: WatchlistCreate):
+async def create_watchlist_endpoint(
+    item: WatchlistCreate, 
+    current_user: User = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_user_db_connection)
+):
     """Creates a new watchlist."""
-    conn = get_db_connection()
-    if not conn:
-         raise HTTPException(status_code=500, detail="Database connection failed")
-    try:
-        new_id = create_watchlist(conn, item.name)
-        if not new_id:
-             raise HTTPException(status_code=500, detail="Failed to create watchlist")
-        return {"id": new_id, "name": item.name}
-    finally:
-        conn.close()
+    # conn injected
+    new_id = create_watchlist(conn, item.name, user_id=current_user.id)
+    if not new_id:
+            raise HTTPException(status_code=500, detail="Failed to create watchlist")
+    return {"id": new_id, "name": item.name}
 
 @router.put("/watchlists/{watchlist_id}")
-async def rename_watchlist_endpoint(watchlist_id: int, item: WatchlistRename):
+async def rename_watchlist_endpoint(
+    watchlist_id: int, 
+    item: WatchlistRename, 
+    current_user: User = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_user_db_connection)
+):
     """Renames a watchlist."""
-    conn = get_db_connection()
-    if not conn:
-         raise HTTPException(status_code=500, detail="Database connection failed")
-    try:
-        success = rename_watchlist(conn, watchlist_id, item.name)
-        if not success:
-             raise HTTPException(status_code=404, detail="Watchlist not found or failed to rename")
-        return {"status": "success"}
-    finally:
-        conn.close()
+    # conn injected
+    success = rename_watchlist(conn, watchlist_id, item.name, user_id=current_user.id)
+    if not success:
+            raise HTTPException(status_code=404, detail="Watchlist not found or failed to rename")
+    return {"status": "success"}
 
 @router.delete("/watchlists/{watchlist_id}")
-async def delete_watchlist_endpoint(watchlist_id: int):
+async def delete_watchlist_endpoint(
+    watchlist_id: int, 
+    current_user: User = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_user_db_connection)
+):
     """Deletes a watchlist."""
-    conn = get_db_connection()
-    if not conn:
-         raise HTTPException(status_code=500, detail="Database connection failed")
-    try:
-        success = delete_watchlist(conn, watchlist_id)
-        if not success:
-             raise HTTPException(status_code=404, detail="Watchlist not found or failed to delete")
-        return {"status": "success"}
-    finally:
-        conn.close()
+    # conn injected
+    success = delete_watchlist(conn, watchlist_id, user_id=current_user.id)
+    if not success:
+            raise HTTPException(status_code=404, detail="Watchlist not found or failed to delete")
+    return {"status": "success"}
 
 @router.get("/watchlist")
 async def get_watchlist_endpoint(
     watchlist_id: int = Query(1, alias="id"),
     currency: str = "USD",
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_user_db_connection)
 ):
     """
     Fetches the watchlist enriched with current market prices.
@@ -3209,11 +3280,24 @@ async def get_watchlist_endpoint(
         _
     ) = data
 
-    conn = get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=500, detail="Database connection failed")
+    # conn injected
+    # Remove manual check
+    pass
     
     try:
+        # Verify ownership
+        allowed = [w['id'] for w in get_all_watchlists(conn, user_id=current_user.id)]
+        if watchlist_id not in allowed:
+             # Legacy fallback: current code allows accessing watchlist 1. 
+             # If watchlist_id is 1 and it's missing from user list (orphan?), we might face issue.
+             # Registration process assigned orphans to first user. 
+             # So stricter check is fine.
+             if not allowed and watchlist_id == 1: 
+                 # Edge case: No watchlists yet.
+                 pass 
+             else:
+                 return [] # Return empty instead of 404/403 to avoid errors in UI? Or fail?
+
         db_items = get_watchlist(conn, watchlist_id=watchlist_id)
         if not db_items:
             return []
@@ -3271,14 +3355,17 @@ async def get_watchlist_endpoint(
         
         return clean_nans(enriched_items)
     finally:
-        conn.close()
+        # conn close handled by dependency
+        pass
 
 @router.post("/watchlist")
-async def add_to_watchlist_api(item: WatchlistAdd):
+async def add_to_watchlist_api(
+    item: WatchlistAdd, 
+    current_user: User = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_user_db_connection)
+):
     """Adds a symbol to the watchlist."""
-    conn = get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=500, detail="Database connection failed")
+    # conn injected
     try:
         symbol_upper = item.symbol.strip().upper()
         if not symbol_upper:
@@ -3286,27 +3373,50 @@ async def add_to_watchlist_api(item: WatchlistAdd):
             
         # Use provided watchlist_id or default to 1
         wl_id = item.watchlist_id or 1
+        
+        # Verify ownership
+        allowed = [w['id'] for w in get_all_watchlists(conn, user_id=current_user.id)]
+        if wl_id not in allowed:
+            # If user has no watchlists, and asks for 1? 
+            # We strictly enforce that the watchlist must belong to user. 
+            # If user has no watchlists, they should create one. 
+            # BUT: Legacy behavior was default id=1. 
+            # Migration created watchlist 1 for user 1. 
+            # New users might not have watchlist 1. 
+            # Frontend should create watchlist if needed.
+            # We return 403.
+            raise HTTPException(status_code=403, detail="Not authorized to modify this watchlist. Please create a watchlist first.")
             
         success = add_to_watchlist(conn, symbol_upper, item.note, watchlist_id=wl_id)
         if not success:
             raise HTTPException(status_code=500, detail="Failed to add to watchlist")
         return {"status": "success"}
     finally:
-        conn.close()
+        # conn close handled by dependency
+        pass
 
 @router.delete("/watchlist/{symbol}")
-async def remove_from_watchlist_api(symbol: str, watchlist_id: int = Query(1, alias="id")):
+async def remove_from_watchlist_api(
+    symbol: str, 
+    watchlist_id: int = Query(1, alias="id"), 
+    current_user: User = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_user_db_connection)
+):
     """Removes a symbol from the watchlist."""
-    conn = get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=500, detail="Database connection failed")
+    # conn injected
     try:
+        # Verify ownership
+        allowed = [w['id'] for w in get_all_watchlists(conn, user_id=current_user.id)]
+        if watchlist_id not in allowed:
+            raise HTTPException(status_code=403, detail="Not authorized to modify this watchlist")
+            
         success = remove_from_watchlist(conn, symbol.strip().upper(), watchlist_id=watchlist_id)
         if not success:
             raise HTTPException(status_code=500, detail="Failed to remove from watchlist")
-        return {"status": "success"}
+        return {"success": True} # Legacy return format? Standardize to status success
     finally:
-        conn.close()
+        # conn close handled by dependency
+        pass
 @router.post("/clear_cache")
 async def clear_cache():
     """Clears all application caches (files and in-memory)."""

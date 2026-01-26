@@ -30,6 +30,11 @@ FMP_API_KEY = os.getenv("FMP_API_KEY") # Prioritize ENV
 # Gemini API Key for AI Stock Analysis
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
+# --- Authentication Configuration ---
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7") # Fallback for dev only!
+AUTH_ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 43200 # 30 days
+
 # --- Cache Configuration ---
 HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX = "yf_portfolio_hist_raw_adjusted_v2"
 DAILY_RESULTS_CACHE_PATH_PREFIX = (
@@ -55,65 +60,23 @@ ORG_NAME = "StockAlchemist"  # Used for cache path consistency
 def get_app_data_dir() -> str:
     """
     Returns the centralized application data directory.
-    - macOS: Standard AppDataLocation (~/Library/Application Support/StockAlchemist/Investa)
-    - Linux: Consolidated hidden folder in home (~/.investa)
-    - Windows: Standard AppDataLocation (~/AppData/Roaming/StockAlchemist/Investa)
+    - Updated to use Project Root 'data' folder for better portability and user isolation.
     """
+    # Use 'data' directory in the project root
+    # Project Structure: /src/server/main.py -> project_root/src/server/main.py
+    # we want project_root/data
+    
+    current_file = os.path.abspath(__file__)
+    # config.py is in src/, so go up one level to 'Investa' root
+    project_root = os.path.dirname(os.path.dirname(current_file))
+    
+    data_path = os.path.join(project_root, "data")
     try:
-        from PySide6.QtCore import QStandardPaths
-        pyside_available = True
-    except ImportError:
-        pyside_available = False
-
-    system = platform.system()
-
-    # Priority 1: Consolidated Linux behavior
-    if system == "Linux":
-        home = os.path.expanduser("~")
-        linux_path = os.path.join(home, f".{APP_NAME.lower()}")
-        try:
-            os.makedirs(linux_path, exist_ok=True)
-            return linux_path
-        except Exception:
-            pass  # Fallthrough to standard logic if mkdir fails
-
-    # Priority 2: Standard OS-specific logic via PySide if available
-    if pyside_available:
-        path = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
-        if not path:
-            path = QStandardPaths.writableLocation(QStandardPaths.AppConfigLocation)
-
-        if path:
-            # If QStandardPaths didn't include the app name (common in scripts), append it manually
-            expected_suffix = os.path.join(ORG_NAME, APP_NAME)
-            if APP_NAME not in path:
-                path = os.path.join(path, expected_suffix)
-            
-            try:
-                os.makedirs(path, exist_ok=True)
-                return path
-            except Exception:
-                pass
-
-    # Priority 2b: macOS Standard Library Path (Fallback if PySide is not available)
-    if system == "Darwin":
-        home = os.path.expanduser("~")
-        mac_path = os.path.join(home, "Library", "Application Support", ORG_NAME, APP_NAME)
-        try:
-            os.makedirs(mac_path, exist_ok=True)
-            return mac_path
-        except Exception:
-            pass
-
-    # Priority 3: Cross-platform fallback based on HOME
-    home = os.path.expanduser("~")
-    fallback_path = os.path.join(home, f".{APP_NAME.lower()}")
-    try:
-        os.makedirs(fallback_path, exist_ok=True)
-        return fallback_path
+        os.makedirs(data_path, exist_ok=True)
+        return data_path
     except Exception:
-        # Final fallback: current working directory
-        return os.getcwd()
+        # Fallback to CWD if permission issues (though unlikely in execution env)
+        return os.path.join(os.getcwd(), "data")
 
 
 def get_app_cache_dir() -> Optional[str]:
@@ -223,13 +186,12 @@ DIVIDEND_CHART_DEFAULT_PERIODS_MONTHLY = 24  # (2 years)
 DEBOUNCE_INTERVAL_MS = (
     400  # Debounce interval for live table filtering (e.g., holdings table)
 )
-MANUAL_OVERRIDES_FILENAME = (
-    "manual_overrides.json"  # Filename for manual overrides (prices, sectors, etc.)
-)
-
-DEFAULT_API_KEY = (
-    ""  # Default API key (e.g., for FMP, though currently unused by yfinance logic)
-)
+GLOBAL_DB_FILENAME = "global.db"
+PORTFOLIO_DB_FILENAME = "portfolio.db"
+DEFAULT_CSV = "my_transactions.csv"
+MANUAL_OVERRIDES_FILENAME = "manual_overrides.json"
+GUI_CONFIG_FILENAME = "gui_config.json"
+DEFAULT_API_KEY = ""
 
 # --- Asset Allocation & Symbol Settings ---
 STANDARD_ASSET_TYPES = [

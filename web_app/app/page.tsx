@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import {
   fetchSummary,
@@ -53,7 +55,7 @@ const ScreenerView = dynamic(() => import('@/components/ScreenerView'));
 
 
 import { useTheme } from 'next-themes';
-import { Home as HomeIcon, BarChart3, Settings as SettingsIcon, Moon, Sun } from 'lucide-react';
+import { Home as HomeIcon, BarChart3, Settings as SettingsIcon, Moon, Sun, LogOut } from 'lucide-react';
 const LayoutConfigurator = dynamic(() => import('@/components/LayoutConfigurator'));
 
 // Static import for ThemeToggle since it's in the sidebar always visible? OR lazy load it? 
@@ -65,6 +67,15 @@ const ThemeToggle = dynamic(() => import('@/components/ThemeToggle'));
 
 export default function Home() {
   const { theme, setTheme } = useTheme();
+  const { user, isLoading: authLoading, logout } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, authLoading, router]);
+
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [currency, setCurrency] = useState('USD');
   const [activeTab, setActiveTab] = useState('performance');
@@ -471,6 +482,14 @@ export default function Home() {
     setMounted(true);
   }, []);
 
+  if (authLoading || !user) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-pulse text-muted-foreground">Loading Investa...</div>
+      </div>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-background pb-20 selection:bg-cyan-500/20 selection:text-cyan-500">
       <div className="fixed inset-0 z-[-1] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-background to-background pointer-events-none" />
@@ -489,9 +508,17 @@ export default function Home() {
           />
         </div>
 
-        <div className="mt-auto space-y-4 pb-4">
+        <div className="mt-auto flex flex-col items-center gap-4 pb-4">
+          <button
+            onClick={() => user && logout()}
+            className="p-2 text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all duration-300"
+            title="Log Out"
+          >
+            <LogOut className="w-5 h-5" />
+          </button>
           <ThemeToggle />
         </div>
+
       </aside>
 
       <CommandPalette

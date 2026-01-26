@@ -879,12 +879,7 @@ def get_historical_price(
                       
              res = df.asof(target_ts)
             
-             if symbol_key == "AMZN":
-                 # Only log a few samples to avoid log bloat
-                 import random
-                 if random.random() < 0.05: # 5% sample
-                     with open("/tmp/investa_debug.log", "a") as f_log:
-                         f_log.write(f"LOOKUP AMZN: target={target_ts}, asof_res={res}\n")
+
             
         except (TypeError, ValueError) as e_asof:
              logging.debug(f"AsOf initial fail for {symbol_key} on {target_date}: {e_asof}")

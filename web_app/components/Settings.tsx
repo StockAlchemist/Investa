@@ -8,6 +8,8 @@ import { COUNTRIES, ALL_INDUSTRIES } from '../lib/constants';
 import AccountGroupManager from './AccountGroupManager';
 import ManualValuationSettings from './ManualValuationSettings';
 
+import { useAuth } from '../context/AuthContext';
+
 type Tab = 'overrides' | 'mapping' | 'excluded' | 'groups' | 'currencies' | 'yield' | 'valuation';
 
 // --- Constants (Mirrored from config.py) ---
@@ -49,6 +51,7 @@ interface SettingsProps {
 
 export default function Settings({ settings, holdings, availableAccounts }: SettingsProps) {
     const queryClient = useQueryClient();
+    const { logout } = useAuth();
     // Removed local settings state, loading, error, portfolioCountries, availableAccounts (now props/derived)
 
     const [activeTab, setActiveTab] = useState<Tab>('overrides');
@@ -1013,6 +1016,22 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
                             </p>
                         )}
                     </div>
+                </div>
+            </div>
+            {/* Sign Out Section (Visible on all devices, but primary for mobile/tablet) */}
+            <div className="bg-white dark:bg-zinc-950 shadow-sm rounded-xl p-6 border border-border border-l-4 border-l-rose-500">
+                <h2 className="text-lg font-bold mb-4 text-foreground">Account</h2>
+                <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">
+                        Sign out of your account on this device.
+                    </p>
+                    <button
+                        type="button"
+                        onClick={() => logout()}
+                        className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 transition-colors"
+                    >
+                        Sign Out
+                    </button>
                 </div>
             </div>
         </div >

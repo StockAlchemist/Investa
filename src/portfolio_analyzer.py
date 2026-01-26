@@ -860,9 +860,11 @@ def _build_summary_rows(
                     f"Price OK ({symbol}): Using Yahoo price {current_price_local}"
                 )
             elif not is_excluded:
-                logging.warning(
-                    f"Warning: Yahoo price invalid/missing for {symbol}. Trying fallbacks."
-                )
+                # if symbol != "UNH": # Silence specific UNH warnings if needed or just remove log
+                #      # logging.warning(
+                #      #    f"Warning: Yahoo price invalid/missing for {symbol}. Trying fallbacks."
+                #      # )
+                #      pass
                 price_source = "Yahoo Invalid"
                 has_warnings = True
             elif is_excluded:

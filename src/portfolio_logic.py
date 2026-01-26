@@ -151,6 +151,7 @@ try:
         calculate_correlation_matrix,
         extract_realized_capital_gains_history,
         calculate_fifo_lots_and_gains,  # NEW IMPORT
+        extract_dividend_history, # NEW IMPORT
     )
 
     ANALYZER_FUNCTIONS_AVAILABLE = True
@@ -548,12 +549,17 @@ def calculate_portfolio_summary(
             )  # Use same cache config
 
         # Fetch historical FX rates (local_curr vs USD)
-        # report_date is datetime.now().date()
+        # FIX: Use date.today() instead of report_date (latest trading date)
+        # The Capital Gains API uses date.today(), so if we use an earlier date (e.g. Friday),
+        # recent weekend transactions (crypto) or today's transactions will fail FX lookup
+        # and result in NaN gain (0 assumed), causing the Dashboard to be lower.
+        fx_fetch_end_date = date.today()
+
         historical_fx_data_usd_based, fx_fetch_err_hist = (
             market_provider_for_hist_fx.get_historical_fx_rates(
                 fx_pairs_yf=list(set(fx_pairs_to_fetch_hist)),
                 start_date=min_tx_date,
-                end_date=report_date,
+                end_date=fx_fetch_end_date,
                 use_cache=True,
                 # Use stable cache key (no dates) to allow incremental updates
                 # The market_data provider will handle date range checks
@@ -804,15 +810,26 @@ def calculate_portfolio_summary(
     try:
         logging.info("Calculating FIFO Realized Gains & Lots for Dashboard...")
         
+        # Ensure transactions are sorted chronologically and by original index for stable FIFO
+        # This matches the logic in strict capital gains extraction
+        fifo_input_df = all_transactions_df_cleaned.copy()
+        if "original_index" in fifo_input_df.columns:
+             fifo_input_df.sort_values(by=["Date", "original_index"], inplace=True)
+        else:
+             fifo_input_df.sort_values(by=["Date"], inplace=True)
+
         # Call the new function that returns both gains and lots
+        # FAILSAFE CORRECTION: The API endpoint for Capital Gains (get_capital_gains) DOES pass 'current_fx_rates_vs_usd'.
+        # Previously, we thought it didn't and passed None, which caused a discrepancy (Dashboard lower by ~$9k)
+        # because the fallback to current FX for missing historical rates was blocked.
         fifo_realized_gains_df, open_lots_dict = calculate_fifo_lots_and_gains(
-            transactions_df=transactions_df_filtered,
+            transactions_df=fifo_input_df, # Use SORTED FULL history
             display_currency=display_currency,
             historical_fx_yf=historical_fx_data_usd_based,
             default_currency=default_currency,
             shortable_symbols=SHORTABLE_SYMBOLS,
             stock_quantity_close_tolerance=STOCK_QUANTITY_CLOSE_TOLERANCE,
-            current_fx_rates_vs_usd=current_fx_rates_vs_usd,  # Pass current rates for fallback
+            current_fx_rates_vs_usd=current_fx_rates_vs_usd, # Pass the available rates!
         )
         
         # --- DEBUG LOGGING ---
@@ -1230,61 +1247,6 @@ def calculate_portfolio_summary(
         if warn_agg:
             has_warnings = True
 
-        # --- ADDED: Override Aggregate Realized Gains with FIFO Totals ---
-        # This ensures the "Realized Gain" card matches the Capital Gains tab,
-        # even if the table hides closed positions (which have realized gains/losses).
-        if not fifo_realized_gains_df.empty:
-            try:
-                # Filter out user_excluded_symbols from the FIFO sum to match Capital Gains tab
-                # --- MODIFIED: Do NOT filter excluded symbols. User wants them included. ---
-                fifo_df_for_sum = fifo_realized_gains_df
-                # if user_excluded_symbols:
-                #     fifo_df_for_sum = fifo_realized_gains_df[
-                #         ~fifo_realized_gains_df["Symbol"].isin(user_excluded_symbols)
-                #     ]
-
-                # 1. Overall Override
-                total_fifo_gain = fifo_df_for_sum["Realized Gain (Display)"].sum()
-                
-                # Update realized gain
-                old_realized = overall_summary_metrics.get("realized_gain", 0.0)
-                overall_summary_metrics["realized_gain"] = total_fifo_gain
-                overall_summary_metrics["total_realized_gain_display"] = total_fifo_gain # Ensure consistency if key exists
-                
-                # Update Total Gain (Realized + Unrealized + Div - Comm)
-                # Re-calculate to ensure consistency
-                unrealized = overall_summary_metrics.get("unrealized_gain", 0.0)
-                dividends = overall_summary_metrics.get("dividends", 0.0)
-                commissions = overall_summary_metrics.get("commissions", 0.0)
-                
-                new_total_gain = total_fifo_gain + unrealized + dividends - commissions
-                overall_summary_metrics["total_gain"] = new_total_gain
-                
-                logging.info(f"Overrode Dashboard Total Realized Gain: {old_realized} -> {total_fifo_gain} (FIFO, Excl. Filtered)")
-
-                # 2. Account-Level Override
-                fifo_gains_by_account = fifo_df_for_sum.groupby("Account")["Realized Gain (Display)"].sum().to_dict()
-                
-                for acct, metrics in account_level_metrics.items():
-                    # Normalize account name if needed, but usually matches
-                    if acct in fifo_gains_by_account:
-                        acct_fifo_gain = fifo_gains_by_account[acct]
-                        
-                        old_acct_realized = metrics.get("total_realized_gain_display", 0.0)
-                        metrics["total_realized_gain_display"] = acct_fifo_gain
-                        
-                        # Update Total Gain for account
-                        acct_unrealized = metrics.get("total_unrealized_gain_display", 0.0)
-                        acct_dividends = metrics.get("total_dividends_display", 0.0)
-                        acct_commissions = metrics.get("total_commissions_display", 0.0)
-                        
-                        metrics["total_gain_display"] = acct_fifo_gain + acct_unrealized + acct_dividends - acct_commissions
-                        
-                        logging.debug(f"Overrode Account {acct} Realized Gain: {old_acct_realized} -> {acct_fifo_gain}")
-                        
-            except Exception as e_override:
-                logging.error(f"Error overriding aggregate realized gains with FIFO: {e_override}")
-
         # Price source warnings check (as before)
         price_source_warnings = False
         if "Price Source" in full_summary_df.columns:
@@ -1304,6 +1266,178 @@ def calculate_portfolio_summary(
             has_warnings = True
             status_parts.append("Fallback Prices Used")
         summary_df_unfiltered = full_summary_df
+
+    # --- MOVED OUTSIDE if/else: Override Dividends (Consistency with Dividends Tab) ---
+    # This ensures that even if 'summary_df_unfiltered' is empty (closed account), we still calculate correct totals.
+    try:
+            # Extract dividend history using the authoritative function
+            div_history_df = extract_dividend_history(
+                all_transactions_df=transactions_df_filtered, # Use filtered tx
+                display_currency=display_currency,
+                historical_fx_yf=historical_fx_data_usd_based,
+                default_currency=default_currency,
+                include_accounts=include_accounts
+            )
+
+            if not div_history_df.empty:
+                total_dividends_override = div_history_df["DividendAmountDisplayCurrency"].sum()
+                
+                # Override Overall Dividends
+                overall_summary_metrics["dividends"] = total_dividends_override
+                overall_summary_metrics["total_dividends_display"] = total_dividends_override
+                
+                # Recalculate Total Gain (using UNMODIFIED realized/unrealized for now - realized will be updated next)
+                unrealized = overall_summary_metrics.get("unrealized_gain", 0.0)
+                realized = overall_summary_metrics.get("realized_gain", 0.0)
+                commissions = overall_summary_metrics.get("commissions", 0.0)
+                
+                new_total_gain_div = realized + unrealized + total_dividends_override - commissions
+                overall_summary_metrics["total_gain"] = new_total_gain_div
+                
+                # Recalc Total Return %
+                total_buy_cost = overall_summary_metrics.get("total_buy_cost", 0.0)
+                if abs(total_buy_cost) > 1e-9:
+                    overall_summary_metrics["total_return_pct"] = (new_total_gain_div / total_buy_cost) * 100.0
+                elif abs(new_total_gain_div) <= 1e-9:
+                    overall_summary_metrics["total_return_pct"] = 0.0
+
+                # Override Account-Level Dividends
+                divs_by_account = div_history_df.groupby("Account")["DividendAmountDisplayCurrency"].sum().to_dict()
+                
+                # FIX: Ensure all accounts with dividends exist in metrics, creating them if needed (for closed accounts)
+                for acct, div_amt in divs_by_account.items():
+                    if acct not in account_level_metrics:
+                         account_level_metrics[acct] = {
+                             "total_realized_gain_display": 0.0,
+                             "total_unrealized_gain_display": 0.0,
+                             "total_dividends_display": 0.0,
+                             "total_commissions_display": 0.0,
+                             "total_gain_display": 0.0,
+                             "total_buy_cost_display": 0.0,
+                             "total_return_pct": 0.0,
+                             "market_value": 0.0
+                         }
+                    
+                    metrics = account_level_metrics[acct]
+                    metrics["total_dividends_display"] = div_amt
+                    
+                    # Recalculate Account Total Gain
+                    acct_realized = metrics.get("total_realized_gain_display", 0.0)
+                    acct_unrealized = metrics.get("total_unrealized_gain_display", 0.0)
+                    acct_commissions = metrics.get("total_commissions_display", 0.0)
+                    
+                    acct_new_total_gain = acct_realized + acct_unrealized + div_amt - acct_commissions
+                    metrics["total_gain_display"] = acct_new_total_gain
+                    
+                    acct_buy_cost = metrics.get("total_buy_cost_display", 0.0)
+                    if abs(acct_buy_cost) > 1e-9:
+                            metrics["total_return_pct"] = (acct_new_total_gain / acct_buy_cost) * 100.0
+                    elif abs(acct_new_total_gain) <= 1e-9:
+                            metrics["total_return_pct"] = 0.0
+                
+                logging.info(f"Overrode Dashboard Total Dividends: {total_dividends_override} (Legacy Extraction)")
+            else:
+                logging.info("Dividend extraction returned empty. Using default aggregation.")
+                
+    except Exception as e_div:
+            logging.error(f"Error overriding dividends: {e_div}")
+            logging.error(traceback.format_exc())
+
+    # --- MOVED OUTSIDE if/else: Override Aggregate Realized Gains with FIFO Totals ---
+    if not fifo_realized_gains_df.empty:
+        try:
+            fifo_df_for_sum = fifo_realized_gains_df.copy()
+
+            # Filter by Account if specific accounts are requested
+            if include_accounts and isinstance(include_accounts, list):
+                    # Ensure we match account names correctly (case-insensitive usually preferred but stick to strict match if data is clean)
+                    # fifo_realized_gains_df usually has Normalized Upper case accounts? 
+                    # calculate_fifo_lots_and_gains normalizes accounts to upper.
+                    # include_accounts should be normalized too.
+                    # Let's normalize both for safety.
+                    include_norm = [str(a).strip().upper() for a in include_accounts]
+                    fifo_df_for_sum = fifo_df_for_sum[fifo_df_for_sum['Account'].isin(include_norm)]
+                    
+            # 1. Overall Override
+            total_fifo_gain = fifo_df_for_sum["Realized Gain (Display)"].sum()
+            
+            # DEBUG LOGGING for User Issue
+            if include_accounts is None:
+                logging.info(f"debug_agg: All Accounts View. Total FIFO Gain: {total_fifo_gain}")
+                # Log top contributors
+                breakdown = fifo_df_for_sum.groupby("Account")["Realized Gain (Display)"].sum().sort_values(ascending=False)
+                logging.info(f"debug_agg: Breakdown by Account: {breakdown.to_dict()}")
+            else:
+                logging.info(f"debug_agg: Filtered View ({include_accounts}). Total FIFO Gain: {total_fifo_gain}")
+            
+            # Update realized gain
+            old_realized = overall_summary_metrics.get("realized_gain", 0.0)
+            overall_summary_metrics["realized_gain"] = total_fifo_gain
+            overall_summary_metrics["total_realized_gain_display"] = total_fifo_gain
+            
+            # Update Total Gain (Realized + Unrealized + Div - Comm)
+            # Re-calculate to ensure consistency
+            unrealized = overall_summary_metrics.get("unrealized_gain", 0.0)
+            dividends = overall_summary_metrics.get("dividends", 0.0) # Already overridden (if applicable)
+            commissions = overall_summary_metrics.get("commissions", 0.0)
+            
+            new_total_gain = total_fifo_gain + unrealized + dividends - commissions
+            overall_summary_metrics["total_gain"] = new_total_gain
+            
+            # Recalculate Total Return %
+            total_buy_cost = overall_summary_metrics.get("total_buy_cost", 0.0)
+            if abs(total_buy_cost) > 1e-9:
+                overall_summary_metrics["total_return_pct"] = (new_total_gain / total_buy_cost) * 100.0
+            elif abs(new_total_gain) <= 1e-9:
+                overall_summary_metrics["total_return_pct"] = 0.0
+            
+            logging.info(f"Overrode Dashboard Total Realized Gain: {old_realized} -> {total_fifo_gain} (FIFO Local)")
+
+            # 2. Account-Level Override
+            fifo_gains_by_account = fifo_realized_gains_df.groupby("Account")["Realized Gain (Display)"].sum().to_dict()
+            
+            # FIX: Ensure all accounts with gains exist in metrics (Closed Accounts)
+            for acct, acct_fifo_gain in fifo_gains_by_account.items():
+                if include_accounts and isinstance(include_accounts, list):
+                     if str(acct).strip().upper() not in [str(a).strip().upper() for a in include_accounts]:
+                         continue # Skip if not in requested filter
+
+                if acct not in account_level_metrics:
+                         account_level_metrics[acct] = {
+                             "total_realized_gain_display": 0.0,
+                             "total_unrealized_gain_display": 0.0,
+                             "total_dividends_display": 0.0,
+                             "total_commissions_display": 0.0,
+                             "total_gain_display": 0.0,
+                             "total_buy_cost_display": 0.0,
+                             "total_return_pct": 0.0,
+                             "market_value": 0.0
+                         }
+
+                metrics = account_level_metrics[acct]
+                
+                old_acct_realized = metrics.get("total_realized_gain_display", 0.0)
+                metrics["total_realized_gain_display"] = acct_fifo_gain
+                
+                # Update Total Gain for account
+                acct_unrealized = metrics.get("total_unrealized_gain_display", 0.0)
+                acct_dividends = metrics.get("total_dividends_display", 0.0)
+                acct_commissions = metrics.get("total_commissions_display", 0.0)
+                
+                acct_new_total_gain = acct_fifo_gain + acct_unrealized + acct_dividends - acct_commissions
+                metrics["total_gain_display"] = acct_new_total_gain
+                
+                # Update Account Total Return %
+                acct_buy_cost = metrics.get("total_buy_cost_display", 0.0)
+                if abs(acct_buy_cost) > 1e-9:
+                        metrics["total_return_pct"] = (acct_new_total_gain / acct_buy_cost) * 100.0
+                elif abs(acct_new_total_gain) <= 1e-9:
+                        metrics["total_return_pct"] = 0.0
+                
+                # logging.debug(f"Overrode Account {acct} Realized Gain: {old_acct_realized} -> {acct_fifo_gain}")
+                    
+        except Exception as e_override:
+            logging.error(f"Error overriding aggregate realized gains with FIFO: {e_override}")
 
     # --- 8. Filter Closed Positions ---
     summary_df_final = pd.DataFrame()
@@ -1455,14 +1589,7 @@ def _unadjust_prices(
         # --- DEBUG FLAG ---
         IS_DEBUG_SYMBOL = yf_symbol == "AAPL"
         
-        if yf_symbol == "AMZN":
-            with open("/tmp/investa_debug.log", "a") as f_log:
-                f_log.write(f"\n--- TRYING UNADJUST AMZN (input points={len(adj_price_df)}) ---\n")
-                jan2_pts = adj_price_df[adj_price_df.index.date == date(2026, 1, 2)]
-                f_log.write(f"Jan 2 points in ADJUSTED input: {len(jan2_pts)}\n")
-                if len(jan2_pts) > 1:
-                    f_log.write(f"Jan 2 unique prices: {jan2_pts['price'].nunique()}\n")
-                    f_log.write(f"Jan 2 first 5 index: {jan2_pts.index[:5].tolist()}\n")
+
 
         # --- Handle Empty/Invalid Input DataFrame ---
         col_to_use = None
@@ -1606,13 +1733,7 @@ def _unadjust_prices(
         result_df = unadj_df[["unadjusted_price"]].rename(columns={"unadjusted_price": "price"})
         unadjusted_prices_yf[yf_symbol] = result_df
         
-        if yf_symbol == "AMZN":
-            today_points = result_df[result_df.index >= pd.Timestamp(get_est_today(), tz='UTC')]
-            with open("/tmp/investa_debug.log", "a") as f_log:
-                f_log.write(f"\n--- UNADJUSTED AMZN TODAY (points={len(today_points)}) ---\n")
-                if not today_points.empty:
-                    f_log.write(f"First 5: {today_points.index[:5].tolist()}\n")
-                    f_log.write(f"Unique prices: {today_points['price'].nunique()}\n")
+
     logging.info(
         f"--- Finished Price Unadjustment ({unadjusted_count} symbols processed with splits) ---"
     )
@@ -4090,14 +4211,7 @@ def _value_daily_holdings_vectorized(
     # Initialize with NaNs
     daily_prices_aligned = np.full((num_days, num_symbols), np.nan, dtype=np.float64)
     
-    with open("/tmp/investa_debug.log", "a") as f_log:
-        f_log.write(f"\n--- VALUATION START ---\n")
-        f_log.write(f"num_days={num_days}, num_symbols={num_symbols}\n")
-        f_log.write(f"Internal map keys: {list(internal_to_yf_map.keys())[:20]}...\n")
-        if historical_prices_yf_unadjusted:
-            first_key = list(historical_prices_yf_unadjusted.keys())[0]
-            f_log.write(f"Sample price keys: {list(historical_prices_yf_unadjusted.keys())[:5]}\n")
-            f_log.write(f"Sample columns for {first_key}: {historical_prices_yf_unadjusted[first_key].columns}\n")
+
     
     # Iterate symbols to fill prices
     # This loop is cheap (N_symbols ~ hundreds)
@@ -4128,13 +4242,7 @@ def _value_daily_holdings_vectorized(
                 aligned_series = price_series.reindex(date_range, method='ffill')
                 daily_prices_aligned[:, sym_id] = aligned_series.values
                 
-                if yf_symbol and yf_symbol.upper() == "AMZN":
-                    # Unconditional print for terminal visibility
-                    with open("/tmp/investa_debug.log", "a") as f_log:
-                        f_log.write(f"\n--- ALIGNED PRICES for AMZN (len={len(aligned_series)}) ---\n")
-                        f_log.write(f"Unique aligned: {aligned_series.nunique()}\n")
-                        jan2_aligned = aligned_series[aligned_series.index.date == date(2026, 1, 2)]
-                        f_log.write(f"Jan 2 aligned unique: {jan2_aligned.nunique()}\n")
+
 
     # 2. Check for missing prices and fill with Last Price if valid
     # We will handle fallback during calculation.
@@ -6013,9 +6121,7 @@ def calculate_historical_performance(
         status_parts.append("L1 Cache Error")
         has_errors = True  # This is a critical failure
 
-    with open("/tmp/investa_debug.log", "a") as f_log:
-        f_log.write(f"\n--- FETCH START ---\n")
-        f_log.write(f"Interval: {interval}, requested symbols: {symbols_for_stocks_and_benchmarks_yf}\n")
+
 
     # --- 3. Load or Fetch ADJUSTED Historical Raw Data ---
     # We always fetch daily data for the FULL range to support valuation baseline.

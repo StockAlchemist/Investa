@@ -39,6 +39,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+def on_startup():
+    from db_utils import initialize_database, get_db_connection
+    # Ensure DB is initialized
+    initialize_database()
+
 app.include_router(api_router, prefix="/api")
 
 @app.get("/")

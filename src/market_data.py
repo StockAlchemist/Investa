@@ -1018,40 +1018,80 @@ class MarketDataProvider:
         fx_pairs = [f"{c}=X" for c in required_currencies if c != "USD"]
         
         if fx_pairs:
-            logging.info(f"Fetching FX for {len(fx_pairs)} pairs...")
+            logging.info(f"Fetching FX for {len(fx_pairs)} pairs using history...")
             try:
-                # Use sequential Tickers check for FX to ensure we get directionality correctly
-                # (Same logic as original roughly, but simplified)
-                # Use isolated fetch for FX info
-                fx_info_batch = _run_isolated_fetch(fx_pairs, task="info")
-                for yf_symbol, info in fx_info_batch.items():
-                    if info:
-                        price = info.get("regularMarketPrice") or info.get("previousClose") # Fallback
-                        prev = info.get("previousClose")
-                        quote_currency = info.get("currency")
+                # Use history fetch for FX as it is more reliable than info/metadata
+                fx_history_df = _run_isolated_fetch(
+                    fx_pairs, 
+                    period="5d", # Fetch last 5 days to ensure we get a valid close (even over weekends)
+                    interval="1d",
+                    task="history"
+                )
+                
+                if not fx_history_df.empty:
+                    # Handle MultiIndex columns if multiple tickers
+                    has_multilevel_fx = getattr(fx_history_df.columns, 'nlevels', 1) > 1
+                    
+                    for yf_symbol in fx_pairs:
+                        try:
+                            price = None
+                            prev = None
                             
-                        base_curr_from_symbol = yf_symbol.replace("=X", "").upper()
+                            # Extract Series for this symbol
+                            # Extract Series for this symbol
+                            sym_df_fx = pd.DataFrame()
                             
-                        # For symbols like "EUR=X", "THB=X", "JPY=X":
-                        # The price returned by yfinance is consistently "Units of Currency per 1 USD".
-                        # E.g. THB=X -> 34.0 (34 THB = 1 USD).
-                        # E.g. EUR=X -> 0.85 (0.85 EUR = 1 USD).
-                        # finutils.get_conversion_rate expects "Units per USD".
-                        # Therefore, we store the price directly.
+                            # Check if the dataframe has MultiIndex columns (Level 0 = Ticker)
+                            if has_multilevel_fx:
+                                if yf_symbol in fx_history_df.columns.get_level_values(0):
+                                    sym_df_fx = fx_history_df[yf_symbol]
+                            else:
+                                # Flat dataframe.
+                                # If we requested multiple symbols, we can't easily distinguish unless columns have names
+                                # But if we requested only 1, it must be it.
+                                if len(fx_pairs) == 1:
+                                    sym_df_fx = fx_history_df
+                                # Else (multiple symbols but flat): 
+                                # This happens if yf failed to group, or columns are like 'Close' and it's ambiguous.
+                                # We'll skip or try to match prefix if columns are 'THB=X Close' (unlikely with auto_adjust)
                             
-                        if price and price > 0:
-                            fx_rates_vs_usd[base_curr_from_symbol] = price
-                            if prev and prev > 0:
-                                fx_prev_close_vs_usd[base_curr_from_symbol] = prev
-                        else:
-                            logging.warning(f"FX Fetch: Invalid price {price} for FX {yf_symbol}")
-                            has_warnings = True # Mark that we had a warning
-                    else:
-                        logging.warning(f"FX Fetch: No data returned for {yf_symbol}")
-                        has_warnings = True # Mark that we had a warning
+                            if not sym_df_fx.empty:
+                                close_col = "Close" if "Close" in sym_df_fx.columns else (sym_df_fx.columns[0] if len(sym_df_fx.columns) > 0 else None)
+                                
+                                if close_col:
+                                    # Get valid rows
+                                    valid_rows = sym_df_fx[close_col].dropna()
+                                    if not valid_rows.empty:
+                                        # Use last available close as current price
+                                        price = float(valid_rows.iloc[-1])
+                                        
+                                        # Try to get previous close
+                                        if len(valid_rows) >= 2:
+                                            prev = float(valid_rows.iloc[-2])
+                                        else:
+                                            prev = price # Fallback
+
+                            base_curr_from_symbol = yf_symbol.replace("=X", "").upper()
+                                
+                            if price and price > 0:
+                                fx_rates_vs_usd[base_curr_from_symbol] = price
+                                if prev and prev > 0:
+                                    fx_prev_close_vs_usd[base_curr_from_symbol] = prev
+                            else:
+                                logging.warning(f"FX Fetch: Invalid/Empty history for {yf_symbol}")
+                                has_warnings = True
+
+                        except Exception as e_fx_sym:
+                            logging.warning(f"Error extracting FX for {yf_symbol}: {e_fx_sym}")
+                            
+                else:
+                    logging.warning("FX Fetch: History returned empty DataFrame.")
+                    has_warnings = True
 
             except Exception as e_fx:
                 logging.error(f"FX fetch error: {e_fx}")
+
+
         
 
         # --- 5. Save Cache ---

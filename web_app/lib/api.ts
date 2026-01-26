@@ -15,6 +15,26 @@ const getApiBaseUrl = () => {
 
 const API_BASE_URL = getApiBaseUrl();
 
+const getAuthHeaders = () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
+    return token ? { 'Authorization': `Bearer ${token}` } : {};
+};
+
+const authFetch = async (url: string, options: RequestInit = {}) => {
+    const headers = {
+        ...getAuthHeaders(),
+        ...(options.headers || {}),
+    } as HeadersInit;
+
+    // Auto-redirect on 401?
+    // If we receive 401, we should probably clear token and redirect.
+    // However, api.ts is not a react component. 
+    // We can rely on the UI components (React Query) to handle errors, or dispatch a custom event.
+    // For now, let's just pass the 401 through, and AuthContext or specific components will handle it.
+
+    return fetch(url, { ...options, headers });
+};
+
 export interface PortfolioSummary {
     metrics: {
         market_value: number;
@@ -94,7 +114,7 @@ export async function fetchSummary(currency: string = 'USD', accounts?: string[]
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
-    const res = await fetch(`${API_BASE_URL}/summary?${params.toString()}`, { signal, cache: 'no-store' });
+    const res = await authFetch(`${API_BASE_URL}/summary?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch summary');
     return res.json();
 }
@@ -107,7 +127,7 @@ export async function fetchHoldings(currency: string = 'USD', accounts?: string[
     if (showClosed) {
         params.append('show_closed', 'true');
     }
-    const res = await fetch(`${API_BASE_URL}/holdings?${params.toString()}`, { signal, cache: 'no-store' });
+    const res = await authFetch(`${API_BASE_URL}/holdings?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch holdings');
     return res.json();
 }
@@ -128,7 +148,7 @@ export async function fetchTransactions(accounts?: string[], signal?: AbortSigna
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
-    const res = await fetch(`${API_BASE_URL}/transactions?${params.toString()}`, { signal, cache: 'no-store' });
+    const res = await authFetch(`${API_BASE_URL}/transactions?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch transactions');
     return res.json();
 }
@@ -141,7 +161,7 @@ export interface StatusResponse {
 }
 
 export async function addTransaction(transaction: Transaction): Promise<StatusResponse> {
-    const response = await fetch(`${API_BASE_URL}/transactions`, {
+    const response = await authFetch(`${API_BASE_URL}/transactions`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -155,7 +175,7 @@ export async function addTransaction(transaction: Transaction): Promise<StatusRe
 }
 
 export async function updateTransaction(id: number, transaction: Transaction): Promise<StatusResponse> {
-    const response = await fetch(`${API_BASE_URL}/transactions/${id}`, {
+    const response = await authFetch(`${API_BASE_URL}/transactions/${id}`, {
         method: "PUT",
         headers: {
             "Content-Type": "application/json",
@@ -169,7 +189,7 @@ export async function updateTransaction(id: number, transaction: Transaction): P
 }
 
 export async function deleteTransaction(id: number): Promise<StatusResponse> {
-    const response = await fetch(`${API_BASE_URL}/transactions/${id}`, {
+    const response = await authFetch(`${API_BASE_URL}/transactions/${id}`, {
         method: "DELETE",
     });
     if (!response.ok) {
@@ -198,7 +218,7 @@ export async function fetchHistory(
     if (fromDate) params.append('from', fromDate);
     if (toDate) params.append('to', toDate);
 
-    const res = await fetch(`${API_BASE_URL}/history?${params.toString()}`, { signal, cache: 'no-store' });
+    const res = await authFetch(`${API_BASE_URL}/history?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch history');
     return res.json();
 }
@@ -223,7 +243,7 @@ export async function fetchStockHistory(
         benchmarks.forEach(b => params.append('benchmarks', b));
     }
 
-    const res = await fetch(`${API_BASE_URL}/stock_history/${symbol}?${params.toString()}`, { signal, cache: 'no-store' });
+    const res = await authFetch(`${API_BASE_URL}/stock_history/${symbol}?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch stock history');
     return res.json();
 }
@@ -248,7 +268,7 @@ export async function fetchAssetChange(
     if (benchmarks) {
         benchmarks.forEach(b => params.append('benchmarks', b));
     }
-    const res = await fetch(`${API_BASE_URL}/asset_change?${params.toString()}`, { signal, cache: 'no-store' });
+    const res = await authFetch(`${API_BASE_URL}/asset_change?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch asset change data');
     return res.json();
 }
@@ -285,7 +305,7 @@ export async function fetchCapitalGains(
     }
     if (fromDate) params.append('from', fromDate);
     if (toDate) params.append('to', toDate);
-    const res = await fetch(`${API_BASE_URL}/capital_gains?${params.toString()}`, { signal, cache: 'no-store' });
+    const res = await authFetch(`${API_BASE_URL}/capital_gains?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch capital gains');
     return res.json();
 }
@@ -310,7 +330,7 @@ export async function fetchDividends(
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
-    const res = await fetch(`${API_BASE_URL}/dividends?${params.toString()}`, { signal, cache: 'no-store' });
+    const res = await authFetch(`${API_BASE_URL}/dividends?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch dividends');
     return res.json();
 }
@@ -338,7 +358,7 @@ export interface Settings {
 }
 
 export async function fetchSettings(): Promise<Settings> {
-    const res = await fetch(`${API_BASE_URL}/settings`);
+    const res = await authFetch(`${API_BASE_URL}/settings`);
     if (!res.ok) throw new Error('Failed to fetch settings');
     return res.json();
 }
@@ -356,7 +376,7 @@ export interface SettingsUpdate {
 }
 
 export async function updateSettings(settings: SettingsUpdate): Promise<StatusResponse> {
-    const response = await fetch(`${API_BASE_URL}/settings/update`, {
+    const response = await authFetch(`${API_BASE_URL}/settings/update`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -382,7 +402,7 @@ export async function fetchRiskMetrics(currency: string = 'USD', accounts?: stri
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
-    const res = await fetch(`${API_BASE_URL}/risk_metrics?${params.toString()}`, { signal, cache: 'no-store' });
+    const res = await authFetch(`${API_BASE_URL}/risk_metrics?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch risk metrics');
     return res.json();
 }
@@ -410,7 +430,7 @@ export async function fetchAttribution(currency: string = 'USD', accounts?: stri
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
-    const res = await fetch(`${API_BASE_URL}/attribution?${params.toString()}`, { signal, cache: 'no-store' });
+    const res = await authFetch(`${API_BASE_URL}/attribution?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch attribution');
     return res.json();
 }
@@ -428,13 +448,13 @@ export async function fetchDividendCalendar(accounts?: string[], signal?: AbortS
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
-    const res = await fetch(`${API_BASE_URL}/dividend_calendar?${params.toString()}`, { signal, cache: 'no-store' });
+    const res = await authFetch(`${API_BASE_URL}/dividend_calendar?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch dividend calendar');
     return res.json();
 }
 
 export async function saveManualOverride(symbol: string, price: number | null): Promise<StatusResponse> {
-    const response = await fetch(`${API_BASE_URL}/settings/manual_overrides`, {
+    const response = await authFetch(`${API_BASE_URL}/settings/manual_overrides`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -448,7 +468,7 @@ export async function saveManualOverride(symbol: string, price: number | null): 
 }
 
 export async function triggerRefresh(secret: string): Promise<StatusResponse> {
-    const response = await fetch(`${API_BASE_URL}/webhook/refresh`, {
+    const response = await authFetch(`${API_BASE_URL}/webhook/refresh`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -474,7 +494,7 @@ export async function fetchCorrelationMatrix(
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
-    const res = await fetch(`${API_BASE_URL}/correlation?${params.toString()}`, { signal, cache: 'no-store' });
+    const res = await authFetch(`${API_BASE_URL}/correlation?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch correlation matrix');
     return res.json();
 }
@@ -494,7 +514,7 @@ export async function fetchProjectedIncome(
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
-    const res = await fetch(`${API_BASE_URL}/projected_income?${params.toString()}`, { signal, cache: 'no-store' });
+    const res = await authFetch(`${API_BASE_URL}/projected_income?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch projected income');
     return res.json();
 }
@@ -525,7 +545,7 @@ export async function fetchPortfolioHealth(
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
-    const res = await fetch(`${API_BASE_URL}/portfolio_health?${params.toString()}`, { signal, cache: 'no-store' });
+    const res = await authFetch(`${API_BASE_URL}/portfolio_health?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) {
         console.error("Failed to fetch portfolio health");
         return null;
@@ -556,13 +576,13 @@ export interface WatchlistMeta {
 }
 
 export async function getWatchlists(signal?: AbortSignal): Promise<WatchlistMeta[]> {
-    const res = await fetch(`${API_BASE_URL}/watchlists`, { signal, cache: 'no-store' });
+    const res = await authFetch(`${API_BASE_URL}/watchlists`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch watchlists');
     return res.json();
 }
 
 export async function createWatchlist(name: string): Promise<WatchlistMeta> {
-    const res = await fetch(`${API_BASE_URL}/watchlists`, {
+    const res = await authFetch(`${API_BASE_URL}/watchlists`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
@@ -572,7 +592,7 @@ export async function createWatchlist(name: string): Promise<WatchlistMeta> {
 }
 
 export async function renameWatchlist(id: number, name: string): Promise<StatusResponse> {
-    const res = await fetch(`${API_BASE_URL}/watchlists/${id}`, {
+    const res = await authFetch(`${API_BASE_URL}/watchlists/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
@@ -582,7 +602,7 @@ export async function renameWatchlist(id: number, name: string): Promise<StatusR
 }
 
 export async function deleteWatchlist(id: number): Promise<StatusResponse> {
-    const res = await fetch(`${API_BASE_URL}/watchlists/${id}`, {
+    const res = await authFetch(`${API_BASE_URL}/watchlists/${id}`, {
         method: "DELETE",
     });
     if (!res.ok) throw new Error('Failed to delete watchlist');
@@ -591,13 +611,13 @@ export async function deleteWatchlist(id: number): Promise<StatusResponse> {
 
 export async function fetchWatchlist(currency: string = 'USD', watchlistId: number = 1, signal?: AbortSignal): Promise<WatchlistItem[]> {
     const params = new URLSearchParams({ currency, id: watchlistId.toString() });
-    const res = await fetch(`${API_BASE_URL}/watchlist?${params.toString()}`, { signal, cache: 'no-store' });
+    const res = await authFetch(`${API_BASE_URL}/watchlist?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch watchlist');
     return res.json();
 }
 
 export async function addToWatchlist(symbol: string, note: string = "", watchlistId: number = 1): Promise<StatusResponse> {
-    const response = await fetch(`${API_BASE_URL}/watchlist`, {
+    const response = await authFetch(`${API_BASE_URL}/watchlist`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -611,7 +631,7 @@ export async function addToWatchlist(symbol: string, note: string = "", watchlis
 }
 
 export async function removeFromWatchlist(symbol: string, watchlistId: number = 1): Promise<StatusResponse> {
-    const response = await fetch(`${API_BASE_URL}/watchlist/${symbol}?id=${watchlistId}`, {
+    const response = await authFetch(`${API_BASE_URL}/watchlist/${symbol}?id=${watchlistId}`, {
         method: "DELETE",
     });
     if (!response.ok) {
@@ -621,7 +641,7 @@ export async function removeFromWatchlist(symbol: string, watchlistId: number = 
 }
 
 export async function updateHoldingTags(account: string, symbol: string, tags: string): Promise<StatusResponse> {
-    const response = await fetch(`${API_BASE_URL}/holdings/update_tags`, {
+    const response = await authFetch(`${API_BASE_URL}/holdings/update_tags`, {
 
         method: 'POST',
         headers: {
@@ -720,26 +740,26 @@ export interface IntrinsicValueResponse {
 export async function fetchFundamentals(symbol: string, force: boolean = false): Promise<Fundamentals> {
     const params = new URLSearchParams();
     if (force) params.append('force', 'true');
-    const res = await fetch(`${API_BASE_URL}/fundamentals/${symbol}?${params.toString()}`);
+    const res = await authFetch(`${API_BASE_URL}/fundamentals/${symbol}?${params.toString()}`);
     if (!res.ok) throw new Error(`Failed to fetch fundamentals for ${symbol}`);
     return res.json();
 }
 
 export async function fetchFinancials(symbol: string, periodType: 'annual' | 'quarterly' = 'annual'): Promise<FinancialsResponse> {
     const params = new URLSearchParams({ period_type: periodType });
-    const res = await fetch(`${API_BASE_URL}/financials/${symbol}?${params.toString()}`);
+    const res = await authFetch(`${API_BASE_URL}/financials/${symbol}?${params.toString()}`);
     if (!res.ok) throw new Error(`Failed to fetch financials for ${symbol}`);
     return res.json();
 }
 
 export async function fetchRatios(symbol: string): Promise<RatiosResponse> {
-    const res = await fetch(`${API_BASE_URL}/ratios/${symbol}`);
+    const res = await authFetch(`${API_BASE_URL}/ratios/${symbol}`);
     if (!res.ok) throw new Error(`Failed to fetch ratios for ${symbol}`);
     return res.json();
 }
 
 export async function fetchIntrinsicValue(symbol: string): Promise<IntrinsicValueResponse> {
-    const res = await fetch(`${API_BASE_URL}/intrinsic_value/${symbol}`);
+    const res = await authFetch(`${API_BASE_URL}/intrinsic_value/${symbol}`);
     if (!res.ok) throw new Error(`Failed to fetch intrinsic value for ${symbol}`);
     return res.json();
 }
@@ -764,13 +784,13 @@ export interface StockAnalysisResponse {
 export async function fetchStockAnalysis(symbol: string, force: boolean = false): Promise<StockAnalysisResponse> {
     const params = new URLSearchParams();
     if (force) params.append('force', 'true');
-    const res = await fetch(`${API_BASE_URL}/stock-analysis/${symbol}?${params.toString()}`, { cache: 'no-store' });
+    const res = await authFetch(`${API_BASE_URL}/stock-analysis/${symbol}?${params.toString()}`, { cache: 'no-store' });
     if (!res.ok) throw new Error(`Failed to fetch AI analysis for ${symbol}`);
     return res.json();
 }
 
 export async function clearCache(): Promise<StatusResponse> {
-    const response = await fetch(`${API_BASE_URL}/clear_cache`, {
+    const response = await authFetch(`${API_BASE_URL}/clear_cache`, {
         method: "POST",
     });
     if (!response.ok) {

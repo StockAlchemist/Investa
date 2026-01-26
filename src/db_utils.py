@@ -26,7 +26,7 @@ import threading
 import config
 
 DB_FILENAME = "investa_transactions.db"
-DB_SCHEMA_VERSION = 9
+DB_SCHEMA_VERSION = 10
 
 # --- Helper for JSON serialization with NaNs ---
 class NpEncoder(json.JSONEncoder):
@@ -64,21 +64,29 @@ def get_database_path(db_filename: str = DB_FILENAME) -> str:
 
 _DB_CONN_CACHE = threading.local()
 
-def get_db_connection(db_path: Optional[str] = None) -> Optional[sqlite3.Connection]:
+def get_db_connection(db_path: Optional[str] = None, check_same_thread: bool = True) -> Optional[sqlite3.Connection]:
     """Establishes a connection to the SQLite database, with thread-local caching."""
     if db_path is None:
         db_path = get_database_path()
     
+    # If check_same_thread is False, we typically shouldn't use thread-local cache blindly 
+    # if we intend to share it, but keeping the cache logic simple is fine.
+    # The cache is per-thread. 
+    
+    # Include check_same_thread in the cache key to avoid returning a strict connection
+    # when a loose one is requested, or vice versa.
+    cache_key = (db_path, check_same_thread)
+    
     if not hasattr(_DB_CONN_CACHE, 'connections'):
         _DB_CONN_CACHE.connections = {}
     
-    if db_path in _DB_CONN_CACHE.connections:
+    if cache_key in _DB_CONN_CACHE.connections:
         # Verify connection is still open
         try:
-            _DB_CONN_CACHE.connections[db_path].execute("SELECT 1")
-            return _DB_CONN_CACHE.connections[db_path]
+            _DB_CONN_CACHE.connections[cache_key].execute("SELECT 1")
+            return _DB_CONN_CACHE.connections[cache_key]
         except (sqlite3.ProgrammingError, sqlite3.Error):
-            del _DB_CONN_CACHE.connections[db_path]
+            del _DB_CONN_CACHE.connections[cache_key]
 
     try:
         db_dir = os.path.dirname(db_path)
@@ -90,7 +98,11 @@ def get_db_connection(db_path: Optional[str] = None) -> Optional[sqlite3.Connect
         conn = None
         for i in range(retries):
             try:
-                conn = sqlite3.connect(db_path, timeout=30)
+                conn = sqlite3.connect(
+                    db_path, 
+                    timeout=30, 
+                    check_same_thread=check_same_thread
+                )
                 conn.execute("PRAGMA foreign_keys = ON;")
                 conn.execute("PRAGMA journal_mode=WAL;")
                 conn.execute("PRAGMA synchronous=NORMAL;")
@@ -103,8 +115,8 @@ def get_db_connection(db_path: Optional[str] = None) -> Optional[sqlite3.Connect
                 raise e
         
         if conn:
-            _DB_CONN_CACHE.connections[db_path] = conn
-            logging.info(f"Successfully connected to database (cached): {db_path}")
+            _DB_CONN_CACHE.connections[cache_key] = conn
+            logging.info(f"Successfully connected to database (cached): {db_path} (check_same_thread={check_same_thread})")
             return conn
         return None
     except sqlite3.Error as e:
@@ -405,6 +417,40 @@ def create_transactions_table(conn: sqlite3.Connection):
                 else:
                     logging.error(f"Error during migration v9: {e}")
                     raise
+
+        if current_db_version < 10:
+            logging.info("Schema version is less than 10. Adding users table and user_id column.")
+            # Refactored: 'users' table is now in GLOBAL DB. We do NOT create it here for portfolio DB.
+            # But we DO need user_id columns for compatibility/verification, even if isolated.
+            
+            # 1. (Skipped) Create users table - Handled by init_global_db
+            
+            # 2. Add user_id to transactions
+            try:
+                cursor.execute('ALTER TABLE transactions ADD COLUMN user_id INTEGER;')
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" in str(e): pass
+                else: raise
+
+            # 3. Add user_id to watchlists
+            try:
+                cursor.execute('ALTER TABLE watchlists ADD COLUMN user_id INTEGER;')
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" in str(e): pass
+                else: raise
+
+            # 4. Add user_id to screener_cache
+            try:
+                cursor.execute('ALTER TABLE screener_cache ADD COLUMN user_id INTEGER;')
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" in str(e): pass
+                else: raise
+
+            cursor.execute(
+                "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
+                (10, datetime.now().isoformat()),
+            )
+            logging.info("Updated schema_version to 10.")
 
         conn.commit()
         logging.info(
@@ -813,51 +859,73 @@ def delete_transaction_from_db(
 
 
 
-def get_all_watchlists(db_conn: sqlite3.Connection) -> List[Dict[str, Any]]:
-    """Fetches all available watchlists."""
-    sql = "SELECT id, name, created_at FROM watchlists ORDER BY created_at ASC"
+def get_all_watchlists(db_conn: sqlite3.Connection, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Fetches all available watchlists for a user."""
+    sql = "SELECT id, name, created_at FROM watchlists"
+    params = []
+    if user_id is not None:
+        sql += " WHERE user_id = ?"
+        params.append(user_id)
+    else:
+        # Legacy/Admin view: show all? Or show where user_id IS NULL?
+        # For now, let's show where user_id IS NULL to support legacy single user who hasn't migrated yet?
+        # But we ran migration that sets user_id. 
+        # If user_id is None, we return empty list to be safe? 
+        return []
+    
+    sql += " ORDER BY created_at ASC"
+    
     try:
         cursor = db_conn.cursor()
-        cursor.execute(sql)
+        cursor.execute(sql, tuple(params))
         rows = cursor.fetchall()
         return [{"id": r[0], "name": r[1], "created_at": r[2]} for r in rows]
     except sqlite3.Error as e:
         logging.error(f"Error fetching watchlists: {e}")
         return []
 
-def create_watchlist(db_conn: sqlite3.Connection, name: str) -> Optional[int]:
+def create_watchlist(db_conn: sqlite3.Connection, name: str, user_id: Optional[int] = None) -> Optional[int]:
     """Creates a new watchlist."""
-    sql = "INSERT INTO watchlists (name, created_at) VALUES (?, ?)"
+    sql = "INSERT INTO watchlists (name, created_at, user_id) VALUES (?, ?, ?)"
     try:
         cursor = db_conn.cursor()
-        cursor.execute(sql, (name, datetime.now().isoformat()))
+        cursor.execute(sql, (name, datetime.now().isoformat(), user_id))
         db_conn.commit()
-        logging.info(f"Created watchlist '{name}' with ID {cursor.lastrowid}")
+        logging.info(f"Created watchlist '{name}' with ID {cursor.lastrowid} for user {user_id}")
         return cursor.lastrowid
     except sqlite3.Error as e:
         logging.error(f"Error creating watchlist '{name}': {e}")
         return None
 
-def rename_watchlist(db_conn: sqlite3.Connection, watchlist_id: int, new_name: str) -> bool:
+def rename_watchlist(db_conn: sqlite3.Connection, watchlist_id: int, new_name: str, user_id: Optional[int] = None) -> bool:
     """Renames an existing watchlist."""
     sql = "UPDATE watchlists SET name = ? WHERE id = ?"
+    params = [new_name, watchlist_id]
+    if user_id is not None:
+        sql += " AND user_id = ?"
+        params.append(user_id)
+        
     try:
         cursor = db_conn.cursor()
-        cursor.execute(sql, (new_name, watchlist_id))
+        cursor.execute(sql, tuple(params))
         db_conn.commit()
         return cursor.rowcount > 0
     except sqlite3.Error as e:
         logging.error(f"Error renaming watchlist {watchlist_id}: {e}")
         return False
 
-def delete_watchlist(db_conn: sqlite3.Connection, watchlist_id: int) -> bool:
+def delete_watchlist(db_conn: sqlite3.Connection, watchlist_id: int, user_id: Optional[int] = None) -> bool:
     """Deletes a watchlist and all its items."""
     # Note: ON DELETE CASCADE should handle items, but we explicitly delete to be safe if foreign keys disabled
     try:
         cursor = db_conn.cursor()
-        # Verify it's not the last watchlist? Or allow deleting? 
-        # For now, allow deleting anything. Frontend should prevent deleting the last one if needed.
-        cursor.execute("DELETE FROM watchlists WHERE id = ?", (watchlist_id,))
+        sql = "DELETE FROM watchlists WHERE id = ?"
+        params = [watchlist_id]
+        if user_id is not None:
+            sql += " AND user_id = ?"
+            params.append(user_id)
+            
+        cursor.execute(sql, tuple(params))
         db_conn.commit()
         return cursor.rowcount > 0
     except sqlite3.Error as e:
@@ -1227,12 +1295,31 @@ def update_intrinsic_value_in_cache(
 
 
 def initialize_database(db_path: Optional[str] = None) -> Optional[sqlite3.Connection]:
+    """Initializes the Portfolio DatabaseSchema."""
     conn = get_db_connection(db_path)
     if conn:
         create_transactions_table(conn)
     return conn
 
+def initialize_global_database() -> Optional[sqlite3.Connection]:
+    """Initializes the Global Database Schema (Users)."""
+    global_db_path = os.path.join(config.get_app_data_dir(), config.GLOBAL_DB_FILENAME)
+    conn = get_db_connection(global_db_path)
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                hashed_password TEXT NOT NULL,
+                is_active BOOLEAN DEFAULT 1,
+                created_at TEXT NOT NULL
+            );
+        """)
+        conn.commit()
+    return conn
 
-# ... (test block truncated/updated for brevity)
-    pass
+# Alias for backward compatibility if needed
+init_db = initialize_database
+
 # End of file
