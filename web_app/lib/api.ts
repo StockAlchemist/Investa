@@ -832,7 +832,7 @@ export interface ScreenerRequest {
 }
 
 export async function runScreener(request: ScreenerRequest): Promise<ScreenerResult[]> {
-    const res = await fetch(`${API_BASE_URL}/screener/run`, {
+    const res = await authFetch(`${API_BASE_URL}/screener/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(request)
@@ -844,7 +844,7 @@ export async function runScreener(request: ScreenerRequest): Promise<ScreenerRes
 export async function fetchScreenerReview(symbol: string, force: boolean = false): Promise<StockAnalysisResponse> {
     const params = new URLSearchParams();
     if (force) params.append('force', 'true');
-    const res = await fetch(`${API_BASE_URL}/screener/review/${symbol}?${params.toString()}`, {
+    const res = await authFetch(`${API_BASE_URL}/screener/review/${symbol}?${params.toString()}`, {
         method: "POST",
         cache: 'no-store'
     });

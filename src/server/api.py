@@ -4,6 +4,7 @@ from collections import defaultdict
 import pandas as pd
 import logging
 import os
+import json
 import time
 import sqlite3
 from datetime import datetime, date, time as dt_time
@@ -2398,7 +2399,6 @@ async def update_settings(
             project_overrides_file = os.path.join(project_root, "manual_overrides.json")
             if os.path.exists(project_overrides_file):
                 try:
-                    import json
                     with open(project_overrides_file, "w", encoding="utf-8") as f:
                         json.dump(current_overrides, f, indent=4, ensure_ascii=False)
                     logging.info(f"Mirrored settings update to {project_overrides_file}")
@@ -2904,7 +2904,6 @@ async def get_financials_endpoint(
             if existing_equity_items:
                 shareholders_equity = balance_sheet.loc[existing_equity_items]
 
-        import json
         return clean_nans({
             "financials": df_to_dict(financials),
             "balance_sheet": df_to_dict(balance_sheet),
@@ -3571,19 +3570,46 @@ class ScreenerRequest(BaseModel):
     manual_symbols: Optional[List[str]] = None
 
 @router.post("/screener/run")
-async def run_screener(request: ScreenerRequest):
+async def run_screener(
+    request: ScreenerRequest,
+    current_user: User = Depends(get_current_user),
+    data: tuple = Depends(get_transaction_data),
+    db_conn: sqlite3.Connection = Depends(get_user_db_connection)
+):
     """
     Runs the stock screener based on the selected universe.
     """
     try:
-        results = screen_stocks(request.universe_type, request.universe_id, request.manual_symbols)
+        universe_type = request.universe_type
+        universe_id = request.universe_id
+        manual_symbols = request.manual_symbols
+        
+        # Handle "Holdings" as a dynamic universe if requested
+        if universe_type == "holdings":
+            summary_data = await _calculate_portfolio_summary_internal(
+                data=data, 
+                current_user=current_user, 
+                show_closed_positions=False
+            )
+            summary_df = summary_data.get("summary_df")
+            if summary_df is not None and not summary_df.empty:
+                # Filter out "Total" row and get unique symbols
+                manual_symbols = summary_df[~summary_df.get("is_total", False) & (summary_df["Symbol"] != "Total")]["Symbol"].tolist()
+                # We treat it as a manual list once resolved
+                universe_type = "manual" 
+
+        results = screen_stocks(universe_type, universe_id, manual_symbols, db_conn=db_conn)
         return clean_nans(results)
     except Exception as e:
         logging.error(f"Screener error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/screener/review/{symbol}")
-async def trigger_ai_review(symbol: str, force: bool = Query(False)):
+async def trigger_ai_review(
+    symbol: str, 
+    force: bool = Query(False),
+    current_user: User = Depends(get_current_user)
+):
     """
     Triggers (or retrieves cached) AI review for a specific stock.
     """

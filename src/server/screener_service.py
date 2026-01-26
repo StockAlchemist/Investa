@@ -75,7 +75,7 @@ def get_sp500_tickers() -> List[str]:
         logging.error(f"Failed to fetch S&P 500 list: {e}")
         return []
 
-def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_symbols: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_symbols: Optional[List[str]] = None, db_conn: Optional[Any] = None) -> List[Dict[str, Any]]:
     """
     Screens a list of stocks based on the specified universe.
     Calculates Intrinsic Value and Margin of Safety.
@@ -84,9 +84,12 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
     
     if universe_type == "manual":
         symbols = manual_symbols or []
-    elif universe_type == "watchlist":
-        if universe_id:
-             conn = get_db_connection()
+    elif universe_type == "watchlist" or universe_type == "holdings":
+        if universe_type == "holdings":
+            symbols = manual_symbols or []
+        elif universe_id:
+             # Use provided conn or create new one
+             conn = db_conn or get_db_connection()
              try:
                 wl_data = get_watchlist(conn, int(universe_id)) # This returns list of Dict with 'symbol'
                 if wl_data:
@@ -95,7 +98,7 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
                  logging.error(f"Error fetching watchlist {universe_id}: {e}")
                  return []
              finally:
-                 if conn: conn.close()
+                 if not db_conn and conn: conn.close()
     elif universe_type == "sp500":
         symbols = get_sp500_tickers()
     
@@ -112,8 +115,8 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
     cached_results = []
     use_pure_fast_path = False
     
-    if universe_type in ["sp500", "watchlist"]:
-        conn = get_db_connection()
+    if universe_type in ["sp500", "watchlist", "holdings"]:
+        conn = db_conn or get_db_connection()
         if conn:
             try:
                 raw_cached = get_screener_results_by_universe(conn, universe_tag)
@@ -144,7 +147,7 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
             except Exception as e:
                 logging.error(f"Error in hybrid fast-path: {e}")
             finally:
-                if conn: conn.close()
+                if not db_conn and conn: conn.close()
 
     if use_pure_fast_path:
         # Sort just in case (though DB should be sorted)
@@ -189,10 +192,10 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
         except Exception as e:
             logging.error(f"Error loading screener cache map: {e}")
         finally:
-            if conn: conn.close()
+            if not db_conn and conn: conn.close()
             
     # Process everything to merge live quotes
-    final_results = process_screener_results(symbols, quotes, details_map, cached_map, universe_tag)
+    final_results = process_screener_results(symbols, quotes, details_map, cached_map, universe_tag, db_conn=db_conn)
     
     # Final Sort
     final_results.sort(key=lambda x: (x.get("margin_of_safety") is not None, x.get("margin_of_safety")), reverse=True)
@@ -204,7 +207,8 @@ def process_screener_results(
     quotes: Dict[str, Any], 
     details_map: Dict[str, Any],
     cached_map: Dict[str, Dict[str, Any]] = None,
-    universe_tag: str = None
+    universe_tag: str = None,
+    db_conn: Optional[Any] = None
 ) -> List[Dict[str, Any]]:
     results = []
     cached_map = cached_map or {}
@@ -388,14 +392,14 @@ def process_screener_results(
         
     # Batch Update DB Cache
     if results:
-        conn = get_db_connection()
+        conn = db_conn or get_db_connection()
         if conn:
             try:
                 upsert_screener_results(conn, results, universe_tag)
             except Exception as e:
                 logging.error(f"Error upserting screener cache: {e}")
             finally:
-                if conn: conn.close()
+                if not db_conn and conn: conn.close()
 
     # Sort by Margin of Safety desc
     results.sort(key=lambda x: (x.get("margin_of_safety") is not None, x.get("margin_of_safety")), reverse=True)

@@ -69,6 +69,7 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
                                     className="w-full h-10 px-3 bg-secondary border border-border rounded-md text-foreground font-medium appearance-none focus:outline-none focus:ring-1 focus:ring-cyan-500/50 cursor-pointer"
                                 >
                                     <option value="watchlist" className="bg-card text-foreground">My Watchlist</option>
+                                    <option value="holdings" className="bg-card text-foreground">My Current Holdings</option>
                                     <option value="sp500" className="bg-card text-foreground">S&P 500 Benchmarks</option>
                                     <option value="manual" className="bg-card text-foreground">Custom Ticker List</option>
                                 </select>
