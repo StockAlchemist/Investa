@@ -153,6 +153,7 @@ def fetch_dividends(symbol, output_file):
 def fetch_calendar(symbol, output_file):
     try:
         import yfinance as yf # Lazy import
+        import pandas as pd # Added missing import
         log(f"Starting calendar fetch for {symbol}")
         ticker = yf.Ticker(symbol)
         cal = ticker.calendar
