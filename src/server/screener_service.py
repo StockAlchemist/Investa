@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 import requests
+from concurrent.futures import ThreadPoolExecutor
 
 from market_data import get_shared_mdp
 from financial_ratios import get_intrinsic_value_for_symbol
@@ -135,7 +136,7 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
                             cached_results = raw_cached
                             # Increase TTL to 1 hour (3600s) for better "reload" experience
                             age_seconds = (now_ts - latest_update_ts).total_seconds()
-                            if age_seconds < 30: # Reduced from 1h for transition
+                            if age_seconds < 3600: # Increased from 30s to 1 hour
                                 logging.info(f"Screener: Pure Fast-path load for '{universe_tag}' ({len(cached_results)} items, {age_seconds:.0f}s old)")
                                 use_pure_fast_path = True
                             else:
@@ -219,166 +220,171 @@ def process_screener_results(
         except Exception:
             pass
 
-    for sym in symbols:
-        # Get Price (Live)
-        quote = quotes.get(sym, {})
-        price = quote.get("price")
-        
-        # Get Info (Fundementals - may be from 24h cache)
-        info = details_map.get(sym, {}).copy()
-        
-        if price:
-            info["currentPrice"] = price
-            info["regularMarketPrice"] = price
-        elif info.get("currentPrice"):
-            price = info.get("currentPrice")
-        
-        if not price:
-             price = info.get("previousClose")
-        
-        if not price:
-            continue
+    # --- PARALLEL PROCESSING ---
+    # We use a helper function for the loop body to work with ThreadPoolExecutor
+    def process_symbol(sym):
+        try:
+            # Get Price (Live)
+            quote = quotes.get(sym, {})
+            price = quote.get("price")
             
-        # --- SMART INVALIDATION LOGIC ---
-        cached = cached_map.get(sym)
-        
-        # Current report identifiers
-        live_fy_end = info.get("lastFiscalYearEnd")
-        live_quarter = info.get("mostRecentQuarter")
-        
-        can_use_cache = False
-        if cached:
-            # If the financial report identifiers haven't changed, 
-            # we can reuse the cached intrinsic value and AI scores.
-            if (cached.get("last_fiscal_year_end") == live_fy_end and 
-                cached.get("most_recent_quarter") == live_quarter):
-                can_use_cache = True
-        
-        if can_use_cache:
-            avg_iv = cached.get("intrinsic_value")
-            valuation_details_str = cached.get("valuation_details")
-            valuation_details = None
-            if valuation_details_str and isinstance(valuation_details_str, str):
-                try:
-                    valuation_details = json.loads(valuation_details_str)
-                except Exception:
-                    pass
+            # Get Info (Fundementals - may be from 24h cache)
+            info = details_map.get(sym, {}).copy()
+            
+            if price:
+                info["currentPrice"] = price
+                info["regularMarketPrice"] = price
+            elif info.get("currentPrice"):
+                price = info.get("currentPrice")
+            
+            if not price:
+                 price = info.get("previousClose")
+            
+            if not price:
+                return None
+                
+            # --- SMART INVALIDATION LOGIC ---
+            cached = cached_map.get(sym)
+            
+            # Current report identifiers
+            live_fy_end = info.get("lastFiscalYearEnd")
+            live_quarter = info.get("mostRecentQuarter")
+            
+            can_use_cache = False
+            if cached:
+                # If the financial report identifiers haven't changed, 
+                # we can reuse the cached intrinsic value and AI scores.
+                if (cached.get("last_fiscal_year_end") == live_fy_end and 
+                    cached.get("most_recent_quarter") == live_quarter):
+                    can_use_cache = True
+            
+            if can_use_cache:
+                avg_iv = cached.get("intrinsic_value")
+                valuation_details_str = cached.get("valuation_details")
+                valuation_details = None
+                if valuation_details_str and isinstance(valuation_details_str, str):
+                    try:
+                        valuation_details = json.loads(valuation_details_str)
+                    except Exception:
+                        pass
+                
+                # Recalculate MOS since price changes daily
+                if avg_iv and price:
+                    mos = ((avg_iv - price) / price) * 100 if price > 0 else 0
+                else:
+                    mos = None
+                
+                # Use cached AI markers
+                has_ai = cached.get("ai_summary") is not None
+                ai_score = cached.get("ai_score")
+                
+                # --- FALLBACK: If DB has no AI info, check pre-scanned list ---
+                if not has_ai or ai_score is None:
+                    if sym.upper() in existing_reviews:
+                        ai_cache_path = os.path.join(ai_cache_dir, f"{sym.upper()}_analysis.json")
+                        if os.path.exists(ai_cache_path):
+                            try:
+                                with open(ai_cache_path, 'r') as f:
+                                    ai_data = json.load(f)
+                                    analysis_obj = ai_data.get("analysis", {})
+                                    scorecard = analysis_obj.get("scorecard", {})
+                                    
+                                    moat = scorecard.get("moat")
+                                    fin = scorecard.get("financial_strength")
+                                    pred = scorecard.get("predictability")
+                                    growth = scorecard.get("growth")
+                                    
+                                    vals = [v for v in [moat, fin, pred, growth] if isinstance(v, (int, float))]
+                                    if vals:
+                                        ai_score = sum(vals) / len(vals)
+                                        has_ai = True
+                            except Exception:
+                                pass
 
-            # Recalculate MOS since price changes daily
-            if avg_iv and price:
-                mos = ((avg_iv - price) / price) * 100 if price > 0 else 0
+                return {
+                    "symbol": sym,
+                    "name": info.get("shortName", sym),
+                    "price": price,
+                    "intrinsic_value": avg_iv,
+                    "margin_of_safety": mos,
+                    "pe_ratio": info.get("trailingPE"),
+                    "market_cap": info.get("marketCap"),
+                    "sector": info.get("sector"),
+                    "has_ai_review": has_ai,
+                    "ai_score": ai_score,
+                    "valuation_details": valuation_details, 
+                    "last_fiscal_year_end": live_fy_end,
+                    "most_recent_quarter": live_quarter
+                }
             else:
-                mos = None
-            
-            # Use cached AI markers
-            has_ai = cached.get("ai_summary") is not None
-            ai_score = cached.get("ai_score")
-            
-            # --- FALLBACK: If DB has no AI info, check pre-scanned list ---
-            if not has_ai or ai_score is None:
-                if sym.upper() in existing_reviews:
-                    ai_cache_path = os.path.join(ai_cache_dir, f"{sym.upper()}_analysis.json")
-                    if os.path.exists(ai_cache_path):
-                        try:
-                            with open(ai_cache_path, 'r') as f:
-                                ai_data = json.load(f)
-                                analysis_obj = ai_data.get("analysis", {})
-                                scorecard = analysis_obj.get("scorecard", {})
-                                
-                                moat = scorecard.get("moat")
-                                fin = scorecard.get("financial_strength")
-                                pred = scorecard.get("predictability")
-                                growth = scorecard.get("growth")
-                                
-                                vals = [v for v in [moat, fin, pred, growth] if isinstance(v, (int, float))]
-                                if vals:
-                                    ai_score = sum(vals) / len(vals)
-                                    has_ai = True
-                        except Exception:
-                            pass
+                # Re-calculation needed
+                mdp = get_shared_mdp()
+                # SPEED OPTIMIZATION: Reduced MC iterations for screener bulk view
+                iv_res = get_intrinsic_value_for_symbol(sym, mdp, iterations=1000)
+                
+                avg_iv = iv_res.get("average_intrinsic_value")
+                mos = iv_res.get("margin_of_safety_pct")
+                valuation_details_json = json.dumps(iv_res, default=str)
+                
+                # AI Review Check
+                ai_cache_path = os.path.join(config.get_app_data_dir(), "ai_analysis_cache", f"{sym.upper()}_analysis.json")
+                has_ai = os.path.exists(ai_cache_path)
+                
+                ai_score = None
+                ai_moat = None
+                ai_fin = None
+                ai_pred = None
+                ai_growth = None
+                ai_summary = None
+                
+                if has_ai:
+                    try:
+                        with open(ai_cache_path, 'r') as f:
+                            ai_data = json.load(f)
+                            analysis_obj = ai_data.get("analysis", {})
+                            scorecard = analysis_obj.get("scorecard", {})
+                            ai_summary = analysis_obj.get("summary")
+                            ai_moat = scorecard.get("moat")
+                            ai_fin = scorecard.get("financial_strength")
+                            ai_pred = scorecard.get("predictability")
+                            ai_growth = scorecard.get("growth")
+                            vals = [v for v in [ai_moat, ai_fin, ai_pred, ai_growth] if isinstance(v, (int, float))]
+                            if vals:
+                                ai_score = sum(vals) / len(vals)
+                    except Exception:
+                        pass
 
-            results.append({
-                "symbol": sym,
-                "name": info.get("shortName", sym),
-                "price": price,
-                "intrinsic_value": avg_iv,
-                "margin_of_safety": mos,
-                "pe_ratio": info.get("trailingPE"),
-                "market_cap": info.get("marketCap"),
-                "sector": info.get("sector"),
-                "has_ai_review": has_ai,
-                "ai_score": ai_score,
-                "valuation_details": valuation_details, # Pass through loaded details
-                "last_fiscal_year_end": live_fy_end,
-                "most_recent_quarter": live_quarter
-            })
-        else:
-            # Report changed or no cache -> Full Re-calculation
-            # CRITICAL: Always use the high-quality centralized helper
-            # This ensures overrides are applied and full statements are fetched.
-            # (Note: We pass None for config_manager here as screener usually runs with defaults, 
-            # but we could initialize one if needed).
-            mdp = get_shared_mdp()
-            iv_res = get_intrinsic_value_for_symbol(sym, mdp)
-            
-            avg_iv = iv_res.get("average_intrinsic_value")
-            mos = iv_res.get("margin_of_safety_pct")
-            
-            # Serialize breakdown for storage
-            valuation_details_json = json.dumps(iv_res, default=str)
-            
-            # AI Review Check (File based for compatibility with existing analyzer)
-            ai_cache_path = os.path.join(config.get_app_data_dir(), "ai_analysis_cache", f"{sym.upper()}_analysis.json")
-            has_ai = os.path.exists(ai_cache_path)
-            
-            # Try to get AI score from JSON if it exists
-            ai_score = None
-            ai_moat = None
-            ai_fin = None
-            ai_pred = None
-            ai_growth = None
-            ai_summary = None
-            
-            if has_ai:
-                try:
-                    with open(ai_cache_path, 'r') as f:
-                        ai_data = json.load(f)
-                        # Scorecard is nested under "analysis" in the stored JSON
-                        analysis_obj = ai_data.get("analysis", {})
-                        scorecard = analysis_obj.get("scorecard", {})
-                        ai_summary = analysis_obj.get("summary")
-                        
-                        ai_moat = scorecard.get("moat")
-                        ai_fin = scorecard.get("financial_strength")
-                        ai_pred = scorecard.get("predictability")
-                        ai_growth = scorecard.get("growth")
-                        
-                        vals = [v for v in [ai_moat, ai_fin, ai_pred, ai_growth] if isinstance(v, (int, float))]
-                        if vals:
-                            ai_score = sum(vals) / len(vals)
-                except Exception:
-                    pass
+                return {
+                    "symbol": sym,
+                    "name": info.get("shortName", sym),
+                    "price": price,
+                    "intrinsic_value": avg_iv,
+                    "margin_of_safety": mos,
+                    "pe_ratio": info.get("trailingPE"),
+                    "market_cap": info.get("marketCap"),
+                    "sector": info.get("sector"),
+                    "has_ai_review": has_ai,
+                    "ai_score": ai_score,
+                    "ai_moat": ai_moat,
+                    "ai_financial_strength": ai_fin,
+                    "ai_predictability": ai_pred,
+                    "ai_growth": ai_growth,
+                    "ai_summary": ai_summary,
+                    "valuation_details": valuation_details_json, 
+                    "last_fiscal_year_end": live_fy_end,
+                    "most_recent_quarter": live_quarter
+                }
+        except Exception as e:
+            logging.error(f"Error processing {sym} in screener: {e}")
+            return None
 
-            results.append({
-                "symbol": sym,
-                "name": info.get("shortName", sym),
-                "price": price,
-                "intrinsic_value": avg_iv,
-                "margin_of_safety": mos,
-                "pe_ratio": info.get("trailingPE"),
-                "market_cap": info.get("marketCap"),
-                "sector": info.get("sector"),
-                "has_ai_review": has_ai,
-                "ai_score": ai_score,
-                "ai_moat": ai_moat,
-                "ai_financial_strength": ai_fin,
-                "ai_predictability": ai_pred,
-                "ai_growth": ai_growth,
-                "ai_summary": ai_summary,
-                "valuation_details": valuation_details_json, # Save strict JSON string
-                "last_fiscal_year_end": live_fy_end,
-                "most_recent_quarter": live_quarter
-            })
+    logging.info(f"Screener: Processing results for {len(symbols)} symbols in parallel...")
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(process_symbol, sym) for sym in symbols]
+        for future in futures:
+            res = future.result()
+            if res:
+                results.append(res)
         
     # Batch Update DB Cache
     if results:

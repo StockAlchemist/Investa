@@ -603,9 +603,11 @@ class MarketDataProvider:
             logging.info(f"TickerDetails: Fetching for {len(missing_symbols)} symbols...")
             try:
                 # REDUCED: Was 10. Tiny chunk size to survive extreme memory constraints.
-                chunk_size = 5
-                for i in range(0, len(internal_stock_symbols), chunk_size):
-                    chunk = list(missing_symbols)[i:i+chunk_size]
+                # UPDATED: Increased slightly to 25 for performance (balancing memory vs subprocess overhead)
+                chunk_size = 25
+                yf_symbols_list = list(missing_symbols)
+                for i in range(0, len(yf_symbols_list), chunk_size):
+                    chunk = yf_symbols_list[i:i+chunk_size]
                     logging.info(f"TickerDetails Fetch: Processing isolated batch {i//chunk_size + 1}. Symbols: {len(chunk)}")
                     info_batch = _run_isolated_fetch(chunk, task="info")
                     
@@ -725,8 +727,9 @@ class MarketDataProvider:
                 # Use chunked download for reliability and to avoid process/memory limits with 500+ symbols
                 all_dfs = []
                 yf_symbols_list = list(yf_symbols_to_fetch)
-                # REDUCED: Was 50. Tiny chunk size to survive extreme memory constraints (especially on OneDrive paths).
-                chunk_size = 5
+                # REDUCED: Was 50. Tiny chunk size to survive extreme memory constraints.
+                # UPDATED: Increased slightly to 25 for performance (balancing memory vs subprocess overhead)
+                chunk_size = 25
                 
                 for i in range(0, len(yf_symbols_list), chunk_size):
                     chunk = yf_symbols_list[i:i+chunk_size]

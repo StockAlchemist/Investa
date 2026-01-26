@@ -910,7 +910,8 @@ def get_comprehensive_intrinsic_value(
     financials_df: Optional[pd.DataFrame] = None,
     balance_sheet_df: Optional[pd.DataFrame] = None,
     cashflow_df: Optional[pd.DataFrame] = None,
-    overrides: Optional[Dict[str, Any]] = None
+    overrides: Optional[Dict[str, Any]] = None,
+    iterations: int = 10000
 ) -> Dict[str, Any]:
     """
     Consolidates multiple intrinsic value models into a single advice object.
@@ -950,10 +951,7 @@ def get_comprehensive_intrinsic_value(
         bond_yield=graham_bond_yield
     )
     
-    current_price = ticker_info.get("currentPrice") or ticker_info.get("regularMarketPrice")
-    
-    # --- Monte Carlo Simulations ---
-    dcf_mc = {}
+    # Pass through iterations to MC simulations
     if "intrinsic_value" in dcf_res:
         params = dcf_res["parameters"]
         # Use applied growth for MC if available
@@ -964,11 +962,11 @@ def get_comprehensive_intrinsic_value(
             mc_growth,
             params["discount_rate"],
             params["projection_years"],
-            params["terminal_growth_rate"]
+            params["terminal_growth_rate"],
+            iterations=iterations
         )
         dcf_res["mc"] = dcf_mc
 
-    graham_mc = {}
     if "intrinsic_value" in graham_res:
         params = graham_res["parameters"]
         if "eps" in params:
@@ -977,9 +975,12 @@ def get_comprehensive_intrinsic_value(
             graham_mc = run_monte_carlo_graham(
                 params["eps"],
                 mc_growth_pct,
-                params["bond_yield_proxy"]
+                params["bond_yield_proxy"],
+                iterations=iterations
             )
             graham_res["mc"] = graham_mc
+
+    current_price = ticker_info.get("currentPrice") or ticker_info.get("regularMarketPrice")
 
     
     # --- ETF Valuation Logic ---
@@ -1089,7 +1090,8 @@ def get_comprehensive_intrinsic_value(
 def get_intrinsic_value_for_symbol(
     symbol: str,
     mdp: Any,
-    config_manager: Optional[Any] = None
+    config_manager: Optional[Any] = None,
+    iterations: int = 10000
 ) -> Dict[str, Any]:
     """
     Higher-level helper to calculate intrinsic value with full data and overrides.
@@ -1149,7 +1151,8 @@ def get_intrinsic_value_for_symbol(
         # 4. Calculate
         results = get_comprehensive_intrinsic_value(
             info, financials, balance_sheet, cashflow,
-            overrides=symbol_overrides
+            overrides=symbol_overrides,
+            iterations=iterations
         )
         
         return results
