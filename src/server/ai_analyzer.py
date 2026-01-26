@@ -11,11 +11,9 @@ from db_utils import get_db_connection, update_ai_review_in_cache, get_cached_sc
 # --- Models and Fallback Configuration ---
 # Models identified from user provided rate limits (gemini-3-flash, gemma-3, etc)
 FALLBACK_MODELS = [
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
-    "gemma-2-27b-it",
-    "gemma-2-9b-it"
+    "gemini-3-flash-preview",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite"
 ]
 
 def generate_stock_review(symbol: str, fund_data: dict, ratios_data: dict, force_refresh: bool = False) -> dict:
