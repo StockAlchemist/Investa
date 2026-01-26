@@ -88,6 +88,9 @@ export default function RegisterPage() {
                                 onChange={(e) => setUsername(e.target.value)}
                                 required
                                 autoComplete="username"
+                                autoCapitalize="none"
+                                spellCheck={false}
+                                autoCorrect="off"
                             />
                         </div>
                         <div className="space-y-2">

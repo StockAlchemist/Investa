@@ -12,12 +12,14 @@ import {
     Coins,
     Settings as SettingsIcon,
     Menu,
-    ScanSearch
+    ScanSearch,
+    LogOut
 } from 'lucide-react';
 
 interface TabNavigationProps {
     activeTab: string;
     onTabChange: (tab: string) => void;
+    onLogout?: () => void;
     side?: 'right' | 'bottom';
 }
 
@@ -34,7 +36,7 @@ const TABS = [
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
 
-export default function TabNavigation({ activeTab, onTabChange, side = 'bottom' }: TabNavigationProps) {
+export default function TabNavigation({ activeTab, onTabChange, onLogout, side = 'bottom' }: TabNavigationProps) {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -122,6 +124,23 @@ export default function TabNavigation({ activeTab, onTabChange, side = 'bottom' 
                                 )}
                             </button>
                         ))}
+                        {onLogout && (
+                            <>
+                                <div className="border-t border-border my-1" />
+                                <button
+                                    onClick={() => {
+                                        if (confirm('Are you sure you want to log out?')) {
+                                            onLogout();
+                                            setIsOpen(false);
+                                        }
+                                    }}
+                                    className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium rounded-xl transition-all duration-200 group text-left text-rose-500 hover:bg-rose-500/10"
+                                >
+                                    <LogOut className="w-4 h-4 transition-transform duration-300 group-hover:scale-110" />
+                                    <span className="flex-1">Log Out</span>
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
             )}

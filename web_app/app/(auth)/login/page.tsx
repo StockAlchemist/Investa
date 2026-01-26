@@ -82,6 +82,9 @@ export default function LoginPage() {
                                 required
                                 autoComplete="username"
                                 name="username"
+                                autoCapitalize="none"
+                                spellCheck={false}
+                                autoCorrect="off"
                             />
                         </div>
                         <div className="space-y-2">

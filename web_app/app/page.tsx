@@ -577,7 +577,7 @@ export default function Home() {
       {/* Sidebar - Desktop */}
       <aside className="fixed left-0 top-0 bottom-0 w-[72px] flex flex-col items-center py-6 border-r border-border bg-background/40 backdrop-blur-2xl z-[60] hidden md:flex transition-all duration-300">
         <div className="flex-1 flex flex-col items-center gap-6">
-          <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} side="right" />
+          <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} onLogout={logout} side="right" />
 
           <CurrencySelector
             currentCurrency={currency}
@@ -693,7 +693,7 @@ export default function Home() {
                   onVisibleItemsChange={setVisibleItems}
                 />
               )}
-              <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} side="bottom" />
+              <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} onLogout={logout} side="bottom" />
             </div>
 
             <div className="hidden md:block">
@@ -753,6 +753,13 @@ export default function Home() {
         >
           <SettingsIcon className="w-5 h-5" />
           <span className="mt-1">Settings</span>
+        </div>
+        <div
+          className="flex flex-col items-center flex-1 cursor-pointer transition-colors hover:text-rose-600 dark:hover:text-rose-400"
+          onClick={() => { if (confirm('Are you sure you want to log out?')) logout(); }}
+        >
+          <LogOut className="w-5 h-5" />
+          <span className="mt-1">Log Out</span>
         </div>
         <div
           className="flex flex-col items-center flex-1 cursor-pointer transition-colors hover:text-cyan-600 dark:hover:text-cyan-400"
