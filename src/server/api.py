@@ -3239,7 +3239,7 @@ async def get_watchlists_endpoint(
 ):
     """Fetches all available watchlists."""
     # conn injected
-    return get_all_watchlists(conn, user_id=current_user.id)
+    return get_all_watchlists(conn)
 
 @router.post("/watchlists")
 async def create_watchlist_endpoint(
@@ -3263,7 +3263,7 @@ async def rename_watchlist_endpoint(
 ):
     """Renames a watchlist."""
     # conn injected
-    success = rename_watchlist(conn, watchlist_id, item.name, user_id=current_user.id)
+    success = rename_watchlist(conn, watchlist_id, item.name)
     if not success:
             raise HTTPException(status_code=404, detail="Watchlist not found or failed to rename")
     return {"status": "success"}
@@ -3276,7 +3276,7 @@ async def delete_watchlist_endpoint(
 ):
     """Deletes a watchlist."""
     # conn injected
-    success = delete_watchlist(conn, watchlist_id, user_id=current_user.id)
+    success = delete_watchlist(conn, watchlist_id)
     if not success:
             raise HTTPException(status_code=404, detail="Watchlist not found or failed to delete")
     return {"status": "success"}
@@ -3308,17 +3308,12 @@ async def get_watchlist_endpoint(
     
     try:
         # Verify ownership
-        allowed = [w['id'] for w in get_all_watchlists(conn, user_id=current_user.id)]
+        allowed = [w['id'] for w in get_all_watchlists(conn)]
         if watchlist_id not in allowed:
-             # Legacy fallback: current code allows accessing watchlist 1. 
-             # If watchlist_id is 1 and it's missing from user list (orphan?), we might face issue.
-             # Registration process assigned orphans to first user. 
-             # So stricter check is fine.
              if not allowed and watchlist_id == 1: 
-                 # Edge case: No watchlists yet.
                  pass 
              else:
-                 return [] # Return empty instead of 404/403 to avoid errors in UI? Or fail?
+                 return []
 
         db_items = get_watchlist(conn, watchlist_id=watchlist_id)
         if not db_items:
@@ -3397,7 +3392,7 @@ async def add_to_watchlist_api(
         wl_id = item.watchlist_id or 1
         
         # Verify ownership
-        allowed = [w['id'] for w in get_all_watchlists(conn, user_id=current_user.id)]
+        allowed = [w['id'] for w in get_all_watchlists(conn)]
         if wl_id not in allowed:
             # If user has no watchlists, and asks for 1? 
             # We strictly enforce that the watchlist must belong to user. 
@@ -3428,7 +3423,7 @@ async def remove_from_watchlist_api(
     # conn injected
     try:
         # Verify ownership
-        allowed = [w['id'] for w in get_all_watchlists(conn, user_id=current_user.id)]
+        allowed = [w['id'] for w in get_all_watchlists(conn)]
         if watchlist_id not in allowed:
             raise HTTPException(status_code=403, detail="Not authorized to modify this watchlist")
             

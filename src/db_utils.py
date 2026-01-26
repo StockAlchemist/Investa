@@ -860,24 +860,12 @@ def delete_transaction_from_db(
 
 
 def get_all_watchlists(db_conn: sqlite3.Connection, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
-    """Fetches all available watchlists for a user."""
-    sql = "SELECT id, name, created_at FROM watchlists"
-    params = []
-    if user_id is not None:
-        sql += " WHERE user_id = ?"
-        params.append(user_id)
-    else:
-        # Legacy/Admin view: show all? Or show where user_id IS NULL?
-        # For now, let's show where user_id IS NULL to support legacy single user who hasn't migrated yet?
-        # But we ran migration that sets user_id. 
-        # If user_id is None, we return empty list to be safe? 
-        return []
-    
-    sql += " ORDER BY created_at ASC"
+    """Fetches all available watchlists in the user-isolated database."""
+    sql = "SELECT id, name, created_at FROM watchlists ORDER BY created_at ASC"
     
     try:
         cursor = db_conn.cursor()
-        cursor.execute(sql, tuple(params))
+        cursor.execute(sql)
         rows = cursor.fetchall()
         return [{"id": r[0], "name": r[1], "created_at": r[2]} for r in rows]
     except sqlite3.Error as e:
@@ -885,29 +873,25 @@ def get_all_watchlists(db_conn: sqlite3.Connection, user_id: Optional[int] = Non
         return []
 
 def create_watchlist(db_conn: sqlite3.Connection, name: str, user_id: Optional[int] = None) -> Optional[int]:
-    """Creates a new watchlist."""
+    """Creates a new watchlist in the user-isolated database."""
     sql = "INSERT INTO watchlists (name, created_at, user_id) VALUES (?, ?, ?)"
     try:
         cursor = db_conn.cursor()
+        # We still store user_id if provided but it's no longer used for filtering
         cursor.execute(sql, (name, datetime.now().isoformat(), user_id))
         db_conn.commit()
-        logging.info(f"Created watchlist '{name}' with ID {cursor.lastrowid} for user {user_id}")
+        logging.info(f"Created watchlist '{name}' with ID {cursor.lastrowid}")
         return cursor.lastrowid
     except sqlite3.Error as e:
         logging.error(f"Error creating watchlist '{name}': {e}")
         return None
 
 def rename_watchlist(db_conn: sqlite3.Connection, watchlist_id: int, new_name: str, user_id: Optional[int] = None) -> bool:
-    """Renames an existing watchlist."""
+    """Renames an existing watchlist in the user-isolated database."""
     sql = "UPDATE watchlists SET name = ? WHERE id = ?"
-    params = [new_name, watchlist_id]
-    if user_id is not None:
-        sql += " AND user_id = ?"
-        params.append(user_id)
-        
     try:
         cursor = db_conn.cursor()
-        cursor.execute(sql, tuple(params))
+        cursor.execute(sql, (new_name, watchlist_id))
         db_conn.commit()
         return cursor.rowcount > 0
     except sqlite3.Error as e:
@@ -915,17 +899,11 @@ def rename_watchlist(db_conn: sqlite3.Connection, watchlist_id: int, new_name: s
         return False
 
 def delete_watchlist(db_conn: sqlite3.Connection, watchlist_id: int, user_id: Optional[int] = None) -> bool:
-    """Deletes a watchlist and all its items."""
-    # Note: ON DELETE CASCADE should handle items, but we explicitly delete to be safe if foreign keys disabled
+    """Deletes a watchlist and all its items in the user-isolated database."""
     try:
         cursor = db_conn.cursor()
         sql = "DELETE FROM watchlists WHERE id = ?"
-        params = [watchlist_id]
-        if user_id is not None:
-            sql += " AND user_id = ?"
-            params.append(user_id)
-            
-        cursor.execute(sql, tuple(params))
+        cursor.execute(sql, (watchlist_id,))
         db_conn.commit()
         return cursor.rowcount > 0
     except sqlite3.Error as e:
