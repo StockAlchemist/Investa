@@ -22,6 +22,8 @@ Investa is a comprehensive portfolio management solution offering both a feature
 * **Customizable Dashboard:** Toggle visibility of widgets and view "Sector Contribution" and "Top Contributors" analysis directly on the main dashboard.
 * **Fundamental Data:** Built-in viewer for company profiles, financials, and balance sheets.
 * **Intrinsic Value Analysis:** Automated **DCF (Income & Revenue-based)** and **Graham's Revised Formula** calculations **(with NAV support for ETFs)** with **Monte Carlo simulations** and **stability logic (Growth Capping & Linear Fading)** to estimate fair value ranges.
+* **User Authentication:** Secure login and registration system with multi-user support.
+* **HTTPS Support:** Built-in Tailscale Serve configuration for secure, encrypted access on local networks and mobile devices.
 * **Valuation Overrides:** Fully customizable valuation parameters (growth rates, discount rates, etc.) for each stock via the Settings menu or individual detail views.
 * **Batch Recalculation:** Dedicated scripts for bulk updating valuations for large universes like the S&P 500.
 
@@ -114,6 +116,17 @@ python src/main_gui.py
 ```
 
 *See the [Tutorial](TUTORIAL.md) for detailed usage instructions.*
+
+## HTTPS Configuration (Highly Recommended)
+
+Investa includes a built-in configuration tool to secure your app with HTTPS using Tailscale Serve. this is **required** for proper autofill functionality on mobile devices and secure remote access.
+
+1.  **Ensure Tailscale is installed and running.**
+2.  **Run the configuration script:**
+    ```bash
+    ./enable_https.sh
+    ```
+3.  **Use the provided HTTPS URL** (e.g., `https://your-node.ts.net`) to access the dashboard.
 
 ## Configuration & Data
 

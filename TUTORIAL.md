@@ -653,6 +653,7 @@ Investa now includes a modern Web Dashboard that allows you to view your portfol
 
 ### Getting Started with the Web App
 
+
 1.  **Start the Application:**
     We've made this easy with a single script that launches both the backend and frontend for you. Open your terminal in the project root and run:
     
@@ -660,11 +661,21 @@ Investa now includes a modern Web Dashboard that allows you to view your portfol
     ./start_investa.sh
     ```
     
-    This command starts the API server (port 8000) and the web interface (port 3000) simultaneously. It will also print your machine's local network IP address (e.g., providing a Tailscale IP or local IP) for remote access.
+    This command starts the API server and the web interface. It will also print your machine's local network IP address (e.g., providing a Tailscale IP or local IP) for remote access.
 
-2.  **Accessing the Dashboard:**
-    *   **Local Machine:** Open your browser and go to `http://localhost:3000`.
-    *   **Remote Device:** Find the IP address of your computer running Investa (e.g., `192.168.1.15`). On your mobile device connected to the same Wi-Fi, go to `http://192.168.1.15:3000`.
+2.  **Setting Up HTTPS (Recommended):**
+    For the best experience (especially on mobile) and to enable secure features like password autofill, run the HTTPS configuration script once:
+    ```bash
+    ./enable_https.sh
+    ```
+    This configures Tailscale Serve to expose your app securely at a URL like `https://your-node.ts.net`.
+
+3.  **Accessing the Dashboard:**
+    *   **Local Machine:** Open your browser and go to `http://localhost:3000` (or your HTTPS URL).
+    *   **Login/Register:** You will be greeted by a login screen.
+        *   **First Time?** Click "Register" to create a new account. Your data is isolated to your user profile.
+        *   **Returning User?** Log in with your username and password.
+    *   **Remote Device:** Use the HTTPS URL provided by step 2 for secure access on your phone or tablet.
 
 ### Features
 
