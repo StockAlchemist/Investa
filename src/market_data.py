@@ -144,6 +144,14 @@ SPDX-License-Identifier: MIT
 """
 
 
+# --- Global Locks ---
+_SHARED_MDP_LOCK = threading.Lock()
+# Semaphore to limit concurrent isolated fetches (subprocesses)
+# Critical for preventing OOM on memory-constrained systems
+# REDUCED TO 1: Strict serialization to prevent OOM
+_FETCH_SEMAPHORE = threading.Semaphore(1)
+
+
 # --- Helper for JSON serialization with NaNs ---
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -164,10 +172,9 @@ def _run_isolated_fetch(tickers, start=None, end=None, interval="1d", task="hist
     """
     # Global semaphore to limit concurrent subprocesses and file usage
     # Mac limit is often 256. We limit strict to 2 to be safe and prevent "Too many open files".
-    global _FETCH_SEMAPHORE
-    if '_FETCH_SEMAPHORE' not in globals():
-        import threading
-        _FETCH_SEMAPHORE = threading.Semaphore(2)
+    # Global semaphore to limit concurrent subprocesses and file usage
+    # Mac limit is often 256. We limit strict to 2 to be safe and prevent "Too many open files".
+    # _FETCH_SEMAPHORE is defined at module level to prevent race conditions.
 
     with _FETCH_SEMAPHORE:
         return _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwargs)
