@@ -755,18 +755,18 @@ export default function Home() {
           <span className="mt-1">Settings</span>
         </div>
         <div
-          className="flex flex-col items-center flex-1 cursor-pointer transition-colors hover:text-rose-600 dark:hover:text-rose-400"
-          onClick={() => { if (confirm('Are you sure you want to log out?')) logout(); }}
-        >
-          <LogOut className="w-5 h-5" />
-          <span className="mt-1">Log Out</span>
-        </div>
-        <div
           className="flex flex-col items-center flex-1 cursor-pointer transition-colors hover:text-cyan-600 dark:hover:text-cyan-400"
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
         >
           {mounted && theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           <span className="mt-1">{mounted && theme === 'dark' ? 'Light' : 'Dark'}</span>
+        </div>
+        <div
+          className="flex flex-col items-center flex-1 cursor-pointer transition-colors hover:text-rose-600 dark:hover:text-rose-400"
+          onClick={() => { if (confirm('Are you sure you want to log out?')) logout(); }}
+        >
+          <LogOut className="w-5 h-5" />
+          <span className="mt-1">Log Out</span>
         </div>
       </div>
     </main >
