@@ -47,9 +47,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+
 # API Routes
 
 app.include_router(api_router, prefix="/api")
+
+# Mount at root as well to handle Tailscale Serve stripping the /api prefix
+app.include_router(api_router)
 
 @app.get("/")
 async def root():

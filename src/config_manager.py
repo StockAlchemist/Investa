@@ -12,6 +12,7 @@
 import os
 import json
 import logging
+import shutil
 import pandas as pd
 import numpy as np
 from datetime import date
@@ -90,8 +91,15 @@ class ConfigManager:
                     loaded = json.load(f)
                 self.gui_config.update(loaded)
                 self._validate_gui_config()
-            except Exception as e:
+            except (json.JSONDecodeError, OSError) as e:
                 logging.error(f"Error loading GUI config: {e}")
+                # Backup corrupt file so it's not lost when we save defaults later
+                try:
+                    corrupt_path = self.CONFIG_FILE + ".corrupt"
+                    shutil.copy2(self.CONFIG_FILE, corrupt_path)
+                    logging.warning(f"Corrupted config backed up to {corrupt_path}")
+                except Exception as backup_e:
+                    logging.error(f"Failed to backup corrupt config: {backup_e}")
 
     def _validate_gui_config(self):
         # Basic validation (simplified from main_gui.py)
@@ -106,11 +114,29 @@ class ConfigManager:
         save_data = self.gui_config.copy()
         save_data.pop("fmp_api_key", None)
         
+        # 1. Backup existing
+        if os.path.exists(self.CONFIG_FILE):
+            try:
+                shutil.copy2(self.CONFIG_FILE, self.CONFIG_FILE + ".bak")
+            except Exception as e:
+                logging.warning(f"Failed to create config backup: {e}")
+
+        # 2. Atomic Write
+        tmp_file = self.CONFIG_FILE + ".tmp"
         try:
-            with open(self.CONFIG_FILE, "w") as f:
+            with open(tmp_file, "w") as f:
                 json.dump(save_data, f, indent=4)
+                f.flush()
+                os.fsync(f.fileno()) # Ensure write to disk
+            
+            os.replace(tmp_file, self.CONFIG_FILE) # Atomic move
         except Exception as e:
             logging.error(f"Error saving GUI config: {e}")
+            if os.path.exists(tmp_file):
+                try:
+                    os.remove(tmp_file)
+                except:
+                    pass
 
     def load_manual_overrides(self):
         loaded = {}
@@ -167,10 +193,28 @@ class ConfigManager:
         if overrides_data is not None:
             self.manual_overrides = overrides_data
             
+        # 1. Backup existing
+        if os.path.exists(self.MANUAL_OVERRIDES_FILE):
+            try:
+                shutil.copy2(self.MANUAL_OVERRIDES_FILE, self.MANUAL_OVERRIDES_FILE + ".bak")
+            except Exception as e:
+                logging.warning(f"Failed to create manual overrides backup: {e}")
+
+        # 2. Atomic Write
+        tmp_file = self.MANUAL_OVERRIDES_FILE + ".tmp"
         try:
-            with open(self.MANUAL_OVERRIDES_FILE, "w", encoding="utf-8") as f:
+            with open(tmp_file, "w", encoding="utf-8") as f:
                 json.dump(self.manual_overrides, f, indent=4, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            
+            os.replace(tmp_file, self.MANUAL_OVERRIDES_FILE)
             return True
         except Exception as e:
             logging.error(f"Error saving manual overrides: {e}")
+            if os.path.exists(tmp_file):
+                try:
+                    os.remove(tmp_file)
+                except:
+                    pass
             return False

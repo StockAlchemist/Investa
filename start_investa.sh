@@ -57,6 +57,15 @@ start_backend() {
         echo "Tailscale IP: $TS_IP"
         echo "Web App: http://$TS_IP:3000"
         echo "API:     http://$TS_IP:8000/api/"
+        
+        # Check for Tailscale Serve (HTTPS)
+        if command -v tailscale &> /dev/null; then
+            TS_SERVE_STATUS=$(tailscale serve status 2>/dev/null)
+            if [[ "$TS_SERVE_STATUS" == *"https://"* ]]; then
+                 HTTPS_URL=$(echo "$TS_SERVE_STATUS" | grep -o 'https://[^ ]*' | head -n 1)
+                 echo "HTTPS:   $HTTPS_URL"
+            fi
+        fi
     fi
     
     if [ -n "$LOCAL_IP" ]; then

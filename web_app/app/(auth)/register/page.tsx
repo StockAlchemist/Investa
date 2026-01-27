@@ -91,6 +91,7 @@ export default function RegisterPage() {
                                 autoCapitalize="none"
                                 spellCheck={false}
                                 autoCorrect="off"
+                                inputMode="text"
                             />
                         </div>
                         <div className="space-y-2">
