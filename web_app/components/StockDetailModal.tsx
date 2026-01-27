@@ -187,9 +187,9 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
             // Priority 2: Fetch everything else in parallel
             // We don't await these for the main loading state
             Promise.allSettled([
-                fetchFinancials(symbol).then(setFinancials),
-                fetchRatios(symbol).then(setRatios),
-                fetchIntrinsicValue(symbol).then((data) => {
+                fetchFinancials(symbol, 'annual', force).then(setFinancials),
+                fetchRatios(symbol, force).then(setRatios),
+                fetchIntrinsicValue(symbol, force).then((data) => {
                     setIntrinsicValue(data);
                     // Dispatch event for live updates in ScreenerResults
                     if (data) {

@@ -3009,42 +3009,65 @@ class MarketDataProvider:
             )
 
     def _fetch_statement_data(
-        self, yf_symbol: str, statement_type: str, period_type: str = "annual"
+        self, yf_symbol: str, statement_type: str, period_type: str = "annual", force_refresh: bool = False
     ) -> Optional[pd.DataFrame]:
         """
-        Fetches a specific financial statement using yfinance and caches it.
+        Generic helper to fetch statement data, checking cache first (unless forced).
         """
-        _ensure_yfinance()
-        if not YFINANCE_AVAILABLE:
-            return None
-
-        cached_df = self._get_cached_statement_data(
-            yf_symbol, statement_type, period_type
-        )
-        if (
-            cached_df is not None
-        ):  # Check if it's not None (could be empty DataFrame from cache)
-            return cached_df
+        # --- Check Cache (Skip if force_refresh is True) ---
+        if not force_refresh:
+            cached_df = self._get_cached_statement_data(
+                yf_symbol, statement_type, period_type
+            )
+            if (
+                cached_df is not None
+            ):  # Check if it's not None (could be empty DataFrame from cache)
+                return cached_df
 
         logging.info(
             f"Fetching fresh {period_type} {statement_type} for {yf_symbol} (isolated)..."
         )
         try:
-            # Use isolated fetch for statements
-            df = _run_isolated_fetch(
-                [yf_symbol],
-                task="statement",
-                statement_type=statement_type,
-                period_type=period_type
-            )
-            
-            if df is None:  
-                df = pd.DataFrame() 
+            _ensure_yfinance()
+            if not YFINANCE_AVAILABLE:
+                return None
 
-            self._save_statement_data_to_cache(
-                yf_symbol, statement_type, period_type, df
+            cached_df = self._get_cached_statement_data(
+                yf_symbol, statement_type, period_type
             )
-            return df
+            if (
+                cached_df is not None
+            ):  # Check if it's not None (could be empty DataFrame from cache)
+                return cached_df
+
+            logging.info(
+                f"Fetching fresh {period_type} {statement_type} for {yf_symbol} (isolated)..."
+            )
+            try:
+                # Use isolated fetch for statements
+                df = _run_isolated_fetch(
+                    [yf_symbol],
+                    task="statement",
+                    statement_type=statement_type,
+                    period_type=period_type
+                )
+                
+                if df is None:  
+                    df = pd.DataFrame() 
+
+                self._save_statement_data_to_cache(
+                    yf_symbol, statement_type, period_type, df
+                )
+                return df
+            except Exception as e:
+                logging.error(
+                    f"Error fetching {period_type} {statement_type} for {yf_symbol}: {e}"
+                )
+                # Cache empty to prevent retry loop
+                self._save_statement_data_to_cache(
+                    yf_symbol, statement_type, period_type, pd.DataFrame()
+                )
+                return pd.DataFrame()
         except Exception as e:
             logging.error(
                 f"Error fetching {period_type} {statement_type} for {yf_symbol}: {e}"
@@ -3057,24 +3080,24 @@ class MarketDataProvider:
 
     @profile
     def get_financials(
-        self, yf_symbol: str, period_type: str = "annual"
+        self, yf_symbol: str, period_type: str = "annual", force_refresh: bool = False
     ) -> Optional[pd.DataFrame]:
         """Fetches Income Statement data for a symbol."""
-        return self._fetch_statement_data(yf_symbol, "financials", period_type)
+        return self._fetch_statement_data(yf_symbol, "financials", period_type, force_refresh)
 
     @profile
     def get_balance_sheet(
-        self, yf_symbol: str, period_type: str = "annual"
+        self, yf_symbol: str, period_type: str = "annual", force_refresh: bool = False
     ) -> Optional[pd.DataFrame]:
         """Fetches Balance Sheet data for a symbol."""
-        return self._fetch_statement_data(yf_symbol, "balance_sheet", period_type)
+        return self._fetch_statement_data(yf_symbol, "balance_sheet", period_type, force_refresh)
 
     @profile
     def get_cashflow(
-        self, yf_symbol: str, period_type: str = "annual"
+        self, yf_symbol: str, period_type: str = "annual", force_refresh: bool = False
     ) -> Optional[pd.DataFrame]:
         """Fetches Cash Flow Statement data for a symbol."""
-        return self._fetch_statement_data(yf_symbol, "cashflow", period_type)
+        return self._fetch_statement_data(yf_symbol, "cashflow", period_type, force_refresh)
 
     def get_exchange_for_symbol(self, yf_symbol: str) -> Optional[str]:
         """

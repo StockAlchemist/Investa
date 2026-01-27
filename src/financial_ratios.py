@@ -1091,7 +1091,8 @@ def get_intrinsic_value_for_symbol(
     symbol: str,
     mdp: Any,
     config_manager: Optional[Any] = None,
-    iterations: int = 10000
+    iterations: int = 10000,
+    force_refresh: bool = False
 ) -> Dict[str, Any]:
     """
     Higher-level helper to calculate intrinsic value with full data and overrides.
@@ -1124,7 +1125,7 @@ def get_intrinsic_value_for_symbol(
     # 2. Fetch COMPLETE data 
     # This fulfills the USER requirement: "Always fetch complete statements"
     try:
-        info = mdp.get_fundamental_data(yf_symbol)
+        info = mdp.get_fundamental_data(yf_symbol, force_refresh=force_refresh)
         
         # CRITICAL: Detect "poisoned" or insufficient info and force fresh fetch
         if not info or len(info) <= 3:
@@ -1135,9 +1136,9 @@ def get_intrinsic_value_for_symbol(
              return {"error": f"No fundamental data found for {yf_symbol}"}
              
         # Force fetching statements
-        financials = mdp.get_financials(yf_symbol, "annual")
-        balance_sheet = mdp.get_balance_sheet(yf_symbol, "annual")
-        cashflow = mdp.get_cashflow(yf_symbol, "annual")
+        financials = mdp.get_financials(yf_symbol, "annual", force_refresh=force_refresh)
+        balance_sheet = mdp.get_balance_sheet(yf_symbol, "annual", force_refresh=force_refresh)
+        cashflow = mdp.get_cashflow(yf_symbol, "annual", force_refresh=force_refresh)
         
         # 3. Handle Overrides
         symbol_overrides = {}

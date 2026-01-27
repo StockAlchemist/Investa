@@ -757,21 +757,26 @@ export async function fetchFundamentals(symbol: string, force: boolean = false):
     return res.json();
 }
 
-export async function fetchFinancials(symbol: string, periodType: 'annual' | 'quarterly' = 'annual'): Promise<FinancialsResponse> {
+export async function fetchFinancials(symbol: string, periodType: 'annual' | 'quarterly' = 'annual', force: boolean = false): Promise<FinancialsResponse> {
     const params = new URLSearchParams({ period_type: periodType });
+    if (force) params.append('force', 'true');
     const res = await authFetch(`${API_BASE_URL}/financials/${symbol}?${params.toString()}`);
     if (!res.ok) throw new Error(`Failed to fetch financials for ${symbol}`);
     return res.json();
 }
 
-export async function fetchRatios(symbol: string): Promise<RatiosResponse> {
-    const res = await authFetch(`${API_BASE_URL}/ratios/${symbol}`);
+export async function fetchRatios(symbol: string, force: boolean = false): Promise<RatiosResponse> {
+    const params = new URLSearchParams();
+    if (force) params.append('force', 'true');
+    const res = await authFetch(`${API_BASE_URL}/ratios/${symbol}?${params.toString()}`);
     if (!res.ok) throw new Error(`Failed to fetch ratios for ${symbol}`);
     return res.json();
 }
 
-export async function fetchIntrinsicValue(symbol: string): Promise<IntrinsicValueResponse> {
-    const res = await authFetch(`${API_BASE_URL}/intrinsic_value/${symbol}`);
+export async function fetchIntrinsicValue(symbol: string, force: boolean = false): Promise<IntrinsicValueResponse> {
+    const params = new URLSearchParams();
+    if (force) params.append('force', 'true');
+    const res = await authFetch(`${API_BASE_URL}/intrinsic_value/${symbol}?${params.toString()}`);
     if (!res.ok) throw new Error(`Failed to fetch intrinsic value for ${symbol}`);
     return res.json();
 }

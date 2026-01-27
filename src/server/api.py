@@ -2160,27 +2160,16 @@ async def get_stock_analysis(
         (_, _, user_symbol_map, user_excluded_symbols, _, _, _) = data
         yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols) or symbol
         
-        # ... logic ...
-        # Note: I am replacing the header + the call site? 
-        # Multi-replace works on blocks. 
-        # I cannot easily replace header AND call site if they are far apart (2194 vs 2250).
-        # Ah. 2194 and 2250 are 50 lines apart.
-        # I should split this into 2 chunks.
-        pass
-
-# Chunk 1: Header
-
-        
         mdp = get_mdp()
         # 1. Fetch Fundamentals
-        fund_data = mdp.get_fundamental_data(yf_symbol)
+        fund_data = mdp.get_fundamental_data(yf_symbol, force_refresh=force)
         if not fund_data:
             fund_data = {}
             
         # 2. Fetch Release Statements and calculate ratios
-        financials_df = mdp.get_financials(yf_symbol, "annual")
-        balance_sheet_df = mdp.get_balance_sheet(yf_symbol, "annual")
-        cashflow_df = mdp.get_cashflow(yf_symbol, "annual")
+        financials_df = mdp.get_financials(yf_symbol, "annual", force_refresh=force)
+        balance_sheet_df = mdp.get_balance_sheet(yf_symbol, "annual", force_refresh=force)
+        cashflow_df = mdp.get_cashflow(yf_symbol, "annual", force_refresh=force)
         
         ratios = {}
         if financials_df is not None and not financials_df.empty and balance_sheet_df is not None and not balance_sheet_df.empty:
@@ -2873,6 +2862,7 @@ async def get_fundamentals_endpoint(
 async def get_financials_endpoint(
     symbol: str,
     period_type: str = "annual",
+    force: bool = Query(False),
     data: tuple = Depends(get_transaction_data)
 ):
     """Returns historical financial statements for a symbol."""
@@ -2885,9 +2875,9 @@ async def get_financials_endpoint(
     
     try:
         mdp = get_mdp()
-        financials = mdp.get_financials(yf_symbol, period_type)
-        balance_sheet = mdp.get_balance_sheet(yf_symbol, period_type)
-        cashflow = mdp.get_cashflow(yf_symbol, period_type)
+        financials = mdp.get_financials(yf_symbol, period_type, force_refresh=force)
+        balance_sheet = mdp.get_balance_sheet(yf_symbol, period_type, force_refresh=force)
+        cashflow = mdp.get_cashflow(yf_symbol, period_type, force_refresh=force)
         
         # Convert DataFrames to dicts for JSON serialization
         def df_to_dict(df):
@@ -2922,6 +2912,7 @@ async def get_financials_endpoint(
 @router.get("/ratios/{symbol}")
 async def get_ratios_endpoint(
     symbol: str,
+    force: bool = Query(False),
     data: tuple = Depends(get_transaction_data)
 ):
     """Returns calculated financial ratios for a symbol."""
@@ -2938,9 +2929,9 @@ async def get_ratios_endpoint(
     try:
         mdp = get_mdp()
         # Fetch data needed for ratios
-        info = mdp.get_fundamental_data(yf_symbol)
-        financials = mdp.get_financials(yf_symbol, "annual")
-        balance_sheet = mdp.get_balance_sheet(yf_symbol, "annual")
+        info = mdp.get_fundamental_data(yf_symbol, force_refresh=force)
+        financials = mdp.get_financials(yf_symbol, "annual", force_refresh=force)
+        balance_sheet = mdp.get_balance_sheet(yf_symbol, "annual", force_refresh=force)
         
         # Calculate historical ratios
         historical_ratios_df = calculate_key_ratios_timeseries(financials, balance_sheet)
@@ -2970,6 +2961,7 @@ async def get_ratios_endpoint(
 @router.get("/intrinsic_value/{symbol}")
 async def get_intrinsic_value_endpoint(
     symbol: str,
+    force: bool = Query(False),
     data: tuple = Depends(get_transaction_data),
     config_manager: ConfigManager = Depends(get_config_manager),
     db_conn: sqlite3.Connection = Depends(get_user_db_connection)
@@ -2988,14 +2980,14 @@ async def get_intrinsic_value_endpoint(
     
     try:
         mdp = get_mdp()
-        results = get_intrinsic_value_for_symbol(symbol, mdp, config_manager)
+        results = get_intrinsic_value_for_symbol(symbol, mdp, config_manager, force_refresh=force)
         
         if "error" in results:
              raise HTTPException(status_code=500, detail=results["error"])
         
         # We still need info for the sync function below
         yf_symbol = map_to_yf_symbol(symbol, user_symbol_map, user_excluded_symbols)
-        info = mdp.get_fundamental_data(yf_symbol)
+        info = mdp.get_fundamental_data(yf_symbol, force_refresh=force)
         
         # Sync to screener cache
         try:
