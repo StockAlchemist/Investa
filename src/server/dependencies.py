@@ -4,6 +4,7 @@ import pandas as pd
 import logging
 import json
 import sqlite3
+import threading
 from typing import Optional, Tuple, Set, Dict, Any
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -61,6 +62,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
 # Global cache for transactions to avoid reloading on every request
 # Keyed by user_id to ensure isolation
 _TRANSACTIONS_CACHE: Dict[int, pd.DataFrame] = {} 
+_DATA_LOADING_LOCK = threading.Lock() # Lock to prevent concurrent reloads (OOM protection)
 _IGNORED_INDICES: Dict[int, Set[int]] = {}
 _IGNORED_REASONS: Dict[int, Dict[int, str]] = {}
 
@@ -187,132 +189,150 @@ def get_transaction_data(current_user: User = Depends(get_current_user)) -> Tupl
     user_cache_exists = user_id in _TRANSACTIONS_CACHE
     
     if not user_cache_exists or current_mtime != _DB_MTIME or db_path != _DB_PATH or overrides_changed:
-        if user_cache_exists:
-            reason = "mtime changed" if current_mtime != _DB_MTIME else "db_path changed"
-            if overrides_changed: reason = "overrides changed"
-            logging.info(f"Reloading transactions for user {user_id} ({reason}). New path: {db_path}")
-        else:
-            logging.info(f"Loading transactions for user {user_id} from: {db_path}")
-        
-        # --- 2b. Load manual_overrides.json ---
-        global _MANUAL_OVERRIDES_FILE_CACHE, _MANUAL_OVERRIDES_MTIME
-        
-        manual_overrides = {} 
-        full_overrides_json = {} 
-        overrides_paths_to_try = [] 
-        
-        if config_loaded_path:
-            config_dir = os.path.dirname(config_loaded_path)
-            overrides_paths_to_try.append(os.path.join(config_dir, config.MANUAL_OVERRIDES_FILENAME))
-        
-        # Fallbacks (optional)
-        overrides_paths_to_try.append(os.path.join(user_data_dir, config.MANUAL_OVERRIDES_FILENAME))
-        
-        current_overrides_path = None
-        for op in overrides_paths_to_try:
-            if os.path.exists(op):
-                current_overrides_path = op
-                break
-        
-        if current_overrides_path:
-            st_ov = os.stat(current_overrides_path)
-            if _MANUAL_OVERRIDES_FILE_CACHE is None or current_overrides_path != _OVERRIDES_PATH or st_ov.st_mtime != _MANUAL_OVERRIDES_MTIME:
+        # CRITICAL FIX: Prevent concurrent reloads which cause OOM
+        # Multiple requests (dashboard parts) hit this simultaneously after cache clear.
+        with _DATA_LOADING_LOCK:
+            # Double-checked locking: Re-evaluate condition inside lock
+            user_cache_exists = user_id in _TRANSACTIONS_CACHE
+            # Note: Checking _DB_MTIME vs current_mtime again is tricky if another thread updated it.
+            # Ideally we check if the cache is now valid.
+            
+            # Simple check: If cache was populated by another thread while we waited, skip load
+            # UNLESS the mtime mismatch was the reason we entered (which means we still need to load if it's old)
+            
+            # Let's verify if the cache state is "fresh enough"
+            # If user_cache_exists is now True, AND _DB_MTIME matches current_mtime... success.
+            is_cache_fresh = user_cache_exists and _DB_MTIME == current_mtime and _DB_PATH == db_path and not overrides_changed
+            
+            if is_cache_fresh:
+                logging.info(f"Skipping reload for user {user_id}, duplicate request handled by another thread.")
+            else:
+                if user_cache_exists:
+                    reason = "mtime changed" if current_mtime != _DB_MTIME else "db_path changed"
+                    if overrides_changed: reason = "overrides changed"
+                    logging.info(f"Reloading transactions for user {user_id} ({reason}). New path: {db_path}")
+                else:
+                    logging.info(f"Loading transactions for user {user_id} from: {db_path}")
+                
+                # --- 2b. Load manual_overrides.json ---
+                global _MANUAL_OVERRIDES_FILE_CACHE, _MANUAL_OVERRIDES_MTIME
+                
+                manual_overrides = {} 
+                full_overrides_json = {} 
+                overrides_paths_to_try = [] 
+                
+                if config_loaded_path:
+                    config_dir = os.path.dirname(config_loaded_path)
+                    overrides_paths_to_try.append(os.path.join(config_dir, config.MANUAL_OVERRIDES_FILENAME))
+                
+                # Fallbacks (optional)
+                overrides_paths_to_try.append(os.path.join(user_data_dir, config.MANUAL_OVERRIDES_FILENAME))
+                
+                current_overrides_path = None
+                for op in overrides_paths_to_try:
+                    if os.path.exists(op):
+                        current_overrides_path = op
+                        break
+                
+                if current_overrides_path:
+                    st_ov = os.stat(current_overrides_path)
+                    if _MANUAL_OVERRIDES_FILE_CACHE is None or current_overrides_path != _OVERRIDES_PATH or st_ov.st_mtime != _MANUAL_OVERRIDES_MTIME:
+                        try:
+                            with open(current_overrides_path, "r") as f:
+                                _MANUAL_OVERRIDES_FILE_CACHE = json.load(f)
+                            _OVERRIDES_PATH = current_overrides_path
+                            _MANUAL_OVERRIDES_MTIME = st_ov.st_mtime
+                            logging.info(f"Loaded/Reloaded manual overrides from {current_overrides_path}")
+                        except Exception as e:
+                            logging.warning(f"Found overrides at {current_overrides_path} but failed to load: {e}")
+                            if _MANUAL_OVERRIDES_FILE_CACHE is None: _MANUAL_OVERRIDES_FILE_CACHE = {}
+                else:
+                    _MANUAL_OVERRIDES_FILE_CACHE = {}
+                    _OVERRIDES_PATH = None
+                    _MANUAL_OVERRIDES_MTIME = 0.0
+
+                full_overrides_json = _MANUAL_OVERRIDES_FILE_CACHE
+                if "manual_price_overrides" in full_overrides_json:
+                    manual_overrides = full_overrides_json["manual_price_overrides"]
+                
+                loaded_overrides_path = _OVERRIDES_PATH
+
+                
+                # --- CHANGED: JSON overrides are the ONLY authority ---
+                # We no longer merge from config.
+                # Initialize defaults from explicit JSON load or empty dict
+                final_manual_overrides = manual_overrides
+                
+                if loaded_overrides_path:
+                     _OVERRIDES_PATH = loaded_overrides_path
+                     _OVERRIDES_MTIME = os.path.getmtime(loaded_overrides_path)
+                
+                # ------------------------------------------------
+                
+                # Merge other collections from JSON if present
+                if "user_excluded_symbols" in full_overrides_json:
+                    loaded_excluded = full_overrides_json.get("user_excluded_symbols", [])
+                    if isinstance(loaded_excluded, list):
+                        clean_excluded = {s.upper().strip() for s in loaded_excluded if isinstance(s, str)}
+                        user_excluded_symbols.update(clean_excluded)
+                if "user_symbol_map" in full_overrides_json:
+                     user_symbol_map.update(full_overrides_json.get("user_symbol_map", {}))
+
                 try:
-                    with open(current_overrides_path, "r") as f:
-                        _MANUAL_OVERRIDES_FILE_CACHE = json.load(f)
-                    _OVERRIDES_PATH = current_overrides_path
-                    _MANUAL_OVERRIDES_MTIME = st_ov.st_mtime
-                    logging.info(f"Loaded/Reloaded manual overrides from {current_overrides_path}")
+                    is_db = db_path.lower().endswith((".db", ".sqlite", ".sqlite3"))
+                    
+                    # Load ALL data first
+                    # TODO: Optimize to load only USER data at SQL level if possible
+                    # But underlying logic 'load_and_clean_transactions' reads everything.
+                    # We will filter dataframe after load.
+                    
+                    df, _, ignored_indices, ignored_reasons, _, _, _ = load_and_clean_transactions(
+                        source_path=db_path,
+                        account_currency_map=account_currency_map,
+                        default_currency=default_currency,
+                        is_db_source=is_db
+                    )
+                    
+                    # --- FILTER BY USER ID ---
+                    # In Isolated Mode, the DB *only* contains this user's data (migrated).
+                    # So df should be all theirs.
+                    # However, for robustness, if we kept user_id column, we can filter or update it.
+                    # If user_id is missing or updated to 1 during copy, we strictly don't care about the column filtering 
+                    # as long as the file is isolated.
+                    
+                    # BUT: If we copied the DB, it has rows for user 1 (old testuser) or 3 (kitmatan).
+                    # If we are kitmatan (id 3) and rows are id 3, fine.
+                    # If migration DID NOT clean other users' data, we might see others?
+                    # Architecture Plan says: "Clean up other users' data... pass" (Step 344)
+                    # So migration copied EVERYTHING.
+                    # So multiple users' data might exist in this file until we clean it.
+                    # So we SHOULD filter by user_id to be safe, assuming the ID matches.
+                    
+                    # Wait, global ID might differ from local ID if we re-gen?
+                    # No, we kept IDs stable in global DB migration.
+                    
+                    if not df.empty and "user_id" in df.columns:
+                         df['user_id'] = pd.to_numeric(df['user_id'], errors='coerce')
+                         # Filter only if user_id matches
+                         df = df[df['user_id'] == user_id].copy()
+                    
+                    _TRANSACTIONS_CACHE[user_id] = df
+                    _IGNORED_INDICES[user_id] = ignored_indices
+                    _IGNORED_REASONS[user_id] = ignored_reasons
+                    
+                    # These are system-wide for now, but scoped in memory
+                    _MANUAL_OVERRIDES[user_id] = final_manual_overrides
+                    _USER_SYMBOL_MAP[user_id] = user_symbol_map
+                    _USER_EXCLUDED_SYMBOLS[user_id] = user_excluded_symbols
+                    _ACCOUNT_CURRENCY_MAP[user_id] = account_currency_map
+                    
+                    _DB_PATH = db_path
+                    _DB_MTIME = current_mtime
+                    
+                    logging.info(f"Loaded {len(df)} transactions for user {user_id}.")
                 except Exception as e:
-                    logging.warning(f"Found overrides at {current_overrides_path} but failed to load: {e}")
-                    if _MANUAL_OVERRIDES_FILE_CACHE is None: _MANUAL_OVERRIDES_FILE_CACHE = {}
-        else:
-            _MANUAL_OVERRIDES_FILE_CACHE = {}
-            _OVERRIDES_PATH = None
-            _MANUAL_OVERRIDES_MTIME = 0.0
-
-        full_overrides_json = _MANUAL_OVERRIDES_FILE_CACHE
-        if "manual_price_overrides" in full_overrides_json:
-            manual_overrides = full_overrides_json["manual_price_overrides"]
-        
-        loaded_overrides_path = _OVERRIDES_PATH
-
-        
-        # --- CHANGED: JSON overrides are the ONLY authority ---
-        # We no longer merge from config.
-        # Initialize defaults from explicit JSON load or empty dict
-        final_manual_overrides = manual_overrides
-        
-        if loaded_overrides_path:
-             _OVERRIDES_PATH = loaded_overrides_path
-             _OVERRIDES_MTIME = os.path.getmtime(loaded_overrides_path)
-        
-        # ------------------------------------------------
-        
-        # Merge other collections from JSON if present
-        if "user_excluded_symbols" in full_overrides_json:
-            loaded_excluded = full_overrides_json.get("user_excluded_symbols", [])
-            if isinstance(loaded_excluded, list):
-                clean_excluded = {s.upper().strip() for s in loaded_excluded if isinstance(s, str)}
-                user_excluded_symbols.update(clean_excluded)
-        if "user_symbol_map" in full_overrides_json:
-             user_symbol_map.update(full_overrides_json.get("user_symbol_map", {}))
-
-        try:
-            is_db = db_path.lower().endswith((".db", ".sqlite", ".sqlite3"))
-            
-            # Load ALL data first
-            # TODO: Optimize to load only USER data at SQL level if possible
-            # But underlying logic 'load_and_clean_transactions' reads everything.
-            # We will filter dataframe after load.
-            
-            df, _, ignored_indices, ignored_reasons, _, _, _ = load_and_clean_transactions(
-                source_path=db_path,
-                account_currency_map=account_currency_map,
-                default_currency=default_currency,
-                is_db_source=is_db
-            )
-            
-            # --- FILTER BY USER ID ---
-            # In Isolated Mode, the DB *only* contains this user's data (migrated).
-            # So df should be all theirs.
-            # However, for robustness, if we kept user_id column, we can filter or update it.
-            # If user_id is missing or updated to 1 during copy, we strictly don't care about the column filtering 
-            # as long as the file is isolated.
-            
-            # BUT: If we copied the DB, it has rows for user 1 (old testuser) or 3 (kitmatan).
-            # If we are kitmatan (id 3) and rows are id 3, fine.
-            # If migration DID NOT clean other users' data, we might see others?
-            # Architecture Plan says: "Clean up other users' data... pass" (Step 344)
-            # So migration copied EVERYTHING.
-            # So multiple users' data might exist in this file until we clean it.
-            # So we SHOULD filter by user_id to be safe, assuming the ID matches.
-            
-            # Wait, global ID might differ from local ID if we re-gen?
-            # No, we kept IDs stable in global DB migration.
-            
-            if not df.empty and "user_id" in df.columns:
-                 df['user_id'] = pd.to_numeric(df['user_id'], errors='coerce')
-                 # Filter only if user_id matches
-                 df = df[df['user_id'] == user_id].copy()
-            
-            _TRANSACTIONS_CACHE[user_id] = df
-            _IGNORED_INDICES[user_id] = ignored_indices
-            _IGNORED_REASONS[user_id] = ignored_reasons
-            
-            # These are system-wide for now, but scoped in memory
-            _MANUAL_OVERRIDES[user_id] = final_manual_overrides
-            _USER_SYMBOL_MAP[user_id] = user_symbol_map
-            _USER_EXCLUDED_SYMBOLS[user_id] = user_excluded_symbols
-            _ACCOUNT_CURRENCY_MAP[user_id] = account_currency_map
-            
-            _DB_PATH = db_path
-            _DB_MTIME = current_mtime
-            
-            logging.info(f"Loaded {len(df)} transactions for user {user_id}.")
-        except Exception as e:
-            logging.error(f"Error loading transactions for user {user_id}: {e}", exc_info=True)
-            return pd.DataFrame(), {}, {}, set(), {}, "", 0.0
+                    logging.error(f"Error loading transactions for user {user_id}: {e}", exc_info=True)
+                    return pd.DataFrame(), {}, {}, set(), {}, "", 0.0
 
     # Return cached data for specific user
     return (
