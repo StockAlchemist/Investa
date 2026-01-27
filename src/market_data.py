@@ -2932,10 +2932,19 @@ class MarketDataProvider:
                 cache_timestamp_str = cached_entry.get("timestamp")
                 if cache_timestamp_str:
                     cache_timestamp = datetime.fromisoformat(cache_timestamp_str)
-                    if datetime.now(timezone.utc) - cache_timestamp < timedelta(
-                        hours=FUNDAMENTALS_CACHE_DURATION_HOURS  # Use same duration as .info
-                    ):
-                        data_json_str = cached_entry.get("data_df_json")
+                    data_json_str = cached_entry.get("data_df_json")
+                    
+                    # Determine cache duration based on data content
+                    # If data is empty, use a short cache (15 mins) to allow retries
+                    is_empty_data = False
+                    if not data_json_str or data_json_str == "{}" or '"data":[]' in data_json_str:
+                        is_empty_data = True
+                    
+                    cache_duration = timedelta(hours=FUNDAMENTALS_CACHE_DURATION_HOURS)
+                    if is_empty_data:
+                        cache_duration = timedelta(minutes=15)
+                        
+                    if datetime.now(timezone.utc) - cache_timestamp < cache_duration:
                         if data_json_str:
                             # Deserialize DataFrame from JSON string
                             df = pd.read_json(StringIO(data_json_str), orient="split")
@@ -2943,9 +2952,14 @@ class MarketDataProvider:
                             # If columns are dates, convert them to simple date strings for consistency if needed,
                             # or ensure they are Timestamps. For now, assume read_json handles it.
                             logging.debug(
-                                f"Using valid cache for {period_type} {statement_type} of {yf_symbol} from {statement_cache_file}"
+                                f"Using valid cache for {period_type} {statement_type} of {yf_symbol} from {statement_cache_file} (Age: {datetime.now(timezone.utc) - cache_timestamp})"
                             )
                             return df
+                        elif is_empty_data:
+                                # return empty DF if within short cache window
+                                return pd.DataFrame()
+                    else:
+                            logging.debug(f"Cache expired for {period_type} {statement_type} of {yf_symbol} (Empty: {is_empty_data})")
             except Exception as e:
                 logging.warning(
                     f"Error reading {period_type} {statement_type} cache for {yf_symbol} from {statement_cache_file}: {e}"
