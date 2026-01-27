@@ -60,10 +60,10 @@ export default function LoginPage() {
                             className="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/20 hidden dark:block"
                         />
                         <div className="flex flex-col -space-y-0.5">
-                            <CardTitle className="text-2xl font-bold tracking-tight text-foreground leading-none">
+                            <CardTitle className="text-3xl font-bold text-foreground leading-none">
                                 Investa
                             </CardTitle>
-                            <span className="text-[10px] text-muted-foreground font-medium tracking-wider">
+                            <span className="text-xs text-muted-foreground font-medium">
                                 by StockAlchemist
                             </span>
                         </div>

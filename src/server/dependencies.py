@@ -380,7 +380,7 @@ def reload_config():
 def get_global_db_connection() -> sqlite3.Connection:
     """Dependency for Global DB Connection (Auth)."""
     global_db_path = os.path.join(config.get_app_data_dir(), config.GLOBAL_DB_FILENAME)
-    conn = get_db_connection(global_db_path, check_same_thread=False)
+    conn = get_db_connection(global_db_path, check_same_thread=False, use_cache=False)
     if not conn:
         raise HTTPException(status_code=500, detail="Global Database unavailable")
     try:
@@ -392,7 +392,7 @@ def get_user_db_connection(current_user: User = Depends(get_current_user)) -> sq
     """Dependency for User Portfolio DB Connection."""
     user_data_dir = os.path.join(config.get_app_data_dir(), "users", current_user.username)
     db_path = os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
-    conn = get_db_connection(db_path, check_same_thread=False)
+    conn = get_db_connection(db_path, check_same_thread=False, use_cache=False)
     if not conn:
         raise HTTPException(status_code=500, detail="User Database unavailable")
     try:

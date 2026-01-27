@@ -27,7 +27,7 @@ import {
 } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { AreaChart, Area, YAxis, ResponsiveContainer } from 'recharts';
-import { DEFAULT_ITEMS } from '@/lib/dashboard_constants';
+import { DEFAULT_ITEMS, INITIAL_VISIBLE_ITEMS } from '@/lib/dashboard_constants';
 // import { CURRENCY_SYMBOLS } from '@/lib/utils';
 import Dashboard from '@/components/Dashboard';
 import HoldingsTable from '@/components/HoldingsTable';
@@ -150,7 +150,7 @@ export default function Home() {
   const [correlationPeriod, setCorrelationPeriod] = useState('1y');
 
   // Lazy init visibleItems
-  const [visibleItems, setVisibleItems] = useState<string[]>(DEFAULT_ITEMS.map(i => i.id));
+  const [visibleItems, setVisibleItems] = useState<string[]>(INITIAL_VISIBLE_ITEMS);
 
   // Load visibleItems from localStorage on mount (initial fallback before server load)
   useEffect(() => {

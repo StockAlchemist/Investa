@@ -17,3 +17,12 @@ export const DEFAULT_ITEMS = [
     { id: 'sectorContribution', title: 'Sector Contribution', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
     { id: 'topContributors', title: 'Top Contributors', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
 ];
+
+export const INITIAL_VISIBLE_ITEMS = [
+    'portfolioValue',
+    'dayGL',
+    'unrealizedGL',
+    'annualTWR',
+    'cashBalance',
+    'portfolioDonut'
+];

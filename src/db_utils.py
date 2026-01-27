@@ -64,7 +64,7 @@ def get_database_path(db_filename: str = DB_FILENAME) -> str:
 
 _DB_CONN_CACHE = threading.local()
 
-def get_db_connection(db_path: Optional[str] = None, check_same_thread: bool = True) -> Optional[sqlite3.Connection]:
+def get_db_connection(db_path: Optional[str] = None, check_same_thread: bool = True, use_cache: bool = True) -> Optional[sqlite3.Connection]:
     """Establishes a connection to the SQLite database, with thread-local caching."""
     if db_path is None:
         db_path = get_database_path()
@@ -80,7 +80,7 @@ def get_db_connection(db_path: Optional[str] = None, check_same_thread: bool = T
     if not hasattr(_DB_CONN_CACHE, 'connections'):
         _DB_CONN_CACHE.connections = {}
     
-    if cache_key in _DB_CONN_CACHE.connections:
+    if use_cache and cache_key in _DB_CONN_CACHE.connections:
         # Verify connection is still open
         try:
             _DB_CONN_CACHE.connections[cache_key].execute("SELECT 1")
@@ -115,8 +115,9 @@ def get_db_connection(db_path: Optional[str] = None, check_same_thread: bool = T
                 raise e
         
         if conn:
-            _DB_CONN_CACHE.connections[cache_key] = conn
-            logging.info(f"Successfully connected to database (cached): {db_path} (check_same_thread={check_same_thread})")
+            if use_cache:
+                _DB_CONN_CACHE.connections[cache_key] = conn
+            logging.info(f"Successfully connected to database ({'cached' if use_cache else 'fresh'}): {db_path} (check_same_thread={check_same_thread})")
             return conn
         return None
     except sqlite3.Error as e:
