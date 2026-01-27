@@ -5,14 +5,16 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 
 import StockDetailModal from './StockDetailModal';
 import StockIcon from './StockIcon';
+import TabContentSkeleton from './skeletons/TabContentSkeleton';
 
 interface CapitalGainsProps {
     data: CapitalGain[] | null;
     currency: string;
     onDateRangeChange?: (fromDate?: string, toDate?: string) => void;
+    isLoading?: boolean;
 }
 
-export default function CapitalGains({ data, currency }: CapitalGainsProps) {
+export default function CapitalGains({ data, currency, isLoading }: CapitalGainsProps) {
     const [selectedYear, setSelectedYear] = useState<string | null>(null);
     const [sortConfig, setSortConfig] = useState<{ key: keyof CapitalGain; direction: 'ascending' | 'descending' } | null>({ key: 'Date', direction: 'descending' });
     const [visibleRows, setVisibleRows] = useState(10);
@@ -60,6 +62,10 @@ export default function CapitalGains({ data, currency }: CapitalGainsProps) {
         }
         return sortableItems;
     }, [filteredData, sortConfig]);
+
+    if (isLoading) {
+        return <TabContentSkeleton type="full" />;
+    }
 
     if (!data) {
         return <div className="p-4 text-center text-muted-foreground">Loading capital gains data...</div>;

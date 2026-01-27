@@ -5,15 +5,17 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 
 import StockDetailModal from './StockDetailModal';
 import StockIcon from './StockIcon';
+import TabContentSkeleton from './skeletons/TabContentSkeleton';
 
 interface DividendProps {
     data: Dividend[] | null;
     currency: string;
     expectedDividends?: number;
     children?: React.ReactNode;
+    isLoading?: boolean;
 }
 
-export default function Dividend({ data, currency, expectedDividends, children }: DividendProps) {
+export default function Dividend({ data, currency, expectedDividends, children, isLoading }: DividendProps) {
     const [sortConfig, setSortConfig] = useState<{ key: keyof Dividend; direction: 'ascending' | 'descending' } | null>({ key: 'Date', direction: 'descending' });
     const [visibleRows, setVisibleRows] = useState(10);
     const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
@@ -53,6 +55,10 @@ export default function Dividend({ data, currency, expectedDividends, children }
         }
         return sortableItems;
     }, [data, sortConfig]);
+
+    if (isLoading) {
+        return <TabContentSkeleton type="full" />;
+    }
 
     if (!data) {
         return <div className="p-4 text-center text-muted-foreground">Loading dividend data...</div>;

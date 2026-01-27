@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import {
   fetchSummary,
   fetchHoldings,
@@ -35,6 +35,7 @@ import AccountSelector from '@/components/AccountSelector';
 import CurrencySelector from '@/components/CurrencySelector';
 import TabNavigation from '@/components/TabNavigation';
 import dynamic from 'next/dynamic';
+import AppShellSkeleton from "@/components/skeletons/AppShellSkeleton";
 
 const PerformanceGraph = dynamic(() => import('@/components/PerformanceGraph'), {
   loading: () => <div className="h-[400px] bg-card rounded-xl border border-border mb-6 animate-pulse" />,
@@ -78,35 +79,50 @@ export default function Home() {
     }
   }, [user, authLoading, router]);
 
-  const [selectedAccounts, setSelectedAccounts] = useState<string[]>(() => {
-    if (typeof window === 'undefined') return [];
-    try {
-      const saved = localStorage.getItem('investa_selected_accounts');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) { return []; }
-  });
-  const [currency, setCurrency] = useState(() => {
-    if (typeof window === 'undefined') return 'USD';
-    return localStorage.getItem('investa_currency') || 'USD';
-  });
-  const [activeTab, setActiveTab] = useState(() => {
-    if (typeof window === 'undefined') return 'performance';
-    return localStorage.getItem('investa_active_tab') || 'performance';
-  });
+  // Hydration-safe state initialization
+  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
+  const [currency, setCurrency] = useState('USD');
+  const [activeTab, setActiveTab] = useState('performance');
+  const [showClosed, setShowClosed] = useState(false);
   const [backgroundFetchEnabled, setBackgroundFetchEnabled] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // Hydrate state from localStorage on mount
+  useEffect(() => {
+    try {
+      // Selected Accounts
+      const savedAccounts = localStorage.getItem('investa_selected_accounts');
+      if (savedAccounts) setSelectedAccounts(JSON.parse(savedAccounts));
+
+      // Currency
+      const savedCurrency = localStorage.getItem('investa_currency');
+      if (savedCurrency) setCurrency(savedCurrency);
+
+      // Active Tab
+      const savedTab = localStorage.getItem('investa_active_tab');
+      if (savedTab) setActiveTab(savedTab);
+
+      // Show Closed
+      const savedShowClosed = localStorage.getItem('investa_show_closed');
+      if (savedShowClosed) setShowClosed(savedShowClosed === 'true');
+
+    } catch (e) {
+      console.error("Failed to hydrate state from localStorage", e);
+    } finally {
+      setMounted(true);
+    }
+  }, []);
 
   // Trigger background fetch after initial load
   useEffect(() => {
-    // Start background fetch immediately after mount to speed up data availability
-    // while still allowing the main UI to paint first.
-    // We use a small timeout to let the event loop clear the render task.
+    if (!mounted) return; // Wait for mount
     const timer = setTimeout(() => {
       setBackgroundFetchEnabled(true);
     }, 100);
     return () => clearTimeout(timer);
-  }, []);
+  }, [mounted]);
 
-
+  // Settings sync effect (condensed)
   const settingsQuery = useQuery({
     queryKey: ['settings'],
     queryFn: fetchSettings,
@@ -114,52 +130,21 @@ export default function Home() {
     enabled: !!user,
   });
 
-  // Sync state from server settings
-  useEffect(() => {
-    if (settingsQuery.data) {
-      if (settingsQuery.data.visible_items && settingsQuery.data.visible_items.length > 0) {
-        setVisibleItems(settingsQuery.data.visible_items);
-      }
-      if (settingsQuery.data.benchmarks && settingsQuery.data.benchmarks.length > 0) {
-        setBenchmarks(settingsQuery.data.benchmarks);
-      }
-      if (typeof settingsQuery.data.show_closed === 'boolean') {
-        setShowClosed(settingsQuery.data.show_closed);
-      }
-      if (settingsQuery.data.display_currency) {
-        setCurrency(settingsQuery.data.display_currency);
-      }
-      if (settingsQuery.data.selected_accounts) {
-        setSelectedAccounts(settingsQuery.data.selected_accounts);
-      }
-      if (settingsQuery.data.active_tab) {
-        setActiveTab(settingsQuery.data.active_tab);
-      }
-    }
-  }, [settingsQuery.data]);
+  // ... (keep existing effects)
 
-  // Lazy init benchmarks from localStorage (fallback)
   const [benchmarks, setBenchmarks] = useState<string[]>(['S&P 500', 'Dow Jones', 'NASDAQ']);
 
-  // Load benchmarks from localStorage on mount (initial fallback before server load)
+  // Independent useEffect for benchmarks (could be merged but keeping separate for clarity based on existing code structure)
   useEffect(() => {
     try {
       const saved = localStorage.getItem('investa_graph_benchmarks');
-      if (saved) {
-        setBenchmarks(JSON.parse(saved));
-      }
-    } catch (e) {
-      console.error("Failed to load benchmarks", e);
-    }
+      if (saved) setBenchmarks(JSON.parse(saved));
+    } catch (e) { console.error(e); }
   }, []);
 
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
-  // Lazy init showClosed
-  const [showClosed, setShowClosed] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return localStorage.getItem('investa_show_closed') === 'true';
-  });
+  // Removed duplicate showClosed init
 
   const [capitalGainsDates, setCapitalGainsDates] = useState<{ from?: string, to?: string }>({});
   const [correlationPeriod, setCorrelationPeriod] = useState('1y');
@@ -179,67 +164,59 @@ export default function Home() {
     }
   }, []);
 
-  // Update helper to sync with server
-  const updateServerSettings = async (updates: Partial<SettingsUpdate>) => {
-    try {
-      await updateSettings(updates);
-    } catch (e) {
-      console.error("Failed to update server settings", e);
-    }
-  };
+  const queryClient = useQueryClient();
 
-  // Persist visibility 
-  useEffect(() => {
-    if (visibleItems.length > 0) {
-      localStorage.setItem('investa_dashboard_visible_items', JSON.stringify(visibleItems));
-      // Only sync if different from server data (to avoid loops)
-      if (settingsQuery.data && JSON.stringify(settingsQuery.data.visible_items) !== JSON.stringify(visibleItems)) {
-        updateServerSettings({ visible_items: visibleItems });
-      }
-    }
-  }, [visibleItems, settingsQuery.data]);
+  const settingsMutation = useMutation({
+    mutationFn: updateSettings,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+    },
+  });
 
-  // Persist showClosed
+  // Unified Settings Sync & Persistence
   useEffect(() => {
-    localStorage.setItem('investa_show_closed', showClosed.toString());
-    if (settingsQuery.data && settingsQuery.data.show_closed !== showClosed) {
-      updateServerSettings({ show_closed: showClosed });
-    }
-  }, [showClosed, settingsQuery.data]);
-
-  // Persist benchmarks
-  useEffect(() => {
-    if (benchmarks.length > 0) {
-      localStorage.setItem('investa_graph_benchmarks', JSON.stringify(benchmarks));
-      if (settingsQuery.data && JSON.stringify(settingsQuery.data.benchmarks) !== JSON.stringify(benchmarks)) {
-        updateServerSettings({ benchmarks: benchmarks });
-      }
-    }
-  }, [benchmarks, settingsQuery.data]);
-
-  // Persist currency
-  useEffect(() => {
+    // 1. Persist to localStorage immediately
     localStorage.setItem('investa_currency', currency);
-    if (settingsQuery.data && settingsQuery.data.display_currency !== currency) {
-      updateServerSettings({ display_currency: currency });
-    }
-  }, [currency, settingsQuery.data]);
-
-  // Persist selected accounts
-  useEffect(() => {
-    localStorage.setItem('investa_selected_accounts', JSON.stringify(selectedAccounts));
-    if (settingsQuery.data && JSON.stringify(settingsQuery.data.selected_accounts) !== JSON.stringify(selectedAccounts)) {
-      updateServerSettings({ selected_accounts: selectedAccounts });
-    }
-  }, [selectedAccounts, settingsQuery.data]);
-
-  // Persist active tab
-  useEffect(() => {
     localStorage.setItem('investa_active_tab', activeTab);
-    if (settingsQuery.data && settingsQuery.data.active_tab !== activeTab) {
-      updateServerSettings({ active_tab: activeTab });
-    }
-  }, [activeTab, settingsQuery.data]);
+    localStorage.setItem('investa_show_closed', showClosed.toString());
+    if (visibleItems.length > 0) localStorage.setItem('investa_dashboard_visible_items', JSON.stringify(visibleItems));
+    if (benchmarks.length > 0) localStorage.setItem('investa_graph_benchmarks', JSON.stringify(benchmarks));
+    localStorage.setItem('investa_selected_accounts', JSON.stringify(selectedAccounts));
+
+    // 2. Sync to Server (Debounced)
+    // Only proceed if we have server data to compare against
+    if (!settingsQuery.data) return;
+
+    const timeoutId = setTimeout(() => {
+      const updates: Partial<SettingsUpdate> = {};
+      const server = settingsQuery.data;
+
+      if (server.display_currency !== currency) updates.display_currency = currency;
+      if (server.active_tab !== activeTab) updates.active_tab = activeTab;
+      if (server.show_closed !== showClosed) updates.show_closed = showClosed;
+
+      // Deep compare arrays
+      if (JSON.stringify(server.selected_accounts) !== JSON.stringify(selectedAccounts)) {
+        updates.selected_accounts = selectedAccounts;
+      }
+      if (JSON.stringify(server.visible_items) !== JSON.stringify(visibleItems) && visibleItems.length > 0) {
+        updates.visible_items = visibleItems;
+      }
+      if (JSON.stringify(server.benchmarks) !== JSON.stringify(benchmarks) && benchmarks.length > 0) {
+        updates.benchmarks = benchmarks;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        settingsMutation.mutate(updates);
+      }
+    }, 1000); // 1 second debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [
+    // Dependencies: trigger on any local change or when server data updates
+    currency, activeTab, showClosed, benchmarks, selectedAccounts, visibleItems,
+    settingsQuery.data
+  ]);
 
   // Command Palette Keyboard Listener
   useEffect(() => {
@@ -275,11 +252,9 @@ export default function Home() {
     placeholderData: keepPreviousData,
   });
 
-  // --- PRIORITIZATION LOGIC ---
-  // Ensure Summary and Holdings fetch FIRST before triggering others
-  // We consider them "loaded" if they have data or successfully fetched.
-  // Using isFetched or data check.
-  const isHighPriorityLoaded = summaryQuery.isSuccess && holdingsQuery.isSuccess;
+  // --- PRIORITIZATION LOGIC REMOVED ---
+  // Queries now run in parallel or on-demand based on active tab
+  // const isHighPriorityLoaded = summaryQuery.isSuccess && holdingsQuery.isSuccess;
 
 
   const transactionsQuery = useQuery({
@@ -287,7 +262,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchTransactions(selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: (activeTab === 'transactions' || backgroundFetchEnabled) && isHighPriorityLoaded,
+    enabled: (activeTab === 'transactions' || backgroundFetchEnabled),
   });
 
   const assetChangeQuery = useQuery({
@@ -295,7 +270,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchAssetChange(currency, selectedAccounts, benchmarks, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: (activeTab === 'asset_change' || backgroundFetchEnabled) && isHighPriorityLoaded,
+    enabled: (activeTab === 'asset_change' || backgroundFetchEnabled),
   });
 
   const capitalGainsQuery = useQuery({
@@ -303,7 +278,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchCapitalGains(currency, selectedAccounts, capitalGainsDates.from, capitalGainsDates.to, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: (activeTab === 'capital_gains' || backgroundFetchEnabled) && isHighPriorityLoaded,
+    enabled: (activeTab === 'capital_gains' || backgroundFetchEnabled),
   });
 
   const dividendsQuery = useQuery({
@@ -311,7 +286,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchDividends(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: (activeTab === 'dividend' || backgroundFetchEnabled) && isHighPriorityLoaded,
+    enabled: (activeTab === 'dividend' || backgroundFetchEnabled),
   });
 
   const riskMetricsQuery = useQuery({
@@ -319,7 +294,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchRiskMetrics(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: isHighPriorityLoaded,
+    // enabled: isHighPriorityLoaded,
   });
 
   const attributionQuery = useQuery({
@@ -327,7 +302,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchAttribution(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: isHighPriorityLoaded,
+    // enabled: isHighPriorityLoaded,
   });
 
   const dividendCalendarQuery = useQuery({
@@ -335,7 +310,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchDividendCalendar(selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: (activeTab === 'dividend' || backgroundFetchEnabled) && isHighPriorityLoaded,
+    enabled: (activeTab === 'dividend' || backgroundFetchEnabled),
   });
 
   const historySparklineQuery = useQuery({
@@ -351,7 +326,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchWatchlist(currency, 1, signal),
     staleTime: 1 * 60 * 1000,
     // No keepPreviousData needed for watchlist as it's not dependent on accounts
-    enabled: (activeTab === 'watchlist' || backgroundFetchEnabled) && isHighPriorityLoaded,
+    enabled: (activeTab === 'watchlist' || backgroundFetchEnabled),
   });
 
   const portfolioHealthQuery = useQuery({
@@ -359,7 +334,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchPortfolioHealth(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: (activeTab === 'analytics' || backgroundFetchEnabled) && isHighPriorityLoaded,
+    enabled: (activeTab === 'analytics' || backgroundFetchEnabled),
   });
 
   const correlationMatrixQuery = useQuery({
@@ -367,7 +342,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchCorrelationMatrix(correlationPeriod, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: (activeTab === 'analytics' || backgroundFetchEnabled) && isHighPriorityLoaded,
+    enabled: (activeTab === 'analytics' || backgroundFetchEnabled),
   });
 
   const incomeProjectionQuery = useQuery({
@@ -375,7 +350,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchProjectedIncome(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: (activeTab === 'dividend' || backgroundFetchEnabled) && isHighPriorityLoaded,
+    enabled: (activeTab === 'dividend' || backgroundFetchEnabled),
   });
 
   const summary = summaryQuery.data;
@@ -426,7 +401,7 @@ export default function Home() {
         return null;
 
       case 'transactions':
-        return <TransactionsTable transactions={transactions} />;
+        return <TransactionsTable transactions={transactions} isLoading={transactionsQuery.isPending && !transactionsQuery.data} />;
       case 'markets':
         return (
           <div className="space-y-6">
@@ -490,13 +465,14 @@ export default function Home() {
       case 'allocation':
         return <Allocation holdings={holdings} currency={currency} />;
       case 'asset_change':
-        return <AssetChange data={assetChangeData} currency={currency} />;
+        return <AssetChange data={assetChangeData} currency={currency} isLoading={assetChangeQuery.isPending && !assetChangeQuery.data} />;
       case 'capital_gains':
         return (
           <CapitalGains
             data={capitalGainsData}
             currency={currency}
             onDateRangeChange={(from, to) => setCapitalGainsDates({ from, to })}
+            isLoading={capitalGainsQuery.isPending && !capitalGainsQuery.data}
           />
         );
       case 'analytics':
@@ -522,7 +498,12 @@ export default function Home() {
       case 'dividend':
         return (
           <div className="space-y-6">
-            <DividendComponent data={dividendData} currency={currency} expectedDividends={summary?.metrics?.est_annual_income_display as number}>
+            <DividendComponent
+              data={dividendData}
+              currency={currency}
+              expectedDividends={summary?.metrics?.est_annual_income_display as number}
+              isLoading={dividendsQuery.isPending && !dividendsQuery.data}
+            >
               <IncomeProjector
                 data={incomeProjectionQuery.data || null}
                 isLoading={incomeProjectionQuery.isLoading && !incomeProjectionQuery.data}
@@ -555,19 +536,10 @@ export default function Home() {
   };
 
   const { resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
+  // mounted state moved to top
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setMounted(true);
-  }, []);
-
-  if (authLoading || !user) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="animate-pulse text-muted-foreground">Loading Investa...</div>
-      </div>
-    );
+  if (!mounted || authLoading || !user) {
+    return <AppShellSkeleton />;
   }
 
   return (

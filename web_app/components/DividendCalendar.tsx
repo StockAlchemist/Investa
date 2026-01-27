@@ -2,6 +2,7 @@ import StockDetailModal from './StockDetailModal';
 import StockIcon from './StockIcon';
 import { useState, useMemo } from 'react';
 import { CheckCircle2, Clock } from 'lucide-react';
+import TableSkeleton from './skeletons/TableSkeleton';
 
 interface DividendEvent {
     symbol: string;
@@ -38,11 +39,7 @@ export default function DividendCalendar({ events, isLoading, currency }: Divide
     }, [events, viewDuration]);
 
     if (isLoading) {
-        return (
-            <div className="bg-card rounded-xl p-6 shadow-sm border border-border animate-pulse h-64 flex items-center justify-center">
-                <span className="text-muted-foreground">Loading calendar...</span>
-            </div>
-        );
+        return <TableSkeleton />;
     }
 
     if (!events || !Array.isArray(events) || events.length === 0) {

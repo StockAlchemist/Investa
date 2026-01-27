@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { formatCurrency } from '../lib/utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { AssetChangeData } from '../lib/api';
+import TabContentSkeleton from './skeletons/TabContentSkeleton';
 
 interface AssetChangeProps {
     data: AssetChangeData | null;
     currency: string;
+    isLoading?: boolean;
 }
 
 const PERIOD_CONFIGS = [
@@ -189,8 +191,12 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
     );
 };
 
-export default function AssetChange({ data, currency }: AssetChangeProps) {
+export default function AssetChange({ data, currency, isLoading }: AssetChangeProps) {
     const [viewMode, setViewMode] = useState<'percent' | 'value'>('percent');
+
+    if (isLoading) {
+        return <TabContentSkeleton type="chart-only" />;
+    }
 
     if (!data) {
         return <div className="p-4 text-center text-muted-foreground">Loading asset change data...</div>;

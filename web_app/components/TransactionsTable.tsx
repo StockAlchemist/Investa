@@ -5,12 +5,14 @@ import { Transaction, addTransaction, updateTransaction, deleteTransaction, addT
 import { Trash2, Star, Pencil, Plus, Filter, ChevronUp, ChevronDown, Download, Eye, EyeOff, LayoutGrid, Table as TableIcon } from 'lucide-react';
 import TransactionModal from './TransactionModal';
 import StockTicker from './StockTicker';
+import TableSkeleton from './skeletons/TableSkeleton';
 
 interface TransactionsTableProps {
     transactions: Transaction[];
+    isLoading?: boolean;
 }
 
-export default function TransactionsTable({ transactions }: TransactionsTableProps) {
+export default function TransactionsTable({ transactions, isLoading }: TransactionsTableProps) {
     const [symbolFilter, setSymbolFilter] = useState('');
     const [accountFilter, setAccountFilter] = useState('');
     const [filterType, setFilterType] = useState('');
@@ -111,6 +113,10 @@ export default function TransactionsTable({ transactions }: TransactionsTablePro
         setAccountFilter('');
         setFilterType('');
     };
+
+    if (isLoading) {
+        return <TableSkeleton />;
+    }
 
     if (!transactions || transactions.length === 0) {
         return <div className="p-4 text-center text-gray-500">No transactions found.</div>;
