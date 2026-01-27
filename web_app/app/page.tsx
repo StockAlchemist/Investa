@@ -627,10 +627,10 @@ export default function Home() {
                 className="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/20 hidden dark:block"
               />
               <div className="hidden sm:flex flex-col -space-y-0.5">
-                <h1 className="text-xl md:text-2xl font-bold tracking-tight text-foreground leading-none">
+                <h1 className="text-3xl md:text-3xl font-bold text-foreground leading-none">
                   Investa
                 </h1>
-                <span className="text-[10px] text-muted-foreground font-medium tracking-wider">
+                <span className="text-xs md:text-xs text-muted-foreground font-medium">
                   by StockAlchemist
                 </span>
               </div>
