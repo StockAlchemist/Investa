@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2, Loader2 } from 'lucide-react';
 import { updateSettings, triggerRefresh, clearCache, Settings as SettingsType, ManualOverride, ManualOverrideData, Holding } from '../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { COUNTRIES, ALL_INDUSTRIES } from '../lib/constants';
@@ -456,10 +456,17 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
 
                 <div className="p-6 min-h-[400px]">
 
+                    {/* Loading State */}
+                    {!settings && (
+                        <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                            <Loader2 className="w-8 h-8 animate-spin mb-2 text-cyan-500" />
+                            <p>Loading settings...</p>
+                        </div>
+                    )}
+
                     {/* Account Groups Tab */}
                     {activeTab === 'groups' && settings && (
                         <AccountGroupManager
-                            settings={settings}
                             availableAccounts={availableAccounts}
                             onUpdate={() => queryClient.invalidateQueries({ queryKey: ['settings'] })}
                         />

@@ -70,7 +70,10 @@ from server.dependencies import get_current_user
 from datetime import timedelta
 from pydantic import BaseModel
 
+import logging
+
 router = APIRouter()
+
 
 current_file_path = os.path.abspath(__file__)
 src_server_dir = os.path.dirname(current_file_path)
@@ -2278,6 +2281,8 @@ async def get_settings(
             enriched_data = override_data.copy() if isinstance(override_data, dict) else {"price": override_data}
             enriched_data["currency"] = currency
             enriched_overrides[symbol_upper] = enriched_data
+
+        groups = config_manager.gui_config.get("account_groups", {})
 
         return {
             "manual_overrides": enriched_overrides,

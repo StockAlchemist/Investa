@@ -1,31 +1,40 @@
 import React, { useState } from 'react';
-import { Trash2 } from 'lucide-react';
-import { Settings, updateSettings } from '../lib/api';
+import { Trash2, Loader2, RefreshCw } from 'lucide-react';
+import { Settings, updateSettings, fetchSettings } from '../lib/api';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 interface AccountGroupManagerProps {
-    settings: Settings;
     availableAccounts: string[];
-    onUpdate: () => void;
+    onUpdate?: () => void;
 }
 
-export default function AccountGroupManager({ settings, availableAccounts, onUpdate }: AccountGroupManagerProps) {
+export default function AccountGroupManager({ availableAccounts, onUpdate }: AccountGroupManagerProps) {
+    const queryClient = useQueryClient();
     const [newGroupName, setNewGroupName] = useState('');
     const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
     const [isCreating, setIsCreating] = useState(false);
 
-    const groups = settings.account_groups || {};
+    // Fetch settings directly to ensure we have the latest data
+    const { data: settings, isLoading, isError } = useQuery({
+        queryKey: ['settings'],
+        queryFn: fetchSettings,
+        staleTime: 5 * 60 * 1000,
+    });
+
+    const groups = settings?.account_groups || {};
 
     const handleCreateGroup = async () => {
-        if (!newGroupName || selectedAccounts.length === 0) return;
+        if (!newGroupName || selectedAccounts.length === 0 || !settings) return;
 
         const newGroups = { ...groups, [newGroupName]: selectedAccounts };
 
         try {
             await updateSettings({ account_groups: newGroups });
+            await queryClient.invalidateQueries({ queryKey: ['settings'] });
             setNewGroupName('');
             setSelectedAccounts([]);
             setIsCreating(false);
-            onUpdate();
+            if (onUpdate) onUpdate();
         } catch (error) {
             console.error("Failed to create group", error);
             alert("Failed to create group");
@@ -33,14 +42,15 @@ export default function AccountGroupManager({ settings, availableAccounts, onUpd
     };
 
     const handleDeleteGroup = async (groupName: string) => {
-        if (!confirm(`Are you sure you want to delete the group "${groupName}"?`)) return;
+        if (!confirm(`Are you sure you want to delete the group "${groupName}"?`) || !settings) return;
 
         const newGroups = { ...groups };
         delete newGroups[groupName];
 
         try {
             await updateSettings({ account_groups: newGroups });
-            onUpdate();
+            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            if (onUpdate) onUpdate();
         } catch (error) {
             console.error("Failed to delete group", error);
             alert("Failed to delete group");
@@ -57,6 +67,22 @@ export default function AccountGroupManager({ settings, availableAccounts, onUpd
 
     const inputClassName = "w-full rounded-md border border-border bg-secondary text-foreground shadow-sm focus:border-cyan-500 focus:ring-cyan-500 px-3 py-2 text-sm outline-none focus:ring-1";
     const labelClassName = "block text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide";
+
+    if (isLoading) {
+        return (
+            <div className="flex justify-center p-8">
+                <Loader2 className="w-6 h-6 animate-spin text-cyan-500" />
+            </div>
+        );
+    }
+
+    if (isError) {
+        return (
+            <div className="p-4 text-red-500 bg-red-500/10 rounded-md text-sm text-center">
+                Failed to load account groups.
+            </div>
+        );
+    }
 
     return (
         <div>
