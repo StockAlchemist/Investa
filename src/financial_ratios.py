@@ -1092,7 +1092,10 @@ def get_intrinsic_value_for_symbol(
     mdp: Any,
     config_manager: Optional[Any] = None,
     iterations: int = 10000,
-    force_refresh: bool = False
+    force_refresh: bool = False,
+    prefetched_financials: Optional[pd.DataFrame] = None,
+    prefetched_balance_sheet: Optional[pd.DataFrame] = None,
+    prefetched_cashflow: Optional[pd.DataFrame] = None
 ) -> Dict[str, Any]:
     """
     Higher-level helper to calculate intrinsic value with full data and overrides.
@@ -1135,10 +1138,10 @@ def get_intrinsic_value_for_symbol(
         if not info:
              return {"error": f"No fundamental data found for {yf_symbol}"}
              
-        # Force fetching statements
-        financials = mdp.get_financials(yf_symbol, "annual", force_refresh=force_refresh)
-        balance_sheet = mdp.get_balance_sheet(yf_symbol, "annual", force_refresh=force_refresh)
-        cashflow = mdp.get_cashflow(yf_symbol, "annual", force_refresh=force_refresh)
+        # Use Prefetched or Fetch New
+        financials = prefetched_financials if prefetched_financials is not None else mdp.get_financials(yf_symbol, "annual", force_refresh=force_refresh)
+        balance_sheet = prefetched_balance_sheet if prefetched_balance_sheet is not None else mdp.get_balance_sheet(yf_symbol, "annual", force_refresh=force_refresh)
+        cashflow = prefetched_cashflow if prefetched_cashflow is not None else mdp.get_cashflow(yf_symbol, "annual", force_refresh=force_refresh)
         
         # 3. Handle Overrides
         symbol_overrides = {}

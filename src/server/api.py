@@ -3565,6 +3565,7 @@ class ScreenerRequest(BaseModel):
     universe_type: str = Field(..., description="watchlist, manual, or sp500")
     universe_id: Optional[str] = None
     manual_symbols: Optional[List[str]] = None
+    fast_mode: Optional[bool] = False
 
 @router.post("/screener/run")
 async def run_screener(
@@ -3595,7 +3596,7 @@ async def run_screener(
                 # We treat it as a manual list once resolved
                 universe_type = "manual" 
 
-        results = screen_stocks(universe_type, universe_id, manual_symbols, db_conn=db_conn)
+        results = screen_stocks(universe_type, universe_id, manual_symbols, db_conn=db_conn, fast_mode=request.fast_mode)
         return clean_nans(results)
     except Exception as e:
         logging.error(f"Screener error: {e}", exc_info=True)

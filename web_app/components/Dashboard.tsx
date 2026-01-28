@@ -30,8 +30,8 @@ interface DashboardProps {
 
 interface MetricCardProps {
     title: string;
-    value: string | number;
-    subValue?: number;
+    value: string | number | null;
+    subValue?: number | null;
     isCurrency?: boolean;
     colorClass?: string;
     valueClassName?: string;
@@ -140,23 +140,34 @@ export default function Dashboard({
     // Prepare data helpers
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     // Use the correctly aggregated cash balance from overall metrics
-    const cashBalance = m?.cash_balance || 0;
-    const dayGL = (m?.day_change_display as number) || 0;
-    const dayGLPct = (m?.day_change_percent as number) || 0;
-    const unrealizedGL = (m?.unrealized_gain as number) || 0;
-    const unrealizedGLPct = m ? ((m.unrealized_gain as number) / ((m.cost_basis_held as number) || 1)) * 100 : 0;
-    const fxGL = (m?.fx_gain_loss_display as number) || 0;
-    const fxGLPct = (m?.fx_gain_loss_pct as number) || 0;
+    const cashBalance = m?.cash_balance ?? null;
+    const dayGL = m?.day_change_display ?? null;
+    const dayGLPct = m?.day_change_percent ?? null;
+    const unrealizedGL = m?.unrealized_gain ?? null;
 
-    const dayGLColor = dayGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500';
-    const unrealizedGLColor = unrealizedGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500';
-    const fxGLColor = fxGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500';
+    // Calculate Unrealized GL Percent safely
+    let unrealizedGLPct: number | null = null;
+    const costBasisHeld = m?.['cost_basis_held'] as number | undefined;
 
-    const totalGain = (m?.total_gain as number) || 0;
-    const realizedGain = (m?.realized_gain as number) || 0;
+    if (m && m.unrealized_gain != null && costBasisHeld && costBasisHeld !== 0) {
+        unrealizedGLPct = (m.unrealized_gain / costBasisHeld) * 100;
+    } else if (m && m.unrealized_gain != null && (!costBasisHeld || costBasisHeld === 0)) {
+        // If cost basis is 0 but we have unrealized gain, it's effectively infinite return.
+        unrealizedGLPct = 0;
+    }
 
-    const totalReturnColor = totalGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500';
-    const realizedGainColor = realizedGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500';
+    const fxGL = m?.fx_gain_loss_display ?? null;
+    const fxGLPct = m?.fx_gain_loss_pct ?? null;
+
+    const dayGLColor = dayGL !== null && dayGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500';
+    const unrealizedGLColor = unrealizedGL !== null && unrealizedGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500';
+    const fxGLColor = fxGL !== null && fxGL >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500';
+
+    const totalGain = m?.total_gain ?? null;
+    const realizedGain = m?.realized_gain ?? null;
+
+    const totalReturnColor = totalGain !== null && totalGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500';
+    const realizedGainColor = realizedGain !== null && realizedGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500';
 
     // Render helper same as before
     const renderContent = (id: string) => {
@@ -178,7 +189,7 @@ export default function Dashboard({
                     subValue={dayGLPct}
                     colorClass={dayGLColor}
                     valueClassName="text-2xl sm:text-3xl"
-                    subValueClassName={cn("text-base sm:text-xl", dayGLPct >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-red-600 text-white dark:text-white hover:bg-red-700 border-none")}
+                    subValueClassName={cn("text-base sm:text-xl", (dayGLPct ?? 0) >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-red-600 text-white dark:text-white hover:bg-red-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
@@ -192,7 +203,7 @@ export default function Dashboard({
                     subValue={m?.total_return_pct}
                     colorClass={totalReturnColor}
                     valueClassName="text-2xl sm:text-3xl"
-                    subValueClassName={cn("text-base sm:text-xl", (m?.total_return_pct || 0) >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-red-600 text-white dark:text-white hover:bg-red-700 border-none")}
+                    subValueClassName={cn("text-base sm:text-xl", (m?.total_return_pct ?? 0) >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-red-600 text-white dark:text-white hover:bg-red-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
@@ -214,7 +225,7 @@ export default function Dashboard({
                     subValue={unrealizedGLPct}
                     colorClass={unrealizedGLColor}
                     valueClassName="text-2xl sm:text-3xl"
-                    subValueClassName={cn("text-base sm:text-xl", unrealizedGLPct >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-red-600 text-white dark:text-white hover:bg-red-700 border-none")}
+                    subValueClassName={cn("text-base sm:text-xl", (unrealizedGLPct ?? 0) >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-red-600 text-white dark:text-white hover:bg-red-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}
@@ -226,7 +237,7 @@ export default function Dashboard({
                     value={fxGL}
                     subValue={fxGLPct}
                     colorClass={fxGLColor}
-                    subValueClassName={cn("text-base sm:text-xl", fxGLPct >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-red-600 text-white dark:text-white hover:bg-red-700 border-none")}
+                    subValueClassName={cn("text-base sm:text-xl", (fxGLPct ?? 0) >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-red-600 text-white dark:text-white hover:bg-red-700 border-none")}
                     containerClassName="h-full flex flex-col justify-center"
                     isHero={true}
                     currency={currency}

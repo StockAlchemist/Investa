@@ -7,6 +7,7 @@ import os
 import sys
 import threading # Added for _SHARED_MDP_LOCK
 from datetime import datetime, timedelta, date, UTC, timezone  # Added UTC
+from concurrent.futures import ThreadPoolExecutor # Added for batch fetching
 from utils_time import get_est_today, get_latest_trading_date, is_market_open, get_nyse_calendar # Added for holiday/timezone awareness
 from typing import List, Dict, Optional, Tuple, Set, Any
 import time
@@ -147,9 +148,10 @@ SPDX-License-Identifier: MIT
 # --- Global Locks ---
 _SHARED_MDP_LOCK = threading.Lock()
 # Semaphore to limit concurrent isolated fetches (subprocesses)
+# Semaphore to limit concurrent isolated fetches (subprocesses)
 # Critical for preventing OOM on memory-constrained systems
-# REDUCED TO 1: Strict serialization to prevent OOM
-_FETCH_SEMAPHORE = threading.Semaphore(1)
+# INCREASED TO 3: Allow some parallelism on modern Macs while avoiding file limit exhaustion
+_FETCH_SEMAPHORE = threading.Semaphore(3)
 
 
 # --- Helper for JSON serialization with NaNs ---
@@ -638,6 +640,56 @@ class MarketDataProvider:
             
         return {sym: cache.get(sym, {}).get("ticker_info", {}) for sym in yf_symbols}
 
+    def get_financial_statements_batch(self, yf_symbols: List[str], frequency: str = "annual") -> Dict[str, Dict[str, pd.DataFrame]]:
+        """
+        Fetches Financials, Balance Sheet, and Cash Flow for a batch of symbols.
+        Returns a nested dictionary: {symbol: {'financials': df, 'balance_sheet': df, 'cashflow': df}}
+        """
+        results = {sym: {'financials': None, 'balance_sheet': None, 'cashflow': None} for sym in yf_symbols}
+        
+        # Ensure yfinance is available
+        _ensure_yfinance()
+        if not YFINANCE_AVAILABLE:
+            return results
+            
+        tasks_map = {
+            'financials': 'financials', 
+            'balance_sheet': 'balance_sheet', 
+            'cashflow': 'cashflow'
+        }
+        
+        if frequency == "quarterly":
+            tasks_map = {
+                'financials': 'quarterly_financials', 
+                'balance_sheet': 'quarterly_balance_sheet', 
+                'cashflow': 'quarterly_cashflow'
+            }
+
+        logging.info(f"Batch fetching financial statements ({frequency}) for {len(yf_symbols)} symbols...")
+        
+        # We rely on thread pool to parallelize single-symbol fetches if batch implementation is risky.
+        # Given we increased _FETCH_SEMAPHORE to 3, we can run 3 isolated fetches in parallel.
+        # This is safer than anticipating unknown worker return formats.
+        
+        def fetch_single_symbol(sym):
+            try:
+                fin = _run_isolated_fetch([sym], task=tasks_map['financials'])
+                bs = _run_isolated_fetch([sym], task=tasks_map['balance_sheet'])
+                cf = _run_isolated_fetch([sym], task=tasks_map['cashflow'])
+                return sym, {'financials': fin, 'balance_sheet': bs, 'cashflow': cf}
+            except Exception as e:
+                logging.error(f"Error fetching statements for {sym}: {e}")
+                return sym, None
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = [executor.submit(fetch_single_symbol, sym) for sym in yf_symbols]
+            for future in futures:
+                sym, res = future.result()
+                if res:
+                    results[sym] = res
+                    
+        return results
+
     @profile
     def get_current_quotes(
         self,
@@ -734,9 +786,8 @@ class MarketDataProvider:
                 # Use chunked download for reliability and to avoid process/memory limits with 500+ symbols
                 all_dfs = []
                 yf_symbols_list = list(yf_symbols_to_fetch)
-                # REDUCED: Was 50. Tiny chunk size to survive extreme memory constraints.
-                # UPDATED: Increased slightly to 25 for performance (balancing memory vs subprocess overhead)
-                chunk_size = 25
+                # UPDATED: Increased to 100 for better throughput on large universes like S&P 500
+                chunk_size = 100
                 
                 for i in range(0, len(yf_symbols_list), chunk_size):
                     chunk = yf_symbols_list[i:i+chunk_size]

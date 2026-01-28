@@ -109,19 +109,47 @@ const ScreenerView: React.FC<ScreenerViewProps> = ({ currency }) => {
         return () => window.removeEventListener('stock-analysis-updated', handleUpdate as EventListener);
     }, []);
 
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    // ... (existing code: fetchWatchlist, etc.)
+
     const handleRunScreener = async (universeType: string, universeId: string | null, manualSymbols: string[]) => {
         setIsLoading(true);
+        setResults([]); // Clear previous results
         try {
-            const data = await runScreener({
+            // PHASE 1: Fast Load (Cache Only)
+            const fastData = await runScreener({
                 universe_type: universeType,
                 universe_id: universeId,
-                manual_symbols: manualSymbols
+                manual_symbols: manualSymbols,
+                fast_mode: true
             });
-            setResults(data);
+
+            if (fastData && fastData.length > 0) {
+                // Deduplicate by symbol to prevent key errors
+                const uniqueFastData = Array.from(new Map(fastData.map((item: any) => [item.symbol, item])).values());
+                setResults(uniqueFastData);
+                setIsLoading(false); // Stop main loading spinner, show content
+                setIsRefreshing(true); // Start background refresh indicator
+            }
+
+            // PHASE 2: Fresh Load (Live Data)
+            // Even if we showed usage cache, we fetch fresh to ensure accuracy
+            const freshData = await runScreener({
+                universe_type: universeType,
+                universe_id: universeId,
+                manual_symbols: manualSymbols,
+                fast_mode: false
+            });
+
+            // Deduplicate by symbol
+            const uniqueFreshData = Array.from(new Map(freshData.map((item: any) => [item.symbol, item])).values());
+            setResults(uniqueFreshData);
         } catch (e) {
             console.error("Screening error", e);
         } finally {
             setIsLoading(false);
+            setIsRefreshing(false);
         }
     };
 
@@ -157,6 +185,13 @@ const ScreenerView: React.FC<ScreenerViewProps> = ({ currency }) => {
 
             <div className="space-y-6">
                 <ScreenerInput onRunScreener={handleRunScreener} isLoading={isLoading} />
+
+                {isRefreshing && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-md w-fit animate-pulse">
+                        <Telescope className="h-3 w-3" />
+                        <span>Updating live prices...</span>
+                    </div>
+                )}
 
                 <ScreenerResults
                     results={results}

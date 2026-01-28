@@ -834,6 +834,7 @@ export interface ScreenerRequest {
     universe_type: string;
     universe_id: string | null;
     manual_symbols: string[];
+    fast_mode?: boolean;
 }
 
 export async function runScreener(request: ScreenerRequest): Promise<ScreenerResult[]> {

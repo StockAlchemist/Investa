@@ -75,13 +75,46 @@ def get_sp500_tickers() -> List[str]:
         logging.error(f"Failed to fetch S&P 500 list: {e}")
         return []
 
-def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_symbols: Optional[List[str]] = None, db_conn: Optional[Any] = None) -> List[Dict[str, Any]]:
+def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_symbols: Optional[List[str]] = None, db_conn: Optional[Any] = None, fast_mode: bool = False) -> List[Dict[str, Any]]:
     """
     Screens a list of stocks based on the specified universe.
     Calculates Intrinsic Value and Margin of Safety.
     """
-    symbols = []
+    # Determine universe_tag FIRST to check cache before resolving symbols (which might be slow e.g. scraping Wikipedia)
+    universe_tag = universe_type
+    if universe_type == "watchlist" and universe_id:
+        universe_tag = f"watchlist_{universe_id}"
+
+    # --- SMART HYBRID FAST-PATH ---
+    # Goal: If we have a fresh cache (< 10 mins), return instantly.
+    # If we have a stale-today cache (> 10 mins), only refresh prices.
+    cached_results = []
+    use_pure_fast_path = False
     
+    # If fast_mode is explicitly requested, we return whatever is in DB immediately (stale or not)
+    if fast_mode:
+         conn = db_conn or get_db_connection()
+         if conn:
+            try:
+                cached_results = get_screener_results_by_universe(conn, universe_tag)
+                if cached_results:
+                     logging.info(f"Screener: FAST MODE requested. Returning {len(cached_results)} cached items immediately.")
+                     # Sort just in case
+                     cached_results.sort(key=lambda x: (x.get("margin_of_safety") is not None, x.get("margin_of_safety")), reverse=True)
+                     return cached_results
+            except Exception as e:
+                logging.error(f"Error in fast_mode retrieval: {e}")
+            finally:
+                if not db_conn and conn: conn.close()
+         # If fast mode returns nothing, we return empty list immediately so UI can show loading state for FRESH load
+         # Or should we fallback to slow load? 
+         # The UI explicitly calls fast_mode=True then fast_mode=False. 
+         # So we return [] here.
+         return []
+
+    # --- SLOW PATH: Resolve Symbols ---
+    # Only done if we are NOT in fast_mode (or fast_mode failed early, but here we are in the fresh loading phase)
+    symbols = []
     if universe_type == "manual":
         symbols = manual_symbols or []
     elif universe_type == "watchlist" or universe_type == "holdings":
@@ -104,17 +137,10 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
     
     if not symbols:
         return []
-
-    universe_tag = universe_type
-    if universe_type == "watchlist" and universe_id:
-        universe_tag = f"watchlist_{universe_id}"
         
-    # --- SMART HYBRID FAST-PATH ---
-    # Goal: If we have a fresh cache (< 10 mins), return instantly.
-    # If we have a stale-today cache (> 10 mins), only refresh prices.
-    cached_results = []
-    use_pure_fast_path = False
-    
+    # Recalculate tag just in case logic diverged? No, it's consistent.
+    # universe_tag already set above.
+
     if universe_type in ["sp500", "watchlist", "holdings"]:
         conn = db_conn or get_db_connection()
         if conn:
@@ -194,8 +220,34 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
         finally:
             if not db_conn and conn: conn.close()
             
+    # Batch Fetch Financial Statements for Missing Symbols (Wait until we know missing_symbols)
+    # Actually, we should do it HERE before processing.
+    batch_statements = {}
+    if missing_symbols:
+         # Only fetch for those we really need (not in cached_map or stale)
+         # Re-filter locally to be precise
+         needed_statements_syms = []
+         for s in missing_symbols:
+             # Standard "is cached" check is complex here, but missing_symbols are already filtered by "not in cached_results".
+             # However, cached_results only checks DB cache.
+             # We should rely on `cached_map` inside process_screener_results?
+             # No, `process_screener_results` logic is complex.
+             # Simplest: Fetch for all missing_symbols.
+             needed_statements_syms.append(s)
+         
+         if needed_statements_syms:
+             batch_statements = mdp.get_financial_statements_batch(needed_statements_syms)
+
     # Process everything to merge live quotes
-    final_results = process_screener_results(symbols, quotes, details_map, cached_map, universe_tag, db_conn=db_conn)
+    final_results = process_screener_results(
+        symbols, 
+        quotes, 
+        details_map, 
+        cached_map, 
+        universe_tag, 
+        db_conn=db_conn,
+        prefetched_statements=batch_statements
+    )
     
     # Final Sort
     final_results.sort(key=lambda x: (x.get("margin_of_safety") is not None, x.get("margin_of_safety")), reverse=True)
@@ -208,10 +260,12 @@ def process_screener_results(
     details_map: Dict[str, Any],
     cached_map: Dict[str, Dict[str, Any]] = None,
     universe_tag: str = None,
-    db_conn: Optional[Any] = None
+    db_conn: Optional[Any] = None,
+    prefetched_statements: Dict[str, Dict] = None
 ) -> List[Dict[str, Any]]:
     results = []
     cached_map = cached_map or {}
+    prefetched_statements = prefetched_statements or {}
     
     # Pre-scan AI review directory to avoid 500+ repeated disk lookups (slow on OneDrive)
     ai_cache_dir = os.path.join(config.get_app_data_dir(), "ai_analysis_cache")
@@ -323,8 +377,27 @@ def process_screener_results(
             else:
                 # Re-calculation needed
                 mdp = get_shared_mdp()
+                
+                # PREFETCHED DATA CHECK
+                p_fin = None
+                p_bs = None
+                p_cf = None
+                if sym in prefetched_statements:
+                    p_data = prefetched_statements[sym]
+                    if p_data:
+                        p_fin = p_data.get('financials')
+                        p_bs = p_data.get('balance_sheet')
+                        p_cf = p_data.get('cashflow')
+
                 # SPEED OPTIMIZATION: Reduced MC iterations for screener bulk view
-                iv_res = get_intrinsic_value_for_symbol(sym, mdp, iterations=1000)
+                iv_res = get_intrinsic_value_for_symbol(
+                    sym, 
+                    mdp, 
+                    iterations=1000, 
+                    prefetched_financials=p_fin,
+                    prefetched_balance_sheet=p_bs,
+                    prefetched_cashflow=p_cf
+                )
                 
                 avg_iv = iv_res.get("average_intrinsic_value")
                 mos = iv_res.get("margin_of_safety_pct")
