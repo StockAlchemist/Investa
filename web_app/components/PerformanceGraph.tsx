@@ -157,22 +157,39 @@ export default function PerformanceGraph({
 
         if (view === 'return') {
             const twr = end.twr; // Now normalized relative to start
-            return {
+
+            const stats = [{
                 label: "Period TWR",
                 text: `${twr > 0 ? '+' : ''}${twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`,
                 color: twr >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-500"
-            };
+            }];
+
+            // Calculate Annualized TWR if period > 1 year
+            const startDate = new Date(start.date).getTime();
+            const endDate = new Date(end.date).getTime();
+            const years = (endDate - startDate) / (1000 * 60 * 60 * 24 * 365.25);
+
+            if (years > 1) {
+                const annualizedTwr = ((Math.pow(1 + twr / 100, 1 / years) - 1) * 100);
+                stats.push({
+                    label: "Ann. TWR",
+                    text: `${annualizedTwr > 0 ? '+' : ''}${annualizedTwr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`,
+                    color: annualizedTwr >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-500"
+                });
+            }
+
+            return stats;
         } else if (view === 'value') {
             const startVal = start.value;
             const endVal = end.value;
             const change = endVal - startVal;
             const changePct = startVal !== 0 ? (change / startVal) * 100 : 0;
 
-            return {
+            return [{
                 label: "Period Change",
                 text: `${formatCurrency(change, currency)} (${change > 0 ? '+' : ''}${changePct.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`,
                 color: change >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-500"
-            };
+            }];
         }
         return null;
     }, [processedData, view, currency]);
@@ -525,13 +542,17 @@ export default function PerformanceGraph({
                         {view === 'return' ? 'Time-Weighted Return' : view === 'value' ? 'Portfolio Value' : 'Drawdown'}
                     </h3>
                     {periodStats ? (
-                        <div className="flex items-baseline gap-2">
-                            <span className="text-sm font-medium text-muted-foreground">
-                                {periodStats.label}
-                            </span>
-                            <span className={`text-xl font-bold tracking-tight ${periodStats.color}`}>
-                                {periodStats.text}
-                            </span>
+                        <div className="flex items-baseline gap-4">
+                            {periodStats.map((stat, index) => (
+                                <div key={index} className="flex items-baseline gap-2">
+                                    <span className="text-sm font-medium text-muted-foreground">
+                                        {stat.label}
+                                    </span>
+                                    <span className={`text-xl font-bold tracking-tight ${stat.color}`}>
+                                        {stat.text}
+                                    </span>
+                                </div>
+                            ))}
                         </div>
                     ) : (
                         <div className="h-9" /> /* Spacer for loading state */
