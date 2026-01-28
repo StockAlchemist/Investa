@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
@@ -142,7 +142,21 @@ export default function Home() {
     } catch (e) { console.error(e); }
   }, []);
 
+
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+
+  // Graph State (Lifted from PerformanceGraph)
+  const [graphPeriod, setGraphPeriod] = useState('1y');
+  const [graphView, setGraphView] = useState<'return' | 'value' | 'drawdown'>('return');
+  const [graphCustomFromDate, setGraphCustomFromDate] = useState(() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - 1);
+    return d.toISOString().split('T')[0];
+  });
+  const [graphCustomToDate, setGraphCustomToDate] = useState(() => {
+    return new Date().toISOString().split('T')[0];
+  });
+
 
   // Removed duplicate showClosed init
 
@@ -159,6 +173,16 @@ export default function Home() {
       if (saved) {
         setVisibleItems(JSON.parse(saved));
       }
+
+      // Graph Settings
+      const savedGraphPeriod = localStorage.getItem('investa_graph_period');
+      if (savedGraphPeriod) setGraphPeriod(savedGraphPeriod);
+
+      const savedGraphView = localStorage.getItem('investa_graph_view');
+      if (savedGraphView && ['return', 'value', 'drawdown'].includes(savedGraphView)) {
+        setGraphView(savedGraphView as 'return' | 'value' | 'drawdown');
+      }
+
     } catch (e) {
       console.error("Failed to load visible items", e);
     }
@@ -182,6 +206,8 @@ export default function Home() {
     if (visibleItems.length > 0) localStorage.setItem('investa_dashboard_visible_items', JSON.stringify(visibleItems));
     if (benchmarks.length > 0) localStorage.setItem('investa_graph_benchmarks', JSON.stringify(benchmarks));
     localStorage.setItem('investa_selected_accounts', JSON.stringify(selectedAccounts));
+    localStorage.setItem('investa_graph_period', graphPeriod);
+    localStorage.setItem('investa_graph_view', graphView);
 
     // 2. Sync to Server (Debounced)
     // Only proceed if we have server data to compare against
@@ -321,6 +347,30 @@ export default function Home() {
     // enabled: isHighPriorityLoaded, // Allow history to fetch in parallel with summary
   });
 
+  // Main Graph Query
+  const graphInterval = useMemo(() => {
+    if (graphPeriod === '1d') return '2m';
+    if (graphPeriod === '5d') return '15m';
+    if (graphPeriod === '1m') return '1d';
+    return '1d';
+  }, [graphPeriod]);
+
+  const graphFromDate = graphPeriod === 'custom' ? graphCustomFromDate : undefined;
+  const graphToDate = graphPeriod === 'custom' ? graphCustomToDate : undefined;
+
+  const historyQuery = useQuery({
+    queryKey: ['history', currency, selectedAccounts, graphPeriod, benchmarks, graphInterval, graphFromDate, graphToDate],
+    queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, graphPeriod, benchmarks, graphInterval, graphFromDate, graphToDate, signal),
+    placeholderData: keepPreviousData,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: graphPeriod === '1d' ? 60000 : false,
+    enabled: activeTab === 'performance' || backgroundFetchEnabled
+  });
+
+  const graphData = historyQuery.data || [];
+  const graphLoading = historyQuery.isLoading && !historyQuery.data;
+
+
   const watchlistQuery = useQuery({
     queryKey: ['watchlist', currency, 1],
     queryFn: ({ signal }) => fetchWatchlist(currency, 1, signal),
@@ -385,6 +435,16 @@ export default function Home() {
               accounts={selectedAccounts}
               benchmarks={benchmarks}
               onBenchmarksChange={setBenchmarks}
+              period={graphPeriod}
+              onPeriodChange={setGraphPeriod}
+              view={graphView}
+              onViewChange={setGraphView}
+              data={graphData}
+              loading={graphLoading}
+              customFromDate={graphCustomFromDate}
+              onCustomFromDateChange={setGraphCustomFromDate}
+              customToDate={graphCustomToDate}
+              onCustomToDateChange={setGraphCustomToDate}
             />
             <HoldingsTable
               holdings={holdings}

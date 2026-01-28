@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
     LineChart,
     Line,
@@ -36,6 +36,16 @@ interface PerformanceGraphProps {
     accounts?: string[];
     benchmarks: string[];
     onBenchmarksChange: (benchmarks: string[]) => void;
+    period: string;
+    onPeriodChange: (period: string) => void;
+    view: 'return' | 'value' | 'drawdown';
+    onViewChange: (view: 'return' | 'value' | 'drawdown') => void;
+    data: PerformanceData[];
+    loading: boolean;
+    customFromDate?: string;
+    onCustomFromDateChange?: (date: string) => void;
+    customToDate?: string;
+    onCustomToDateChange?: (date: string) => void;
 }
 
 const COLORS = [
@@ -48,11 +58,26 @@ const COLORS = [
     "#db2777", // Pink
 ];
 
-export default function PerformanceGraph({ currency, accounts, benchmarks, onBenchmarksChange }: PerformanceGraphProps) {
-    const [view, setView] = useState<'return' | 'value' | 'drawdown'>('return');
-    const [period, setPeriod] = useState('1y');
+export default function PerformanceGraph({
+    currency,
+    accounts,
+    benchmarks,
+    onBenchmarksChange,
+    period,
+    onPeriodChange,
+    view,
+    onViewChange,
+    data,
+    loading,
+    customFromDate,
+    onCustomFromDateChange,
+    customToDate,
+    onCustomToDateChange
+}: PerformanceGraphProps) {
+    // const [view, setView] = useState<'return' | 'value' | 'drawdown'>('return'); // Lifted
+    // const [period, setPeriod] = useState('1y'); // Lifted
 
-
+    /*
     const [customFromDate, setCustomFromDate] = useState(() => {
         const d = new Date();
         d.setFullYear(d.getFullYear() - 1);
@@ -61,19 +86,10 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
     const [customToDate, setCustomToDate] = useState(() => {
         return new Date().toISOString().split('T')[0];
     });
-    const [isInitialized, setIsInitialized] = useState(false);
+    */
+    // const [isInitialized, setIsInitialized] = useState(false); // Removed
 
-    // Initialize state from localStorage
-    useEffect(() => {
-        const savedPeriod = localStorage.getItem('investa_graph_period');
-        if (savedPeriod) setPeriod(savedPeriod);
-
-        const savedView = localStorage.getItem('investa_graph_view');
-        if (savedView && ['return', 'value', 'drawdown'].includes(savedView)) {
-            setView(savedView as 'return' | 'value' | 'drawdown');
-        }
-        setIsInitialized(true);
-    }, []);
+    // Initialize state from localStorage - MOVED TO PARENT
 
     // Client-side header to prevent hydration mismatch with Recharts
     const [mounted, setMounted] = useState(false);
@@ -81,41 +97,11 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
         setMounted(true);
     }, []);
 
-    // Persist state to localStorage
-    useEffect(() => {
-        if (isInitialized) {
-            localStorage.setItem('investa_graph_period', period);
-        }
-    }, [period, isInitialized]);
+    // Persist state to localStorage - MOVED TO PARENT
 
-    useEffect(() => {
-        if (isInitialized) {
-            localStorage.setItem('investa_graph_view', view);
-        }
-    }, [view, isInitialized]);
+    // Calculate interval based on period - MOVED TO PARENT (Implicitly used by query in parent)
 
-    // Calculate interval based on period
-    const interval = useMemo(() => {
-        if (period === '1d') return '2m';
-        if (period === '5d') return '15m';
-        if (period === '1m') return '1d';
-        return '1d';
-    }, [period]);
-
-    const fromDate = period === 'custom' ? customFromDate : undefined;
-    const toDate = period === 'custom' ? customToDate : undefined;
-
-    // Use React Query for data fetching
-    const { data: queryData, isLoading: queryLoading } = useQuery({
-        queryKey: ['history', currency, accounts, period, benchmarks, interval, fromDate, toDate],
-        queryFn: ({ signal }) => fetchHistory(currency, accounts, period, benchmarks, interval, fromDate, toDate, signal),
-        placeholderData: keepPreviousData,
-        staleTime: 5 * 60 * 1000,
-        refetchInterval: period === '1d' ? 60000 : false, // Auto-refresh for 1D view
-    });
-
-    const data = queryData || [];
-    const loading = queryLoading && !queryData; // Only show loading if no data available (initial load)
+    // useQuery REMOVED - using props.data and props.loading
 
 
 
@@ -363,7 +349,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
             return date.toLocaleDateString(undefined, { timeZone: 'America/New_York', month: 'short', day: 'numeric' });
         } else if (['3y', '5y', '10y', 'all', 'custom'].includes(period)) {
             // Long periods or custom range: Show Month + Year if range is large
-            const showYear = period !== 'custom' || (new Date(customToDate).getTime() - new Date(customFromDate).getTime() > 1000 * 60 * 60 * 24 * 365);
+            const showYear = period !== 'custom' || !customToDate || !customFromDate || (new Date(customToDate).getTime() - new Date(customFromDate).getTime() > 1000 * 60 * 60 * 24 * 365);
             if (showYear) {
                 return date.toLocaleDateString(undefined, { timeZone: 'America/New_York', month: 'short', year: 'numeric' });
             }
@@ -555,7 +541,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                 <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 min-w-0">
                     <div className="flex flex-col gap-2 w-full min-w-0">
                         <div className="flex items-center gap-2 w-full overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
-                            <PeriodSelector selectedPeriod={period} onPeriodChange={setPeriod} />
+                            <PeriodSelector selectedPeriod={period} onPeriodChange={onPeriodChange} />
                         </div>
                         {period === 'custom' && (
                             <div className="flex items-center gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
@@ -564,7 +550,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                     <input
                                         type="date"
                                         value={customFromDate}
-                                        onChange={(e) => setCustomFromDate(e.target.value)}
+                                        onChange={(e) => onCustomFromDateChange?.(e.target.value)}
                                         className="bg-transparent border-none text-xs sm:text-sm font-medium focus:ring-0 p-0 w-[110px] sm:w-auto"
                                     />
                                 </div>
@@ -573,7 +559,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                     <input
                                         type="date"
                                         value={customToDate}
-                                        onChange={(e) => setCustomToDate(e.target.value)}
+                                        onChange={(e) => onCustomToDateChange?.(e.target.value)}
                                         className="bg-transparent border-none text-xs sm:text-sm font-medium focus:ring-0 p-0 w-[110px] sm:w-auto"
                                     />
                                 </div>
@@ -587,7 +573,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                         )}
                         <div className="flex bg-secondary rounded-lg p-1 border border-border shrink-0">
                             <button
-                                onClick={() => setView('return')}
+                                onClick={() => onViewChange('return')}
                                 className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'return'
                                     ? 'bg-[#0097b2] text-white shadow-sm'
                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
@@ -596,7 +582,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                 Return %
                             </button>
                             <button
-                                onClick={() => setView('value')}
+                                onClick={() => onViewChange('value')}
                                 className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'value'
                                     ? 'bg-[#0097b2] text-white shadow-sm'
                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
@@ -605,7 +591,7 @@ export default function PerformanceGraph({ currency, accounts, benchmarks, onBen
                                 Value
                             </button>
                             <button
-                                onClick={() => setView('drawdown')}
+                                onClick={() => onViewChange('drawdown')}
                                 className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'drawdown'
                                     ? 'bg-[#0097b2] text-white shadow-sm'
                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
