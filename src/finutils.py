@@ -693,7 +693,7 @@ def get_cash_flows_for_mwr(
     if not sorted_dates and abs(final_account_market_value) < 1e-9:
         return [], []
     final_dates = list(sorted_dates)
-    final_flows = [-dates_flows[d] for d in final_dates]  # <<< SIGN FLIP
+    final_flows = [dates_flows[d] for d in final_dates]  # Left as is (Buys-, Sells+) for XIRR
     final_market_value_target = (
         float(final_account_market_value)
         if pd.notna(final_account_market_value)
@@ -778,6 +778,9 @@ def get_conversion_rate(
     from_curr_upper = from_curr.upper()
     to_curr_upper = to_curr.upper()
     rate_A_per_USD = fx_rates.get(from_curr_upper)
+    if rate_A_per_USD is None:
+        rate_A_per_USD = fx_rates.get(f"{from_curr_upper}=X")
+
     # Added debug log for lookup
     logging.debug(
         f"get_conversion_rate: Looking up {from_curr_upper}/USD (key '{from_curr_upper}'): {rate_A_per_USD}"
@@ -785,6 +788,9 @@ def get_conversion_rate(
     if from_curr_upper == "USD":
         rate_A_per_USD = 1.0
     rate_B_per_USD = fx_rates.get(to_curr_upper)
+    if rate_B_per_USD is None:
+        rate_B_per_USD = fx_rates.get(f"{to_curr_upper}=X")
+
     # Added debug log for lookup
     logging.debug(
         f"get_conversion_rate: Looking up {to_curr_upper}/USD (key '{to_curr_upper}'): {rate_B_per_USD}"

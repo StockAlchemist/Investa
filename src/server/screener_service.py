@@ -220,23 +220,41 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
         finally:
             if not db_conn and conn: conn.close()
             
-    # Batch Fetch Financial Statements for Missing Symbols (Wait until we know missing_symbols)
-    # Actually, we should do it HERE before processing.
+    # Batch Fetch Financial Statements for Missing Symbols
     batch_statements = {}
     if missing_symbols:
-         # Only fetch for those we really need (not in cached_map or stale)
-         # Re-filter locally to be precise
          needed_statements_syms = []
-         for s in missing_symbols:
-             # Standard "is cached" check is complex here, but missing_symbols are already filtered by "not in cached_results".
-             # However, cached_results only checks DB cache.
-             # We should rely on `cached_map` inside process_screener_results?
-             # No, `process_screener_results` logic is complex.
-             # Simplest: Fetch for all missing_symbols.
-             needed_statements_syms.append(s)
+         logging.info(f"Screener: Checking cache validity for {len(missing_symbols)} missing symbols before batch fetch...")
+         
+         for sym in missing_symbols:
+             # Check if we can likely use the cache
+             cached = cached_map.get(sym)
+             info = details_map.get(sym, {})
+             
+             # If we don't have basic info, we probably can't calculate anyway, but let's try fetching to be safe if no cache
+             if not info:
+                 needed_statements_syms.append(sym)
+                 continue
+
+             live_fy_end = info.get("lastFiscalYearEnd")
+             live_quarter = info.get("mostRecentQuarter")
+             
+             can_use_cache = False
+             if cached:
+                # Same logic as in process_symbol to determine if we need to recalculate
+                if (cached.get("last_fiscal_year_end") == live_fy_end and 
+                    cached.get("most_recent_quarter") == live_quarter):
+                    can_use_cache = True
+             
+             if not can_use_cache:
+                 needed_statements_syms.append(sym)
          
          if needed_statements_syms:
+             logging.info(f"Screener: Batch fetching financials for {len(needed_statements_syms)} symbols...")
+             # Use the new batch method
              batch_statements = mdp.get_financial_statements_batch(needed_statements_syms)
+         else:
+             logging.info("Screener: All missing symbols have valid individual cache. Skipping batch fetch.")
 
     # Process everything to merge live quotes
     final_results = process_screener_results(

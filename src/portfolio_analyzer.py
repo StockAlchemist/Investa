@@ -72,7 +72,7 @@ try:
         safe_sum,  # Used by _calculate_aggregate_metrics
         get_currency_symbol_from_code,
         get_historical_rate_via_usd_bridge,  # Added for dividend history
-        # Add any other finutils functions used by the moved functions
+        get_cash_flows_for_mwr, # Used for overall MWR
     )
 except ImportError:
     logging.critical(
@@ -1535,8 +1535,10 @@ def _calculate_aggregate_metrics(
     full_summary_df: pd.DataFrame,
     display_currency: str,
     report_date: date,
+    fx_rates: Optional[Dict[str, float]] = None,  # <-- New param
     include_accounts: Optional[List[str]] = None,  # <-- New param
     all_available_accounts: Optional[List[str]] = None,
+    transactions_df: Optional[pd.DataFrame] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Dict[str, float]], List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Calculates account-level and overall portfolio summary metrics.
@@ -1578,7 +1580,7 @@ def _calculate_aggregate_metrics(
             "total_gain": 0.0,
             "total_cost_invested": 0.0,
             "total_buy_cost": 0.0,
-            "portfolio_mwr": np.nan,
+            "portfolio_mwr": overall_mwr,
             "day_change_display": 0.0,
             "day_change_percent": np.nan,
             "report_date": report_date.strftime("%Y-%m-%d"),
@@ -1912,6 +1914,39 @@ def _calculate_aggregate_metrics(
     )
     # --- END ADDED ---
 
+    # --- ADDED: Overall MWR (IRR) Calculation ---
+    overall_mwr = np.nan
+    
+    # We need to pass the *filtered* transactions relevant to these accounts.
+    # df_for_overall_summary is 'Summary' data, not transactions.
+    # 'transactions_df' is passed into this function.
+    if transactions_df is not None and not transactions_df.empty:
+        # Filter transactions for the selected accounts (if any)
+        # Note: If no accounts selected (empty list), we include all.
+        tx_for_mwr = transactions_df
+        if not is_all_accounts_selected:
+            if "Account" in transactions_df.columns:
+               tx_for_mwr = transactions_df[transactions_df["Account"].isin(include_accounts)]
+        
+        # Calculate Cash Flows
+        mwr_dates, mwr_flows = get_cash_flows_for_mwr(
+            account_transactions=tx_for_mwr,
+            final_account_market_value=overall_market_value_display,
+            end_date=report_date,
+            target_currency=display_currency,
+            fx_rates=fx_rates,
+            display_currency=display_currency
+        )
+        
+        if mwr_dates and mwr_flows:
+             overall_mwr = calculate_irr(mwr_dates, mwr_flows)
+             if pd.notna(overall_mwr):
+                 overall_mwr = overall_mwr * 100.0 # Convert to percentage
+
+    # --- END ADDED ---
+    
+
+
     overall_summary_metrics = {
         "market_value": overall_market_value_display,
         "cost_basis_held": overall_cost_basis_display,
@@ -1922,7 +1957,7 @@ def _calculate_aggregate_metrics(
         "total_gain": overall_total_gain_display,
         "total_cost_invested": overall_total_cost_invested_display,
         "total_buy_cost": overall_total_buy_cost_display,
-        "portfolio_mwr": np.nan,
+        "portfolio_mwr": overall_mwr, # Using the calculated value
         "day_change_display": overall_day_change_display,
         "day_change_percent": overall_day_change_percent,
         "report_date": report_date.strftime("%Y-%m-%d"),

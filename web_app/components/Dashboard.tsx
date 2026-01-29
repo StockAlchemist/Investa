@@ -218,6 +218,14 @@ export default function Dashboard({
                     isLoading={isLoading}
                 // Force height or min-width? No.
                 />;
+            case 'mwr':
+                return <MetricCard
+                    title="IRR (MWR)"
+                    value={m?.portfolio_mwr !== undefined && m?.portfolio_mwr !== null ? `${m.portfolio_mwr.toFixed(2)}%` : '-'}
+                    isCurrency={false}
+                    colorClass={m?.portfolio_mwr && m.portfolio_mwr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
+                    isLoading={isLoading}
+                />;
             case 'unrealizedGL':
                 return <MetricCard
                     title="Unrealized G/L"

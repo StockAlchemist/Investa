@@ -1225,8 +1225,10 @@ def calculate_portfolio_summary(
                 full_summary_df=full_summary_df,
                 display_currency=display_currency,
                 report_date=report_date,
+                fx_rates=current_fx_rates_vs_usd,
                 include_accounts=include_accounts,
                 all_available_accounts=available_accounts_for_errors,
+                transactions_df=transactions_for_summary,
             )
         )
         # Ensure types before assignment

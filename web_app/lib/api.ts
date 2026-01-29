@@ -49,6 +49,7 @@ export interface PortfolioSummary {
         fx_gain_loss_display?: number;
         fx_gain_loss_pct?: number;
         annualized_twr?: number;
+        portfolio_mwr?: number; // Added Money-Weighted Return (IRR)
         cash_balance?: number; // Might not be directly in metrics, check account_metrics for Cash
         exchange_rate_to_display?: number;
         indices?: Record<string, {

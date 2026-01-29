@@ -1068,7 +1068,17 @@ def get_cached_screener_results(db_conn: sqlite3.Connection, symbols: List[str])
             else:
                 row_dict["ai_score"] = None
                 
-            results[row_dict["symbol"]] = row_dict
+            # --- MERGE LOGIC: Prioritize entries with AI Data ---
+            symbol = row_dict["symbol"]
+            if symbol not in results:
+                results[symbol] = row_dict
+            else:
+                current_summary = results[symbol].get("ai_summary")
+                new_summary = row_dict.get("ai_summary")
+                # If current has no summary but new one does, upgrade
+                if not (current_summary and len(current_summary) > 0) and (new_summary and len(new_summary) > 0):
+                    results[symbol] = row_dict
+
         return results
     except sqlite3.Error as e:
         logging.error(f"Error fetching cached screener results: {e}")
