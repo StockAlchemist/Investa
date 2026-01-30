@@ -10,7 +10,7 @@ import ManualValuationSettings from './ManualValuationSettings';
 
 import { useAuth } from '../context/AuthContext';
 
-type Tab = 'overrides' | 'mapping' | 'excluded' | 'groups' | 'currencies' | 'yield' | 'valuation' | 'account';
+type Tab = 'overrides' | 'mapping' | 'excluded' | 'groups' | 'currencies' | 'yield' | 'valuation' | 'account' | 'advanced';
 
 // --- Constants (Mirrored from config.py) ---
 const ASSET_TYPES = [
@@ -504,6 +504,15 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                         Valuation Overrides
                     </button>
                     <button
+                        onClick={() => setActiveTab('advanced')}
+                        className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors border-b-2 whitespace-nowrap ${activeTab === 'advanced'
+                            ? 'border-cyan-500 text-cyan-500 dark:text-cyan-400'
+                            : 'border-transparent text-muted-foreground hover:text-foreground hover:border-black/20 dark:hover:border-white/20'
+                            }`}
+                    >
+                        Advanced
+                    </button>
+                    <button
                         onClick={() => setActiveTab('account')}
                         className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors border-b-2 whitespace-nowrap ${activeTab === 'account'
                             ? 'border-red-500 text-red-500'
@@ -702,7 +711,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                             </div>
 
                             <h3 className="text-lg font-medium mb-4 text-red-500">Danger Zone</h3>
-                            <div className="bg-red-50 dark:bg-red-950/20 p-4 rounded-lg border border-red-200 dark:border-red-900">
+                            <div className="bg-red-50 dark:bg-red-950/20 p-4 rounded-lg border border-red-200 dark:border-red-900 mb-8">
                                 <h4 className="font-medium text-red-700 dark:text-red-400 mb-2">Delete Account</h4>
                                 <p className="text-sm text-red-600/80 dark:text-red-400/80 mb-4">
                                     Once you delete your account, there is no going back. Please be certain.
@@ -714,6 +723,23 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                 >
                                     Delete Account
                                 </button>
+                            </div>
+
+                            <h3 className="text-lg font-medium mb-4">Device</h3>
+                            <div className="bg-secondary p-6 rounded-lg border border-border">
+                                <h4 className="font-medium mb-2 text-foreground">Sign Out</h4>
+                                <div className="flex items-center justify-between">
+                                    <p className="text-sm text-muted-foreground">
+                                        Sign out of your account on this device.
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => logout()}
+                                        className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 transition-colors"
+                                    >
+                                        Sign Out
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     )}
@@ -1115,81 +1141,70 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                             </div>
                         </div>
                     )}
-                </div>
-            </div>
 
-            {/* Webhook Connection (Existing) */}
-            <div className="bg-white dark:bg-zinc-950 shadow-sm rounded-xl p-6 border border-border border-l-4 border-l-cyan-500">
-                <h2 className="text-lg font-bold mb-4 text-foreground">Webhook Integration</h2>
-                <div className="space-y-4">
-                    <p className="text-sm text-muted-foreground">
-                        Trigger a data refresh externally (e.g., from a shortcut) using: <code className="bg-black/10 dark:bg-white/10 px-2 py-1 rounded text-xs text-cyan-500 dark:text-cyan-400">POST /api/webhook/refresh</code>
-                    </p>
-                    <div className="flex gap-2 max-w-md">
-                        <input
-                            type="text"
-                            placeholder="Webhook Secret"
-                            value={refreshSecret}
-                            onChange={(e) => setRefreshSecret(e.target.value)}
-                            className="flex-1 rounded-md border border-border bg-secondary shadow-sm focus:border-cyan-500 focus:ring-cyan-500 sm:text-sm text-foreground px-3 py-2 outline-none focus:ring-1"
-                        />
-                        <button
-                            type="button"
-                            onClick={handleRefresh}
-                            className="px-4 py-2 border border-border rounded-md shadow-sm text-sm font-medium text-foreground bg-secondary hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors"
-                        >
-                            Test
-                        </button>
-                    </div>
-                    {refreshStatus && (
-                        <p className={`text-sm ${refreshStatus.startsWith('Error') ? 'text-red-500' : 'text-emerald-400'}`}>
-                            {refreshStatus}
-                        </p>
+                    {/* Advanced Settings Tab */}
+                    {activeTab === 'advanced' && (
+                        <div className="space-y-8">
+                            {/* Webhook Connection */}
+                            <div className="bg-secondary p-6 rounded-lg border border-border border-l-4 border-l-cyan-500">
+                                <h3 className="text-lg font-bold mb-4 text-foreground">Webhook Integration</h3>
+                                <div className="space-y-4">
+                                    <p className="text-sm text-muted-foreground">
+                                        Trigger a data refresh externally (e.g., from a shortcut) using: <code className="bg-black/10 dark:bg-white/10 px-2 py-1 rounded text-xs text-cyan-500 dark:text-cyan-400">POST /api/webhook/refresh</code>
+                                    </p>
+                                    <div className="flex gap-2 max-w-md">
+                                        <input
+                                            type="text"
+                                            placeholder="Webhook Secret"
+                                            value={refreshSecret}
+                                            onChange={(e) => setRefreshSecret(e.target.value)}
+                                            className="flex-1 rounded-md border border-border bg-background shadow-sm focus:border-cyan-500 focus:ring-cyan-500 sm:text-sm text-foreground px-3 py-2 outline-none focus:ring-1"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={handleRefresh}
+                                            className="px-4 py-2 border border-border rounded-md shadow-sm text-sm font-medium text-foreground bg-background hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors"
+                                        >
+                                            Test
+                                        </button>
+                                    </div>
+                                    {refreshStatus && (
+                                        <p className={`text-sm ${refreshStatus.startsWith('Error') ? 'text-red-500' : 'text-emerald-400'}`}>
+                                            {refreshStatus}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Cache Management Section */}
+                            <div className="bg-secondary p-6 rounded-lg border border-border border-l-4 border-l-red-500">
+                                <h3 className="text-lg font-bold mb-4 text-foreground">Cache Management</h3>
+                                <div className="space-y-4">
+                                    <p className="text-sm text-muted-foreground">
+                                        Identify and resolve data discrepancies by clearing all local caches. This includes historical performance data, market quotes, and metadata.
+                                    </p>
+                                    <div className="flex items-center gap-4">
+                                        <button
+                                            type="button"
+                                            onClick={handleClearCache}
+                                            className={`px-4 py-2 border rounded-md shadow-sm text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${confirmClear
+                                                ? 'bg-red-600 text-white border-transparent hover:bg-red-700 focus:ring-red-500'
+                                                : 'border-red-500/50 text-red-500 bg-red-500/5 hover:bg-red-500/10 focus:ring-red-500'}`}
+                                        >
+                                            {confirmClear ? "Click to Confirm" : "Clear All Cache"}
+                                        </button>
+                                        {clearStatus && (
+                                            <p className={`text-sm ${clearStatus.startsWith('Error') ? 'text-red-500' : 'text-emerald-400'}`}>
+                                                {clearStatus}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     )}
                 </div>
             </div>
-
-            {/* Cache Management Section */}
-            <div className="bg-white dark:bg-zinc-950 shadow-sm rounded-xl p-6 border border-border border-l-4 border-l-red-500">
-                <h2 className="text-lg font-bold mb-4 text-foreground">Cache Management</h2>
-                <div className="space-y-4">
-                    <p className="text-sm text-muted-foreground">
-                        Identify and resolve data discrepancies by clearing all local caches. This includes historical performance data, market quotes, and metadata.
-                    </p>
-                    <div className="flex items-center gap-4">
-                        <button
-                            type="button"
-                            onClick={handleClearCache}
-                            className={`px-4 py-2 border rounded-md shadow-sm text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${confirmClear
-                                ? 'bg-red-600 text-white border-transparent hover:bg-red-700 focus:ring-red-500'
-                                : 'border-red-500/50 text-red-500 bg-red-500/5 hover:bg-red-500/10 focus:ring-red-500'}`}
-                        >
-                            {confirmClear ? "Click to Confirm" : "Clear All Cache"}
-                        </button>
-                        {clearStatus && (
-                            <p className={`text-sm ${clearStatus.startsWith('Error') ? 'text-red-500' : 'text-emerald-400'}`}>
-                                {clearStatus}
-                            </p>
-                        )}
-                    </div>
-                </div>
-            </div>
-            {/* Sign Out Section (Visible on all devices, but primary for mobile/tablet) */}
-            <div className="bg-white dark:bg-zinc-950 shadow-sm rounded-xl p-6 border border-border border-l-4 border-l-rose-500">
-                <h2 className="text-lg font-bold mb-4 text-foreground">Account</h2>
-                <div className="flex items-center justify-between">
-                    <p className="text-sm text-muted-foreground">
-                        Sign out of your account on this device.
-                    </p>
-                    <button
-                        type="button"
-                        onClick={() => logout()}
-                        className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 transition-colors"
-                    >
-                        Sign Out
-                    </button>
-                </div>
-            </div>
-        </div >
+        </div>
     );
 }
