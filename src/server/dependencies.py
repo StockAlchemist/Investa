@@ -75,6 +75,7 @@ _USER_SYMBOL_MAP: Dict[int, Dict[str, str]] = {}
 _USER_EXCLUDED_SYMBOLS: Dict[int, Set[str]] = {}
 _ACCOUNT_CURRENCY_MAP: Dict[int, Dict[str, str]] = {}
 
+_DB_PATH: Optional[str] = None
 _DB_MTIME: float = 0.0
 _OVERRIDES_PATH: Optional[str] = None
 _OVERRIDES_MTIME: float = 0.0

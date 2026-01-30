@@ -56,7 +56,9 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
             try {
                 await deleteTransaction(tx.id);
                 // Invalidate queries to refresh data
-                queryClient.invalidateQueries();
+                queryClient.invalidateQueries({ queryKey: ['transactions'] });
+                queryClient.invalidateQueries({ queryKey: ['summary'] });
+                queryClient.invalidateQueries({ queryKey: ['holdings'] });
             } catch (error) {
                 console.error("Failed to delete transaction:", error);
                 alert("Failed to delete transaction");
@@ -91,7 +93,9 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                     await deleteTransaction(id);
                 }
                 setSelectedIds(new Set());
-                queryClient.invalidateQueries();
+                queryClient.invalidateQueries({ queryKey: ['transactions'] });
+                queryClient.invalidateQueries({ queryKey: ['summary'] });
+                queryClient.invalidateQueries({ queryKey: ['holdings'] });
                 alert(`Successfully deleted ${selectedIds.size} transactions.`);
             } catch (error) {
                 console.error("Failed bulk delete:", error);
@@ -109,7 +113,9 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                 await updateTransaction(transaction.id, transaction);
             }
             // Invalidate queries to refresh data
-            queryClient.invalidateQueries();
+            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['summary'] });
+            queryClient.invalidateQueries({ queryKey: ['holdings'] });
         } catch (error) {
             console.error("Failed to save transaction:", error);
             throw error; // Re-throw to be handled by modal
@@ -175,7 +181,8 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
             if (action === 'approve') {
                 await queryClient.invalidateQueries({ queryKey: ['transactions'] });
             }
-            queryClient.invalidateQueries();
+            queryClient.invalidateQueries({ queryKey: ['summary'] });
+            queryClient.invalidateQueries({ queryKey: ['holdings'] });
         } catch (error) {
             console.error(`Failed to ${action} transactions:`, error);
             alert(`Error ${action}ing transactions`);

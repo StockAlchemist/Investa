@@ -89,6 +89,13 @@ project_root = os.path.dirname(src_dir)
 # Global Cache for Portfolio Summary Calculations to avoid redundant processing per-request
 _PORTFOLIO_SUMMARY_CACHE = {}
 
+def reload_data_and_clear_cache():
+    """Helper to clear both transaction data cache and portfolio summary cache."""
+    reload_data()
+    _PORTFOLIO_SUMMARY_CACHE.clear()
+    logging.info("Transaction and Summary caches cleared.")
+
+
 # Global Market Data Provider to share DB connections and cache across requests
 _MDP_INSTANCE = None
 
@@ -1019,7 +1026,7 @@ async def create_transaction(
         conn.close()
         
         if success:
-            reload_data() # Refresh cache
+            reload_data_and_clear_cache() # Refresh transaction and summary caches
             return {"status": "success", "id": new_id, "message": "Transaction added"}
         else:
             raise HTTPException(status_code=500, detail="Failed to add transaction to database")
@@ -1071,7 +1078,7 @@ async def update_transaction(
         conn.close()
         
         if success:
-            reload_data()
+            reload_data_and_clear_cache()
             return {"status": "success", "message": "Transaction updated"}
         else:
             raise HTTPException(status_code=404, detail="Transaction not found or update failed")
@@ -1105,7 +1112,7 @@ async def delete_transaction(
         conn.close()
         
         if success:
-            reload_data()
+            reload_data_and_clear_cache()
             return {"status": "success", "message": "Transaction deleted"}
         else:
             raise HTTPException(status_code=404, detail="Transaction not found or delete failed")
@@ -1150,44 +1157,11 @@ async def update_holding_tags(
         rows_affected = cursor.rowcount
         conn.close()
         
-        reload_data()
+        reload_data_and_clear_cache()
         return {"status": "success", "message": f"Updated tags for {rows_affected} transactions"}
 
     except Exception as e:
         logging.error(f"Error updating holding tags: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-@router.delete("/transactions/{transaction_id}")
-async def delete_transaction(
-    transaction_id: int,
-    data: tuple = Depends(get_transaction_data)
-):
-    """
-    Deletes a transaction.
-
-    Args:
-        transaction_id (int): The ID of the transaction to delete.
-        data (tuple): Dependency injection.
-
-    Returns:
-        Dict: Status message.
-    """
-    try:
-        _, _, _, _, _, db_path, _ = data
-        conn = get_db_connection(db_path)
-        if not conn:
-             raise HTTPException(status_code=500, detail="Database connection failed")
-             
-        success = delete_transaction_from_db(conn, transaction_id)
-        conn.close()
-        
-        if success:
-            reload_data()
-            return {"status": "success", "message": "Transaction deleted"}
-        else:
-            raise HTTPException(status_code=404, detail="Transaction not found or delete failed")
-
-    except Exception as e:
-        logging.error(f"Error deleting transaction: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/sync/ibkr")
@@ -1347,7 +1321,7 @@ async def approve_ibkr(
         
         conn.commit()
         if approved_count > 0:
-            reload_data()
+            reload_data_and_clear_cache()
             
         return {"status": "success", "message": f"Successfully approved {approved_count} transactions.", "count": approved_count}
     except Exception as e:
@@ -1367,7 +1341,7 @@ async def reject_ibkr(
         deleted_count = cursor.rowcount
         conn.commit()
         if deleted_count > 0:
-            reload_data()
+            reload_data_and_clear_cache()
         return {"status": "success", "message": f"Discarded {deleted_count} transactions.", "count": deleted_count}
     except Exception as e:
         conn.rollback()
@@ -2666,7 +2640,7 @@ async def update_settings(
             # ---------------------------------------------------------
 
             # Reload data to apply changes (clear cache)
-            reload_data()
+            reload_data_and_clear_cache()
             return {"status": "success", "message": "Settings updated and data reloaded"}
         else:
              raise HTTPException(status_code=500, detail="Failed to save settings to file")
@@ -3357,7 +3331,7 @@ async def update_manual_override(
         # -------------------------------------------------------------------------------
 
         # Force reload of data so next request uses new override
-        reload_data()
+        reload_data_and_clear_cache()
         
         return {"status": "success", "message": f"Override for {symbol_upper} updated."}
 
@@ -3471,7 +3445,7 @@ async def webhook_refresh(
              logging.info("Webhook: Cache file not found (already clean).")
              
         # 2. Reload internal transaction cache
-        reload_data()
+        reload_data_and_clear_cache()
         
         return {"status": "success", "message": "Market data cache invalidated and data reloaded."}
         
@@ -3819,7 +3793,7 @@ async def clear_cache():
         
         # 3. Reload Data
         logging.info("Reloading data after cache clear...")
-        reload_data()
+        reload_data_and_clear_cache()
         
         return {"status": "success", "message": f"Cache cleared. {deleted_count} items removed."}
     except Exception as e:
