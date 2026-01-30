@@ -109,6 +109,8 @@ except ImportError:
 
 INVALID_SYMBOLS_CACHE_FILE = "invalid_symbols_cache.json"
 INVALID_SYMBOLS_DURATION = 24 * 60 * 60  # 24 hours in seconds
+PERSISTENT_FX_CACHE_FILE = "fx_rates_persistent.json"
+PERSISTENT_FX_DURATION_HOURS = 24
 
 # --- Import helpers from finutils.py ---
 try:
@@ -151,7 +153,9 @@ _SHARED_MDP_LOCK = threading.Lock()
 # Semaphore to limit concurrent isolated fetches (subprocesses)
 # Critical for preventing OOM on memory-constrained systems
 # INCREASED TO 3: Allow some parallelism on modern Macs while avoiding file limit exhaustion
-_FETCH_SEMAPHORE = threading.Semaphore(3)
+# REDUCED TO 1: Force serialized subprocess execution to survive memory-constrained environments
+# This prevents multiple yfinance instances from competing for RAM.
+_FETCH_SEMAPHORE = threading.Semaphore(1)
 
 
 # --- Helper for JSON serialization with NaNs ---
@@ -241,13 +245,13 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwar
             if response.get("data") is None and "file" not in response:
                  # Empty result path
                  if os.path.exists(temp_output): os.remove(temp_output)
-                 return pd.DataFrame() if task not in ["info", "calendar"] else {}
+                 return pd.DataFrame() if task not in ["info", "calendar", "statements_batch"] else {}
 
             # Load results from file
             file_path = response.get("file")
             if file_path and os.path.exists(file_path):
                 try:
-                    if task in ["info", "calendar"]:
+                    if task in ["info", "calendar", "statements_batch"]:
                         with open(file_path, "r") as f:
                             data_loaded = json.load(f)
                         return data_loaded.get("data", {})
@@ -287,7 +291,7 @@ def _run_isolated_fetch_impl(tickers, start, end, interval, task, period, **kwar
         else:
             logging.error(f"Isolated fetch worker reported error: {response.get('message')}")
             if os.path.exists(temp_output): os.remove(temp_output)
-            return {} if task in ["info", "calendar"] else (pd.Series() if task == "dividends" else pd.DataFrame())
+            return {} if task in ["info", "calendar", "statements_batch"] else (pd.Series() if task == "dividends" else pd.DataFrame())
 
     except Exception as e:
         logging.error(f"Error running isolated fetch: {e}")
@@ -342,6 +346,10 @@ class MarketDataProvider:
         # Ensure directory exists
         os.makedirs(self.fundamentals_cache_dir, exist_ok=True)
         
+        # Construct full path for metadata_cache_dir
+        self.metadata_cache_dir = os.path.join(app_data_dir, "metadata_cache")
+        os.makedirs(self.metadata_cache_dir, exist_ok=True)
+        
         # logging.info("MarketDataProvider initialized.")
 
     def _get_historical_cache_dir(self) -> str:
@@ -372,247 +380,293 @@ class MarketDataProvider:
         return os.path.join(self._get_historical_cache_dir(), filename)
 
     def _get_metadata_cache_path(self) -> str:
-        """Returns the full path to the metadata cache file."""
+        """DEPRECATED: Returns the full path to the aggregate metadata cache file."""
         return os.path.join(self._get_historical_cache_dir(), METADATA_CACHE_FILE_NAME)
 
+    def _get_symbol_metadata_path(self, yf_symbol: str) -> str:
+        """Returns the full path for an individual symbol's metadata file."""
+        safe_sym = "".join(c if c.isalnum() or c in [".", "_", "-"] else "_" for c in yf_symbol)
+        return os.path.join(self.metadata_cache_dir, f"{safe_sym}.json")
+
     def _load_metadata_cache(self) -> Dict[str, Dict]:
-        """Loads the metadata cache (Name, Currency) from disk."""
-        path = self._get_metadata_cache_path()
-        if not os.path.exists(path):
-            return {}
-        try:
-            with open(path, "r") as f:
-                return json.load(f)
-        except Exception as e:
-            logging.warning(f"Error loading metadata cache: {e}")
-            return {}
+        """Loads the metadata cache. Now just a shell for compatibility or return empty."""
+        return {} # Force empty to signal we need to check per-symbol files
 
     def _save_metadata_cache(self, cache: Dict[str, Dict]):
-        """Saves the metadata cache to disk."""
-        path = self._get_metadata_cache_path()
+        """Saves the metadata cache. Now saves per-symbol files."""
+        for sym, data in cache.items():
+            path = self._get_symbol_metadata_path(sym)
+            try:
+                with open(path, "w") as f:
+                    json.dump(data, f, indent=2)
+            except Exception as e:
+                logging.warning(f"Error saving metadata for {sym}: {e}")
+
+    def _get_persistent_fx_cache_path(self) -> str:
+        """Returns the full path to the persistent FX cache file."""
+        return os.path.join(config.get_app_data_dir(), PERSISTENT_FX_CACHE_FILE)
+
+    def _load_persistent_fx_cache(self, allow_stale: bool = True) -> Tuple[Dict[str, float], Dict[str, float]]:
+        """Loads the persistent FX cache from disk."""
+        path = self._get_persistent_fx_cache_path()
+        if not os.path.exists(path):
+            return {}, {}
         try:
-            with open(path, "w") as f:
-                json.dump(cache, f, indent=2)
+            with open(path, "r") as f:
+                content = json.load(f)
+                ts_str = content.get("timestamp")
+                if ts_str:
+                    ts = datetime.fromisoformat(ts_str)
+                    age_seconds = (datetime.now(timezone.utc) - ts).total_seconds()
+                    # Return if within 24h OR if we explicitly allow stale data
+                    if allow_stale or age_seconds < PERSISTENT_FX_DURATION_HOURS * 3600:
+                        if allow_stale and age_seconds >= PERSISTENT_FX_DURATION_HOURS * 3600:
+                            logging.info(f"FX: Using STALE persistent cache (age: {age_seconds/3600:.1f}h)")
+                        return content.get("fx_rates", {}), content.get("fx_prev_close", {})
         except Exception as e:
-            logging.warning(f"Error saving metadata cache: {e}")
+            logging.warning(f"Error loading persistent FX cache: {e}")
+        return {}, {}
+
+    def _save_persistent_fx_cache(self, fx_rates: Dict[str, float], fx_prev_close: Dict[str, float]):
+        """Saves the persistent FX cache to disk."""
+        path = self._get_persistent_fx_cache_path()
+        try:
+            content = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "fx_rates": fx_rates,
+                "fx_prev_close": fx_prev_close
+            }
+            with open(path, "w") as f:
+                json.dump(content, f, indent=2)
+        except Exception as e:
+            logging.warning(f"Error saving persistent FX cache: {e}")
 
     def _ensure_metadata_batch(self, yf_symbols: Set[str]) -> Dict[str, Dict]:
         """
         Ensures metadata (Name, Currency) exists and is fresh for given symbols.
-        Fetches missing data and updates cache.
-        Returns a dict of metadata keyed by YF symbol.
+        Uses fragmented per-symbol caching to avoid OOM.
         """
-        cache = self._load_metadata_cache()
+        results = {}
         now_ts = datetime.now(timezone.utc)
         missing_symbols = []
         
-        # Ensure yfinance is loaded
+        # 1. Check fragmented cache first
+        for sym in yf_symbols:
+            meta_path = self._get_symbol_metadata_path(sym)
+            cached_meta = None
+            if os.path.exists(meta_path):
+                try:
+                    with open(meta_path, "r") as f:
+                        cached_meta = json.load(f)
+                except Exception:
+                    pass
+            
+            if cached_meta:
+                ts_str = cached_meta.get("timestamp")
+                if ts_str:
+                    try:
+                        entry_ts = datetime.fromisoformat(ts_str)
+                        if (now_ts - entry_ts).days <= METADATA_CACHE_DURATION_DAYS:
+                            results[sym] = cached_meta
+                            continue
+                    except ValueError:
+                        pass
+            
+            missing_symbols.append(sym)
+
+        if not missing_symbols:
+            return results
+
+        # 2. Fetch missing
         _ensure_yfinance()
         if not YFINANCE_AVAILABLE:
-            return cache
-        
-        # Check cache validity
-        for sym in yf_symbols:
-            entry = cache.get(sym)
-            if not entry:
-                missing_symbols.append(sym)
-                continue
-                
-            ts_str = entry.get("timestamp")
-            if not ts_str:
-                missing_symbols.append(sym)
-                continue
-                
-            try:
-                entry_ts = datetime.fromisoformat(ts_str)
-                # Check expiration
-                if (now_ts - entry_ts).days > METADATA_CACHE_DURATION_DAYS:
-                    missing_symbols.append(sym)
-            except ValueError:
-                missing_symbols.append(sym)
+            return results
 
-        if missing_symbols:
-            logging.info(f"Metadata Cache: Fetching missing metadata for {len(missing_symbols)} symbols...")
-            try:
-                  # Use isolated batch fetch for metadata
-                  chunk_size = 50
-                  for i in range(0, len(missing_symbols), chunk_size):
-                      chunk = missing_symbols[i:i+chunk_size]
-                      logging.info(f"Metadata Fetch: Processing isolated batch {i//chunk_size + 1}/{len(missing_symbols)//chunk_size + 1}. Symbols: {len(chunk)}")
-                      
-                      # Isolated fetch for info task
-                      info_batch = _run_isolated_fetch(chunk, task="info")
-                      
-                      for sym in chunk:
-                          info = info_batch.get(sym)
-                          if info:
-                              name = info.get("shortName") or info.get("longName") or sym
-                              cache[sym] = {
-                                  "name": name,
-                                  "currency": info.get("currency"),
-                                  "sector": info.get("sector"),
-                                  "industry": info.get("industry"),
-                                  "timestamp": now_ts.isoformat()
-                              }
-                          else:
-                              logging.warning(f"Failed to fetch metadata for {sym}. Using placeholders.")
-                              if sym not in cache:
-                                  cache[sym] = {
-                                      "name": sym,
-                                      "currency": None, 
-                                      "sector": None,
-                                      "industry": None,
-                                      "timestamp": now_ts.isoformat()
-                                  }
-            except Exception as e_batch:
-                 logging.error(f"Error in metadata batch fetch: {e_batch}")
+        logging.info(f"Metadata Cache: Fetching missing metadata for {len(missing_symbols)} symbols...")
+        try:
+            chunk_size = 50
+            for i in range(0, len(missing_symbols), chunk_size):
+                chunk = missing_symbols[i:i+chunk_size]
+                logging.info(f"Metadata Fetch: Processing batch {i//chunk_size + 1}. Symbols: {len(chunk)}")
+                
+                info_batch = _run_isolated_fetch(chunk, task="info")
+                
+                for sym in chunk:
+                    info = info_batch.get(sym)
+                    meta_entry = None
+                    if info:
+                        name = info.get("shortName") or info.get("longName") or sym
+                        meta_entry = {
+                            "name": name,
+                            "currency": info.get("currency"),
+                            "sector": info.get("sector"),
+                            "industry": info.get("industry"),
+                            "timestamp": now_ts.isoformat()
+                        }
+                    else:
+                        logging.warning(f"Failed to fetch metadata for {sym}. Using placeholders.")
+                        meta_entry = {
+                            "name": sym,
+                            "currency": None, 
+                            "sector": None,
+                            "industry": None,
+                            "timestamp": now_ts.isoformat()
+                        }
+                    
+                    if meta_entry:
+                        results[sym] = meta_entry
+                        # Save immediately to fragmented cache
+                        try:
+                            with open(self._get_symbol_metadata_path(sym), "w") as f:
+                                json.dump(meta_entry, f, indent=2)
+                        except Exception:
+                            pass
+        except Exception as e_batch:
+            logging.error(f"Error in metadata batch fetch: {e_batch}")
             
-            self._save_metadata_cache(cache)
-            
-        return cache
+        return results
 
     def _get_fundamentals_cache_path(self) -> str:
-        """Returns the full path to the aggregate fundamentals cache file."""
+        """DEPRECATED: Returns the full path to the aggregate fundamentals cache file."""
         return os.path.join(self.fundamentals_cache_dir, "fundamentals_aggregate.json")
 
+    def _get_symbol_fundamentals_path(self, yf_symbol: str) -> str:
+        """Returns the full path for an individual symbol's fundamentals file."""
+        safe_sym = "".join(c if c.isalnum() or c in [".", "_", "-"] else "_" for c in yf_symbol)
+        return os.path.join(self.fundamentals_cache_dir, f"{safe_sym}.json")
+
     def _load_fundamentals_cache(self) -> Dict[str, Dict]:
-        """Loads the aggregate fundamentals cache from disk."""
-        path = self._get_fundamentals_cache_path()
-        if not os.path.exists(path):
-            return {}
-        try:
-            with open(path, "r") as f:
-                return json.load(f)
-        except Exception as e:
-            logging.warning(f"Error loading fundamentals cache: {e}")
-            return {}
+        """Loads the aggregate fundamentals cache. Now returns empty to force per-symbol check."""
+        return {}
 
     def _save_fundamentals_cache(self, cache: Dict[str, Dict]):
-        """Saves the aggregate fundamentals cache to disk."""
-        path = self._get_fundamentals_cache_path()
-        try:
-            with open(path, "w") as f:
-                json.dump(cache, f, indent=2, cls=NpEncoder)
-        except Exception as e:
-            logging.warning(f"Error saving fundamentals cache: {e}")
+        """Saves fundamentals to disk. Now saves per-symbol files."""
+        for sym, entry in cache.items():
+            path = self._get_symbol_fundamentals_path(sym)
+            try:
+                # Merge with existing data if any (legacy compatibility)
+                existing = {}
+                if os.path.exists(path):
+                    with open(path, "r") as f:
+                        existing = json.load(f)
+                
+                # If existing is a legacy format (raw data directly), wrap it
+                if "data" not in existing:
+                    existing = {"data": existing, "timestamp": datetime.now(timezone.utc).isoformat()}
+                
+                # Update data
+                if "ticker_info" in entry:
+                    existing["ticker_info"] = entry["ticker_info"]
+                
+                # Copy other fields
+                for k, v in entry.items():
+                    if k != "ticker_info":
+                        existing[k] = v
+                
+                with open(path, "w") as f:
+                    json.dump(existing, f, indent=2, cls=NpEncoder)
+            except Exception as e:
+                logging.warning(f"Error saving fundamentals for {sym}: {e}")
 
     def get_fundamental_data_batch(self, yf_symbols: Set[str]) -> Dict[str, Dict]:
         """
-        Fetches fundamental data (specifically dividend info) for the given symbols.
-        Uses caching to avoid slow fetching.
+        Fetches fundamental data for the given symbols using fragmented caching.
         """
-        cache = self._load_fundamentals_cache()
+        results = {}
         now_ts = datetime.now(timezone.utc)
         missing_symbols = []
         
-        # Ensure yfinance is loaded
+        # 1. Check fragmented cache
+        for sym in yf_symbols:
+            path = self._get_symbol_fundamentals_path(sym)
+            if os.path.exists(path):
+                try:
+                    with open(path, "r") as f:
+                        entry = json.load(f)
+                        ts_str = entry.get("timestamp")
+                        if ts_str:
+                            entry_ts = datetime.fromisoformat(ts_str)
+                            if (now_ts - entry_ts).days < 1:
+                                results[sym] = entry
+                                continue
+                except Exception:
+                    pass
+            missing_symbols.append(sym)
+
+        if not missing_symbols:
+            return results
+
+        # 2. Fetch missing
         _ensure_yfinance()
         if not YFINANCE_AVAILABLE:
-            return cache  # Return whatever is in cache if yf unavailable
+            return results
 
-        # Check cache validity
-        for sym in yf_symbols:
-            entry = cache.get(sym)
-            if not entry:
-                missing_symbols.append(sym)
-                continue
+        logging.info(f"Fundamentals: Fetching missing data for {len(missing_symbols)} symbols...")
+        try:
+            chunk_size = 50
+            for i in range(0, len(missing_symbols), chunk_size):
+                chunk = list(missing_symbols)[i:i+chunk_size]
+                logging.info(f"Fundamentals Fetch: Processing batch {i//chunk_size + 1}. Symbols: {len(chunk)}")
+                
+                info_batch = _run_isolated_fetch(chunk, task="info")
+                
+                for sym in chunk:
+                    info = info_batch.get(sym)
+                    if info:
+                        div_rate = info.get("dividendRate", 0.0)
+                        div_yield = info.get("dividendYield", 0.0)
+                        
+                        entry = {
+                            "trailingAnnualDividendRate": div_rate if div_rate else 0.0,
+                            "dividendYield": div_yield if div_yield else 0.0,
+                            "exDividendDate": info.get("exDividendDate"),
+                            "lastDividendValue": info.get("lastDividendValue", 0.0),
+                            "lastDividendDate": info.get("lastDividendDate"),
+                            "timestamp": now_ts.isoformat(),
+                            "ticker_info": info # Store full info if we fetched it anyway
+                        }
+                        results[sym] = entry
+                        # Save fragmented
+                        self._save_fundamentals_cache({sym: entry})
+                    else:
+                        logging.warning(f"Failed to fetch fundamentals for {sym} (isolated).")
+        except Exception as e_batch:
+            logging.error(f"Error in fundamentals batch fetch: {e_batch}")
             
-            ts_str = entry.get("timestamp")
-            if not ts_str:
-                missing_symbols.append(sym)
-                continue
-            
-            try:
-                entry_ts = datetime.fromisoformat(ts_str)
-                # Cache valid for 24 hours (fundamentals don't change often)
-                if (now_ts - entry_ts).days >= 1: # 1 day expiration
-                     missing_symbols.append(sym)
-            except ValueError:
-                missing_symbols.append(sym)
-        
-        if missing_symbols:
-            logging.info(f"Fundamentals: Fetching missing data for {len(missing_symbols)} symbols...")
-            try:
-                # Use isolated batch fetch
-                chunk_size = 50
-                for i in range(0, len(missing_symbols), chunk_size):
-                    chunk = list(missing_symbols)[i:i+chunk_size] # Convert to list for slicing
-                    logging.info(f"Fundamentals Fetch: Processing isolated batch {i//chunk_size + 1}. Symbols: {len(chunk)}")
-                    
-                    # Isolated fetch for info task
-                    info_batch = _run_isolated_fetch(chunk, task="info")
-                    
-                    for sym in chunk:
-                        info = info_batch.get(sym)
-                        if info:
-                            # Extract dividend data
-                            # dividendRate is annual dividend in currency
-                            # dividendYield is percentage (e.g. 0.05 for 5%)
-                            div_rate = info.get("dividendRate", 0.0)
-                            div_yield = info.get("dividendYield", 0.0)
-                            
-                            # Additional data for matching frequency and projection
-                            ex_div_date = info.get("exDividendDate", None)
-                            last_div_val = info.get("lastDividendValue", 0.0)
-                            last_div_date = info.get("lastDividendDate", None)
-
-                            cache[sym] = {
-                                "trailingAnnualDividendRate": div_rate if div_rate else 0.0,
-                                "dividendYield": div_yield if div_yield else 0.0,
-                                "exDividendDate": ex_div_date,
-                                "lastDividendValue": last_div_val,
-                                "lastDividendDate": last_div_date,
-                                "timestamp": now_ts.isoformat()
-                            }
-                        else:
-                            logging.warning(f"Failed to fetch fundamentals for {sym} (isolated).")
-                            cache[sym] = {"timestamp": now_ts.isoformat()} # Cache as tried to avoid infinite loop
-
-                            
-            except Exception as e_batch:
-                logging.error(f"Error in fundamentals batch fetch: {e_batch}")
-            
-            self._save_fundamentals_cache(cache)
-            
-        return cache
+        return results
 
     def get_ticker_details_batch(self, yf_symbols: Set[str]) -> Dict[str, Dict]:
         """
-        Fetches detailed ticker info (for screener) and caches it.
-        Uses fundamentals cache as storage.
+        Fetches detailed ticker info (for screener) and caches it using fragmented files.
         """
-        cache = self._load_fundamentals_cache()
+        results = {}
         now_ts = datetime.now(timezone.utc)
         missing_symbols = []
         
-        # Ensure yfinance is available
-        _ensure_yfinance()
-        if not YFINANCE_AVAILABLE:
-            return {sym: cache.get(sym, {}).get("ticker_info", {}) for sym in yf_symbols}
-
+        # 1. Check fragmented cache
         for sym in yf_symbols:
-            entry = cache.get(sym)
-            if not entry or "ticker_info" not in entry:
-                missing_symbols.append(sym)
-                continue
-            
-            ts_str = entry.get("timestamp")
-            if not ts_str:
-                missing_symbols.append(sym)
-                continue
-            
-            try:
-                entry_ts = datetime.fromisoformat(ts_str)
-                if (now_ts - entry_ts).days >= 1: 
-                     missing_symbols.append(sym)
-            except ValueError:
-                missing_symbols.append(sym)
-        
+            path = self._get_symbol_fundamentals_path(sym)
+            if os.path.exists(path):
+                try:
+                    with open(path, "r") as f:
+                        entry = json.load(f)
+                        # Ticker info might be in "data" (singular fetch) or directly in entry (batch fetch)
+                        info = entry.get("ticker_info") or entry.get("data")
+                        ts_str = entry.get("timestamp")
+                        
+                        if info and ts_str:
+                            entry_ts = datetime.fromisoformat(ts_str)
+                            if (now_ts - entry_ts).days < 1:
+                                results[sym] = info
+                                continue
+                except Exception:
+                    pass
+            missing_symbols.append(sym)
+
         if missing_symbols:
             logging.info(f"TickerDetails: Fetching for {len(missing_symbols)} symbols...")
             try:
-                # REDUCED: Was 10. Tiny chunk size to survive extreme memory constraints.
-                # UPDATED: Increased slightly to 25 for performance (balancing memory vs subprocess overhead)
+                # Keep batch size small to avoid huge memory in result reconstruction
                 chunk_size = 25
                 yf_symbols_list = list(missing_symbols)
                 for i in range(0, len(yf_symbols_list), chunk_size):
@@ -623,26 +677,23 @@ class MarketDataProvider:
                     for sym in chunk:
                         info = info_batch.get(sym)
                         if info:
-                            entry = cache.get(sym, {})
-                            entry["ticker_info"] = info
-                            entry["timestamp"] = now_ts.isoformat()
-                            if "trailingAnnualDividendRate" not in entry:
-                                entry["trailingAnnualDividendRate"] = info.get("dividendRate", 0.0)
-                            if "dividendYield" not in entry:
-                                entry["dividendYield"] = info.get("dividendYield", 0.0)
-                            cache[sym] = entry
-                        else:
-                            cache[sym] = cache.get(sym, {"timestamp": now_ts.isoformat()})
+                            results[sym] = info
+                            # Save to fragmented cache
+                            entry = {
+                                "ticker_info": info,
+                                "timestamp": now_ts.isoformat(),
+                                "trailingAnnualDividendRate": info.get("dividendRate", 0.0),
+                                "dividendYield": info.get("dividendYield", 0.0)
+                            }
+                            self._save_fundamentals_cache({sym: entry})
             except Exception as e:
                 logging.error(f"Error in ticker details fetch: {e}")
             
-            self._save_fundamentals_cache(cache)
-            
-        return {sym: cache.get(sym, {}).get("ticker_info", {}) for sym in yf_symbols}
+        return results
 
     def get_financial_statements_batch(self, yf_symbols: List[str], frequency: str = "annual") -> Dict[str, Dict[str, pd.DataFrame]]:
         """
-        Fetches Financials, Balance Sheet, and Cash Flow for a batch of symbols.
+        Fetches Financials, Balance Sheet, and Cash Flow for a batch of symbols using consolidated isolated fetches.
         Returns a nested dictionary: {symbol: {'financials': df, 'balance_sheet': df, 'cashflow': df}}
         """
         results = {sym: {'financials': None, 'balance_sheet': None, 'cashflow': None} for sym in yf_symbols}
@@ -652,41 +703,39 @@ class MarketDataProvider:
         if not YFINANCE_AVAILABLE:
             return results
             
-        tasks_map = {
-            'financials': 'financials', 
-            'balance_sheet': 'balance_sheet', 
-            'cashflow': 'cashflow'
-        }
+        period_type = "quarterly" if frequency == "quarterly" else "annual"
+        logging.info(f"Batch fetching financial statements ({period_type}) for {len(yf_symbols)} symbols...")
         
-        if frequency == "quarterly":
-            tasks_map = {
-                'financials': 'quarterly_financials', 
-                'balance_sheet': 'quarterly_balance_sheet', 
-                'cashflow': 'quarterly_cashflow'
-            }
-
-        logging.info(f"Batch fetching financial statements ({frequency}) for {len(yf_symbols)} symbols...")
+        # Chunking to keep memory manageable while reducing process startups
+        chunk_size = 10 # Financials are large, keep chunks small
+        yf_symbols_list = list(yf_symbols)
         
-        # We rely on thread pool to parallelize single-symbol fetches if batch implementation is risky.
-        # Given we increased _FETCH_SEMAPHORE to 3, we can run 3 isolated fetches in parallel.
-        # This is safer than anticipating unknown worker return formats.
-        
-        def fetch_single_symbol(sym):
+        for i in range(0, len(yf_symbols_list), chunk_size):
+            chunk = yf_symbols_list[i : i + chunk_size]
+            logging.info(f"Statements Fetch: Processing batch {i//chunk_size + 1}/{len(yf_symbols_list)//chunk_size + 1} (Size: {len(chunk)})")
+            
             try:
-                fin = _run_isolated_fetch([sym], task=tasks_map['financials'])
-                bs = _run_isolated_fetch([sym], task=tasks_map['balance_sheet'])
-                cf = _run_isolated_fetch([sym], task=tasks_map['cashflow'])
-                return sym, {'financials': fin, 'balance_sheet': bs, 'cashflow': cf}
-            except Exception as e:
-                logging.error(f"Error fetching statements for {sym}: {e}")
-                return sym, None
-
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            futures = [executor.submit(fetch_single_symbol, sym) for sym in yf_symbols]
-            for future in futures:
-                sym, res = future.result()
-                if res:
-                    results[sym] = res
+                # Use the new consolidated task
+                batch_data = _run_isolated_fetch(chunk, task="statements_batch", period_type=period_type)
+                
+                if batch_data:
+                    for sym, sym_data in batch_data.items():
+                        if sym_data:
+                            processed_sym_data = {}
+                            for stmt_type in ['financials', 'balance_sheet', 'cashflow']:
+                                json_str = sym_data.get(stmt_type)
+                                if json_str:
+                                    try:
+                                        from io import StringIO
+                                        processed_sym_data[stmt_type] = pd.read_json(StringIO(json_str), orient='split')
+                                    except Exception as e_parse:
+                                        logging.warning(f"Error parsing {stmt_type} for {sym}: {e_parse}")
+                                        processed_sym_data[stmt_type] = pd.DataFrame()
+                                else:
+                                    processed_sym_data[stmt_type] = pd.DataFrame()
+                            results[sym] = processed_sym_data
+            except Exception as e_batch:
+                logging.error(f"Error in statements batch {i//chunk_size + 1}: {e_batch}")
                     
         return results
 
@@ -787,7 +836,8 @@ class MarketDataProvider:
                 all_dfs = []
                 yf_symbols_list = list(yf_symbols_to_fetch)
                 # UPDATED: Increased to 100 for better throughput on large universes like S&P 500
-                chunk_size = 100
+                # REDUCED: Was 100. Smaller chunk size to further limit peak memory spike per subprocess.
+                chunk_size = 50
                 
                 for i in range(0, len(yf_symbols_list), chunk_size):
                     chunk = yf_symbols_list[i:i+chunk_size]
@@ -1158,6 +1208,22 @@ class MarketDataProvider:
 
             except Exception as e_fx:
                 logging.error(f"FX fetch error: {e_fx}")
+
+            # Fallback to persistent cache for any missing currencies
+            # Try fresh first, then allow stale
+            persistent_fx, persistent_prev = self._load_persistent_fx_cache(allow_stale=True)
+            if persistent_fx:
+                for curr in required_currencies:
+                    if curr not in fx_rates_vs_usd and curr in persistent_fx:
+                        logging.info(f"FX Fallback: Using persistent cache for {curr}")
+                        fx_rates_vs_usd[curr] = persistent_fx[curr]
+                        if curr in persistent_prev:
+                            fx_prev_close_vs_usd[curr] = persistent_prev[curr]
+
+            # Save what we have to persistent cache if it's substantial (at least one non-USD currency)
+            has_non_usd = any(curr != "USD" for curr in fx_rates_vs_usd.keys())
+            if has_non_usd:
+                self._save_persistent_fx_cache(fx_rates_vs_usd, fx_prev_close_vs_usd)
 
 
         
@@ -2784,11 +2850,19 @@ class MarketDataProvider:
                         if is_valid:
                             cached_data = symbol_cache_entry.get("data")
                             # CRITICAL: Reject "empty" or "poisoned" cache entries
-                            if cached_data is not None and len(cached_data) > 3: # symbol, quoteType, etc.
+                            # For Equities, we expect more substantial info (identifiers).
+                            # Symbols with < 8 keys often indicate failed yfinance lookups.
+                            is_poisoned = cached_data is None or len(cached_data) <= 8
+                            if cached_data and cached_data.get("quoteType", "").upper() == "EQUITY":
+                                # If missing both identifiers, it's likely a poisoned lookup
+                                if not cached_data.get("lastFiscalYearEnd") and not cached_data.get("mostRecentQuarter"):
+                                    is_poisoned = True
+                                    
+                            if not is_poisoned:
                                 cache_valid = True
                                 logging.debug(f"Using valid fundamentals cache for {yf_symbol} from file")
                             else:
-                                logging.warning(f"Rejecting poisoned/empty fundamentals cache for {yf_symbol}")
+                                logging.warning(f"Rejecting poisoned/empty/incomplete fundamentals cache for {yf_symbol} (Keys: {len(cached_data) if cached_data else 0})")
                                 cache_valid = False
                         else:
                             if not valid_until_str: # Only log standard expiry if not smart

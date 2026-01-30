@@ -35,7 +35,8 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
         return (
             <div
                 className={cn(
-                    "overflow-hidden rounded-full bg-white flex items-center justify-center",
+                    "overflow-hidden rounded-full flex items-center justify-center",
+                    mounted && resolvedTheme === 'dark' ? "bg-zinc-800" : "bg-zinc-100 border border-zinc-200",
                     className
                 )}
                 style={{ width: effectiveSize, height: effectiveSize }}
@@ -77,7 +78,8 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
         return (
             <div
                 className={cn(
-                    "overflow-hidden rounded-full bg-white flex items-center justify-center",
+                    "overflow-hidden rounded-full flex items-center justify-center",
+                    mounted && resolvedTheme === 'dark' ? "bg-zinc-800" : "bg-zinc-100 border border-zinc-200",
                     className
                 )}
                 style={{ width: effectiveSize, height: effectiveSize }}
@@ -158,7 +160,8 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
         return (
             <div
                 className={cn(
-                    "overflow-hidden rounded-full bg-white flex items-center justify-center",
+                    "overflow-hidden rounded-full flex items-center justify-center",
+                    mounted && resolvedTheme === 'dark' ? "bg-zinc-800" : "bg-zinc-100 border border-zinc-200",
                     className
                 )}
                 style={{ width: effectiveSize, height: effectiveSize }}
@@ -308,10 +311,13 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
     const isDarkIcon = ['SPGI'].includes(symbol) && mounted && resolvedTheme === 'dark';
 
     // Some icons are white/transparent and need a dark background even in light mode
-    const forcedDarkBackgrounds = ['CBOE', 'SLB', 'UBER', 'V', 'ULTA', 'WSM', 'WYNN', 'NKE', 'ORCL'];
+    const isDark = mounted && resolvedTheme === 'dark';
+    const forcedDarkBackgrounds = ['CBOE', 'SLB', 'UBER', 'V', 'ULTA', 'WSM', 'WYNN', 'NKE', 'ORCL', 'DOCU', 'DTM'];
     const needsDarkBg = forcedDarkBackgrounds.includes(symbol);
 
-    const bgColor = isDarkIcon || needsDarkBg ? 'bg-black' : 'bg-white';
+    const bgColor = isDarkIcon || needsDarkBg
+        ? 'bg-black'
+        : (isDark ? 'bg-zinc-800' : 'bg-zinc-100 border border-zinc-200');
 
     return (
         <img

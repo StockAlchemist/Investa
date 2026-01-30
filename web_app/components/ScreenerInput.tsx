@@ -71,6 +71,8 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
                                     <option value="watchlist" className="bg-card text-foreground">My Watchlist</option>
                                     <option value="holdings" className="bg-card text-foreground">My Current Holdings</option>
                                     <option value="sp500" className="bg-card text-foreground">S&P 500 Benchmarks</option>
+                                    <option value="sp400" className="bg-card text-foreground">S&P 400 (Mid Cap)</option>
+                                    <option value="russell2000" className="bg-card text-foreground">Russell 2000 (Small Cap)</option>
                                     <option value="manual" className="bg-card text-foreground">Custom Ticker List</option>
                                 </select>
                                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
@@ -143,7 +145,7 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
                     <div className="flex items-start gap-2 p-3 rounded-lg bg-secondary/30 border border-border/50">
                         <Info className="w-4 h-4 text-cyan-500 mt-0.5 flex-shrink-0" />
                         <p className="text-[11px] font-medium text-muted-foreground leading-relaxed">
-                            Screening large universes like the S&P 500 may take up to 60 seconds on the first run to build the local metadata cache. Results are sorted by Margin of Safety by default.
+                            Screening large universes may take 1-5 minutes on the first run to build the local metadata cache (S&P 400 ~4m, Russell 2000 ~20m). Subsequent runs are instant.
                         </p>
                     </div>
                 </form>

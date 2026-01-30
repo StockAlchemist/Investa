@@ -105,6 +105,52 @@ def fetch_info(symbols, output_file):
         log(f"Error in fetch_info: {e}\n{traceback.format_exc()}")
         return {"status": "error", "message": str(e)}
 
+def fetch_statements_batch(symbols, period_type, output_file):
+    try:
+        import yfinance as yf # Lazy import
+        import pandas as pd  # Lazy import
+        log(f"Starting consolidated statements fetch ({period_type}) for {len(symbols)} symbols.")
+        results = {}
+        
+        for i, sym in enumerate(symbols):
+            log(f"Processing statements for {sym} ({i+1}/{len(symbols)})...")
+            ticker = yf.Ticker(sym)
+            sym_data = {}
+            
+            try:
+                if period_type == "quarterly":
+                    f = ticker.quarterly_financials
+                    b = ticker.quarterly_balance_sheet
+                    c = ticker.quarterly_cashflow
+                else:
+                    f = ticker.financials
+                    b = ticker.balance_sheet
+                    c = ticker.cashflow
+                
+                if f is not None and not f.empty:
+                    sym_data['financials'] = f.to_json(orient='split', date_format='iso')
+                if b is not None and not b.empty:
+                    sym_data['balance_sheet'] = b.to_json(orient='split', date_format='iso')
+                if c is not None and not c.empty:
+                    sym_data['cashflow'] = c.to_json(orient='split', date_format='iso')
+                
+                results[sym] = sym_data
+            except Exception as e_sym:
+                log(f"Error fetching statements for {sym}: {e_sym}")
+                results[sym] = None
+            
+            # Memory management
+            log(f"Collecting garbage after {sym} statements...")
+            gc.collect()
+            
+        with open(output_file, "w") as f:
+            json.dump({"status": "success", "data": results}, f)
+        return {"status": "success", "file": output_file}
+        
+    except Exception as e:
+        log(f"Error in fetch_statements_batch: {e}\n{traceback.format_exc()}")
+        return {"status": "error", "message": str(e)}
+
 def fetch_statement(symbol, statement_type, period_type, output_file):
     try:
         import yfinance as yf # Lazy import
@@ -194,7 +240,7 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
                 auto_adjust=True,
                 actions=False,
                 timeout=30,
-                threads=4 # REDUCED: Was True
+                threads=1 # REDUCED: Force single-threaded to minimize memory and potential rate-limit triggers
             )
         else:
             log(f"Starting fetch for {len(symbols)} symbols. Range: {start_date}-{end_date}, Int: {interval}")
@@ -208,7 +254,7 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
                 auto_adjust=True,
                 actions=False,
                 timeout=30,
-                threads=4 # REDUCED: Was True
+                threads=1 # REDUCED: Force single-threaded
             )
         
         # DIAGNOSTIC LOGGING
@@ -225,6 +271,10 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
                  else:
                      s_data = data[s] if s in data.columns else pd.DataFrame()
                  log(f"  Symbol {s}: {len(s_data)} rows. Tuesday rows: {len(s_data[s_data.index.date == date(2026, 1, 20)]) if not s_data.empty else 0}")
+        
+        # RATE LIMIT DETECTION
+        if "Too Many Requests" in str(data) or "YFRateLimitError" in str(data):
+            log("YFinance Rate Limit Detected in download result.")
         
         # NOTE: We previously attempted manual filtering (9:30-16:00) but it caused issues
         # with UTC vs Local timezones (pruning valid data).
@@ -333,6 +383,8 @@ if __name__ == "__main__":
             result = fetch_info(symbols, output_file)
         elif task == "statement":
             result = fetch_statement(symbols[0], request.get("statement_type"), request.get("period_type"), output_file)
+        elif task == "statements_batch":
+            result = fetch_statements_batch(symbols, request.get("period_type"), output_file)
         elif task == "dividends":
             result = fetch_dividends(symbols[0], output_file)
         elif task == "calendar":

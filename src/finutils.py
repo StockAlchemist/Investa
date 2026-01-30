@@ -19,6 +19,8 @@ import numpy as np
 from datetime import date, datetime, timedelta
 import hashlib
 import os
+import config
+import math
 import logging
 from scipy import optimize
 import warnings
@@ -781,6 +783,13 @@ def get_conversion_rate(
     if rate_A_per_USD is None:
         rate_A_per_USD = fx_rates.get(f"{from_curr_upper}=X")
 
+    # --- NEW: Static Fallback Injection ---
+    # If a rate is missing from the provided API-based dictionary, try the static fallback.
+    if pd.isna(rate_A_per_USD) and hasattr(config, "STATIC_FX_FALLBACK"):
+        rate_A_per_USD = config.STATIC_FX_FALLBACK.get(from_curr_upper)
+        if pd.notna(rate_A_per_USD):
+             logging.info(f"FX Fallback: Using STATIC rate for {from_curr_upper}")
+             
     # Added debug log for lookup
     logging.debug(
         f"get_conversion_rate: Looking up {from_curr_upper}/USD (key '{from_curr_upper}'): {rate_A_per_USD}"
@@ -790,6 +799,12 @@ def get_conversion_rate(
     rate_B_per_USD = fx_rates.get(to_curr_upper)
     if rate_B_per_USD is None:
         rate_B_per_USD = fx_rates.get(f"{to_curr_upper}=X")
+
+    if pd.isna(rate_B_per_USD) and hasattr(config, "STATIC_FX_FALLBACK"):
+        rate_B_per_USD = config.STATIC_FX_FALLBACK.get(to_curr_upper)
+        if pd.notna(rate_B_per_USD):
+             logging.info(f"FX Fallback: Using STATIC rate for {to_curr_upper}")
+    # --------------------------------------
 
     # Added debug log for lookup
     logging.debug(

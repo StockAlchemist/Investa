@@ -389,7 +389,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                             {formatCurrency(row.price, 'USD')}
                                         </td>
                                         <td className="px-6 py-4 text-right tabular-nums text-sm font-medium text-muted-foreground">
-                                            {row.intrinsic_value ? formatCurrency(row.intrinsic_value, 'USD') : '-'}
+                                            {typeof row.intrinsic_value === 'number' ? formatCurrency(row.intrinsic_value, 'USD') : '-'}
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             {row.margin_of_safety !== null ? (
@@ -399,7 +399,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                                         row.margin_of_safety > 0 ? 'text-cyan-600 dark:text-cyan-400' : 'text-red-600 dark:text-red-500'
                                                 )}>
                                                     {row.margin_of_safety > 0 ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
-                                                    {formatPercent(row.margin_of_safety / 100)}
+                                                    {typeof row.margin_of_safety === 'number' ? formatPercent(row.margin_of_safety / 100) : '-'}
                                                 </div>
                                             ) : (
                                                 <div className="text-right">
@@ -408,7 +408,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                             )}
                                         </td>
                                         <td className="px-6 py-4 text-right font-mono text-sm text-muted-foreground tabular-nums">
-                                            {row.pe_ratio ? row.pe_ratio.toFixed(1) : '-'}
+                                            {typeof row.pe_ratio === 'number' ? row.pe_ratio.toFixed(1) : '-'}
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             {row.ai_score !== null && row.ai_score !== undefined ? (
@@ -418,7 +418,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                                         row.ai_score >= 6 ? 'text-cyan-500' :
                                                             row.ai_score >= 4 ? 'text-amber-500' : 'text-red-500'
                                                 )}>
-                                                    {row.ai_score.toFixed(1)}/10
+                                                    {typeof row.ai_score === 'number' ? `${row.ai_score.toFixed(1)}/10` : 'N/A'}
                                                 </div>
                                             ) : (
                                                 <div className="text-right">

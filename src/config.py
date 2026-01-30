@@ -519,6 +519,23 @@ CURRENCY_SYMBOLS = {
 }
 # --- END ADDED ---
 
+# --- Static FX Fallback Rates (vs USD) ---
+# Used as a last resort when both API and persistent cache are unavailable.
+# These are approximate rates to prevent "CRITICAL ERROR" and keep metrics functional.
+STATIC_FX_FALLBACK = {
+    "USD": 1.0,
+    "THB": 34.0,   # Approx THB per 1 USD
+    "SGD": 1.35,   # Approx SGD per 1 USD
+    "EUR": 0.92,   # Approx EUR per 1 USD
+    "GBP": 0.79,   # Approx GBP per 1 USD
+    "JPY": 150.0,  # Approx JPY per 1 USD
+    "HKD": 7.8,    # Approx HKD per 1 USD
+    "AUD": 1.5,
+    "CAD": 1.35,
+    "CHF": 0.88,
+    "CNY": 7.2,
+}
+
 # --- Graph Defaults ---
 DEFAULT_GRAPH_DAYS_AGO = 365 * 2  # Default start for graphs, days relative to today
 DEFAULT_GRAPH_INTERVAL = "D"  # Default graph interval (D, W, M)

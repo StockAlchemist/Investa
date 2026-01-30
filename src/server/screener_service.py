@@ -1,6 +1,7 @@
 import pandas as pd
 import logging
 import os
+import io
 import json
 import time
 from datetime import datetime
@@ -23,6 +24,119 @@ import config
 # Cache for S&P 500 tickers
 SP500_CACHE_FILE = "sp500_tickers_cache.json"
 SP500_CACHE_TTL = 86400  # 24 hours
+
+def get_etf_holdings(product_id: str, ticker: str, filename: str) -> List[str]:
+    """
+    Fetches ETF holdings from iShares (BlackRock) CSV format.
+    Commonly used for:
+      - Russell 2000 (IWM): 239710
+      - S&P MidCap 400 (IJH): 239763
+    """
+    cache_path = os.path.join(config.get_app_data_dir(), filename)
+    # 7-day TTL for static lists
+    CACHE_TTL = 86400 * 7
+    
+    # Check cache
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, "r") as f:
+                data = json.load(f)
+                timestamp = data.get("timestamp", 0)
+                if time.time() - timestamp < CACHE_TTL:
+                    logging.info(f"Using cached {ticker} list")
+                    return data.get("tickers", [])
+        except Exception as e:
+            logging.warning(f"Error reading {ticker} cache: {e}")
+
+    logging.info(f"Fetching {ticker} list from iShares...")
+    try:
+        # iShares Ajax URL format
+        base_url = f"https://www.ishares.com/us/products/{product_id}/fund/1467271812596.ajax"
+        params = {
+            "fileType": "csv",
+            "fileName": f"{ticker}_holdings",
+            "dataType": "fund"
+        }
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        response = requests.get(base_url, params=params, headers=headers)
+        response.raise_for_status()
+        
+        # Parse CSV - skips metadata rows automatically by finding header
+        # iShares CSVs usually have ~10 lines of metadata before the header "Ticker,Name,..."
+        # pandas read_csv with 'header' argument usually works if we skip bad lines, or we can inspect.
+        # Safe way: read string, find "Ticker", start there.
+        
+        content = response.text
+        lines = content.split('\n')
+        start_row = 0
+        for i, line in enumerate(lines[:30]):
+            if "Ticker" in line and "Name" in line:
+                start_row = i
+                break
+        
+        if start_row > 0:
+            df = pd.read_csv(io.StringIO(content), header=start_row)
+        else:
+            # Fallback
+            df = pd.read_csv(io.StringIO(content))
+
+        # Filter for valid tickers
+        if "Ticker" in df.columns:
+            # Drop NaN and non-string
+            tickers = df["Ticker"].dropna().astype(str).tolist()
+            
+            # Clean up tickers (e.g. BRK.B -> BRK-B if needed, though iShares often uses dot)
+            # Remove purely numeric or cash placeholders, or disclaimer text
+            valid_tickers = []
+            for t in tickers:
+                t = str(t).strip()
+                
+                # Basic validity checks
+                if not t or t == "-" or t.lower() == "nan": 
+                    continue
+                
+                # Exclude obvious non-tickers (Disclaimers are long sentences)
+                if len(t) > 12: 
+                    continue
+                
+                # Tickers shouldn't have spaces usually (unless it's a special class like "BRK B" but we handle that)
+                # But legal text has many spaces.
+                if " " in t:
+                    continue
+                
+                # Must start with a letter (some specialized tickers might not, but standard stocks do)
+                # Allowing numbers just in case of weird ETFs/Futures, but for Russell 2000 stocks they are alpha.
+                # Actually, let's just protect against the massive text block. 
+                # The length check > 12 is the most effective against the disclaimer.
+                
+                # Yahoo Finance conversion
+                t = t.replace('.', '-')
+                valid_tickers.append(t)
+            
+            tickers = valid_tickers
+            
+            # Save to cache
+            try:
+                with open(cache_path, "w") as f:
+                    json.dump({
+                        "timestamp": time.time(),
+                        "tickers": tickers
+                    }, f)
+            except Exception as e:
+                logging.warning(f"Error saving {ticker} cache: {e}")
+                
+            return tickers
+        else:
+            logging.error(f"Column 'Ticker' not found in {ticker} CSV")
+            return []
+            
+    except Exception as e:
+        logging.error(f"Failed to fetch {ticker} list: {e}")
+        return []
 
 def get_sp500_tickers() -> List[str]:
     """
@@ -74,6 +188,14 @@ def get_sp500_tickers() -> List[str]:
     except Exception as e:
         logging.error(f"Failed to fetch S&P 500 list: {e}")
         return []
+
+def get_russell2000_tickers() -> List[str]:
+    """Fetches Russell 2000 tickers from iShares IWM ETF."""
+    return get_etf_holdings("239710", "IWM", "russell2000_tickers_cache.json")
+
+def get_sp400_tickers() -> List[str]:
+    """Fetches S&P MidCap 400 tickers from iShares IJH ETF."""
+    return get_etf_holdings("239763", "IJH", "sp400_tickers_cache.json")
 
 def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_symbols: Optional[List[str]] = None, db_conn: Optional[Any] = None, fast_mode: bool = False) -> List[Dict[str, Any]]:
     """
@@ -134,6 +256,10 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
                  if not db_conn and conn: conn.close()
     elif universe_type == "sp500":
         symbols = get_sp500_tickers()
+    elif universe_type == "russell2000":
+        symbols = get_russell2000_tickers()
+    elif universe_type == "sp400":
+        symbols = get_sp400_tickers()
     
     if not symbols:
         return []
@@ -141,7 +267,7 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
     # Recalculate tag just in case logic diverged? No, it's consistent.
     # universe_tag already set above.
 
-    if universe_type in ["sp500", "watchlist", "holdings"]:
+    if universe_type in ["sp500", "russell2000", "sp400", "watchlist", "holdings"]:
         conn = db_conn or get_db_connection()
         if conn:
             try:
@@ -175,7 +301,7 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
             finally:
                 if not db_conn and conn: conn.close()
 
-    if use_pure_fast_path:
+    if use_pure_fast_path and fast_mode:
         # Sort just in case (though DB should be sorted)
         cached_results.sort(key=lambda x: (x.get("margin_of_safety") is not None, x.get("margin_of_safety")), reverse=True)
         return cached_results
@@ -210,7 +336,7 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
     details_map = mdp.get_ticker_details_batch(set(symbols))
     
     # Check DB for individual caches (Smart Invalidation lookup)
-    conn = get_db_connection()
+    conn = db_conn if db_conn else get_db_connection()
     cached_map = {}
     if conn:
         try:
@@ -242,8 +368,10 @@ def screen_stocks(universe_type: str, universe_id: Optional[str] = None, manual_
              can_use_cache = False
              if cached:
                 # Same logic as in process_symbol to determine if we need to recalculate
+                # IMPORTANT: Also check if intrinsic_value is actually present in cache
                 if (cached.get("last_fiscal_year_end") == live_fy_end and 
-                    cached.get("most_recent_quarter") == live_quarter):
+                    cached.get("most_recent_quarter") == live_quarter and
+                    cached.get("intrinsic_value") is not None):
                     can_use_cache = True
              
              if not can_use_cache:
@@ -330,8 +458,12 @@ def process_screener_results(
             if cached:
                 # If the financial report identifiers haven't changed, 
                 # we can reuse the cached intrinsic value and AI scores.
-                if (cached.get("last_fiscal_year_end") == live_fy_end and 
-                    cached.get("most_recent_quarter") == live_quarter):
+                # FIX: Only trust the match if identifiers are present and IV is actually cached.
+                # (None == None match is too weak and often indicates poisoned data).
+                if (live_fy_end and live_quarter and 
+                    cached.get("last_fiscal_year_end") == live_fy_end and 
+                    cached.get("most_recent_quarter") == live_quarter and 
+                    cached.get("intrinsic_value") is not None):
                     can_use_cache = True
             
             if can_use_cache:

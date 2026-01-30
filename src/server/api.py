@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from starlette.concurrency import run_in_threadpool
 from typing import List, Dict, Any, Optional
 from collections import defaultdict
 import pandas as pd
@@ -313,10 +314,12 @@ logging.info("API MODULE LOADED - VERSION 2")
 
 def clean_nans(obj):
     """Recursively replace NaN/Infinity with None for JSON serialization."""
-    if isinstance(obj, float):
-        if math.isnan(obj) or math.isinf(obj):
+    if isinstance(obj, (float, np.floating)):
+        if np.isnan(obj) or np.isinf(obj):
             return None
-        return float(obj) # Force cast to python float (handles np.float64)
+        return float(obj)
+    elif isinstance(obj, (int, np.integer)):
+        return int(obj)
     elif isinstance(obj, dict):
         return {k: clean_nans(v) for k, v in obj.items()}
     elif isinstance(obj, list):
@@ -3596,7 +3599,7 @@ async def run_screener(
                 # We treat it as a manual list once resolved
                 universe_type = "manual" 
 
-        results = screen_stocks(universe_type, universe_id, manual_symbols, db_conn=db_conn, fast_mode=request.fast_mode)
+        results = await run_in_threadpool(screen_stocks, universe_type, universe_id, manual_symbols, db_conn=db_conn, fast_mode=request.fast_mode)
         return clean_nans(results)
     except Exception as e:
         logging.error(f"Screener error: {e}", exc_info=True)

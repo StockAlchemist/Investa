@@ -869,6 +869,7 @@ def calculate_intrinsic_value_graham(
             if total_equity and shares and shares > 0:
                 book_value = total_equity / shares
                 if book_value > 0:
+                    logging.info(f"Graham Formula fallback to Book Value ({book_value:.2f}) for symbol due to missing/negative EPS.")
                     return {
                         "intrinsic_value": book_value,
                         "model": "Book Value",
@@ -950,6 +951,9 @@ def get_comprehensive_intrinsic_value(
         eps=graham_eps,
         bond_yield=graham_bond_yield
     )
+    
+    dcf_mc = None
+    graham_mc = None
     
     # Pass through iterations to MC simulations
     if "intrinsic_value" in dcf_res:
@@ -1131,8 +1135,14 @@ def get_intrinsic_value_for_symbol(
         info = mdp.get_fundamental_data(yf_symbol, force_refresh=force_refresh)
         
         # CRITICAL: Detect "poisoned" or insufficient info and force fresh fetch
-        if not info or len(info) <= 3:
-            logging.warning(f"Detected invalid/insufficient fundamental info for {yf_symbol} in get_intrinsic_value_for_symbol. Forcing refresh.")
+        # If it's an Equity, we expect more identifiers.
+        is_sparse = not info or len(info) <= 8
+        if info and info.get("quoteType", "").upper() == "EQUITY":
+            if not info.get("lastFiscalYearEnd") or not info.get("mostRecentQuarter"):
+                is_sparse = True
+                
+        if is_sparse:
+            logging.warning(f"Detected sparse/poisoned fundamental info for {yf_symbol} in get_intrinsic_value_for_symbol. Forcing refresh.")
             info = mdp.get_fundamental_data(yf_symbol, force_refresh=True)
 
         if not info:
