@@ -7,12 +7,16 @@ interface LayoutConfiguratorProps {
     visibleItems: string[];
     onVisibleItemsChange: (items: string[]) => void;
     className?: string;
+    variant?: 'default' | 'ghost';
+    align?: 'left' | 'right';
 }
 
 export default function LayoutConfigurator({
     visibleItems,
     onVisibleItemsChange,
-    className
+    className,
+    variant = 'default',
+    align = 'right'
 }: LayoutConfiguratorProps) {
     const [isOpen, setIsOpen] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -52,8 +56,7 @@ export default function LayoutConfigurator({
                 onClick={() => setIsOpen(!isOpen)}
                 className={cn(
                     "flex items-center justify-center gap-2 p-2 rounded-xl transition-all duration-300 group",
-                    "bg-card hover:bg-accent/10",
-                    "border border-border shadow-sm",
+                    variant === 'ghost' ? "bg-transparent border-none shadow-none" : "bg-card border border-border shadow-sm",
                     isOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-cyan-500",
                     "h-[44px] px-3"
                 )}
@@ -70,7 +73,10 @@ export default function LayoutConfigurator({
             {isOpen && (
                 <div
                     style={{ backgroundColor: 'var(--menu-solid)' }}
-                    className="absolute right-0 top-full mt-2 min-w-[240px] w-max origin-top-right border border-border rounded-xl shadow-xl outline-none z-50 overflow-hidden"
+                    className={cn(
+                        "absolute top-full mt-2 min-w-[240px] w-max origin-top border border-border rounded-xl shadow-xl outline-none z-50 overflow-hidden",
+                        align === 'left' ? "left-0 origin-top-left" : "right-0 origin-top-right"
+                    )}
                 >
                     <div className="py-1 max-h-[80vh] overflow-y-auto">
                         <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">

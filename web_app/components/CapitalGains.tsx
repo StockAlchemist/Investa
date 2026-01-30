@@ -71,9 +71,7 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
         return <div className="p-4 text-center text-muted-foreground">Loading capital gains data...</div>;
     }
 
-    if (data.length === 0) {
-        return <div className="p-4 text-center text-muted-foreground">No realized capital gains found for the selected criteria.</div>;
-    }
+
 
     // --- Calculations (on filtered data) ---
     const totalRealizedGain = filteredData.reduce((sum, item) => sum + (item['Realized Gain (Display)'] || 0), 0);
@@ -288,33 +286,41 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border/50">
-                            {visibleData.map((item, index) => (
-                                <tr key={index} className="hover:bg-accent/5 transition-colors">
-                                    <td className="px-6 py-3 whitespace-nowrap text-sm text-foreground">{item.Date}</td>
-                                    <td
-                                        className="px-6 py-3 whitespace-nowrap text-sm font-medium text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
-                                        onClick={() => setSelectedSymbol(item.Symbol)}
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            <StockIcon symbol={item.Symbol} size={20} />
-                                            {item.Symbol}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-3 whitespace-nowrap text-sm text-muted-foreground">{item.Account}</td>
-                                    <td className="px-6 py-3 whitespace-nowrap text-sm text-muted-foreground">{item.Type}</td>
-                                    <td className="px-6 py-3 whitespace-nowrap text-sm text-muted-foreground tabular-nums">{item.Quantity}</td>
-                                    <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-muted-foreground tabular-nums">
-                                        {formatCurrency(item["Total Proceeds (Display)"] || 0, currency)}
-                                    </td>
-                                    <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-muted-foreground tabular-nums">
-                                        {formatCurrency(item["Total Cost Basis (Display)"] || 0, currency)}
-                                    </td>
-                                    <td className={`px-6 py-3 whitespace-nowrap text-sm text-right font-medium tabular-nums ${(item['Realized Gain (Display)'] || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'
-                                        }`}>
-                                        {formatCurrency(item['Realized Gain (Display)'] || 0, currency)}
+                            {visibleData.length === 0 ? (
+                                <tr>
+                                    <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground">
+                                        No realized capital gains found for the selected criteria.
                                     </td>
                                 </tr>
-                            ))}
+                            ) : (
+                                visibleData.map((item, index) => (
+                                    <tr key={index} className="hover:bg-accent/5 transition-colors">
+                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-foreground">{item.Date}</td>
+                                        <td
+                                            className="px-6 py-3 whitespace-nowrap text-sm font-medium text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
+                                            onClick={() => setSelectedSymbol(item.Symbol)}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <StockIcon symbol={item.Symbol} size={20} />
+                                                {item.Symbol}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-muted-foreground">{item.Account}</td>
+                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-muted-foreground">{item.Type}</td>
+                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-muted-foreground tabular-nums">{item.Quantity}</td>
+                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-muted-foreground tabular-nums">
+                                            {formatCurrency(item["Total Proceeds (Display)"] || 0, currency)}
+                                        </td>
+                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-muted-foreground tabular-nums">
+                                            {formatCurrency(item["Total Cost Basis (Display)"] || 0, currency)}
+                                        </td>
+                                        <td className={`px-6 py-3 whitespace-nowrap text-sm text-right font-medium tabular-nums ${(item['Realized Gain (Display)'] || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'
+                                            }`}>
+                                            {formatCurrency(item['Realized Gain (Display)'] || 0, currency)}
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
                         </tbody>
                     </table>
                 </div>

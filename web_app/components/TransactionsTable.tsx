@@ -118,17 +118,13 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
         return <TableSkeleton />;
     }
 
-    if (!transactions || transactions.length === 0) {
-        return <div className="p-4 text-center text-gray-500">No transactions found.</div>;
-    }
-
     const uniqueTypes = new Set<string>();
-    transactions.forEach(tx => {
+    (transactions || []).forEach(tx => {
         if (tx.Type) uniqueTypes.add(tx.Type);
     });
     const existingTypes = Array.from(uniqueTypes).sort();
 
-    const filteredTransactions = transactions.filter(tx => {
+    const filteredTransactions = (transactions || []).filter(tx => {
         const symbolMatch = tx.Symbol.toLowerCase().includes(symbolFilter.toLowerCase());
         const accountMatch = tx.Account.toLowerCase().includes(accountFilter.toLowerCase());
         const typeMatch = filterType ? tx.Type === filterType : true;
@@ -355,55 +351,65 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-black/5 dark:divide-white/10">
-                            {visibleTransactions.map((tx, index) => (
-                                <tr key={index} className={`hover:bg-accent/5 transition-colors group ${tx.id !== undefined && selectedIds.has(tx.id) ? 'bg-cyan-500/5' : ''}`}>
-                                    <td className="px-4 py-3 whitespace-nowrap text-sm">
-                                        <input
-                                            type="checkbox"
-                                            checked={tx.id !== undefined && selectedIds.has(tx.id)}
-                                            onChange={() => tx.id !== undefined && handleToggleSelect(tx.id)}
-                                            className="rounded border-gray-300 text-cyan-500 focus:ring-cyan-500 cursor-pointer"
-                                        />
-                                    </td>
-                                    <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">{tx.Date ? tx.Date.split('T')[0].split(' ')[0] : '-'}</td>
-                                    <td className="px-4 py-3 text-sm text-muted-foreground">
-                                        <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${getTransactionTypeStyle(tx.Type)}`}>
-                                            {formatTransactionType(tx.Type)}
-                                        </span>
-                                    </td>
-                                    <td className="px-4 py-3 whitespace-nowrap">
-                                        <StockTicker symbol={tx.Symbol} currency={tx["Local Currency"]} />
-                                    </td>
-                                    <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">{tx.Quantity}</td>
-                                    <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">{tx["Price/Share"]?.toFixed(2)}</td>
-                                    <td className="px-4 py-3 text-sm text-right font-medium text-foreground tabular-nums">
-                                        {tx["Total Amount"] ? Math.abs(tx["Total Amount"]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
-                                    </td>
-                                    <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">
-                                        {tx.Commission ? tx.Commission.toFixed(2) : '-'}
-                                    </td>
-                                    <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{tx.Account}</td>
-                                    <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">{tx["Split Ratio"] ? tx["Split Ratio"] : ''}</td>
-                                    <td className="px-4 py-3 text-sm text-muted-foreground truncate max-w-xs" title={tx.Note}>{tx.Note || '-'}</td>
-                                    <td className="px-4 py-3 text-sm text-muted-foreground">{tx["Local Currency"]}</td>
-                                    <td className="px-4 py-3 text-sm text-right text-foreground whitespace-nowrap">
-                                        <button
-                                            onClick={() => handleEdit(tx)}
-                                            className="text-cyan-500 hover:text-cyan-400 hover:bg-cyan-500/10 p-2 rounded transition-colors mr-1"
-                                            title="Edit"
-                                        >
-                                            <Pencil className="w-4 h-4" />
-                                        </button>
-                                        <button
-                                            onClick={() => handleDelete(tx)}
-                                            className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-2 rounded transition-colors"
-                                            title="Delete"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
+                            {visibleTransactions.length === 0 ? (
+                                <tr>
+                                    <td colSpan={13} className="px-6 py-12 text-center text-muted-foreground">
+                                        {(!transactions || transactions.length === 0)
+                                            ? "No transactions added yet. Click 'Add Transaction' to get started."
+                                            : "No transactions match your filters."}
                                     </td>
                                 </tr>
-                            ))}
+                            ) : (
+                                visibleTransactions.map((tx, index) => (
+                                    <tr key={index} className={`hover:bg-accent/5 transition-colors group ${tx.id !== undefined && selectedIds.has(tx.id) ? 'bg-cyan-500/5' : ''}`}>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                            <input
+                                                type="checkbox"
+                                                checked={tx.id !== undefined && selectedIds.has(tx.id)}
+                                                onChange={() => tx.id !== undefined && handleToggleSelect(tx.id)}
+                                                className="rounded border-gray-300 text-cyan-500 focus:ring-cyan-500 cursor-pointer"
+                                            />
+                                        </td>
+                                        <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">{tx.Date ? tx.Date.split('T')[0].split(' ')[0] : '-'}</td>
+                                        <td className="px-4 py-3 text-sm text-muted-foreground">
+                                            <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${getTransactionTypeStyle(tx.Type)}`}>
+                                                {formatTransactionType(tx.Type)}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <StockTicker symbol={tx.Symbol} currency={tx["Local Currency"]} />
+                                        </td>
+                                        <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">{tx.Quantity}</td>
+                                        <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">{tx["Price/Share"]?.toFixed(2)}</td>
+                                        <td className="px-4 py-3 text-sm text-right font-medium text-foreground tabular-nums">
+                                            {tx["Total Amount"] ? Math.abs(tx["Total Amount"]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
+                                        </td>
+                                        <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">
+                                            {tx.Commission ? tx.Commission.toFixed(2) : '-'}
+                                        </td>
+                                        <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{tx.Account}</td>
+                                        <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">{tx["Split Ratio"] ? tx["Split Ratio"] : ''}</td>
+                                        <td className="px-4 py-3 text-sm text-muted-foreground truncate max-w-xs" title={tx.Note}>{tx.Note || '-'}</td>
+                                        <td className="px-4 py-3 text-sm text-muted-foreground">{tx["Local Currency"]}</td>
+                                        <td className="px-4 py-3 text-sm text-right text-foreground whitespace-nowrap">
+                                            <button
+                                                onClick={() => handleEdit(tx)}
+                                                className="text-cyan-500 hover:text-cyan-400 hover:bg-cyan-500/10 p-2 rounded transition-colors mr-1"
+                                                title="Edit"
+                                            >
+                                                <Pencil className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(tx)}
+                                                className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-2 rounded transition-colors"
+                                                title="Delete"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
                         </tbody>
                     </table>
                 </div>

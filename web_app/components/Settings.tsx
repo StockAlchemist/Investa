@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Pencil, Trash2, Loader2 } from 'lucide-react';
-import { updateSettings, triggerRefresh, clearCache, Settings as SettingsType, ManualOverride, ManualOverrideData, Holding } from '../lib/api';
+import { updateSettings, triggerRefresh, clearCache, deleteUser, changePassword, Settings as SettingsType, ManualOverride, ManualOverrideData, Holding } from '../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { COUNTRIES, ALL_INDUSTRIES } from '../lib/constants';
 import AccountGroupManager from './AccountGroupManager';
@@ -10,7 +10,7 @@ import ManualValuationSettings from './ManualValuationSettings';
 
 import { useAuth } from '../context/AuthContext';
 
-type Tab = 'overrides' | 'mapping' | 'excluded' | 'groups' | 'currencies' | 'yield' | 'valuation';
+type Tab = 'overrides' | 'mapping' | 'excluded' | 'groups' | 'currencies' | 'yield' | 'valuation' | 'account';
 
 // --- Constants (Mirrored from config.py) ---
 const ASSET_TYPES = [
@@ -47,14 +47,15 @@ interface SettingsProps {
     settings: SettingsType | null;
     holdings: Holding[];
     availableAccounts: string[];
+    initialTab?: Tab;
 }
 
-export default function Settings({ settings, holdings, availableAccounts }: SettingsProps) {
+export default function Settings({ settings, holdings, availableAccounts, initialTab }: SettingsProps) {
     const queryClient = useQueryClient();
-    const { logout } = useAuth();
+    const { logout, user } = useAuth();
     // Removed local settings state, loading, error, portfolioCountries, availableAccounts (now props/derived)
 
-    const [activeTab, setActiveTab] = useState<Tab>('overrides');
+    const [activeTab, setActiveTab] = useState<Tab>(initialTab || 'overrides');
     const [confirmClear, setConfirmClear] = useState(false);
     const [clearStatus, setClearStatus] = useState<string | null>(null);
 
@@ -75,6 +76,13 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
 
     const [excludeSymbol, setExcludeSymbol] = useState('');
     const [newCurrency, setNewCurrency] = useState('');
+
+    // Password State
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [passwordStatus, setPasswordStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+    const [isChangingPassword, setIsChangingPassword] = useState(false);
 
     // Common input/select classes
     const inputClassName = "w-full rounded-md border border-border bg-secondary text-foreground shadow-sm focus:border-cyan-500 focus:ring-cyan-500 px-3 py-2 text-sm outline-none focus:ring-1";
@@ -365,6 +373,47 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
         }
     };
 
+    const handleDeleteAccount = async () => {
+        if (!window.confirm("Are you sure you want to delete your account? This action cannot be undone and will delete all your data.")) return;
+        if (!window.confirm("Please confirm again: DELETE ACCOUNT PERMANENTLY?")) return;
+
+        try {
+            await deleteUser();
+            logout();
+        } catch (err) {
+            alert("Failed to delete account: " + String(err));
+        }
+    };
+
+    const handleChangePassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setPasswordStatus(null);
+
+        if (newPassword !== confirmPassword) {
+            setPasswordStatus({ type: 'error', message: "New passwords do not match" });
+            return;
+        }
+
+        if (newPassword.length < 4) {
+            setPasswordStatus({ type: 'error', message: "Password must be at least 4 characters" });
+            return;
+        }
+
+        setIsChangingPassword(true);
+        try {
+            const res = await changePassword(currentPassword, newPassword);
+            setPasswordStatus({ type: 'success', message: res.message || "Password changed successfully" });
+            setCurrentPassword('');
+            setNewPassword('');
+            setConfirmPassword('');
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            setPasswordStatus({ type: 'error', message: message });
+        } finally {
+            setIsChangingPassword(false);
+        }
+    };
+
     const overrides = settings?.manual_overrides || {};
     const symbolMap = settings?.user_symbol_map || {};
     // Sort excluded symbols alphabetically
@@ -380,11 +429,13 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
 
             {/* Symbol Settings Section */}
             <div className="bg-white dark:bg-zinc-950 shadow-sm rounded-xl overflow-hidden border border-border">
-                <div className="px-6 py-4 border-b border-border">
-                    <h2 className="text-2xl font-bold leading-tight tracking-tight bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent w-fit pb-1">Symbol Settings</h2>
-                    <p className="text-sm text-muted-foreground mt-1">
-                        Manage price overrides, custom symbol mappings, and exclusions.
-                    </p>
+                <div className="px-6 py-4 border-b border-border flex justify-between items-center">
+                    <div>
+                        <h2 className="text-2xl font-bold leading-tight tracking-tight bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent w-fit pb-1">Settings</h2>
+                        <p className="text-sm text-muted-foreground mt-1">
+                            Manage application settings, preferences, and account.
+                        </p>
+                    </div>
                 </div>
 
                 {/* Tabs */}
@@ -451,6 +502,15 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
                             }`}
                     >
                         Valuation Overrides
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('account')}
+                        className={`px-6 py-3 text-sm font-medium focus:outline-none transition-colors border-b-2 whitespace-nowrap ${activeTab === 'account'
+                            ? 'border-red-500 text-red-500'
+                            : 'border-transparent text-muted-foreground hover:text-foreground hover:border-black/20 dark:hover:border-white/20'
+                            }`}
+                    >
+                        Account
                     </button>
                 </div>
 
@@ -567,6 +627,95 @@ export default function Settings({ settings, holdings, availableAccounts }: Sett
                     {/* Valuation Overrides Tab */}
                     {activeTab === 'valuation' && settings && (
                         <ManualValuationSettings settings={settings} />
+                    )}
+
+                    {/* Account Tab */}
+                    {activeTab === 'account' && (
+                        <div className="max-w-2xl">
+                            <h3 className="text-lg font-medium mb-4">Account Information</h3>
+                            <div className="bg-secondary p-4 rounded-lg border border-border mb-8">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className={labelClassName}>Username</label>
+                                        <p className="font-mono text-lg">{user?.username}</p>
+                                    </div>
+                                    <div>
+                                        <label className={labelClassName}>User ID</label>
+                                        <p className="font-mono text-lg">{user?.id}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <h3 className="text-lg font-medium mb-4">Security</h3>
+                            <div className="bg-secondary p-6 rounded-lg border border-border mb-8">
+                                <form onSubmit={handleChangePassword} className="space-y-4 max-w-md">
+                                    <h4 className="font-medium mb-4">Change Password</h4>
+
+                                    <div>
+                                        <label className={labelClassName}>Current Password</label>
+                                        <input
+                                            type="password"
+                                            value={currentPassword}
+                                            onChange={(e) => setCurrentPassword(e.target.value)}
+                                            className={inputClassName}
+                                            required
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className={labelClassName}>New Password</label>
+                                        <input
+                                            type="password"
+                                            value={newPassword}
+                                            onChange={(e) => setNewPassword(e.target.value)}
+                                            className={inputClassName}
+                                            required
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className={labelClassName}>Confirm New Password</label>
+                                        <input
+                                            type="password"
+                                            value={confirmPassword}
+                                            onChange={(e) => setConfirmPassword(e.target.value)}
+                                            className={inputClassName}
+                                            required
+                                        />
+                                    </div>
+
+                                    {passwordStatus && (
+                                        <div className={`text-sm p-3 rounded ${passwordStatus.type === 'success' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
+                                            {passwordStatus.message}
+                                        </div>
+                                    )}
+
+                                    <button
+                                        type="submit"
+                                        disabled={isChangingPassword}
+                                        className="px-4 py-2 bg-cyan-600 text-white rounded hover:bg-cyan-700 transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
+                                    >
+                                        {isChangingPassword && <Loader2 className="w-4 h-4 animate-spin" />}
+                                        Change Password
+                                    </button>
+                                </form>
+                            </div>
+
+                            <h3 className="text-lg font-medium mb-4 text-red-500">Danger Zone</h3>
+                            <div className="bg-red-50 dark:bg-red-950/20 p-4 rounded-lg border border-red-200 dark:border-red-900">
+                                <h4 className="font-medium text-red-700 dark:text-red-400 mb-2">Delete Account</h4>
+                                <p className="text-sm text-red-600/80 dark:text-red-400/80 mb-4">
+                                    Once you delete your account, there is no going back. Please be certain.
+                                    This will permanently delete your user profile, portfolio data, and settings.
+                                </p>
+                                <button
+                                    onClick={handleDeleteAccount}
+                                    className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors shadow-sm"
+                                >
+                                    Delete Account
+                                </button>
+                            </div>
+                        </div>
                     )}
 
                     {/* Manual Price Overrides Tab */}

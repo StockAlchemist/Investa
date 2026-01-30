@@ -34,6 +34,7 @@ import HoldingsTable from '@/components/HoldingsTable';
 import AccountSelector from '@/components/AccountSelector';
 import CurrencySelector from '@/components/CurrencySelector';
 import TabNavigation from '@/components/TabNavigation';
+import ThemeToggle from '@/components/ThemeToggle';
 import dynamic from 'next/dynamic';
 import AppShellSkeleton from "@/components/skeletons/AppShellSkeleton";
 
@@ -58,14 +59,11 @@ const ScreenerView = dynamic(() => import('@/components/ScreenerView'));
 
 
 import { useTheme } from 'next-themes';
-import { Home as HomeIcon, BarChart3, Settings as SettingsIcon, Moon, Sun, LogOut } from 'lucide-react';
+import { Home as HomeIcon, BarChart3, Settings as SettingsIcon, Moon, Sun, LogOut, UserCircle } from 'lucide-react';
 const LayoutConfigurator = dynamic(() => import('@/components/LayoutConfigurator'));
 
-// Static import for ThemeToggle since it's in the sidebar always visible? OR lazy load it? 
-// It's small, let's lazy load if it's not critical. But wait, I removed it from the chunk above.
-// I need to add ThemeToggle back. Step 8 showed it was imported.
-// I will keep ThemeToggle as dynamic too.
-const ThemeToggle = dynamic(() => import('@/components/ThemeToggle'));
+// Static import for ThemeToggle since it's in the sidebar always visible
+// const ThemeToggle = dynamic(() => import('@/components/ThemeToggle'));
 
 
 export default function Home() {
@@ -86,6 +84,19 @@ export default function Home() {
   const [showClosed, setShowClosed] = useState(false);
   const [backgroundFetchEnabled, setBackgroundFetchEnabled] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'overrides' | 'account' | undefined>(undefined);
+
+  const handleUserIconClick = () => {
+    setSettingsInitialTab('account');
+    setActiveTab('settings');
+  };
+
+  const handleTabChange = (tab: string) => {
+    if (tab === 'settings') {
+      setSettingsInitialTab(undefined);
+    }
+    setActiveTab(tab);
+  };
 
   // Hydrate state from localStorage on mount
   useEffect(() => {
@@ -124,7 +135,7 @@ export default function Home() {
 
   // Settings sync effect (condensed)
   const settingsQuery = useQuery({
-    queryKey: ['settings'],
+    queryKey: ['settings', user?.username],
     queryFn: fetchSettings,
     staleTime: 5 * 60 * 1000,
     enabled: !!user,
@@ -193,7 +204,7 @@ export default function Home() {
   const settingsMutation = useMutation({
     mutationFn: updateSettings,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
     },
   });
 
@@ -265,17 +276,19 @@ export default function Home() {
 
   // Queries
   const summaryQuery = useQuery({
-    queryKey: ['summary', currency, selectedAccounts],
+    queryKey: ['summary', user?.username, currency, selectedAccounts],
     queryFn: ({ signal }) => fetchSummary(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
+    enabled: !!user,
   });
 
   const holdingsQuery = useQuery({
-    queryKey: ['holdings', currency, selectedAccounts, showClosed],
+    queryKey: ['holdings', user?.username, currency, selectedAccounts, showClosed],
     queryFn: ({ signal }) => fetchHoldings(currency, selectedAccounts, showClosed, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
+    enabled: !!user,
   });
 
   // --- PRIORITIZATION LOGIC REMOVED ---
@@ -284,67 +297,67 @@ export default function Home() {
 
 
   const transactionsQuery = useQuery({
-    queryKey: ['transactions', selectedAccounts],
+    queryKey: ['transactions', user?.username, selectedAccounts],
     queryFn: ({ signal }) => fetchTransactions(selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: (activeTab === 'transactions' || backgroundFetchEnabled),
+    enabled: !!user && (activeTab === 'transactions' || backgroundFetchEnabled),
   });
 
   const assetChangeQuery = useQuery({
-    queryKey: ['assetChange', currency, selectedAccounts, benchmarks],
+    queryKey: ['assetChange', user?.username, currency, selectedAccounts, benchmarks],
     queryFn: ({ signal }) => fetchAssetChange(currency, selectedAccounts, benchmarks, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: (activeTab === 'asset_change' || backgroundFetchEnabled),
+    enabled: !!user && (activeTab === 'asset_change' || backgroundFetchEnabled),
   });
 
   const capitalGainsQuery = useQuery({
-    queryKey: ['capitalGains', currency, selectedAccounts, capitalGainsDates.from, capitalGainsDates.to],
+    queryKey: ['capitalGains', user?.username, currency, selectedAccounts, capitalGainsDates.from, capitalGainsDates.to],
     queryFn: ({ signal }) => fetchCapitalGains(currency, selectedAccounts, capitalGainsDates.from, capitalGainsDates.to, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: (activeTab === 'capital_gains' || backgroundFetchEnabled),
+    enabled: !!user && (activeTab === 'capital_gains' || backgroundFetchEnabled),
   });
 
   const dividendsQuery = useQuery({
-    queryKey: ['dividends', currency, selectedAccounts],
+    queryKey: ['dividends', user?.username, currency, selectedAccounts],
     queryFn: ({ signal }) => fetchDividends(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: (activeTab === 'dividend' || backgroundFetchEnabled),
+    enabled: !!user && (activeTab === 'dividend' || backgroundFetchEnabled),
   });
 
   const riskMetricsQuery = useQuery({
-    queryKey: ['riskMetrics', currency, selectedAccounts],
+    queryKey: ['riskMetrics', user?.username, currency, selectedAccounts],
     queryFn: ({ signal }) => fetchRiskMetrics(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    // enabled: isHighPriorityLoaded,
+    enabled: !!user,
   });
 
   const attributionQuery = useQuery({
-    queryKey: ['attribution', currency, selectedAccounts],
+    queryKey: ['attribution', user?.username, currency, selectedAccounts],
     queryFn: ({ signal }) => fetchAttribution(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    // enabled: isHighPriorityLoaded,
+    enabled: !!user,
   });
 
   const dividendCalendarQuery = useQuery({
-    queryKey: ['dividendCalendar', selectedAccounts],
+    queryKey: ['dividendCalendar', user?.username, selectedAccounts],
     queryFn: ({ signal }) => fetchDividendCalendar(selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: (activeTab === 'dividend' || backgroundFetchEnabled),
+    enabled: !!user && (activeTab === 'dividend' || backgroundFetchEnabled),
   });
 
   const historySparklineQuery = useQuery({
-    queryKey: ['history', currency, selectedAccounts, 'sparkline'],
+    queryKey: ['history', user?.username, currency, selectedAccounts, 'sparkline'],
     queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, '1d', [], '5m', undefined, undefined, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    // enabled: isHighPriorityLoaded, // Allow history to fetch in parallel with summary
+    enabled: !!user,
   });
 
   // Main Graph Query
@@ -359,12 +372,12 @@ export default function Home() {
   const graphToDate = graphPeriod === 'custom' ? graphCustomToDate : undefined;
 
   const historyQuery = useQuery({
-    queryKey: ['history', currency, selectedAccounts, graphPeriod, benchmarks, graphInterval, graphFromDate, graphToDate],
+    queryKey: ['history', user?.username, currency, selectedAccounts, graphPeriod, benchmarks, graphInterval, graphFromDate, graphToDate],
     queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, graphPeriod, benchmarks, graphInterval, graphFromDate, graphToDate, signal),
     placeholderData: keepPreviousData,
     staleTime: 5 * 60 * 1000,
     refetchInterval: graphPeriod === '1d' ? 60000 : false,
-    enabled: activeTab === 'performance' || backgroundFetchEnabled
+    enabled: !!user && (activeTab === 'performance' || backgroundFetchEnabled)
   });
 
   const graphData = historyQuery.data || [];
@@ -372,35 +385,35 @@ export default function Home() {
 
 
   const watchlistQuery = useQuery({
-    queryKey: ['watchlist', currency, 1],
+    queryKey: ['watchlist', user?.username, currency, 1],
     queryFn: ({ signal }) => fetchWatchlist(currency, 1, signal),
     staleTime: 1 * 60 * 1000,
     // No keepPreviousData needed for watchlist as it's not dependent on accounts
-    enabled: (activeTab === 'watchlist' || backgroundFetchEnabled),
+    enabled: !!user && (activeTab === 'watchlist' || backgroundFetchEnabled),
   });
 
   const portfolioHealthQuery = useQuery({
-    queryKey: ['portfolioHealth', currency, selectedAccounts],
+    queryKey: ['portfolioHealth', user?.username, currency, selectedAccounts],
     queryFn: ({ signal }) => fetchPortfolioHealth(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: (activeTab === 'analytics' || backgroundFetchEnabled),
+    enabled: !!user && (activeTab === 'analytics' || backgroundFetchEnabled),
   });
 
   const correlationMatrixQuery = useQuery({
-    queryKey: ['correlationMatrix', correlationPeriod, selectedAccounts],
+    queryKey: ['correlationMatrix', user?.username, correlationPeriod, selectedAccounts],
     queryFn: ({ signal }) => fetchCorrelationMatrix(correlationPeriod, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: (activeTab === 'analytics' || backgroundFetchEnabled),
+    enabled: !!user && (activeTab === 'analytics' || backgroundFetchEnabled),
   });
 
   const incomeProjectionQuery = useQuery({
-    queryKey: ['incomeProjection', currency, selectedAccounts],
+    queryKey: ['incomeProjection', user?.username, currency, selectedAccounts],
     queryFn: ({ signal }) => fetchProjectedIncome(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: (activeTab === 'dividend' || backgroundFetchEnabled),
+    enabled: !!user && (activeTab === 'dividend' || backgroundFetchEnabled),
   });
 
   const summary = summaryQuery.data;
@@ -583,6 +596,7 @@ export default function Home() {
             settings={settingsQuery.data || null}
             holdings={holdings}
             availableAccounts={availableAccounts}
+            initialTab={settingsInitialTab as any}
           />
         );
       default:
@@ -609,7 +623,7 @@ export default function Home() {
       {/* Sidebar - Desktop */}
       <aside className="fixed left-0 top-0 bottom-0 w-[72px] flex flex-col items-center py-6 border-r border-border bg-background/40 backdrop-blur-2xl z-[60] hidden md:flex transition-all duration-300">
         <div className="flex-1 flex flex-col items-center gap-6">
-          <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} onLogout={logout} side="right" />
+          <TabNavigation activeTab={activeTab} onTabChange={handleTabChange} onLogout={logout} side="right" />
 
           <CurrencySelector
             currentCurrency={currency}
@@ -712,20 +726,32 @@ export default function Home() {
                 onChange={setCurrency}
                 fxRate={summary?.metrics?.exchange_rate_to_display}
                 availableCurrencies={settingsQuery.data?.available_currencies}
+                align="left"
               />
               <AccountSelector
                 availableAccounts={availableAccounts}
                 selectedAccounts={selectedAccounts}
                 onChange={setSelectedAccounts}
                 accountGroups={settingsQuery.data?.account_groups}
+                variant="ghost"
+                align="left"
               />
               {activeTab === 'performance' && (
                 <LayoutConfigurator
                   visibleItems={visibleItems}
                   onVisibleItemsChange={setVisibleItems}
+                  variant="ghost"
+                  align="right"
                 />
               )}
-              <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} onLogout={logout} side="bottom" />
+              <TabNavigation activeTab={activeTab} onTabChange={handleTabChange} onLogout={logout} side="bottom" />
+              <button
+                onClick={handleUserIconClick}
+                className="p-2 rounded-xl hover:bg-accent/10 transition-colors text-cyan-500"
+                title="User Settings"
+              >
+                <UserCircle className="w-5 h-5" />
+              </button>
             </div>
 
             <div className="hidden md:block">
@@ -745,6 +771,14 @@ export default function Home() {
                 />
               </div>
             )}
+
+            <button
+              onClick={handleUserIconClick}
+              className="hidden md:flex items-center justify-center w-10 h-10 rounded-xl bg-card border border-border shadow-sm text-cyan-500 hover:bg-accent/10 transition-all duration-300"
+              title="User Settings"
+            >
+              <UserCircle className="w-5 h-5" />
+            </button>
           </div>
         </div>
 

@@ -109,7 +109,7 @@ export function PortfolioHealthComponent({ data, isLoading }: PortfolioHealthPro
                 <div className="flex flex-col md:flex-row gap-8 items-center md:items-start">
                     {/* Ring Chart Section */}
                     <div className="flex flex-col items-center gap-2 min-w-[150px]">
-                        <ScoreRing score={data.overall_score} />
+                        <ScoreRing score={data.overall_score ?? 0} />
                         <div className="text-center">
                             <div className="text-lg font-semibold text-foreground">{data.rating}</div>
                             <p className="text-xs text-muted-foreground">Overall Rating</p>
@@ -126,22 +126,22 @@ export function PortfolioHealthComponent({ data, isLoading }: PortfolioHealthPro
                             </div>
                         )}
                         <HealthBar
-                            score={data.components.diversification.score}
+                            score={data.components?.diversification?.score ?? 0}
                             label="Diversification"
                             icon={PieChart}
-                            value={`HHI: ${data.components.diversification.metric}`}
+                            value={`HHI: ${data.components?.diversification?.metric ?? 'N/A'}`}
                         />
                         <HealthBar
-                            score={data.components.efficiency.score}
+                            score={data.components?.efficiency?.score ?? 0}
                             label="Efficiency (Sharpe)"
                             icon={Activity}
-                            value={String(data.components.efficiency.metric)}
+                            value={String(data.components?.efficiency?.metric ?? 'N/A')}
                         />
                         <HealthBar
-                            score={data.components.stability.score}
+                            score={data.components?.stability?.score ?? 0}
                             label="Stability (Low Vol)"
                             icon={ShieldCheck}
-                            value={String(data.components.stability.metric)}
+                            value={String(data.components?.stability?.metric ?? 'N/A')}
                         />
                     </div>
                 </div>

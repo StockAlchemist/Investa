@@ -12,6 +12,8 @@ from datetime import datetime, date, time as dt_time
 
 
 
+import shutil
+
 from server.dependencies import get_transaction_data, get_config_manager, reload_data, get_global_db_connection, get_user_db_connection
 from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
 from utils_time import get_est_today, get_latest_trading_date
@@ -98,6 +100,10 @@ def get_mdp():
 class UserCreate(BaseModel):
     username: str
     password: str
+
+class UserPasswordUpdate(BaseModel):
+    current_password: str
+    new_password: str
 
 from fastapi.security import OAuth2PasswordRequestForm
 
@@ -186,7 +192,67 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), conn: sqlite3.
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
+@router.delete("/auth/me")
+async def delete_user_me(
+    current_user: User = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_global_db_connection)
+):
+    try:
+        # 1. Delete user from GLOBAL DB
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM users WHERE id = ?", (current_user.id,))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+        conn.commit()
+        
+        # 2. Delete user data directory
+        user_data_dir = os.path.join(config.get_app_data_dir(), "users", current_user.username)
+        if os.path.exists(user_data_dir):
+            try:
+                shutil.rmtree(user_data_dir)
+                logging.info(f"Deleted data directory for user {current_user.username}")
+            except Exception as e:
+                logging.error(f"Failed to delete data directory for {current_user.username}: {e}")
+                # We continue as the user is effectively deleted from the system
+        
+        return {"status": "success", "message": f"User {current_user.username} deleted"}
+        
+    except Exception as e:
+        logging.error(f"Error deleting user {current_user.username}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete user")
+
 # --- End Auth Routes ---
+
+@router.post("/auth/change-password")
+async def change_password(
+    password_data: UserPasswordUpdate,
+    current_user: User = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_global_db_connection)
+):
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT hashed_password FROM users WHERE id = ?", (current_user.id,))
+        row = cursor.fetchone()
+        
+        if not row:
+             raise HTTPException(status_code=404, detail="User not found")
+             
+        stored_hash = row[0]
+        
+        if not verify_password(password_data.current_password, stored_hash):
+            raise HTTPException(status_code=400, detail="Incorrect current password")
+            
+        hashed_new_pw = get_password_hash(password_data.new_password)
+        
+        cursor.execute("UPDATE users SET hashed_password = ? WHERE id = ?", (hashed_new_pw, current_user.id))
+        conn.commit()
+        
+        return {"status": "success", "message": "Password updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error changing password for {current_user.username}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update password")
 
 
 

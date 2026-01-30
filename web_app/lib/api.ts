@@ -20,6 +20,29 @@ const getAuthHeaders = () => {
     return token ? { 'Authorization': `Bearer ${token}` } : {};
 };
 
+export async function deleteUser(): Promise<StatusResponse> {
+    const res = await authFetch(`${API_BASE_URL}/auth/me`, {
+        method: "DELETE",
+    });
+    if (!res.ok) throw new Error('Failed to delete user');
+    return res.json();
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<StatusResponse> {
+    const res = await authFetch(`${API_BASE_URL}/auth/change-password`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Failed to change password');
+    }
+    return res.json();
+}
+
 const authFetch = async (url: string, options: RequestInit = {}) => {
     const headers = {
         ...getAuthHeaders(),

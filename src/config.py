@@ -142,11 +142,7 @@ DEFAULT_CURRENT_CACHE_FILE_PATH = (
 YFINANCE_INDEX_TICKER_MAP = {".DJI": "^DJI", "IXIC": "^IXIC", ".INX": "^GSPC"}
 DEFAULT_INDEX_QUERY_SYMBOLS = list(YFINANCE_INDEX_TICKER_MAP.keys())
 
-SYMBOL_MAP_TO_YFINANCE = {
-    "BRK.B": "BRK-B",
-    "BECL.BK": "BEM.BK",  # BECL merged into BEM
-    "NOK.BK": "NOK.BK",   # Verify if valid, or maybe delisted
-}
+SYMBOL_MAP_TO_YFINANCE = {}
 
 YFINANCE_EXCLUDED_SYMBOLS = {}
 # {"VTSAX", "VTIAX"} # Example: Mutual funds often don't have good YF data

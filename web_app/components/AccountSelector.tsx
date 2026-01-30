@@ -6,9 +6,11 @@ interface AccountSelectorProps {
     selectedAccounts: string[];
     onChange: (accounts: string[]) => void;
     accountGroups?: Record<string, string[]>;
+    variant?: 'default' | 'ghost';
+    align?: 'left' | 'right';
 }
 
-export default function AccountSelector({ availableAccounts, selectedAccounts, onChange, accountGroups = {} }: AccountSelectorProps) {
+export default function AccountSelector({ availableAccounts, selectedAccounts, onChange, accountGroups = {}, variant = 'default', align = 'right' }: AccountSelectorProps) {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -75,8 +77,7 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                 onClick={() => setIsOpen(!isOpen)}
                 className={cn(
                     "flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group",
-                    "bg-card hover:bg-accent/10",
-                    "border border-border shadow-sm",
+                    variant === 'ghost' ? "bg-transparent border-none shadow-none" : "bg-card border border-border shadow-sm",
                     "font-semibold tracking-tight min-w-[80px]",
                     isOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-cyan-500",
                     "flex-row py-2 px-4 h-[44px]"
@@ -92,7 +93,10 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
             {isOpen && (
                 <div
                     style={{ backgroundColor: 'var(--menu-solid)' }}
-                    className="absolute right-0 top-full mt-2 min-w-[200px] w-max origin-top-right border border-border rounded-xl shadow-xl outline-none z-50 overflow-hidden"
+                    className={cn(
+                        "absolute top-full mt-2 min-w-[200px] w-max origin-top border border-border rounded-xl shadow-xl outline-none z-50 overflow-hidden",
+                        align === 'left' ? "left-0 origin-top-left" : "right-0 origin-top-right"
+                    )}
                 >
                     <div className="py-1 max-h-[80vh] overflow-y-auto">
                         {/* All Accounts Option */}

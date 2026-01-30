@@ -64,9 +64,7 @@ export default function Dividend({ data, currency, expectedDividends, children, 
         return <div className="p-4 text-center text-muted-foreground">Loading dividend data...</div>;
     }
 
-    if (data.length === 0) {
-        return <div className="p-4 text-center text-muted-foreground">No dividend history found for the selected criteria.</div>;
-    }
+
 
     // --- Calculations ---
     const totalDividends = data.reduce((sum, item) => sum + (item['DividendAmountDisplayCurrency'] || 0), 0);
@@ -183,24 +181,32 @@ export default function Dividend({ data, currency, expectedDividends, children, 
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border/50">
-                            {visibleData.map((item, index) => (
-                                <tr key={index} className="hover:bg-accent/5 transition-colors">
-                                    <td className="px-6 py-3 whitespace-nowrap text-sm text-foreground">{item.Date}</td>
-                                    <td
-                                        className="px-6 py-3 whitespace-nowrap text-sm font-medium text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
-                                        onClick={() => setSelectedSymbol(item.Symbol)}
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            <StockIcon symbol={item.Symbol} size={20} />
-                                            {item.Symbol}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-3 whitespace-nowrap text-sm text-muted-foreground">{item.Account}</td>
-                                    <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-muted-foreground tabular-nums">
-                                        {formatCurrency(item['DividendAmountDisplayCurrency'] || 0, currency)}
+                            {visibleData.length === 0 ? (
+                                <tr>
+                                    <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
+                                        No dividend history found for the selected criteria.
                                     </td>
                                 </tr>
-                            ))}
+                            ) : (
+                                visibleData.map((item, index) => (
+                                    <tr key={index} className="hover:bg-accent/5 transition-colors">
+                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-foreground">{item.Date}</td>
+                                        <td
+                                            className="px-6 py-3 whitespace-nowrap text-sm font-medium text-foreground cursor-pointer hover:text-cyan-500 transition-colors"
+                                            onClick={() => setSelectedSymbol(item.Symbol)}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <StockIcon symbol={item.Symbol} size={20} />
+                                                {item.Symbol}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-muted-foreground">{item.Account}</td>
+                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-right text-muted-foreground tabular-nums">
+                                            {formatCurrency(item['DividendAmountDisplayCurrency'] || 0, currency)}
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
                         </tbody>
                     </table>
                 </div>

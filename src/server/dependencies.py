@@ -135,7 +135,7 @@ def get_transaction_data(current_user: User = Depends(get_current_user)) -> Tupl
     # --- 1b. Defaults from config.py ---
     account_currency_map = {"SET": "THB"}
     default_currency = config.DEFAULT_CURRENCY
-    user_symbol_map = config.SYMBOL_MAP_TO_YFINANCE.copy()
+    user_symbol_map = {} # config.SYMBOL_MAP_TO_YFINANCE is deprecated/removed
     user_excluded_symbols = set(config.YFINANCE_EXCLUDED_SYMBOLS.copy())
     
     # Merge account_currency_map from gui_config (legacy support, or keep it there if desired)

@@ -10,9 +10,10 @@ interface CurrencySelectorProps {
     fxRate?: number;
     side?: 'right' | 'bottom';
     availableCurrencies?: string[];
+    align?: 'left' | 'right';
 }
 
-export default function CurrencySelector({ currentCurrency, onChange, fxRate, side = 'bottom', availableCurrencies }: CurrencySelectorProps) {
+export default function CurrencySelector({ currentCurrency, onChange, fxRate, side = 'bottom', availableCurrencies, align = 'right' }: CurrencySelectorProps) {
     const currencies = availableCurrencies || AVAILABLE_CURRENCIES;
 
     const [isOpen, setIsOpen] = useState(false);
@@ -36,8 +37,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                 onClick={() => setIsOpen(!isOpen)}
                 className={cn(
                     "flex flex-col items-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group",
-                    "bg-card hover:bg-accent/10",
-                    "border border-border shadow-sm",
+                    side === 'bottom' ? "bg-transparent border-none shadow-none" : "bg-card border border-border shadow-sm",
                     "font-semibold tracking-tight w-[60px]",
                     isOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-cyan-500",
                     side === 'bottom' && "flex-row py-2 px-4 h-[44px] justify-center w-auto min-w-0"
@@ -71,7 +71,7 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                     "absolute overflow-hidden z-[100] transition-all animate-in fade-in zoom-in duration-200",
                     side === 'right'
                         ? "left-full top-0 ml-4 slide-in-from-left-2"
-                        : "right-0 top-full mt-2 slide-in-from-top-2",
+                        : cn("top-full mt-2 slide-in-from-top-2", align === 'left' ? "left-0" : "right-0"),
                     "w-48 rounded-2xl border border-border shadow-2xl shadow-black/40"
                 )} style={{ backgroundColor: 'var(--menu-solid)' }}>
                     <div className="p-2 grid gap-1">
