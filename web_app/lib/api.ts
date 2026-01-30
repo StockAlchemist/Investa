@@ -385,6 +385,8 @@ export interface Settings {
     display_currency?: string;
     selected_accounts?: string[];
     active_tab?: string;
+    ibkr_token?: string;
+    ibkr_query_id?: string;
 }
 
 export async function fetchSettings(): Promise<Settings> {
@@ -409,6 +411,8 @@ export interface SettingsUpdate {
     display_currency?: string;
     selected_accounts?: string[];
     active_tab?: string;
+    ibkr_token?: string;
+    ibkr_query_id?: string;
 }
 
 export async function updateSettings(settings: SettingsUpdate): Promise<StatusResponse> {
@@ -514,6 +518,43 @@ export async function triggerRefresh(secret: string): Promise<StatusResponse> {
     if (!response.ok) {
         throw new Error(`Failed to trigger refresh: ${response.statusText}`);
     }
+    return response.json();
+}
+
+export async function syncIbkr(): Promise<StatusResponse> {
+    const response = await authFetch(`${API_BASE_URL}/sync/ibkr`, {
+        method: "POST"
+    });
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.message || err.detail || 'Failed to sync IBKR');
+    }
+    return response.json();
+}
+
+export async function fetchPendingIbkr(): Promise<Transaction[]> {
+    const res = await authFetch(`${API_BASE_URL}/sync/ibkr/pending`, { cache: 'no-store' });
+    if (!res.ok) throw new Error('Failed to fetch pending transactions');
+    return res.json();
+}
+
+export async function approveIbkr(ids: number[]): Promise<StatusResponse> {
+    const response = await authFetch(`${API_BASE_URL}/sync/ibkr/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ids),
+    });
+    if (!response.ok) throw new Error('Failed to approve transactions');
+    return response.json();
+}
+
+export async function rejectIbkr(ids: number[]): Promise<StatusResponse> {
+    const response = await authFetch(`${API_BASE_URL}/sync/ibkr/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ids),
+    });
+    if (!response.ok) throw new Error('Failed to reject transactions');
     return response.json();
 }
 export interface CorrelationData {

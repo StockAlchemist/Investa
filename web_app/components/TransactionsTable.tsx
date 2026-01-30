@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { exportToCSV } from '../lib/export';
-import { Transaction, addTransaction, updateTransaction, deleteTransaction, addToWatchlist } from '../lib/api';
-import { Trash2, Star, Pencil, Plus, Filter, ChevronUp, ChevronDown, Download, Eye, EyeOff, LayoutGrid, Table as TableIcon } from 'lucide-react';
+import { Transaction, addTransaction, updateTransaction, deleteTransaction, addToWatchlist, fetchPendingIbkr, approveIbkr, rejectIbkr } from '../lib/api';
+import { Trash2, Star, Pencil, Plus, Filter, ChevronUp, ChevronDown, Download, Eye, EyeOff, LayoutGrid, Table as TableIcon, CheckCircle, XCircle, AlertCircle, Clock } from 'lucide-react';
 import TransactionModal from './TransactionModal';
 import StockTicker from './StockTicker';
 import TableSkeleton from './skeletons/TableSkeleton';
@@ -24,6 +24,14 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
     const [currentTransaction, setCurrentTransaction] = useState<Transaction | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [mobileViewMode, setMobileViewMode] = useState<'card' | 'table'>('table');
+
+    // React Query for pending items
+    const { data: pendingTransactions = [], isLoading: isPendingLoading } = useQuery<Transaction[]>({
+        queryKey: ['pendingIbkr'],
+        queryFn: fetchPendingIbkr,
+    });
+    const [selectedPendingIds, setSelectedPendingIds] = useState<Set<number>>(new Set());
+    const [isApproving, setIsApproving] = useState(false);
 
     const queryClient = useQueryClient();
 
@@ -144,6 +152,32 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
         setVisibleRows(filteredTransactions.length);
     };
 
+    // --- Pending Syncs Logic ---
+    const handlePendingAction = async (action: 'approve' | 'reject', ids?: number[]) => {
+        const idsToProcess = ids || Array.from(selectedPendingIds);
+        if (idsToProcess.length === 0) return;
+
+        setIsApproving(true);
+        try {
+            if (action === 'approve') {
+                await approveIbkr(idsToProcess);
+            } else {
+                await rejectIbkr(idsToProcess);
+            }
+            setSelectedPendingIds(new Set());
+            // Invalidate both pending and main transactions
+            queryClient.invalidateQueries({ queryKey: ['pendingIbkr'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            // For good measure, invalidate everything for summary numbers
+            queryClient.invalidateQueries();
+        } catch (error) {
+            console.error(`Failed to ${action} transactions:`, error);
+            alert(`Error ${action}ing transactions`);
+        } finally {
+            setIsApproving(false);
+        }
+    };
+
     // Calculate Account -> Currency Map from existing transactions
     // Also extract unique accounts and symbols for suggestions
     const accountCurrencyMap: Record<string, string> = {};
@@ -186,7 +220,103 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
     };
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-6">
+            {/* Pending Transactions Staging Area */}
+            {pendingTransactions.length > 0 && (
+                <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-xl overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500">
+                    <div className="px-4 py-3 bg-cyan-500/10 border-b border-cyan-500/20 flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                            <Clock className="h-4 w-4 text-cyan-500" />
+                            <h3 className="text-sm font-semibold text-cyan-700 dark:text-cyan-400 uppercase tracking-wider">
+                                Pending Syncs ({pendingTransactions.length})
+                            </h3>
+                        </div>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => handlePendingAction('approve')}
+                                disabled={selectedPendingIds.size === 0 || isApproving}
+                                className="px-3 py-1 bg-cyan-600 text-white rounded text-xs font-bold hover:bg-cyan-700 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                            >
+                                <CheckCircle className="h-3 w-3" />
+                                Approve Selected ({selectedPendingIds.size})
+                            </button>
+                            <button
+                                onClick={() => handlePendingAction('reject')}
+                                disabled={selectedPendingIds.size === 0 || isApproving}
+                                className="px-3 py-1 bg-red-600/10 text-red-600 border border-red-600/20 rounded text-xs font-bold hover:bg-red-600/20 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                            >
+                                <XCircle className="h-3 w-3" />
+                                Discard
+                            </button>
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-black/5 dark:divide-white/10">
+                            <thead className="bg-cyan-500/5 text-xs font-semibold text-cyan-700 dark:text-cyan-400">
+                                <tr>
+                                    <th className="px-4 py-2 text-left w-10">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedPendingIds.size === pendingTransactions.length}
+                                            onChange={() => {
+                                                if (selectedPendingIds.size === pendingTransactions.length) setSelectedPendingIds(new Set());
+                                                else setSelectedPendingIds(new Set(pendingTransactions.map(t => t.id!).filter(Boolean)));
+                                            }}
+                                            className="rounded border-cyan-500/30 text-cyan-500 focus:ring-cyan-500"
+                                        />
+                                    </th>
+                                    <th className="px-4 py-2">Date</th>
+                                    <th className="px-4 py-2">Type</th>
+                                    <th className="px-4 py-2">Symbol</th>
+                                    <th className="px-4 py-2 text-right">Qty</th>
+                                    <th className="px-4 py-2 text-right">Price</th>
+                                    <th className="px-4 py-2 text-right">Comm.</th>
+                                    <th className="px-4 py-2 text-right">Total</th>
+                                    <th className="px-4 py-2 text-right">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-black/5 dark:divide-white/10 text-sm">
+                                {pendingTransactions.map((tx) => (
+                                    <tr key={tx.id} className="hover:bg-cyan-500/10 transition-colors">
+                                        <td className="px-4 py-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedPendingIds.has(tx.id!)}
+                                                onChange={() => {
+                                                    const next = new Set(selectedPendingIds);
+                                                    if (next.has(tx.id!)) next.delete(tx.id!);
+                                                    else next.add(tx.id!);
+                                                    setSelectedPendingIds(next);
+                                                }}
+                                                className="rounded border-cyan-500/30 text-cyan-500 focus:ring-cyan-500"
+                                            />
+                                        </td>
+                                        <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">{tx.Date}</td>
+                                        <td className="px-4 py-2 font-bold text-cyan-500 uppercase text-[10px] tracking-tighter">{tx.Type}</td>
+                                        <td className="px-4 py-2 font-medium">{tx.Symbol}</td>
+                                        <td className="px-4 py-2 text-right tabular-nums">{tx.Quantity}</td>
+                                        <td className="px-4 py-2 text-right tabular-nums">{tx["Price/Share"]?.toFixed(2)}</td>
+                                        <td className="px-4 py-2 text-right text-muted-foreground tabular-nums">{tx.Commission?.toFixed(2) || '0.00'}</td>
+                                        <td className="px-4 py-2 text-right font-bold tabular-nums">
+                                            {tx["Total Amount"]?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </td>
+                                        <td className="px-4 py-2 text-right whitespace-nowrap">
+                                            <div className="flex justify-end gap-1">
+                                                <button onClick={() => handlePendingAction('approve', [tx.id!])} className="p-1 hover:bg-cyan-500/20 text-cyan-500 rounded transition-colors" title="Approve">
+                                                    <CheckCircle className="h-4 w-4" />
+                                                </button>
+                                                <button onClick={() => handlePendingAction('reject', [tx.id!])} className="p-1 hover:bg-red-500/20 text-red-500 rounded transition-colors" title="Discard">
+                                                    <XCircle className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
 
 
             <TransactionModal

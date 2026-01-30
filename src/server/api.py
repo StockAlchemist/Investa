@@ -44,6 +44,7 @@ from db_utils import (
 
 from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series
 import config
+from ibkr_connector import IBKRConnector
 from config import YFINANCE_INDEX_TICKER_MAP, BENCHMARK_MAPPING
 from config_manager import ConfigManager
 from fastapi.responses import JSONResponse
@@ -1188,6 +1189,189 @@ async def delete_transaction(
     except Exception as e:
         logging.error(f"Error deleting transaction: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/sync/ibkr")
+async def sync_ibkr(
+    current_user: User = Depends(get_current_user),
+    data: tuple = Depends(get_transaction_data),
+    config_manager = Depends(get_config_manager)
+):
+    """
+    Syncs transactions from IBKR via Flex Web Service.
+    """
+    try:
+        # Prioritize values from config_manager (persisted in manual_overrides.json)
+        # Fall back to config.py (environment variables)
+        token = config_manager.manual_overrides.get("ibkr_token") or config.IBKR_TOKEN
+        query_id = config_manager.manual_overrides.get("ibkr_query_id") or config.IBKR_QUERY_ID
+        
+        if not token or not query_id:
+            # We check here to provide a clear error to the user via the API
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "code": "CONFIG_MISSING",
+                    "message": "IBKR API not configured. Please set IBKR Token and Query ID in your settings."
+                }
+            )
+            
+        _, _, _, _, _, db_path, _ = data
+        conn = get_db_connection(db_path)
+        if not conn:
+            raise HTTPException(status_code=500, detail="Database connection failed")
+            
+        connector = IBKRConnector(token=token, query_id=query_id)
+        # Flex sync involves network I/O, run in threadpool to avoid blocking event loop
+        try:
+            new_transactions = await run_in_threadpool(connector.sync)
+        except Exception as sync_err:
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "status": "error",
+                    "code": "SYNC_FAILED",
+                    "message": str(sync_err)
+                }
+            )
+        
+        if not new_transactions:
+             return {
+                 "status": "success", 
+                 "message": "Sync successful, but no new transactions were found in the report.", 
+                 "added_count": 0
+             }
+             
+        staged_count = 0
+        duplicate_count = 0
+        
+        # Helper logic for staging (since we had issues adding it to db_utils)
+        def _stage_tx(conn, tx_data, u_id):
+            ext_id = tx_data.get("ExternalID")
+            cursor = conn.cursor()
+            if ext_id:
+                # Check main table
+                cursor.execute("SELECT id FROM transactions WHERE ExternalID = ?", (ext_id,))
+                if cursor.fetchone(): return False, "duplicate_main"
+                # Check pending table
+                cursor.execute("SELECT id FROM pending_transactions WHERE ExternalID = ?", (ext_id,))
+                if cursor.fetchone(): return False, "duplicate_pending"
+            
+            db_cols = ["Date", "Type", "Symbol", "Quantity", "Price/Share", "Total Amount", "Commission", "Account", "Split Ratio", "Note", "Local Currency", "To Account", "Tags", "ExternalID", "user_id"]
+            placeholders = ", ".join([f":{c.replace('/', '_').replace(' ', '_')}" for c in db_cols])
+            cols_str = ", ".join([f'"{c}"' for c in db_cols])
+            
+            sql = f"INSERT INTO pending_transactions ({cols_str}) VALUES ({placeholders});"
+            sql_data = {}
+            for col in db_cols:
+                val = tx_data.get(col) if col != "user_id" else u_id
+                
+                # Fallback for Total Amount if missing (or provided as 'Amount')
+                if col == "Total Amount" and val is None:
+                    val = tx_data.get("Amount") # Try alternate key
+                    if val is None: # Calculate
+                        q = tx_data.get("Quantity", 0)
+                        p = tx_data.get("Price/Share", 0)
+                        c = tx_data.get("Commission", 0)
+                        t = tx_data.get("Type", "").upper()
+                        if q and p:
+                            val = (q * p) + (c if t == "BUY" else -c)
+
+                if col == "Type" and isinstance(val, str): val = val.strip().title()
+                if col == "Date" and isinstance(val, (datetime, date)): val = val.strftime("%Y-%m-%d")
+                sql_data[col.replace('/', '_').replace(' ', '_')] = None if pd.isna(val) else val
+            
+            cursor.execute(sql, sql_data)
+            return True, cursor.lastrowid
+
+        for tx_data in new_transactions:
+            success, result = _stage_tx(conn, tx_data, current_user.id)
+            if success:
+                staged_count += 1
+            elif result in ["duplicate_main", "duplicate_pending"]:
+                duplicate_count += 1
+                    
+        conn.commit()
+        conn.close()
+        
+        return {
+            "status": "success", 
+            "message": f"Sync successful. {staged_count} transactions staged for review ({duplicate_count} skipped as duplicates).",
+            "staged_count": staged_count,
+            "duplicate_count": duplicate_count
+        }
+        
+    except Exception as e:
+        logging.error(f"Error during IBKR sync: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+@router.get("/sync/ibkr/pending")
+async def get_pending_ibkr(
+    current_user: User = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_user_db_connection)
+):
+    """Fetch pending transactions for review."""
+    try:
+        query = "SELECT * FROM pending_transactions WHERE user_id = ? ORDER BY Date DESC"
+        df = pd.read_sql_query(query, conn, params=(current_user.id,))
+        return df.to_dict(orient="records")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/sync/ibkr/approve")
+async def approve_ibkr(
+    ids: List[int],
+    current_user: User = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_user_db_connection)
+):
+    """Approve and move transactions from staging to main table."""
+    try:
+        cursor = conn.cursor()
+        approved_count = 0
+        
+        # Columns in pending (exclude ID)
+        cols = ["Date", "Type", "Symbol", "Quantity", "Price/Share", "Total Amount", "Commission", "Account", "Split Ratio", "Note", "Local Currency", "To Account", "Tags", "ExternalID", "user_id"]
+        cols_str = ", ".join([f'"{c}"' for c in cols])
+        
+        for p_id in ids:
+            # Fetch from pending
+            cursor.execute(f"SELECT {cols_str} FROM pending_transactions WHERE id = ? AND user_id = ?", (p_id, current_user.id))
+            row = cursor.fetchone()
+            if row:
+                # Insert into main table
+                placeholders = ", ".join(["?"] * len(cols))
+                cursor.execute(f"INSERT INTO transactions ({cols_str}) VALUES ({placeholders})", row)
+                # Delete from pending
+                cursor.execute("DELETE FROM pending_transactions WHERE id = ?", (p_id,))
+                approved_count += 1
+        
+        conn.commit()
+        if approved_count > 0:
+            reload_data()
+            
+        return {"status": "success", "message": f"Successfully approved {approved_count} transactions.", "count": approved_count}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/sync/ibkr/reject")
+async def reject_ibkr(
+    ids: List[int],
+    current_user: User = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_user_db_connection)
+):
+    """Discard pending transactions."""
+    try:
+        cursor = conn.cursor()
+        cursor.execute(f"DELETE FROM pending_transactions WHERE id IN ({','.join(['?']*len(ids))}) AND user_id = ?", (*ids, current_user.id))
+        deleted_count = cursor.rowcount
+        conn.commit()
+        return {"status": "success", "message": f"Discarded {deleted_count} transactions.", "count": deleted_count}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error during IBKR sync: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Sync error: {str(e)}")
 
 
 def _calculate_historical_performance_internal(
@@ -2357,7 +2541,9 @@ async def get_settings(
             "show_closed": config_manager.gui_config.get("show_closed", False),
             "display_currency": config_manager.gui_config.get("display_currency", "USD"),
             "selected_accounts": config_manager.gui_config.get("selected_accounts", []),
-            "active_tab": config_manager.gui_config.get("active_tab", "performance")
+            "active_tab": config_manager.gui_config.get("active_tab", "performance"),
+            "ibkr_token": config_manager.manual_overrides.get("ibkr_token") or config.IBKR_TOKEN,
+            "ibkr_query_id": config_manager.manual_overrides.get("ibkr_query_id") or config.IBKR_QUERY_ID
         }
     except Exception as e:
         logging.error(f"Error getting settings: {e}", exc_info=True)
@@ -2379,6 +2565,8 @@ class SettingsUpdate(BaseModel):
     display_currency: Optional[str] = None
     selected_accounts: Optional[List[str]] = None
     active_tab: Optional[str] = None
+    ibkr_token: Optional[str] = None
+    ibkr_query_id: Optional[str] = None
 
 @router.post("/settings/update")
 async def update_settings(
@@ -2412,6 +2600,12 @@ async def update_settings(
 
         if settings.valuation_overrides is not None:
             current_overrides["valuation_overrides"] = settings.valuation_overrides
+
+        if settings.ibkr_token is not None:
+            current_overrides["ibkr_token"] = settings.ibkr_token
+            
+        if settings.ibkr_query_id is not None:
+            current_overrides["ibkr_query_id"] = settings.ibkr_query_id
 
         # Update GUI Config (Dashboard persistence)
         gui_config_changed = False

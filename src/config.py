@@ -30,6 +30,10 @@ FMP_API_KEY = os.getenv("FMP_API_KEY") # Prioritize ENV
 # Gemini API Key for AI Stock Analysis
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
+# --- IBKR Configuration ---
+IBKR_TOKEN = os.getenv("IBKR_TOKEN")
+IBKR_QUERY_ID = os.getenv("IBKR_QUERY_ID")
+
 # --- Authentication Configuration ---
 AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7") # Fallback for dev only!
 AUTH_ALGORITHM = "HS256"

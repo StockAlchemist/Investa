@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Pencil, Trash2, Loader2 } from 'lucide-react';
-import { updateSettings, triggerRefresh, clearCache, deleteUser, changePassword, Settings as SettingsType, ManualOverride, ManualOverrideData, Holding } from '../lib/api';
+import { updateSettings, triggerRefresh, clearCache, deleteUser, changePassword, syncIbkr, Settings as SettingsType, ManualOverride, ManualOverrideData, Holding } from '../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { COUNTRIES, ALL_INDUSTRIES } from '../lib/constants';
 import AccountGroupManager from './AccountGroupManager';
@@ -83,6 +83,13 @@ export default function Settings({ settings, holdings, availableAccounts, initia
     const [confirmPassword, setConfirmPassword] = useState('');
     const [passwordStatus, setPasswordStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
     const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+    // IBKR State
+    const [ibkrToken, setIbkrToken] = useState(settings?.ibkr_token || '');
+    const [ibkrQueryId, setIbkrQueryId] = useState(settings?.ibkr_query_id || '');
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [syncStatus, setSyncStatus] = useState<string | null>(null);
+    const [isSavingIbkr, setIsSavingIbkr] = useState(false);
 
     // Common input/select classes
     const inputClassName = "w-full rounded-md border border-border bg-secondary text-foreground shadow-sm focus:border-cyan-500 focus:ring-cyan-500 px-3 py-2 text-sm outline-none focus:ring-1";
@@ -413,6 +420,40 @@ export default function Settings({ settings, holdings, availableAccounts, initia
             setIsChangingPassword(false);
         }
     };
+
+    const handleSaveIbkr = async () => {
+        setIsSavingIbkr(true);
+        try {
+            await updateSettings({
+                ibkr_token: ibkrToken,
+                ibkr_query_id: ibkrQueryId
+            });
+            await queryClient.invalidateQueries({ queryKey: ['settings'] });
+            setSyncStatus("Settings saved successfully.");
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "Failed to save IBKR settings";
+            setSyncStatus(`Error: ${message}`);
+        } finally {
+            setIsSavingIbkr(false);
+            setTimeout(() => setSyncStatus(null), 5000);
+        }
+    }
+
+    const handleSyncIbkr = async () => {
+        setIsSyncing(true);
+        setSyncStatus("Syncing with IBKR...");
+        try {
+            const res = await syncIbkr();
+            setSyncStatus(res.message || "Sync complete");
+            await queryClient.invalidateQueries(); // Refresh all data
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "Sync failed";
+            setSyncStatus(`Error: ${message}`);
+        } finally {
+            setIsSyncing(false);
+            // Don't clear status immediately so user can see result
+        }
+    }
 
     const overrides = settings?.manual_overrides || {};
     const symbolMap = settings?.user_symbol_map || {};
@@ -1175,6 +1216,79 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                     )}
                                 </div>
                             </div>
+
+                            {/* IBKR Integration */}
+                            <div className="bg-secondary p-6 rounded-lg border border-border border-l-4 border-l-[#0097b2]">
+                                <div className="flex justify-between items-start mb-4">
+                                    <div>
+                                        <h3 className="text-lg font-bold text-foreground">Interactive Brokers (IBKR)</h3>
+                                        <p className="text-sm text-muted-foreground mt-1">
+                                            Sync transactions via the IBKR Flex Web Service. Requires an <span className="font-semibold">Activity Flex Query</span>.
+                                        </p>
+                                    </div>
+                                    <div className="bg-[#0097b2]/10 text-[#0097b2] px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider">
+                                        Integration
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                                    <div className="space-y-2">
+                                        <label className={labelClassName}>Flex Token</label>
+                                        <input
+                                            type="password"
+                                            placeholder="Your IBKR Flex Token"
+                                            value={ibkrToken}
+                                            onChange={(e) => setIbkrToken(e.target.value)}
+                                            className={inputClassName}
+                                        />
+                                        <p className="text-[10px] text-muted-foreground italic">
+                                            Enable Flex Web Service in IBKR Settings to get a token.
+                                        </p>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className={labelClassName}>Query ID</label>
+                                        <input
+                                            type="text"
+                                            placeholder="e.g. 123456"
+                                            value={ibkrQueryId}
+                                            onChange={(e) => setIbkrQueryId(e.target.value)}
+                                            className={inputClassName}
+                                        />
+                                        <p className="text-[10px] text-muted-foreground italic">
+                                            The ID of your Activity Flex Query template.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-4">
+                                    <button
+                                        type="button"
+                                        onClick={handleSaveIbkr}
+                                        disabled={isSavingIbkr || isSyncing}
+                                        className="px-4 py-2 border border-border rounded-md shadow-sm text-sm font-medium text-foreground bg-background hover:bg-zinc-100 dark:hover:bg-zinc-900 focus:outline-none transition-colors disabled:opacity-50"
+                                    >
+                                        {isSavingIbkr ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save Credentials"}
+                                    </button>
+
+                                    <div className="h-6 w-px bg-border hidden md:block" />
+
+                                    <button
+                                        type="button"
+                                        onClick={handleSyncIbkr}
+                                        disabled={isSyncing || !ibkrToken || !ibkrQueryId}
+                                        className="px-6 py-2 bg-[#0097b2] text-white rounded-md shadow-sm text-sm font-medium hover:bg-[#0086a0] focus:outline-none transition-all disabled:opacity-50 disabled:grayscale flex items-center gap-2"
+                                    >
+                                        {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sync Now"}
+                                    </button>
+
+                                    {syncStatus && (
+                                        <p className={`text-sm font-medium ${syncStatus.startsWith('Error') ? 'text-red-500' : 'text-emerald-500'}`}>
+                                            {syncStatus}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+
 
                             {/* Cache Management Section */}
                             <div className="bg-secondary p-6 rounded-lg border border-border border-l-4 border-l-red-500">

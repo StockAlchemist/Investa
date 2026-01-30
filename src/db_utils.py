@@ -26,7 +26,7 @@ import threading
 import config
 
 DB_FILENAME = "investa_transactions.db"
-DB_SCHEMA_VERSION = 10
+DB_SCHEMA_VERSION = 12
 
 # --- Helper for JSON serialization with NaNs ---
 class NpEncoder(json.JSONEncoder):
@@ -147,7 +147,8 @@ def create_transactions_table(conn: sqlite3.Connection):
         Note TEXT,
         "Local Currency" TEXT NOT NULL,
         "To Account" TEXT,
-        "Tags" TEXT
+        "Tags" TEXT,
+        "ExternalID" TEXT
     );
     """
     create_version_table_sql = """
@@ -453,6 +454,56 @@ def create_transactions_table(conn: sqlite3.Connection):
             )
             logging.info("Updated schema_version to 10.")
 
+        if current_db_version < 11:
+            logging.info("Schema version is less than 11. Adding 'ExternalID' column to transactions.")
+            try:
+                cursor.execute('ALTER TABLE transactions ADD COLUMN ExternalID TEXT;')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_external_id ON transactions (ExternalID);')
+                cursor.execute(
+                    "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
+                    (11, datetime.now().isoformat()),
+                )
+                logging.info("Updated schema_version to 11.")
+            except sqlite3.Error as e:
+                if "duplicate column name" in str(e):
+                    logging.info("'ExternalID' column already exists.")
+                else:
+                    logging.error(f"Error during migration v11: {e}")
+                    raise
+
+        if current_db_version < 12:
+            logging.info("Schema version is less than 12. Creating 'pending_transactions' table.")
+            try:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS pending_transactions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        Date TEXT NOT NULL,
+                        Type TEXT NOT NULL,
+                        Symbol TEXT NOT NULL,
+                        Quantity REAL,
+                        "Price/Share" REAL,
+                        "Total Amount" REAL,
+                        Commission REAL,
+                        Account TEXT NOT NULL,
+                        "Split Ratio" REAL,
+                        Note TEXT,
+                        "Local Currency" TEXT NOT NULL,
+                        "To Account" TEXT,
+                        "Tags" TEXT,
+                        "ExternalID" TEXT,
+                        user_id INTEGER
+                    );
+                """)
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_pending_external_id ON pending_transactions (ExternalID);')
+                cursor.execute(
+                    "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
+                    (12, datetime.now().isoformat()),
+                )
+                logging.info("Updated schema_version to 12.")
+            except sqlite3.Error as e:
+                logging.error(f"Error during migration v12: {e}")
+                raise
+
         conn.commit()
         logging.info(
             "Transactions, watchlist, and schema_version tables checked/created/updated successfully."
@@ -604,7 +655,7 @@ def load_all_transactions_from_db(
     try:
         query = """
         SELECT id as original_index, Date, Type, Symbol, Quantity, "Price/Share",
-               "Total Amount", Commission, Account, "Split Ratio", Note, "Local Currency", "To Account", Tags
+               "Total Amount", Commission, Account, "Split Ratio", Note, "Local Currency", "To Account", Tags, ExternalID
         FROM transactions
         ORDER BY Date, original_index;
         """
@@ -663,10 +714,24 @@ def add_transaction_to_db(
         "Split Ratio",
         "Note",
         "Local Currency",
-        "Local Currency",
         "To Account",
         "Tags",
+        "ExternalID",
     ]
+    
+    # --- Deduplication Check ---
+    external_id = transaction_data.get("ExternalID")
+    if external_id:
+        try:
+            cursor = db_conn.cursor()
+            cursor.execute("SELECT id FROM transactions WHERE ExternalID = ?", (external_id,))
+            existing = cursor.fetchone()
+            if existing:
+                logging.info(f"Transaction with ExternalID {external_id} already exists (ID: {existing[0]}). Skipping.")
+                return True, existing[0]
+        except sqlite3.Error as e:
+            logging.warning(f"Error checking for existing ExternalID {external_id}: {e}")
+
     quoted_db_columns = [
         f'"{col}"' if "/" in col or " " in col else col for col in db_column_order
     ]

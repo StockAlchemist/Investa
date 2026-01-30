@@ -77,7 +77,9 @@ class ConfigManager:
             "user_excluded_symbols": sorted(list(config.YFINANCE_EXCLUDED_SYMBOLS.copy())),
             "account_interest_rates": {},
             "interest_free_thresholds": {},
-            "valuation_overrides": {}
+            "valuation_overrides": {},
+            "ibkr_token": None,
+            "ibkr_query_id": None
         }
 
     def load_all(self):
@@ -188,6 +190,10 @@ class ConfigManager:
                 self.manual_overrides["valuation_overrides"] = {
                     k.upper().strip(): v for k, v in val_overrides.items() if isinstance(v, dict)
                 }
+
+            # Load IBKR Credentials
+            self.manual_overrides["ibkr_token"] = loaded.get("ibkr_token")
+            self.manual_overrides["ibkr_query_id"] = str(loaded.get("ibkr_query_id")) if loaded.get("ibkr_query_id") else None
 
     def save_manual_overrides(self, overrides_data: Optional[Dict[str, Any]] = None):
         if overrides_data is not None:
