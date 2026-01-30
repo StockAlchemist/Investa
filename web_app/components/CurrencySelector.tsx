@@ -37,17 +37,17 @@ export default function CurrencySelector({ currentCurrency, onChange, fxRate, si
                 onClick={() => setIsOpen(!isOpen)}
                 className={cn(
                     "flex flex-col items-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group",
-                    side === 'bottom' ? "bg-transparent border-none shadow-none" : "bg-card border border-border shadow-sm",
+                    side === 'bottom' ? "bg-transparent border-none shadow-none" : "hover:bg-accent/10",
                     "font-semibold tracking-tight w-[60px]",
-                    isOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-cyan-500",
-                    side === 'bottom' && "flex-row py-2 px-4 h-[44px] justify-center w-auto min-w-0"
+                    isOpen ? "ring-2 ring-cyan-500/20" : "text-cyan-500",
+                    side === 'bottom' && "flex-row py-2 px-2 h-[44px] justify-center w-auto min-w-0"
                 )}
                 title={`Currency: ${currentCurrency}`}
             >
                 <div className={cn(
                     "p-2 rounded-xl transition-all duration-300 hidden sm:block",
-                    isOpen ? "bg-cyan-500 text-white shadow-lg shadow-cyan-500/30" : "bg-secondary text-cyan-500 group-hover:scale-110",
-                    side === 'bottom' && "p-1"
+                    isOpen ? "bg-cyan-500 text-white shadow-lg shadow-cyan-500/30" : "text-cyan-500 group-hover:scale-110",
+                    side === 'bottom' && "p-1 bg-secondary"
                 )}>
                     <Globe className={cn(side === 'bottom' ? "w-3.5 h-3.5" : "w-5 h-5")} />
                 </div>

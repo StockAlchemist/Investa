@@ -33,7 +33,6 @@ const TABS = [
     { id: 'capital_gains', label: 'Cap. Gains', icon: DollarSign },
     { id: 'analytics', label: 'Analytics', icon: Activity },
     { id: 'dividend', label: 'Dividend', icon: Coins },
-    { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
 
 export default function TabNavigation({ activeTab, onTabChange, onLogout, side = 'bottom' }: TabNavigationProps) {
@@ -71,17 +70,17 @@ export default function TabNavigation({ activeTab, onTabChange, onLogout, side =
                 onClick={() => setIsOpen(!isOpen)}
                 className={cn(
                     "flex flex-col items-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group",
-                    side === 'bottom' ? "bg-transparent border-none shadow-none" : "bg-card border border-border shadow-sm",
+                    side === 'bottom' ? "bg-transparent border-none shadow-none" : "hover:bg-accent/10",
                     "text-xs font-semibold tracking-tight w-[60px]",
-                    isOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-foreground/80 hover:text-foreground",
+                    isOpen ? "ring-2 ring-cyan-500/20" : "text-foreground/80 hover:text-foreground",
                     side === 'bottom' && "flex-row py-2 px-4 justify-center w-auto min-w-0 h-[44px]"
                 )}
                 title={activeTabObj?.label}
             >
                 <div className={cn(
                     "p-2 rounded-xl transition-all duration-300",
-                    isOpen ? "bg-cyan-500 text-white shadow-lg shadow-cyan-500/30" : "bg-secondary text-cyan-500 group-hover:scale-110",
-                    side === 'bottom' && "p-1.5"
+                    isOpen ? "bg-cyan-500 text-white shadow-lg shadow-cyan-500/30" : "text-cyan-500 group-hover:scale-110",
+                    side === 'bottom' && "p-1.5 bg-secondary"
                 )}>
                     <ActiveIcon className={cn(side === 'bottom' ? "w-4 h-4" : "w-5 h-5")} />
                 </div>

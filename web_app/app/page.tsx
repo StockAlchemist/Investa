@@ -621,8 +621,18 @@ export default function Home() {
       <div className="fixed inset-0 z-[-1] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-background to-background pointer-events-none" />
 
       {/* Sidebar - Desktop */}
-      <aside className="fixed left-0 top-0 bottom-0 w-[72px] flex flex-col items-center py-6 border-r border-border bg-background/40 backdrop-blur-2xl z-[60] hidden md:flex transition-all duration-300">
-        <div className="flex-1 flex flex-col items-center gap-6">
+      <aside className="fixed left-0 top-0 bottom-0 w-[72px] flex flex-col items-center py-4 border-r border-border bg-background/40 backdrop-blur-2xl z-[60] hidden md:flex transition-all duration-300">
+        <div className="flex-1 flex flex-col items-center gap-2">
+          <button
+            onClick={handleUserIconClick}
+            className="flex items-center justify-center p-3 rounded-2xl text-cyan-500 hover:bg-accent/10 transition-all duration-300 group w-[60px]"
+            title="User Settings"
+          >
+            <div className="p-2 rounded-xl transition-all duration-300 group-hover:scale-110">
+              <UserCircle className="w-5 h-5" />
+            </div>
+          </button>
+
           <TabNavigation activeTab={activeTab} onTabChange={handleTabChange} onLogout={logout} side="right" />
 
           <CurrencySelector
@@ -634,17 +644,26 @@ export default function Home() {
           />
         </div>
 
-        <div className="mt-auto flex flex-col items-center gap-4 pb-4">
+        <div className="mt-auto flex flex-col items-center gap-1 pb-4">
+          <ThemeToggle />
+          <button
+            onClick={() => handleTabChange('settings')}
+            className="flex flex-col items-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group hover:bg-accent/10 w-[60px]"
+            title="Settings"
+          >
+            <div className="p-2 rounded-xl transition-all duration-300 text-cyan-500 group-hover:scale-110">
+              <SettingsIcon className="w-5 h-5" />
+            </div>
+          </button>
           <button
             onClick={() => user && logout()}
-            className="flex flex-col items-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group bg-card hover:bg-accent/10 border border-border shadow-sm w-[60px]"
+            className="flex flex-col items-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group hover:bg-accent/10 w-[60px]"
             title="Log Out"
           >
-            <div className="p-2 rounded-xl transition-all duration-300 bg-secondary text-cyan-500 group-hover:scale-110">
+            <div className="p-2 rounded-xl transition-all duration-300 text-cyan-500 group-hover:scale-110">
               <LogOut className="w-5 h-5" />
             </div>
           </button>
-          <ThemeToggle />
         </div>
 
       </aside>
@@ -720,7 +739,7 @@ export default function Home() {
 
             <div className="h-6 w-px bg-border hidden md:block" />
 
-            <div className="md:hidden flex items-center gap-2">
+            <div className="md:hidden flex items-center gap-1">
               <CurrencySelector
                 currentCurrency={currency}
                 onChange={setCurrency}
@@ -772,13 +791,6 @@ export default function Home() {
               </div>
             )}
 
-            <button
-              onClick={handleUserIconClick}
-              className="hidden md:flex items-center justify-center w-10 h-10 rounded-xl bg-card border border-border shadow-sm text-cyan-500 hover:bg-accent/10 transition-all duration-300"
-              title="User Settings"
-            >
-              <UserCircle className="w-5 h-5" />
-            </button>
           </div>
         </div>
 

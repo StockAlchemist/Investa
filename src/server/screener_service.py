@@ -466,9 +466,11 @@ def process_screener_results(
                     cached.get("intrinsic_value") is not None):
                     can_use_cache = True
             
+            valuation_details_json = None
             if can_use_cache:
                 avg_iv = cached.get("intrinsic_value")
                 valuation_details_str = cached.get("valuation_details")
+                valuation_details_json = valuation_details_str
                 valuation_details = None
                 if valuation_details_str and isinstance(valuation_details_str, str):
                     try:
@@ -483,8 +485,9 @@ def process_screener_results(
                     mos = None
                 
                 # Use cached AI markers
-                has_ai = cached.get("ai_summary") is not None
+                has_ai = cached.get("has_ai_review") if "has_ai_review" in cached else (cached.get("ai_summary") is not None)
                 ai_score = cached.get("ai_score")
+                ai_summary = None
                 
                 # --- FALLBACK: If DB has no AI info, check pre-scanned list ---
                 if not has_ai or ai_score is None:
@@ -506,8 +509,19 @@ def process_screener_results(
                                     if vals:
                                         ai_score = sum(vals) / len(vals)
                                         has_ai = True
-                            except Exception:
-                                pass
+                                        ai_summary = analysis_obj.get("summary")
+                                    
+                            except Exception as e_ai:
+                                logging.warning(f"Failed to load AI cache for {sym}: {e_ai}")
+
+                # Ensure individual AI metrics are returned (needed for detail view)
+                ai_moat = cached.get("ai_moat")
+                ai_financial_strength = cached.get("ai_financial_strength")
+                ai_predictability = cached.get("ai_predictability")
+                ai_growth = cached.get("ai_growth")
+                # If we didn't get ai_summary from fallback, get it from cache
+                if ai_summary is None:
+                    ai_summary = cached.get("ai_summary")
 
                 return {
                     "symbol": sym,
@@ -520,7 +534,12 @@ def process_screener_results(
                     "sector": info.get("sector"),
                     "has_ai_review": has_ai,
                     "ai_score": ai_score,
-                    "valuation_details": valuation_details, 
+                    "ai_moat": ai_moat,
+                    "ai_financial_strength": ai_financial_strength,
+                    "ai_predictability": ai_predictability,
+                    "ai_growth": ai_growth,
+                    "ai_summary": ai_summary,
+                    "valuation_details": valuation_details_json,
                     "last_fiscal_year_end": live_fy_end,
                     "most_recent_quarter": live_quarter
                 }
@@ -529,6 +548,10 @@ def process_screener_results(
                 mdp = get_shared_mdp()
                 
                 # PREFETCHED DATA CHECK
+                avg_iv = None
+                mos = None
+                valuation_details_json = None
+                valuation_details = {}
                 p_fin = None
                 p_bs = None
                 p_cf = None

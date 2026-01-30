@@ -80,7 +80,7 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                     variant === 'ghost' ? "bg-transparent border-none shadow-none" : "bg-card border border-border shadow-sm",
                     "font-semibold tracking-tight min-w-[80px]",
                     isOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-cyan-500",
-                    "flex-row py-2 px-4 h-[44px]"
+                    "flex-row py-2 px-2 h-[44px]"
                 )}
             >
                 <div className="flex flex-col items-center leading-none gap-0">

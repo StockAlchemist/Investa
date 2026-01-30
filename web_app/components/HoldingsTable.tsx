@@ -5,7 +5,7 @@ import { exportToCSV } from '../lib/export';
 import { Holding, Lot, addToWatchlist, removeFromWatchlist, WatchlistItem, updateHoldingTags } from '../lib/api';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { AreaChart, Area, Line, ResponsiveContainer, YAxis, ReferenceLine } from 'recharts';
-import { Search, X, Filter, LayoutGrid, Eye, EyeOff, Layers, Download, Building2, UserCircle, Tag, PenLine, Save, Table as TableIcon } from 'lucide-react';
+import { Search, X, Filter, LayoutGrid, Eye, EyeOff, Layers, Download, Building2, UserCircle, Tag, PenLine, Save, Table as TableIcon, Settings2 } from 'lucide-react';
 
 import { Skeleton } from './ui/skeleton';
 import { useStockModal } from '@/context/StockModalContext';
@@ -631,7 +631,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                         : 'text-foreground bg-secondary border-border hover:bg-accent/10'
                                     }`}
                             >
-                                <LayoutGrid className="w-3.5 h-3.5" />
+                                <Settings2 className="w-3.5 h-3.5" />
                                 <span className="hidden sm:inline">Columns</span>
                             </button>
                             {isColumnMenuOpen && (
