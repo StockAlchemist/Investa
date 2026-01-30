@@ -1366,6 +1366,8 @@ async def reject_ibkr(
         cursor.execute(f"DELETE FROM pending_transactions WHERE id IN ({','.join(['?']*len(ids))}) AND user_id = ?", (*ids, current_user.id))
         deleted_count = cursor.rowcount
         conn.commit()
+        if deleted_count > 0:
+            reload_data()
         return {"status": "success", "message": f"Discarded {deleted_count} transactions.", "count": deleted_count}
     except Exception as e:
         conn.rollback()

@@ -157,6 +157,12 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
         const idsToProcess = ids || Array.from(selectedPendingIds);
         if (idsToProcess.length === 0) return;
 
+        // Optimistic update: Remove from UI immediately
+        queryClient.setQueryData(['pendingIbkr'], (old: Transaction[] | undefined) =>
+            old ? old.filter(tx => !idsToProcess.includes(tx.id!)) : []
+        );
+        setSelectedPendingIds(new Set());
+
         setIsApproving(true);
         try {
             if (action === 'approve') {
@@ -164,15 +170,17 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
             } else {
                 await rejectIbkr(idsToProcess);
             }
-            setSelectedPendingIds(new Set());
-            // Invalidate both pending and main transactions
-            queryClient.invalidateQueries({ queryKey: ['pendingIbkr'] });
-            queryClient.invalidateQueries({ queryKey: ['transactions'] });
-            // For good measure, invalidate everything for summary numbers
+            // Refetch to ensure we're in sync with server
+            await queryClient.invalidateQueries({ queryKey: ['pendingIbkr'] });
+            if (action === 'approve') {
+                await queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            }
             queryClient.invalidateQueries();
         } catch (error) {
             console.error(`Failed to ${action} transactions:`, error);
             alert(`Error ${action}ing transactions`);
+            // Roll back on error? For now, just refetch
+            queryClient.invalidateQueries({ queryKey: ['pendingIbkr'] });
         } finally {
             setIsApproving(false);
         }
