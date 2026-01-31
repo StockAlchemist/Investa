@@ -768,6 +768,38 @@ Investa's Web Dashboard now features a rich, interactive **Stock Price Chart** t
     *   *Note: SMAs are calculated based on the available historical data for the selected period.*
 
 *   **Responsive Design:** The chart controls are optimized for both desktop and mobile use, ensuring you have full analytical power whether you're at your desk or on the go.
+ 
+## Part 16: IBKR Integration (Automated Sync)
+
+Investa now supports automated transaction syncing from **Interactive Brokers (IBKR)** via their Web Flex Service. This eliminates the need for manual CSV exports/imports for your IBKR accounts.
+
+### 1. Setting Up Your IBKR Flex Service
+To enable this, you must first configure a "Flex Query" in your IBKR Portal:
+1.  **Log in to your IBKR Portal.**
+2.  Navigate to **Settings > Account Settings > Reporting > Flex Web Service**.
+3.  **Enable** the service and take note of your **Token**.
+4.  Create a new **Custom Flex Query**:
+    *   Select **Trade Confirms** as the data source.
+    *   Ensure fields like `Date`, `Symbol`, `Quantity`, `Price`, and `Currency` are included.
+    *   Save the query and take note of its **Query ID**.
+
+### 2. Configuring Investa
+1.  Open the Web Dashboard and go to **Settings > IBKR Settings**.
+2.  Enter your **Flex Token** and **Flex Query ID**.
+3.  Click **Save Configuration**.
+
+### 3. Syncing Transactions
+1.  Navigate to the **Sync** tab (or click the Sync icon in the sidebar).
+2.  Click **Fetch from IBKR**.
+3.  Investa will fetch new transactions and place them in a **Staging Area**.
+
+### 4. Review and Approve
+Imported transactions are not added to your main database immediately. This "Staging" step allows you to review data for accuracy:
+*   **Pending Table:** View all newly fetched transactions.
+*   **Approve:** Select transactions and click **Approve** to move them into your main transaction history.
+*   **Reject:** If a transaction looks incorrect or redundant, select it and click **Reject** to remove it from the staging area without affecting your database.
+
+Once approved, these transactions will be treated like any other entry, impacting your Holdings, Performance, and Total Return after a **Refresh All**.
 
 ---
 

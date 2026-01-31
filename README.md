@@ -26,6 +26,7 @@ Investa is a comprehensive portfolio management solution offering both a feature
 * **HTTPS Support:** Built-in Tailscale Serve configuration for secure, encrypted access on local networks and mobile devices.
 * **Valuation Overrides:** Fully customizable valuation parameters (growth rates, discount rates, etc.) for each stock via the Settings menu or individual detail views.
 * **Batch Recalculation:** Dedicated scripts for bulk updating valuations for large universes like the S&P 500.
+* **IBKR Integration:** Automated syncing of transactions from Interactive Brokers via Web Flex Service with a staging area for review and approval.
 
 ## Getting Started
 
