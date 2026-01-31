@@ -1,17 +1,26 @@
 import { useState, useEffect, useRef } from 'react';
 import { PortfolioSummary, PerformanceData } from '../lib/api';
 import { formatCurrency, cn } from '../lib/utils';
-import { LineChart, Line, ResponsiveContainer } from 'recharts';
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { MetricCard } from './MetricCard'; // Use new component
 import { COMPLEX_METRIC_IDS, DEFAULT_ITEMS } from '../lib/dashboard_constants';
+import {
+    Wallet,
+    TrendingUp,
+    TrendingDown,
+    DollarSign,
+    Percent,
+    Activity,
+    PiggyBank,
+    Receipt,
+    PieChart
+} from 'lucide-react';
 
 // Lazy component import logic handled by parent or standard import above
 import RiskMetrics from './RiskMetrics';
 import { SectorAttribution, TopContributors } from './AttributionChart';
 import PortfolioDonut from './PortfolioDonut';
 import { Holding } from '@/lib/api';
+import { Card, CardContent } from "@/components/ui/card";
 
 interface DashboardProps {
     summary: PortfolioSummary;
@@ -27,89 +36,6 @@ interface DashboardProps {
     holdings?: Holding[];
     visibleItems: string[];
 }
-
-interface MetricCardProps {
-    title: string;
-    value: string | number | null;
-    subValue?: number | null;
-    isCurrency?: boolean;
-    colorClass?: string;
-    valueClassName?: string;
-    containerClassName?: string;
-    subValueClassName?: string;
-    currency?: string;
-    isHero?: boolean;
-    isPercent?: boolean;
-    vertical?: boolean;
-    sparklineData?: { value: number }[];
-    isLoading?: boolean;
-}
-
-const MetricCard = ({
-    title,
-    value,
-    subValue,
-    isCurrency = true,
-    colorClass = '',
-    valueClassName = 'text-xl sm:text-2xl',
-    containerClassName = '',
-    subValueClassName = '',
-    vertical = false,
-    sparklineData,
-    currency = 'USD',
-    isLoading = false
-}: MetricCardProps) => (
-    <Card className={cn(
-        "h-full transition-all duration-300 relative overflow-hidden group",
-        "hover:bg-accent/5 transition-colors",
-        containerClassName
-    )}>
-        <CardContent className="h-full flex flex-col justify-center p-4 sm:p-6 relative">
-            <p className="text-sm font-medium text-muted-foreground relative z-10 uppercase tracking-wider text-[10px]">{title}</p>
-
-            <div className="mt-2 flex items-center gap-2 sm:gap-3 flex-wrap relative z-10">
-                {isLoading ? (
-                    <Skeleton className="h-8 w-32" />
-                ) : (
-                    <h3 className={cn("font-bold tracking-tight", colorClass || "text-foreground", valueClassName)}>
-                        {value !== null && value !== undefined ? (isCurrency && typeof value === 'number' ? formatCurrency(value, currency) : value) : '-'}
-                    </h3>
-                )}
-                {isLoading ? (
-                    <Skeleton className="h-5 w-12 rounded-full" />
-                ) : subValue !== undefined && subValue !== null && (
-                    <Badge variant={subValue >= 0 ? "success" : "destructive"} className={cn("text-[9px] sm:text-[11px] font-bold px-1.5 sm:px-2 py-0.5", subValueClassName)}>
-                        {subValue > 0 ? '+' : ''}{subValue.toFixed(2)}%
-                    </Badge>
-                )}
-            </div>
-
-            {!isLoading && sparklineData && sparklineData.length > 1 && (
-                <div className="absolute inset-0 z-0 pointer-events-none opacity-30 group-hover:opacity-50 transition-opacity">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={sparklineData}>
-                            <Line
-                                type="monotone"
-                                dataKey="value"
-                                stroke={subValue && subValue >= 0 ? "#10b981" : "#ef4444"}
-                                strokeWidth={2}
-                                dot={false}
-                                isAnimationActive={false}
-                            />
-                        </LineChart>
-                    </ResponsiveContainer>
-                </div>
-            )}
-            {isLoading && (
-                <div className="absolute bottom-0 left-0 right-0 h-10 px-6">
-                    <Skeleton className="h-full w-full opacity-20" />
-                </div>
-            )}
-        </CardContent>
-    </Card>
-);
-
-
 
 export default function Dashboard({
     summary,
@@ -176,11 +102,12 @@ export default function Dashboard({
                 return <MetricCard
                     title="Total Portfolio Value"
                     value={m?.market_value ?? 0}
-                    valueClassName="text-3xl sm:text-5xl"
-                    containerClassName="h-full flex flex-col justify-center"
+                    valueClassName="text-2xl sm:text-4xl" // Slightly smaller generally, but hero
+                    containerClassName="h-full bg-gradient-to-br from-card to-secondary/30"
                     isHero={true}
                     currency={currency}
                     isLoading={isLoading}
+                    icon={Wallet}
                 />;
             case 'dayGL':
                 return <MetricCard
@@ -188,13 +115,14 @@ export default function Dashboard({
                     value={dayGL}
                     subValue={dayGLPct}
                     colorClass={dayGLColor}
-                    valueClassName="text-2xl sm:text-3xl"
-                    subValueClassName={cn("text-base sm:text-xl", (dayGLPct ?? 0) >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-red-600 text-white dark:text-white hover:bg-red-700 border-none")}
-                    containerClassName="h-full flex flex-col justify-center"
+                    valueClassName="text-xl sm:text-2xl"
+                    subValueClassName={cn("", (dayGLPct ?? 0) >= 0 ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-red-500/10 text-red-600 dark:text-red-400")}
+                    containerClassName="h-full"
                     isHero={true}
                     currency={currency}
                     sparklineData={history.map(d => ({ value: d.twr }))}
                     isLoading={isLoading}
+                    icon={(dayGL ?? 0) >= 0 ? TrendingUp : TrendingDown}
                 />;
             case 'totalReturn':
                 return <MetricCard
@@ -202,12 +130,13 @@ export default function Dashboard({
                     value={totalGain}
                     subValue={m?.total_return_pct}
                     colorClass={totalReturnColor}
-                    valueClassName="text-2xl sm:text-3xl"
-                    subValueClassName={cn("text-base sm:text-xl", (m?.total_return_pct ?? 0) >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-red-600 text-white dark:text-white hover:bg-red-700 border-none")}
-                    containerClassName="h-full flex flex-col justify-center"
+                    valueClassName="text-xl sm:text-2xl"
+                    subValueClassName={cn("", (m?.total_return_pct ?? 0) >= 0 ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-red-500/10 text-red-600 dark:text-red-400")}
+                    containerClassName="h-full"
                     isHero={true}
                     currency={currency}
                     isLoading={isLoading}
+                    icon={Activity}
                 />;
             case 'annualTWR':
                 return <MetricCard
@@ -216,7 +145,7 @@ export default function Dashboard({
                     isCurrency={false}
                     colorClass={m?.annualized_twr && m.annualized_twr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
                     isLoading={isLoading}
-                // Force height or min-width? No.
+                    icon={Percent}
                 />;
             case 'mwr':
                 return <MetricCard
@@ -225,6 +154,7 @@ export default function Dashboard({
                     isCurrency={false}
                     colorClass={m?.portfolio_mwr && m.portfolio_mwr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
                     isLoading={isLoading}
+                    icon={Activity}
                 />;
             case 'unrealizedGL':
                 return <MetricCard
@@ -232,12 +162,13 @@ export default function Dashboard({
                     value={unrealizedGL}
                     subValue={unrealizedGLPct}
                     colorClass={unrealizedGLColor}
-                    valueClassName="text-2xl sm:text-3xl"
-                    subValueClassName={cn("text-base sm:text-xl", (unrealizedGLPct ?? 0) >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-red-600 text-white dark:text-white hover:bg-red-700 border-none")}
-                    containerClassName="h-full flex flex-col justify-center"
+                    valueClassName="text-xl sm:text-2xl"
+                    subValueClassName={cn("", (unrealizedGLPct ?? 0) >= 0 ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-red-500/10 text-red-600 dark:text-red-400")}
+                    containerClassName="h-full"
                     isHero={true}
                     currency={currency}
                     isLoading={isLoading}
+                    icon={TrendingUp} // Or separate icon
                 />;
             case 'fxGL':
                 return <MetricCard
@@ -245,22 +176,24 @@ export default function Dashboard({
                     value={fxGL}
                     subValue={fxGLPct}
                     colorClass={fxGLColor}
-                    subValueClassName={cn("text-base sm:text-xl", (fxGLPct ?? 0) >= 0 ? "bg-emerald-600 text-white dark:text-white hover:bg-emerald-700 border-none" : "bg-red-600 text-white dark:text-white hover:bg-red-700 border-none")}
-                    containerClassName="h-full flex flex-col justify-center"
+                    subValueClassName={cn("", (fxGLPct ?? 0) >= 0 ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-red-500/10 text-red-600 dark:text-red-400")}
+                    containerClassName="h-full"
                     isHero={true}
                     currency={currency}
                     isLoading={isLoading}
+                    icon={DollarSign}
                 />;
             case 'realizedGain':
                 return <MetricCard
                     title="Realized Gain"
                     value={realizedGain}
                     colorClass={realizedGainColor}
-                    valueClassName="text-2xl sm:text-3xl"
-                    containerClassName="h-full flex flex-col justify-center"
+                    valueClassName="text-xl sm:text-2xl"
+                    containerClassName="h-full"
                     isHero={true}
                     currency={currency}
                     isLoading={isLoading}
+                    icon={PiggyBank}
                 />;
             case 'cashBalance':
                 return <MetricCard
@@ -268,16 +201,19 @@ export default function Dashboard({
                     value={cashBalance}
                     currency={currency}
                     isLoading={isLoading}
+                    icon={DollarSign}
+                    valueClassName="text-xl sm:text-2xl"
                 />;
             case 'ytdDividends':
                 return <MetricCard
                     title="Total Dividends"
                     value={m?.dividends ?? 0}
-                    valueClassName="text-2xl sm:text-3xl"
-                    containerClassName="h-full flex flex-col justify-center"
+                    valueClassName="text-xl sm:text-2xl"
+                    containerClassName="h-full"
                     isHero={true}
                     currency={currency}
                     isLoading={isLoading}
+                    icon={DollarSign} // Or create a generic dividend icon
                 />;
             case 'fees':
                 return <MetricCard
@@ -286,6 +222,7 @@ export default function Dashboard({
                     colorClass="text-red-600 dark:text-red-500"
                     currency={currency}
                     isLoading={isLoading}
+                    icon={Receipt}
                 />;
             case 'riskMetrics':
                 return <RiskMetrics metrics={riskMetrics} isLoading={riskMetricsLoading!} />;
@@ -295,10 +232,15 @@ export default function Dashboard({
                 return <TopContributors data={attributionData} isLoading={attributionLoading!} currency={currency} />;
             case 'portfolioDonut':
                 return (
-                    <Card className="h-full">
+                    <Card className="h-full border-border hover:border-cyan-500/20 transition-colors">
                         <CardContent className="h-full p-4 relative">
-                            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">Portfolio Composition</h3>
-                            <div className="h-[calc(100%-24px)]">
+                            <div className="flex justify-between items-start mb-2">
+                                <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Portfolio Composition</h3>
+                                <div className="p-2 rounded-lg bg-secondary/50 text-muted-foreground">
+                                    <PieChart className="w-4 h-4" />
+                                </div>
+                            </div>
+                            <div className="h-[calc(100%-32px)]">
                                 <PortfolioDonut holdings={holdings} currency={currency} />
                             </div>
                         </CardContent>
@@ -315,7 +257,7 @@ export default function Dashboard({
     return (
         <div className="mb-10 space-y-6">
             {/* Scalar Metrics Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
+            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
                 {visibleScalarItems.map((item) => (
                     <div key={item.id} className={cn(item.colSpan, "w-full min-w-0")}>
                         {renderContent(item.id)}
@@ -325,7 +267,7 @@ export default function Dashboard({
 
             {/* Complex/Tall Metrics Grid */}
             {visibleComplexItems.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     {visibleComplexItems.map((item) => (
                         <div key={item.id} className={item.colSpan}>
                             {renderContent(item.id)}

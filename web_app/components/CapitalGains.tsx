@@ -111,32 +111,30 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
 
     return (
         <div className="space-y-6">
-            {/* Summary Cards */}
-            <div className="flex justify-between items-center mb-4">
-                <div className="text-sm text-muted-foreground">
-                    {selectedYear ? `Showing data for ${selectedYear} (Click chart to reset)` : `Showing All Time`}
-                </div>
-            </div>
+            import {CircleDollarSign, ArrowUpRight, Scale} from 'lucide-react';
+            import {MetricCard} from './MetricCard';
 
+            // ... inside the component function, replacing the summary div block
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-card p-4 rounded-xl shadow-sm border border-border">
-                    <h3 className="text-sm font-medium text-muted-foreground">Total Realized Gain</h3>
-                    <p className={`text-2xl font-bold ${totalRealizedGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
-                        {formatCurrency(totalRealizedGain, currency)}
-                    </p>
-                </div>
-                <div className="bg-card p-4 rounded-xl shadow-sm border border-border">
-                    <h3 className="text-sm font-medium text-muted-foreground">Total Proceeds</h3>
-                    <p className="text-2xl font-bold text-foreground">
-                        {formatCurrency(totalProceeds, currency)}
-                    </p>
-                </div>
-                <div className="bg-card p-4 rounded-xl shadow-sm border border-border">
-                    <h3 className="text-sm font-medium text-muted-foreground">Total Cost Basis</h3>
-                    <p className="text-2xl font-bold text-foreground">
-                        {formatCurrency(totalCostBasis, currency)}
-                    </p>
-                </div>
+                <MetricCard
+                    title="Total Realized Gain"
+                    value={totalRealizedGain}
+                    currency={currency}
+                    colorClass={totalRealizedGain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
+                    icon={CircleDollarSign}
+                />
+                <MetricCard
+                    title="Total Proceeds"
+                    value={totalProceeds}
+                    currency={currency}
+                    icon={ArrowUpRight}
+                />
+                <MetricCard
+                    title="Total Cost Basis"
+                    value={totalCostBasis}
+                    currency={currency}
+                    icon={Scale}
+                />
             </div>
 
             {/* Annual Gains Chart */}

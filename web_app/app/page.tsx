@@ -700,7 +700,7 @@ export default function Home() {
       />
 
       <header className="sticky top-0 z-50 w-full border-b border-border bg-background/60 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 md:pl-[72px] py-3 sm:py-4 flex justify-between items-center gap-4 sm:gap-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:pr-8 md:pl-[90px] lg:pl-[104px] py-3 sm:py-4 flex justify-between items-center gap-4 sm:gap-8">
           <div className="flex items-center gap-4">
             {/* Logo and App Title */}
             <div className="flex items-center gap-2 sm:gap-3 transition-all duration-300">
@@ -716,7 +716,7 @@ export default function Home() {
                 alt="Investa Logo"
                 className="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/20 hidden dark:block"
               />
-              <div className="hidden sm:flex flex-col -space-y-0.5">
+              <div className="hidden sm:flex md:hidden lg:flex flex-col -space-y-0.5">
                 <h1 className="text-3xl md:text-3xl font-bold text-foreground leading-none">
                   Investa
                 </h1>
@@ -795,7 +795,7 @@ export default function Home() {
 
       </header >
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 md:pl-[72px] transition-all duration-300">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:pr-8 pt-6 md:pl-[90px] lg:pl-[104px] transition-all duration-300">
 
 
         {renderTabContent()}

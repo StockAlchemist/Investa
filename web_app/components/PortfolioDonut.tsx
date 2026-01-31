@@ -203,7 +203,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
     return (
         <div className="relative h-full">
             <h4 className="absolute top-3 left-4 z-10 text-xs font-semibold text-muted-foreground uppercase tracking-tight">{title}</h4>
-            <div className="relative w-full h-full min-h-[380px] md:min-h-[550px]">
+            <div className="relative w-full h-full min-h-[450px] md:min-h-[650px] pb-6">
                 {/* Only render ResponsiveContainer when we have valid data, otherwise it might error with width -1 */}
                 {(data && data.length > 0) ? (
                     <ResponsiveContainer width="100%" height="100%" debounce={50}>
@@ -351,18 +351,18 @@ export default function PortfolioDonut({ holdings, currency }: PortfolioDonutPro
     };
 
     const COLORS = [
-        '#0ea5e9', // sky-500
-        '#22c55e', // green-500
-        '#eab308', // yellow-500
-        '#f97316', // orange-500
-        '#ef4444', // red-500
-        '#8b5cf6', // violet-500
-        '#ec4899', // pink-500
-        '#14b8a6', // teal-500
-        '#6366f1', // indigo-500
-        '#84cc16', // lime-500
-        '#d946ef', // fuchsia-500
-        '#06b6d4', // cyan-500
+        '#0097b2', // Brand Cyan
+        '#0ea5e9', // Sky
+        '#3b82f6', // Blue
+        '#6366f1', // Indigo
+        '#8b5cf6', // Violet
+        '#d946ef', // Fuchsia
+        '#ec4899', // Pink
+        '#f43f5e', // Rose
+        '#f59e0b', // Amber
+        '#10b981', // Emerald
+        '#14b8a6', // Teal
+        '#64748b', // Slate for others
     ];
 
     // --- Process Holdings Data ---
@@ -495,7 +495,7 @@ export default function PortfolioDonut({ holdings, currency }: PortfolioDonutPro
     }, [holdings, currency, totalValue, totalUnrealizedGain]);
 
     return (
-        <div className="h-full w-full grid grid-cols-1 md:grid-cols-2 gap-0 md:gap-4">
+        <div className="h-full w-full grid grid-cols-1 lg:grid-cols-2 gap-0 lg:gap-4">
             <SingleDonut
                 title="By Holding"
                 data={holdingsData}
@@ -507,7 +507,7 @@ export default function PortfolioDonut({ holdings, currency }: PortfolioDonutPro
                 metric={holdingsMetric}
                 setMetric={setHoldingsMetric}
             />
-            <div className="block md:hidden h-px bg-border/50 my-1" />
+            <div className="block lg:hidden h-px bg-border/50 my-1" />
             <SingleDonut
                 title="By Account"
                 data={accountsData}

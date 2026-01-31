@@ -4,9 +4,9 @@ export const COMPLEX_METRIC_IDS = ['riskMetrics', 'sectorContribution', 'topCont
 export const DEFAULT_ITEMS = [
     { id: 'portfolioValue', title: 'Total Portfolio Value', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
     { id: 'dayGL', title: "Day's Gain/Loss", colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
-    { id: 'totalReturn', title: 'Total Return', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
-    { id: 'unrealizedGL', title: 'Unrealized G/L', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
-    { id: 'realizedGain', title: 'Realized Gain', colSpan: 'col-span-2 md:col-span-2 lg:col-span-2' },
+    { id: 'totalReturn', title: 'Total Return', colSpan: 'col-span-2 md:col-span-1 lg:col-span-1' },
+    { id: 'unrealizedGL', title: 'Unrealized G/L', colSpan: 'col-span-2 md:col-span-1 lg:col-span-1' },
+    { id: 'realizedGain', title: 'Realized Gain', colSpan: 'col-span-2 md:col-span-1 lg:col-span-1' },
     { id: 'annualTWR', title: 'Annual TWR', colSpan: 'col-span-1' },
     { id: 'mwr', title: 'IRR (MWR)', colSpan: 'col-span-1' },
     { id: 'ytdDividends', title: 'Total Dividends', colSpan: 'col-span-1' },
@@ -22,8 +22,9 @@ export const DEFAULT_ITEMS = [
 export const INITIAL_VISIBLE_ITEMS = [
     'portfolioValue',
     'dayGL',
-    'unrealizedGL',
+    'realizedGain',
     'annualTWR',
+    'mwr',
     'cashBalance',
     'portfolioDonut'
 ];

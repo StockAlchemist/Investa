@@ -22,16 +22,16 @@ export default function MarketIndicesBox({ indices, onClick }: MarketIndicesBoxP
     return (
         <div
             onClick={onClick}
-            className="hidden lg:flex items-center gap-1 p-1 rounded-2xl bg-card/40 border border-border/50 hover:bg-accent/10 hover:border-cyan-500/30 transition-all duration-300 group cursor-pointer overflow-hidden relative"
+            className="hidden md:flex items-center gap-1 p-1 rounded-2xl bg-card/40 border border-border/50 hover:bg-accent/10 hover:border-cyan-500/30 transition-all duration-300 group cursor-pointer overflow-hidden relative"
         >
             {indexList.map((index, idx) => (
                 <div
                     key={index.name}
-                    className={`flex flex-col items-start px-3 py-1.5 min-w-[110px] ${idx < indexList.length - 1 ? 'border-r border-border/30' : ''}`}
+                    className={`flex flex-col items-start px-3 py-1.5 min-w-[100px] ${idx < indexList.length - 1 ? 'border-r border-border/30' : ''}`}
                 >
                     <div className="flex items-center justify-between w-full gap-2">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
-                            {index.name}
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors truncate max-w-[80px]">
+                            {index.name.replace('Dow Jones', 'Dow').replace('Russell 2000', 'RUT')}
                         </span>
                         <span className={`text-[9px] font-bold tabular-nums ${(index.change || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
                             {(index.changesPercentage || 0).toFixed(2)}%
@@ -40,14 +40,6 @@ export default function MarketIndicesBox({ indices, onClick }: MarketIndicesBoxP
                     <div className="text-xs font-bold text-foreground tabular-nums">
                         {index.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? "0.00"}
                     </div>
-
-                    {index.sparkline && index.sparkline.length > 1 && (
-                        <div className="absolute bottom-0 left-0 right-0 h-[2px] pointer-events-none opacity-30 group-hover:opacity-60 transition-opacity">
-                            {/* Sparklines are handled via the relative container or ignored for simplicity here since they might overlap. 
-                   Actually, let's keep them scoped to the individual index section if possible, but the original UI had them at bottom.
-               */}
-                        </div>
-                    )}
                 </div>
             ))}
 

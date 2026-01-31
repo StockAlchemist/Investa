@@ -89,21 +89,28 @@ export default function Dividend({ data, currency, expectedDividends, children, 
 
     return (
         <div className="space-y-6">
+            import {CircleDollarSign, CalendarClock} from 'lucide-react';
+            import {MetricCard} from './MetricCard';
+
+            // ... inside the component
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-card p-4 rounded-xl shadow-sm border border-border">
-                    <h3 className="text-sm font-medium text-muted-foreground">Total Dividends</h3>
-                    <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-                        {formatCurrency(totalDividends, currency)}
-                    </p>
-                </div>
+                <MetricCard
+                    title="Total Dividends"
+                    value={totalDividends}
+                    currency={currency}
+                    colorClass="text-emerald-600 dark:text-emerald-400"
+                    icon={CircleDollarSign}
+                />
+
                 {expectedDividends !== undefined && (
-                    <div className="bg-card p-4 rounded-xl shadow-sm border border-border">
-                        <h3 className="text-sm font-medium text-muted-foreground">Expected Dividends (Next 12M)</h3>
-                        <p className="text-2xl font-bold text-cyan-600 dark:text-cyan-400">
-                            {formatCurrency(expectedDividends, currency)}
-                        </p>
-                    </div>
+                    <MetricCard
+                        title="Expected Dividends (Next 12M)"
+                        value={expectedDividends}
+                        currency={currency}
+                        colorClass="text-cyan-600 dark:text-cyan-400"
+                        icon={CalendarClock}
+                    />
                 )}
             </div>
 
