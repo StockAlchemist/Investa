@@ -489,6 +489,11 @@ def process_screener_results(
                 ai_score = cached.get("ai_score")
                 ai_summary = None
                 
+                ai_moat = None
+                ai_financial_strength = None
+                ai_predictability = None
+                ai_growth = None
+                
                 # --- FALLBACK: If DB has no AI info, check pre-scanned list ---
                 if not has_ai or ai_score is None:
                     if sym.upper() in existing_reviews:

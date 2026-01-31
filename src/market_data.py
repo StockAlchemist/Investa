@@ -2886,8 +2886,8 @@ class MarketDataProvider:
                                  cache_valid = False
                     # ---------------------------------
                     else:
-                        logging.warning(
-                            f"Fundamentals cache file for {yf_symbol} missing timestamp: {symbol_cache_file}"
+                        logging.info(
+                            f"Fundamentals cache file for {yf_symbol} missing timestamp. Treating as expired/invalid: {symbol_cache_file}"
                         )
             except (json.JSONDecodeError, IOError, Exception) as e:
                 logging.warning(

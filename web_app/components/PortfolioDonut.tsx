@@ -211,7 +211,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                             <Pie
                                 data={data}
                                 cx="50%"
-                                cy="53%"
+                                cy="50%"
                                 innerRadius="50%"
                                 outerRadius="70%"
                                 paddingAngle={2}
@@ -242,7 +242,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                 )}
 
                 {/* Center Content Overlay */}
-                <div className="absolute left-1/2 top-[53%] -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
                     <div className="flex flex-col items-center justify-center pointer-events-auto">
                         {activeItem ? (
                             <>

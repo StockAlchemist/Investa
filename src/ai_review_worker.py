@@ -2,7 +2,7 @@
 """
 -------------------------------------------------------------------------------
  Name:          ai_review_worker.py
- Purpose:       Standalone worker to generate AI stock reviews for S&P 500 companies.
+ Purpose:       Standalone worker to generate AI stock reviews for S&P 500 and S&P 400 companies.
                 Runs independently from the main app, checks cache, and handles rate limits.
 
  Usage:         Run from the 'src' directory or with 'src' in PYTHONPATH.
@@ -12,7 +12,7 @@
 
  Copyright:     (c) Investa Contributors 2026
  Licence:       MIT
--------------------------------------------------------------------------------
+ -------------------------------------------------------------------------------
 """
 import time
 import logging
@@ -20,6 +20,7 @@ import os
 import sys
 import datetime
 import random
+from typing import List
 
 # Ensure 'src' is in the python path if running from within src
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -29,11 +30,11 @@ if current_dir not in sys.path:
 # Import necessary modules
 try:
     import config
-    from market_data import get_shared_mdp, map_to_yf_symbol
-    from server.screener_service import get_sp500_tickers
+    from market_data import get_shared_mdp
+    from server.screener_service import get_sp500_tickers, get_sp400_tickers
     from server.ai_analyzer import generate_stock_review
     from financial_ratios import calculate_key_ratios_timeseries, get_comprehensive_intrinsic_value
-    from db_utils import get_db_connection, upsert_screener_results, update_intrinsic_value_in_cache, get_cached_screener_results, update_ai_review_in_cache
+    from db_utils import get_db_connection, update_intrinsic_value_in_cache, update_ai_review_in_cache
 except ImportError as e:
     print(f"CRITICAL: Failed to import modules. Make sure you are running with 'src' in PYTHONPATH. Error: {e}")
     sys.exit(1)
@@ -42,9 +43,9 @@ BATCH_DELAY_SECONDS = 2
 MAX_CONSECUTIVE_FAILURES = 5
 RATE_LIMIT_WAIT_SECONDS = 24 * 3600 # 24 hours
 
-def check_if_review_exists(symbol: str, fund_data: dict = None) -> bool:
+def check_if_review_exists(symbol: str, fund_data: dict = None, universe: str = 'sp500') -> bool:
     """
-    Checks if a valid AI review already exists for the symbol in the cache.
+    Checks if a valid AI review already exists for the symbol in the cache for the specified universe.
     Performs smart invalidation based on fiscal year/quarter data.
     """
     conn = get_db_connection()
@@ -52,35 +53,38 @@ def check_if_review_exists(symbol: str, fund_data: dict = None) -> bool:
         return False
         
     try:
-        # We can use get_cached_screener_results to check
-        results = get_cached_screener_results(conn, [symbol])
+        # Direct SQL query to check specific universe cache
+        # We need to handle the composite PK (symbol, universe) effectively
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT ai_summary, last_fiscal_year_end, most_recent_quarter FROM screener_cache WHERE symbol=? AND universe=?", 
+            (symbol, universe)
+        )
+        row = cursor.fetchone()
         conn.close()
         
-        if symbol in results:
-            data = results[symbol]
-            # Check if ai_summary is present and not empty
-            summary_text = data.get("ai_summary", "")
+        if row:
+            summary_text = row[0] if row[0] else ""
+            cached_fy_end = row[1]
+            cached_mrq = row[2]
+            
             has_review = bool(summary_text)
             
             # --- FAILURE DETECTION ---
-            # If review exists but looks like an error or is empty/too short, force regeneration
             if has_review:
                 if "error" in summary_text.lower() or len(summary_text) < 20:
-                    logging.warning(f"Invalidating cache for {symbol}: AI Summary indicates failure or is too short.")
+                    logging.warning(f"Invalidating cache for {symbol} ({universe}): AI Summary indicates failure or is too short.")
                     return False
             
             if has_review and fund_data:
                 # --- SMART INVALIDATION ---
-                cached_fy_end = data.get("last_fiscal_year_end")
-                cached_mrq = data.get("most_recent_quarter")
-                
                 live_fy_end = fund_data.get("lastFiscalYearEnd")
                 live_mrq = fund_data.get("mostRecentQuarter")
                 
                 # If cached data timestamp identifiers are stale compared to live data,
                 # we declare the review as "not existing" to force a refresh.
                 if cached_fy_end != live_fy_end or cached_mrq != live_mrq:
-                    logging.info(f"Invalidating cache for {symbol}: New financial data detected. Cached(FY={cached_fy_end}, Q={cached_mrq}) vs Live(FY={live_fy_end}, Q={live_mrq})")
+                    logging.info(f"Invalidating cache for {symbol} ({universe}): New financial data detected. Cached(FY={cached_fy_end}, Q={cached_mrq}) vs Live(FY={live_fy_end}, Q={live_mrq})")
                     return False
             
             return has_review
@@ -91,9 +95,9 @@ def check_if_review_exists(symbol: str, fund_data: dict = None) -> bool:
             conn.close()
         return False
 
-def save_review_to_screener(symbol: str, review: dict, fund_data: dict):
+def save_review_to_screener(symbol: str, review: dict, fund_data: dict, universe: str = 'sp500'):
     """
-    Saves the generated AI review to the screener cache with universe='sp500'.
+    Saves the generated AI review to the screener cache with the specified universe.
     """
     conn = get_db_connection()
     if not conn:
@@ -106,26 +110,25 @@ def save_review_to_screener(symbol: str, review: dict, fund_data: dict):
             symbol, 
             review, 
             info=fund_data, 
-            universe='sp500'
+            universe=universe
         )
         conn.close()
-        logging.info(f"Saved review to screener cache for {symbol} (universe='sp500').")
+        logging.info(f"Saved review to screener cache for {symbol} (universe='{universe}').")
     except Exception as e:
         logging.error(f"Error saving review to screener for {symbol}: {e}")
         if conn:
             conn.close()
 
-def process_stock(symbol: str, mdp, fund_data: dict) -> bool:
+def process_stock(symbol: str, mdp, fund_data: dict, universe: str = 'sp500') -> bool:
     """
     Fetches data and generates review for a single stock.
     Returns True if successful (or skipped), False if failed.
     """
     try:
-        logging.info(f"Processing {symbol}...")
+        logging.info(f"Processing {symbol} ({universe})...")
         
-        # 1. Map Symbol (S&P 500 uses simple tickers, but good to be safe)
+        # 1. Map Symbol
         yf_symbol = symbol 
-        # Note: get_sp500_tickers returns sanitized separate tickers usually
         
         # 2. Validate Fundamentals
         if not fund_data:
@@ -147,8 +150,6 @@ def process_stock(symbol: str, mdp, fund_data: dict) -> bool:
                 logging.warning(f"Ratio calculation failed for {symbol}: {e}")
         
         # 4. Generate Review
-        # force_refresh=False will use cache if it exists, but we did a pre-check.
-        # However, passing False is safer.
         review = generate_stock_review(symbol, fund_data, ratios, force_refresh=False)
         
         if "error" in review:
@@ -174,7 +175,8 @@ def process_stock(symbol: str, mdp, fund_data: dict) -> bool:
                     iv_results.get("margin_of_safety_pct"),
                     fund_data.get("lastFiscalYearEnd"),
                     fund_data.get("mostRecentQuarter"),
-                    info=fund_data
+                    info=fund_data,
+                    universe=universe # Ensure we update the correct universe row
                 )
                 conn.close()
                 logging.info(f"Updated intrinsic value cache for {symbol}.")
@@ -182,13 +184,67 @@ def process_stock(symbol: str, mdp, fund_data: dict) -> bool:
             logging.error(f"Failed to calculate/update intrinsic value for {symbol}: {iv_e}")
 
         # 7. Save Review to Screener Table
-        save_review_to_screener(symbol, review, fund_data)
+        save_review_to_screener(symbol, review, fund_data, universe=universe)
         
         return True
 
     except Exception as e:
         logging.error(f"Exception processing {symbol}: {e}", exc_info=True)
         return False
+
+def process_ticker_list(mdp, tickers: List[str], universe: str) -> int:
+    """
+    Processes a list of tickers for a given universe.
+    Returns the number of stocks actually processed (generated reviews).
+    """
+    logging.info(f"Starting processing for universe: {universe} ({len(tickers)} tickers)")
+    
+    if not tickers:
+        logging.warning(f"No tickers provided for {universe}.")
+        return 0
+        
+    processed_count = 0
+    consecutive_failures = 0
+    
+    for symbol in tickers:
+        try:
+            # 1. Fetch Fundamentals FIRST (Needed for Smart Cache Check)
+            yf_symbol = symbol 
+            fund_data = mdp.get_fundamental_data(yf_symbol)
+            
+            # Check cache with smart invalidation
+            if check_if_review_exists(symbol, fund_data, universe=universe):
+                # logging.info(f"Skipping {symbol} - Valid & Fresh review exists.")
+                continue
+            
+            logging.info(f"Review needed for {symbol} in {universe}. Starting generation.")
+            success = process_stock(symbol, mdp, fund_data, universe=universe)
+            
+            if success:
+                consecutive_failures = 0
+                processed_count += 1
+                # Sleep to be polite
+                time.sleep(BATCH_DELAY_SECONDS)
+            else:
+                consecutive_failures += 1
+                logging.warning(f"Failure count: {consecutive_failures}")
+                
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    logging.error(f"Hit max consecutive failures ({MAX_CONSECUTIVE_FAILURES}). Likely Rate Limit or Network Issue.")
+                    logging.info(f"Sleeping for 24 hours (started at {datetime.datetime.now()})...")
+                    time.sleep(RATE_LIMIT_WAIT_SECONDS)
+                    consecutive_failures = 0 # Reset after long sleep
+                    # We continue the loop (or break if we want to refresh list? break is safer)
+                    return processed_count
+                    
+        except KeyboardInterrupt:
+            logging.info("Worker stopped by user.")
+            sys.exit(0)
+        except Exception as e:
+             logging.error(f"Error iterating {symbol}: {e}")
+             
+    logging.info(f"Finished pass for {universe}. Processed {processed_count} stocks.")
+    return processed_count
 
 def main():
     # Configure logging to ensure output is visible
@@ -199,71 +255,30 @@ def main():
             logging.StreamHandler(sys.stdout)
         ]
     )
-    logging.info("Starting AI Review Worker...")
+    logging.info("Starting AI Review Worker (S&P 500 & S&P 400)...")
     
     # Get Market Data Provider
     mdp = get_shared_mdp()
     
-    consecutive_failures = 0
-    
     while True:
         try:
-            # 1. Get S&P 500 List
+            total_processed = 0
+            
+            # 1. Process S&P 500
             logging.info("Fetching S&P 500 list...")
-            tickers = get_sp500_tickers()
-            logging.info(f"Found {len(tickers)} tickers.")
+            sp500_tickers = get_sp500_tickers()
+            total_processed += process_ticker_list(mdp, sp500_tickers, "sp500")
             
-            if not tickers:
-                logging.error("No tickers found. Retrying in 1 hour.")
-                time.sleep(3600)
-                continue
-                
-            # Randomize order to avoid getting stuck on same stocks or alphabetical bias
-            # causing issues if we restart
-            # random.shuffle(tickers) 
-            # Actually, maybe sequential is better to track progress? 
-            # But the user asked to "skip those that already have reviews", so order doesn't matter much.
-            # Let's keep original order but maybe shuffle slightly or just iterate.
-            
-            processed_count = 0
-            
-            for symbol in tickers:
-                # 1. Fetch Fundamentals FIRST (Needed for Smart Cache Check)
-                # Note: This increases API usage slightly (fetching funds for skipped items), 
-                # but is required for 'smart' invalidation.
-                # However, mdp caches fundamentals for 12h-24h so it's efficient.
-                yf_symbol = symbol 
-                fund_data = mdp.get_fundamental_data(yf_symbol)
-                
-                # Check cache with smart invalidation
-                if check_if_review_exists(symbol, fund_data):
-                    # logging.info(f"Skipping {symbol} - Valid & Fresh review exists.")
-                    continue
-                
-                logging.info(f"Review needed for {symbol}. Starting generation.")
-                success = process_stock(symbol, mdp, fund_data)
-                
-                if success:
-                    consecutive_failures = 0
-                    processed_count += 1
-                    # Sleep to be polite
-                    time.sleep(BATCH_DELAY_SECONDS)
-                else:
-                    consecutive_failures += 1
-                    logging.warning(f"Failure count: {consecutive_failures}")
-                    
-                    if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                        logging.error(f"Hit max consecutive failures ({MAX_CONSECUTIVE_FAILURES}). Likely Rate Limit or Network Issue.")
-                        logging.info(f"Sleeping for 24 hours (started at {datetime.datetime.now()})...")
-                        time.sleep(RATE_LIMIT_WAIT_SECONDS)
-                        consecutive_failures = 0 # Reset after long sleep
-                        break # Break inner loop to refresh ticker list after sleep
-            
-            if processed_count == 0:
+            # 2. Process S&P 400
+            logging.info("Fetching S&P 400 list...")
+            sp400_tickers = get_sp400_tickers()
+            total_processed += process_ticker_list(mdp, sp400_tickers, "sp400")
+
+            if total_processed == 0:
                 logging.info("No stocks needed processing (all cached). Sleeping for 1 hour before re-checking...")
                 time.sleep(3600)
             else:
-                logging.info("Finished pass through S&P 500. Sleeping for 1 hour...")
+                logging.info(f"Cycle complete. Processed {total_processed} stocks. Sleeping for 1 hour...")
                 time.sleep(3600)
 
         except KeyboardInterrupt:
