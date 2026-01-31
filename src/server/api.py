@@ -743,6 +743,10 @@ async def get_market_history(
                     df[display_name] = (df['price'] / first_price - 1) * 100
                 else:
                     df[display_name] = 0.0
+                
+                # Keep the price column but rename it so it doesn't conflict
+                df[f"{display_name}_price"] = df['price']
+                
                 dfs.append(df.drop(columns=['price']))
         
         if not dfs:

@@ -54,9 +54,16 @@ const CustomTooltip = ({ active, payload, label, period }: any) => {
                                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
                                 <span className="text-xs font-bold text-foreground/90">{entry.name}</span>
                             </div>
-                            <span className={`text-xs font-black tabular-nums ${entry.value >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                {entry.value >= 0 ? '+' : ''}{entry.value.toFixed(2)}%
-                            </span>
+                            <div className="flex flex-col items-end">
+                                <span className={`text-xs font-black tabular-nums ${entry.value >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                    {entry.value >= 0 ? '+' : ''}{entry.value.toFixed(2)}%
+                                </span>
+                                {payload[0]?.payload?.[`${entry.name}_price`] !== undefined && (
+                                    <span className="text-[10px] font-medium text-muted-foreground tabular-nums">
+                                        {payload[0].payload[`${entry.name}_price`].toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     ))}
                 </div>
@@ -103,7 +110,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks }: IndexGr
 
     const activeBenchmarks = useMemo(() => {
         if (data.length === 0) return [];
-        return Object.keys(data[0]).filter(k => k !== 'date');
+        return Object.keys(data[0]).filter(k => k !== 'date' && !k.endsWith('_price'));
     }, [data]);
 
     const currentReturns = useMemo(() => {
