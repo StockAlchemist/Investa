@@ -1539,7 +1539,9 @@ def _calculate_aggregate_metrics(
     include_accounts: Optional[List[str]] = None,  # <-- New param
     all_available_accounts: Optional[List[str]] = None,
     transactions_df: Optional[pd.DataFrame] = None,
-) -> Tuple[Dict[str, Any], Dict[str, Dict[str, float]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    historical_fx_rates: Optional[Dict[str, pd.DataFrame]] = None, # ADDED: Historical FX Data
+) -> Tuple[Dict[str, Any], Dict[str, Dict[str, float]], bool, bool]: # Fixed return type hint
+
     """
     Calculates account-level and overall portfolio summary metrics.
     (Implementation remains the same as provided previously - relies only on input df and helpers)
@@ -1935,6 +1937,7 @@ def _calculate_aggregate_metrics(
             end_date=report_date,
             target_currency=display_currency,
             fx_rates=fx_rates,
+            historical_fx_rates=historical_fx_rates, # ADDED: Historical FX Data
             display_currency=display_currency
         )
         
@@ -1942,6 +1945,10 @@ def _calculate_aggregate_metrics(
              overall_mwr = calculate_irr(mwr_dates, mwr_flows)
              if pd.notna(overall_mwr):
                  overall_mwr = overall_mwr * 100.0 # Convert to percentage
+             else:
+                 logging.debug(f"MWR Calc Failed (Result NaN). Dates: {len(mwr_dates)}, Flows: {len(mwr_flows)}")
+        else:
+             logging.debug(f"MWR Prep Failed (No flows). Market Val: {overall_market_value_display}, TX Count: {len(tx_for_mwr) if not tx_for_mwr.empty else 0}")
 
     # --- END ADDED ---
     

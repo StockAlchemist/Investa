@@ -290,9 +290,14 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
     first_non_zero_flow = None
     first_non_zero_idx = -1
     non_zero_cfs_list = []
+    max_abs_flow = 0.0  # Tracks max magnitude for normalization
+    
     for idx, cf in enumerate(cash_flows):
-        if abs(cf) > 1e-9:
+        abs_cf = abs(cf)
+        if abs_cf > 1e-9:
             non_zero_cfs_list.append(cf)
+            if abs_cf > max_abs_flow:
+                max_abs_flow = abs_cf
             if first_non_zero_flow is None:
                 first_non_zero_flow = cf
                 first_non_zero_idx = idx
@@ -313,6 +318,18 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
         logging.debug(f"DEBUG IRR: Fail - No positive flows found: {cash_flows}")
         return np.nan
 
+    # --- ADDED: Normalize Cash Flows ---
+    # Solver can fail with very large numbers (e.g. JPY, VND).
+    # Scaling flows does not change IRR.
+    # We scale down by max_abs_flow to keep numbers around [-1, 1].
+    
+    solver_flows = cash_flows
+    if max_abs_flow > 1e6: # Only scale if numbers are somewhat large (1M+)
+        scale_factor = max_abs_flow
+        solver_flows = [cf / scale_factor for cf in cash_flows]
+        # logging.debug(f"DEBUG IRR: Scaled flows by {scale_factor}. First Flow: {solver_flows[0]}")
+    # --- END ADDED ---
+
     # 3. Solver Logic
     with warnings.catch_warnings():
         # Ignore common numerical warnings from scipy's root-finding algorithms.
@@ -332,13 +349,13 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
         # First, try the Newton-Raphson method. It's fast but can fail to converge.
         try:
             irr_result = optimize.newton(
-                calculate_npv, x0=0.1, args=(dates, cash_flows), tol=1e-6, maxiter=100
+                calculate_npv, x0=0.1, args=(dates, solver_flows), tol=1e-6, maxiter=100
             )
             if (
                 not np.isfinite(irr_result) or irr_result <= -1.0 or irr_result > 100.0
             ):  # Check range
                 raise RuntimeError("Newton result out of reasonable range")
-            npv_check = calculate_npv(irr_result, dates, cash_flows)
+            npv_check = calculate_npv(irr_result, dates, solver_flows)
             if not np.isclose(
                 npv_check, 0.0, atol=1e-4
             ):  # Check if it finds the root accurately
@@ -350,8 +367,8 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
             # This method requires a bracket [a, b] where the NPV at a and b have opposite signs.
             try:
                 lower_bound, upper_bound = -0.9999, 50.0
-                npv_low = calculate_npv(lower_bound, dates, cash_flows)
-                npv_high = calculate_npv(upper_bound, dates, cash_flows)
+                npv_low = calculate_npv(lower_bound, dates, solver_flows)
+                npv_high = calculate_npv(upper_bound, dates, solver_flows)
                 logging.debug(
                     f"DEBUG IRR: Newton failed. Brentq bounds NPV: Low={npv_low}, High={npv_high}"
                 )
@@ -362,7 +379,7 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
                         calculate_npv,
                         a=lower_bound,
                         b=upper_bound,
-                        args=(dates, cash_flows),
+                        args=(dates, solver_flows),
                         xtol=1e-6,
                         rtol=1e-6,
                         maxiter=100,
@@ -561,39 +578,34 @@ def get_cash_flows_for_mwr(
     target_currency: str,
     fx_rates: Optional[Dict[str, float]],  # Expects standard 'FROM/TO' -> rate format
     display_currency: str,  # Used for warning msg only (REMOVED - fx_rates needed)
+    historical_fx_rates: Optional[Dict[Tuple[date, str], float]] = None, # ADDED: Historical FX Data (Date, LocalCurr) -> Rate to Target
 ) -> Tuple[List[date], List[float]]:
     """
     Calculates cash flows for Money-Weighted Return (MWR) for a specific account in the target currency.
 
     Processes transactions for a single account, calculating the cash flow impact of each
     transaction (buys, sells, dividends, fees, cash deposits/withdrawals) in its local currency.
-    Converts these local currency flows to the `target_currency` using the provided `fx_rates`.
-    The final account market value (already in `target_currency`) is added as the terminal flow.
-    Note: The sign convention for MWR cash flows is often flipped compared to IRR (deposits/buys
-    are positive, withdrawals/sells are negative) before solving. This function applies that flip.
+    Converts these local currency flows to the `target_currency`.
+    
+    CRITICAL CHANGE: Uses `historical_fx_rates` (if available) to convert flows using a pre-calculated 
+    rate specific to the transaction date. The `historical_fx_rates` dict is expected to map 
+    (date, local_currency) -> conversion_rate_to_target.
+    This ensures accurate IRR for non-USD currencies by capturing FX fluctuations. 
+    Falls back to `fx_rates` (current/static) if historical data is missing.
 
     Args:
         account_transactions (pd.DataFrame): The transactions DataFrame filtered for a specific account.
-                                             Must contain 'Date', 'Symbol', 'Type', 'Quantity',
-                                             'Price/Share', 'Commission', 'Total Amount', and
-                                             'Local Currency' columns.
         final_account_market_value (float): The final market value of the entire account in the
                                             `target_currency` as of the end_date.
         end_date (date): The end date for the calculation period.
         target_currency (str): The target currency for the MWR calculation.
-        fx_rates (Optional[Dict[str, float]]): A dictionary of FX rates relative to a base currency
-                                               (typically USD, e.g., {'JPY': 150.0, 'EUR': 0.9})
-                                               used for currency conversion via `get_conversion_rate`.
-        display_currency (str): The display currency used in log messages (informational only).
+        fx_rates (Optional[Dict[str, float]]): Current FX rates (fallback).
+        display_currency (str): The display currency (informational).
+        historical_fx_rates (Optional[Dict[Tuple[date, str], float]]): Dictionary mapping (Date, LocalCurrency) 
+            to the conversion rate to the target currency.
 
     Returns:
-        Tuple[List[date], List[float]]: A tuple containing:
-            - List[date]: A list of dates for the cash flows, sorted chronologically.
-            - List[float]: A list of cash flows in the `target_currency`, with signs flipped
-                           for MWR calculation (deposits/buys positive, withdrawals/sells negative).
-                           The final market value is added as a positive flow on the end_date.
-            Returns ([], []) if no relevant transactions or final value exist, or if the
-            cash flow pattern is invalid for IRR/MWR.
+        Tuple[List[date], List[float]]: Sorted dates and cash flows in target currency.
     """
     if account_transactions.empty:
         return [], []
@@ -679,14 +691,44 @@ def get_cash_flows_for_mwr(
         cash_flow_target = cash_flow_local
         if pd.notna(cash_flow_local) and abs(cash_flow_local) > 1e-9:
             if local_currency != target_currency:
-                rate = get_conversion_rate(local_currency, target_currency, fx_rates)
+                rate = np.nan
+                
+                # 1. Try Historical Lookup via Pre-calculated Dictionary (Date, Curr) -> Rate
+                if historical_fx_rates:
+                   # Ensure tx_date is a date object for lookup
+                   lookup_date = tx_date
+                   if isinstance(lookup_date, pd.Timestamp):
+                       lookup_date = lookup_date.date()
+                   elif isinstance(lookup_date, datetime):
+                       lookup_date = lookup_date.date()
+                       
+                   # Lookup logic: 
+                   # The dict maps (date, local_currency) -> rate_to_target
+                   # We need Local -> Target.
+                   if (lookup_date, local_currency) in historical_fx_rates:
+                       rate = historical_fx_rates[(lookup_date, local_currency)]
+                   
+                   # Fallback: if exact date missing, try closest previous date (within reason)??
+                   # portfolio_logic already handles ffill/bfill, so missing here likely means
+                   # missing entirely or date mismatch.
+                   # Let's trust exact lookup for now given portfolio_logic prep.
+
+                # 2. Fallback to Current/Static Rate if Historical failed
+                if pd.isna(rate):
+                    rate = get_conversion_rate(local_currency, target_currency, fx_rates)
+                
+                # 3. Log Warning if still NaN
                 if pd.isna(rate):  # Check for NaN explicitly
                     logging.warning(
-                        f"Warning: MWR calc cannot convert flow on {tx_date} from {local_currency} to {target_currency} (FX rate missing/invalid). Skipping flow."
+                        f"Warning: MWR calc cannot convert flow on {tx_date} from {local_currency} to {target_currency} (FX rate missing/invalid). Skipping flow. FX_RATES_KEYS: {list(fx_rates.keys()) if fx_rates else 'None'}"
                     )
                     cash_flow_target = 0.0
                 else:
                     cash_flow_target = cash_flow_local * rate
+            
+            # debug log for first few flows to verify conversion
+            # if len(dates_flows) < 5:
+            #    logging.debug(f"MWR Flow Debug: {tx_date} {local_currency}->{target_currency} ({cash_flow_local} -> {cash_flow_target}) Rate={rate if local_currency != target_currency else 1.0}")
 
             if pd.notna(cash_flow_target) and abs(cash_flow_target) > 1e-9:
                 dates_flows[tx_date] += cash_flow_target

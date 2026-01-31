@@ -534,6 +534,21 @@ STATIC_FX_FALLBACK = {
     "CAD": 1.35,
     "CHF": 0.88,
     "CNY": 7.2,
+    "NZD": 1.65,
+    "INR": 83.0,
+    "KRW": 1330.0,
+    "TWD": 31.5,
+    "MYR": 4.7,
+    "IDR": 15600.0,
+    "PHP": 56.0,
+    "VND": 24500.0,
+    "BRL": 5.0,
+    "MXN": 17.0,
+    "SEK": 10.4,
+    "NOK": 10.5,
+    "DKK": 6.9,
+    "ZAR": 19.0,
+    "TRY": 31.0,
 }
 
 # --- Graph Defaults ---

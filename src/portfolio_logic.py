@@ -585,8 +585,14 @@ def calculate_portfolio_summary(
                 if not isinstance(df.index, pd.DatetimeIndex):
                     df.index = pd.to_datetime(df.index)
                 
-                # Just take the price column
-                series = df['price'].rename(curr_code)
+                # Just take the price column (prefer 'Close' from Yahoo, fallback to 'price' if internal mock)
+                if 'Close' in df.columns:
+                    series = df['Close'].rename(curr_code)
+                elif 'price' in df.columns:
+                    series = df['price'].rename(curr_code)
+                else:
+                    logging.warning(f"Warning: neither 'Close' nor 'price' column found in historical FX for {pair}. Columns: {df.columns}")
+                    continue
                 # Ensure index is date (not datetime with time)
                 series.index = series.index.date
                 # Remove duplicates in index if any
@@ -1229,6 +1235,7 @@ def calculate_portfolio_summary(
                 include_accounts=include_accounts,
                 all_available_accounts=available_accounts_for_errors,
                 transactions_df=transactions_for_summary,
+                historical_fx_rates=historical_fx_for_processing, # ADDED: Historical FX Data
             )
         )
         # Ensure types before assignment
