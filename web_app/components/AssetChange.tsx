@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { formatCurrency } from '../lib/utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { AssetChangeData } from '../lib/api';
@@ -46,7 +46,7 @@ interface AssetSectionProps {
 }
 
 const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSectionProps) => {
-    const periodData = data[config.key] || [];
+    const periodData = (data && data[config.key]) || [];
     const [numPeriods, setNumPeriods] = useState(config.defaultPeriods);
 
     // Filter data based on numPeriods
@@ -59,11 +59,13 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
     let keysToPlot: string[] = [];
     if (displayData.length > 0) {
         const sampleRecord = displayData[displayData.length - 1];
-        Object.keys(sampleRecord).forEach(k => {
-            if (k.endsWith(targetSuffix)) {
-                keysToPlot.push(k);
-            }
-        });
+        if (sampleRecord) {
+            Object.keys(sampleRecord).forEach(k => {
+                if (k.endsWith(targetSuffix)) {
+                    keysToPlot.push(k);
+                }
+            });
+        }
     }
 
     // In 'value' mode, only show Portfolio
@@ -98,13 +100,13 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
             {/* Chart */}
             <div className="h-64 mb-6">
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart key={`${viewMode}-${config.key}`} data={displayData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                    <BarChart key={`${viewMode}-${config.key}`} data={displayData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
                         <XAxis
                             dataKey="Date"
                             tick={{ fontSize: 10, fill: '#9ca3af' }}
                             tickFormatter={(val) => {
-                                if (!val) return '';
+                                if (!val || typeof val !== 'string') return '';
                                 const datePart = val.split(' ')[0];
                                 if (config.key === 'Y') {
                                     return datePart.split('-')[0];
@@ -131,52 +133,56 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                                 if (active && payload && payload.length) {
                                     return (
                                         <div className="border border-border p-3 rounded-lg shadow-xl" style={{ backgroundColor: 'var(--menu-solid)' }}>
-                                            <p className="font-medium text-foreground mb-1">
+                                            <p className="font-medium text-foreground mb-1 text-sm">
                                                 {typeof label === 'string' && !isNaN(Date.parse(label))
                                                     ? new Date(label).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
                                                     : label}
                                             </p>
-                                            {payload.map((entry, index) => (
-                                                <div key={index} className="flex items-center gap-2 text-sm">
-                                                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
-                                                    <span className="text-muted-foreground">{entry.name}:</span>
-                                                    <span className={`font-medium ${Number(entry.value) >= 0 ? "text-emerald-500" : "text-red-500"}`}>
-                                                        {formatValue(entry.value)}
-                                                    </span>
-                                                </div>
-                                            ))}
-                                            {/* Show Net Flow and Total Change if available in Value mode */}
-                                            {viewMode === 'value' && payload[0]?.payload && (() => {
-                                                const record = payload[0].payload;
-                                                const netFlowKey = `Portfolio ${config.key}-NetFlow`;
-                                                const netFlow = record[netFlowKey];
+                                            <div className="space-y-1">
+                                                {payload.map((entry, index) => (
+                                                    <div key={index} className="flex items-center gap-2 text-xs">
+                                                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
+                                                        <span className="text-muted-foreground">{entry.name}:</span>
+                                                        <span className={`font-medium ${Number(entry.value) >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                                                            {formatValue(Number(entry.value))}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                                {/* Show Net Flow and Total Change if available in Value mode */}
+                                                {viewMode === 'value' && payload[0]?.payload && (() => {
+                                                    const record = payload[0].payload;
+                                                    const netFlowKey = `Portfolio ${config.key}-NetFlow`;
+                                                    const netFlow = record[netFlowKey];
 
-                                                // Only show if netFlow is defined and non-zero
-                                                if (netFlow !== undefined && Math.abs(netFlow) > 0.01) {
-                                                    const totalChange = (payload.find(p => p.name === 'Portfolio') as any)?.value + netFlow;
-                                                    return (
-                                                        <>
-                                                            <div className="flex items-center gap-2 text-sm mt-1 pt-1 border-t border-border/50">
-                                                                <span className="w-2 h-2 rounded-full bg-cyan-500" />
-                                                                <span className="text-muted-foreground">Net Flow:</span>
-                                                                <span className={`font-medium ${Number(netFlow) >= 0 ? "text-emerald-500" : "text-red-500"}`}>
-                                                                    {formatValue(netFlow)}
-                                                                </span>
-                                                            </div>
-                                                            {totalChange !== undefined && !isNaN(totalChange) && (
-                                                                <div className="flex items-center gap-2 text-sm">
-                                                                    <span className="w-2 h-2 rounded-full bg-transparent" />
-                                                                    <span className="text-muted-foreground">Total Change:</span>
-                                                                    <span className={`font-medium ${Number(totalChange) >= 0 ? "text-emerald-500" : "text-red-500"}`}>
-                                                                        {formatValue(totalChange)}
+                                                    // Only show if netFlow is defined and non-zero
+                                                    if (netFlow !== undefined && Math.abs(netFlow) > 0.01) {
+                                                        const portfolioEntry = payload.find(p => p.name === 'Portfolio');
+                                                        const portfolioValue = portfolioEntry ? Number(portfolioEntry.value) : 0;
+                                                        const totalChange = portfolioValue + netFlow;
+                                                        return (
+                                                            <>
+                                                                <div className="flex items-center gap-2 text-xs mt-1 pt-1 border-t border-border/50">
+                                                                    <span className="w-2 h-2 rounded-full bg-cyan-500" />
+                                                                    <span className="text-muted-foreground">Net Flow:</span>
+                                                                    <span className={`font-medium ${Number(netFlow) >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                                                                        {formatValue(netFlow)}
                                                                     </span>
                                                                 </div>
-                                                            )}
-                                                        </>
-                                                    );
-                                                }
-                                                return null;
-                                            })()}
+                                                                {!isNaN(totalChange) && (
+                                                                    <div className="flex items-center gap-2 text-xs">
+                                                                        <span className="w-2 h-2 rounded-full bg-transparent" />
+                                                                        <span className="text-muted-foreground">Total Change:</span>
+                                                                        <span className={`font-medium ${Number(totalChange) >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                                                                            {formatValue(totalChange)}
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                            </>
+                                                        );
+                                                    }
+                                                    return null;
+                                                })()}
+                                            </div>
                                         </div>
                                     );
                                 }
@@ -184,7 +190,13 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                             }}
                             cursor={{ fill: 'var(--glass-hover)' }}
                         />
-                        {viewMode === 'percent' && <Legend wrapperStyle={{ color: '#9ca3af' }} />}
+                        {viewMode === 'percent' && (
+                            <Legend
+                                wrapperStyle={{ fontSize: 10, paddingTop: 10 }}
+                                iconSize={8}
+                                iconType="circle"
+                            />
+                        )}
                         {keysToPlot.map((key, index) => {
                             const name = key.replace(` ${targetSuffix}`, '');
                             return (
@@ -195,10 +207,10 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                                     fill={viewMode === 'percent' ? getBarColor(name, index) : undefined}
                                     radius={[4, 4, 0, 0]}
                                 >
-                                    {viewMode === 'value' && displayData.map((entry: Record<string, number>, i: number) => (
+                                    {viewMode === 'value' && displayData.map((entry: any, i: number) => (
                                         <Cell
                                             key={`cell-${i}`}
-                                            fill={entry[key] >= 0 ? '#10b981' : '#ef4444'}
+                                            fill={(entry[key] || 0) >= 0 ? '#10b981' : '#ef4444'}
                                         />
                                     ))}
                                 </Bar>
@@ -213,13 +225,27 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
 
 export default function AssetChange({ data, currency, isLoading }: AssetChangeProps) {
     const [viewMode, setViewMode] = useState<'percent' | 'value'>('percent');
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     if (isLoading) {
         return <TabContentSkeleton type="chart-only" />;
     }
 
-    if (!data) {
-        return <div className="p-4 text-center text-muted-foreground">Loading asset change data...</div>;
+    if (!data || Object.keys(data).length === 0) {
+        return (
+            <div className="p-12 text-center text-muted-foreground bg-card rounded-2xl border border-border border-dashed">
+                <p className="font-medium text-sm">No asset change data available.</p>
+                <p className="text-xs mt-1">Please ensure your portfolio history is populated.</p>
+            </div>
+        );
+    }
+
+    if (!mounted) {
+        return <TabContentSkeleton type="chart-only" />;
     }
 
     const formatValue = (val: number) => {

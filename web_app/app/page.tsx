@@ -519,9 +519,9 @@ export default function Home() {
                           {(() => {
                             const normalized = index.name.toLowerCase();
                             let color = "#10b981"; // Default Emerald
-                            if (normalized.includes('s&p') || normalized.includes('500')) color = "#0097b2"; // Cyan
+                            if (normalized.includes('s&p 500') || normalized.includes('500')) color = "#0097b2"; // Cyan
                             if (normalized.includes('nasdaq')) color = "#8b5cf6"; // Violet
-                            if (normalized.includes('dow')) color = "#10b981"; // Emerald
+                            if (normalized.includes('dow jones') || normalized.includes('dow')) color = "#f59e0b"; // Amber
 
                             const gradientId = `splitFill-${index.name.replace(/[^a-zA-Z]/g, '')}`;
                             return (

@@ -24,7 +24,6 @@ export const INITIAL_VISIBLE_ITEMS = [
     'dayGL',
     'unrealizedGL',
     'annualTWR',
-    'mwr',
     'cashBalance',
     'portfolioDonut'
 ];
