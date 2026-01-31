@@ -138,7 +138,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks }: IndexGr
                             <div className="flex-1 min-w-0 pr-4">
                                 <div className="flex items-center justify-between gap-4 mb-1">
                                     <div className="flex items-center gap-3 truncate">
-                                        <h2 className="text-3xl font-black tracking-tighter text-foreground">Market Comparison</h2>
+                                        <h2 className="text-3xl font-black tracking-tight text-foreground">Markets</h2>
                                         <Badge variant="secondary" className="font-black text-[10px] uppercase tracking-widest px-3">Benchmarks</Badge>
                                     </div>
                                     <div className="flex items-center gap-6">
