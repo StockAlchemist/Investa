@@ -672,7 +672,8 @@ class MarketDataProvider:
                 for i in range(0, len(yf_symbols_list), chunk_size):
                     chunk = yf_symbols_list[i:i+chunk_size]
                     logging.info(f"TickerDetails Fetch: Processing isolated batch {i//chunk_size + 1}. Symbols: {len(chunk)}")
-                    info_batch = _run_isolated_fetch(chunk, task="info")
+                    # Use minimal=True to avoid OOM on large batches (skips analyst/ETF details)
+                    info_batch = _run_isolated_fetch(chunk, task="info", minimal=True)
                     
                     for sym in chunk:
                         info = info_batch.get(sym)
@@ -2862,8 +2863,13 @@ class MarketDataProvider:
                                 cache_valid = True
                                 logging.debug(f"Using valid fundamentals cache for {yf_symbol} from file")
                             else:
-                                logging.warning(f"Rejecting poisoned/empty/incomplete fundamentals cache for {yf_symbol} (Keys: {len(cached_data) if cached_data else 0})")
+                                logging.warning(f"Rejecting poisoned/empty/incomplete fundamentals cache for {yf_symbol} (Keys: {len(cached_data) if cached_data else 0}). PURGING FILE.")
                                 cache_valid = False
+                                try:
+                                    os.remove(symbol_cache_file)
+                                    logging.info(f"Purged corrupt cache file: {symbol_cache_file}")
+                                except Exception as e_del:
+                                    logging.error(f"Failed to purge corrupt cache file {symbol_cache_file}: {e_del}")
                         else:
                             if not valid_until_str: # Only log standard expiry if not smart
                                  logging.info(f"Fundamentals cache expired for {yf_symbol} (Standard duration)")

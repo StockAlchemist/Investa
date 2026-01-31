@@ -24,9 +24,9 @@ def log(msg):
 
 # Removed ThreadPoolExecutor to save memory
 
-def fetch_info(symbols, output_file):
+def fetch_info(symbols, output_file, minimal=False):
     try:
-        log(f"Starting info fetch for {len(symbols)} symbols. Sequential mode.")
+        log(f"Starting info fetch for {len(symbols)} symbols. Sequential mode. Minimal={minimal}")
         import yfinance as yf # Lazy import
         results = {}
         
@@ -39,49 +39,52 @@ def fetch_info(symbols, output_file):
                 log(f"Received .info for {sym}. Keys: {len(info) if info else 0}")
 
                 # --- ETF DATA EXTRACTION ---
-                try:
-                    if hasattr(ticker, 'funds_data'):
-                        log(f"Fetching funds_data for {sym}...")
-                        fd = ticker.funds_data
-                        if fd:
-                             etf_data = {}
-                             th = getattr(fd, 'top_holdings', None)
-                             if th is not None:
-                                 etf_data['top_holdings'] = []
-                                 if hasattr(th, 'iterrows'): 
-                                     for s, row in th.iterrows():
-                                         etf_data['top_holdings'].append({
-                                             "symbol": str(s), "name": str(row.get('Name', s)), "percent": float(row.get('Holding Percent', 0))
-                                         })
-                             if hasattr(fd, 'sector_weightings') and fd.sector_weightings:
-                                 etf_data['sector_weightings'] = fd.sector_weightings
-                             if hasattr(fd, 'asset_classes') and fd.asset_classes:
-                                 etf_data['asset_classes'] = fd.asset_classes
-                             if etf_data:
-                                 info['etf_data'] = etf_data
-                        log(f"funds_data processed for {sym}")
-                except Exception as e_etf:
-                    log(f"Error extracting ETF data for {sym}: {e_etf}")
-                
-                # --- ANALYST ESTIMATES ---
-                try:
-                    log(f"Fetching earnings_estimate for {sym}...")
-                    ee = ticker.earnings_estimate
-                    if not ee.empty:
-                        info['_earnings_estimate'] = ee.to_dict(orient='index')
+                if not minimal:
+                    try:
+                        if hasattr(ticker, 'funds_data'):
+                            log(f"Fetching funds_data for {sym}...")
+                            fd = ticker.funds_data
+                            if fd:
+                                 etf_data = {}
+                                 th = getattr(fd, 'top_holdings', None)
+                                 if th is not None:
+                                     etf_data['top_holdings'] = []
+                                     if hasattr(th, 'iterrows'): 
+                                         for s, row in th.iterrows():
+                                             etf_data['top_holdings'].append({
+                                                 "symbol": str(s), "name": str(row.get('Name', s)), "percent": float(row.get('Holding Percent', 0))
+                                             })
+                                 if hasattr(fd, 'sector_weightings') and fd.sector_weightings:
+                                     etf_data['sector_weightings'] = fd.sector_weightings
+                                 if hasattr(fd, 'asset_classes') and fd.asset_classes:
+                                     etf_data['asset_classes'] = fd.asset_classes
+                                 if etf_data:
+                                     info['etf_data'] = etf_data
+                            log(f"funds_data processed for {sym}")
+                    except Exception as e_etf:
+                        log(f"Error extracting ETF data for {sym}: {e_etf}")
                     
-                    log(f"Fetching revenue_estimate for {sym}...")
-                    re = ticker.revenue_estimate
-                    if not re.empty:
-                        info['_revenue_estimate'] = re.to_dict(orient='index')
-                    
-                    log(f"Fetching growth_estimates for {sym}...")
-                    ge = ticker.growth_estimates
-                    if not ge.empty:
-                        info['_growth_estimates'] = ge.to_dict(orient='index')
-                    log(f"Analyst estimates processed for {sym}")
-                except Exception as e_analyst:
-                    log(f"Error fetching analyst estimates for {sym}: {e_analyst}")
+                    # --- ANALYST ESTIMATES ---
+                    try:
+                        log(f"Fetching earnings_estimate for {sym}...")
+                        ee = ticker.earnings_estimate
+                        if not ee.empty:
+                            info['_earnings_estimate'] = ee.to_dict(orient='index')
+                        
+                        log(f"Fetching revenue_estimate for {sym}...")
+                        re = ticker.revenue_estimate
+                        if not re.empty:
+                            info['_revenue_estimate'] = re.to_dict(orient='index')
+                        
+                        log(f"Fetching growth_estimates for {sym}...")
+                        ge = ticker.growth_estimates
+                        if not ge.empty:
+                            info['_growth_estimates'] = ge.to_dict(orient='index')
+                        log(f"Analyst estimates processed for {sym}")
+                    except Exception as e_analyst:
+                        log(f"Error fetching analyst estimates for {sym}: {e_analyst}")
+                else:
+                    log(f"Minimal mode: Skipping ETF and Analyst data for {sym}")
                 
                 return sym, info
             except Exception as e:
@@ -380,7 +383,7 @@ if __name__ == "__main__":
             os.close(fd)
         
         if task == "info":
-            result = fetch_info(symbols, output_file)
+            result = fetch_info(symbols, output_file, minimal=request.get("minimal", False))
         elif task == "statement":
             result = fetch_statement(symbols[0], request.get("statement_type"), request.get("period_type"), output_file)
         elif task == "statements_batch":

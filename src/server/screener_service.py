@@ -630,8 +630,8 @@ def process_screener_results(
             return None
 
     logging.info(f"Screener: Processing results for {len(symbols)} symbols in parallel...")
-    # WORKER LIMIT: Set to 3 (Safe Mode). 5 was still triggering OOM.
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    # WORKER LIMIT: Set to 2 (Ultra-Safe Mode). 3 was borderline for OOM on constrained systems.
+    with ThreadPoolExecutor(max_workers=2) as executor:
         futures = [executor.submit(process_symbol, sym) for sym in symbols]
         for future in futures:
             res = future.result()
