@@ -39,7 +39,8 @@ from db_utils import (
     rename_watchlist,
     delete_watchlist,
     update_intrinsic_value_in_cache,
-    upsert_screener_results
+    upsert_screener_results,
+    get_cached_screener_results
 )
 
 from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series
@@ -2552,32 +2553,70 @@ async def get_stock_analysis(
         
         # 4. Interactive Calculation of Intrinsic Value & Cache Update
         try:
-            # We calculate this ON THE FLY to ensure the frontend gets the detailed value
-            # immediately when "Analyze" is clicked, updating the screener row live.
-            iv_results = get_comprehensive_intrinsic_value(
-                fund_data, financials_df, balance_sheet_df, cashflow_df
-            )
-            
-            # Serialize the entire result for storage
-            iv_json = json.dumps(iv_results, default=str)
-            
-            # Inject into info dict so it gets picked up by update_intrinsic_value_in_cache
-            # We copy it to avoid mutating the original fund_data for other uses if any
-            info_for_update = fund_data.copy()
-            info_for_update["valuation_details"] = iv_json
+            # Check cache first if not forced
+            iv_results = None
+            if not force and db_conn:
+                try:
+                    cached_results = get_cached_screener_results(db_conn, [symbol])
+                    if symbol in cached_results:
+                        cached_entry = cached_results[symbol]
+                        
+                        # Extract cached metadata
+                        cached_fy_end = cached_entry.get("last_fiscal_year_end")
+                        cached_mrq = cached_entry.get("most_recent_quarter")
+                        cached_val_details_str = cached_entry.get("valuation_details")
+                        
+                        current_fy_end = fund_data.get("lastFiscalYearEnd")
+                        current_mrq = fund_data.get("mostRecentQuarter")
+                        
+                        # Validate if cache is fresh enough (Timestamps match)
+                        is_fresh = True
+                        if current_fy_end and cached_fy_end != current_fy_end:
+                            is_fresh = False
+                        if current_mrq and cached_mrq != current_mrq:
+                            is_fresh = False
+                            
+                        # Also ensure we actually have the detailed JSON stored
+                        if is_fresh and cached_val_details_str:
+                             logging.info(f"Using cached Intrinsic Value for {symbol} (Freshness verified)")
+                             try:
+                                 iv_results = json.loads(cached_val_details_str)
+                                 # Ensure top-level metrics match cache (consistency check)
+                                 # (optional, but good for safety)
+                             except json.JSONDecodeError:
+                                 logging.warning(f"Failed to decode cached valuation details for {symbol}")
+                                 iv_results = None
+                except Exception as e_cache_read:
+                    logging.warning(f"Error checking IV cache for {symbol}: {e_cache_read}")
 
-            # Update cache so screener table reads it next time (or live update listens to it)
-            # db_conn is injected
-            if db_conn:
-                update_intrinsic_value_in_cache(
-                    db_conn,
-                    symbol,
-                    iv_results.get("average_intrinsic_value"),
-                    iv_results.get("margin_of_safety_pct"),
-                    fund_data.get("lastFiscalYearEnd"),
-                    fund_data.get("mostRecentQuarter"),
-                    info=info_for_update
+            if iv_results is None:
+                # We calculate this ON THE FLY to ensure the frontend gets the detailed value
+                # immediately when "Analyze" is clicked, updating the screener row live.
+                logging.info(f"Recalculating Intrinsic Value for {symbol}...")
+                iv_results = get_comprehensive_intrinsic_value(
+                    fund_data, financials_df, balance_sheet_df, cashflow_df
                 )
+                
+                # Serialize the entire result for storage
+                iv_json = json.dumps(iv_results, default=str)
+                
+                # Inject into info dict so it gets picked up by update_intrinsic_value_in_cache
+                # We copy it to avoid mutating the original fund_data for other uses if any
+                info_for_update = fund_data.copy()
+                info_for_update["valuation_details"] = iv_json
+
+                # Update cache so screener table reads it next time (or live update listens to it)
+                # db_conn is injected
+                if db_conn:
+                    update_intrinsic_value_in_cache(
+                        db_conn,
+                        symbol,
+                        iv_results.get("average_intrinsic_value"),
+                        iv_results.get("margin_of_safety_pct"),
+                        fund_data.get("lastFiscalYearEnd"),
+                        fund_data.get("mostRecentQuarter"),
+                        info=info_for_update
+                    )
             
             # Inject into response so frontend event can carry it
             analysis["intrinsic_value_data"] = iv_results

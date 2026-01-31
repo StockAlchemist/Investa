@@ -385,7 +385,7 @@ export default function Home() {
   });
 
   const graphData = historyQuery.data || [];
-  const graphLoading = historyQuery.isLoading && !historyQuery.data;
+  const graphLoading = (historyQuery.isLoading || historyQuery.isFetching) && (!graphData || graphData.length === 0);
 
 
   const watchlistQuery = useQuery({
