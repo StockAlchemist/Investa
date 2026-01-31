@@ -49,13 +49,12 @@ interface PerformanceGraphProps {
 }
 
 const COLORS = [
-    "#2563eb", // Portfolio (Blue)
-    "#dc2626", // Red
-    "#16a34a", // Green
-    "#d97706", // Amber
-    "#9333ea", // Purple
-    "#0891b2", // Cyan
-    "#db2777", // Pink
+    "#ef4444", // Portfolio (Red)
+    "#0097b2", // Investa Cyan (Benchmark 1)
+    "#f59e0b", // Amber (Benchmark 2)
+    "#8b5cf6", // Violet (Benchmark 3)
+    "#e11d48", // Rose (Benchmark 4)
+    "#10b981", // Emerald (Benchmark 5)
 ];
 
 export default function PerformanceGraph({
@@ -662,15 +661,15 @@ export default function PerformanceGraph({
                             {/* Time-Weighted Return (TWR) */}
                             <defs>
                                 <linearGradient id="colorTwr" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
-                                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.8} />
+                                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
                                 </linearGradient>
                             </defs>
                             <Line
                                 type="monotone"
                                 dataKey="twr"
                                 name="Portfolio"
-                                stroke="#3b82f6"
+                                stroke="#ef4444"
                                 strokeWidth={2}
                                 dot={false}
                                 activeDot={{ r: 4, strokeWidth: 0 }}
@@ -708,8 +707,8 @@ export default function PerformanceGraph({
                         <AreaChart syncId="portfolio-sync" data={chartedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                             <defs>
                                 <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
+                                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
                                 </linearGradient>
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />

@@ -88,12 +88,14 @@ project_root = os.path.dirname(src_dir)
 
 # Global Cache for Portfolio Summary Calculations to avoid redundant processing per-request
 _PORTFOLIO_SUMMARY_CACHE = {}
+_MARKET_HISTORY_CACHE = {}
 
 def reload_data_and_clear_cache():
-    """Helper to clear both transaction data cache and portfolio summary cache."""
+    """Helper to clear both transaction data cache, portfolio summary cache, and market history cache."""
     reload_data()
     _PORTFOLIO_SUMMARY_CACHE.clear()
-    logging.info("Transaction and Summary caches cleared.")
+    _MARKET_HISTORY_CACHE.clear()
+    logging.info("Transaction, Summary, and Market History caches cleared.")
 
 
 # Global Market Data Provider to share DB connections and cache across requests
@@ -648,6 +650,134 @@ async def get_portfolio_summary(
         return clean_nans(response_data)
     except Exception as e:
         logging.error(f"Error calculating summary: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/market_history")
+async def get_market_history(
+    benchmarks: List[str] = Query(...),
+    period: str = "1y",
+    interval: str = "1d",
+    currency: str = "USD",
+):
+    """
+    Returns historical return % for given market indices/benchmarks.
+    """
+    # 0. Global Cache Check
+    cache_key = (tuple(sorted(benchmarks)), period, interval, currency)
+    now_ts_cache = time.time()
+    if cache_key in _MARKET_HISTORY_CACHE:
+        entry, expiry = _MARKET_HISTORY_CACHE[cache_key]
+        if now_ts_cache < expiry:
+            logging.info(f"Market History Cache HIT: {cache_key}")
+            return entry
+
+    try:
+        from utils_time import get_est_today, get_latest_trading_date
+        
+        # MAPPING: Convert benchmark display names to YF tickers (reuse logic from history)
+        mapped_benchmarks = []
+        ticker_to_name = {}
+        bm_mapping_lower = {k.lower(): v for k, v in config.BENCHMARK_MAPPING.items()}
+        yf_map_lower = {k.lower(): v for k, v in config.YFINANCE_INDEX_TICKER_MAP.items()}
+        
+        for b in benchmarks:
+            b_lower = b.lower()
+            if b_lower in bm_mapping_lower:
+                ticker = bm_mapping_lower[b_lower]
+                mapped_benchmarks.append(ticker)
+                ticker_to_name[ticker] = b
+            elif b_lower in yf_map_lower:
+                ticker = yf_map_lower[b_lower]
+                mapped_benchmarks.append(ticker)
+                ticker_to_name[ticker] = b
+            else:
+                mapped_benchmarks.append(b)
+        
+        # Determine date range (simplified logic from history)
+        end_date = get_est_today() + timedelta(days=1)
+        if period == "1d":
+            interval = "2m" # Force Intraday
+            start_date = get_latest_trading_date()
+        elif period == "5d" or period == "7d":
+            start_date = end_date - timedelta(days=7)
+        elif period == "1m":
+            start_date = end_date - timedelta(days=30)
+        elif period == "3m":
+            start_date = end_date - timedelta(days=90)
+        elif period == "6m":
+            start_date = end_date - timedelta(days=180)
+        elif period == "1y":
+            start_date = end_date - timedelta(days=365)
+        elif period == "3y":
+            start_date = end_date - timedelta(days=365 * 3)
+        elif period == "5y":
+            start_date = end_date - timedelta(days=365 * 5)
+        elif period == "10y":
+            start_date = end_date - timedelta(days=365 * 10)
+        elif period == "ytd":
+            start_date = date(end_date.year, 1, 1)
+        else:
+            start_date = end_date - timedelta(days=365)
+
+        mdp = get_mdp()
+        hist_data, _ = mdp.get_historical_data(
+            symbols_yf=mapped_benchmarks,
+            start_date=start_date,
+            end_date=end_date,
+            interval=interval
+        )
+        
+        if not hist_data:
+            return []
+
+        # Process and normalize data (Return %) using Vectorized Pandas logic
+        # Result should be a list of dicts: [{date: '...', '^GSPC': 0.1, ...}, ...]
+        dfs = []
+        for ticker in mapped_benchmarks:
+            if ticker in hist_data and not hist_data[ticker].empty:
+                df = hist_data[ticker][['price']].copy()
+                # Normalize returns relative to first point
+                first_price = df['price'].iloc[0]
+                display_name = ticker_to_name.get(ticker, ticker)
+                if first_price != 0:
+                    df[display_name] = (df['price'] / first_price - 1) * 100
+                else:
+                    df[display_name] = 0.0
+                dfs.append(df.drop(columns=['price']))
+        
+        if not dfs:
+            return []
+            
+        # Combine all indices into one DataFrame
+        combined_df = pd.concat(dfs, axis=1)
+        combined_df = combined_df.sort_index()
+        
+        # Reset index to get dates as a column
+        combined_df.index.name = 'date'
+        combined_df = combined_df.reset_index()
+        
+        # Convert dates to string (using pd.to_datetime to be safe if types differ)
+        combined_df['date'] = pd.to_datetime(combined_df['date'])
+        
+        is_intraday_local = any(x in interval for x in ["m", "h"])
+        if is_intraday_local:
+             combined_df['date'] = combined_df['date'].dt.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+             combined_df['date'] = combined_df['date'].dt.strftime("%Y-%m-%d")
+
+        result = clean_nans(combined_df.to_dict(orient="records"))
+        
+        # Cache the result for 15 minutes
+        _MARKET_HISTORY_CACHE[cache_key] = (result, now_ts_cache + 900)
+        
+        return result
+
+    except Exception as e:
+        logging.error(f"Error in get_market_history: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+    except Exception as e:
+        logging.error(f"Error in get_market_history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/correlation")

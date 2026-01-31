@@ -56,6 +56,8 @@ const CorrelationMatrix = dynamic(() => import('@/components/CorrelationMatrix')
 const PortfolioHealthComponent = dynamic(() => import('@/components/PortfolioHealth').then(mod => mod.PortfolioHealthComponent));
 const Watchlist = dynamic(() => import('@/components/Watchlist'));
 const ScreenerView = dynamic(() => import('@/components/ScreenerView'));
+const MarketIndicesBox = dynamic(() => import('@/components/MarketIndicesBox'), { ssr: false });
+const IndexGraphModal = dynamic(() => import('@/components/IndexGraphModal'), { ssr: false });
 
 
 import { useTheme } from 'next-themes';
@@ -97,6 +99,8 @@ export default function Home() {
     }
     setActiveTab(tab);
   };
+
+  const [isIndexGraphModalOpen, setIsIndexGraphModalOpen] = useState(false);
 
   // Hydrate state from localStorage on mount
   useEffect(() => {
@@ -487,7 +491,11 @@ export default function Home() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {Object.values(summary.metrics.indices).map((index: any) => (
-                  <div key={index.name} className="flex flex-col p-5 rounded-2xl bg-card border border-border bg-gradient-to-b from-card to-card/50 shadow-sm hover:shadow-md hover:border-cyan-500/30 transition-all duration-300 group">
+                  <div
+                    key={index.name}
+                    onClick={() => setIsIndexGraphModalOpen(true)}
+                    className="flex flex-col p-5 rounded-2xl bg-card border border-border bg-gradient-to-b from-card to-card/50 shadow-sm hover:shadow-md hover:border-cyan-500/30 transition-all duration-300 group cursor-pointer"
+                  >
                     <div className="flex justify-between items-start mb-4">
                       <div>
                         <span className="text-muted-foreground text-[10px] font-bold uppercase tracking-widest">{index.name}</span>
@@ -508,24 +516,35 @@ export default function Home() {
                     {index.sparkline && index.sparkline.length > 1 && (
                       <div className="h-16 w-full mt-2 filter drop-shadow-sm opacity-90 group-hover:opacity-100 transition-opacity">
                         <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={index.sparkline.map((v: number) => ({ value: v }))}>
-                            <defs>
-                              <linearGradient id={`splitFill-${index.name.replace(/[^a-zA-Z]/g, '')}`} x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor={index.change >= 0 ? "#10b981" : "#ef4444"} stopOpacity={0.25} />
-                                <stop offset="95%" stopColor={index.change >= 0 ? "#10b981" : "#ef4444"} stopOpacity={0} />
-                              </linearGradient>
-                            </defs>
-                            <YAxis hide domain={['dataMin', 'dataMax']} />
-                            <Area
-                              type="monotone"
-                              dataKey="value"
-                              stroke={index.change >= 0 ? "#10b981" : "#ef4444"}
-                              fill={`url(#splitFill-${index.name.replace(/[^a-zA-Z]/g, '')})`}
-                              strokeWidth={2.5}
-                              dot={false}
-                              isAnimationActive={false}
-                            />
-                          </AreaChart>
+                          {(() => {
+                            const normalized = index.name.toLowerCase();
+                            let color = "#10b981"; // Default Emerald
+                            if (normalized.includes('s&p') || normalized.includes('500')) color = "#0097b2"; // Cyan
+                            if (normalized.includes('nasdaq')) color = "#8b5cf6"; // Violet
+                            if (normalized.includes('dow')) color = "#10b981"; // Emerald
+
+                            const gradientId = `splitFill-${index.name.replace(/[^a-zA-Z]/g, '')}`;
+                            return (
+                              <AreaChart data={index.sparkline.map((v: number) => ({ value: v }))}>
+                                <defs>
+                                  <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor={color} stopOpacity={0.2} />
+                                    <stop offset="95%" stopColor={color} stopOpacity={0} />
+                                  </linearGradient>
+                                </defs>
+                                <YAxis hide domain={['dataMin', 'dataMax']} />
+                                <Area
+                                  type="monotone"
+                                  dataKey="value"
+                                  stroke={color}
+                                  fill={`url(#${gradientId})`}
+                                  strokeWidth={3}
+                                  dot={false}
+                                  isAnimationActive={false}
+                                />
+                              </AreaChart>
+                            );
+                          })()}
                         </ResponsiveContainer>
                       </div>
                     )}
@@ -674,6 +693,12 @@ export default function Home() {
         onNavigate={handleNavigate}
       />
 
+      <IndexGraphModal
+        isOpen={isIndexGraphModalOpen}
+        onClose={() => setIsIndexGraphModalOpen(false)}
+        benchmarks={benchmarks}
+      />
+
       <header className="sticky top-0 z-50 w-full border-b border-border bg-background/60 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 md:pl-[72px] py-3 sm:py-4 flex justify-between items-center gap-4 sm:gap-8">
           <div className="flex items-center gap-4">
@@ -704,38 +729,12 @@ export default function Home() {
 
 
           <div className="flex items-center gap-4">
-            {summary?.metrics?.indices && Object.values(summary.metrics.indices).map((index: any) => (
-              <div key={index.name} className="hidden lg:flex flex-col items-start px-3 py-1.5 rounded-xl bg-card/40 border border-border/50 hover:bg-accent/10 hover:border-border transition-all duration-300 group overflow-hidden relative min-w-[120px]">
-                <div className="flex items-center justify-between w-full gap-2">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">{index.name}</span>
-                  <span className={`text-[9px] font-bold tabular-nums ${(index.change || 0) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
-                    {(index.changesPercentage || 0).toFixed(2)}%
-                  </span>
-                </div>
-                <div className="text-xs font-bold text-foreground tabular-nums">
-                  {index.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? "0.00"}
-                </div>
-
-                {index.sparkline && index.sparkline.length > 1 && (
-                  <div className="absolute bottom-0 left-0 right-0 h-[3px] pointer-events-none opacity-40 group-hover:opacity-100 transition-opacity">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={index.sparkline.map((v: number) => ({ value: v }))}>
-                        <YAxis hide domain={['dataMin', 'dataMax']} />
-                        <Area
-                          type="monotone"
-                          dataKey="value"
-                          stroke={index.change >= 0 ? "#10b981" : "#ef4444"}
-                          fill="transparent"
-                          strokeWidth={1.5}
-                          dot={false}
-                          isAnimationActive={false}
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </div>
-            ))}
+            {summary?.metrics?.indices && (
+              <MarketIndicesBox
+                indices={summary.metrics.indices}
+                onClick={() => setIsIndexGraphModalOpen(true)}
+              />
+            )}
 
             <div className="h-6 w-px bg-border hidden md:block" />
 

@@ -17,7 +17,24 @@ const PERIOD_CONFIGS = [
     { key: 'D', title: 'Daily Returns', dataKey: 'D-Return', defaultPeriods: 30 },
 ];
 
-const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#0088fe', '#00C49F'];
+const COLORS = [
+    "#ef4444", // Portfolio (Red)
+    "#0097b2", // Investa Cyan (S&P 500)
+    "#f59e0b", // Amber (Dow Jones)
+    "#8b5cf6", // Violet (NASDAQ)
+    "#e11d48", // Rose (Russell 2000)
+    "#10b981", // Emerald (Fallback)
+];
+
+const getBarColor = (name: string, index: number) => {
+    const normalized = name.toLowerCase();
+    if (normalized.includes('portfolio')) return "#ef4444";
+    if (normalized.includes('s&p 500') || normalized.includes('500')) return "#0097b2";
+    if (normalized.includes('dow jones') || normalized.includes('dow')) return "#f59e0b";
+    if (normalized.includes('nasdaq')) return "#8b5cf6";
+    if (normalized.includes('russell 2000') || normalized.includes('2000')) return "#e11d48";
+    return COLORS[index % COLORS.length];
+};
 
 interface AssetSectionProps {
     config: { key: string; title: string; dataKey: string; defaultPeriods: number };
@@ -168,22 +185,25 @@ const AssetSection = ({ config, data, currency, viewMode, formatValue }: AssetSe
                             cursor={{ fill: 'var(--glass-hover)' }}
                         />
                         {viewMode === 'percent' && <Legend wrapperStyle={{ color: '#9ca3af' }} />}
-                        {keysToPlot.map((key, index) => (
-                            <Bar
-                                key={key}
-                                dataKey={key}
-                                name={key.replace(` ${targetSuffix}`, '')}
-                                fill={viewMode === 'percent' ? COLORS[index % COLORS.length] : undefined}
-                                radius={[4, 4, 0, 0]}
-                            >
-                                {viewMode === 'value' && displayData.map((entry: Record<string, number>, i: number) => (
-                                    <Cell
-                                        key={`cell-${i}`}
-                                        fill={entry[key] >= 0 ? '#10b981' : '#ef4444'}
-                                    />
-                                ))}
-                            </Bar>
-                        ))}
+                        {keysToPlot.map((key, index) => {
+                            const name = key.replace(` ${targetSuffix}`, '');
+                            return (
+                                <Bar
+                                    key={key}
+                                    dataKey={key}
+                                    name={name}
+                                    fill={viewMode === 'percent' ? getBarColor(name, index) : undefined}
+                                    radius={[4, 4, 0, 0]}
+                                >
+                                    {viewMode === 'value' && displayData.map((entry: Record<string, number>, i: number) => (
+                                        <Cell
+                                            key={`cell-${i}`}
+                                            fill={entry[key] >= 0 ? '#10b981' : '#ef4444'}
+                                        />
+                                    ))}
+                                </Bar>
+                            );
+                        })}
                     </BarChart>
                 </ResponsiveContainer>
             </div>

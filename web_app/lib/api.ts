@@ -247,6 +247,21 @@ export async function fetchHistory(
     return res.json();
 }
 
+export async function fetchMarketHistory(
+    benchmarks: string[],
+    period: string = '1y',
+    interval: string = '1d',
+    currency: string = 'USD',
+    signal?: AbortSignal
+): Promise<any[]> {
+    const params = new URLSearchParams({ period, interval, currency });
+    benchmarks.forEach(b => params.append('benchmarks', b));
+
+    const res = await authFetch(`${API_BASE_URL}/market_history?${params.toString()}`, { signal, cache: 'no-store' });
+    if (!res.ok) throw new Error('Failed to fetch market history');
+    return res.json();
+}
+
 export interface StockHistoryData {
     date: string;
     value: number;
