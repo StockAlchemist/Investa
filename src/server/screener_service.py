@@ -500,12 +500,12 @@ def process_screener_results(
                                     analysis_obj = ai_data.get("analysis", {})
                                     scorecard = analysis_obj.get("scorecard", {})
                                     
-                                    moat = scorecard.get("moat")
-                                    fin = scorecard.get("financial_strength")
-                                    pred = scorecard.get("predictability")
-                                    growth = scorecard.get("growth")
+                                    ai_moat = scorecard.get("moat")
+                                    ai_financial_strength = scorecard.get("financial_strength")
+                                    ai_predictability = scorecard.get("predictability")
+                                    ai_growth = scorecard.get("growth")
                                     
-                                    vals = [v for v in [moat, fin, pred, growth] if isinstance(v, (int, float))]
+                                    vals = [v for v in [ai_moat, ai_financial_strength, ai_predictability, ai_growth] if isinstance(v, (int, float))]
                                     if vals:
                                         ai_score = sum(vals) / len(vals)
                                         has_ai = True
@@ -514,11 +514,12 @@ def process_screener_results(
                             except Exception as e_ai:
                                 logging.warning(f"Failed to load AI cache for {sym}: {e_ai}")
 
-                # Ensure individual AI metrics are returned (needed for detail view)
-                ai_moat = cached.get("ai_moat")
-                ai_financial_strength = cached.get("ai_financial_strength")
-                ai_predictability = cached.get("ai_predictability")
-                ai_growth = cached.get("ai_growth")
+                # If we still don't have individual metrics from fallback, try to get from cache object
+                if ai_moat is None: ai_moat = cached.get("ai_moat")
+                if ai_financial_strength is None: ai_financial_strength = cached.get("ai_financial_strength")
+                if ai_predictability is None: ai_predictability = cached.get("ai_predictability")
+                if ai_growth is None: ai_growth = cached.get("ai_growth")
+                
                 # If we didn't get ai_summary from fallback, get it from cache
                 if ai_summary is None:
                     ai_summary = cached.get("ai_summary")
