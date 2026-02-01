@@ -154,7 +154,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                         </div>
 
                         <div className="flex items-start gap-8">
-                            <div className="flex items-center gap-8 mr-6">
+                            <div className="flex items-center mr-6">
                                 {activeBenchmarks.map((bench, idx) => {
                                     const graphLatest = currentReturns[bench];
                                     const graphPrice = currentReturns[`${bench}_price`];
@@ -170,18 +170,21 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
 
                                     if (displayPct === undefined) return null;
                                     return (
-                                        <div key={bench} className="flex flex-col items-end">
-                                            <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/80 mb-0.5">{bench}</span>
-                                            <span className="text-xl font-bold tracking-tighter tabular-nums text-foreground">
-                                                {displayPrice !== undefined ? displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'}
-                                            </span>
-                                            <span className={cn(
-                                                "text-[10px] font-bold tracking-tight tabular-nums",
-                                                displayPct >= 0 ? "text-emerald-500" : "text-rose-500"
-                                            )}>
-                                                {displayPct >= 0 ? '+' : ''}{displayPct.toFixed(2)}%
-                                            </span>
-                                        </div>
+                                        <React.Fragment key={bench}>
+                                            {idx > 0 && <div className="w-px h-10 bg-border/60 mx-6" />}
+                                            <div className="flex flex-col items-end">
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/80 mb-0.5">{bench}</span>
+                                                <span className="text-xl font-bold tracking-tighter tabular-nums text-foreground">
+                                                    {displayPrice !== undefined ? displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'}
+                                                </span>
+                                                <span className={cn(
+                                                    "text-[10px] font-bold tracking-tight tabular-nums",
+                                                    displayPct >= 0 ? "text-emerald-500" : "text-rose-500"
+                                                )}>
+                                                    {displayPct >= 0 ? '+' : ''}{displayPct.toFixed(2)}%
+                                                </span>
+                                            </div>
+                                        </React.Fragment>
                                     );
                                 })}
                             </div>

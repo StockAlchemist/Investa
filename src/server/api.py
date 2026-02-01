@@ -717,6 +717,8 @@ async def get_market_history(
             start_date = end_date - timedelta(days=365 * 10)
         elif period == "ytd":
             start_date = date(end_date.year, 1, 1)
+        elif period == "all" or period == "max":
+            start_date = date(1980, 1, 1) # Return full history
         else:
             start_date = end_date - timedelta(days=365)
 
