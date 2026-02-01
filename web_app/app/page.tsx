@@ -62,6 +62,7 @@ const IndexGraphModal = dynamic(() => import('@/components/IndexGraphModal'), { 
 
 import { useTheme } from 'next-themes';
 import { Home as HomeIcon, BarChart3, Settings as SettingsIcon, Moon, Sun, LogOut, UserCircle } from 'lucide-react';
+import ControlBar from '@/components/ControlBar';
 const LayoutConfigurator = dynamic(() => import('@/components/LayoutConfigurator'));
 
 // Static import for ThemeToggle since it's in the sidebar always visible
@@ -639,53 +640,19 @@ export default function Home() {
     <main className="min-h-screen bg-background pb-20 selection:bg-cyan-500/20 selection:text-cyan-500">
       <div className="fixed inset-0 z-[-1] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-background to-background pointer-events-none" />
 
-      {/* Sidebar - Desktop */}
-      <aside className="fixed left-0 top-0 bottom-0 w-[72px] flex flex-col items-center py-4 border-r border-border bg-background/40 backdrop-blur-2xl z-[60] hidden md:flex transition-all duration-300">
-        <div className="flex-1 flex flex-col items-center gap-2">
-          <button
-            onClick={handleUserIconClick}
-            className="flex items-center justify-center p-3 rounded-2xl text-cyan-500 hover:bg-accent/10 transition-all duration-300 group w-[60px]"
-            title="User Settings"
-          >
-            <div className="p-2 rounded-xl transition-all duration-300 group-hover:scale-110">
-              <UserCircle className="w-5 h-5" />
-            </div>
-          </button>
-
-          <TabNavigation activeTab={activeTab} onTabChange={handleTabChange} onLogout={logout} side="right" />
-
-          <CurrencySelector
-            currentCurrency={currency}
-            onChange={setCurrency}
-            fxRate={summary?.metrics?.exchange_rate_to_display}
-            side="right"
-            availableCurrencies={settingsQuery.data?.available_currencies}
-          />
-        </div>
-
-        <div className="mt-auto flex flex-col items-center gap-1 pb-4">
-          <ThemeToggle />
-          <button
-            onClick={() => handleTabChange('settings')}
-            className="flex flex-col items-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group hover:bg-accent/10 w-[60px]"
-            title="Settings"
-          >
-            <div className="p-2 rounded-xl transition-all duration-300 text-cyan-500 group-hover:scale-110">
-              <SettingsIcon className="w-5 h-5" />
-            </div>
-          </button>
-          <button
-            onClick={() => user && logout()}
-            className="flex flex-col items-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group hover:bg-accent/10 w-[60px]"
-            title="Log Out"
-          >
-            <div className="p-2 rounded-xl transition-all duration-300 text-cyan-500 group-hover:scale-110">
-              <LogOut className="w-5 h-5" />
-            </div>
-          </button>
-        </div>
-
-      </aside>
+      {/* Control Bar - Desktop */}
+      <ControlBar
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        onLogout={logout}
+        currency={currency}
+        onCurrencyChange={setCurrency}
+        fxRate={summary?.metrics?.exchange_rate_to_display}
+        availableCurrencies={settingsQuery.data?.available_currencies}
+        onSettingsClick={() => handleTabChange('settings')}
+        onUserClick={handleUserIconClick}
+        user={user}
+      />
 
       <CommandPalette
         isOpen={isCommandPaletteOpen}
@@ -700,8 +667,8 @@ export default function Home() {
         currentIndices={summary?.metrics?.indices}
       />
 
-      <header className="sticky top-0 z-50 w-full border-b border-border bg-background/60 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:pr-8 md:pl-[90px] lg:pl-[104px] py-3 sm:py-4 flex justify-between items-center gap-4 sm:gap-8">
+      <header className="sticky top-0 md:top-[61px] z-50 w-full border-b border-border bg-background/60 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:pr-8 py-3 sm:py-4 flex justify-between items-center gap-4 sm:gap-8">
           <div className="flex items-center gap-4">
             {/* Logo and App Title */}
             <div className="flex items-center gap-2 sm:gap-3 transition-all duration-300">
@@ -796,7 +763,7 @@ export default function Home() {
 
       </header >
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:pr-8 pt-6 md:pl-[90px] lg:pl-[104px] transition-all duration-300">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:pr-8 pt-6 transition-all duration-300">
 
 
         {renderTabContent()}

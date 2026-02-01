@@ -21,6 +21,7 @@ interface TabNavigationProps {
     onTabChange: (tab: string) => void;
     onLogout?: () => void;
     side?: 'right' | 'bottom';
+    align?: 'left' | 'right';
 }
 
 const TABS = [
@@ -35,7 +36,7 @@ const TABS = [
     { id: 'dividend', label: 'Dividend', icon: Coins },
 ];
 
-export default function TabNavigation({ activeTab, onTabChange, onLogout, side = 'bottom' }: TabNavigationProps) {
+export default function TabNavigation({ activeTab, onTabChange, onLogout, side = 'bottom', align = 'right' }: TabNavigationProps) {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -91,7 +92,7 @@ export default function TabNavigation({ activeTab, onTabChange, onLogout, side =
                     "absolute overflow-hidden z-[100] transition-all animate-in fade-in zoom-in duration-200",
                     side === 'right'
                         ? "left-full top-0 ml-4 slide-in-from-left-2"
-                        : "right-0 top-full mt-2 slide-in-from-top-2 origin-top-right",
+                        : `${align === 'left' ? 'left-0 origin-top-left' : 'right-0 origin-top-right'} top-full mt-2 slide-in-from-top-2`,
                     "w-56 rounded-2xl border border-border shadow-2xl shadow-black/40"
                 )} style={{ backgroundColor: 'var(--menu-solid)' }}>
                     <div className="p-2 grid gap-1">
