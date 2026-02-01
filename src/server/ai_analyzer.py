@@ -164,7 +164,9 @@ def generate_stock_review(symbol: str, fund_data: dict, ratios_data: dict, force
     }
 
     prompt = f"""
-Analyze the stock {symbol} based on the following financial data and business summary:
+Analyze the stock {symbol} using the provided financial data AND by looking up recent news, earnings reports, and analyst sentiments on the web.
+
+Financial Data:
 {json.dumps(metrics, indent=2)}
 
 Provide a professional investment review covering these specific topics:
@@ -173,7 +175,7 @@ Provide a professional investment review covering these specific topics:
 3. Predictability: Reliability of earnings, historical consistency, and business cyclicality.
 4. Growth Perspective: Future growth drivers, market opportunities, and potential risks.
 
-For each topic, provide a score from 1 to 10.
+For each topic, provide a score from 1 to 10 based on both the data and your web research.
 
 Return the response STRICTLY as a JSON object with the following structure:
 {{
@@ -198,6 +200,7 @@ Do not include any other markdown formatting or explanations outside the JSON bl
         "contents": [{
             "parts": [{"text": prompt}]
         }],
+        "tools": [{"google_search": {}}],
         "generationConfig": {
             "response_mime_type": "application/json"
         }

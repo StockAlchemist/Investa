@@ -697,6 +697,7 @@ export default function Home() {
         isOpen={isIndexGraphModalOpen}
         onClose={() => setIsIndexGraphModalOpen(false)}
         benchmarks={benchmarks}
+        currentIndices={summary?.metrics?.indices}
       />
 
       <header className="sticky top-0 z-50 w-full border-b border-border bg-background/60 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">

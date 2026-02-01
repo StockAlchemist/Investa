@@ -484,50 +484,59 @@ def process_screener_results(
                 else:
                     mos = None
                 
-                # Use cached AI markers
+                # --- AI REVIEW DATA LOADING ---
+                # Check timestamps to decide between Cache vs Disk
+                ai_cache_path = os.path.join(ai_cache_dir, f"{sym.upper()}_analysis.json")
+                use_ai_from_disk = False
+                
+                # Default to cache values
                 has_ai = cached.get("has_ai_review") if "has_ai_review" in cached else (cached.get("ai_summary") is not None)
                 ai_score = cached.get("ai_score")
-                ai_summary = None
-                
-                ai_moat = None
-                ai_financial_strength = None
-                ai_predictability = None
-                ai_growth = None
-                
-                # --- FALLBACK: If DB has no AI info, check pre-scanned list ---
-                if not has_ai or ai_score is None:
-                    if sym.upper() in existing_reviews:
-                        ai_cache_path = os.path.join(ai_cache_dir, f"{sym.upper()}_analysis.json")
-                        if os.path.exists(ai_cache_path):
-                            try:
-                                with open(ai_cache_path, 'r') as f:
-                                    ai_data = json.load(f)
-                                    analysis_obj = ai_data.get("analysis", {})
-                                    scorecard = analysis_obj.get("scorecard", {})
-                                    
-                                    ai_moat = scorecard.get("moat")
-                                    ai_financial_strength = scorecard.get("financial_strength")
-                                    ai_predictability = scorecard.get("predictability")
-                                    ai_growth = scorecard.get("growth")
-                                    
-                                    vals = [v for v in [ai_moat, ai_financial_strength, ai_predictability, ai_growth] if isinstance(v, (int, float))]
-                                    if vals:
-                                        ai_score = sum(vals) / len(vals)
-                                        has_ai = True
-                                        ai_summary = analysis_obj.get("summary")
-                                    
-                            except Exception as e_ai:
-                                logging.warning(f"Failed to load AI cache for {sym}: {e_ai}")
+                ai_summary = cached.get("ai_summary")
+                ai_moat = cached.get("ai_moat")
+                ai_financial_strength = cached.get("ai_financial_strength")
+                ai_predictability = cached.get("ai_predictability")
+                ai_growth = cached.get("ai_growth")
 
-                # If we still don't have individual metrics from fallback, try to get from cache object
-                if ai_moat is None: ai_moat = cached.get("ai_moat")
-                if ai_financial_strength is None: ai_financial_strength = cached.get("ai_financial_strength")
-                if ai_predictability is None: ai_predictability = cached.get("ai_predictability")
-                if ai_growth is None: ai_growth = cached.get("ai_growth")
-                
-                # If we didn't get ai_summary from fallback, get it from cache
-                if ai_summary is None:
-                    ai_summary = cached.get("ai_summary")
+                if os.path.exists(ai_cache_path):
+                    try:
+                        file_mtime = os.path.getmtime(ai_cache_path)
+                        cache_ts_str = cached.get("updated_at")
+                        cache_ts = 0
+                        if cache_ts_str:
+                            try:
+                                cache_ts = datetime.fromisoformat(cache_ts_str).timestamp()
+                            except ValueError:
+                                pass
+                        
+                        # If file is newer than cache (plus small buffer), or cache has no AI data
+                        # Buffer of 1s to avoid race conditions where they are created "simultaneously"
+                        if file_mtime > (cache_ts + 1.0) or not has_ai:
+                            use_ai_from_disk = True
+                    except OSError:
+                        pass
+
+                if use_ai_from_disk:
+                    try:
+                        with open(ai_cache_path, 'r') as f:
+                            ai_data = json.load(f)
+                            analysis_obj = ai_data.get("analysis", {})
+                            scorecard = analysis_obj.get("scorecard", {})
+                            
+                            ai_moat = scorecard.get("moat")
+                            ai_financial_strength = scorecard.get("financial_strength")
+                            ai_predictability = scorecard.get("predictability")
+                            ai_growth = scorecard.get("growth")
+                            
+                            vals = [v for v in [ai_moat, ai_financial_strength, ai_predictability, ai_growth] if isinstance(v, (int, float))]
+                            if vals:
+                                ai_score = sum(vals) / len(vals)
+                                has_ai = True
+                                ai_summary = analysis_obj.get("summary")
+                                logging.info(f"Screener: Detected new AI review for {sym}. Reloading from disk.")
+                            
+                    except Exception as e_ai:
+                        logging.warning(f"Failed to load AI cache for {sym}: {e_ai}")
 
                 return {
                     "symbol": sym,

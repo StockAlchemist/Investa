@@ -23,6 +23,7 @@ interface IndexGraphModalProps {
     isOpen: boolean;
     onClose: () => void;
     benchmarks: string[];
+    currentIndices?: Record<string, any>;
 }
 
 const COLORS = [
@@ -73,7 +74,7 @@ const CustomTooltip = ({ active, payload, label, period }: any) => {
     return null;
 };
 
-export default function IndexGraphModal({ isOpen, onClose, benchmarks }: IndexGraphModalProps) {
+export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIndices }: IndexGraphModalProps) {
     const [period, setPeriod] = useState('1y');
     const [data, setData] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
@@ -109,9 +110,8 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks }: IndexGr
     }, [isOpen, benchmarks, period]);
 
     const activeBenchmarks = useMemo(() => {
-        if (data.length === 0) return [];
-        return Object.keys(data[0]).filter(k => k !== 'date' && !k.endsWith('_price'));
-    }, [data]);
+        return benchmarks;
+    }, [benchmarks]);
 
     const currentReturns = useMemo(() => {
         if (data.length === 0) return {};
@@ -150,16 +150,30 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks }: IndexGr
                                     </div>
                                     <div className="flex items-center gap-6">
                                         {activeBenchmarks.map((bench, idx) => {
-                                            const val = currentReturns[bench];
-                                            if (val === undefined) return null;
+                                            const graphLatest = currentReturns[bench];
+                                            const graphPrice = currentReturns[`${bench}_price`];
+
+                                            // Normalize names for lookup (Backend uses "Dow" and "Nasdaq")
+                                            const lookupName = bench === 'Dow Jones' ? 'Dow' : (bench === 'NASDAQ' ? 'Nasdaq' : bench);
+
+                                            // Find live data by name
+                                            const liveIndex = currentIndices ? Object.values(currentIndices).find((i: any) => i.name === lookupName || i.name === bench) : null;
+
+                                            const displayPrice = liveIndex?.price ?? graphPrice;
+                                            const displayPct = liveIndex?.changesPercentage ?? graphLatest;
+
+                                            if (displayPct === undefined) return null;
                                             return (
                                                 <div key={bench} className="flex flex-col items-end">
                                                     <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">{bench}</span>
+                                                    <span className="text-lg font-bold tracking-tighter tabular-nums text-foreground">
+                                                        {displayPrice !== undefined ? displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'}
+                                                    </span>
                                                     <span className={cn(
-                                                        "text-lg font-bold tracking-tighter tabular-nums",
-                                                        val >= 0 ? "text-emerald-500" : "text-rose-500"
+                                                        "text-[10px] font-bold tracking-tight tabular-nums",
+                                                        displayPct >= 0 ? "text-emerald-500" : "text-rose-500"
                                                     )}>
-                                                        {val >= 0 ? '+' : ''}{val.toFixed(2)}%
+                                                        {displayPct >= 0 ? '+' : ''}{displayPct.toFixed(2)}%
                                                     </span>
                                                 </div>
                                             );
@@ -168,8 +182,6 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks }: IndexGr
                                 </div>
                                 <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium italic">
                                     <span className="text-cyan-500 font-bold not-italic">Indices Performance</span>
-                                    <span>•</span>
-                                    <span>Relative return percentage from start of period</span>
                                 </div>
                             </div>
                         </div>
