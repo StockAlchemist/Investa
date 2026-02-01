@@ -74,6 +74,23 @@ const GROUPING_LABEL_MAP: Record<string, string> = {
     'Country': 'Country',
 };
 
+const INVESTMENT_TYPE_MAP: Record<string, string> = {
+    'EQUITY': 'Stocks',
+    'ETF': 'ETFs',
+    'CASH': 'Cash',
+    'MUTUALFUND': 'Mutual Funds',
+};
+
+const CURRENCY_MAP: Record<string, string> = {
+    'USD': 'US Dollar',
+    'THB': 'Thai Baht',
+    'EUR': 'Euro',
+    'GBP': 'British Pound',
+    'SGD': 'Singapore Dollar',
+    'JPY': 'Japanese Yen',
+    'HKD': 'Hong Kong Dollar',
+};
+
 const normalizeMarketName = (market: string): string => {
     if (!market) return 'Unknown';
     const m = market.toUpperCase();
@@ -425,12 +442,14 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                 if (h.Symbol === 'AAPL') console.log(`DEBUG_MARKET: AAPL -> Raw: ${rawExchange}, Norm: ${exchange}`, h);
                 groupKey = exchange;
             } else if (groupBy === 'quoteType') {
-                groupKey = (h as any)['quoteType'] || 'Other';
+                const rawType = (h as any)['quoteType'] || 'Other';
+                groupKey = INVESTMENT_TYPE_MAP[rawType] || rawType;
             } else if (groupBy === 'Country') {
                 // Prioritize 'geography' over 'Country'
                 groupKey = (h as any)['geography'] || (h as any)['Country'] || 'Unknown';
             } else if (groupBy === 'Currency') {
-                groupKey = (h as any)['Local Currency'] || 'Unknown';
+                const rawCurrency = (h as any)['Local Currency'] || 'Unknown';
+                groupKey = CURRENCY_MAP[rawCurrency] || rawCurrency;
             } else {
                 const val = getValue(h, groupBy);
                 groupKey = val ? String(val) : 'Other';

@@ -136,62 +136,63 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                 {/* Header Section */}
                 <div className="sticky top-0 z-50 bg-card border-b border-border flex-shrink-0 shadow-sm">
                     <div className="p-8 pb-6 flex justify-between items-start">
-                        <div className="flex items-center gap-6 flex-1 text-foreground">
+                        <div className="flex items-center gap-6 text-foreground">
                             {/* Icon Stack/Placeholder */}
                             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#0097b2] to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 flex-shrink-0 p-3 overflow-hidden">
                                 <TrendingUp className="w-full h-full text-white" />
                             </div>
 
-                            <div className="flex-1 min-w-0 pr-4">
-                                <div className="flex items-center justify-between gap-4 mb-1">
-                                    <div className="flex items-center gap-3 truncate">
-                                        <h2 className="text-3xl font-black tracking-tight text-foreground">Markets</h2>
-                                        <Badge variant="secondary" className="font-black text-[10px] uppercase tracking-widest px-3">Benchmarks</Badge>
-                                    </div>
-                                    <div className="flex items-center gap-6">
-                                        {activeBenchmarks.map((bench, idx) => {
-                                            const graphLatest = currentReturns[bench];
-                                            const graphPrice = currentReturns[`${bench}_price`];
-
-                                            // Normalize names for lookup (Backend uses "Dow" and "Nasdaq")
-                                            const lookupName = bench === 'Dow Jones' ? 'Dow' : (bench === 'NASDAQ' ? 'Nasdaq' : bench);
-
-                                            // Find live data by name
-                                            const liveIndex = currentIndices ? Object.values(currentIndices).find((i: any) => i.name === lookupName || i.name === bench) : null;
-
-                                            const displayPrice = liveIndex?.price ?? graphPrice;
-                                            const displayPct = liveIndex?.changesPercentage ?? graphLatest;
-
-                                            if (displayPct === undefined) return null;
-                                            return (
-                                                <div key={bench} className="flex flex-col items-end">
-                                                    <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">{bench}</span>
-                                                    <span className="text-lg font-bold tracking-tighter tabular-nums text-foreground">
-                                                        {displayPrice !== undefined ? displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'}
-                                                    </span>
-                                                    <span className={cn(
-                                                        "text-[10px] font-bold tracking-tight tabular-nums",
-                                                        displayPct >= 0 ? "text-emerald-500" : "text-rose-500"
-                                                    )}>
-                                                        {displayPct >= 0 ? '+' : ''}{displayPct.toFixed(2)}%
-                                                    </span>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
+                            <div className="flex flex-col">
+                                <div className="flex items-center gap-4 mb-0.5">
+                                    <h2 className="text-3xl font-black tracking-tight text-foreground">Markets</h2>
+                                    <Badge variant="secondary" className="font-black text-[10px] uppercase tracking-widest px-3">Benchmarks</Badge>
                                 </div>
-                                <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium italic">
-                                    <span className="text-cyan-500 font-bold not-italic">Indices Performance</span>
+                                <div className="flex items-center gap-2 text-sm text-cyan-500 font-bold">
+                                    Indices Performance
                                 </div>
                             </div>
                         </div>
 
-                        <button
-                            onClick={onClose}
-                            className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all duration-200 text-muted-foreground hover:text-foreground group"
-                        >
-                            <X className="w-7 h-7 group-hover:rotate-90 transition-transform duration-300" />
-                        </button>
+                        <div className="flex items-start gap-8">
+                            <div className="flex items-center gap-8 mr-6">
+                                {activeBenchmarks.map((bench, idx) => {
+                                    const graphLatest = currentReturns[bench];
+                                    const graphPrice = currentReturns[`${bench}_price`];
+
+                                    // Normalize names for lookup (Backend uses "Dow" and "Nasdaq")
+                                    const lookupName = bench === 'Dow Jones' ? 'Dow' : (bench === 'NASDAQ' ? 'Nasdaq' : bench);
+
+                                    // Find live data by name
+                                    const liveIndex = currentIndices ? Object.values(currentIndices).find((i: any) => i.name === lookupName || i.name === bench) : null;
+
+                                    const displayPrice = liveIndex?.price ?? graphPrice;
+                                    const displayPct = liveIndex?.changesPercentage ?? graphLatest;
+
+                                    if (displayPct === undefined) return null;
+                                    return (
+                                        <div key={bench} className="flex flex-col items-end">
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/80 mb-0.5">{bench}</span>
+                                            <span className="text-xl font-bold tracking-tighter tabular-nums text-foreground">
+                                                {displayPrice !== undefined ? displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'}
+                                            </span>
+                                            <span className={cn(
+                                                "text-[10px] font-bold tracking-tight tabular-nums",
+                                                displayPct >= 0 ? "text-emerald-500" : "text-rose-500"
+                                            )}>
+                                                {displayPct >= 0 ? '+' : ''}{displayPct.toFixed(2)}%
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            <button
+                                onClick={onClose}
+                                className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all duration-200 text-muted-foreground hover:text-foreground group"
+                            >
+                                <X className="w-7 h-7 group-hover:rotate-90 transition-transform duration-300" />
+                            </button>
+                        </div>
                     </div>
 
                     {/* Range Selector Integration */}
@@ -278,18 +279,18 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                         {activeBenchmarks.map((bench, idx) => {
                             const val = currentReturns[bench];
                             return (
-                                <div key={bench} className="bg-card/40 border border-border/50 p-6 rounded-[2rem] hover:bg-card/60 transition-all duration-300 group">
+                                <div key={bench} className="bg-card/40 border border-border/50 p-6 rounded-[2rem] hover:bg-card/60 transition-all duration-300 group flex flex-col items-center justify-center text-center">
                                     <div className="flex items-center gap-3 mb-4">
                                         <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
                                         <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground group-hover:text-foreground transition-colors">{bench}</span>
                                     </div>
                                     <div className={cn(
-                                        "text-2xl font-black tabular-nums",
+                                        "text-3xl font-black tabular-nums tracking-tight",
                                         val >= 0 ? "text-emerald-500" : "text-rose-500"
                                     )}>
                                         {val !== undefined ? `${val >= 0 ? '+' : ''}${val.toFixed(2)}%` : '--'}
                                     </div>
-                                    <p className="text-[10px] text-muted-foreground mt-2 font-medium">Period performance return</p>
+                                    <p className="text-[10px] text-muted-foreground mt-3 font-medium opacity-60">Period performance return</p>
                                 </div>
                             );
                         })}
@@ -308,7 +309,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                     </div>
                 </div>
             </div>
-        </div>,
+        </div >,
         document.body
     );
 }

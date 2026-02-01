@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Sector } from 'recharts';
 import { Holding } from '@/lib/api';
 import { formatCurrency, cn } from '@/lib/utils';
 import StockIcon from './StockIcon';
@@ -60,6 +60,23 @@ const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, per
                 </span>
             </div>
         </foreignObject>
+    );
+};
+
+const renderActiveShape = (props: any) => {
+    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+    return (
+        <g>
+            <Sector
+                cx={cx}
+                cy={cy}
+                innerRadius={innerRadius}
+                outerRadius={outerRadius + 8}
+                startAngle={startAngle}
+                endAngle={endAngle}
+                fill={fill}
+            />
+        </g>
     );
 };
 
@@ -208,6 +225,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                 {(data && data.length > 0) ? (
                     <ResponsiveContainer width="100%" height="100%" debounce={50}>
                         <PieChart>
+                            {/* @ts-ignore */}
                             <Pie
                                 data={data}
                                 cx="50%"
@@ -218,6 +236,8 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                                 dataKey="value"
                                 onMouseEnter={onPieEnter}
                                 onMouseLeave={onPieLeave}
+                                activeIndex={activeIndex}
+                                activeShape={renderActiveShape}
                                 // Pass forceAllLabels through a closure or similar
                                 label={(props) => renderCustomizedLabel({ ...props, forceAllLabels })}
                                 labelLine={false}
@@ -227,8 +247,8 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                                     <Cell
                                         key={`cell-${index}`}
                                         fill={entry.color}
-                                        strokeWidth={2}
-                                        stroke={index === activeIndex ? "rgba(255,255,255,0.8)" : "transparent"}
+                                        strokeWidth={0}
+                                        fillOpacity={activeIndex === undefined || activeIndex === index ? 1 : 0.3}
                                         className="transition-all duration-300 outline-none"
                                     />
                                 ))}
