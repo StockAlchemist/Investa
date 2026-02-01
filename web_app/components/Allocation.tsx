@@ -30,7 +30,14 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
 
         holdings.forEach(h => {
             const value = (h[marketValueKey] as number) || 0;
-            const category = (h[key] as string) || 'Unknown';
+            // For Country, prioritize 'geography' (from overrides or improved data) over 'Country'
+            let category = 'Unknown';
+            if (key === 'Country') {
+                category = (h['geography'] as string) || (h['Country'] as string) || 'Unknown';
+            } else {
+                category = (h[key] as string) || 'Unknown';
+            }
+
             aggregation[category] = (aggregation[category] || 0) + value;
         });
 
@@ -97,7 +104,7 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
             {renderPieChart("Allocation by Asset Type", assetTypeData)}
             {renderPieChart("Allocation by Sector", sectorData)}
             {renderPieChart("Allocation by Industry", industryData)}
-            {renderPieChart("Allocation by Geography", countryData)}
+            {renderPieChart("Allocation by Country", countryData)}
         </div>
     );
 }

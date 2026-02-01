@@ -1345,9 +1345,15 @@ def _build_summary_rows(
                 "FX Gain/Loss %": fx_gain_loss_pct_holding,
                 "Name": stock_data.get("name", ""),  # Add Company Name
                 "sparkline_7d": stock_data.get("sparkline_7d", []),
+                "exchange": stock_data.get("exchange"),
+                "fullExchangeName": stock_data.get("fullExchangeName"),
+                "quoteType": stock_data.get("quoteType"),
                 "Tags": tags_list,  # Added Tags
             }
         )
+        
+        if symbol == "AAPL":
+            logging.info(f"DEBUG_MARKET: AAPL Data -> Exchange: {stock_data.get('exchange')}, Full: {stock_data.get('fullExchangeName')}, MarketOverride: {data.get('Market')}")
     # --- End Stock/ETF Loop ---
 
     # --- Loop 2: Process Cash Holdings (Per Account - No Aggregation) ---

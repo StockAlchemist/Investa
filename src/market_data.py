@@ -467,8 +467,14 @@ class MarketDataProvider:
                     try:
                         entry_ts = datetime.fromisoformat(ts_str)
                         if (now_ts - entry_ts).days <= METADATA_CACHE_DURATION_DAYS:
-                            results[sym] = cached_meta
-                            continue
+                            # --- 1.1 Cache Validation (Check for new fields) ---
+                            # Ensure 'exchange' key exists (added in v1.1 update)
+                            # If missing, treat as stale/invalid to force re-fetch.
+                            if "exchange" in cached_meta:
+                                results[sym] = cached_meta
+                                continue
+                            else:
+                                logging.debug(f"Metadata cache for {sym} is missing 'exchange' field. Invalidating.")
                     except ValueError:
                         pass
             
@@ -501,6 +507,9 @@ class MarketDataProvider:
                             "currency": info.get("currency"),
                             "sector": info.get("sector"),
                             "industry": info.get("industry"),
+                            "exchange": info.get("exchange"),
+                            "fullExchangeName": info.get("fullExchangeName"),
+                            "quoteType": info.get("quoteType"),
                             "timestamp": now_ts.isoformat()
                         }
                     else:
@@ -510,6 +519,9 @@ class MarketDataProvider:
                             "currency": None, 
                             "sector": None,
                             "industry": None,
+                            "exchange": None,
+                            "fullExchangeName": None,
+                            "quoteType": None,
                             "timestamp": now_ts.isoformat()
                         }
                     
@@ -787,8 +799,8 @@ class MarketDataProvider:
             pass
 
         # --- 2. Caching Logic for Current Quotes (Short-term Price Cache) ---
-        # v10_1M_CACHE: Re-enabled short cache to prevent thread explosion/crash on concurrent requests.
-        cache_key = f"CURRENT_QUOTES_v10_1M_CACHE::{'_'.join(sorted(yf_symbols_to_fetch))}::{'_'.join(sorted(required_currencies))}"
+        # v11_1M_CACHE: Updated to v11 to force refresh for Exchange/Market data.
+        cache_key = f"CURRENT_QUOTES_v11_1M_CACHE::{'_'.join(sorted(yf_symbols_to_fetch))}::{'_'.join(sorted(required_currencies))}"
         cached_quotes = None
         cached_fx = None
         cached_fx_prev = None
@@ -995,6 +1007,9 @@ class MarketDataProvider:
                                     "changesPercentage": change_pct,
                                     "currency": currency.upper(),
                                     "name": name,
+                                    "exchange": meta.get("exchange"),
+                                    "fullExchangeName": meta.get("fullExchangeName"),
+                                    "quoteType": meta.get("quoteType"),
                                     "source": "yf_batch_download_stale_safe" if not is_today else "yf_batch_download",
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
                                     "trailingAnnualDividendRate": fund.get("trailingAnnualDividendRate", 0),

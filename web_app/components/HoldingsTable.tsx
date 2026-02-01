@@ -5,7 +5,7 @@ import { exportToCSV } from '../lib/export';
 import { Holding, Lot, addToWatchlist, removeFromWatchlist, WatchlistItem, updateHoldingTags } from '../lib/api';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { AreaChart, Area, Line, ResponsiveContainer, YAxis, ReferenceLine } from 'recharts';
-import { Search, X, Filter, LayoutGrid, Eye, EyeOff, Layers, Download, Building2, UserCircle, Tag, PenLine, Save, Table as TableIcon, Settings2 } from 'lucide-react';
+import { Search, X, Filter, LayoutGrid, Eye, EyeOff, Layers, Download, Building2, UserCircle, Tag, PenLine, Save, Table as TableIcon, Settings2, ChevronDown, ChevronRight, ListFilter } from 'lucide-react';
 
 import { Skeleton } from './ui/skeleton';
 import { useStockModal } from '@/context/StockModalContext';
@@ -63,6 +63,27 @@ interface SortConfig {
     direction: SortDirection;
 }
 
+type GroupingOption = 'Market' | 'Currency' | 'Sector' | 'Industry' | 'quoteType' | 'Country' | null;
+
+const GROUPING_LABEL_MAP: Record<string, string> = {
+    'Market': 'Market',
+    'Currency': 'Currency',
+    'Sector': 'Sector',
+    'Industry': 'Industry',
+    'quoteType': 'Investment Type',
+    'Country': 'Country',
+};
+
+const normalizeMarketName = (market: string): string => {
+    if (!market) return 'Unknown';
+    const m = market.toUpperCase();
+    if (m.includes('NASDAQ') || m === 'NMS' || m === 'NGM' || m === 'NCM') return 'NASDAQ';
+    if (m === 'NYQ' || m === 'NYSE' || m.includes('NEW YORK')) return 'NYSE';
+    if (m === 'ASE' || m === 'AMEX') return 'AMEX';
+    if (m === 'PCX' || m === 'ARCA' || m.includes('ARCA')) return 'NYSE Arca';
+    return market; // Return original if no match
+};
+
 export default function HoldingsTable({ holdings, currency, isLoading = false, showClosed = false, onToggleShowClosed }: HoldingsTableProps) {
     const queryClient = useQueryClient();
 
@@ -111,6 +132,12 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
     const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
     const sectorMenuRef = useRef<HTMLDivElement>(null);
     const accountMenuRef = useRef<HTMLDivElement>(null);
+    const groupByMenuRef = useRef<HTMLDivElement>(null);
+
+    // --- Grouping State ---
+    const [groupBy, setGroupBy] = useState<GroupingOption>(null);
+    const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+    const [isGroupByMenuOpen, setIsGroupByMenuOpen] = useState(false);
 
     // --- Tags Editing State ---
     const [editingTags, setEditingTags] = useState<{ symbol: string, account: string, currentTags: string } | null>(null);
@@ -209,6 +236,9 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
             }
             if (accountMenuRef.current && !accountMenuRef.current.contains(event.target as Node)) {
                 setIsAccountMenuOpen(false);
+            }
+            if (groupByMenuRef.current && !groupByMenuRef.current.contains(event.target as Node)) {
+                setIsGroupByMenuOpen(false);
             }
         }
         document.addEventListener("mousedown", handleClickOutside);
@@ -375,6 +405,139 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
 
     }, [filteredHoldings, visibleColumns, getValue]);
 
+    // --- Grouping Logic ---
+    const groupedHoldings = useMemo(() => {
+        if (!groupBy) return null;
+
+        const groups = new Map<string, {
+            key: string;
+            holdings: Holding[];
+            aggregates: any;
+        }>();
+
+        aggregatedHoldings.forEach(h => {
+            // Determine group key
+            let groupKey = 'Other';
+            if (groupBy === 'Market') {
+                // Use 'fullExchangeName' or 'exchange' if available, then fallback to 'Market' or 'Unknown'
+                const rawExchange = (h as any)['fullExchangeName'] || (h as any)['exchange'] || (h as any)['Market'] || 'Unknown';
+                const exchange = normalizeMarketName(rawExchange);
+                if (h.Symbol === 'AAPL') console.log(`DEBUG_MARKET: AAPL -> Raw: ${rawExchange}, Norm: ${exchange}`, h);
+                groupKey = exchange;
+            } else if (groupBy === 'quoteType') {
+                groupKey = (h as any)['quoteType'] || 'Other';
+            } else if (groupBy === 'Country') {
+                // Prioritize 'geography' over 'Country'
+                groupKey = (h as any)['geography'] || (h as any)['Country'] || 'Unknown';
+            } else if (groupBy === 'Currency') {
+                groupKey = (h as any)['Local Currency'] || 'Unknown';
+            } else {
+                const val = getValue(h, groupBy);
+                groupKey = val ? String(val) : 'Other';
+            }
+
+            if (!groups.has(groupKey)) {
+                groups.set(groupKey, {
+                    key: groupKey,
+                    holdings: [],
+                    aggregates: {
+                        'Mkt Val': 0,
+                        'Day Chg': 0,
+                        'Cost Basis': 0,
+                        'Unreal. G/L': 0,
+                        'Real. G/L': 0,
+                        'Divs': 0,
+                        'Fees': 0,
+                        'Total G/L': 0,
+                    }
+                });
+            }
+
+            const group = groups.get(groupKey)!;
+            group.holdings.push(h);
+
+            // Accumulate Aggregates
+            const getNum = (key: string) => {
+                const val = getValue(h, key);
+                return typeof val === 'number' ? val : 0;
+            };
+
+            group.aggregates['Mkt Val'] += getNum('Mkt Val');
+            group.aggregates['Day Chg'] += getNum('Day Chg');
+            group.aggregates['Cost Basis'] += getNum('Cost Basis');
+            group.aggregates['Unreal. G/L'] += getNum('Unreal. G/L');
+            group.aggregates['Real. G/L'] += getNum('Real. G/L');
+            group.aggregates['Divs'] += getNum('Divs');
+            group.aggregates['Fees'] += getNum('Fees');
+            group.aggregates['Total G/L'] += getNum('Total G/L');
+        });
+
+        // Calculate Percentages for Groups and Sort Items
+        return Array.from(groups.values()).map(g => {
+            // Calculate Group Percentages
+            if (g.aggregates['Mkt Val'] !== 0 && g.aggregates['Mkt Val'] - g.aggregates['Day Chg'] !== 0) {
+                g.aggregates['Day Chg %'] = (g.aggregates['Day Chg'] / (g.aggregates['Mkt Val'] - g.aggregates['Day Chg'])) * 100;
+            }
+            if (g.aggregates['Cost Basis'] !== 0) {
+                g.aggregates['Unreal. G/L %'] = (g.aggregates['Unreal. G/L'] / g.aggregates['Cost Basis']) * 100;
+                g.aggregates['Total Ret %'] = (g.aggregates['Total G/L'] / g.aggregates['Cost Basis']) * 100;
+            }
+
+            // Sort items within group
+            g.holdings.sort((a, b) => {
+                const valA = getValue(a, sortConfig.key);
+                const valB = getValue(b, sortConfig.key);
+
+                if (valA === null || valA === undefined) return 1;
+                if (valB === null || valB === undefined) return -1;
+
+                if (typeof valA === 'string' && typeof valB === 'string') {
+                    return sortConfig.direction === 'asc'
+                        ? valA.localeCompare(valB)
+                        : valB.localeCompare(valA);
+                }
+
+                const numA = typeof valA === 'number' ? valA : 0;
+                const numB = typeof valB === 'number' ? valB : 0;
+                return sortConfig.direction === 'asc' ? (numA - numB) : (numB - numA);
+            });
+
+            return g;
+        }).sort((a, b) => b.aggregates['Mkt Val'] - a.aggregates['Mkt Val']); // Sort groups by Mkt Val largely
+
+    }, [aggregatedHoldings, groupBy, getValue, sortConfig]);
+
+    const toggleGroup = (groupKey: string) => {
+        setExpandedGroups(prev => {
+            const next = new Set(prev);
+            if (next.has(groupKey)) next.delete(groupKey);
+            else next.add(groupKey);
+            return next;
+        });
+    };
+
+    // Auto-expand all groups when grouping changes
+    useEffect(() => {
+        if (groupedHoldings) {
+            setExpandedGroups(new Set(groupedHoldings.map(g => g.key)));
+        }
+    }, [groupBy]); // This might cause re-expansion on data updates, which might be annoying if user collapsed. 
+    // Better: Only expand if expandedGroups is empty? 
+    // Or just depend on `groupBy` changing. 
+    // If we put `groupedHoldings` dependency, it triggers on every price update.
+    // The implementation above with [groupBy] roughly works but `groupedHoldings` is derived. 
+    // Best to verify if `groupBy` changed. 
+
+    // Actually, we can just use a separate effect for when `groupBy` changes identity.
+    // The current effect depends on `groupBy` implicitly because of the component render, 
+    // but cleaner to make it explicit or use a ref to track prev groupBy.
+    // For simplicity, let's leave it manual or auto-expand on setGroupBy.
+
+    const handleSetGroupBy = (option: GroupingOption) => {
+        setGroupBy(option);
+        // Expanded groups will be handled by effect or reset
+    };
+
     const sortedHoldings = useMemo(() => {
         return [...aggregatedHoldings].sort((a, b) => {
             const valA = getValue(a, sortConfig.key);
@@ -397,13 +560,17 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
 
     const totalItemsCount = useMemo(() => {
         if (!holdings) return 0;
+        if (groupBy) {
+            return groupedHoldings?.length || 0; // Count groups? or items? Usually items.
+            // If grouped, existing count logic (aggregatedHoldings.length) is still valid for "Total Items" 
+            // but maybe we want to show "X Groups". 
+            // Let's stick to total holdings count.
+        }
         if (visibleColumns.includes('Account')) {
             return holdings.length;
         }
-        // In aggregated mode (no Account column), count unique symbols in the *original* holdings
-        // Note: Use a set of symbols from the raw 'holdings' prop
         return new Set(holdings.map(h => h.Symbol)).size;
-    }, [holdings, visibleColumns]);
+    }, [holdings, visibleColumns, groupBy, groupedHoldings]);
 
     if (!isLoading && (!holdings || holdings.length === 0)) {
         return <div className="p-4 text-center text-muted-foreground">No holdings found.</div>;
@@ -516,7 +683,10 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         <div className="flex items-center gap-3">
                             <h2 className="text-lg font-bold text-foreground">Holdings</h2>
                             <span className="text-xs font-medium text-muted-foreground bg-secondary px-2 py-0.5 rounded-full border border-border">
-                                {aggregatedHoldings.length} / {totalItemsCount}
+                                {groupBy
+                                    ? `${aggregatedHoldings.length} items in ${groupedHoldings?.length || 0} groups`
+                                    : `${aggregatedHoldings.length} / ${totalItemsCount}`
+                                }
                             </span>
                         </div>
 
@@ -544,6 +714,51 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
 
                     {/* Filters & Actions Group - Consolidated and Compact */}
                     <div className="flex flex-wrap items-center gap-1.5">
+
+                        {/* Group By Filter */}
+                        <div className="relative" ref={groupByMenuRef}>
+                            <button
+                                onClick={() => setIsGroupByMenuOpen(!isGroupByMenuOpen)}
+                                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors
+                                ${groupBy
+                                        ? 'bg-[#0097b2] text-white shadow-sm border-transparent'
+                                        : 'text-foreground bg-secondary border-border hover:bg-accent/10'
+                                    }`}
+                            >
+                                <ListFilter className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">{groupBy ? `By ${GROUPING_LABEL_MAP[groupBy]}` : 'Group'}</span>
+                            </button>
+                            {isGroupByMenuOpen && (
+                                <div className="absolute left-0 z-50 mt-1.5 w-48 origin-top-left bg-white dark:bg-zinc-950 border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none">
+                                    <div className="py-1">
+                                        <label className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                name="grouping"
+                                                checked={groupBy === null}
+                                                onChange={() => handleSetGroupBy(null)}
+                                                className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded-full bg-secondary"
+                                            />
+                                            <span className="ml-2">Do not group</span>
+                                        </label>
+                                        <hr className="my-1 border-border" />
+                                        {Object.entries(GROUPING_LABEL_MAP).map(([key, label]) => (
+                                            <label key={key} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="grouping"
+                                                    checked={groupBy === key}
+                                                    onChange={() => handleSetGroupBy(key as GroupingOption)}
+                                                    className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded-full bg-secondary"
+                                                />
+                                                <span className="ml-2">{label}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
                         {/* Sector Filter */}
                         <div className="relative" ref={sectorMenuRef}>
                             <button
@@ -742,137 +957,345 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                         ))}
                                     </tr>
                                 ))
-                            ) : visibleHoldings.map((holding, idx) => (
-                                <React.Fragment key={`${holding.Symbol}-${idx}`}>
-                                    <tr className="hover:bg-accent/5 transition-colors">
-                                        {visibleColumns.map(header => {
-                                            const val = getValue(holding, header);
-                                            // Use tabular-nums for numeric columns to ensure digit alignment
-                                            const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
-                                            const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
+                            ) : groupBy && groupedHoldings ? (
+                                groupedHoldings.map((group) => (
+                                    <React.Fragment key={group.key}>
+                                        {/* Group Header Row */}
+                                        <tr
+                                            className="bg-secondary/30 hover:bg-secondary/50 cursor-pointer transition-colors"
+                                            onClick={() => toggleGroup(group.key)}
+                                        >
+                                            <td colSpan={visibleColumns.length} className="px-4 py-3">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                        {expandedGroups.has(group.key) ? (
+                                                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                                        ) : (
+                                                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                                        )}
+                                                        <span className="font-semibold text-foreground">{group.key}</span>
+                                                        <span className="text-xs text-muted-foreground bg-secondary border border-border px-1.5 py-0.5 rounded-full">
+                                                            {group.holdings.length}
+                                                        </span>
+                                                    </div>
 
-                                            return (
-                                                <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')}`}>
-                                                    {header === '7d Trend' ? (
-                                                        <div className="h-10 w-28 ml-auto">
-                                                            {val && Array.isArray(val) && val.length > 1 ? (
-                                                                <ResponsiveContainer width="100%" height="100%">
-                                                                    <AreaChart data={val.map((v, i) => ({ value: v, index: i }))}>
-                                                                        <defs>
-                                                                            {(() => {
-                                                                                const baseline = val[0];
-                                                                                const min = Math.min(...val);
-                                                                                const max = Math.max(...val);
-                                                                                const range = max - min;
-                                                                                const off = range <= 0 ? 0 : (max - baseline) / range;
-
-                                                                                return (
-                                                                                    <>
-                                                                                        <linearGradient id={`splitFill-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
-                                                                                            <stop offset={off} stopColor="#10b981" stopOpacity={0.15} />
-                                                                                            <stop offset={off} stopColor="#ef4444" stopOpacity={0.15} />
-                                                                                        </linearGradient>
-                                                                                        <linearGradient id={`splitStroke-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
-                                                                                            <stop offset={off} stopColor="#10b981" stopOpacity={1} />
-                                                                                            <stop offset={off} stopColor="#ef4444" stopOpacity={1} />
-                                                                                        </linearGradient>
-                                                                                    </>
-                                                                                );
-                                                                            })()}
-                                                                        </defs>
-                                                                        <YAxis hide domain={['dataMin', 'dataMax']} />
-                                                                        <ReferenceLine y={val[0]} stroke="#71717a" strokeDasharray="2 2" strokeOpacity={0.3} />
-                                                                        <Area
-                                                                            type="monotone"
-                                                                            dataKey="value"
-                                                                            baseValue={val[0]}
-                                                                            stroke={`url(#splitStroke-${holding.Symbol})`}
-                                                                            fill={`url(#splitFill-${holding.Symbol})`}
-                                                                            strokeWidth={1.5}
-                                                                            isAnimationActive={false}
-                                                                            dot={(props: any) => {
-                                                                                const { cx, cy, index } = props;
-                                                                                if (index === val.length - 1) {
-                                                                                    // Calculate color for dot based on value vs baseline
-                                                                                    const color = val[val.length - 1] >= val[0] ? "#10b981" : "#ef4444";
-                                                                                    return (
-                                                                                        <circle key="dot" cx={cx} cy={cy} r={2} fill={color} stroke="none" />
-                                                                                    );
-                                                                                }
-                                                                                return <React.Fragment key={index} />;
-                                                                            }}
-                                                                        />
-                                                                    </AreaChart>
-                                                                </ResponsiveContainer>
-                                                            ) : (
-                                                                <div className="h-full w-full flex items-center justify-center text-[10px] text-muted-foreground/30">
-                                                                    no data
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    ) : header === 'Symbol' ? (
-                                                        <div className="flex items-center justify-start gap-3">
-                                                            <WatchlistStar symbol={val as string} size="md" />
-                                                            <button
-                                                                onClick={() => openStockDetail(val as string, currency)}
-                                                                className="font-semibold text-foreground hover:text-cyan-500 transition-colors cursor-pointer"
-                                                            >
-                                                                {formatValue(val, header)}
-                                                            </button>
-                                                        </div>
-                                                    ) : header === 'Tags' ? (
-                                                        <div className="flex items-center justify-end gap-2 group/tags min-w-[120px]">
-                                                            <div className="flex flex-wrap gap-1 justify-end">
-                                                                {Array.isArray(val) && val.length > 0 ? (
-                                                                    val.map((tag: string, i: number) => (
-                                                                        <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300">
-                                                                            {tag}
-                                                                        </span>
-                                                                    ))
-                                                                ) : (
-                                                                    <span className="text-muted-foreground italic text-xs opacity-0 group-hover/tags:opacity-50 transition-opacity">Add tag</span>
-                                                                )}
+                                                    {/* Group Summaries for Visible Columns */}
+                                                    <div className="flex items-center gap-6 pr-2">
+                                                        {visibleColumns.includes('Mkt Val') && (
+                                                            <div className="text-sm">
+                                                                <span className="text-xs text-muted-foreground mr-1">Mkt:</span>
+                                                                <span className="font-medium tabular-nums">{formatValue(group.aggregates['Mkt Val'], 'Mkt Val')}</span>
                                                             </div>
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    const tags = Array.isArray(val) ? val : [];
-                                                                    const acc = formatValue(getValue(holding, "Account"), "Account") as string;
-                                                                    handleEditTags(holding.Symbol, acc, tags);
-                                                                }}
-                                                                className="text-muted-foreground hover:text-cyan-500 opacity-0 group-hover/tags:opacity-100 transition-opacity p-1"
-                                                                title="Edit Tags"
-                                                            >
-                                                                <PenLine className="h-3 w-3" />
-                                                            </button>
-                                                        </div>
-                                                    ) : (
-                                                        formatValue(val, header)
-                                                    )}
-                                                </td>
-                                            );
-                                        })}
-                                    </tr>
-                                    {showLots && holding.lots && holding.lots.length > 0 && (
-                                        holding.lots.map((lot, lotIdx) => (
-                                            <tr key={`${holding.Symbol}-lot-${lotIdx}`} className="bg-zinc-50/50 dark:bg-zinc-900/40">
+                                                        )}
+                                                        {visibleColumns.includes('Day Chg') && (
+                                                            <div className="text-sm hidden sm:block">
+                                                                <span className="text-xs text-muted-foreground mr-1">Day:</span>
+                                                                <span className={`${getCellClass(group.aggregates['Day Chg'], 'Day Chg')} tabular-nums`}>
+                                                                    {formatValue(group.aggregates['Day Chg'], 'Day Chg')}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                        {visibleColumns.includes('Day Chg %') && (
+                                                            <div className="text-sm hidden sm:block">
+                                                                <span className={`${getCellClass(group.aggregates['Day Chg'], 'Day Chg %')} tabular-nums`}>
+                                                                    {formatValue(group.aggregates['Day Chg %'], 'Day Chg %')}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                        {visibleColumns.includes('Unreal. G/L') && (
+                                                            <div className="text-sm hidden md:block">
+                                                                <span className="text-xs text-muted-foreground mr-1">Unreal:</span>
+                                                                <span className={`${getCellClass(group.aggregates['Unreal. G/L'], 'Unreal. G/L')} tabular-nums`}>
+                                                                    {formatValue(group.aggregates['Unreal. G/L'], 'Unreal. G/L')}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {/* Group Items */}
+                                        {expandedGroups.has(group.key) && group.holdings.map((holding, idx) => (
+                                            <tr key={`${holding.Symbol}-${idx}`} className="hover:bg-accent/5 transition-colors">
                                                 {visibleColumns.map(header => {
-                                                    const holdingPrice = getValue(holding, "Price") as number;
-                                                    const val = getLotValue(lot, header, holdingPrice);
+                                                    const val = getValue(holding, header);
                                                     const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
+                                                    const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
 
                                                     return (
-                                                        <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-t border-dashed border-border/40 ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')}`}>
-                                                            {header === 'Symbol' && <span className="text-[10px] opacity-50">↳</span>}
-                                                            {formatValue(val, header)}
+                                                        <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')}`}>
+                                                            {header === '7d Trend' ? (
+                                                                <div className="h-10 w-28 ml-auto">
+                                                                    {val && Array.isArray(val) && val.length > 1 ? (
+                                                                        <ResponsiveContainer width="100%" height="100%">
+                                                                            <AreaChart data={val.map((v, i) => ({ value: v, index: i }))}>
+                                                                                <defs>
+                                                                                    {(() => {
+                                                                                        const baseline = val[0];
+                                                                                        const min = Math.min(...val);
+                                                                                        const max = Math.max(...val);
+                                                                                        const range = max - min;
+                                                                                        const off = range <= 0 ? 0 : (max - baseline) / range;
+
+                                                                                        return (
+                                                                                            <>
+                                                                                                <linearGradient id={`splitFill-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
+                                                                                                    <stop offset={off} stopColor="#10b981" stopOpacity={0.15} />
+                                                                                                    <stop offset={off} stopColor="#ef4444" stopOpacity={0.15} />
+                                                                                                </linearGradient>
+                                                                                                <linearGradient id={`splitStroke-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
+                                                                                                    <stop offset={off} stopColor="#10b981" stopOpacity={1} />
+                                                                                                    <stop offset={off} stopColor="#ef4444" stopOpacity={1} />
+                                                                                                </linearGradient>
+                                                                                            </>
+                                                                                        );
+                                                                                    })()}
+                                                                                </defs>
+                                                                                <YAxis hide domain={['dataMin', 'dataMax']} />
+                                                                                <ReferenceLine y={val[0]} stroke="#71717a" strokeDasharray="2 2" strokeOpacity={0.3} />
+                                                                                <Area
+                                                                                    type="monotone"
+                                                                                    dataKey="value"
+                                                                                    baseValue={val[0]}
+                                                                                    stroke={`url(#splitStroke-${holding.Symbol})`}
+                                                                                    fill={`url(#splitFill-${holding.Symbol})`}
+                                                                                    strokeWidth={1.5}
+                                                                                    isAnimationActive={false}
+                                                                                    dot={(props: any) => {
+                                                                                        const { cx, cy, index } = props;
+                                                                                        if (index === val.length - 1) {
+                                                                                            const color = val[val.length - 1] >= val[0] ? "#10b981" : "#ef4444";
+                                                                                            return (
+                                                                                                <circle key="dot" cx={cx} cy={cy} r={2} fill={color} stroke="none" />
+                                                                                            );
+                                                                                        }
+                                                                                        return null;
+                                                                                    }}
+                                                                                />
+                                                                            </AreaChart>
+                                                                        </ResponsiveContainer>
+                                                                    ) : (
+                                                                        <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground/50">
+                                                                            no data
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            ) : header === 'Symbol' ? (
+                                                                <div className="flex items-center gap-3">
+                                                                    {/* Watchlist Star */}
+                                                                    <WatchlistStar
+                                                                        symbol={holding.Symbol}
+                                                                        className="text-muted-foreground hover:text-amber-400"
+                                                                    />
+
+                                                                    {/* Logo */}
+
+
+                                                                    <div className="flex flex-col">
+                                                                        <span
+                                                                            className="font-bold text-foreground hover:text-cyan-500 cursor-pointer transition-colors"
+                                                                            onClick={() => openStockDetail(holding.Symbol)}
+                                                                        >
+                                                                            {holding.Symbol}
+                                                                        </span>
+                                                                        {showLots && holding.lots && holding.lots.length > 0 && (
+                                                                            <div className="flex items-center gap-1 mt-0.5" title={`${holding.lots.length} tax lots`}>
+                                                                                <Layers className="w-3 h-3 text-muted-foreground" />
+                                                                                <span className="text-[10px] text-muted-foreground">{holding.lots.length} Lots</span>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            ) : header === 'Tags' ? (
+                                                                <div className="group/tags flex items-center gap-2 justify-start min-w-[100px]">
+                                                                    {editingTags?.symbol === holding.Symbol && editingTags?.account === (holding.Account || 'All') ? (
+                                                                        <div className="flex items-center gap-1 animate-in fade-in zoom-in duration-200">
+                                                                            <input
+                                                                                type="text"
+                                                                                value={tagsInput}
+                                                                                onChange={(e) => setTagsInput(e.target.value)}
+                                                                                className="w-32 h-7 text-xs bg-background border border-cyan-500/50 rounded px-2 focus:outline-none focus:ring-1 focus:ring-cyan-500 shadow-sm"
+                                                                                placeholder="e.g. Dividend, Tech"
+                                                                                autoFocus
+                                                                                onKeyDown={(e) => {
+                                                                                    if (e.key === 'Enter') handleSaveTags();
+                                                                                    if (e.key === 'Escape') setEditingTags(null);
+                                                                                }}
+                                                                            />
+                                                                            <button onClick={handleSaveTags} className="p-1 hover:bg-emerald-500/10 text-emerald-600 rounded">
+                                                                                <Save className="w-3.5 h-3.5" />
+                                                                            </button>
+                                                                            <button onClick={() => setEditingTags(null)} className="p-1 hover:bg-red-500/10 text-red-600 rounded">
+                                                                                <X className="w-3.5 h-3.5" />
+                                                                            </button>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <>
+                                                                            {val && Array.isArray(val) && val.length > 0 ? (
+                                                                                <div className="flex flex-wrap gap-1">
+                                                                                    {val.map((tag: string, i: number) => (
+                                                                                        <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-500/20">
+                                                                                            {tag}
+                                                                                        </span>
+                                                                                    ))}
+                                                                                </div>
+                                                                            ) : (
+                                                                                <span className="text-muted-foreground/30 text-xs italic group-hover/tags:opacity-100 opacity-0 transition-opacity">Add tags...</span>
+                                                                            )}
+
+                                                                            <button
+                                                                                onClick={() => handleEditTags(holding.Symbol, holding.Account || 'All', Array.isArray(val) ? val as string[] : [])}
+                                                                                className="opacity-0 group-hover/tags:opacity-100 p-1 hover:bg-secondary rounded-full transition-all text-muted-foreground hover:text-foreground"
+                                                                            >
+                                                                                <PenLine className="w-3 h-3" />
+                                                                            </button>
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            ) : (
+                                                                formatValue(val, header)
+                                                            )}
                                                         </td>
                                                     );
                                                 })}
                                             </tr>
-                                        ))
-                                    )}
-                                </React.Fragment>
-                            ))}
+                                        ))}
+                                    </React.Fragment>
+                                ))
+                            ) : (
+                                // Existing flat list rendering
+                                visibleHoldings.map((holding, idx) => (
+                                    <React.Fragment key={`${holding.Symbol}-${idx}`}>
+                                        <tr className="hover:bg-accent/5 transition-colors">
+                                            {visibleColumns.map(header => {
+                                                const val = getValue(holding, header);
+                                                // Use tabular-nums for numeric columns to ensure digit alignment
+                                                const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
+                                                const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
+
+                                                return (
+                                                    <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')}`}>
+                                                        {header === '7d Trend' ? (
+                                                            <div className="h-10 w-28 ml-auto">
+                                                                {val && Array.isArray(val) && val.length > 1 ? (
+                                                                    <ResponsiveContainer width="100%" height="100%">
+                                                                        <AreaChart data={val.map((v, i) => ({ value: v, index: i }))}>
+                                                                            <defs>
+                                                                                {(() => {
+                                                                                    const baseline = val[0];
+                                                                                    const min = Math.min(...val);
+                                                                                    const max = Math.max(...val);
+                                                                                    const range = max - min;
+                                                                                    const off = range <= 0 ? 0 : (max - baseline) / range;
+
+                                                                                    return (
+                                                                                        <>
+                                                                                            <linearGradient id={`splitFill-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
+                                                                                                <stop offset={off} stopColor="#10b981" stopOpacity={0.15} />
+                                                                                                <stop offset={off} stopColor="#ef4444" stopOpacity={0.15} />
+                                                                                            </linearGradient>
+                                                                                            <linearGradient id={`splitStroke-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
+                                                                                                <stop offset={off} stopColor="#10b981" stopOpacity={1} />
+                                                                                                <stop offset={off} stopColor="#ef4444" stopOpacity={1} />
+                                                                                            </linearGradient>
+                                                                                        </>
+                                                                                    );
+                                                                                })()}
+                                                                            </defs>
+                                                                            <YAxis hide domain={['dataMin', 'dataMax']} />
+                                                                            <ReferenceLine y={val[0]} stroke="#71717a" strokeDasharray="2 2" strokeOpacity={0.3} />
+                                                                            <Area
+                                                                                type="monotone"
+                                                                                dataKey="value"
+                                                                                baseValue={val[0]}
+                                                                                stroke={`url(#splitStroke-${holding.Symbol})`}
+                                                                                fill={`url(#splitFill-${holding.Symbol})`}
+                                                                                strokeWidth={1.5}
+                                                                                isAnimationActive={false}
+                                                                                dot={(props: any) => {
+                                                                                    const { cx, cy, index } = props;
+                                                                                    if (index === val.length - 1) {
+                                                                                        // Calculate color for dot based on value vs baseline
+                                                                                        const color = val[val.length - 1] >= val[0] ? "#10b981" : "#ef4444";
+                                                                                        return (
+                                                                                            <circle key="dot" cx={cx} cy={cy} r={2} fill={color} stroke="none" />
+                                                                                        );
+                                                                                    }
+                                                                                    return <React.Fragment key={index} />;
+                                                                                }}
+                                                                            />
+                                                                        </AreaChart>
+                                                                    </ResponsiveContainer>
+                                                                ) : (
+                                                                    <div className="h-full w-full flex items-center justify-center text-[10px] text-muted-foreground/30">
+                                                                        no data
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ) : header === 'Symbol' ? (
+                                                            <div className="flex items-center justify-start gap-3">
+                                                                <WatchlistStar symbol={val as string} size="md" />
+                                                                <button
+                                                                    onClick={() => openStockDetail(val as string, currency)}
+                                                                    className="font-semibold text-foreground hover:text-cyan-500 transition-colors cursor-pointer"
+                                                                >
+                                                                    {formatValue(val, header)}
+                                                                </button>
+                                                            </div>
+                                                        ) : header === 'Tags' ? (
+                                                            <div className="flex items-center justify-end gap-2 group/tags min-w-[120px]">
+                                                                <div className="flex flex-wrap gap-1 justify-end">
+                                                                    {Array.isArray(val) && val.length > 0 ? (
+                                                                        val.map((tag: string, i: number) => (
+                                                                            <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300">
+                                                                                {tag}
+                                                                            </span>
+                                                                        ))
+                                                                    ) : (
+                                                                        <span className="text-muted-foreground italic text-xs opacity-0 group-hover/tags:opacity-50 transition-opacity">Add tag</span>
+                                                                    )}
+                                                                </div>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        const tags = Array.isArray(val) ? val : [];
+                                                                        const acc = formatValue(getValue(holding, "Account"), "Account") as string;
+                                                                        handleEditTags(holding.Symbol, acc, tags);
+                                                                    }}
+                                                                    className="text-muted-foreground hover:text-cyan-500 opacity-0 group-hover/tags:opacity-100 transition-opacity p-1"
+                                                                    title="Edit Tags"
+                                                                >
+                                                                    <PenLine className="h-3 w-3" />
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            formatValue(val, header)
+                                                        )}
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                        {showLots && holding.lots && holding.lots.length > 0 && (
+                                            holding.lots.map((lot, lotIdx) => (
+                                                <tr key={`${holding.Symbol}-lot-${lotIdx}`} className="bg-zinc-50/50 dark:bg-zinc-900/40">
+                                                    {visibleColumns.map(header => {
+                                                        const holdingPrice = getValue(holding, "Price") as number;
+                                                        const val = getLotValue(lot, header, holdingPrice);
+                                                        const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
+
+                                                        return (
+                                                            <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-t border-dashed border-border/40 ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')}`}>
+                                                                {header === 'Symbol' && <span className="text-[10px] opacity-50">↳</span>}
+                                                                {formatValue(val, header)}
+                                                            </td>
+                                                        );
+                                                    })}
+                                                </tr>
+                                            ))
+                                        )}
+                                    </React.Fragment>
+                                ))
+                            )}
                         </tbody>
                     </table>
                 </div>
@@ -960,7 +1383,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                         </div>
                     ))}
                 </div>
-                {visibleRows < sortedHoldings.length && (
+                {!groupBy && visibleRows < sortedHoldings.length && (
                     <div className="flex justify-center gap-4 p-4 border-t border-black/5 dark:border-white/10">
                         <button
                             onClick={handleShowMore}

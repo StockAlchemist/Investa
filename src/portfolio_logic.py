@@ -1057,7 +1057,7 @@ def calculate_portfolio_summary(
         summary_df_unfiltered_temp = pd.DataFrame(portfolio_summary_rows)
         if "Symbol" in summary_df_unfiltered_temp.columns:
             symbols_in_summary = summary_df_unfiltered_temp["Symbol"].unique()
-            sector_map, quote_type_map, country_map, industry_map = {}, {}, {}, {}
+            sector_map, quote_type_map, country_map, industry_map, exchange_map = {}, {}, {}, {}, {}
 
             for internal_symbol in symbols_in_summary:
                 symbol_overrides = manual_overrides_effective.get(
@@ -1067,6 +1067,7 @@ def calculate_portfolio_summary(
                 manual_sector = symbol_overrides.get("sector", "").strip()
                 manual_geography = symbol_overrides.get("geography", "").strip()
                 manual_industry = symbol_overrides.get("industry", "").strip()
+                manual_exchange = symbol_overrides.get("exchange", "").strip()
 
                 if internal_symbol == CASH_SYMBOL_CSV or internal_symbol.startswith(
                     "Cash ("
@@ -1075,7 +1076,14 @@ def calculate_portfolio_summary(
                     quote_type_map[internal_symbol] = "CASH"
                     country_map[internal_symbol] = "Cash"
                     industry_map[internal_symbol] = "Cash"
+                    exchange_map[internal_symbol] = "Cash" # Set Market for Cash
+                    
+                    if manual_exchange:
+                         exchange_map[internal_symbol] = manual_exchange
                     continue
+
+                if internal_symbol == "SCBRM1":
+                     logging.info(f"DEBUG_OVERRIDE_SCBRM1: ManualExchange={manual_exchange}, AllOverrides={symbol_overrides}")
 
                 yf_ticker_for_sector = map_to_yf_symbol(
                     internal_symbol,
@@ -1094,6 +1102,8 @@ def calculate_portfolio_summary(
                 industry_map[internal_symbol] = (
                     manual_industry if manual_industry else "N/A (No YF/Manual)"
                 )
+                if manual_exchange:
+                    exchange_map[internal_symbol] = manual_exchange
 
                 if yf_ticker_for_sector and (
                     not manual_sector
@@ -1150,6 +1160,13 @@ def calculate_portfolio_summary(
                 summary_df_unfiltered_temp["Symbol"]
                 .map(industry_map)
                 .fillna("Unknown Industry")
+            )
+            # Apply Manual Exchange Overrides
+            existing_exchange = summary_df_unfiltered_temp["exchange"] if "exchange" in summary_df_unfiltered_temp.columns else pd.Series([None] * len(summary_df_unfiltered_temp), index=summary_df_unfiltered_temp.index)
+            summary_df_unfiltered_temp["exchange"] = (
+                summary_df_unfiltered_temp["Symbol"]
+                .map(exchange_map)
+                .combine_first(existing_exchange)
             )
             portfolio_summary_rows = summary_df_unfiltered_temp.to_dict(
                 orient="records"

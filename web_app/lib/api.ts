@@ -380,6 +380,7 @@ export interface ManualOverrideData {
     sector?: string;
     geography?: string;
     industry?: string;
+    exchange?: string;
 }
 
 export type ManualOverride = number | ManualOverrideData;

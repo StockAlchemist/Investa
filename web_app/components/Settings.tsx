@@ -70,6 +70,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
     const [overrideSector, setOverrideSector] = useState('');
     const [overrideGeo, setOverrideGeo] = useState('');
     const [overrideIndustry, setOverrideIndustry] = useState('');
+    const [overrideExchange, setOverrideExchange] = useState('');
 
     const [mapFrom, setMapFrom] = useState('');
     const [mapTo, setMapTo] = useState('');
@@ -117,12 +118,14 @@ export default function Settings({ settings, holdings, availableAccounts, initia
             setOverrideSector('');
             setOverrideGeo('');
             setOverrideIndustry('');
+            setOverrideExchange('');
         } else {
             setOverridePrice(data.price ? data.price.toString() : '');
             setOverrideAssetType(data.asset_type || '');
             setOverrideSector(data.sector || '');
             setOverrideGeo(data.geography || '');
             setOverrideIndustry(data.industry || '');
+            setOverrideExchange(data.exchange || '');
         }
 
         // Scroll to top of settings container to show the form
@@ -132,7 +135,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
     // --- Actions ---
 
     const addOverride = async () => {
-        const hasMetadata = overrideAssetType || overrideSector || overrideGeo || overrideIndustry;
+        const hasMetadata = overrideAssetType || overrideSector || overrideGeo || overrideIndustry || overrideExchange;
         if (!settings || !overrideSymbol || (!overridePrice && !hasMetadata)) return;
 
         let price: number | null = null;
@@ -153,7 +156,8 @@ export default function Settings({ settings, holdings, availableAccounts, initia
             asset_type: overrideAssetType || undefined,
             sector: overrideSector || undefined,
             geography: overrideGeo || undefined,
-            industry: overrideIndustry || undefined
+            industry: overrideIndustry || undefined,
+            exchange: overrideExchange || undefined
         };
 
         // Handling the price=0 case if user meant "no price override".
@@ -182,6 +186,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                 if (rest.sector === undefined) delete rest.sector;
                 if (rest.geography === undefined) delete rest.geography;
                 if (rest.industry === undefined) delete rest.industry;
+                if (rest.exchange === undefined) delete rest.exchange;
 
                 cleanedOverrides[k] = rest;
             }
@@ -198,6 +203,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
             setOverrideSector('');
             setOverrideGeo('');
             setOverrideIndustry('');
+            setOverrideExchange('');
 
             // Removed loadSettings call, parent will update
         } catch {
@@ -835,7 +841,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                         </select>
                                     </div>
                                     <div className="col-span-1">
-                                        <label className={labelClassName}>Geography</label>
+                                        <label className={labelClassName}>Country</label>
                                         <select
                                             value={overrideGeo}
                                             onChange={(e) => setOverrideGeo(e.target.value)}
@@ -873,12 +879,22 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                             ))}
                                         </select>
                                     </div>
+                                    <div className="col-span-1">
+                                        <label className={labelClassName}>Market</label>
+                                        <input
+                                            type="text"
+                                            value={overrideExchange}
+                                            onChange={(e) => setOverrideExchange(e.target.value)}
+                                            placeholder="e.g. NASDAQ"
+                                            className={inputClassName}
+                                        />
+                                    </div>
                                 </div>
                                 <div className="flex justify-end mt-2">
                                     <button
                                         type="button"
                                         onClick={addOverride}
-                                        disabled={!overrideSymbol || (!overridePrice && !overrideAssetType && !overrideSector && !overrideGeo && !overrideIndustry)}
+                                        disabled={!overrideSymbol || (!overridePrice && !overrideAssetType && !overrideSector && !overrideGeo && !overrideIndustry && !overrideExchange)}
                                         className="w-full md:w-auto px-6 py-2 bg-[#0097b2] text-white rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         Set Override
@@ -894,15 +910,16 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                             <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Price</th>
                                             <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Asset Type</th>
                                             <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Sector</th>
-                                            <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Geography</th>
+                                            <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Country</th>
                                             <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Industry</th>
+                                            <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Market</th>
                                             <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-border">
                                         {Object.entries(overrides).length === 0 ? (
                                             <tr>
-                                                <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground italic">
+                                                <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground italic">
                                                     No manual overrides defined.
                                                 </td>
                                             </tr>
@@ -916,6 +933,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                                     const sector = isObj ? (data as ManualOverrideData).sector : '';
                                                     const geo = isObj ? (data as ManualOverrideData).geography : '';
                                                     const industry = isObj ? (data as ManualOverrideData).industry : '';
+                                                    const exchange = isObj ? (data as ManualOverrideData).exchange : '';
                                                     const currency = isObj ? (data as ManualOverrideData).currency : 'USD';
 
                                                     return (
@@ -931,6 +949,7 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                                                             <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{sector || '-'}</td>
                                                             <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{geo || '-'}</td>
                                                             <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{industry || '-'}</td>
+                                                            <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{exchange || '-'}</td>
                                                             <td className="px-4 py-3 whitespace-nowrap text-right font-medium">
                                                                 <button
                                                                     type="button"
