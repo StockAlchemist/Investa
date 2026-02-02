@@ -21,7 +21,6 @@ import {
   updateSettings,
   SettingsUpdate,
   fetchPortfolioHealth,
-  fetchCorrelationMatrix,
   fetchProjectedIncome,
   PerformanceData
 } from '@/lib/api';
@@ -52,8 +51,6 @@ const DividendCalendar = dynamic(() => import('@/components/DividendCalendar'));
 const IncomeProjector = dynamic(() => import('@/components/IncomeProjector').then(mod => mod.IncomeProjector));
 const Settings = dynamic(() => import('@/components/Settings'));
 const CommandPalette = dynamic(() => import('@/components/CommandPalette'));
-const CorrelationMatrix = dynamic(() => import('@/components/CorrelationMatrix').then(mod => mod.CorrelationMatrix));
-const PortfolioHealthComponent = dynamic(() => import('@/components/PortfolioHealth').then(mod => mod.PortfolioHealthComponent));
 const Watchlist = dynamic(() => import('@/components/Watchlist'));
 const ScreenerView = dynamic(() => import('@/components/ScreenerView'));
 const MarketIndicesBox = dynamic(() => import('@/components/MarketIndicesBox'), { ssr: false });
@@ -181,7 +178,6 @@ export default function Home() {
   // Removed duplicate showClosed init
 
   const [capitalGainsDates, setCapitalGainsDates] = useState<{ from?: string, to?: string }>({});
-  const [correlationPeriod, setCorrelationPeriod] = useState('1y');
 
   // Lazy init visibleItems
   const [visibleItems, setVisibleItems] = useState<string[]>(INITIAL_VISIBLE_ITEMS);
@@ -406,16 +402,10 @@ export default function Home() {
     queryFn: ({ signal }) => fetchPortfolioHealth(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'analytics' || backgroundFetchEnabled),
+    enabled: !!user && (activeTab === 'performance' || backgroundFetchEnabled),
   });
 
-  const correlationMatrixQuery = useQuery({
-    queryKey: ['correlationMatrix', user?.username, correlationPeriod, selectedAccounts],
-    queryFn: ({ signal }) => fetchCorrelationMatrix(correlationPeriod, selectedAccounts, signal),
-    staleTime: 5 * 60 * 1000,
-    placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'analytics' || backgroundFetchEnabled),
-  });
+
 
   const incomeProjectionQuery = useQuery({
     queryKey: ['incomeProjection', user?.username, currency, selectedAccounts],
@@ -447,6 +437,7 @@ export default function Home() {
               isLoading={summaryQuery.isLoading && !summaryQuery.data} // Only show skeleton if no data
               riskMetrics={riskMetricsQuery.data || {}}
               riskMetricsLoading={riskMetricsQuery.isLoading && !riskMetricsQuery.data}
+              portfolioHealth={portfolioHealthQuery.data || null}
               attributionData={attributionQuery.data}
               attributionLoading={attributionQuery.isLoading && !attributionQuery.data}
               holdings={holdings}
@@ -572,26 +563,7 @@ export default function Home() {
             isLoading={capitalGainsQuery.isPending && !capitalGainsQuery.data}
           />
         );
-      case 'analytics':
-        return (
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold leading-none tracking-tight bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent w-fit">Analytics & Risk</h2>
 
-            <PortfolioHealthComponent
-              data={portfolioHealthQuery.data || null}
-              isLoading={portfolioHealthQuery.isLoading && !portfolioHealthQuery.data}
-            />
-
-            <div className="h-[600px]">
-              <CorrelationMatrix
-                data={correlationMatrixQuery.data || null}
-                isLoading={correlationMatrixQuery.isLoading && !correlationMatrixQuery.data}
-                period={correlationPeriod}
-                onPeriodChange={setCorrelationPeriod}
-              />
-            </div>
-          </div>
-        );
       case 'dividend':
         return (
           <div className="space-y-6">

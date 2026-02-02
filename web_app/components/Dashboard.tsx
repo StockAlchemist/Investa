@@ -28,8 +28,11 @@ interface DashboardProps {
     history?: PerformanceData[];
     isLoading?: boolean;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     riskMetrics?: any;
     riskMetricsLoading?: boolean;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    portfolioHealth?: any;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     attributionData?: any;
     attributionLoading?: boolean;
@@ -44,6 +47,7 @@ export default function Dashboard({
     isLoading = false,
     riskMetrics = {},
     riskMetricsLoading = false,
+    portfolioHealth = null,
     attributionData = null,
     attributionLoading = false,
     holdings = [],
@@ -225,7 +229,7 @@ export default function Dashboard({
                     icon={Receipt}
                 />;
             case 'riskMetrics':
-                return <RiskMetrics metrics={riskMetrics} isLoading={riskMetricsLoading!} />;
+                return <RiskMetrics metrics={riskMetrics} portfolioHealth={portfolioHealth} isLoading={riskMetricsLoading!} />;
             case 'sectorContribution':
                 return <SectorAttribution data={attributionData} isLoading={attributionLoading!} currency={currency} />;
             case 'topContributors':

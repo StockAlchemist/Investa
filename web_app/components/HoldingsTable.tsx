@@ -5,7 +5,7 @@ import { exportToCSV } from '../lib/export';
 import { Holding, Lot, addToWatchlist, removeFromWatchlist, WatchlistItem, updateHoldingTags } from '../lib/api';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { AreaChart, Area, Line, ResponsiveContainer, YAxis, ReferenceLine } from 'recharts';
-import { Search, X, Filter, LayoutGrid, Eye, EyeOff, Layers, Download, Building2, UserCircle, Tag, PenLine, Save, Table as TableIcon, Settings2, ChevronDown, ChevronRight, ListFilter } from 'lucide-react';
+import { Search, X, Filter, LayoutGrid, Eye, EyeOff, Layers, Download, UserCircle, Tag, PenLine, Save, Table as TableIcon, Settings2, ChevronDown, ChevronRight, ListFilter } from 'lucide-react';
 
 import { Skeleton } from './ui/skeleton';
 import { useStockModal } from '@/context/StockModalContext';
@@ -143,11 +143,11 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
 
     // --- Search & Filter State ---
     const [searchQuery, setSearchQuery] = useState("");
-    const [selectedSectors, setSelectedSectors] = useState<Set<string>>(new Set());
+
     const [selectedAccounts, setSelectedAccounts] = useState<Set<string>>(new Set());
-    const [isSectorMenuOpen, setIsSectorMenuOpen] = useState(false);
+
     const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
-    const sectorMenuRef = useRef<HTMLDivElement>(null);
+
     const accountMenuRef = useRef<HTMLDivElement>(null);
     const groupByMenuRef = useRef<HTMLDivElement>(null);
 
@@ -248,9 +248,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
             if (columnMenuRef.current && !columnMenuRef.current.contains(event.target as Node)) {
                 setIsColumnMenuOpen(false);
             }
-            if (sectorMenuRef.current && !sectorMenuRef.current.contains(event.target as Node)) {
-                setIsSectorMenuOpen(false);
-            }
+
             if (accountMenuRef.current && !accountMenuRef.current.contains(event.target as Node)) {
                 setIsAccountMenuOpen(false);
             }
@@ -323,18 +321,17 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
     };
 
     // --- Filter Logic ---
-    const uniqueSectors = useMemo(() => Array.from(new Set(holdings.map(h => h.Sector).filter(Boolean) as string[])).sort(), [holdings]);
+
     const uniqueAccounts = useMemo(() => Array.from(new Set(holdings.map(h => h.Account).filter(Boolean) as string[])).sort(), [holdings]);
 
     const filteredHoldings = useMemo(() => {
         if (!holdings) return [];
         return holdings.filter(h => {
             const matchesSearch = h.Symbol.toLowerCase().includes(searchQuery.toLowerCase());
-            const matchesSector = selectedSectors.size === 0 || (h.Sector && selectedSectors.has(h.Sector));
             const matchesAccount = selectedAccounts.size === 0 || (h.Account && selectedAccounts.has(h.Account));
-            return matchesSearch && matchesSector && matchesAccount;
+            return matchesSearch && matchesAccount;
         });
-    }, [holdings, searchQuery, selectedSectors, selectedAccounts]);
+    }, [holdings, searchQuery, selectedAccounts]);
 
     const aggregatedHoldings = useMemo(() => {
         if (visibleColumns.includes('Account')) {
@@ -603,14 +600,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
         );
     };
 
-    const toggleSector = (sector: string) => {
-        setSelectedSectors(prev => {
-            const newSet = new Set(prev);
-            if (newSet.has(sector)) newSet.delete(sector);
-            else newSet.add(sector);
-            return newSet;
-        });
-    };
+
 
     const toggleAccount = (account: string) => {
         setSelectedAccounts(prev => {
@@ -778,44 +768,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                             )}
                         </div>
 
-                        {/* Sector Filter */}
-                        <div className="relative" ref={sectorMenuRef}>
-                            <button
-                                onClick={() => setIsSectorMenuOpen(!isSectorMenuOpen)}
-                                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors
-                                ${selectedSectors.size > 0 || isSectorMenuOpen
-                                        ? 'bg-[#0097b2] text-white shadow-sm border-transparent'
-                                        : 'text-foreground bg-secondary border-border hover:bg-accent/10'
-                                    }`}
-                            >
-                                <Building2 className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">Sector {selectedSectors.size > 0 && `(${selectedSectors.size})`}</span>
-                                {selectedSectors.size > 0 && <span className="sm:hidden text-[10px] absolute -top-1 -right-1 bg-cyan-500 text-white rounded-full w-4 h-4 flex items-center justify-center border border-card">{selectedSectors.size}</span>}
-                            </button>
-                            {isSectorMenuOpen && (
-                                <div className="absolute left-0 z-50 mt-1.5 w-56 origin-top-left bg-white dark:bg-zinc-950 border border-border rounded-md shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto">
-                                    <div className="p-2 border-b border-border">
-                                        <button onClick={() => setSelectedSectors(new Set())} className="text-xs text-cyan-500 hover:text-cyan-600 font-medium w-full text-left px-2">
-                                            Clear Filter
-                                        </button>
-                                    </div>
-                                    <div className="py-1">
-                                        {uniqueSectors.map(sector => (
-                                            <label key={sector} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-accent/10 cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedSectors.has(sector)}
-                                                    onChange={() => toggleSector(sector)}
-                                                    className="h-4 w-4 text-cyan-600 focus:ring-cyan-500 border-border rounded bg-secondary"
-                                                />
-                                                <span className="ml-2 truncate">{sector}</span>
-                                            </label>
-                                        ))}
-                                        {uniqueSectors.length === 0 && <div className="px-4 py-2 text-sm text-muted-foreground">No sectors found</div>}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
+
 
                         {/* Account Filter */}
                         <div className="relative" ref={accountMenuRef}>

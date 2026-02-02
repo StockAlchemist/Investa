@@ -32,7 +32,6 @@ const TABS = [
     { id: 'allocation', label: 'Allocation', icon: PieChart },
     { id: 'asset_change', label: 'Asset Change', icon: TrendingUp },
     { id: 'capital_gains', label: 'Cap. Gains', icon: DollarSign },
-    { id: 'analytics', label: 'Analytics', icon: Activity },
     { id: 'dividend', label: 'Dividend', icon: Coins },
 ];
 

@@ -590,24 +590,7 @@ export async function rejectIbkr(ids: number[]): Promise<StatusResponse> {
     if (!response.ok) throw new Error('Failed to reject transactions');
     return response.json();
 }
-export interface CorrelationData {
-    assets: string[];
-    correlation: { x: string; y: string; value: number }[];
-}
 
-export async function fetchCorrelationMatrix(
-    period: string = '1y',
-    accounts?: string[],
-    signal?: AbortSignal
-): Promise<CorrelationData> {
-    const params = new URLSearchParams({ period });
-    if (accounts) {
-        accounts.forEach(acc => params.append('accounts', acc));
-    }
-    const res = await authFetch(`${API_BASE_URL}/correlation?${params.toString()}`, { signal, cache: 'no-store' });
-    if (!res.ok) throw new Error('Failed to fetch correlation matrix');
-    return res.json();
-}
 export interface ProjectedIncome {
     month: string;
     value: number;
