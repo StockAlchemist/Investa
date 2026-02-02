@@ -6,6 +6,8 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 import StockDetailModal from './StockDetailModal';
 import StockIcon from './StockIcon';
 import TabContentSkeleton from './skeletons/TabContentSkeleton';
+import { CircleDollarSign, ArrowUpRight, Scale } from 'lucide-react';
+import { MetricCard } from './MetricCard';
 
 interface CapitalGainsProps {
     data: CapitalGain[] | null;
@@ -111,8 +113,7 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
 
     return (
         <div className="space-y-6">
-            import {CircleDollarSign, ArrowUpRight, Scale} from 'lucide-react';
-            import {MetricCard} from './MetricCard';
+
 
             // ... inside the component function, replacing the summary div block
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

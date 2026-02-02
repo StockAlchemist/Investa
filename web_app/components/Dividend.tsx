@@ -6,6 +6,8 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 import StockDetailModal from './StockDetailModal';
 import StockIcon from './StockIcon';
 import TabContentSkeleton from './skeletons/TabContentSkeleton';
+import { CircleDollarSign, CalendarClock } from 'lucide-react';
+import { MetricCard } from './MetricCard';
 
 interface DividendProps {
     data: Dividend[] | null;
@@ -89,8 +91,7 @@ export default function Dividend({ data, currency, expectedDividends, children, 
 
     return (
         <div className="space-y-6">
-            import {CircleDollarSign, CalendarClock} from 'lucide-react';
-            import {MetricCard} from './MetricCard';
+
 
             // ... inside the component
             {/* Summary Cards */}

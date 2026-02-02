@@ -68,4 +68,5 @@ if __name__ == "__main__":
     log_config["formatters"]["default"]["fmt"] = "%(asctime)s - " + log_config["formatters"]["default"]["fmt"]
 
     # reload=False for debugging stability vs potential thread deadlock issues with StatReload
-    uvicorn.run("server.main:app", host="0.0.0.0", port=8000, reload=False, workers=1, log_config=log_config)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run("server.main:app", host="0.0.0.0", port=port, reload=False, workers=1, log_config=log_config)

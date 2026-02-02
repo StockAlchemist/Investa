@@ -6,7 +6,8 @@
     "dev": "next dev -H 0.0.0.0",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "build:desktop": "APP_ENV=desktop NEXT_PUBLIC_API_URL=http://127.0.0.1:8001/api next build"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -111,7 +111,12 @@ Requires Python 3.8+.
 ./start_investa.sh
 ```
 
-**Run Desktop Only:**
+**Run Desktop App (Electron):**
+```bash
+./start_desktop.sh
+```
+
+**Run Legacy Python GUI:**
 ```bash
 python src/main_gui.py
 ```

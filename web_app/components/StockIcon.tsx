@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import Image from 'next/image';
 import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils';
 
@@ -41,8 +40,8 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
                 )}
                 style={{ width: effectiveSize, height: effectiveSize }}
             >
-                <Image
-                    src="/set-logo-v2.png"
+                <img
+                    src="set-logo-v2.png"
                     alt="SET"
                     width={effectiveSize}
                     height={effectiveSize}
@@ -62,8 +61,8 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
                 )}
                 style={{ width: effectiveSize, height: effectiveSize }}
             >
-                <Image
-                    src="/ibkr-logo.png"
+                <img
+                    src="ibkr-logo.png"
                     alt="IBKR"
                     width={effectiveSize}
                     height={effectiveSize}
@@ -84,8 +83,8 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
                 )}
                 style={{ width: effectiveSize, height: effectiveSize }}
             >
-                <Image
-                    src="/webull-logo.png"
+                <img
+                    src="webull-logo.png"
                     alt="WeBull"
                     width={effectiveSize}
                     height={effectiveSize}
@@ -105,8 +104,8 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
                 )}
                 style={{ width: effectiveSize, height: effectiveSize }}
             >
-                <Image
-                    src="/scb-logo.png"
+                <img
+                    src="scb-logo.png"
                     alt="SCB"
                     width={effectiveSize}
                     height={effectiveSize}
@@ -125,8 +124,8 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
                 )}
                 style={{ width: effectiveSize, height: effectiveSize }}
             >
-                <Image
-                    src="/es-logo.png"
+                <img
+                    src="es-logo.png"
                     alt="ES"
                     width={effectiveSize}
                     height={effectiveSize}
@@ -145,8 +144,8 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
                 )}
                 style={{ width: effectiveSize, height: effectiveSize }}
             >
-                <Image
-                    src="/schwab-logo.png"
+                <img
+                    src="schwab-logo.png"
                     alt="Schwab"
                     width={effectiveSize}
                     height={effectiveSize}
@@ -166,8 +165,8 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
                 )}
                 style={{ width: effectiveSize, height: effectiveSize }}
             >
-                <Image
-                    src="/cash_icon.png"
+                <img
+                    src="cash_icon.png"
                     alt="CASH"
                     width={effectiveSize}
                     height={effectiveSize}
@@ -190,70 +189,70 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
 
     // Manual overrides for specific symbols to use local images
     const localOverrides: Record<string, string> = {
-        'ABBV': (mounted && resolvedTheme === 'dark') ? '/abbv-dark.png' : '/abbv.png',
-        'ACGL': '/acgl.png',
-        'ADI': '/adi.png',
-        'ADSK': '/adsk.png',
-        'AIG': '/aig.png',
-        'ALB': '/alb.png',
-        'ALL': '/all.png',
-        'AMP': '/amp.png',
-        'AMZN': '/amzn.png',
-        'ANET': '/anet.png',
-        'APO': '/apo.png',
-        'APP': '/app.png',
-        'AAPL': (mounted && resolvedTheme === 'dark') ? '/aapl-dark.png' : '/aapl.png',
-        'APH': '/aph.png',
-        'APTV': '/aptv.png',
-        'ARE': '/are.png',
-        'ARES': '/ares.png',
-        'ASML': '/asml.png',
-        'ATO': '/ato.png',
-        'AVB': '/avb.png',
-        'AWK': '/awk.png',
-        'AXON': '/axon.png',
-        'BA': '/ba.png',
-        'BAX': '/bax.png',
-        'BLK': '/blk.png',
-        'CBOE': '/cboe.png',
-        'CDNS': '/cdns.png',
-        'CEG': '/ceg.png',
-        'CSX': '/csx.png',
-        'CTAS': '/ctas.png',
-        'DDOG': '/ddog.png',
-        'DHI': '/dhi.png',
-        'DIS': '/dis.png',
-        'EXE': '/exe.png',
-        'EXPE': '/expe.png',
-        'FAST': '/fast.png',
-        'GEN': '/gen.png',
-        'HSY': '/hsy.png',
-        'IBM': '/ibm.png',
-        'INTC': '/intc.png',
-        'JBL': '/jbl.png',
-        'KR': '/kr.png',
-        'LMT': '/lmt.png',
-        'MRSH': '/mrsh.png',
-        'NKE': '/nke.png',
-        'NTAP': '/ntap.png',
-        'ON': '/on.png',
-        'PLTR': '/pltr.png',
-        'PSKY': '/psky.png',
-        'Q': '/q.png',
-        'RCL': '/rcl.png',
-        'REGN': '/regn.png',
-        'SLB': '/slb.png',
-        'SNDK': '/sndk.png',
-        'SPGI': (mounted && resolvedTheme === 'dark') ? '/spgi-logo-dark.png' : '/spgi-logo.png',
-        'STT': '/stt.png',
-        'SW': '/sw.png',
-        'UBER': '/uber.png',
-        'ULTA': '/ulta.png',
-        'UNH': '/unh.png',
-        'V': '/v.png',
-        'VRTX': '/vrtx.png',
-        'WSM': '/wsm.png',
-        'WYNN': '/wynn.png',
+        'ABBV': (mounted && resolvedTheme === 'dark') ? 'abbv-dark.png' : 'abbv.png',
+        'ACGL': 'acgl.png',
+        'ADI': 'adi.png',
+        'ADSK': 'adsk.png',
+        'AIG': 'aig.png',
+        'ALB': 'alb.png',
+        'ALL': 'all.png',
+        'AMP': 'amp.png',
+        'AMZN': 'amzn.png',
+        'ANET': 'anet.png',
+        'APO': 'apo.png',
+        'APP': 'app.png',
+        'AAPL': (mounted && resolvedTheme === 'dark') ? 'aapl-dark.png' : 'aapl.png',
+        'APH': 'aph.png',
+        'APTV': 'aptv.png',
+        'ARE': 'are.png',
+        'ARES': 'ares.png',
+        'ASML': 'asml.png',
+        'ATO': 'ato.png',
+        'AVB': 'avb.png',
+        'AWK': 'awk.png',
+        'AXON': 'axon.png',
+        'BA': 'ba.png',
+        'BAX': 'bax.png',
+        'BLK': 'blk.png',
+        'CBOE': 'cboe.png',
+        'CDNS': 'cdns.png',
+        'CEG': 'ceg.png',
+        'CSX': 'csx.png',
+        'CTAS': 'ctas.png',
+        'DDOG': 'ddog.png',
+        'DHI': 'dhi.png',
+        'DIS': 'dis.png',
+        'EXE': 'exe.png',
+        'EXPE': 'expe.png',
+        'FAST': 'fast.png',
+        'GEN': 'gen.png',
+        'HSY': 'hsy.png',
+        'IBM': 'ibm.png',
+        'INTC': 'intc.png',
+        'JBL': 'jbl.png',
+        'KR': 'kr.png',
+        'LMT': 'lmt.png',
+        'MRSH': 'mrsh.png',
+        'NKE': 'nke.png',
+        'NTAP': 'ntap.png',
+        'ON': 'on.png',
+        'PLTR': 'pltr.png',
+        'PSKY': 'psky.png',
+        'Q': 'q.png',
+        'RCL': 'rcl.png',
+        'REGN': 'regn.png',
+        'SLB': 'slb.png',
+        'SNDK': 'sndk.png',
+        'SPGI': (mounted && resolvedTheme === 'dark') ? 'spgi-logo-dark.png' : 'spgi-logo.png',
+        'STT': 'stt.png',
+        'SW': 'sw.png',
+        'UBER': 'uber.png',
+        'ULTA': 'ulta.png',
+        'UNH': 'unh.png',
+        'V': 'v.png',
+        'VRTX': 'vrtx.png',
+        'WSM': 'wsm.png',
+        'WYNN': 'wynn.png',
     };
 
     const sources = [

@@ -1,9 +1,21 @@
 import type { NextConfig } from "next";
 
+const isDesktop = process.env.APP_ENV === 'desktop';
+
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["100.66.59.98", "localhost:3000", "muon.tail33e9df.ts.net"],
   devIndicators: false,
+  output: isDesktop ? 'export' : undefined,
+  assetPrefix: isDesktop ? './' : undefined, // Fix loading assets in Electron (file:// protocol)
+  // @ts-ignore
+  optimizeFonts: false, // Disable font optimization to prevent file:// protocol preload warnings
+  images: {
+    unoptimized: isDesktop,
+  },
   async rewrites() {
+    // Rewrites are not supported in static exports
+    if (isDesktop) return [];
+
     return [
       {
         source: '/api/:path*',

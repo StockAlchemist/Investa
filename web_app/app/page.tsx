@@ -76,7 +76,11 @@ export default function Home() {
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/login');
+      if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
+        window.location.href = 'login.html';
+      } else {
+        router.push('/login');
+      }
     }
   }, [user, authLoading, router]);
 
@@ -675,12 +679,12 @@ export default function Home() {
               {/* logo-dark.png is the dark mode logo, logo.png is light mode */}
               {/* Using display classes for instant switching based on next-themes class */}
               <img
-                src="/logo.png?v=5"
+                src="logo.png?v=5"
                 alt="Investa Logo"
                 className="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/20 block dark:hidden"
               />
               <img
-                src="/logo-dark.png?v=5"
+                src="logo-dark.png?v=5"
                 alt="Investa Logo"
                 className="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/20 hidden dark:block"
               />

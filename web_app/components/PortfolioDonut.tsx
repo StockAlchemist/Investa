@@ -223,7 +223,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
             <div className="relative w-full h-full min-h-[450px] md:min-h-[650px] pb-6">
                 {/* Only render ResponsiveContainer when we have valid data, otherwise it might error with width -1 */}
                 {(data && data.length > 0) ? (
-                    <ResponsiveContainer width="100%" height="100%" debounce={50}>
+                    <ResponsiveContainer width="100%" height="100%" debounce={50} minWidth={100} minHeight={100}>
                         <PieChart>
                             {/* @ts-ignore */}
                             <Pie
@@ -236,6 +236,7 @@ function SingleDonut({ title, data, currency, totalValue, totalDayChange, totalC
                                 dataKey="value"
                                 onMouseEnter={onPieEnter}
                                 onMouseLeave={onPieLeave}
+                                // @ts-ignore
                                 activeIndex={activeIndex}
                                 activeShape={renderActiveShape}
                                 // Pass forceAllLabels through a closure or similar

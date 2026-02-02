@@ -13,7 +13,24 @@ const getApiBaseUrl = () => {
     return 'http://localhost:8000/api';
 };
 
-const API_BASE_URL = getApiBaseUrl();
+export const API_BASE_URL = getApiBaseUrl();
+
+export async function fetchCurrentUser(token: string): Promise<User> {
+    const res = await fetch(`${API_BASE_URL}/auth/me`, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
+    if (!res.ok) throw new Error('Failed to fetch user');
+    return res.json();
+}
+
+export interface User {
+    id: number;
+    username: string;
+    is_active: boolean;
+    created_at: string;
+}
 
 const getAuthHeaders = () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;

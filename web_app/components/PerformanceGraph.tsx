@@ -630,7 +630,7 @@ export default function PerformanceGraph({
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                     </div>
                 )}
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
                     {view === 'return' ? (
                         <LineChart syncId="portfolio-sync" data={chartedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />

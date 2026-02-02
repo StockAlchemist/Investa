@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardFooter, CardDescription } from "@/components/ui/card";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { API_BASE_URL } from "@/lib/api";
 
 export default function LoginPage() {
     const { login } = useAuth();
@@ -25,7 +26,7 @@ export default function LoginPage() {
             formData.append("username", username);
             formData.append("password", password);
 
-            const res = await fetch("/api/auth/login", {
+            const res = await fetch(`${API_BASE_URL}/auth/login`, {
                 method: "POST",
                 body: formData,
             });
@@ -50,12 +51,12 @@ export default function LoginPage() {
                 <CardHeader className="space-y-4 flex flex-col items-center">
                     <div className="flex items-center gap-3">
                         <img
-                            src="/logo.png?v=5"
+                            src="logo.png?v=5"
                             alt="Investa Logo"
                             className="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/20 block dark:hidden"
                         />
                         <img
-                            src="/logo-dark.png?v=5"
+                            src="logo-dark.png?v=5"
                             alt="Investa Logo"
                             className="w-12 h-12 rounded-xl shadow-lg shadow-cyan-500/20 hidden dark:block"
                         />

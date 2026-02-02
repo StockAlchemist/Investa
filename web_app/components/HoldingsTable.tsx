@@ -1046,7 +1046,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                             {header === '7d Trend' ? (
                                                                 <div className="h-10 w-28 ml-auto">
                                                                     {val && Array.isArray(val) && val.length > 1 ? (
-                                                                        <ResponsiveContainer width="100%" height="100%">
+                                                                        <ResponsiveContainer width="100%" height="100%" minWidth={50} minHeight={30}>
                                                                             <AreaChart data={val.map((v, i) => ({ value: v, index: i }))}>
                                                                                 <defs>
                                                                                     {(() => {
@@ -1197,7 +1197,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                         {header === '7d Trend' ? (
                                                             <div className="h-10 w-28 ml-auto">
                                                                 {val && Array.isArray(val) && val.length > 1 ? (
-                                                                    <ResponsiveContainer width="100%" height="100%">
+                                                                    <ResponsiveContainer width="100%" height="100%" minWidth={50} minHeight={30}>
                                                                         <AreaChart data={val.map((v, i) => ({ value: v, index: i }))}>
                                                                             <defs>
                                                                                 {(() => {

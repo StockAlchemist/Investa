@@ -189,7 +189,7 @@ The special cash symbol **`$CASH`** is crucial for accurately tracking your port
     Open your terminal, ensure your virtual environment is active (if used), navigate to the Investa project directory, and run:
 
     ```bash
-    python src/main_gui.py
+    ./start_desktop.sh
     ```
 
 2. **Database Initialization (First Run):**

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardFooter, CardDescription } from "@/components/ui/card";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { API_BASE_URL } from "@/lib/api";
 
 export default function RegisterPage() {
     const { login } = useAuth();
@@ -29,7 +30,7 @@ export default function RegisterPage() {
         setLoading(true);
 
         try {
-            const res = await fetch("/api/auth/register", {
+            const res = await fetch(`${API_BASE_URL}/auth/register`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -47,7 +48,7 @@ export default function RegisterPage() {
             formData.append("username", username);
             formData.append("password", password);
 
-            const loginRes = await fetch("/api/auth/login", {
+            const loginRes = await fetch(`${API_BASE_URL}/auth/login`, {
                 method: "POST",
                 body: formData,
             });
@@ -57,7 +58,11 @@ export default function RegisterPage() {
                 login(data.access_token);
             } else {
                 // Fallback to login page if auto-login fails
-                router.push("/login");
+                if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
+                    window.location.href = 'login.html';
+                } else {
+                    router.push("/login");
+                }
             }
 
         } catch (err: any) {

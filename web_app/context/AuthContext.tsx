@@ -2,14 +2,10 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { fetchCurrentUser, User } from "../lib/api";
 
 // Define shapes
-interface User {
-    id: number;
-    username: string;
-    is_active: boolean;
-    created_at: string;
-}
+// interface User remove definition as imported
 
 interface AuthContextType {
     user: User | null;
@@ -41,20 +37,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const fetchUser = async (authToken: string) => {
         try {
-            // Assuming API base URL is relative /api or configured
-            const res = await fetch("/api/auth/me", {
-                headers: {
-                    Authorization: `Bearer ${authToken}`,
-                },
-            });
-
-            if (res.ok) {
-                const userData = await res.json();
-                setUser(userData);
-            } else {
-                // Token invalid
-                logout();
-            }
+            const userData = await fetchCurrentUser(authToken);
+            setUser(userData);
         } catch (error) {
             console.error("Failed to fetch user:", error);
             logout();
@@ -68,14 +52,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem("access_token", newToken);
         setToken(newToken);
         await fetchUser(newToken); // Wait for user data to be fetched
-        router.push("/");
+
+        // Handle navigation in Electron (file:// protocol)
+        if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
+            window.location.href = 'index.html';
+        } else {
+            router.push("/");
+        }
     };
 
     const logout = () => {
         localStorage.removeItem("access_token");
         setToken(null);
         setUser(null);
-        router.push("/login");
+
+        // Handle navigation in Electron (file:// protocol)
+        if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
+            // Force navigation to the HTML file directly
+            window.location.href = 'login.html';
+        } else {
+            router.push("/login");
+        }
     };
 
     const refreshUser = async () => {

@@ -54,8 +54,8 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
     const renderPieChart = (title: string, data: AggregatedData[]) => (
         <div className="bg-card p-4 rounded-xl shadow-sm border border-border flex flex-col h-[32rem]">
             <h3 className="text-lg font-semibold text-foreground mb-4 text-center">{title}</h3>
-            <div className="flex-grow">
-                <ResponsiveContainer width="100%" height="100%">
+            <div className="flex-grow min-h-0 relative">
+                <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
                     <PieChart>
                         <Pie
                             data={data}
