@@ -60,6 +60,7 @@ const IndexGraphModal = dynamic(() => import('@/components/IndexGraphModal'), { 
 import { useTheme } from 'next-themes';
 import { Home as HomeIcon, BarChart3, Settings as SettingsIcon, Moon, Sun, LogOut, UserCircle } from 'lucide-react';
 import ControlBar from '@/components/ControlBar';
+import UserMenu from '@/components/UserMenu';
 const LayoutConfigurator = dynamic(() => import('@/components/LayoutConfigurator'));
 
 // Static import for ThemeToggle since it's in the sidebar always visible
@@ -707,13 +708,12 @@ export default function Home() {
                 />
               )}
               <TabNavigation activeTab={activeTab} onTabChange={handleTabChange} onLogout={logout} side="bottom" />
-              <button
-                onClick={handleUserIconClick}
-                className="p-2 rounded-xl hover:bg-accent/10 transition-colors text-cyan-500"
-                title="User Settings"
-              >
-                <UserCircle className="w-5 h-5" />
-              </button>
+              <UserMenu
+                user={user}
+                onLogout={logout}
+                onUserClick={handleUserIconClick}
+                align="right"
+              />
             </div>
 
             <div className="hidden md:block">
@@ -781,13 +781,6 @@ export default function Home() {
         >
           {mounted && theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           <span className="mt-1">{mounted && theme === 'dark' ? 'Light' : 'Dark'}</span>
-        </div>
-        <div
-          className="flex flex-col items-center flex-1 cursor-pointer transition-colors hover:text-rose-600 dark:hover:text-rose-400"
-          onClick={() => { if (confirm('Are you sure you want to log out?')) logout(); }}
-        >
-          <LogOut className="w-5 h-5" />
-          <span className="mt-1">Log Out</span>
         </div>
       </div>
     </main >

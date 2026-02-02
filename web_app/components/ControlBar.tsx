@@ -2,7 +2,8 @@ import React from 'react';
 import TabNavigation from '@/components/TabNavigation';
 import CurrencySelector from '@/components/CurrencySelector';
 import ThemeToggle from '@/components/ThemeToggle';
-import { UserCircle, Settings as SettingsIcon, LogOut, Home } from 'lucide-react';
+import UserMenu from '@/components/UserMenu';
+import { Settings as SettingsIcon, Home } from 'lucide-react';
 
 interface ControlBarProps {
     activeTab: string;
@@ -57,7 +58,7 @@ export default function ControlBar({
                     <button
                         onClick={onSettingsClick}
                         className="p-2 rounded-xl text-cyan-500 hover:bg-accent/10 transition-all duration-300 group"
-                        title="Settings"
+                        title="Project Settings"
                     >
                         <SettingsIcon className="w-5 h-5 transition-transform duration-300 group-hover:rotate-90" />
                     </button>
@@ -74,21 +75,12 @@ export default function ControlBar({
 
                     <div className="h-6 w-px bg-border mx-1" />
 
-                    <button
-                        onClick={onUserClick}
-                        className="p-2 rounded-xl text-cyan-500 hover:bg-accent/10 transition-all duration-300 group"
-                        title="User Settings"
-                    >
-                        <UserCircle className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />
-                    </button>
-
-                    <button
-                        onClick={() => user && onLogout?.()}
-                        className="p-2 rounded-xl text-cyan-500 hover:bg-accent/10 transition-all duration-300 group"
-                        title="Log Out"
-                    >
-                        <LogOut className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />
-                    </button>
+                    <UserMenu
+                        user={user}
+                        onLogout={onLogout}
+                        onUserClick={onUserClick}
+                        align="right"
+                    />
                 </div>
             </div>
         </div>
