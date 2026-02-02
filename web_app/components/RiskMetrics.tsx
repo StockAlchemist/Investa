@@ -245,7 +245,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading }: Ris
                                 <div className="flex flex-col items-center justify-center p-4 min-w-[130px] gap-2">
                                     <ScoreRing score={portfolioHealth.overall_score} />
                                     <div className={cn(
-                                        "text-sm font-bold tracking-tight",
+                                        "text-base font-bold tracking-tight",
                                         portfolioHealth.overall_score >= 80 ? "text-cyan-500" :
                                             portfolioHealth.overall_score >= 60 ? "text-emerald-500" :
                                                 portfolioHealth.overall_score >= 40 ? "text-yellow-500" : "text-red-500"
@@ -258,11 +258,11 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading }: Ris
                                 <div className="flex flex-col justify-center gap-3 w-full pr-2 border-l border-border/40 pl-4 py-2">
                                     <div className="flex justify-between items-center group/row">
                                         <div className="flex items-center gap-2 text-muted-foreground">
-                                            <PieChart className="w-3.5 h-3.5" />
-                                            <span className="text-[10px] font-bold uppercase tracking-wider">Diversification</span>
+                                            <PieChart className="w-4 h-4" />
+                                            <span className="text-xs font-bold uppercase tracking-wider">Diversification</span>
                                         </div>
                                         <span className={cn(
-                                            "font-mono text-sm font-bold",
+                                            "font-mono text-base font-bold",
                                             portfolioHealth.components.diversification.score >= 60 ? "text-emerald-500" : "text-yellow-500"
                                         )}>
                                             {portfolioHealth.components.diversification.score}
@@ -270,11 +270,11 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading }: Ris
                                     </div>
                                     <div className="flex justify-between items-center group/row">
                                         <div className="flex items-center gap-2 text-muted-foreground">
-                                            <TrendingUp className="w-3.5 h-3.5" />
-                                            <span className="text-[10px] font-bold uppercase tracking-wider">Efficiency</span>
+                                            <TrendingUp className="w-4 h-4" />
+                                            <span className="text-xs font-bold uppercase tracking-wider">Efficiency</span>
                                         </div>
                                         <span className={cn(
-                                            "font-mono text-sm font-bold",
+                                            "font-mono text-base font-bold",
                                             portfolioHealth.components.efficiency.score >= 60 ? "text-emerald-500" : "text-yellow-500"
                                         )}>
                                             {portfolioHealth.components.efficiency.score}
@@ -282,11 +282,11 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading }: Ris
                                     </div>
                                     <div className="flex justify-between items-center group/row">
                                         <div className="flex items-center gap-2 text-muted-foreground">
-                                            <ShieldCheck className="w-3.5 h-3.5" />
-                                            <span className="text-[10px] font-bold uppercase tracking-wider">Stability</span>
+                                            <ShieldCheck className="w-4 h-4" />
+                                            <span className="text-xs font-bold uppercase tracking-wider">Stability</span>
                                         </div>
                                         <span className={cn(
-                                            "font-mono text-sm font-bold",
+                                            "font-mono text-base font-bold",
                                             portfolioHealth.components.stability.score >= 60 ? "text-emerald-500" : "text-yellow-500"
                                         )}>
                                             {portfolioHealth.components.stability.score}
