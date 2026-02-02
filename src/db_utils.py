@@ -62,6 +62,11 @@ def get_database_path(db_filename: str = DB_FILENAME) -> str:
     return app_data_path
 
 
+def get_global_screener_db_path() -> str:
+    """Returns the path to the global master screener database."""
+    return os.path.join(config.get_app_data_dir(), DB_FILENAME)
+
+
 _DB_CONN_CACHE = threading.local()
 
 def get_db_connection(db_path: Optional[str] = None, check_same_thread: bool = True, use_cache: bool = True) -> Optional[sqlite3.Connection]:
@@ -1108,53 +1113,103 @@ def get_cached_screener_results(db_conn: sqlite3.Connection, symbols: List[str])
     placeholders = ",".join(["?"] * len(symbols))
     sql = f"SELECT * FROM screener_cache WHERE symbol IN ({placeholders})"
     
-    try:
-        cursor = db_conn.cursor()
-        cursor.execute(sql, symbols)
-        rows = cursor.fetchall()
-        
-        # Get column names
-        cols = [description[0] for description in cursor.description]
-        
-        results = {}
-        for row in rows:
-            row_dict = dict(zip(cols, row))
+    results = {}
+    
+    def fetch_and_map(conn, syms):
+        try:
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT * FROM screener_cache WHERE symbol IN ({','.join(['?'] * len(syms))})", syms)
+            rows = cursor.fetchall()
+            cols = [description[0] for description in cursor.description]
             
-            # Calculate average AI score if available
-            ai_scores = [
-                row_dict.get("ai_moat"),
-                row_dict.get("ai_financial_strength"),
-                row_dict.get("ai_predictability"),
-                row_dict.get("ai_growth")
-            ]
-            valid_scores = [s for s in ai_scores if s is not None]
-            if valid_scores:
-                row_dict["ai_score"] = sum(valid_scores) / len(valid_scores)
-            else:
-                row_dict["ai_score"] = None
+            mapping = {}
+            for row in rows:
+                row_dict = dict(zip(cols, row))
+                # Calculate average AI score if available
+                ai_scores = [
+                    row_dict.get("ai_moat"),
+                    row_dict.get("ai_financial_strength"),
+                    row_dict.get("ai_predictability"),
+                    row_dict.get("ai_growth")
+                ]
+                valid_scores = [s for s in ai_scores if s is not None]
+                if valid_scores:
+                    row_dict["ai_score"] = sum(valid_scores) / len(valid_scores)
+                else:
+                    row_dict["ai_score"] = None
                 
-            # --- MERGE LOGIC: Prioritize entries with AI Data ---
-            symbol = row_dict["symbol"]
-            if symbol not in results:
-                results[symbol] = row_dict
-            else:
-                current_summary = results[symbol].get("ai_summary")
-                new_summary = row_dict.get("ai_summary")
-                # If current has no summary but new one does, upgrade
-                if not (current_summary and len(current_summary) > 0) and (new_summary and len(new_summary) > 0):
-                    results[symbol] = row_dict
+                mapping[row_dict["symbol"]] = row_dict
+            return mapping
+        except sqlite3.Error:
+            return {}
 
-        return results
-    except sqlite3.Error as e:
-        logging.error(f"Error fetching cached screener results: {e}")
-        return {}
+    # 1. Fetch from primary database (User DB)
+    results = fetch_and_map(db_conn, symbols)
+    
+    # 2. If using an isolated database, fallback to Global DB for AI data
+    global_path = get_global_screener_db_path()
+    try:
+        # Check if the current connection is NOT the global database
+        # We check by comparing normalized absolute paths
+        import sqlite3 as sqlite_lib
+        current_db_res = db_conn.execute("PRAGMA database_list").fetchone()
+        current_db_path = current_db_res[2] if current_db_res else ""
+        
+        is_isolated = False
+        if current_db_path:
+            is_isolated = os.path.abspath(current_db_path) != os.path.abspath(global_path)
+            
+        if is_isolated and os.path.exists(global_path):
+            with sqlite_lib.connect(global_path) as global_conn:
+                global_data = fetch_and_map(global_conn, symbols)
+                
+                # Merge AI data from global into user results
+                for symbol, g_info in global_data.items():
+                    if symbol not in results:
+                        # If not in user cache at all, just use the global entry
+                        results[symbol] = g_info
+                    else:
+                        # If in user cache but missing AI data, merge AI fields
+                        u_info = results[symbol]
+                        has_ai = u_info.get("ai_summary") and len(u_info["ai_summary"]) > 0
+                        g_has_ai = g_info.get("ai_summary") and len(g_info["ai_summary"]) > 0
+                        
+                        if not has_ai and g_has_ai:
+                            ai_fields = [
+                                "ai_moat", "ai_financial_strength", "ai_predictability", 
+                                "ai_growth", "ai_summary", "ai_score"
+                            ]
+                            for field in ai_fields:
+                                u_info[field] = g_info.get(field)
+    except Exception as e:
+        logging.warning(f"Failed to merge global AI data: {e}")
+
+    return results
 
 def get_screener_results_by_universe(db_conn: sqlite3.Connection, universe: str) -> List[Dict[str, Any]]:
     """Retrieves all cached screener results for a specific universe tag."""
-    sql = "SELECT * FROM screener_cache WHERE universe = ? ORDER BY margin_of_safety DESC"
+    
+    # --- ISOLATION FIX: If universe is public, prioritize Global DB ---
+    public_universes = ['sp500', 'sp400', 'russell2000']
+    global_path = get_global_screener_db_path()
+    
+    target_conn = db_conn
+    is_temporary_conn = False
     
     try:
-        cursor = db_conn.cursor()
+        if universe in public_universes and os.path.exists(global_path):
+            import sqlite3 as sqlite_lib
+            # Check if current connection is already the global one
+            current_db_res = db_conn.execute("PRAGMA database_list").fetchone()
+            current_db_path = current_db_res[2] if current_db_res else ""
+            
+            if os.path.abspath(current_db_path) != os.path.abspath(global_path):
+                target_conn = sqlite_lib.connect(global_path)
+                is_temporary_conn = True
+                logging.info(f"Using global DB for public universe '{universe}'")
+
+        sql = "SELECT * FROM screener_cache WHERE universe = ? ORDER BY margin_of_safety DESC"
+        cursor = target_conn.cursor()
         cursor.execute(sql, (universe,))
         rows = cursor.fetchall()
         
@@ -1165,7 +1220,7 @@ def get_screener_results_by_universe(db_conn: sqlite3.Connection, universe: str)
             
             # Cleanup for frontend consistency
             if "ai_summary" in row_dict:
-                row_dict["has_ai_review"] = row_dict["ai_summary"] is not None
+                row_dict["has_ai_review"] = row_dict["ai_summary"] is not None and len(row_dict["ai_summary"]) > 20
             
             # Calculate average AI score if available
             ai_scores = [
@@ -1185,84 +1240,110 @@ def get_screener_results_by_universe(db_conn: sqlite3.Connection, universe: str)
     except sqlite3.Error as e:
         logging.error(f"Error fetching screener results for universe {universe}: {e}")
         return []
+    finally:
+        if is_temporary_conn:
+            target_conn.close()
 def update_ai_review_in_cache(db_conn: sqlite3.Connection, symbol: str, ai_data: Dict[str, Any], info: Optional[Dict[str, Any]] = None, universe: str = 'manual'):
     """
     Specifically updates the AI review portions of the screener cache.
     Targets ALL universes for the given symbol to keep them in sync.
     If no entries exist, creates a new entry with the specified universe.
     Also syncs metadata from 'info' if provided.
-    """
-    now_str = datetime.now().isoformat()
-    scorecard = ai_data.get("scorecard", {})
     
-    # 1. Update all existing entries
-    update_sql = """
-    UPDATE screener_cache SET
-        ai_moat = ?,
-        ai_financial_strength = ?,
-        ai_predictability = ?,
-        ai_growth = ?,
-        ai_summary = ?,
-        name = COALESCE(?, name),
-        price = COALESCE(?, price),
-        pe_ratio = COALESCE(?, pe_ratio),
-        market_cap = COALESCE(?, market_cap),
-        sector = COALESCE(?, sector),
-        last_fiscal_year_end = COALESCE(?, last_fiscal_year_end),
-        most_recent_quarter = COALESCE(?, most_recent_quarter),
-        updated_at = ?
-    WHERE symbol = ?
+    ISOLATION FIX: Also attempts to update the global master database if db_conn is isolated.
     """
-    
-    name = info.get("shortName") if info else None
-    price = info.get("currentPrice") if info else None
-    pe = info.get("trailingPE") if info else None
-    mcap = info.get("marketCap") if info else None
-    sector = info.get("sector") if info else None
-    fy_end = info.get("lastFiscalYearEnd") if info else None
-    mrq = info.get("mostRecentQuarter") if info else None
-
-    try:
-        cursor = db_conn.cursor()
-        cursor.execute(update_sql, (
-            scorecard.get("moat"),
-            scorecard.get("financial_strength"),
-            scorecard.get("predictability"),
-            scorecard.get("growth"),
-            ai_data.get("summary"),
-            name, price, pe, mcap, sector,
-            fy_end, mrq,
-            now_str,
-            symbol.upper()
-        ))
+    def do_update(conn, sym, data, inf, univ):
+        now_str = datetime.now().isoformat()
+        scorecard = data.get("scorecard", {})
         
-        # 2. If no rows affected, create new entry using the provided universe
-        if cursor.rowcount == 0:
-            insert_sql = """
-            INSERT INTO screener_cache (
-                symbol, universe, ai_moat, ai_financial_strength, 
-                ai_predictability, ai_growth, ai_summary, 
-                name, price, pe_ratio, market_cap, sector, 
-                last_fiscal_year_end, most_recent_quarter, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
-            cursor.execute(insert_sql, (
-                symbol.upper(),
-                universe,
+        # 1. Update all existing entries
+        update_sql = """
+        UPDATE screener_cache SET
+            ai_moat = ?,
+            ai_financial_strength = ?,
+            ai_predictability = ?,
+            ai_growth = ?,
+            ai_summary = ?,
+            name = COALESCE(?, name),
+            price = COALESCE(?, price),
+            pe_ratio = COALESCE(?, pe_ratio),
+            market_cap = COALESCE(?, market_cap),
+            sector = COALESCE(?, sector),
+            last_fiscal_year_end = COALESCE(?, last_fiscal_year_end),
+            most_recent_quarter = COALESCE(?, most_recent_quarter),
+            updated_at = ?
+        WHERE symbol = ?
+        """
+        
+        short_name = inf.get("shortName") if inf else None
+        price_val = inf.get("currentPrice") if inf else None
+        pe_val = inf.get("trailingPE") if inf else None
+        mcap_val = inf.get("marketCap") if inf else None
+        sector_val = inf.get("sector") if inf else None
+        fy_end_val = inf.get("lastFiscalYearEnd") if inf else None
+        mrq_val = inf.get("mostRecentQuarter") if inf else None
+
+        try:
+            cursor = conn.cursor()
+            cursor.execute(update_sql, (
                 scorecard.get("moat"),
                 scorecard.get("financial_strength"),
                 scorecard.get("predictability"),
                 scorecard.get("growth"),
-                ai_data.get("summary"),
-                name, price, pe, mcap, sector,
-                fy_end, mrq,
-                now_str
+                data.get("summary"),
+                short_name, price_val, pe_val, mcap_val, sector_val,
+                fy_end_val, mrq_val,
+                now_str,
+                sym.upper()
             ))
+            
+            # 2. If no rows affected, create new entry using the provided universe
+            if cursor.rowcount == 0:
+                insert_sql = """
+                INSERT INTO screener_cache (
+                    symbol, universe, ai_moat, ai_financial_strength, 
+                    ai_predictability, ai_growth, ai_summary, 
+                    name, price, pe_ratio, market_cap, sector, 
+                    last_fiscal_year_end, most_recent_quarter, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                cursor.execute(insert_sql, (
+                    sym.upper(),
+                    univ,
+                    scorecard.get("moat"),
+                    scorecard.get("financial_strength"),
+                    scorecard.get("predictability"),
+                    scorecard.get("growth"),
+                    data.get("summary"),
+                    short_name, price_val, pe_val, mcap_val, sector_val,
+                    fy_end_val, mrq_val,
+                    now_str
+                ))
+            
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logging.error(f"Error in do_update for {sym}: {e}")
+            conn.rollback()
+            return False
+
+    # 1. Update primary database
+    do_update(db_conn, symbol, ai_data, info, universe)
+    
+    # 2. Update global database if isolated
+    global_path = get_global_screener_db_path()
+    try:
+        current_db_res = db_conn.execute("PRAGMA database_list").fetchone()
+        current_db_path = current_db_res[2] if current_db_res else ""
         
-        db_conn.commit()
-    except sqlite3.Error as e:
-        logging.error(f"Error updating AI review in cache for {symbol}: {e}")
-        db_conn.rollback()
+        if current_db_path and os.path.abspath(current_db_path) != os.path.abspath(global_path):
+            if os.path.exists(global_path):
+                import sqlite3 as sqlite_lib
+                with sqlite_lib.connect(global_path) as global_conn:
+                    do_update(global_conn, symbol, ai_data, info, universe)
+                    logging.info(f"Synchronized AI review for {symbol} to global DB.")
+    except Exception as e:
+        logging.warning(f"Failed to synchronize AI review to global DB: {e}")
 
 def update_intrinsic_value_in_cache(
     db_conn: sqlite3.Connection, 
@@ -1271,81 +1352,106 @@ def update_intrinsic_value_in_cache(
     margin_of_safety: Optional[float],
     last_fiscal_year_end: Optional[int] = None,
     most_recent_quarter: Optional[int] = None,
-    info: Optional[Dict[str, Any]] = None
+    info: Optional[Dict[str, Any]] = None,
+    universe: str = 'manual'
 ):
     """
     Updates intrinsic value and related metrics in the screener cache.
     Targets ALL universes for the given symbol to keep them in sync.
-    If no entries exist, creates a 'manual' universe entry.
+    If no entries exist, creates a new entry with the specified universe.
     Also syncs metadata from 'info' if provided.
+    
+    ISOLATION FIX: Also attempts to update the global master database if db_conn is isolated.
     """
-    now_str = datetime.now().isoformat()
-    
-    # 1. Update all existing entries
-    update_sql = """
-    UPDATE screener_cache SET
-        intrinsic_value = ?,
-        margin_of_safety = ?,
-        last_fiscal_year_end = COALESCE(?, last_fiscal_year_end),
-        most_recent_quarter = COALESCE(?, most_recent_quarter),
-        name = COALESCE(?, name),
-        price = COALESCE(?, price),
-        pe_ratio = COALESCE(?, pe_ratio),
-        market_cap = COALESCE(?, market_cap),
-        sector = COALESCE(?, sector),
-        updated_at = ?,
-        valuation_details = COALESCE(?, valuation_details)
-    WHERE symbol = ?
-    """
-    
-    name = info.get("shortName") if info else None
-    price = info.get("currentPrice") if info else None
-    pe = info.get("trailingPE") if info else None
-    mcap = info.get("marketCap") if info else None
-    sector = info.get("sector") if info else None
-    
-    # Check if info contains valuation_details
-    valuation_details = info.get("valuation_details") if info else None
-
-    try:
-        cursor = db_conn.cursor()
-        cursor.execute(update_sql, (
-            intrinsic_value,
-            margin_of_safety,
-            last_fiscal_year_end,
-            most_recent_quarter,
-            name, price, pe, mcap, sector,
-            now_str,
-            # FIX: Serialize valuation_details if it's a dict
-            json.dumps(valuation_details, cls=NpEncoder) if isinstance(valuation_details, dict) else valuation_details,
-            symbol.upper()
-        ))
+    def do_iv_update(conn, sym, iv, mos, fy_end, qtr, inf, univ):
+        now_str = datetime.now().isoformat()
         
-        # 2. If no rows affected, create new 'manual' entry
-        if cursor.rowcount == 0:
-            insert_sql = """
-            INSERT INTO screener_cache (
-                symbol, universe, intrinsic_value, margin_of_safety, 
-                last_fiscal_year_end, most_recent_quarter, 
-                name, price, pe_ratio, market_cap, sector, updated_at, valuation_details
-            ) VALUES (?, 'manual', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
-            cursor.execute(insert_sql, (
-                symbol.upper(),
-                intrinsic_value,
-                margin_of_safety,
-                last_fiscal_year_end,
-                most_recent_quarter,
-                name, price, pe, mcap, sector,
+        # 1. Update all existing entries
+        update_sql = """
+        UPDATE screener_cache SET
+            intrinsic_value = ?,
+            margin_of_safety = ?,
+            last_fiscal_year_end = COALESCE(?, last_fiscal_year_end),
+            most_recent_quarter = COALESCE(?, most_recent_quarter),
+            name = COALESCE(?, name),
+            price = COALESCE(?, price),
+            pe_ratio = COALESCE(?, pe_ratio),
+            market_cap = COALESCE(?, market_cap),
+            sector = COALESCE(?, sector),
+            updated_at = ?,
+            valuation_details = COALESCE(?, valuation_details)
+        WHERE symbol = ?
+        """
+        
+        name_val = inf.get("shortName") if inf else None
+        price_val = inf.get("currentPrice") if inf else None
+        pe_val = inf.get("trailingPE") if inf else None
+        mcap_val = inf.get("marketCap") if inf else None
+        sector_val = inf.get("sector") if inf else None
+        
+        # Check if info contains valuation_details
+        valuation_details = inf.get("valuation_details") if inf else None
+
+        try:
+            cursor = conn.cursor()
+            cursor.execute(update_sql, (
+                iv,
+                mos,
+                fy_end,
+                qtr,
+                name_val, price_val, pe_val, mcap_val, sector_val,
                 now_str,
                 # FIX: Serialize valuation_details if it's a dict
-                json.dumps(valuation_details, cls=NpEncoder) if isinstance(valuation_details, dict) else valuation_details
+                json.dumps(valuation_details, cls=NpEncoder) if isinstance(valuation_details, dict) else valuation_details,
+                sym.upper()
             ))
             
-        db_conn.commit()
-    except sqlite3.Error as e:
-        logging.error(f"Error updating intrinsic value in cache for {symbol}: {e}")
-        db_conn.rollback()
+            # 2. If no rows affected, create new entry with provided universe
+            if cursor.rowcount == 0:
+                insert_sql = """
+                INSERT INTO screener_cache (
+                    symbol, universe, intrinsic_value, margin_of_safety, 
+                    last_fiscal_year_end, most_recent_quarter, 
+                    name, price, pe_ratio, market_cap, sector, updated_at, valuation_details
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                cursor.execute(insert_sql, (
+                    sym.upper(),
+                    univ,
+                    iv,
+                    mos,
+                    fy_end,
+                    qtr,
+                    name_val, price_val, pe_val, mcap_val, sector_val,
+                    now_str,
+                    # FIX: Serialize valuation_details if it's a dict
+                    json.dumps(valuation_details, cls=NpEncoder) if isinstance(valuation_details, dict) else valuation_details
+                ))
+                
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logging.error(f"Error in do_iv_update for {sym}: {e}")
+            conn.rollback()
+            return False
+
+    # 1. Update primary database
+    do_iv_update(db_conn, symbol, intrinsic_value, margin_of_safety, last_fiscal_year_end, most_recent_quarter, info, universe)
+    
+    # 2. Update global database if isolated
+    global_path = get_global_screener_db_path()
+    try:
+        current_db_res = db_conn.execute("PRAGMA database_list").fetchone()
+        current_db_path = current_db_res[2] if current_db_res else ""
+        
+        if current_db_path and os.path.abspath(current_db_path) != os.path.abspath(global_path):
+            if os.path.exists(global_path):
+                import sqlite3 as sqlite_lib
+                with sqlite_lib.connect(global_path) as global_conn:
+                    do_iv_update(global_conn, symbol, intrinsic_value, margin_of_safety, last_fiscal_year_end, most_recent_quarter, info, universe)
+                    logging.info(f"Synchronized intrinsic value for {symbol} to global DB.")
+    except Exception as e:
+        logging.warning(f"Failed to synchronize intrinsic value to global DB: {e}")
 
 
 def initialize_database(db_path: Optional[str] = None) -> Optional[sqlite3.Connection]:

@@ -16,7 +16,7 @@ FALLBACK_MODELS = [
     "gemini-2.5-flash-lite"
 ]
 
-def generate_stock_review(symbol: str, fund_data: dict, ratios_data: dict, force_refresh: bool = False) -> dict:
+def generate_stock_review(symbol: str, fund_data: dict, ratios_data: dict, force_refresh: bool = False, use_search: bool = True) -> dict:
     """
     Generates a comprehensive stock review using Gemini/Gemma models.
     Includes file-based caching and a fallback chain to handle rate limits.
@@ -196,11 +196,11 @@ Return the response STRICTLY as a JSON object with the following structure:
 Do not include any other markdown formatting or explanations outside the JSON block.
 """
 
-    payload = {
+    # Base payload without tools
+    base_payload = {
         "contents": [{
             "parts": [{"text": prompt}]
         }],
-        "tools": [{"google_search": {}}],
         "generationConfig": {
             "response_mime_type": "application/json"
         }
@@ -213,40 +213,63 @@ Do not include any other markdown formatting or explanations outside the JSON bl
 
     for model in FALLBACK_MODELS:
         base_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-        max_retries_per_model = 1
-        base_delay = 5 # Reduced base delay since we have fallbacks
         
-        logging.info(f"AI Analysis: Attempting review for {symbol} using model '{model}'...")
+        # We try each model according to the user's strategy:
+        # - Gemini 3: No search (to avoid 429s)
+        # - Gemini 2.5: Search enabled (as first attempt), then fallback to no-search
+        if "gemini-3" in model:
+            search_options = [False]
+        else:
+            search_options = [True, False] if use_search else [False]
         
-        for attempt in range(max_retries_per_model):
+        for current_search_setting in search_options:
+            logging.info(f"AI Analysis: Attempting review for {symbol} using model '{model}' (Search: {current_search_setting})...")
+            
+            # Create a model-specific and search-specific payload
+            current_payload = json.loads(json.dumps(base_payload)) # Deep copy
+            
+            if current_search_setting:
+                current_payload["tools"] = [{"google_search": {}}]
+            
+            # FIX: gemini-2.5 models do not support tools + json_mode together.
+            # We drop json_mode and rely on the prompt's "STRICTLY as a JSON object" instruction.
+            if "gemini-2.5" in model and current_search_setting:
+                 current_payload["generationConfig"].pop("response_mime_type", None)
+
             try:
                 response = requests.post(
                     f"{base_url}?key={api_key}",
                     headers={"Content-Type": "application/json"},
-                    json=payload,
+                    json=current_payload,
                     timeout=60
                 )
                 
                 # Check for rate limits or server errors
                 if response.status_code == 429 or 500 <= response.status_code < 600:
-                    if attempt < max_retries_per_model - 1:
-                        delay = (base_delay * (2 ** attempt)) + (random.random() * 2)
-                        logging.warning(f"AI Analysis: Model '{model}' rate limited/error ({response.status_code}). Retrying in {delay:.1f}s...")
-                        time.sleep(delay)
-                        continue
-                    else:
-                        logging.warning(f"AI Analysis: Model '{model}' failed (status {response.status_code}). Falling back to next model in chain...")
-                        break # Try next model
+                    logging.warning(f"AI Analysis: Model '{model}' (Search: {current_search_setting}) failed (status {response.status_code}). Response: {response.text[:200]}...")
+                    # If this was with search, the inner loop will try without search.
+                    # If this was already without search, we break to the next model.
+                    continue 
                 
                 response.raise_for_status()
                 
                 data = response.json()
                 content_text = data['candidates'][0]['content']['parts'][0]['text']
                 
-                if content_text.startswith("```json"):
-                    content_text = content_text.replace("```json", "").replace("```", "").strip()
-                
-                result = json.loads(content_text)
+                # Robust JSON extraction: Find the substring between first '{' and last '}'
+                try:
+                    start_idx = content_text.find('{')
+                    end_idx = content_text.rfind('}')
+                    
+                    if start_idx != -1 and end_idx != -1 and end_idx >= start_idx:
+                        json_str = content_text[start_idx : end_idx + 1]
+                        result = json.loads(json_str)
+                    else:
+                        # Fallback if no braces found
+                        result = json.loads(content_text)
+                except json.JSONDecodeError as e:
+                    logging.warning(f"JSON Parse Error for {model}: {e}. Content preview: {content_text[:100]}...")
+                    continue # Try next option or next model
                 
                 # Save to cache
                 try:
@@ -260,6 +283,7 @@ Do not include any other markdown formatting or explanations outside the JSON bl
                             "timestamp": time.time(), 
                             "analysis": result, 
                             "model_used": model,
+                            "search_included": current_search_setting,
                             "metadata": metadata
                         }, f)
                     
@@ -279,14 +303,11 @@ Do not include any other markdown formatting or explanations outside the JSON bl
                 return result
                 
             except Exception as e:
-                if attempt < max_retries_per_model - 1:
-                    delay = (base_delay * (2 ** attempt)) + (random.random() * 2)
-                    logging.warning(f"AI Analysis: transient error for '{model}': {e}. Retrying in {delay:.1f}s...")
-                    time.sleep(delay)
-                    continue
-                else:
-                    logging.warning(f"AI Analysis: Model '{model}' failed completely. Falling back...")
-                    break # Try next model
+                error_msg = str(e)
+                if isinstance(e, requests.exceptions.HTTPError) and e.response is not None:
+                         error_msg += f" | Body: {e.response.text}"
+                logging.warning(f"AI Analysis: Model '{model}' (Search: {current_search_setting}) failed completely. Error: {error_msg}")
+                continue # Try next option or next model
 
     logging.error(f"AI Analysis: All models in fallback chain failed for {symbol}.")
     if stale_result:

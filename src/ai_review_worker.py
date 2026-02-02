@@ -39,7 +39,8 @@ except ImportError as e:
     print(f"CRITICAL: Failed to import modules. Make sure you are running with 'src' in PYTHONPATH. Error: {e}")
     sys.exit(1)
 
-BATCH_DELAY_SECONDS = 2
+BATCH_DELAY_SECONDS = 15 # Increased to 15s to respect Gemini 3 Flash 5 RPM limit (60s / 5 = 12s + buffer)
+USE_GROUNDING = True # Toggle Google Search (True uses search, False disables it)
 MAX_CONSECUTIVE_FAILURES = 5
 RATE_LIMIT_WAIT_SECONDS = 24 * 3600 # 24 hours
 
@@ -149,9 +150,13 @@ def process_stock(symbol: str, mdp, fund_data: dict, universe: str = 'sp500') ->
             except Exception as e:
                 logging.warning(f"Ratio calculation failed for {symbol}: {e}")
         
-        # 4. Generate Review
-        review = generate_stock_review(symbol, fund_data, ratios, force_refresh=False)
-        
+        # 4. Generate AI review
+        try:
+            review = generate_stock_review(symbol, fund_data, ratios, use_search=USE_GROUNDING)
+        except Exception as e:
+            logging.error(f"Failed to generate review for {symbol}: {e}")
+            return False # Indicate failure
+            
         if "error" in review:
             logging.error(f"Failed to generate review for {symbol}: {review['error']}")
             return False
