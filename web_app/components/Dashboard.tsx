@@ -250,7 +250,7 @@ export default function Dashboard({
                 return <TopContributors data={attributionData} isLoading={attributionLoading!} isRefreshing={isRefreshing} currency={currency} />;
             case 'portfolioDonut':
                 return (
-                    <Card className="h-full border-border hover:border-cyan-500/20 transition-colors relative overflow-hidden">
+                    <Card className="h-full hover:bg-accent/5 transition-all duration-300 hover:shadow-md relative overflow-hidden">
                         <CardContent className="h-full p-4 relative">
                             <div className="flex justify-between items-start mb-2">
                                 <div className="flex items-center gap-2">

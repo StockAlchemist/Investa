@@ -43,8 +43,8 @@ export function MetricCard({
 }: MetricCardProps) {
     return (
         <Card className={cn(
-            "h-full transition-all duration-300 relative overflow-hidden group border-border",
-            "hover:bg-accent/5 hover:border-cyan-500/20 hover:shadow-md",
+            "h-full transition-all duration-300 relative overflow-hidden group",
+            "hover:bg-accent/5 hover:shadow-md",
             containerClassName
         )}>
             <CardContent className="h-full flex flex-col justify-between p-4 relative">

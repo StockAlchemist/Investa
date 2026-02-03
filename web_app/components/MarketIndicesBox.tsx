@@ -24,7 +24,7 @@ export default function MarketIndicesBox({ indices, onClick, isFetching = false 
     return (
         <div
             onClick={onClick}
-            className="hidden md:flex items-center gap-1 p-1 rounded-2xl bg-card/40 border border-border/50 hover:bg-accent/10 hover:border-cyan-500/30 transition-all duration-300 group cursor-pointer overflow-hidden relative"
+            className="hidden md:flex items-center gap-1 p-1 rounded-2xl bg-card/40 hover:bg-accent/10 hover:shadow-sm transition-all duration-300 group cursor-pointer overflow-hidden relative"
         >
             {isFetching && (
                 <div className="absolute top-1 right-1 z-20">

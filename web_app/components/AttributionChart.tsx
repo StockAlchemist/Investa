@@ -42,14 +42,14 @@ const formatPercentHelper = (val: number) => {
 export function SectorAttribution({ data, isLoading, isRefreshing = false, currency }: CommonProps) {
     if (isLoading) {
         return (
-            <div className="bg-card rounded-xl p-6 shadow-sm border border-border animate-pulse h-80"></div>
+            <div className="bg-card rounded-xl p-6 shadow-sm animate-pulse h-80"></div>
         );
     }
 
     const hasSectors = data?.sectors && data.sectors.length > 0;
 
     return (
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-border h-full relative overflow-hidden">
+        <div className="bg-card rounded-xl p-6 shadow-sm h-full relative overflow-hidden">
             <div className="flex items-center gap-2 mb-6">
                 <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Sector Contribution</h3>
                 {isRefreshing && !isLoading && (
@@ -85,7 +85,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
 
     if (isLoading) {
         return (
-            <div className="bg-card rounded-xl p-6 shadow-sm border border-border animate-pulse h-80"></div>
+            <div className="bg-card rounded-xl p-6 shadow-sm animate-pulse h-80"></div>
         );
     }
 
@@ -93,7 +93,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
 
     return (
         <>
-            <div className="bg-card rounded-xl p-6 shadow-sm border border-border h-full relative overflow-hidden">
+            <div className="bg-card rounded-xl p-6 shadow-sm h-full relative overflow-hidden">
                 <div className="flex items-center gap-2 mb-6">
                     <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Top Contributors</h3>
                     {isRefreshing && !isLoading && (

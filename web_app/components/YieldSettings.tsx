@@ -40,10 +40,13 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
     };
 
     const handleThresholdChange = (account: string, value: string) => {
-        const numVal = parseFloat(value);
+        // Strip non-digits
+        const cleanValue = value.replace(/\D/g, '');
+        const numVal = cleanValue === '' ? 0 : parseInt(cleanValue, 10);
+
         setLocalThresholds(prev => ({
             ...prev,
-            [account]: isNaN(numVal) ? 0 : numVal
+            [account]: numVal
         }));
         setSaveStatus(null);
     };
@@ -131,8 +134,8 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
 
             {saveStatus && (
                 <div className={`p-4 rounded-md border text-sm flex items-center gap-2 ${saveStatus === 'success'
-                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
-                        : 'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400'
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400'
                     }`}>
                     {saveStatus === 'success' ? <Save size={16} /> : <AlertCircle size={16} />}
                     {statusMessage}
@@ -189,9 +192,8 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="max-w-[150px]">
                                                     <input
-                                                        type="number"
-                                                        step="100"
-                                                        value={localThresholds[account] || ''}
+                                                        type="text"
+                                                        value={localThresholds[account] ? localThresholds[account].toLocaleString('en-US') : ''}
                                                         onChange={(e) => handleThresholdChange(account, e.target.value)}
                                                         placeholder="0"
                                                         className={inputClassName}

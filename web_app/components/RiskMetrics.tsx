@@ -34,7 +34,7 @@ interface MetricItemProps {
 const MetricItem = ({ label, value, icon: Icon, description, colorClass, onClick }: MetricItemProps) => (
     <div
         onClick={onClick}
-        className="flex flex-col p-3 bg-secondary/30 rounded-xl border border-border/50 hover:border-cyan-500/50 hover:bg-cyan-500/5 cursor-pointer transition-all duration-300 group/item h-full justify-between"
+        className="flex flex-col p-3 bg-secondary/30 rounded-xl hover:bg-cyan-500/5 cursor-pointer transition-all duration-300 group/item h-full justify-between"
     >
         <div>
             <div className="flex items-center gap-2 text-muted-foreground mb-2">
@@ -150,7 +150,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
 
     if (isLoading) {
         return (
-            <Card className="h-full border-border bg-card">
+            <Card className="h-full bg-card">
                 <CardContent className="p-6">
                     <div className="flex justify-between items-center mb-6">
                         <Skeleton className="h-4 w-32" />
@@ -158,7 +158,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                     </div>
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                         {[1, 2, 3, 4].map((i) => (
-                            <div key={i} className="h-24 rounded-xl border border-border/50 bg-background/50 p-4 space-y-2">
+                            <div key={i} className="h-24 rounded-xl bg-background/50 p-4 space-y-2">
                                 <Skeleton className="h-3 w-16" />
                                 <Skeleton className="h-6 w-12" />
                             </div>
@@ -222,7 +222,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
 
     return (
         <React.Fragment>
-            <Card className="h-full border-border hover:border-cyan-500/20 transition-all duration-300 hover:shadow-md group relative overflow-hidden">
+            <Card className="h-full hover:bg-accent/5 transition-all duration-300 hover:shadow-md group relative overflow-hidden">
                 <CardContent className="h-full p-4 flex flex-col gap-4">
                     <div className="flex justify-between items-start">
                         <div className="flex items-center gap-2">
@@ -240,7 +240,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                         {/* Left Side: Portfolio Health */}
                         {portfolioHealth && (
                             <div
-                                className="lg:w-[40%] flex flex-row items-center p-2 rounded-xl border border-border/30 bg-secondary/5 hover:bg-secondary/10 transition-colors cursor-pointer group/health relative overflow-hidden"
+                                className="lg:w-[40%] flex flex-row items-center p-2 rounded-xl bg-secondary/5 transition-colors cursor-pointer group/health relative overflow-hidden"
                                 onClick={() => setIsHealthModalOpen(true)}
                             >
                                 <div className="absolute top-2 right-2 opacity-0 group-hover/health:opacity-100 transition-opacity">

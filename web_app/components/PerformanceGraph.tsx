@@ -338,7 +338,7 @@ export default function PerformanceGraph({
         return (
             <div
                 ref={containerRef}
-                className="rounded-xl p-6 shadow-sm border border-border h-[400px] flex items-center justify-center text-muted-foreground w-full"
+                className="rounded-xl p-6 shadow-sm h-[400px] flex items-center justify-center text-muted-foreground w-full"
                 style={{ backgroundColor: 'var(--menu-solid)' }}
             >
                 {!mounted || loading ? (
@@ -438,7 +438,7 @@ export default function PerformanceGraph({
             );
 
             return (
-                <div className="p-3 border border-border shadow-2xl rounded-xl min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-32px)] overflow-visible" style={{ backgroundColor: 'var(--menu-solid)' }}>
+                <div className="p-3 shadow-2xl rounded-xl min-w-[280px] sm:min-w-[320px] max-w-[calc(100vw-32px)] overflow-visible" style={{ backgroundColor: 'var(--menu-solid)' }}>
                     <p className="text-sm font-bold text-foreground mb-2 border-b border-border pb-1">
                         {dateStr}
                     </p>
@@ -535,7 +535,7 @@ export default function PerformanceGraph({
     const isContinuous = period === '1d';
 
     return (
-        <div ref={containerRef} className="bg-card rounded-xl p-4 shadow-sm border border-border mb-6 overflow-visible relative">
+        <div ref={containerRef} className="bg-card rounded-xl p-4 shadow-sm mb-6 overflow-visible relative">
             <div className="mb-6">
                 <div className="flex flex-col items-start gap-1 md:flex-row md:justify-between md:items-center md:gap-0 mb-4">
                     <h3 className="text-lg font-medium text-muted-foreground flex items-center gap-2">
@@ -571,7 +571,7 @@ export default function PerformanceGraph({
                         </div>
                         {period === 'custom' && (
                             <div className="flex items-center gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
-                                <div className="flex items-center gap-1.5 bg-secondary rounded-lg px-2.5 py-1 border border-border">
+                                <div className="flex items-center gap-1.5 bg-secondary rounded-lg px-2.5 py-1">
                                     <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">From</span>
                                     <input
                                         type="date"
@@ -580,7 +580,7 @@ export default function PerformanceGraph({
                                         className="bg-transparent border-none text-xs sm:text-sm font-medium focus:ring-0 p-0 w-[110px] sm:w-auto"
                                     />
                                 </div>
-                                <div className="flex items-center gap-1.5 bg-secondary rounded-lg px-2.5 py-1 border border-border">
+                                <div className="flex items-center gap-1.5 bg-secondary rounded-lg px-2.5 py-1">
                                     <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">To</span>
                                     <input
                                         type="date"
@@ -597,7 +597,7 @@ export default function PerformanceGraph({
                         {view === 'return' && (
                             <BenchmarkSelector selectedBenchmarks={benchmarks} onBenchmarkChange={onBenchmarksChange} />
                         )}
-                        <div className="flex bg-secondary rounded-lg p-1 border border-border shrink-0">
+                        <div className="flex bg-secondary rounded-lg p-1 shrink-0">
                             <button
                                 onClick={() => onViewChange('return')}
                                 className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'return'
