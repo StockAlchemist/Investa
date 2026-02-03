@@ -1400,20 +1400,7 @@ def _build_summary_rows(
                  has_errors = True
                  fx_rate = np.nan
                  
-            # --- Interest Calculation ---
-            div_yield_on_current_pct_display = np.nan
-            est_annual_income_display = 0.0
-            
-            if account_interest_rates:
-                rate = account_interest_rates.get(account, 0.0)
-                thresh = interest_free_thresholds.get(account, 0.0)
-                if rate > 0 and current_qty > 0:
-                    eff_bal = max(0, current_qty - thresh)
-                    annual_income_local = eff_bal * (rate / 100.0)
-                    h["est_annual_income_local"] = annual_income_local # Update ref for verification if needed
-                    
-                    if pd.notna(fx_rate):
-                        est_annual_income_display = annual_income_local * fx_rate
+            est_annual_income_display = 0.0 # Will be populated in post-processing if rate > 0
 
             market_value_display_for_yield = current_qty * (fx_rate if pd.notna(fx_rate) else 0.0)
 
@@ -1501,13 +1488,54 @@ def _build_summary_rows(
                 "IRR (%)": stock_irr,
                 "Local Currency": local_currency,
                 "Price Source": price_source,
-                f"Div. Yield (Cost) %": div_yield_on_cost_pct_display,
-                f"Div. Yield (Current) %": div_yield_on_current_pct_display,
-                f"Est. Ann. Income ({display_currency})": est_annual_income_display,
+                f"Div. Yield (Current) %": np.nan, # Will be updated in post-processing
+                f"Est. Ann. Income ({display_currency})": 0.0, # Will be updated in post-processing
                 f"FX Gain/Loss ({display_currency})": fx_gain_loss_display_holding,
                 "FX Gain/Loss %": fx_gain_loss_pct_holding,
                 "Name": "Cash",
             })
+
+    # --- Post-Process: Apply Cash Yield Interest (Aggregated by Account) ---
+    if account_interest_rates:
+        # 1. Group cash rows by account
+        account_cash_map = defaultdict(list)
+        for row in portfolio_summary_rows:
+            if row.get("Symbol", "").startswith("Cash") or row.get("Symbol") == "$CASH":
+                acc = row.get("Account")
+                if acc:
+                    account_cash_map[acc].append(row)
+        
+        # 2. Apply Threshold and Calculate Interest
+        for acc_name, rows in account_cash_map.items():
+            rate_pct = account_interest_rates.get(acc_name, 0.0)
+            if rate_pct <= 0:
+                continue
+                
+            thresh = interest_free_thresholds.get(acc_name, 0.0)
+            
+            # Calculate Total Market Value (Display Currency) for this account's cash
+            total_mv_display = sum(r.get(f"Market Value ({display_currency})", 0.0) for r in rows)
+            
+            # Calculate Effective Balance (Global Threshold Application)
+            # Assuming threshold is in Display Currency (USD usually) or same as MarketValue units
+            effective_balance_display = max(0.0, total_mv_display - thresh)
+            
+            # Calculate Total Expected Annual Income
+            total_income_display = effective_balance_display * (rate_pct / 100.0)
+            
+            # Distribute income back to rows (weighted by MV)
+            if total_mv_display > 1e-9:
+                for r in rows:
+                    mv = r.get(f"Market Value ({display_currency})", 0.0)
+                    weight = mv / total_mv_display
+                    allocated_income = total_income_display * weight
+                    
+                    r[f"Est. Ann. Income ({display_currency})"] = allocated_income
+                    if mv > 1e-9:
+                        r[f"Div. Yield (Current) %"] = (allocated_income / mv) * 100.0
+            elif total_income_display > 0:
+                 # Edge case: Total MV is 0 or negative but somehow we have income? Unlikely with max(0, ...).
+                 pass
     # --- End Cash Loop ---
 
 
@@ -3059,173 +3087,83 @@ def calculate_health_score(
 
 # --- ADDED: Helper to calculate monthly cash interest events (Shared) ---
 def generate_cash_interest_events(
-    df: pd.DataFrame,
+    portfolio_summary_rows: List[Dict[str, Any]],
     interest_rates: Dict[str, float],
     thresholds: Dict[str, float],
     start_date: date,
-    end_date: date
+    end_date: date,
+    display_currency: str = "USD"
 ) -> List[Dict[str, Any]]:
     """
-    Generates estimated monthly cash interest events for account balances.
-    
-    Args:
-        df: DataFrame containing holdings (specifically for filtering cash balances).
-            Should look like the raw transactions df or similar that contains "Symbol", "Account", "Local Currency".
-        interest_rates: Dict mapping account names to annual interest rates (%).
-        thresholds: Dict mapping account names to interest-free cash thresholds.
-        start_date: Start date for generating events.
-        end_date: End date for generating events.
-        
-    Returns:
-        List of event dictionaries suitable for the dividend calendar/summary.
+    Generates estimated monthly cash interest events using pre-calculated summary rows.
     """
     events = []
     
-    # Calculate *Current* Cash Balance per Account
-    # We need the current cash balance to project forward.
-    # Assuming 'df' here is the raw ALL TRANSACTIONS dataframe.
-    try:
-        from finutils import is_cash_symbol
+    # 1. Aggregate Cash Balances by Account (from Summary Rows)
+    # The summary rows are already in Display Currency (USD) and netted correctly.
+    account_usd_balances = defaultdict(float)
+    
+    logging.info(f"GenCashInterest: Processing {len(portfolio_summary_rows)} summary rows. Interest Rates keys: {list(interest_rates.keys())}")
+    
+    for row in portfolio_summary_rows:
+        # Check if it's a cash row
+        sym = row.get("Symbol", "")
+        # Add simpler check for safety in case of formatting changes
+        is_cash = sym == "$CASH" or sym.startswith("Cash ") or row.get("Name") == "Cash" or "Cash (" in sym
         
-        # Filter for cash transactions
-        # Note: df["Symbol"] might need .astype(str) safety if not done elsewhere
-        if "Symbol" not in df.columns or df.empty:
-             return []
+        if is_cash:
+             account = row.get("Account")
+             if account:
+                 # ROBUST LOOKUP: Find 'Market Value (...)' key
+                 mv = 0.0
+                 for k, v in row.items():
+                     if k.startswith("Market Value (") and isinstance(v, (int, float)):
+                         mv = v
+                         break
+                 
+                 account_usd_balances[account] += mv
+                 logging.info(f"GenCashInterest: Found cash row for {account}: {sym}, MV={mv}")
 
-        # Calculate Cash Balances per Account/Currency
-        # CRITICAL FIX: Ensure 'Total Amount' signs are correct. data_loader might return absolute values.
-        # Buys/Withdrawals/Fees -> Negative (Outflow)
-        # Sells/Deposits/Dividends -> Positive (Inflow)
-        
-        # We use ALL transactions to determine Net Cash (Deposits - Withdrawals + Sells - Buys + Divs)
-        # Checking "Symbol == $CASH" is insufficient as it ignores stock trades that spend cash.
-        cash_df = df.copy()
-        
-        # 1. Normalize Type
-        if "Type" in cash_df.columns:
-            cash_df["Type"] = cash_df["Type"].astype(str).str.lower().str.strip()
-        
-        # 2. Enforce Signs
-        # Define Outflows
-        outflow_types = ["buy", "withdrawal", "fee", "tax", "commission"]
-        inflow_types = ["sell", "deposit", "dividend", "interest"]
-        
-        # Ensure 'Total Amount' is numeric before calculations
-        if "Total Amount" not in cash_df.columns:
-            return []
-        cash_df["Total Amount"] = pd.to_numeric(cash_df["Total Amount"], errors='coerce').fillna(0.0)
+    logging.info(f"GenCashInterest: Aggregated Balances: {dict(account_usd_balances)}")
 
-        # Create 'calc_amount' column
-        cash_df["calc_amount"] = cash_df["Total Amount"]
-        
-        # Apply logic if Type exists
-        if "Type" in cash_df.columns: # "Total Amount" check already done
-            # Force Outflows to be negative
-            mask_out = cash_df["Type"].isin(outflow_types)
-            cash_df.loc[mask_out, "calc_amount"] = -cash_df.loc[mask_out, "Total Amount"].abs()
-            
-            # Force Inflows to be positive
-            mask_in = cash_df["Type"].isin(inflow_types)
-            cash_df.loc[mask_in, "calc_amount"] = cash_df.loc[mask_in, "Total Amount"].abs()
-            
-        # Group by Account and Currency using the corrected 'calc_amount'
-        group_cols = ["Account", "Local Currency"]
-        
-        # Ensure group cols exist
-        if not all(col in cash_df.columns for col in group_cols):
-             return []
+    today = date.today()
 
-        # Use 'calc_amount' explicitly
-        cash_balances = cash_df.groupby(group_cols)["calc_amount"].sum().reset_index()
+    # --- Generate Events per Account (Consolidated) ---
+    for account, balance_usd in account_usd_balances.items():
+            
+        # Apply Account Settings
+        rate = interest_rates.get(account)
+        if not rate or rate <= 0:
+            continue
+            
+        # Apply Threshold (Global per Account)
+        threshold = thresholds.get(account, 0.0)
+        effective_balance_usd = max(0, balance_usd - threshold)
         
-        # Prepare FX Rates
-        needed_currencies = set(cash_balances["Local Currency"].unique())
-        needed_currencies = {c for c in needed_currencies if c and c.upper() != "USD"}
+        if effective_balance_usd <= 0:
+            continue
+            
+        # Calculate Annual Interest (USD)
+        annual_income_usd = effective_balance_usd * (rate / 100.0)
+        monthly_payment_usd = annual_income_usd / 12.0
         
-        current_fx_rates = {}
-        if needed_currencies:
-            try:
-                from market_data import MarketDataProvider
-                provider = MarketDataProvider()
-                # Use positional arguments to match safe legacy usage pattern found elsewhere
-                _, rates, _, _, _ = provider.get_current_quotes(
-                    [],                 # internal_stock_symbols
-                    needed_currencies,  # required_currencies
-                    {},                 # user_symbol_map
-                    set()               # user_excluded_symbols
-                )
-                current_fx_rates = rates
-            except Exception as e_fx:
-                logging.warning(f"Failed to fetch FX for cash interest: {e_fx}")
-
-        today = date.today()
-        
-        for _, row in cash_balances.iterrows():
-            account = row["Account"]
-            currency = row["Local Currency"]
-            balance = row["calc_amount"]
+        if monthly_payment_usd > 0.01:
+            # Anchor to the current month to ensure we cover all 12 months of the projection window
+            iter_date = today.replace(day=1)
             
-            # Apply Account Settings
-            rate = interest_rates.get(account)
-            if not rate or rate <= 0:
-                continue
+            logging.info(f"GenCashInterest: Projecting for {account}: Rate={rate}%, Bal={balance_usd}, Monthly={monthly_payment_usd:.2f}, Start={iter_date}")
             
-            if balance <= 0:
-                continue
-                
-            # Apply Threshold
-            threshold = thresholds.get(account, 0.0)
-            effective_balance = max(0, balance - threshold)
-            
-            if effective_balance <= 0:
-                continue
-                
-            # Calculate Annual Interest
-            annual_income_local = effective_balance * (rate / 100.0)
-            monthly_payment_local = annual_income_local / 12.0
-            
-            # Convert to USD
-            monthly_payment_usd = 0.0
-            if currency == "USD":
-                monthly_payment_usd = monthly_payment_local
-            else:
-                fx = current_fx_rates.get(currency)
-                if fx and fx > 0:
-                     # YFinance "XXX=X" is typically "XXX per 1 USD" (e.g. THB=X is ~34.0)
-                     # So we DIVIDE the local amount by the rate to get USD.
-                     monthly_payment_usd = monthly_payment_local / fx
-                else:
-                    # Missing FX rate. Do NOT default to 1.0 as it causes massive inflation for weak currencies (e.g. JPY, THB).
-                    # Log once per run? Or just skip.
-                    # logging.warning(f"Skipping cash interest for {account} ({currency}): Missing FX rate.")
-                    continue
-            
-            if monthly_payment_usd > 0.01:
-                # Use next month 1st as anchor for "next payment"
-                iter_date = today.replace(day=1) + timedelta(days=32) # Next month
-                iter_date = iter_date.replace(day=1) 
-                
-                # Ensure we start >= start_date if provided
-                if iter_date < start_date:
-                    iter_date = start_date.replace(day=1)
-                    if iter_date < start_date: 
-                         # If start_date is mid-month, just take it? 
-                         # Or simpler: just ensure we iterate forward.
-                         pass
-
-                while iter_date <= end_date:
-                    events.append({
-                        "symbol": "$CASH",
-                        "dividend_date": str(iter_date),
-                        "ex_dividend_date": "",
-                        "amount": monthly_payment_usd,
-                        "status": "estimated",
-                        "account": account,
-                        "name": f"Cash Interest ({account} - {currency})"
-                    })
-                    iter_date = (pd.Timestamp(iter_date) + pd.DateOffset(months=1)).date()
+            # Generate monthly events
+            while iter_date <= end_date:
+                events.append({
+                    "symbol": "$CASH",
+                    "dividend_date": str(iter_date),
+                    "ex_dividend_date": "",
+                    "amount": monthly_payment_usd,
+                    "status": "estimated",
+                    "account": account,
+                    "name": f"Cash Interest ({account})" # Consolidated Name
+                })
+                iter_date = (pd.Timestamp(iter_date) + pd.DateOffset(months=1)).date()
                     
-    except Exception as e:
-        logging.error(f"Error generating cash interest events: {e}", exc_info=True)
-        
     return events

@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatCurrency } from '@/lib/utils';
 import { ResponsiveContainer, LineChart, Line } from 'recharts';
-import { LucideIcon } from 'lucide-react';
+import { LucideIcon, Loader2 } from 'lucide-react';
 
 export interface MetricCardProps {
     title: string;
@@ -21,6 +21,7 @@ export interface MetricCardProps {
     vertical?: boolean;
     sparklineData?: { value: number }[];
     isLoading?: boolean;
+    isRefreshing?: boolean;
     icon?: LucideIcon;
 }
 
@@ -37,6 +38,7 @@ export function MetricCard({
     sparklineData,
     currency = 'USD',
     isLoading = false,
+    isRefreshing = false,
     icon: Icon
 }: MetricCardProps) {
     return (
@@ -45,6 +47,11 @@ export function MetricCard({
             "hover:bg-accent/5 hover:border-cyan-500/20 hover:shadow-md",
             containerClassName
         )}>
+            {isRefreshing && !isLoading && (
+                <div className="absolute top-2 right-2 z-20">
+                    <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
+                </div>
+            )}
             <CardContent className="h-full flex flex-col justify-between p-4 relative">
                 <div className="flex justify-between items-start z-10">
                     <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{title}</p>

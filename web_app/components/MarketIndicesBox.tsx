@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { ResponsiveContainer, AreaChart, Area, YAxis } from 'recharts';
+import { Loader2 } from 'lucide-react';
 
 interface IndexData {
     name: string;
@@ -14,9 +15,10 @@ interface IndexData {
 interface MarketIndicesBoxProps {
     indices: Record<string, IndexData>;
     onClick: () => void;
+    isFetching?: boolean;
 }
 
-export default function MarketIndicesBox({ indices, onClick }: MarketIndicesBoxProps) {
+export default function MarketIndicesBox({ indices, onClick, isFetching = false }: MarketIndicesBoxProps) {
     const indexList = Object.values(indices);
 
     return (
@@ -24,6 +26,11 @@ export default function MarketIndicesBox({ indices, onClick }: MarketIndicesBoxP
             onClick={onClick}
             className="hidden md:flex items-center gap-1 p-1 rounded-2xl bg-card/40 border border-border/50 hover:bg-accent/10 hover:border-cyan-500/30 transition-all duration-300 group cursor-pointer overflow-hidden relative"
         >
+            {isFetching && (
+                <div className="absolute top-1 right-1 z-20">
+                    <Loader2 className="w-2.5 h-2.5 animate-spin text-cyan-500 opacity-70" />
+                </div>
+            )}
             {indexList.map((index, idx) => (
                 <div
                     key={index.name}

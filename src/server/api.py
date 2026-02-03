@@ -16,7 +16,7 @@ import shutil
 
 from server.dependencies import get_transaction_data, get_config_manager, reload_data, get_global_db_connection, get_user_db_connection
 from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
-from utils_time import get_est_today, get_latest_trading_date
+from utils_time import get_est_today, get_latest_trading_date, is_market_open
 from portfolio_analyzer import (
     calculate_periodic_returns, 
     extract_realized_capital_gains_history, 
@@ -266,6 +266,14 @@ async def change_password(
         raise HTTPException(status_code=500, detail="Failed to update password")
 
 
+
+
+@router.get("/market_status")
+async def get_market_status():
+    """
+    Returns whether the US stock market is currently open.
+    """
+    return {"is_open": is_market_open()}
 
 
 @router.get("/asset_change")
@@ -1318,7 +1326,8 @@ def _calculate_historical_performance_internal(
     return_df: bool = False,
     interval: str = "1d",
     from_date_str: Optional[str] = None,
-    to_date_str: Optional[str] = None
+    to_date_str: Optional[str] = None,
+    force: bool = False
 ):
     (
         df,
@@ -1520,6 +1529,8 @@ def _calculate_historical_performance_internal(
             account_currency_map=account_currency_map,
             default_currency=config.DEFAULT_CURRENCY,
             interval=calc_interval,
+            use_raw_data_cache=not force,
+            use_daily_results_cache=not force,
             original_csv_file_path=original_csv_path
         )
         logging.info(f"API History: Calc returned daily_df with {len(daily_df)} rows. Columns: {list(daily_df.columns)}")
@@ -1589,29 +1600,32 @@ def _calculate_historical_performance_internal(
     # We use iloc[0] (the baseline point t-1) as the reference.
     if daily_df is not None and not daily_df.empty: # Modified: Always normalize, even for "all"
         try:
+             # Standardized Baseline Search
+             def get_robust_divisor(series):
+                 if series.empty: return 1.0
+                 # Try first point
+                 v0 = series.iloc[0]
+                 if pd.notna(v0) and v0 != 0: return v0
+                 # Search forward for first non-zero/non-nan
+                 valid_points = series[series.notna() & (series != 0)]
+                 if not valid_points.empty:
+                     return valid_points.iloc[0]
+                 return 1.0
+
              # 1. Normalize Portfolio TWR
              if "Portfolio Accumulated Gain" in daily_df.columns:
-                 start_val = daily_df["Portfolio Accumulated Gain"].iloc[0]
-                 if start_val != 0:
-                     daily_df["Portfolio Accumulated Gain"] = daily_df["Portfolio Accumulated Gain"] / start_val
-                 # Optimization: No need to log every time, but good for debugging if needed
-                 # logging.debug(f"API: Normalized Portfolio TWR by factor {start_val}")
+                 start_val = get_robust_divisor(daily_df["Portfolio Accumulated Gain"])
+                 if start_val != 1.0 or daily_df["Portfolio Accumulated Gain"].iloc[0] == 0:
+                      daily_df["Portfolio Accumulated Gain"] = daily_df["Portfolio Accumulated Gain"] / start_val
 
-             # 2. Normalize Benchmarks
              # 2. Normalize Benchmarks
              if benchmarks:
                  for b_ticker in benchmarks:
                      bm_col = f"{b_ticker} Accumulated Gain"
                      if bm_col in daily_df.columns:
-                         # Backfill to ensure we have a valid start value if the exact start date is missing data
-                         daily_df[bm_col] = daily_df[bm_col].bfill()
-                         
-                         bm_start_val = daily_df[bm_col].iloc[0]
-                         if pd.notna(bm_start_val) and bm_start_val != 0:
+                         bm_start_val = get_robust_divisor(daily_df[bm_col])
+                         if bm_start_val != 1.0 or daily_df[bm_col].iloc[0] == 0:
                              daily_df[bm_col] = daily_df[bm_col] / bm_start_val
-                         elif pd.isna(bm_start_val):
-                              # If still NaN (empty series?), fill with 1.0
-                              daily_df[bm_col] = 1.0
                      # Add logging for benchmark price series alignment and Tuesday data
                      bm_price_col = f"{b_ticker} Price"
                      if bm_price_col in daily_df.columns:
@@ -1763,12 +1777,13 @@ def get_history(
     interval: str = "1d",
     from_date: Optional[str] = Query(None, alias="from"),
     to_date: Optional[str] = Query(None, alias="to"),
+    force: bool = False,
     data: tuple = Depends(get_transaction_data)
 ):
     """
     Returns historical portfolio performance (Value and TWR) and benchmarks.
     """
-    logging.info(f"get_history: period={period}, interval={interval}, from={from_date}, to={to_date}")
+    logging.info(f"get_history: period={period}, interval={interval}, from={from_date}, to={to_date}, force={force}")
     try:
         mapped_benchmarks = []
         if benchmarks:
@@ -1787,7 +1802,8 @@ def get_history(
             return_df=False,
             interval=interval,
             from_date_str=from_date,
-            to_date_str=to_date
+            to_date_str=to_date,
+            force=force
         )
     except Exception as e:
         logging.error(f"Error getting history: {e}", exc_info=True)
@@ -2292,23 +2308,31 @@ async def get_projected_income(
         try:
             # Re-fetch settings similarly to get_dividend_calendar to ensure freshness
             # (data[1] might be stale if dependency cache invalidation lags)
-            raw_df = data[0]
-            
             config_manager = get_config_manager(current_user)
             config_manager.load_manual_overrides()
             interest_rates = config_manager.manual_overrides.get("account_interest_rates", {})
             thresholds = config_manager.manual_overrides.get("interest_free_thresholds", {})
 
             if interest_rates:
+                # Corrected Date Anchoring: Adjusted `iter_date` to start from the 1st of the current month instead of skipping to the next month.
+                # This ensures the current month's interest is included in the 12-month projection chart, aligning it with the summary box.
+                # Ensured 12-Month Coverage: Modified the loop to ensure that even if the 12th month's interest payment falls slightly beyond the 1-year window in days,
+                # it is still captured for the monthly bucketing logic.
+                # Robust Aggregation: Improved the logic in `api.py` to correctly track and log the total cash interest added to the projection chart for easier debugging.
+                logging.info(f"Adding cash interest to projection for {current_user.username}. Account rates: {list(interest_rates.keys())}")
                 
+                # Use summary rows which have correct aggregated balances in Display Currency
+                # 'rows' variable is already available and populated from summary_df earlier in the function
                 cash_events = generate_cash_interest_events(
-                    df=raw_df,
+                    portfolio_summary_rows=rows,
                     interest_rates=interest_rates,
                     thresholds=thresholds,
                     start_date=today,
-                    end_date=end_projection.date()
+                    end_date=end_projection.date(),
+                    display_currency=currency
                 )
                 
+                total_cash_added = 0.0
                 # Aggregate events into the projection buckets
                 for event in cash_events:
                     # event["dividend_date"] is 'YYYY-MM-DD'
@@ -2317,13 +2341,18 @@ async def get_projected_income(
                     amt = event["amount"]
                     sym = event["symbol"] # $CASH
                     
+                    found = False
                     # Find matching result bucket
                     for res in results:
                         if res["year_month"] == key:
                             current_val = res.get(sym, 0.0)
                             res[sym] = current_val + amt
                             res["value"] += amt # Update total
+                            total_cash_added += amt
+                            found = True
                             break
+                
+                logging.info(f"ProjectedIncome: Added total {total_cash_added:.2f} in cash interest to 12M projection.")
                             
         except Exception as e_cash:
              logging.error(f"Error adding cash interest to projection: {e_cash}")
@@ -3026,6 +3055,9 @@ async def get_dividend_calendar(
         # Run in parallel
         # Run SEQUENTIALLY to absolutely prevent OOM/Thread exhaustion
         # This endpoint is a background feature, it can be slow.
+        
+
+        
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future_to_sym = {executor.submit(fetch_symbol_data, sym): sym for sym in holdings.keys()}
             for future in concurrent.futures.as_completed(future_to_sym):
@@ -3038,31 +3070,80 @@ async def get_dividend_calendar(
         # Sort by date
         calendar_events.sort(key=lambda x: x["dividend_date"])
         
-        # --- NEW: Add Virtual Interest on Cash via Helper ---
         try:
+            # Load settings
             config_manager.load_manual_overrides()
             interest_rates = config_manager.manual_overrides.get("account_interest_rates", {})
             thresholds = config_manager.manual_overrides.get("interest_free_thresholds", {})
             
-            if interest_rates:
-                cash_events = generate_cash_interest_events( # Changed to use imported function
-                    df=df,
+            # --- ALWAYS TRY to generate cash events + Debug ---
+            # (Previously we skipped if no rates, but that hides why they are missing in UI)
+            
+            # Count cash rows before processing for diagnostics
+            cash_row_count = 0
+            if rows:
+                for r in rows:
+                    sym = r.get("Symbol", "")
+                    if sym == "$CASH" or sym.startswith("Cash ") or r.get("Name") == "Cash" or "Cash (" in sym:
+                         cash_row_count += 1
+
+            # Detect currency
+            display_currency = "USD"
+            if rows:
+                for k in rows[0].keys():
+                    if k.startswith("Market Value ("):
+                         parts = k.split("(")
+                         if len(parts) > 1:
+                              display_currency = parts[1].split(")")[0]
+                         break
+
+            try:
+                cash_events = generate_cash_interest_events(
+                    portfolio_summary_rows=rows,
                     interest_rates=interest_rates,
                     thresholds=thresholds,
                     start_date=today,
-                    end_date=end_date
+                    end_date=end_date,
+                    display_currency=display_currency
                 )
+                
+
+
                 calendar_events.extend(cash_events)
                 
-                # Re-sort after adding interest
-                calendar_events.sort(key=lambda x: x["dividend_date"])
-                
-        except Exception as e:
-            logging.error(f"Error adding cash interest: {e}")
+            except Exception as e_gen:
+                 # Catch internal generation errors
+                 calendar_events.append({
+                    "symbol": "$ERR_GEN",
+                    "dividend_date": str(today),
+                    "status": "error",
+                    "amount": 0.0,
+                    "name": f"GenError: {str(e_gen)[:50]}" 
+                 })
+                 logging.error(f"Cash Generation Failed: {e_gen}", exc_info=True)
+                 
+            # Re-sort after adding interest
+            calendar_events.sort(key=lambda x: x["dividend_date"])
+
+        except Exception as e_main:
+            logging.error(f"Error adding cash interest (Main): {e_main}")
+            calendar_events.append({
+                "symbol": "$ERR_MAIN",
+                 "dividend_date": str(date.today()),
+                 "status": "error",
+                 "amount": 0.0,
+                 "name": f"MainError: {str(e_main)[:50]}" 
+            })
+
+
+            # Re-sort after adding interest
+            calendar_events.sort(key=lambda x: x["dividend_date"])
+
+        return clean_nans(calendar_events)
 
         return clean_nans(calendar_events)
         
-        return clean_nans(calendar_events)
+
 
     except Exception as e:
         logging.error(f"Error fetching dividend calendar: {e}", exc_info=True)

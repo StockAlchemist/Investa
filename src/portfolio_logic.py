@@ -4224,6 +4224,7 @@ def _value_daily_holdings_vectorized(
     internal_to_yf_map: Dict[str, str],
     account_ids_to_include_set: Set[int],
     default_currency: str,
+    interval: str,
 ) -> Tuple[pd.Series, bool, str]:
     """
     Vectorized valuation of holdings and cash.
@@ -4264,8 +4265,20 @@ def _value_daily_holdings_vectorized(
                     # FIX: Ensure UTC awareness and DO NOT Normalize (preserves intraday/hourly timestamps)
                     price_series.index = pd.to_datetime(price_series.index, utc=True)
                 
-                # Reindex using ffill
-                aligned_series = price_series.reindex(date_range, method='ffill')
+                # Reindex with interpolation to smooth gaps (especially the 9:30 AM anchor gap)
+                # We use method=None in reindex to create NaNs, then interpolate them.
+                is_intra = any(x in interval for x in ["m", "h", "min"])
+                
+                if is_intra:
+                    # 1. Reindex to the full index (adds NaNs for missing minutes/hours)
+                    # 2. Interpolate linearly based on time
+                    # 3. ffill/bfill for any remaining edges
+                    aligned_series = price_series.reindex(date_range).interpolate(method='time').ffill().bfill()
+                else:
+                    # Standard daily/weekly: simple ffill is usually sufficient and faster
+                    price_series_clean = price_series.ffill().bfill()
+                    aligned_series = price_series_clean.reindex(date_range, method='ffill')
+                
                 daily_prices_aligned[:, sym_id] = aligned_series.values
                 
 
@@ -4964,6 +4977,7 @@ def _load_or_calculate_daily_results(
                 internal_to_yf_map=internal_to_yf_map,
                 account_ids_to_include_set=account_ids_to_include_set,
                 default_currency=default_currency,
+                interval=interval,
             )
             if val_errors:
                 status_update += val_status
@@ -5863,7 +5877,13 @@ def _calculate_accumulated_gains_and_resample(
                                         break
                             
                             if found_valid and divisor != 0:
-                                final_df_output[col] = final_df_output[col] / divisor
+                                # --- FIX: Safety check for massive spikes due to near-zero divisor ---
+                                # If the divisor is extremely small (e.g. 0.0001), it will amplify the 
+                                # whole series by 10,000x. We set a threshold for validity.
+                                if abs(divisor) < 1e-4:
+                                     logging.warning(f"Normalization divisor for {col} is too small ({divisor}). Skipping normalization to prevent spikes.")
+                                else:
+                                     final_df_output[col] = final_df_output[col] / divisor
                             else:
                                 logging.warning(f"Could not find ANY valid normalization baseline for {col} in range.")
 
@@ -6216,9 +6236,15 @@ def calculate_historical_performance(
                         
                         merged_df = pd.concat([daily_df_sym.loc[daily_mask], intra_df])
                         merged_df = merged_df[~merged_df.index.duplicated(keep='last')].sort_index()
+                        
+                        # --- FIX: Ensure the merged series has NO leading NaNs for the day ---
+                        # This prevents the 'jump' from zero if today's first point is missing
+                        if not merged_df.empty:
+                            merged_df = merged_df.ffill().bfill()
+                        
                         historical_prices_yf_adjusted[sym] = merged_df
                     else:
-                        historical_prices_yf_adjusted[sym] = intra_df
+                        historical_prices_yf_adjusted[sym] = intra_df.ffill().bfill()
         except Exception as e_intra:
             logging.error(f"Failed to fetch/merge intraday data: {e_intra}")
 
@@ -6257,13 +6283,16 @@ def calculate_historical_performance(
                 h_df_proc.index = pd.to_datetime(h_df_proc.index, utc=True)
                 
                 if not h_df_proc.empty:
+                    # --- FIX: Aggressive filling for intraday prices ---
+                    h_df_proc = h_df_proc.ffill().bfill()
+                    
                     h_start_ts = h_df_proc.index.min()
                     
                     combined = pd.concat([d_df[d_df.index < h_start_ts], h_df_proc]).sort_index()
                     final_df = combined[~combined.index.duplicated(keep='last')]
                     historical_prices_yf_adjusted[original_key] = final_df
             else:
-                historical_prices_yf_adjusted[s] = h_df
+                historical_prices_yf_adjusted[s] = h_df.ffill().bfill()
 
     logging.info(
         f"Fetching/Loading historical FX rates ({len(fx_pairs_for_api_yf)} pairs)..."
@@ -6494,11 +6523,15 @@ def calculate_historical_performance(
                             # MLK Day holiday requires > 72h (Fri 4pm to Tue 9:30am is ~90h)
                             tol = pd.Timedelta('120h')
 
-                            bm_series_aligned = bm_series.reindex(
-                                daily_df.index, 
-                                method='ffill', 
-                                tolerance=tol
-                            )
+                            is_intra = any(x in interval for x in ["m", "h", "min"])
+                            if is_intra:
+                                bm_series_aligned = bm_series.reindex(daily_df.index).interpolate(method='time').ffill().bfill()
+                            else:
+                                bm_series_aligned = bm_series.reindex(
+                                    daily_df.index, 
+                                    method='ffill', 
+                                    tolerance=tol
+                                )
                             daily_df[f"{bm} Price"] = bm_series_aligned
                             # ADDED: Diagnostic logging for Tuesday data
                             num_tuesday = daily_df.loc[daily_df.index.date == date(2026, 1, 20), f"{bm} Price"].notna().sum()

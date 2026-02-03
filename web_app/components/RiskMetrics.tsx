@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
-import { Activity, Percent, ArrowDownRight, Zap, X, Info, PieChart, ShieldCheck, TrendingUp } from 'lucide-react';
+import { Activity, Percent, ArrowDownRight, Zap, X, Info, PieChart, ShieldCheck, TrendingUp, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Skeleton } from "@/components/ui/skeleton";
 import { createPortal } from 'react-dom';
@@ -17,6 +17,7 @@ interface RiskMetricsProps {
     };
     portfolioHealth: PortfolioHealth | null;
     isLoading: boolean;
+    isRefreshing?: boolean;
 }
 
 interface MetricItemProps {
@@ -131,7 +132,7 @@ const RISK_EXPLANATIONS: Record<string, { title: string, description: string, in
 
 // ...
 
-export default function RiskMetrics({ metrics, portfolioHealth, isLoading }: RiskMetricsProps) {
+export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRefreshing = false }: RiskMetricsProps) {
     const [selectedMetric, setSelectedMetric] = useState<string | null>(null);
     const [isHealthModalOpen, setIsHealthModalOpen] = useState(false);
 
@@ -221,7 +222,12 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading }: Ris
 
     return (
         <React.Fragment>
-            <Card className="h-full border-border hover:border-cyan-500/20 transition-all duration-300 hover:shadow-md group">
+            <Card className="h-full border-border hover:border-cyan-500/20 transition-all duration-300 hover:shadow-md group relative overflow-hidden">
+                {isRefreshing && !isLoading && (
+                    <div className="absolute top-2 right-2 z-20">
+                        <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
+                    </div>
+                )}
                 <CardContent className="h-full p-4 flex flex-col gap-4">
                     <div className="flex justify-between items-start">
                         <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Risk Analytics</h3>

@@ -7,6 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { COUNTRIES, ALL_INDUSTRIES } from '../lib/constants';
 import AccountGroupManager from './AccountGroupManager';
 import ManualValuationSettings from './ManualValuationSettings';
+import YieldSettings from './YieldSettings';
 
 import { useAuth } from '../context/AuthContext';
 
@@ -588,96 +589,18 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                         />
                     )}
 
-                    {/* Cash Yield Tab */}
+                    {/* Cash Yield Tab (Refactored) */}
                     {activeTab === 'yield' && settings && (
-                        <div>
-                            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
-                                Configure annual interest rates and interest-free thresholds for cash balances in each account.
-                            </p>
-                            <div className="overflow-x-auto">
-                                <table className="min-w-full divide-y divide-border text-sm">
-                                    <thead className="bg-secondary/50 font-semibold border-b border-border">
-                                        <tr>
-                                            <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Account</th>
-                                            <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Cash Balance</th>
-                                            <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Annual Interest Rate (%)</th>
-                                            <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Interest-Free Threshold</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-border">
-                                        {availableAccounts
-                                            .filter(account => {
-                                                // Calculate cash balance for this account
-                                                const accountCash = holdings
-                                                    .filter(h => h.Account === account && (h.Symbol === '$CASH' || h.Symbol === 'Cash' || h.Symbol.includes('Cash')))
-                                                    .reduce((sum, h) => {
-                                                        // Use Market Value (Display) or approximate from Quantity * Price if not available
-                                                        // Holding has dynamic keys, but usually "Market Value" is standard or "Market Value (USD)"
-                                                        // Let's try to find a key starting with "Market Value"
-                                                        const mvKey = Object.keys(h).find(k => k.startsWith('Market Value'));
-                                                        const val = mvKey ? (h[mvKey] as number) : 0;
-                                                        return sum + (val || 0);
-                                                    }, 0);
-                                                return Math.abs(accountCash) > 0.01; // Filter out zero/near-zero balance
-                                            })
-                                            .map(account => {
-                                                const rate = settings.account_interest_rates?.[account] ?? 0;
-                                                const threshold = settings.interest_free_thresholds?.[account] ?? 0;
-
-                                                const accountCash = holdings
-                                                    .filter(h => h.Account === account && (h.Symbol === '$CASH' || h.Symbol === 'Cash' || h.Symbol.includes('Cash')))
-                                                    .reduce((sum, h) => {
-                                                        const mvKey = Object.keys(h).find(k => k.startsWith('Market Value'));
-                                                        const val = mvKey ? (h[mvKey] as number) : 0;
-                                                        return sum + (val || 0);
-                                                    }, 0);
-
-                                                return (
-                                                    <tr key={account} className="hover:bg-accent/5 transition-colors">
-                                                        <td className="px-4 py-3 whitespace-nowrap font-medium text-foreground">{account}</td>
-                                                        <td className="px-4 py-3 whitespace-nowrap text-right font-mono text-muted-foreground">
-                                                            {accountCash.toLocaleString(undefined, { style: 'currency', currency: 'USD' })}
-                                                        </td>
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            <div className="relative min-w-[110px] max-w-[160px]">
-                                                                <input
-                                                                    type="number"
-                                                                    step="0.01"
-                                                                    defaultValue={rate}
-                                                                    onBlur={(e) => {
-                                                                        const val = parseFloat(e.target.value);
-                                                                        if (!isNaN(val) && val !== rate) {
-                                                                            updateAccountYield(account, val, threshold);
-                                                                        }
-                                                                    }}
-                                                                    className={`${inputClassName} pr-7 w-full`}
-                                                                />
-                                                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs pointer-events-none">%</span>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            <div className="min-w-[110px] max-w-[160px]">
-                                                                <input
-                                                                    type="number"
-                                                                    step="100"
-                                                                    defaultValue={threshold}
-                                                                    onBlur={(e) => {
-                                                                        const val = parseFloat(e.target.value);
-                                                                        if (!isNaN(val) && val !== threshold) {
-                                                                            updateAccountYield(account, rate, val);
-                                                                        }
-                                                                    }}
-                                                                    className={`${inputClassName} w-full`}
-                                                                />
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
+                        <YieldSettings
+                            settings={settings}
+                            availableAccounts={availableAccounts}
+                            holdings={holdings}
+                            onSettingsUpdated={() => {
+                                // Trigger a reload of settings/portfolio data to ensure yield calculation uses fresh settings
+                                queryClient.invalidateQueries({ queryKey: ['settings'] });
+                                queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+                            }}
+                        />
                     )}
 
                     {/* Valuation Overrides Tab */}

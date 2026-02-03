@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Loader2 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import {
     LineChart,
@@ -16,7 +17,7 @@ import {
 import PeriodSelector from './PeriodSelector';
 import BenchmarkSelector from './BenchmarkSelector';
 import { fetchHistory, PerformanceData } from '../lib/api';
-import { formatCurrency } from '../lib/utils';
+import { formatCurrency, cn } from '../lib/utils';
 
 
 
@@ -540,22 +541,27 @@ export default function PerformanceGraph({
                     <h3 className="text-lg font-medium text-muted-foreground">
                         {view === 'return' ? 'Time-Weighted Return' : view === 'value' ? 'Portfolio Value' : 'Drawdown'}
                     </h3>
-                    {periodStats ? (
-                        <div className="flex items-baseline gap-4">
-                            {periodStats.map((stat, index) => (
-                                <div key={index} className="flex items-baseline gap-2">
-                                    <span className="text-sm font-medium text-muted-foreground">
-                                        {stat.label}
-                                    </span>
-                                    <span className={`text-xl font-bold tracking-tight ${stat.color}`}>
-                                        {stat.text}
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="h-9" /> /* Spacer for loading state */
-                    )}
+                    <div className="flex items-center gap-4">
+                        {loading && processedData.length > 0 && (
+                            <Loader2 className="w-4 h-4 animate-spin text-cyan-500 opacity-70" />
+                        )}
+                        {periodStats ? (
+                            <div className="flex items-baseline gap-4">
+                                {periodStats.map((stat, index) => (
+                                    <div key={index} className="flex items-baseline gap-2">
+                                        <span className="text-sm font-medium text-muted-foreground">
+                                            {stat.label}
+                                        </span>
+                                        <span className={`text-xl font-bold tracking-tight ${stat.color}`}>
+                                            {stat.text}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="h-9" /> /* Spacer for loading state */
+                        )}
+                    </div>
                 </div>
 
                 <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 min-w-0">
@@ -601,15 +607,17 @@ export default function PerformanceGraph({
                             >
                                 Return %
                             </button>
-                            <button
-                                onClick={() => onViewChange('value')}
-                                className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'value'
-                                    ? 'bg-[#0097b2] text-white shadow-sm'
-                                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
-                                    }`}
-                            >
-                                Value
-                            </button>
+                            <div className="relative">
+                                <button
+                                    onClick={() => onViewChange('value')}
+                                    className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'value'
+                                        ? 'bg-[#0097b2] text-white shadow-sm'
+                                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
+                                        }`}
+                                >
+                                    Value
+                                </button>
+                            </div>
                             <button
                                 onClick={() => onViewChange('drawdown')}
                                 className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all ${view === 'drawdown'
@@ -626,8 +634,18 @@ export default function PerformanceGraph({
 
             <div className="h-[400px] w-full relative overflow-visible pb-4">
                 {loading && (
-                    <div className="absolute inset-0 bg-white/50 dark:bg-gray-800/50 flex items-center justify-center z-10">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                    <div className={cn(
+                        "absolute inset-0 flex items-center justify-center z-10 rounded-xl transition-all duration-300",
+                        processedData.length === 0 ? "bg-background/80" : "bg-background/30 backdrop-blur-[1px] pointer-events-none"
+                    )}>
+                        <div className="flex flex-col items-center gap-4">
+                            <Loader2 className={cn("animate-spin text-cyan-500", processedData.length === 0 ? "w-8 h-8" : "w-6 h-6")} />
+                            {processedData.length === 0 && (
+                                <span className="text-xs font-black tracking-[0.2em] text-cyan-500 uppercase animate-pulse">
+                                    Calculating Graph
+                                </span>
+                            )}
+                        </div>
                     </div>
                 )}
                 <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>

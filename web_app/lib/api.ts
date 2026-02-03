@@ -160,6 +160,12 @@ export async function fetchSummary(currency: string = 'USD', accounts?: string[]
     return res.json();
 }
 
+export async function fetchMarketStatus(): Promise<{ is_open: boolean }> {
+    const res = await authFetch(`${API_BASE_URL}/market_status`, { cache: 'no-store' });
+    if (!res.ok) throw new Error('Failed to fetch market status');
+    return res.json();
+}
+
 export async function fetchHoldings(currency: string = 'USD', accounts?: string[], showClosed: boolean = false, signal?: AbortSignal): Promise<Holding[]> {
     const params = new URLSearchParams({ currency });
     if (accounts) {
@@ -521,6 +527,7 @@ export async function fetchDividendCalendar(accounts?: string[], signal?: AbortS
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
     }
+    params.append('_t', Date.now().toString());
     const res = await authFetch(`${API_BASE_URL}/dividend_calendar?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch dividend calendar');
     return res.json();

@@ -1673,7 +1673,7 @@ class MarketDataProvider:
 
     @profile
     def _fetch_yf_historical_data(
-        self, symbols_yf: List[str], start_date: date, end_date: date, interval: str = "1d"
+        self, symbols_yf: List[str], start_date: date, end_date: date, interval: str = "1d", use_cache: bool = True
     ) -> Dict[str, pd.DataFrame]:
         """
         Internal helper to fetch historical 'Close' data (adjusted) using yfinance.download.
@@ -1691,7 +1691,7 @@ class MarketDataProvider:
             
             # For intraday intervals, prefer 'Close' over 'Adj Close' 
             # as yfinance often returns NaNs in Adj Close for short intervals.
-            is_intraday_local = any(x in interval for x in ["m", "h"])
+            is_intraday_local = any(x in interval for x in ["m", "h", "min"])
             
             primary = "Close" if is_intraday_local else "Adj Close"
             secondary = "Adj Close" if is_intraday_local else "Close"
@@ -1704,6 +1704,11 @@ class MarketDataProvider:
                 df_clean["price"] = df_clean[primary]
             elif secondary in df_clean.columns:
                 df_clean["price"] = df_clean[secondary]
+            
+            # --- SMART ANCHOR: Keep 'Open' for intraday initialization ---
+            if "Open" in df_clean.columns:
+                df_clean["open_price"] = df_clean["Open"]
+            # --- END SMART ANCHOR ---
             
             num_nans = df_clean["price"].isna().sum() if "price" in df_clean.columns else "N/A"
             logging.info(f"Hist Fetch Helper: Normalized symbol {sym} (Intraday={is_intraday_local}) with {len(df_clean)} rows. NaNs: {num_nans}. Source: {primary if 'price' in df_clean.columns and df_clean['price'].equals(df_clean.get(primary)) else secondary}")
@@ -1779,7 +1784,7 @@ class MarketDataProvider:
 
         # --- CACHE READ (After-Hours/Weekend) ---
         # If market is closed, try to load from local DB to avoid API latency
-        if is_intraday and not is_market_open():
+        if use_cache and is_intraday and not is_market_open():
             logging.info(f"Hist Fetch Helper: Market closed. Checking Intraday DB Cache for {len(symbols_yf)} symbols...")
             symbols_to_fetch_remote = []
             
@@ -1846,8 +1851,8 @@ class MarketDataProvider:
             symbols_yf = symbols_to_fetch_remote
 
         
-        if not is_intraday and yf_start_date >= today:
-            logging.info(f"Hist Fetch Helper: Requested start date {yf_start_date} is today or in the future. Skipping fetch.")
+        if not is_intraday and yf_start_date > today:
+            logging.info(f"Hist Fetch Helper: Requested start date {yf_start_date} is in the future. Skipping fetch.")
             return {}
 
         # --- FIX: Prevent fetching future dates (Intraday) ---
@@ -2235,6 +2240,69 @@ class MarketDataProvider:
                     self.db.upsert_intraday(sym, df, interval)
             except Exception as e_db_save:
                 logging.error(f"Hist Fetch Helper: Error saving to Intraday DB: {e_db_save}")
+
+        # --- SMART ANCHOR: Inject Daily Open into Intraday gaps ---
+        if is_intraday and historical_data:
+            logging.info(f"Hist Fetch Helper: Applying Smart Anchor (Daily-Open Injection) for {len(historical_data)} symbols...")
+            try:
+                # Fetch daily data (1d) for the same symbols and period to get official Open prices
+                # We use recursion but with interval="1d" to bypass this block. 
+                # We also force use_cache=True to make it as fast as possible.
+                daily_data = self._fetch_yf_historical_data(
+                    symbols_yf=list(historical_data.keys()),
+                    start_date=start_date,
+                    end_date=end_date,
+                    interval="1d",
+                    use_cache=True
+                )
+                
+                inject_count = 0
+                for sym, df_intra in historical_data.items():
+                    if df_intra.empty:
+                        continue
+                        
+                    # Process each day in the intraday range
+                    intra_dates = df_intra.index.normalize().unique()
+                    for d in intra_dates:
+                        # NY Market Open Time: 09:30 AM
+                        anchor_ts = pd.Timestamp(datetime.combine(d, datetime.strptime("09:30", "%H:%M").time())).tz_localize("America/New_York").tz_convert("UTC")
+                        
+                        if anchor_ts not in df_intra.index:
+                            open_val = None
+                            
+                            # 1. Try to get from daily_data fetch
+                            if sym in daily_data:
+                                df_daily = daily_data[sym]
+                                daily_date_mask = df_daily.index.normalize() == pd.Timestamp(d).normalize()
+                                if daily_date_mask.any():
+                                    row_daily = df_daily[daily_date_mask]
+                                    if "open_price" in row_daily.columns and pd.notna(row_daily["open_price"].iloc[0]):
+                                        open_val = row_daily["open_price"].iloc[0]
+                                    else:
+                                        open_val = row_daily["price"].iloc[0]
+                            
+                            # 2. Fallback to Ticker.info for 'today' if daily fetch failed (common for active sessions)
+                            if open_val is None and d.date() == today:
+                                try:
+                                    t_obj = yf.Ticker(sym)
+                                    open_val = t_obj.info.get("regularMarketOpen") or t_obj.info.get("open")
+                                except Exception:
+                                    pass
+
+                            # 3. Inject if found
+                            if open_val:
+                                if "price" not in df_intra.columns:
+                                    df_intra["price"] = np.nan
+                                df_intra.at[anchor_ts, "price"] = open_val
+                                inject_count += 1
+                
+                if inject_count > 0:
+                    logging.info(f"Hist Fetch Helper: Injected {inject_count} anchor points (Daily Open) into intraday series.")
+                    # Re-sort after injection
+                    for sym in historical_data:
+                        historical_data[sym] = historical_data[sym].sort_index()
+            except Exception as e_anchor:
+                logging.warning(f"Hist Fetch Helper: Smart Anchor injection failed: {e_anchor}")
 
         logging.info(
             f"Hist Fetch Helper: Finished fetching ({len(historical_data)} symbols successful)."
@@ -2682,7 +2750,7 @@ class MarketDataProvider:
 
         # 0. Bypass DB for intraday data
         if interval != "1d":
-            return self._fetch_yf_historical_data(symbols_yf, start_date, end_date, interval=interval), False
+            return self._fetch_yf_historical_data(symbols_yf, start_date, end_date, interval=interval, use_cache=use_cache), False
 
         # 1. Sync missing range to DB (with 5-day overlap for integrity)
         if use_cache:
@@ -2770,7 +2838,7 @@ class MarketDataProvider:
         if interval == "D": interval = "1d"
 
         if interval != "1d":
-            return self._fetch_yf_historical_data(fx_pairs_yf, start_date, end_date, interval=interval), False
+            return self._fetch_yf_historical_data(fx_pairs_yf, start_date, end_date, interval=interval, use_cache=use_cache), False
 
         logging.info(f"Hist FX (DB): Fetching {len(fx_pairs_yf)} pairs ({start_date} to {end_date})...")
 

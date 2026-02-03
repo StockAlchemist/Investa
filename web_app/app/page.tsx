@@ -22,6 +22,7 @@ import {
   SettingsUpdate,
   fetchPortfolioHealth,
   fetchProjectedIncome,
+  fetchMarketStatus,
   PerformanceData
 } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -281,10 +282,23 @@ export default function Home() {
   };
 
   // Queries
+  const marketStatusQuery = useQuery({
+    queryKey: ['marketStatus'],
+    queryFn: fetchMarketStatus,
+    staleTime: 60 * 1000,
+    refetchInterval: 5 * 60 * 1000, // Check market status every 5 minutes
+    enabled: !!user,
+  });
+
+  const isMarketOpen = marketStatusQuery.data?.is_open ?? false;
+
+
+
   const summaryQuery = useQuery({
     queryKey: ['summary', user?.username, currency, selectedAccounts],
     queryFn: ({ signal }) => fetchSummary(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
+    refetchInterval: isMarketOpen ? 60 * 1000 : false, // Update summary every minute if market is open
     placeholderData: keepPreviousData,
     enabled: !!user,
   });
@@ -382,12 +396,12 @@ export default function Home() {
     queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, graphPeriod, benchmarks, graphInterval, graphFromDate, graphToDate, signal),
     placeholderData: keepPreviousData,
     staleTime: 5 * 60 * 1000,
-    refetchInterval: graphPeriod === '1d' ? 60000 : false,
+    refetchInterval: isMarketOpen && (graphPeriod === '1d' || graphPeriod === '5d') ? 60000 : false,
     enabled: !!user && (activeTab === 'performance' || backgroundFetchEnabled)
   });
 
   const graphData = historyQuery.data || [];
-  const graphLoading = (historyQuery.isLoading || historyQuery.isFetching) && (!graphData || graphData.length === 0);
+  const graphLoading = historyQuery.isFetching;
 
 
   const watchlistQuery = useQuery({
@@ -436,6 +450,7 @@ export default function Home() {
               currency={currency}
               history={historySparklineQuery.data || []}
               isLoading={summaryQuery.isLoading && !summaryQuery.data} // Only show skeleton if no data
+              isRefreshing={summaryQuery.isFetching || historySparklineQuery.isFetching}
               riskMetrics={riskMetricsQuery.data || {}}
               riskMetricsLoading={riskMetricsQuery.isLoading && !riskMetricsQuery.data}
               portfolioHealth={portfolioHealthQuery.data || null}
@@ -677,6 +692,7 @@ export default function Home() {
             {summary?.metrics?.indices && (
               <MarketIndicesBox
                 indices={summary.metrics.indices}
+                isFetching={summaryQuery.isFetching}
                 onClick={() => setIsIndexGraphModalOpen(true)}
               />
             )}

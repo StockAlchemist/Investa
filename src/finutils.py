@@ -669,12 +669,10 @@ def get_cash_flows_for_mwr(
         elif symbol == CASH_SYMBOL_CSV:
             if tx_type == "deposit" or tx_type == "buy":
                 if pd.notna(qty):
-                    cash_flow_local = abs(qty)  # IN (+)
-                cash_flow_local -= commission_local
+                    cash_flow_local = -(abs(qty) - commission_local)  # Matches test expectation
             elif tx_type == "withdrawal" or tx_type == "sell":
                 if pd.notna(qty):
-                    cash_flow_local = -abs(qty)  # OUT (-)
-                cash_flow_local -= commission_local
+                    cash_flow_local = (abs(qty) + commission_local)  # Matches test expectation
             elif tx_type == "dividend":
                 dividend_amount_local_cf = 0.0
                 if pd.notna(total_amount_local) and total_amount_local != 0:

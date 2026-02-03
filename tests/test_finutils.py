@@ -376,13 +376,13 @@ def test_get_conversion_rate_same_currency(sample_fx_rates):
 
 
 def test_get_conversion_rate_missing(sample_fx_rates):
-    # CAD is missing from sample_fx_rates
+    # 'XXX' is missing from sample_fx_rates AND STATIC_FX_FALLBACK
     assert np.isnan(
-        get_conversion_rate("USD", "CAD", sample_fx_rates)
-    )  # MODIFIED: Expect NaN
+        get_conversion_rate("USD", "XXX", sample_fx_rates)
+    )
     assert np.isnan(
-        get_conversion_rate("CAD", "EUR", sample_fx_rates)
-    )  # MODIFIED: Expect NaN
+        get_conversion_rate("XXX", "EUR", sample_fx_rates)
+    )
 
 
 def test_get_conversion_rate_invalid_input(sample_fx_rates):
@@ -587,12 +587,12 @@ def test_get_cash_flows_mwr_basic(mock_conv_rate, sample_transactions_mwr_df):
         sample_transactions_mwr_df["Account"] == account
     ]
 
-    # Expected flows for IBKR (USD -> USD, MWR sign flip):
-    # 2023-01-15: Buy 10 MSFT @ 300 + 5 comm = -3005 -> +3005 (MWR)
-    # 2023-03-05: Sell 5 VTI @ 210 - 5 comm = +1045 -> -1045 (MWR)
+    # Expected flows for IBKR (USD -> USD, IRR convention: Buy=-, FinalMV=+):
+    # 2023-01-15: Buy 10 MSFT @ 300 + 5 comm = -3005
+    # 2023-03-05: Sell 5 VTI @ 210 - 5 comm = +1045
     # 2023-05-01: Final MV = +1550
     expected_dates = [date(2023, 1, 15), date(2023, 3, 5), date(2023, 5, 1)]
-    expected_flows = [3005.0, -1045.0, 1550.0]
+    expected_flows = [-3005.0, 1045.0, 1550.0]
 
     dates, flows = get_cash_flows_for_mwr(
         account_tx,

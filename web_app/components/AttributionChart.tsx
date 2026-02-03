@@ -2,6 +2,7 @@
 
 import StockDetailModal from './StockDetailModal';
 import { useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import StockIcon from './StockIcon';
 
 export interface AttributionData {
@@ -25,6 +26,7 @@ export interface AttributionData {
 interface CommonProps {
     data: AttributionData;
     isLoading: boolean;
+    isRefreshing?: boolean;
     currency: string;
 }
 
@@ -37,7 +39,7 @@ const formatPercentHelper = (val: number) => {
     return `${(val * 100).toFixed(1)}%`;
 };
 
-export function SectorAttribution({ data, isLoading, currency }: CommonProps) {
+export function SectorAttribution({ data, isLoading, isRefreshing = false, currency }: CommonProps) {
     if (isLoading) {
         return (
             <div className="bg-card rounded-xl p-6 shadow-sm border border-border animate-pulse h-80"></div>
@@ -47,7 +49,12 @@ export function SectorAttribution({ data, isLoading, currency }: CommonProps) {
     const hasSectors = data?.sectors && data.sectors.length > 0;
 
     return (
-        <div className="bg-card rounded-xl p-6 shadow-sm border border-border h-full">
+        <div className="bg-card rounded-xl p-6 shadow-sm border border-border h-full relative overflow-hidden">
+            {isRefreshing && !isLoading && (
+                <div className="absolute top-2 right-2 z-20">
+                    <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
+                </div>
+            )}
             <h3 className="text-sm font-medium text-muted-foreground mb-6 uppercase tracking-wider">Sector Contribution</h3>
             <div className="space-y-4">
                 {hasSectors ? data.sectors.map((s) => (
@@ -73,7 +80,7 @@ export function SectorAttribution({ data, isLoading, currency }: CommonProps) {
     );
 }
 
-export function TopContributors({ data, isLoading, currency }: CommonProps) {
+export function TopContributors({ data, isLoading, isRefreshing = false, currency }: CommonProps) {
     const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
 
     if (isLoading) {
@@ -86,7 +93,12 @@ export function TopContributors({ data, isLoading, currency }: CommonProps) {
 
     return (
         <>
-            <div className="bg-card rounded-xl p-6 shadow-sm border border-border h-full">
+            <div className="bg-card rounded-xl p-6 shadow-sm border border-border h-full relative overflow-hidden">
+                {isRefreshing && !isLoading && (
+                    <div className="absolute top-2 right-2 z-20">
+                        <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
+                    </div>
+                )}
                 <h3 className="text-sm font-medium text-muted-foreground mb-6 uppercase tracking-wider">Top Contributors</h3>
                 <div className="space-y-3">
                     {hasStocks ? data.stocks.map((stock, idx) => (

@@ -12,7 +12,8 @@ import {
     Activity,
     PiggyBank,
     Receipt,
-    PieChart
+    PieChart,
+    Loader2
 } from 'lucide-react';
 
 // Lazy component import logic handled by parent or standard import above
@@ -27,6 +28,7 @@ interface DashboardProps {
     currency: string;
     history?: PerformanceData[];
     isLoading?: boolean;
+    isRefreshing?: boolean;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     riskMetrics?: any;
@@ -51,7 +53,8 @@ export default function Dashboard({
     attributionData = null,
     attributionLoading = false,
     holdings = [],
-    visibleItems
+    visibleItems,
+    isRefreshing = false
 }: DashboardProps) {
     const m = summary?.metrics;
     const am = summary?.account_metrics;
@@ -111,6 +114,7 @@ export default function Dashboard({
                     isHero={true}
                     currency={currency}
                     isLoading={isLoading}
+                    isRefreshing={isRefreshing}
                     icon={Wallet}
                 />;
             case 'dayGL':
@@ -126,6 +130,7 @@ export default function Dashboard({
                     currency={currency}
                     sparklineData={history.map(d => ({ value: d.twr }))}
                     isLoading={isLoading}
+                    isRefreshing={isRefreshing}
                     icon={(dayGL ?? 0) >= 0 ? TrendingUp : TrendingDown}
                 />;
             case 'totalReturn':
@@ -140,6 +145,7 @@ export default function Dashboard({
                     isHero={true}
                     currency={currency}
                     isLoading={isLoading}
+                    isRefreshing={isRefreshing}
                     icon={Activity}
                 />;
             case 'annualTWR':
@@ -149,6 +155,7 @@ export default function Dashboard({
                     isCurrency={false}
                     colorClass={m?.annualized_twr && m.annualized_twr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
                     isLoading={isLoading}
+                    isRefreshing={isRefreshing}
                     icon={Percent}
                 />;
             case 'mwr':
@@ -158,6 +165,7 @@ export default function Dashboard({
                     isCurrency={false}
                     colorClass={m?.portfolio_mwr && m.portfolio_mwr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
                     isLoading={isLoading}
+                    isRefreshing={isRefreshing}
                     icon={Activity}
                 />;
             case 'unrealizedGL':
@@ -172,6 +180,7 @@ export default function Dashboard({
                     isHero={true}
                     currency={currency}
                     isLoading={isLoading}
+                    isRefreshing={isRefreshing}
                     icon={TrendingUp} // Or separate icon
                 />;
             case 'fxGL':
@@ -185,6 +194,7 @@ export default function Dashboard({
                     isHero={true}
                     currency={currency}
                     isLoading={isLoading}
+                    isRefreshing={isRefreshing}
                     icon={DollarSign}
                 />;
             case 'realizedGain':
@@ -197,6 +207,7 @@ export default function Dashboard({
                     isHero={true}
                     currency={currency}
                     isLoading={isLoading}
+                    isRefreshing={isRefreshing}
                     icon={PiggyBank}
                 />;
             case 'cashBalance':
@@ -205,6 +216,7 @@ export default function Dashboard({
                     value={cashBalance}
                     currency={currency}
                     isLoading={isLoading}
+                    isRefreshing={isRefreshing}
                     icon={DollarSign}
                     valueClassName="text-xl sm:text-2xl"
                 />;
@@ -217,6 +229,7 @@ export default function Dashboard({
                     isHero={true}
                     currency={currency}
                     isLoading={isLoading}
+                    isRefreshing={isRefreshing}
                     icon={DollarSign} // Or create a generic dividend icon
                 />;
             case 'fees':
@@ -226,17 +239,23 @@ export default function Dashboard({
                     colorClass="text-red-600 dark:text-red-500"
                     currency={currency}
                     isLoading={isLoading}
+                    isRefreshing={isRefreshing}
                     icon={Receipt}
                 />;
             case 'riskMetrics':
-                return <RiskMetrics metrics={riskMetrics} portfolioHealth={portfolioHealth} isLoading={riskMetricsLoading!} />;
+                return <RiskMetrics metrics={riskMetrics} portfolioHealth={portfolioHealth} isLoading={riskMetricsLoading!} isRefreshing={isRefreshing} />;
             case 'sectorContribution':
-                return <SectorAttribution data={attributionData} isLoading={attributionLoading!} currency={currency} />;
+                return <SectorAttribution data={attributionData} isLoading={attributionLoading!} isRefreshing={isRefreshing} currency={currency} />;
             case 'topContributors':
-                return <TopContributors data={attributionData} isLoading={attributionLoading!} currency={currency} />;
+                return <TopContributors data={attributionData} isLoading={attributionLoading!} isRefreshing={isRefreshing} currency={currency} />;
             case 'portfolioDonut':
                 return (
-                    <Card className="h-full border-border hover:border-cyan-500/20 transition-colors">
+                    <Card className="h-full border-border hover:border-cyan-500/20 transition-colors relative overflow-hidden">
+                        {isRefreshing && !isLoading && (
+                            <div className="absolute top-2 right-2 z-20">
+                                <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
+                            </div>
+                        )}
                         <CardContent className="h-full p-4 relative">
                             <div className="flex justify-between items-start mb-2">
                                 <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Portfolio Composition</h3>
