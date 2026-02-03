@@ -280,20 +280,40 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                     {/* Optional Informational Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12 pb-8">
                         {activeBenchmarks.map((bench, idx) => {
-                            const val = currentReturns[bench];
+                            const graphLatest = currentReturns[bench];
+                            const graphPrice = currentReturns[`${bench}_price`];
+
+                            // Normalize names for lookup (Backend uses "Dow" and "Nasdaq")
+                            const lookupName = bench === 'Dow Jones' ? 'Dow' : (bench === 'NASDAQ' ? 'Nasdaq' : bench);
+
+                            // Find live data by name
+                            const liveIndex = currentIndices ? Object.values(currentIndices).find((i: any) => i.name === lookupName || i.name === bench) : null;
+
+                            const displayPrice = liveIndex?.price ?? graphPrice;
+                            const val = graphLatest;
+
                             return (
                                 <div key={bench} className="bg-card/40 border border-border/50 p-6 rounded-[2rem] hover:bg-card/60 transition-all duration-300 group flex flex-col items-center justify-center text-center">
                                     <div className="flex items-center gap-3 mb-4">
                                         <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
                                         <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground group-hover:text-foreground transition-colors">{bench}</span>
                                     </div>
+
+                                    {/* Current Price */}
+                                    <div className="text-xl font-bold tracking-tight text-foreground mb-1 tabular-nums">
+                                        {displayPrice !== undefined && displayPrice !== null ? displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'}
+                                    </div>
+
+                                    {/* Period Performance */}
                                     <div className={cn(
                                         "text-3xl font-black tabular-nums tracking-tight",
-                                        val >= 0 ? "text-emerald-500" : "text-rose-500"
+                                        (val ?? 0) >= 0 ? "text-emerald-500" : "text-rose-500"
                                     )}>
-                                        {val !== undefined ? `${val >= 0 ? '+' : ''}${val.toFixed(2)}%` : '--'}
+                                        {(val !== undefined && val !== null) ? `${val >= 0 ? '+' : ''}${val.toFixed(2)}%` : '--'}
                                     </div>
-                                    <p className="text-[10px] text-muted-foreground mt-3 font-medium opacity-60">Period performance return</p>
+                                    <p className="text-[10px] text-muted-foreground mt-3 font-medium opacity-60">
+                                        {period.toUpperCase()} PERFORMANCE
+                                    </p>
                                 </div>
                             );
                         })}
