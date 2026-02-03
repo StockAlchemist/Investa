@@ -638,3 +638,49 @@ def test_get_cash_flows_mwr_conversion(mock_conv_rate, sample_transactions_mwr_d
 
     assert dates == expected_dates
     assert flows == pytest.approx(expected_flows)
+
+
+def test_get_cash_flows_mwr_with_historical_fx(sample_transactions_mwr_df):
+    account = "SET"
+    target_currency = "USD"
+    final_mv_target = 40000.0 / 31.54  # Final value in USD @ current rate
+    end_date = date(2023, 5, 1)
+
+    # Current rates (fallback)
+    fx_rates_current = {"THB": 31.54, "USD": 1.0}
+
+    # Historical rates: intentionally different from current
+    # 2023-02-10: Buy/Deposit was at 32.4
+    # 2023-04-20: Withdrawal was at 33.0
+    hist_fx = {
+        (date(2023, 2, 10), "THB"): 1.0 / 32.4,
+        (date(2023, 4, 20), "THB"): 1.0 / 33.0,
+    }
+
+    account_tx = sample_transactions_mwr_df[
+        sample_transactions_mwr_df["Account"] == account
+    ]
+
+    # Expected flows:
+    # 2023-02-10: Deposit 50000 - 100 comm = +49900 THB -> -49900 * (1/32.4) USD (Buy/Outflow)
+    # 2023-04-20: Withdraw 10000 - 50 comm = -10050 THB -> -(-10050 * (1/33.0)) USD (Sell/Inflow) = +10050/33.0
+    # 2023-05-01: Final MV = +40000 / 31.54 USD
+    expected_dates = [date(2023, 2, 10), date(2023, 4, 20), date(2023, 5, 1)]
+    expected_flows = [
+        -49900.0 / 32.4,
+        10050.0 / 33.0,
+        40000.0 / 31.54,
+    ]
+
+    dates, flows = get_cash_flows_for_mwr(
+        account_transactions=account_tx,
+        final_account_market_value=final_mv_target,
+        end_date=end_date,
+        target_currency=target_currency,
+        fx_rates=fx_rates_current,
+        display_currency=target_currency,
+        historical_fx_rates=hist_fx,
+    )
+
+    assert dates == expected_dates
+    assert flows == pytest.approx(expected_flows)
