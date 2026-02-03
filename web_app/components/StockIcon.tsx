@@ -311,12 +311,12 @@ export default function StockIcon({ symbol, size = 24, className, domain }: Stoc
 
     // Some icons are white/transparent and need a dark background even in light mode
     const isDark = mounted && resolvedTheme === 'dark';
-    const forcedDarkBackgrounds = ['CBOE', 'SLB', 'UBER', 'V', 'ULTA', 'WSM', 'WYNN', 'NKE', 'ORCL', 'DOCU', 'DTM'];
+    const forcedDarkBackgrounds = ['CBOE', 'SLB', 'UBER', 'ULTA', 'WSM', 'WYNN', 'NKE', 'ORCL', 'DOCU', 'DTM'];
     const needsDarkBg = forcedDarkBackgrounds.includes(symbol);
 
     const bgColor = isDarkIcon || needsDarkBg
         ? 'bg-black'
-        : (isDark ? 'bg-zinc-800' : 'bg-zinc-100 border border-zinc-200');
+        : (isDark ? 'bg-zinc-800' : (symbol === 'V' ? 'bg-white border border-zinc-200' : 'bg-zinc-100 border border-zinc-200'));
 
     return (
         <img
