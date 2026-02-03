@@ -536,15 +536,13 @@ export default function PerformanceGraph({
 
     return (
         <div ref={containerRef} className="bg-card rounded-xl p-4 shadow-sm border border-border mb-6 overflow-visible relative">
-            {loading && processedData.length > 0 && (
-                <div className="absolute top-2 right-2 z-20">
-                    <Loader2 className="w-4 h-4 animate-spin text-cyan-500 opacity-70" />
-                </div>
-            )}
             <div className="mb-6">
                 <div className="flex flex-col items-start gap-1 md:flex-row md:justify-between md:items-center md:gap-0 mb-4">
-                    <h3 className="text-lg font-medium text-muted-foreground">
+                    <h3 className="text-lg font-medium text-muted-foreground flex items-center gap-2">
                         {view === 'return' ? 'Time-Weighted Return' : view === 'value' ? 'Portfolio Value' : 'Drawdown'}
+                        {loading && processedData.length > 0 && (
+                            <Loader2 className="w-4 h-4 animate-spin text-cyan-500 opacity-70" />
+                        )}
                     </h3>
                     <div className="flex items-center gap-4">
                         {periodStats ? (

@@ -203,6 +203,30 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), conn: sqlite3.
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
+class UpdateUserProfile(BaseModel):
+    alias: Optional[str] = None
+
+@router.patch("/auth/me", response_model=User)
+async def update_user_profile(
+    profile_data: UpdateUserProfile,
+    current_user: User = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_global_db_connection)
+):
+    try:
+        cursor = conn.cursor()
+        
+        # Only update alias for now
+        if profile_data.alias is not None:
+             logging.info(f"Updating alias for {current_user.username} to: '{profile_data.alias}'")
+             cursor.execute("UPDATE users SET alias = ? WHERE id = ?", (profile_data.alias, current_user.id))
+             conn.commit()
+             current_user.alias = profile_data.alias
+             
+        return current_user
+    except Exception as e:
+        logging.error(f"Error updating profile for {current_user.username}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update profile")
+
 @router.delete("/auth/me")
 async def delete_user_me(
     current_user: User = Depends(get_current_user),

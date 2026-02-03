@@ -251,15 +251,15 @@ export default function Dashboard({
             case 'portfolioDonut':
                 return (
                     <Card className="h-full border-border hover:border-cyan-500/20 transition-colors relative overflow-hidden">
-                        {isRefreshing && !isLoading && (
-                            <div className="absolute top-2 right-2 z-20">
-                                <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
-                            </div>
-                        )}
                         <CardContent className="h-full p-4 relative">
                             <div className="flex justify-between items-start mb-2">
-                                <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Portfolio Composition</h3>
-                                <div className="p-2 rounded-lg bg-secondary/50 text-muted-foreground">
+                                <div className="flex items-center gap-2">
+                                    <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Portfolio Composition</h3>
+                                    {isRefreshing && !isLoading && (
+                                        <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
+                                    )}
+                                </div>
+                                <div className="absolute top-3 right-3 p-1.5 rounded-lg bg-secondary/50 text-muted-foreground">
                                     <PieChart className="w-4 h-4" />
                                 </div>
                             </div>

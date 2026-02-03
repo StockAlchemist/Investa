@@ -50,12 +50,12 @@ export function SectorAttribution({ data, isLoading, isRefreshing = false, curre
 
     return (
         <div className="bg-card rounded-xl p-6 shadow-sm border border-border h-full relative overflow-hidden">
-            {isRefreshing && !isLoading && (
-                <div className="absolute top-2 right-2 z-20">
+            <div className="flex items-center gap-2 mb-6">
+                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Sector Contribution</h3>
+                {isRefreshing && !isLoading && (
                     <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
-                </div>
-            )}
-            <h3 className="text-sm font-medium text-muted-foreground mb-6 uppercase tracking-wider">Sector Contribution</h3>
+                )}
+            </div>
             <div className="space-y-4">
                 {hasSectors ? data.sectors.map((s) => (
                     <div key={s.sector}>
@@ -94,12 +94,12 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
     return (
         <>
             <div className="bg-card rounded-xl p-6 shadow-sm border border-border h-full relative overflow-hidden">
-                {isRefreshing && !isLoading && (
-                    <div className="absolute top-2 right-2 z-20">
+                <div className="flex items-center gap-2 mb-6">
+                    <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Top Contributors</h3>
+                    {isRefreshing && !isLoading && (
                         <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
-                    </div>
-                )}
-                <h3 className="text-sm font-medium text-muted-foreground mb-6 uppercase tracking-wider">Top Contributors</h3>
+                    )}
+                </div>
                 <div className="space-y-3">
                     {hasStocks ? data.stocks.map((stock, idx) => (
                         <div

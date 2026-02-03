@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Pencil, Trash2, Loader2 } from 'lucide-react';
-import { updateSettings, triggerRefresh, clearCache, deleteUser, changePassword, syncIbkr, Settings as SettingsType, ManualOverride, ManualOverrideData, Holding } from '../lib/api';
+import { updateSettings, triggerRefresh, clearCache, deleteUser, changePassword, syncIbkr, updateUserProfile, Settings as SettingsType, ManualOverride, ManualOverrideData, Holding } from '../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { COUNTRIES, ALL_INDUSTRIES } from '../lib/constants';
 import AccountGroupManager from './AccountGroupManager';
@@ -53,7 +53,7 @@ interface SettingsProps {
 
 export default function Settings({ settings, holdings, availableAccounts, initialTab }: SettingsProps) {
     const queryClient = useQueryClient();
-    const { logout, user } = useAuth();
+    const { logout, user, refreshUser } = useAuth();
     // Removed local settings state, loading, error, portfolioCountries, availableAccounts (now props/derived)
 
     const [activeTab, setActiveTab] = useState<Tab>(initialTab || 'overrides');
@@ -614,13 +614,40 @@ export default function Settings({ settings, holdings, availableAccounts, initia
                             <h3 className="text-lg font-medium mb-4">Account Information</h3>
                             <div className="bg-secondary p-4 rounded-lg border border-border mb-8">
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div>
+                                    <div className="col-span-2 md:col-span-1">
                                         <label className={labelClassName}>Username</label>
                                         <p className="font-mono text-lg">{user?.username}</p>
                                     </div>
-                                    <div>
+                                    <div className="col-span-2 md:col-span-1">
                                         <label className={labelClassName}>User ID</label>
                                         <p className="font-mono text-lg">{user?.id}</p>
+                                    </div>
+                                    <div className="col-span-2">
+                                        <label className={labelClassName}>Alias (Display Name)</label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                defaultValue={user?.alias || ''}
+                                                placeholder="e.g. My Portfolio"
+                                                className={inputClassName}
+                                                onBlur={async (e) => {
+                                                    const newAlias = e.target.value.trim();
+                                                    if (newAlias !== (user?.alias || '')) {
+                                                        try {
+                                                            await updateUserProfile({ alias: newAlias });
+                                                            // Invalidate query to refresh user data context-wide
+                                                            await refreshUser();
+                                                            // Optional: toast success
+                                                        } catch (err) {
+                                                            alert("Failed to update alias");
+                                                        }
+                                                    }
+                                                }}
+                                            />
+                                        </div>
+                                        <p className="text-[10px] text-muted-foreground mt-1 italic">
+                                            This name will be displayed in the user menu. Leave empty to use username.
+                                        </p>
                                     </div>
                                 </div>
                             </div>

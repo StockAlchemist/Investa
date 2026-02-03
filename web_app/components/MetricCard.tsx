@@ -47,18 +47,18 @@ export function MetricCard({
             "hover:bg-accent/5 hover:border-cyan-500/20 hover:shadow-md",
             containerClassName
         )}>
-            {isRefreshing && !isLoading && (
-                <div className="absolute top-2 right-2 z-20">
-                    <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
-                </div>
-            )}
             <CardContent className="h-full flex flex-col justify-between p-4 relative">
                 <div className="flex justify-between items-start z-10">
-                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{title}</p>
+                    <div className="flex items-center gap-2">
+                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{title}</p>
+                        {isRefreshing && !isLoading && (
+                            <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
+                        )}
+                    </div>
                     {Icon && (
                         <div className={cn(
-                            "p-2 rounded-lg bg-secondary/50 text-muted-foreground transition-colors group-hover:text-cyan-500 group-hover:bg-cyan-500/10",
-                            // Adjust icon styling if needed
+                            "absolute top-3 right-3 p-1.5 rounded-lg bg-secondary/50 text-muted-foreground transition-all duration-300",
+                            "group-hover:text-cyan-500 group-hover:bg-cyan-500/10"
                         )}>
                             <Icon className="w-4 h-4" />
                         </div>

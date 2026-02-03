@@ -28,9 +28,10 @@ import portfolio_analyzer
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from db_utils import initialize_database, get_db_connection
+    from db_utils import initialize_database, initialize_global_database, get_db_connection
     # Ensure DB is initialized
     initialize_database()
+    initialize_global_database()
     yield
 
 app = FastAPI(title="Investa API", description="Backend for Investa PWA", lifespan=lifespan)

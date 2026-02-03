@@ -48,7 +48,7 @@ export default function UserMenu({ user, onLogout, onUserClick, align = 'right' 
                 >
                     <div className="p-2 grid gap-1">
                         <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 border-b border-border mb-1">
-                            {user?.username || 'Account'}
+                            {user?.alias || user?.username || 'Account'}
                         </div>
                         <button
                             onClick={() => {

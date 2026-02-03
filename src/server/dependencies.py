@@ -46,11 +46,17 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     conn = get_db_connection(global_db_path, check_same_thread=False)
     if conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, is_active, created_at FROM users WHERE username = ?", (token_data.username,))
+        cursor.execute("SELECT id, username, is_active, created_at, alias FROM users WHERE username = ?", (token_data.username,))
         row = cursor.fetchone()
         if row is None:
             raise credentials_exception
-        user = User(id=row[0], username=row[1], is_active=bool(row[2]), created_at=row[3])
+        user = User(
+            id=row[0], 
+            username=row[1], 
+            is_active=bool(row[2]), 
+            created_at=row[3],
+            alias=row[4]
+        )
         if not user.is_active:
              raise HTTPException(status_code=400, detail="Inactive user")
         return user

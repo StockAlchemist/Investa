@@ -1472,10 +1472,22 @@ def initialize_global_database() -> Optional[sqlite3.Connection]:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
                 hashed_password TEXT NOT NULL,
+                alias TEXT,
                 is_active BOOLEAN DEFAULT 1,
                 created_at TEXT NOT NULL
             );
         """)
+        
+        # Migration: Add alias column if not exists
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN alias TEXT;")
+            logging.info("Added 'alias' column to users table.")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" in str(e):
+                pass
+            else:
+                raise
+        
         conn.commit()
     return conn
 

@@ -25,9 +25,22 @@ export async function fetchCurrentUser(token: string): Promise<User> {
     return res.json();
 }
 
+export async function updateUserProfile(data: { alias: string }): Promise<User> {
+    const res = await authFetch(`${API_BASE_URL}/auth/me`, {
+        method: 'PATCH',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to update user profile');
+    return res.json();
+}
+
 export interface User {
     id: number;
     username: string;
+    alias?: string;
     is_active: boolean;
     created_at: string;
 }

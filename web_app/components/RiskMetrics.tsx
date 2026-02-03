@@ -223,15 +223,15 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
     return (
         <React.Fragment>
             <Card className="h-full border-border hover:border-cyan-500/20 transition-all duration-300 hover:shadow-md group relative overflow-hidden">
-                {isRefreshing && !isLoading && (
-                    <div className="absolute top-2 right-2 z-20">
-                        <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
-                    </div>
-                )}
                 <CardContent className="h-full p-4 flex flex-col gap-4">
                     <div className="flex justify-between items-start">
-                        <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Risk Analytics</h3>
-                        <div className="p-1.5 rounded-lg bg-secondary/50 text-muted-foreground group-hover:text-cyan-500 group-hover:bg-cyan-500/10 transition-colors">
+                        <div className="flex items-center gap-2">
+                            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Risk Analytics</h3>
+                            {isRefreshing && !isLoading && (
+                                <Loader2 className="w-3 h-3 animate-spin text-cyan-500 opacity-70" />
+                            )}
+                        </div>
+                        <div className="absolute top-3 right-3 p-1.5 rounded-lg bg-secondary/50 text-muted-foreground group-hover:text-cyan-500 group-hover:bg-cyan-500/10 transition-colors">
                             <Activity className="w-4 h-4" />
                         </div>
                     </div>

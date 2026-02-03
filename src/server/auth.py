@@ -30,6 +30,7 @@ class TokenData(BaseModel):
 class User(BaseModel):
     id: int
     username: str
+    alias: Optional[str] = None
     is_active: bool = True
     created_at: str
 
