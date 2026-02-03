@@ -7,8 +7,6 @@ const nextConfig: NextConfig = {
   devIndicators: false,
   output: isDesktop ? 'export' : undefined,
   assetPrefix: isDesktop ? './' : undefined, // Fix loading assets in Electron (file:// protocol)
-  // @ts-ignore
-  optimizeFonts: false, // Disable font optimization to prevent file:// protocol preload warnings
   images: {
     unoptimized: isDesktop,
   },
