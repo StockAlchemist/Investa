@@ -535,16 +535,18 @@ export default function PerformanceGraph({
     const isContinuous = period === '1d';
 
     return (
-        <div ref={containerRef} className="bg-card rounded-xl p-4 shadow-sm border border-border mb-6 overflow-visible">
+        <div ref={containerRef} className="bg-card rounded-xl p-4 shadow-sm border border-border mb-6 overflow-visible relative">
+            {loading && processedData.length > 0 && (
+                <div className="absolute top-2 right-2 z-20">
+                    <Loader2 className="w-4 h-4 animate-spin text-cyan-500 opacity-70" />
+                </div>
+            )}
             <div className="mb-6">
                 <div className="flex flex-col items-start gap-1 md:flex-row md:justify-between md:items-center md:gap-0 mb-4">
                     <h3 className="text-lg font-medium text-muted-foreground">
                         {view === 'return' ? 'Time-Weighted Return' : view === 'value' ? 'Portfolio Value' : 'Drawdown'}
                     </h3>
                     <div className="flex items-center gap-4">
-                        {loading && processedData.length > 0 && (
-                            <Loader2 className="w-4 h-4 animate-spin text-cyan-500 opacity-70" />
-                        )}
                         {periodStats ? (
                             <div className="flex items-baseline gap-4">
                                 {periodStats.map((stat, index) => (
@@ -633,18 +635,16 @@ export default function PerformanceGraph({
             </div>
 
             <div className="h-[400px] w-full relative overflow-visible pb-4">
-                {loading && (
+                {loading && processedData.length === 0 && (
                     <div className={cn(
                         "absolute inset-0 flex items-center justify-center z-10 rounded-xl transition-all duration-300",
-                        processedData.length === 0 ? "bg-background/80" : "bg-background/30 backdrop-blur-[1px] pointer-events-none"
+                        "bg-background/80"
                     )}>
                         <div className="flex flex-col items-center gap-4">
-                            <Loader2 className={cn("animate-spin text-cyan-500", processedData.length === 0 ? "w-8 h-8" : "w-6 h-6")} />
-                            {processedData.length === 0 && (
-                                <span className="text-xs font-black tracking-[0.2em] text-cyan-500 uppercase animate-pulse">
-                                    Calculating Graph
-                                </span>
-                            )}
+                            <Loader2 className="animate-spin text-cyan-500 w-8 h-8" />
+                            <span className="text-xs font-black tracking-[0.2em] text-cyan-500 uppercase animate-pulse">
+                                Calculating Graph
+                            </span>
                         </div>
                     </div>
                 )}
