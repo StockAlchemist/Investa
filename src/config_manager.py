@@ -25,8 +25,10 @@ from utils import get_column_definitions, DEFAULT_GRAPH_START_DATE, DEFAULT_GRAP
 class ConfigManager:
     def __init__(self, app_data_path: str):
         self.app_data_path = app_data_path
-        self.CONFIG_FILE = os.path.join(app_data_path, "gui_config.json")
-        self.MANUAL_OVERRIDES_FILE = os.path.join(app_data_path, config.MANUAL_OVERRIDES_FILENAME)
+        global_config_dir = os.path.join(app_data_path, config.CONFIG_DIR)
+        os.makedirs(global_config_dir, exist_ok=True)
+        self.CONFIG_FILE = os.path.join(global_config_dir, "gui_config.json")
+        self.MANUAL_OVERRIDES_FILE = os.path.join(global_config_dir, config.MANUAL_OVERRIDES_FILENAME)
         
         # Initialize defaults
         self.gui_config = self._get_default_gui_config()

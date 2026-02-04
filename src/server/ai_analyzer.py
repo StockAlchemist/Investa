@@ -48,7 +48,7 @@ def generate_stock_review(symbol: str, fund_data: dict, ratios_data: dict, force
         }
     
     # --- Caching Logic ---
-    cache_dir = os.path.join(config.get_app_data_dir(), "ai_analysis_cache")
+    cache_dir = os.path.join(config.get_app_data_dir(), config.CACHE_DIR, "ai_analysis_cache")
     os.makedirs(cache_dir, exist_ok=True)
     cache_path = os.path.join(cache_dir, f"{symbol.upper()}_analysis.json")
     

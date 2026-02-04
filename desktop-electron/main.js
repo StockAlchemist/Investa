@@ -2,6 +2,17 @@ const { app, BrowserWindow } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const http = require('http');
+const fs = require('fs');
+const os = require('os');
+
+const logFile = path.join(os.homedir(), 'investa_app.log');
+
+function logToFile(message) {
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(logFile, `[${timestamp}] ${message}\n`);
+}
+
+logToFile('--- App Starting ---');
 
 let mainWindow;
 let pythonProcess;
@@ -11,40 +22,42 @@ const PYTHON_HOST = '127.0.0.1';
 // Function to find Python executable
 function getPythonCommand() {
     const isWin = process.platform === 'win32';
-    // Check for local venv first if it exists
-    const venvPath = path.join(__dirname, '..', '.venv', isWin ? 'Scripts' : 'bin', isWin ? 'python.exe' : 'python3');
-    // You might want to add logic to check if this file exists using fs.existsSync
-    // For now, defaulting to system python if we can't be sure, or assuming user has it in path.
-    // Actually, let's just use 'python3' and assume it's in PATH for Mac/Linux and 'python' for Windows
+    // If packaged, we might want to bundle a python env, but for now we assume system python/venv
     return isWin ? 'python' : 'python3';
 }
 
 function startPythonBackend() {
+    const isDev = require('electron-is-dev');
     const pythonCmd = getPythonCommand();
-    const scriptPath = path.join(__dirname, '..', 'src', 'server', 'main.py');
+
+    // In production, backend files are in extraResources (Resources folder)
+    const baseDir = isDev ? path.join(__dirname, '..') : process.resourcesPath;
+
+    const scriptPath = path.join(baseDir, 'src', 'server', 'main.py');
 
     // Set PYTHONPATH to include the project root so imports work
-    const projectRoot = path.join(__dirname, '..');
+    const projectRoot = baseDir;
     const env = {
         ...process.env,
         PYTHONPATH: projectRoot + (process.platform === 'win32' ? ';' : ':') + (process.env.PYTHONPATH || ''),
         PORT: PYTHON_PORT.toString()
     };
 
-    console.log(`Starting Python backend: ${pythonCmd} ${scriptPath}`);
+    logToFile(`Starting Python backend: ${pythonCmd} ${scriptPath}`);
+    logToFile(`PYTHONPATH: ${env.PYTHONPATH}`);
 
     pythonProcess = spawn(pythonCmd, [scriptPath], { env });
 
     pythonProcess.stdout.on('data', (data) => {
-        console.log(`[Python]: ${data}`);
+        logToFile(`[Python]: ${data}`);
     });
 
     pythonProcess.stderr.on('data', (data) => {
-        console.error(`[Python API Error]: ${data}`);
+        logToFile(`[Python API Error]: ${data}`);
     });
 
     pythonProcess.on('close', (code) => {
-        console.log(`Python process exited with code ${code}`);
+        logToFile(`Python process exited with code ${code}`);
     });
 }
 
@@ -82,10 +95,10 @@ function createWindow() {
     // mainWindow.webContents.openDevTools();
 
     // Load the Next.js static export
-    // In development, you might want to load localhost:3000
-    // HEADS UP: We are pointing to the OUT directory of web_app
-    const indexPath = path.join(__dirname, '..', 'web_app', 'out', 'index.html');
-    mainWindow.loadFile(indexPath).catch(err => console.log("Failed to load index.html. Did you run build:desktop?", err));
+    const isDev = require('electron-is-dev');
+    const baseDir = isDev ? path.join(__dirname, '..') : app.getAppPath();
+    const indexPath = path.join(baseDir, 'web_app', 'out', 'index.html');
+    mainWindow.loadFile(indexPath).catch(err => console.error("Failed to load index.html. Path tried: " + indexPath, err));
 
     mainWindow.on('closed', () => {
         mainWindow = null;

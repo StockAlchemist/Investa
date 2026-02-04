@@ -42,7 +42,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     # For now, we trust the token's claim if signature is valid, 
     # but let's do a quick DB check to fail if user deleted.
     # Connect to GLOBAL DB for Auth
-    global_db_path = os.path.join(config.get_app_data_dir(), GLOBAL_DB_FILENAME)
+    global_db_path = os.path.join(config.get_app_data_dir(), config.DB_DIR, GLOBAL_DB_FILENAME)
     conn = get_db_connection(global_db_path, check_same_thread=False)
     if conn:
         cursor = conn.cursor()
@@ -105,7 +105,7 @@ def get_transaction_data(current_user: User = Depends(get_current_user)) -> Tupl
     username = current_user.username
     
     # Define User Data Directory
-    user_data_dir = os.path.join(config.get_app_data_dir(), "users", username)
+    user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, username)
     
     # ---------------------------
     # --- 1. Load User Configuration ---
@@ -372,7 +372,7 @@ from config_manager import ConfigManager
 
 def get_config_manager(current_user: User = Depends(get_current_user)) -> ConfigManager:
     """Dependency that provides a User-specific ConfigManager."""
-    user_data_dir = os.path.join(config.get_app_data_dir(), "users", current_user.username)
+    user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, current_user.username)
     # Ensure dir exists
     os.makedirs(user_data_dir, exist_ok=True)
     return ConfigManager(user_data_dir)
@@ -386,7 +386,7 @@ def reload_config():
 
 def get_global_db_connection() -> sqlite3.Connection:
     """Dependency for Global DB Connection (Auth)."""
-    global_db_path = os.path.join(config.get_app_data_dir(), config.GLOBAL_DB_FILENAME)
+    global_db_path = os.path.join(config.get_app_data_dir(), config.DB_DIR, config.GLOBAL_DB_FILENAME)
     conn = get_db_connection(global_db_path, check_same_thread=False, use_cache=False)
     if not conn:
         raise HTTPException(status_code=500, detail="Global Database unavailable")
@@ -397,7 +397,7 @@ def get_global_db_connection() -> sqlite3.Connection:
 
 def get_user_db_connection(current_user: User = Depends(get_current_user)) -> sqlite3.Connection:
     """Dependency for User Portfolio DB Connection."""
-    user_data_dir = os.path.join(config.get_app_data_dir(), "users", current_user.username)
+    user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, current_user.username)
     db_path = os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
     conn = get_db_connection(db_path, check_same_thread=False, use_cache=False)
     if not conn:

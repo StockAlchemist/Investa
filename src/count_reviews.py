@@ -36,7 +36,7 @@ def main():
         print("Could not connect to database.")
 
     # 2. Check File Cache
-    cache_dir = os.path.join(config.get_app_data_dir(), "ai_analysis_cache")
+    cache_dir = os.path.join(config.get_app_data_dir(), config.CACHE_DIR, "ai_analysis_cache")
     file_count = 0
     if os.path.exists(cache_dir):
         files = [f for f in os.listdir(cache_dir) if f.endswith("_analysis.json")]

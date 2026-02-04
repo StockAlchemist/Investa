@@ -60,6 +60,13 @@ APP_NAME = "Investa"  # Used by db_utils.py for fallback folder if QStandardPath
 APP_VERSION = "1.0.1"
 ORG_NAME = "StockAlchemist"  # Used for cache path consistency
 
+# --- Directory Names ---
+DB_DIR = "db"
+CACHE_DIR = "cache"
+CONFIG_DIR = "config"
+EXPORTS_DIR = "exports"
+USERS_DIR = "users"
+
 
 def get_app_data_dir() -> str:
     """

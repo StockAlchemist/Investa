@@ -143,7 +143,7 @@ async def register(user: UserCreate, conn: sqlite3.Connection = Depends(get_glob
         
         # --- Initialize User Isolation ---
         # Create user directory and initialize their portfolio DB
-        user_data_dir = os.path.join(config.get_app_data_dir(), "users", user.username)
+        user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, user.username)
         try:
              os.makedirs(user_data_dir, exist_ok=True)
              
@@ -241,7 +241,7 @@ async def delete_user_me(
         conn.commit()
         
         # 2. Delete user data directory
-        user_data_dir = os.path.join(config.get_app_data_dir(), "users", current_user.username)
+        user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, current_user.username)
         if os.path.exists(user_data_dir):
             try:
                 shutil.rmtree(user_data_dir)

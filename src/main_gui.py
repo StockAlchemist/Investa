@@ -2394,8 +2394,8 @@ The CSV file should contain the following columns (header names must match exact
             logging.exception(
                 f"CRITICAL ERROR during config/manual file path initialization: {e_path_init}"
             )
-            self.CONFIG_FILE = "gui_config.json"  # Fallback
-            self.MANUAL_OVERRIDES_FILE = MANUAL_OVERRIDES_FILENAME  # Fallback
+            self.CONFIG_FILE = os.path.join(config.get_app_data_dir(), config.CONFIG_DIR, "gui_config.json")  # Fallback
+            self.MANUAL_OVERRIDES_FILE = os.path.join(config.get_app_data_dir(), config.CONFIG_DIR, config.MANUAL_OVERRIDES_FILENAME)  # Fallback
             QMessageBox.critical(
                 self,
                 "Path Error",

@@ -14,7 +14,7 @@ class MarketDatabase:
     """
     def __init__(self, db_path: Optional[str] = None):
         if db_path is None:
-            db_path = os.path.join(config.get_app_data_dir(), "market_data.db")
+            db_path = os.path.join(config.get_app_data_dir(), config.DB_DIR, "market_data.db")
         self.db_path = db_path
         self._init_db()
 

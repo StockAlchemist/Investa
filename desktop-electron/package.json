@@ -17,5 +17,53 @@
   "devDependencies": {
     "electron": "^28.2.0",
     "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.stockalchemist.investa",
+    "productName": "Investa",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "package.json",
+      {
+        "from": "../web_app/out",
+        "to": "web_app/out",
+        "filter": [
+          "**/*",
+          "!**/.DS_Store"
+        ]
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "../src",
+        "to": "src",
+        "filter": [
+          "**/*",
+          "!**/.DS_Store",
+          "!**/*.pyc",
+          "!**/__pycache__"
+        ]
+      },
+      {
+        "from": "..",
+        "to": ".",
+        "filter": [
+          "requirements.txt"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.finance",
+      "icon": "../build_resources/Investa.icns",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "target": [
+        "dir"
+      ]
+    },
+    "asar": true
   }
 }

@@ -45,10 +45,10 @@ class NpEncoder(json.JSONEncoder):
 def get_database_path(db_filename: str = DB_FILENAME) -> str:
     """
     Determines the full path for the SQLite database file.
-    Prioritizes centralized application data directory, falls back to CWD.
+    Prioritizes centralized application data directory (db subfolder), falls back to CWD.
     """
-    # Priority 1: Check centralized application data directory
-    app_data_dir = config.get_app_data_dir()
+    # Priority 1: Check centralized application data directory (db subfolder)
+    app_data_dir = os.path.join(config.get_app_data_dir(), config.DB_DIR)
     app_data_path = os.path.join(app_data_dir, db_filename)
     if os.path.exists(app_data_path):
         return app_data_path
@@ -64,7 +64,7 @@ def get_database_path(db_filename: str = DB_FILENAME) -> str:
 
 def get_global_screener_db_path() -> str:
     """Returns the path to the global master screener database."""
-    return os.path.join(config.get_app_data_dir(), DB_FILENAME)
+    return os.path.join(config.get_app_data_dir(), config.DB_DIR, DB_FILENAME)
 
 
 _DB_CONN_CACHE = threading.local()
@@ -1463,7 +1463,7 @@ def initialize_database(db_path: Optional[str] = None) -> Optional[sqlite3.Conne
 
 def initialize_global_database() -> Optional[sqlite3.Connection]:
     """Initializes the Global Database Schema (Users)."""
-    global_db_path = os.path.join(config.get_app_data_dir(), config.GLOBAL_DB_FILENAME)
+    global_db_path = os.path.join(config.get_app_data_dir(), config.DB_DIR, config.GLOBAL_DB_FILENAME)
     conn = get_db_connection(global_db_path)
     if conn:
         cursor = conn.cursor()

@@ -32,7 +32,7 @@ def get_etf_holdings(product_id: str, ticker: str, filename: str) -> List[str]:
       - Russell 2000 (IWM): 239710
       - S&P MidCap 400 (IJH): 239763
     """
-    cache_path = os.path.join(config.get_app_data_dir(), filename)
+    cache_path = os.path.join(config.get_app_data_dir(), config.CACHE_DIR, filename)
     # 7-day TTL for static lists
     CACHE_TTL = 86400 * 7
     
@@ -143,7 +143,7 @@ def get_sp500_tickers() -> List[str]:
     Fetches the list of S&P 500 companies from Wikipedia.
     Uses caching to avoid repeated web requests.
     """
-    cache_path = os.path.join(config.get_app_data_dir(), SP500_CACHE_FILE)
+    cache_path = os.path.join(config.get_app_data_dir(), config.CACHE_DIR, SP500_CACHE_FILE)
     
     # Check cache
     if os.path.exists(cache_path):
@@ -414,7 +414,7 @@ def process_screener_results(
     prefetched_statements = prefetched_statements or {}
     
     # Pre-scan AI review directory to avoid 500+ repeated disk lookups (slow on OneDrive)
-    ai_cache_dir = os.path.join(config.get_app_data_dir(), "ai_analysis_cache")
+    ai_cache_dir = os.path.join(config.get_app_data_dir(), config.CACHE_DIR, "ai_analysis_cache")
     existing_reviews = set()
     if os.path.exists(ai_cache_dir):
         try:
@@ -592,7 +592,7 @@ def process_screener_results(
                 valuation_details_json = json.dumps(iv_res, default=str)
                 
                 # AI Review Check
-                ai_cache_path = os.path.join(config.get_app_data_dir(), "ai_analysis_cache", f"{sym.upper()}_analysis.json")
+                ai_cache_path = os.path.join(config.get_app_data_dir(), config.CACHE_DIR, "ai_analysis_cache", f"{sym.upper()}_analysis.json")
                 has_ai = os.path.exists(ai_cache_path)
                 
                 ai_score = None

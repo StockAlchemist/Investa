@@ -323,8 +323,10 @@ class MarketDataProvider:
             {}
         )  # Store recently fetched historical FX
 
-        # Get centralized app data directory
+        # Get centralized app data directory (cache subfolder)
         app_data_dir = config.get_app_data_dir()
+        cache_dir = os.path.join(app_data_dir, config.CACHE_DIR)
+        os.makedirs(cache_dir, exist_ok=True)
 
         # Construct full path for current_cache_file
         if current_cache_file is None:
@@ -333,21 +335,21 @@ class MarketDataProvider:
         if os.path.isabs(current_cache_file):
             self.current_cache_file = current_cache_file
         else:
-            self.current_cache_file = os.path.join(app_data_dir, current_cache_file)
+            self.current_cache_file = os.path.join(cache_dir, current_cache_file)
 
         # Construct full path for fundamentals_cache_dir
         if os.path.isabs(fundamentals_cache_dir):
             self.fundamentals_cache_dir = fundamentals_cache_dir
         else:
             self.fundamentals_cache_dir = os.path.join(
-                app_data_dir, fundamentals_cache_dir
+                cache_dir, fundamentals_cache_dir
             )
 
         # Ensure directory exists
         os.makedirs(self.fundamentals_cache_dir, exist_ok=True)
         
         # Construct full path for metadata_cache_dir
-        self.metadata_cache_dir = os.path.join(app_data_dir, "metadata_cache")
+        self.metadata_cache_dir = os.path.join(cache_dir, "metadata_cache")
         os.makedirs(self.metadata_cache_dir, exist_ok=True)
         
         # logging.info("MarketDataProvider initialized.")
@@ -355,7 +357,7 @@ class MarketDataProvider:
     def _get_historical_cache_dir(self) -> str:
         """Constructs and returns the full path to the historical data cache subdirectory."""
         app_data_dir = config.get_app_data_dir()
-        hist_dir = os.path.join(app_data_dir, self.hist_data_cache_dir_name)
+        hist_dir = os.path.join(app_data_dir, config.CACHE_DIR, self.hist_data_cache_dir_name)
         os.makedirs(hist_dir, exist_ok=True)
         return hist_dir
 
@@ -404,7 +406,7 @@ class MarketDataProvider:
 
     def _get_persistent_fx_cache_path(self) -> str:
         """Returns the full path to the persistent FX cache file."""
-        return os.path.join(config.get_app_data_dir(), PERSISTENT_FX_CACHE_FILE)
+        return os.path.join(config.get_app_data_dir(), config.CACHE_DIR, PERSISTENT_FX_CACHE_FILE)
 
     def _load_persistent_fx_cache(self, allow_stale: bool = True) -> Tuple[Dict[str, float], Dict[str, float]]:
         """Loads the persistent FX cache from disk."""
