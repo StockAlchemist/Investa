@@ -88,7 +88,7 @@ export default function Home() {
   const [currency, setCurrency] = useState('USD');
   const [activeTab, setActiveTab] = useState('performance');
   const [showClosed, setShowClosed] = useState(false);
-  const [backgroundFetchEnabled, setBackgroundFetchEnabled] = useState(false);
+  const [backgroundFetchLevel, setBackgroundFetchLevel] = useState(0);
   const [mounted, setMounted] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'overrides' | 'account' | undefined>(undefined);
 
@@ -132,13 +132,20 @@ export default function Home() {
     }
   }, []);
 
-  // Trigger background fetch after initial load
+  // Stagger background fetches to prioritize essential data
   useEffect(() => {
-    if (!mounted) return; // Wait for mount
-    const timer = setTimeout(() => {
-      setBackgroundFetchEnabled(true);
-    }, 100);
-    return () => clearTimeout(timer);
+    if (!mounted) return;
+
+    // Level 1: Performance Tab extras (Health, Risk, Attribution) after 1.5s
+    const t1 = setTimeout(() => setBackgroundFetchLevel(1), 1500);
+
+    // Level 2: Other tabs (Transactions, Dividends, etc.) after 4s
+    const t2 = setTimeout(() => setBackgroundFetchLevel(2), 4000);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
   }, [mounted]);
 
   // Settings sync effect (condensed)
@@ -321,7 +328,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchTransactions(selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'transactions' || backgroundFetchEnabled),
+    enabled: !!user && (activeTab === 'transactions' || backgroundFetchLevel >= 2),
   });
 
   const assetChangeQuery = useQuery({
@@ -329,7 +336,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchAssetChange(currency, selectedAccounts, benchmarks, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'asset_change' || backgroundFetchEnabled),
+    enabled: !!user && (activeTab === 'asset_change' || backgroundFetchLevel >= 2),
   });
 
   const capitalGainsQuery = useQuery({
@@ -337,7 +344,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchCapitalGains(currency, selectedAccounts, capitalGainsDates.from, capitalGainsDates.to, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'capital_gains' || backgroundFetchEnabled),
+    enabled: !!user && (activeTab === 'capital_gains' || backgroundFetchLevel >= 2),
   });
 
   const dividendsQuery = useQuery({
@@ -345,7 +352,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchDividends(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'dividend' || backgroundFetchEnabled),
+    enabled: !!user && (activeTab === 'dividend' || backgroundFetchLevel >= 2),
   });
 
   const riskMetricsQuery = useQuery({
@@ -353,7 +360,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchRiskMetrics(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: !!user,
+    enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 1),
   });
 
   const attributionQuery = useQuery({
@@ -361,7 +368,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchAttribution(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: !!user,
+    enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 1),
   });
 
   const dividendCalendarQuery = useQuery({
@@ -369,7 +376,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchDividendCalendar(selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'dividend' || backgroundFetchEnabled),
+    enabled: !!user && (activeTab === 'dividend' || backgroundFetchLevel >= 2),
   });
 
   const historySparklineQuery = useQuery({
@@ -397,7 +404,7 @@ export default function Home() {
     placeholderData: keepPreviousData,
     staleTime: 5 * 60 * 1000,
     refetchInterval: isMarketOpen && (graphPeriod === '1d' || graphPeriod === '5d') ? 60000 : false,
-    enabled: !!user && (activeTab === 'performance' || backgroundFetchEnabled)
+    enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 1)
   });
 
   const graphData = historyQuery.data || [];
@@ -409,7 +416,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchWatchlist(currency, 1, signal),
     staleTime: 1 * 60 * 1000,
     // No keepPreviousData needed for watchlist as it's not dependent on accounts
-    enabled: !!user && (activeTab === 'watchlist' || backgroundFetchEnabled),
+    enabled: !!user && (activeTab === 'watchlist' || backgroundFetchLevel >= 2),
   });
 
   const portfolioHealthQuery = useQuery({
@@ -417,7 +424,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchPortfolioHealth(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'performance' || backgroundFetchEnabled),
+    enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 1),
   });
 
 
@@ -427,7 +434,7 @@ export default function Home() {
     queryFn: ({ signal }) => fetchProjectedIncome(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'dividend' || backgroundFetchEnabled),
+    enabled: !!user && (activeTab === 'dividend' || backgroundFetchLevel >= 2),
   });
 
   const summary = summaryQuery.data;

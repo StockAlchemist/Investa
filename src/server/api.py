@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from starlette.concurrency import run_in_threadpool
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from collections import defaultdict
 import pandas as pd
 import logging
@@ -9,9 +9,7 @@ import json
 import time
 import sqlite3
 from datetime import datetime, date, time as dt_time
-
-
-
+import asyncio
 import shutil
 
 from server.dependencies import get_transaction_data, get_config_manager, reload_data, get_global_db_connection, get_user_db_connection
@@ -90,13 +88,120 @@ project_root = os.path.dirname(src_dir)
 # Global Cache for Portfolio Summary Calculations to avoid redundant processing per-request
 _PORTFOLIO_SUMMARY_CACHE = {}
 _MARKET_HISTORY_CACHE = {}
+_PORTFOLIO_HISTORY_CACHE = {} # Shared cache for historical calculations
+_HISTORY_CALC_FUTURES = {}    # Track in-flight historical calculations
 
 def reload_data_and_clear_cache():
     """Helper to clear both transaction data cache, portfolio summary cache, and market history cache."""
     reload_data()
     _PORTFOLIO_SUMMARY_CACHE.clear()
     _MARKET_HISTORY_CACHE.clear()
-    logging.info("Transaction, Summary, and Market History caches cleared.")
+    _PORTFOLIO_HISTORY_CACHE.clear()
+    logging.info("Transaction, Summary, Market History, and Portfolio History caches cleared.")
+
+
+async def _get_historical_performance_cached(
+    df: pd.DataFrame,
+    manual_overrides_dict: Dict,
+    user_symbol_map: Dict,
+    user_excluded_symbols: set,
+    account_currency_map: Dict,
+    original_csv_file_path: Optional[str],
+    start_date: date,
+    end_date: date,
+    interval: str,
+    benchmark_symbols_yf: List[str],
+    display_currency: str,
+    include_accounts: Optional[List[str]],
+    db_mtime: float
+) -> Tuple[pd.DataFrame, Dict, Dict, str]:
+    """
+    Wrapper for calculate_historical_performance that uses a shared in-memory cache
+    and implements concurrency control (task sharing) to prevent the thundering herd effect.
+    """
+    # Create a unique key for the request parameters and data state
+    accounts_key = tuple(sorted(include_accounts)) if include_accounts else "ALL"
+    benchmarks_key = tuple(sorted(benchmark_symbols_yf)) if benchmark_symbols_yf else ()
+    
+    # We bucket market data freshness to 5 minutes if market is open, or 1 hour if closed
+    from utils_time import is_market_open
+    if is_market_open():
+        time_bucket = int(time.time() / (5 * 60)) # 5 mins
+    else:
+        time_bucket = int(time.time() / (60 * 60)) # 1 hour
+        
+    cache_key = (
+        display_currency,
+        accounts_key,
+        benchmarks_key,
+        start_date,
+        end_date,
+        interval,
+        db_mtime,
+        time_bucket
+    )
+    
+    # 1. Check if we already have a cached result
+    if cache_key in _PORTFOLIO_HISTORY_CACHE:
+        logging.info(f"Using cached Portfolio History for key: {cache_key[:3]}...")
+        return _PORTFOLIO_HISTORY_CACHE[cache_key]
+        
+    # 2. Check if another request is already calculating this
+    if cache_key in _HISTORY_CALC_FUTURES:
+        logging.info(f"Historical calculation in progress for key {cache_key[:3]}... waiting.")
+        try:
+            return await _HISTORY_CALC_FUTURES[cache_key]
+        except Exception as e:
+            # If the future failed, we'll try to re-calculate (though usually better to just re-raise)
+            logging.error(f"Waiting for historical calculation failed: {e}")
+            raise
+        
+    # 3. No cache and no in-flight request, so we calculate
+    future = asyncio.Future()
+    _HISTORY_CALC_FUTURES[cache_key] = future
+    
+    try:
+        logging.info(f"Starting historical performance calculation for key {cache_key[:3]}...")
+        
+        # Since calculate_historical_performance is CPU-bound, run in threadpool
+        def run_calc():
+            return calculate_historical_performance(
+                all_transactions_df_cleaned=df,
+                original_transactions_df_for_ignored=df,
+                ignored_indices_from_load=set(),
+                ignored_reasons_from_load={},
+                start_date=start_date,
+                end_date=end_date,
+                interval=interval,
+                benchmark_symbols_yf=benchmark_symbols_yf,
+                display_currency=display_currency,
+                account_currency_map=account_currency_map,
+                default_currency=config.DEFAULT_CURRENCY,
+                include_accounts=include_accounts,
+                manual_overrides_dict=manual_overrides_dict,
+                user_symbol_map=user_symbol_map,
+                user_excluded_symbols=user_excluded_symbols,
+                original_csv_file_path=original_csv_file_path
+            )
+            
+        result = await run_in_threadpool(run_calc)
+        
+        # Store in cache
+        _PORTFOLIO_HISTORY_CACHE[cache_key] = result
+        if len(_PORTFOLIO_HISTORY_CACHE) > 20:
+            first_key = next(iter(_PORTFOLIO_HISTORY_CACHE))
+            del _PORTFOLIO_HISTORY_CACHE[first_key]
+            
+        future.set_result(result)
+        return result
+    except Exception as e:
+        if not future.done():
+            future.set_exception(e)
+        logging.error(f"Error in historical calculation: {e}", exc_info=True)
+        raise
+    finally:
+        # Remove from in-flight tracker
+        _HISTORY_CALC_FUTURES.pop(cache_key, None)
 
 
 # Global Market Data Provider to share DB connections and cache across requests
@@ -343,23 +448,20 @@ async def get_asset_change(
                     mapped_benchmarks.append(b)
 
         # 1. Calculate full history (using 'all' period)
-        daily_df, _, _, final_status_str = calculate_historical_performance(
-            all_transactions_df_cleaned=df,
-            original_transactions_df_for_ignored=df,
-            ignored_indices_from_load=set(),
-            ignored_reasons_from_load={},
-            start_date=date(2000, 1, 1), # All history
-            end_date=date.today(),
-            display_currency=currency,
+        daily_df, _, _, final_status_str = await _get_historical_performance_cached(
+            df=df,
             manual_overrides_dict=manual_overrides,
             user_symbol_map=user_symbol_map,
             user_excluded_symbols=user_excluded_symbols,
+            account_currency_map=account_currency_map,
+            original_csv_file_path=original_csv_path,
+            start_date=date(2000, 1, 1), # All history
+            end_date=date.today(),
+            display_currency=currency,
             include_accounts=accounts,
             benchmark_symbols_yf=mapped_benchmarks,
-            account_currency_map=account_currency_map,
-            default_currency=config.DEFAULT_CURRENCY,
             interval="D",
-            original_csv_file_path=original_csv_path
+            db_mtime=data[6] # db_mtime
         )
         
         if daily_df is None or daily_df.empty:
@@ -529,7 +631,43 @@ async def _calculate_portfolio_summary_internal(
         interest_free_thresholds=interest_free_thresholds
     )
     
+    # --- Calculate Annualized TWR and include in metrics ---
+    annualized_twr = None
+    if not df.empty:
+        try:
+            # Use cached helper for historical data
+            min_date = df["Date"].min().date()
+            max_date = date.today()
+            
+            daily_df, _, _, _ = await _get_historical_performance_cached(
+                df=df,
+                manual_overrides_dict=manual_overrides,
+                user_symbol_map=user_symbol_map,
+                user_excluded_symbols=user_excluded_symbols,
+                account_currency_map=account_currency_map,
+                original_csv_file_path=db_path, # In this context db_path is the source path
+                start_date=min_date,
+                end_date=max_date,
+                interval="D",
+                benchmark_symbols_yf=[],
+                display_currency=currency,
+                include_accounts=include_accounts,
+                db_mtime=db_mtime
+            )
+            
+            if daily_df is not None and not daily_df.empty:
+                twr_col = "Portfolio Accumulated Gain"
+                if twr_col in daily_df.columns:
+                    final_twr_factor = daily_df[twr_col].iloc[-1]
+                    days = (max_date - min_date).days
+                    if days > 0 and pd.notna(final_twr_factor) and final_twr_factor > 0:
+                        annualized_factor = final_twr_factor ** (365.25 / days)
+                        annualized_twr = (annualized_factor - 1) * 100.0
+        except Exception as e_twr:
+            logging.warning(f"Failed to calculate Annualized TWR in summary: {e_twr}")
+
     if overall_summary_metrics:
+        overall_summary_metrics["annualized_twr"] = annualized_twr
         # Base calculator now correctly includes cash interest (due to fresh config load).
         # We verified 'est_annual_income_display' matches user expectations (~$5237).
         pass
@@ -602,54 +740,14 @@ async def get_portfolio_summary(
         overall_summary_metrics = summary_data["metrics"]
         account_level_metrics = summary_data["account_metrics"]
 
-        # --- Calculate Annualized TWR ---
-        annualized_twr = None
-        if not df.empty:
-            try:
-                # Determine date range for "all" time
-                min_date = df["Date"].min().date()
-                max_date = date.today()
-                
-                # Fetch full history to calculate TWR over the entire period
-                daily_df, _, _, _ = calculate_historical_performance(
-                    all_transactions_df_cleaned=df,
-                    original_transactions_df_for_ignored=df,
-                    ignored_indices_from_load=set(),
-                    ignored_reasons_from_load={},
-                    start_date=min_date,
-                    end_date=max_date,
-                    interval="D",
-                    benchmark_symbols_yf=[], # No benchmarks needed for just portfolio TWR
-                    display_currency=currency,
-                    account_currency_map=account_currency_map,
-                    default_currency=config.DEFAULT_CURRENCY,
-                    include_accounts=accounts,
-                    manual_overrides_dict=manual_overrides,
-                    user_symbol_map=user_symbol_map,
-                    user_excluded_symbols=user_excluded_symbols,
-                    original_csv_file_path=original_csv_path
-                )
-                
-                if daily_df is not None and not daily_df.empty:
-                    twr_col = "Portfolio Accumulated Gain"
-                    if twr_col in daily_df.columns:
-                        # Get the final TWR factor (cumulative)
-                        # daily_df[twr_col] contains the cumulative TWR factor (e.g., 1.5 for 50% gain)
-                        final_twr_factor = daily_df[twr_col].iloc[-1]
-                        
-                        # Ensure we annualize over the full REQUESTED period (from first transaction to today)
-                        # This is more robust than using daily_df.index which might be truncated if data is sparse.
-                        days = (max_date - min_date).days
-                        
-                        if days > 0 and pd.notna(final_twr_factor) and final_twr_factor > 0:
-                            # Annualize: (Total_Factor)^(365.25 / Days) - 1
-                            annualized_factor = final_twr_factor ** (365.25 / days)
-                            annualized_twr = (annualized_factor - 1) * 100.0
-            except Exception as e_twr:
-                logging.warning(f"Failed to calculate Annualized TWR: {e_twr}")
-
+        # --- Fetch Market Indices ---
         if overall_summary_metrics:
-            overall_summary_metrics["annualized_twr"] = annualized_twr
+            try:
+                mdp = get_mdp()
+                indices_data = mdp.get_index_quotes(config.INDICES_FOR_HEADER)
+                overall_summary_metrics["indices"] = indices_data
+            except Exception as e_indices:
+                logging.warning(f"Failed to fetch market indices: {e_indices}")
 
             # --- Fetch Market Indices ---
             try:
@@ -1341,7 +1439,7 @@ async def reject_ibkr(
         raise HTTPException(status_code=500, detail=f"Sync error: {str(e)}")
 
 
-def _calculate_historical_performance_internal(
+async def _calculate_historical_performance_internal(
     currency: str,
     period: str,
     accounts: Optional[List[str]],
@@ -1537,25 +1635,20 @@ def _calculate_historical_performance_internal(
     
     t_start = time.time()
     try:
-        daily_df, _, historical_fx_yf, _ = calculate_historical_performance(
-            all_transactions_df_cleaned=df,
-            original_transactions_df_for_ignored=None, # Not needed for web view
-            ignored_indices_from_load=set(),
-            ignored_reasons_from_load={},
-            start_date=start_date,
-            end_date=end_date,
-            display_currency=currency,
+        daily_df, _, historical_fx_yf, _ = await _get_historical_performance_cached(
+            df=df,
             manual_overrides_dict=manual_overrides,
             user_symbol_map=user_symbol_map,
             user_excluded_symbols=user_excluded_symbols,
+            account_currency_map=account_currency_map,
+            original_csv_file_path=original_csv_path,
+            start_date=start_date,
+            end_date=end_date,
+            display_currency=currency,
             include_accounts=accounts,
             benchmark_symbols_yf=benchmarks,
-            account_currency_map=account_currency_map,
-            default_currency=config.DEFAULT_CURRENCY,
             interval=calc_interval,
-            use_raw_data_cache=not force,
-            use_daily_results_cache=not force,
-            original_csv_file_path=original_csv_path
+            db_mtime=data[6] # db_mtime
         )
         logging.info(f"API History: Calc returned daily_df with {len(daily_df)} rows. Columns: {list(daily_df.columns)}")
         if not daily_df.empty:
@@ -1793,7 +1886,7 @@ def _calculate_historical_performance_internal(
 
 
 @router.get("/history")
-def get_history(
+async def get_history(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),
     period: str = "1y",
@@ -1817,7 +1910,7 @@ def get_history(
                 else:
                     mapped_benchmarks.append(b)
 
-        return _calculate_historical_performance_internal(
+        return await _calculate_historical_performance_internal(
             currency=currency,
             period=period,
             accounts=accounts,
@@ -2034,39 +2127,31 @@ async def get_capital_gains(
         user_excluded_symbols,
         account_currency_map,
         original_csv_path,
-        _
+        db_mtime
     ) = data
 
     if df.empty:
         return []
 
     try:
-        # We need historical FX rates to calculate gains in display currency.
-        # This requires running calculate_historical_performance.
-        # We can optimize by asking for a shorter date range if needed, 
-        # but for full history we need full range.
-        
         # Determine full date range from transactions
         min_date = df["Date"].min().date()
         max_date = date.today()
         
-        _, _, historical_fx_yf, _ = calculate_historical_performance(
-            all_transactions_df_cleaned=df,
-            original_transactions_df_for_ignored=df,
-            ignored_indices_from_load=set(),
-            ignored_reasons_from_load={},
+        _, _, historical_fx_yf, _ = await _get_historical_performance_cached(
+            df=df,
+            manual_overrides_dict=manual_overrides,
+            user_symbol_map=user_symbol_map,
+            user_excluded_symbols=user_excluded_symbols,
+            account_currency_map=account_currency_map,
+            original_csv_file_path=original_csv_path,
             start_date=min_date,
             end_date=max_date,
             interval="D",
             benchmark_symbols_yf=[], # No benchmarks needed
             display_currency=currency,
-            account_currency_map=account_currency_map,
-            default_currency=config.DEFAULT_CURRENCY,
             include_accounts=accounts,
-            manual_overrides_dict=manual_overrides,
-            user_symbol_map=user_symbol_map,
-            user_excluded_symbols=user_excluded_symbols,
-            original_csv_file_path=original_csv_path
+            db_mtime=db_mtime
         )
         
         # Parse dates
@@ -2133,37 +2218,31 @@ async def get_dividends(
         user_excluded_symbols,
         account_currency_map,
         original_csv_path,
-        _
+        db_mtime
     ) = data
 
     if df.empty:
         return []
 
     try:
-        # We need historical FX rates to calculate dividends in display currency.
-        # This requires running calculate_historical_performance.
-        
         # Determine full date range from transactions
         min_date = df["Date"].min().date()
         max_date = date.today()
         
-        _, _, historical_fx_yf, _ = calculate_historical_performance(
-            all_transactions_df_cleaned=df,
-            original_transactions_df_for_ignored=df,
-            ignored_indices_from_load=set(),
-            ignored_reasons_from_load={},
+        _, _, historical_fx_yf, _ = await _get_historical_performance_cached(
+            df=df,
+            manual_overrides_dict=manual_overrides,
+            user_symbol_map=user_symbol_map,
+            user_excluded_symbols=user_excluded_symbols,
+            account_currency_map=account_currency_map,
+            original_csv_file_path=original_csv_path,
             start_date=min_date,
             end_date=max_date,
             interval="D",
             benchmark_symbols_yf=[], # No benchmarks needed
             display_currency=currency,
-            account_currency_map=account_currency_map,
-            default_currency=config.DEFAULT_CURRENCY,
             include_accounts=accounts,
-            manual_overrides_dict=manual_overrides,
-            user_symbol_map=user_symbol_map,
-            user_excluded_symbols=user_excluded_symbols,
-            original_csv_file_path=original_csv_path
+            db_mtime=db_mtime
         )
         
         dividend_df = extract_dividend_history(
@@ -2714,23 +2793,20 @@ async def get_risk_metrics(
 
     try:
         # Calculate daily history to get the total portfolio value series
-        daily_df, _, _, _ = calculate_historical_performance(
-            all_transactions_df_cleaned=df,
-            original_transactions_df_for_ignored=df,
-            ignored_indices_from_load=set(),
-            ignored_reasons_from_load={},
-            start_date=date(2000, 1, 1),
-            end_date=date.today(),
-            display_currency=currency,
+        daily_df, _, _, _ = await _get_historical_performance_cached(
+            df=df,
             manual_overrides_dict=manual_overrides,
             user_symbol_map=user_symbol_map,
             user_excluded_symbols=user_excluded_symbols,
+            account_currency_map=account_currency_map,
+            original_csv_file_path=original_csv_path,
+            start_date=date(2000, 1, 1),
+            end_date=date.today(),
+            display_currency=currency,
             include_accounts=accounts,
             benchmark_symbols_yf=[], # Add empty benchmarks for risk metrics
-            account_currency_map=account_currency_map,
-            default_currency=config.DEFAULT_CURRENCY,
             interval="D",
-            original_csv_file_path=original_csv_path
+            db_mtime=data[6] # db_mtime
         )
         
         if daily_df is None or "Portfolio Value" not in daily_df.columns:
@@ -3473,7 +3549,7 @@ async def get_portfolio_health(
         
         # 2. Get Risk Metrics (for efficiency/volatility)
         logging.info("Health: Fetching history (1y period)")
-        history_df = _calculate_historical_performance_internal(
+        history_df = await _calculate_historical_performance_internal(
             currency=currency,
             period="1y", # Standard period for health check
             accounts=accounts,
