@@ -648,7 +648,7 @@ export default function PerformanceGraph({
                 )}
                 <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
                     {view === 'return' ? (
-                        <LineChart syncId="portfolio-sync" data={chartedData} margin={{ top: 5, right: 5, left: 10, bottom: 5 }}>
+                        <LineChart syncId="portfolio-sync" data={chartedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                             <XAxis
                                 dataKey="timestamp"
@@ -673,7 +673,7 @@ export default function PerformanceGraph({
                                     const padding = range * 0.05 || 0.1;
                                     return [dataMin - padding, dataMax + padding];
                                 }}
-                                width={80}
+                                width={65}
                             />
                             <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '4 4' }} />
                             <Legend />
