@@ -77,7 +77,7 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                 onClick={() => setIsOpen(!isOpen)}
                 className={cn(
                     "flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group",
-                    variant === 'ghost' ? "bg-transparent border-none shadow-none" : "bg-card border border-border shadow-sm",
+                    variant === 'ghost' ? "bg-transparent border-none shadow-none" : "bg-card border-none shadow-sm",
                     "font-semibold tracking-tight min-w-[80px]",
                     isOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-cyan-500",
                     "flex-row py-2 px-2 h-[44px]"

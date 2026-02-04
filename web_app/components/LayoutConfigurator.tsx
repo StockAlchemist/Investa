@@ -56,7 +56,7 @@ export default function LayoutConfigurator({
                 onClick={() => setIsOpen(!isOpen)}
                 className={cn(
                     "flex items-center justify-center gap-2 p-2 rounded-xl transition-all duration-300 group",
-                    variant === 'ghost' ? "bg-transparent border-none shadow-none" : "bg-card border border-border shadow-sm",
+                    variant === 'ghost' ? "bg-transparent border-none shadow-none" : "bg-card border-none shadow-sm",
                     isOpen ? "border-cyan-500/50 ring-2 ring-cyan-500/20" : "text-cyan-500",
                     "h-[44px] px-3"
                 )}
