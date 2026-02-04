@@ -219,7 +219,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
     if (isLoading && !watchlists.length) {
         return (
             <div className="space-y-4">
-                <Card className="bg-card border-border">
+                <Card className="bg-card">
                     <CardHeader>
                         <Skeleton className="h-8 w-48" />
                     </CardHeader>
@@ -245,7 +245,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                             "px-3 py-1.5 text-sm font-medium border rounded-md shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500",
                             activeWatchlistId === wl.id
                                 ? "bg-[#0097b2] text-white border-transparent shadow-sm"
-                                : "text-foreground bg-secondary border-border hover:bg-accent/10"
+                                : "text-foreground bg-secondary border-transparent hover:bg-accent/10"
                         )}
                     >
                         {wl.name}
@@ -271,7 +271,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                 ) : (
                     <button
                         onClick={() => setIsCreating(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-foreground bg-secondary border border-border rounded-md shadow-sm hover:bg-accent/10 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500"
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-foreground bg-secondary border-transparent rounded-md shadow-sm hover:bg-accent/10 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500"
                     >
                         <Plus className="h-3.5 w-3.5" />
                         <span>New List</span>
@@ -279,7 +279,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                 )}
             </div>
 
-            <Card className="bg-card border-border">
+            <Card className="bg-card">
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                     <div>
                         <div className="flex items-center gap-3">
@@ -371,7 +371,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                         </Button>
                     </form>
 
-                    <div className="overflow-x-auto rounded-lg border border-border">
+                    <div className="overflow-x-auto rounded-lg">
                         <table className="min-w-full divide-y divide-border/50">
                             <thead className="bg-secondary/50 font-semibold border-b border-border">
                                 <tr>

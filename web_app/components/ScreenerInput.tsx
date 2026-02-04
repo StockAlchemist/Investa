@@ -48,7 +48,7 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
     };
 
     return (
-        <Card className="bg-card border-border shadow-sm">
+        <Card className="bg-card shadow-sm">
             <CardHeader className="pb-4">
                 <div className="flex items-center gap-2">
                     <Filter className="w-5 h-5 text-[#0097b2]" />
@@ -142,7 +142,7 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
                     </div>
 
                     {/* Information Note */}
-                    <div className="flex items-start gap-2 p-3 rounded-lg bg-secondary/30 border border-border/50">
+                    <div className="flex items-start gap-2 p-3 rounded-lg bg-secondary/30 border-border/50">
                         <Info className="w-4 h-4 text-cyan-500 mt-0.5 flex-shrink-0" />
                         <p className="text-[11px] font-medium text-muted-foreground leading-relaxed">
                             Screening large universes may take 1-5 minutes on the first run to build the local metadata cache (S&P 400 ~4m, Russell 2000 ~20m). Subsequent runs are instant.

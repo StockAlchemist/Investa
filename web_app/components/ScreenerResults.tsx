@@ -193,7 +193,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
     if (!results || results.length === 0) return null;
 
     return (
-        <Card className="bg-card border-border shadow-sm overflow-hidden">
+        <Card className="bg-card shadow-sm overflow-hidden">
             <CardHeader className="pb-2">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-2">
@@ -237,7 +237,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                 </div>
 
                 {showFilters && (
-                    <div className="mt-4 p-4 rounded-xl bg-secondary/20 border border-border/50 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="mt-4 p-4 rounded-xl bg-secondary/20 border-border/50 animate-in fade-in slide-in-from-top-2 duration-200">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                             {/* MOS Filter */}
                             <div className="space-y-2">
@@ -460,7 +460,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                         <tr className="bg-secondary/5">
                                             <td colSpan={6} className="p-0">
                                                 <div className="p-6 border-t border-border animate-in fade-in slide-in-from-top-2 duration-300">
-                                                    <div className="bg-card rounded-2xl p-6 border border-border shadow-sm space-y-6">
+                                                    <div className="bg-card rounded-2xl p-6 shadow-sm space-y-6">
                                                         <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
                                                             <div className="flex items-center gap-3">
                                                                 <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500">

@@ -261,7 +261,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                 </div>
 
                                 {/* Breakdown Section */}
-                                <div className="flex flex-col justify-center gap-3 w-full pr-2 border-l border-border/40 pl-4 py-2">
+                                <div className="flex flex-col justify-center gap-3 w-full pr-2 border-l border-white/5 pl-4 py-2">
                                     <div className="flex justify-between items-center group/row">
                                         <div className="flex items-center gap-2 text-muted-foreground">
                                             <PieChart className="w-4 h-4" />
@@ -326,7 +326,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setSelectedMetric(null)} />
                     <div
                         style={{ backgroundColor: 'var(--menu-solid)' }}
-                        className="relative w-full max-w-md border border-border/50 rounded-2xl shadow-2xl p-6 animate-in zoom-in-95 duration-200"
+                        className="relative w-full max-w-md border-border/50 rounded-2xl shadow-2xl p-6 animate-in zoom-in-95 duration-200"
                     >
                         <button
                             onClick={() => setSelectedMetric(null)}
@@ -384,7 +384,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsHealthModalOpen(false)} />
                     <div
                         style={{ backgroundColor: 'var(--menu-solid)' }}
-                        className="relative w-full max-w-lg border border-border/50 rounded-2xl shadow-2xl p-6 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"
+                        className="relative w-full max-w-lg border-border/50 rounded-2xl shadow-2xl p-6 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"
                     >
                         <button
                             onClick={() => setIsHealthModalOpen(false)}

@@ -118,7 +118,7 @@ export default function Dividend({ data, currency, expectedDividends, children, 
             {children}
 
             {/* Annual Dividends Chart */}
-            <div className="bg-card p-4 rounded-xl shadow-sm border border-border">
+            <div className="bg-card p-4 rounded-xl shadow-sm">
                 <h3 className="text-lg font-semibold text-foreground mb-4">Annual Dividends</h3>
                 <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
@@ -164,7 +164,7 @@ export default function Dividend({ data, currency, expectedDividends, children, 
             </div>
 
             {/* Transactions Table */}
-            <div className="bg-card rounded-xl shadow-sm border border-border overflow-hidden">
+            <div className="bg-card rounded-xl shadow-sm overflow-hidden">
                 <div className="p-4 border-b border-black/5 dark:border-white/5 flex justify-between items-center">
                     <h3 className="text-lg font-semibold text-foreground">Dividend Transactions</h3>
                     <div className="text-sm text-muted-foreground">
@@ -221,7 +221,7 @@ export default function Dividend({ data, currency, expectedDividends, children, 
                 {/* Mobile Card View */}
                 <div className="block md:hidden space-y-4 p-4">
                     {visibleData.map((item, index) => (
-                        <div key={`mobile-div-${index}`} className="bg-card rounded-lg border border-border shadow-sm p-4">
+                        <div key={`mobile-div-${index}`} className="bg-card rounded-lg shadow-sm p-4">
                             <div className="flex justify-between items-start mb-2">
                                 <div>
                                     <h3

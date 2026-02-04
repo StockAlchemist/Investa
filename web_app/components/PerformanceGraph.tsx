@@ -648,7 +648,7 @@ export default function PerformanceGraph({
                 )}
                 <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
                     {view === 'return' ? (
-                        <LineChart syncId="portfolio-sync" data={chartedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
+                        <LineChart syncId="portfolio-sync" data={chartedData} margin={{ top: 5, right: 5, left: 10, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                             <XAxis
                                 dataKey="timestamp"
@@ -668,8 +668,12 @@ export default function PerformanceGraph({
                                 tick={{ fontSize: 12, fill: '#9ca3af' }}
                                 axisLine={false}
                                 tickLine={false}
-                                domain={['auto', 'auto']}
-                                width={50}
+                                domain={([dataMin, dataMax]) => {
+                                    const range = dataMax - dataMin;
+                                    const padding = range * 0.05 || 0.1;
+                                    return [dataMin - padding, dataMax + padding];
+                                }}
+                                width={80}
                             />
                             <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '4 4' }} />
                             <Legend />
@@ -747,7 +751,11 @@ export default function PerformanceGraph({
                                 axisLine={false}
                                 tickLine={false}
                                 width={60}
-                                domain={['auto', 'auto']}
+                                domain={([dataMin, dataMax]) => {
+                                    const range = dataMax - dataMin;
+                                    const padding = range * 0.05 || (dataMax * 0.01);
+                                    return [dataMin - padding, dataMax + padding];
+                                }}
                             />
                             {hasFXRate && (
                                 <YAxis
@@ -757,7 +765,11 @@ export default function PerformanceGraph({
                                     axisLine={false}
                                     tickLine={false}
                                     width={40}
-                                    domain={['auto', 'auto']}
+                                    domain={([dataMin, dataMax]) => {
+                                        const range = dataMax - dataMin;
+                                        const padding = range * 0.05 || (dataMax * 0.01);
+                                        return [dataMin - padding, dataMax + padding];
+                                    }}
                                     tickFormatter={(val) => val.toFixed(2)}
                                 />
                             )}
@@ -816,6 +828,11 @@ export default function PerformanceGraph({
                                 axisLine={false}
                                 tickLine={false}
                                 width={60}
+                                domain={([dataMin, dataMax]) => {
+                                    const range = dataMax - dataMin;
+                                    const padding = range * 0.05 || 0.1;
+                                    return [dataMin - padding, dataMax + padding];
+                                }}
                             />
                             <Tooltip
                                 content={<CustomTooltip />}

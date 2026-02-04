@@ -685,13 +685,13 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
 
     return (
         <>
-            <div className="bg-card border border-border rounded-xl shadow-sm mt-4 overflow-hidden scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800 scrollbar-track-transparent">
+            <div className="bg-card rounded-xl shadow-sm mt-4 overflow-hidden scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800 scrollbar-track-transparent">
                 <div className="flex flex-col gap-4 p-4 border-b border-black/5 dark:border-white/5">
                     {/* Header Row: Title, Count & Search */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
                             <h2 className="text-lg font-bold text-foreground">Holdings</h2>
-                            <span className="text-xs font-medium text-muted-foreground bg-secondary px-2 py-0.5 rounded-full border border-border">
+                            <span className="text-xs font-medium text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">
                                 {groupBy
                                     ? `${aggregatedHoldings.length} items in ${groupedHoldings?.length || 0} groups`
                                     : `${aggregatedHoldings.length} / ${totalItemsCount}`
@@ -708,7 +708,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                 placeholder="Search symbol..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-9 pr-4 py-1.5 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 placeholder-muted-foreground transition-all"
+                                className="w-full pl-9 pr-4 py-1.5 text-sm bg-secondary border-border rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 placeholder-muted-foreground transition-all"
                             />
                             {searchQuery && (
                                 <button
