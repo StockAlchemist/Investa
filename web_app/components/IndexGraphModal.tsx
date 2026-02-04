@@ -271,9 +271,9 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                                         dataKey={bench}
                                         name={bench}
                                         stroke={COLORS[idx % COLORS.length]}
-                                        strokeWidth={3}
+                                        strokeWidth={2}
                                         dot={false}
-                                        activeDot={{ r: 6, strokeWidth: 4, stroke: 'var(--background)', fill: COLORS[idx % COLORS.length] }}
+                                        activeDot={{ r: 6, strokeWidth: 3, stroke: 'var(--background)', fill: COLORS[idx % COLORS.length] }}
                                         animationDuration={1500}
                                         animationEasing="ease-in-out"
                                     />
