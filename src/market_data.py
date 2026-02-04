@@ -2780,6 +2780,8 @@ class MarketDataProvider:
                 
                  if price_series is not None:
                      df_clean = price_series.to_frame(name="price")
+                     if "Volume" in df_db.columns:
+                         df_clean["Volume"] = df_db["Volume"]
                      historical_prices_yf_adjusted[sym] = df_clean
                      
         # 3. Validation and fallback

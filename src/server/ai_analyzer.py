@@ -220,7 +220,7 @@ Do not include any other markdown formatting or explanations outside the JSON bl
         if "gemini-3" in model:
             search_options = [False]
         else:
-            search_options = [True, False] if use_search else [False]
+            search_options = [True] if use_search else [False]
         
         for current_search_setting in search_options:
             logging.info(f"AI Analysis: Attempting review for {symbol} using model '{model}' (Search: {current_search_setting})...")
