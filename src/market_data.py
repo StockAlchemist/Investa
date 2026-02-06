@@ -1533,89 +1533,119 @@ class MarketDataProvider:
                     task="history"
                 )
 
-                for (
-                    yf_symbol,
-                    ticker_info,
-                ) in (
-                    index_info_batch.items()
-                ):  # yf_symbol is now the YF ticker like ^DJI
-                    try:
-                        if ticker_info:
-                            # Prioritize keys commonly available for indices
-                            price = (
-                                ticker_info.get("regularMarketPrice")
-                                or ticker_info.get("currentPrice")
-                                or ticker_info.get("previousClose")
-                            )
-                            change = ticker_info.get("regularMarketChange")
-                            change_pct = ticker_info.get("regularMarketChangePercent")
-                            name = (
-                                INDEX_DISPLAY_NAMES.get(yf_symbol)
-                                or ticker_info.get("shortName")
-                                or ticker_info.get("longName")
-                            )
-
-                            # Map back to the original internal symbol for results dictionary
-                            internal_result_key = internal_to_yf_index_map.get(
-                                yf_symbol, yf_symbol
-                            )
-                            if price is not None:
-                                results[internal_result_key] = (
-                                    {  # Store result with internal key
-                                        "price": price,
-                                        "change": change if change is not None else 0.0,
-                                        "changesPercentage": (
-                                            change_pct
-                                            if change_pct is not None
-                                            else 0.0
-                                        ),
-                                        "name": name,
-                                        "source": "yf_info",
-                                        "timestamp": datetime.now(
-                                            timezone.utc
-                                        ).isoformat(),
-                                    }
-                                )
-                                
-                                # Extract sparkline from history
-                                if not index_hist_df.empty:
-                                    has_multilevel = getattr(index_hist_df.columns, 'nlevels', 1) > 1
-                                    try:
-                                        sym_df = pd.DataFrame()
-                                        if len(yf_tickers_to_fetch) > 1:
-                                            if has_multilevel and yf_symbol in index_hist_df.columns.get_level_values(0):
-                                                sym_df = index_hist_df[yf_symbol]
-                                            elif not has_multilevel and any(isinstance(c, (tuple, list)) and c[0].upper() == yf_symbol.upper() for c in index_hist_df.columns):
-                                                cols_for_sym = [c for c in index_hist_df.columns if isinstance(c, (tuple, list)) and c[0].upper() == yf_symbol.upper()]
-                                                sym_df = index_hist_df[cols_for_sym]
-                                                sym_df.columns = [c[1] for c in sym_df.columns]
-                                        else:
-                                            sym_df = index_hist_df
-                                        
-                                        if not sym_df.empty:
-                                            close_col = "Close" if "Close" in sym_df.columns else sym_df.columns[0]
-                                            sparkline = sym_df[close_col].dropna().tolist()
-                                            results[internal_result_key]["sparkline"] = sparkline
-                                    except Exception as e_hist:
-                                        logging.warning(f"Error extracting sparkline for {yf_symbol}: {e_hist}")
-
+                # Loop over ALL requested tickers, not just those that returned info
+                for yf_symbol in yf_tickers_to_fetch:
+                    ticker_info = index_info_batch.get(yf_symbol, {})
+                    
+                    # Initialize variables
+                    price = None
+                    change = None
+                    change_pct = None
+                    name = None
+                    
+                    # 1. Try to get data from 'info' first
+                    if ticker_info:
+                        price = (
+                            ticker_info.get("regularMarketPrice")
+                            or ticker_info.get("currentPrice")
+                            or ticker_info.get("previousClose")
+                        )
+                        change = ticker_info.get("regularMarketChange")
+                        change_pct = ticker_info.get("regularMarketChangePercent")
+                        name = (
+                            INDEX_DISPLAY_NAMES.get(yf_symbol)
+                            or ticker_info.get("shortName")
+                            or ticker_info.get("longName")
+                        )
+                    
+                    # 2. Fallback to History if price is missing
+                    if price is None and not index_hist_df.empty:
+                        try:
+                            # Extract specific symbol dataframe
+                            sym_df = pd.DataFrame()
+                            has_multilevel = getattr(index_hist_df.columns, 'nlevels', 1) > 1
+                            
+                            if len(yf_tickers_to_fetch) > 1:
+                                if has_multilevel and yf_symbol in index_hist_df.columns.get_level_values(0):
+                                    sym_df = index_hist_df[yf_symbol]
+                                elif not has_multilevel:
+                                    # Try to find columns starting with symbol if flattened
+                                    cols_for_sym = [c for c in index_hist_df.columns if isinstance(c, (tuple, list)) and c[0].upper() == yf_symbol.upper()]
+                                    if cols_for_sym:
+                                        sym_df = index_hist_df[cols_for_sym]
+                                        sym_df.columns = [c[1] for c in sym_df.columns]
                             else:
-                                logging.warning(
-                                    f"Could not get price for index {yf_symbol} (Internal: {internal_result_key}) from info."
-                                )
-                        else:
-                            logging.warning(
-                                f"Could not get .info for index {yf_symbol} (Internal: {internal_to_yf_index_map.get(yf_symbol, yf_symbol)})"
-                            )
+                                sym_df = index_hist_df
+                                
+                            if not sym_df.empty:
+                                close_col = "Close" if "Close" in sym_df.columns else sym_df.columns[0]
+                                hist_series = sym_df[close_col].dropna()
+                                
+                                if not hist_series.empty:
+                                    # Get latest price
+                                    price = float(hist_series.iloc[-1])
+                                    
+                                    # Calculate change if we have at least 2 days
+                                    if len(hist_series) >= 2:
+                                        prev_close = float(hist_series.iloc[-2])
+                                        change = price - prev_close
+                                        change_pct = (change / prev_close) * 100
+                                    else:
+                                        change = 0.0
+                                        change_pct = 0.0
+                                        
+                                    logging.info(f"Using history fallback for {yf_symbol}: Price={price}, Change={change}")
+                        except Exception as e_fallback:
+                            logging.warning(f"Error using history fallback for {yf_symbol}: {e_fallback}")
 
-                    except AttributeError as ae:
-                        logging.error(
-                            f"AttributeError processing info for index {yf_symbol}: {ae}"
-                        )
-                    except Exception as e_ticker:
-                        logging.error(
-                            f"Error processing info for index {yf_symbol}: {e_ticker}"
-                        )
+                    # 3. Finalize Name
+                    if not name:
+                         name = INDEX_DISPLAY_NAMES.get(yf_symbol, yf_symbol)
+
+                    # 4. Construct Result
+                    internal_result_key = internal_to_yf_index_map.get(
+                        yf_symbol, yf_symbol
+                    )
+                    
+                    if price is not None:
+                        results[internal_result_key] = {
+                            "price": price,
+                            "change": change if change is not None else 0.0,
+                            "changesPercentage": (
+                                change_pct if change_pct is not None else 0.0
+                            ),
+                            "name": name,
+                            "source": "yf_info" if ticker_info.get("regularMarketPrice") else "yf_history_fallback",
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+                        
+                        # Extract sparkline from history (same logic as before)
+                        if not index_hist_df.empty:
+                            try:
+                                # Reuse the extraction logic or re-extract
+                                # Simplified re-extraction for safety/clarity within this block scope
+                                spk_df = pd.DataFrame()
+                                has_multilevel = getattr(index_hist_df.columns, 'nlevels', 1) > 1
+                                if len(yf_tickers_to_fetch) > 1:
+                                    if has_multilevel and yf_symbol in index_hist_df.columns.get_level_values(0):
+                                        spk_df = index_hist_df[yf_symbol]
+                                    elif not has_multilevel:
+                                         cols_for_sym = [c for c in index_hist_df.columns if isinstance(c, (tuple, list)) and c[0].upper() == yf_symbol.upper()]
+                                         if cols_for_sym:
+                                            spk_df = index_hist_df[cols_for_sym]
+                                            spk_df.columns = [c[1] for c in spk_df.columns]
+                                else:
+                                    spk_df = index_hist_df
+
+                                if not spk_df.empty:
+                                    c_col = "Close" if "Close" in spk_df.columns else spk_df.columns[0]
+                                    sparkline = spk_df[c_col].dropna().tolist()
+                                    results[internal_result_key]["sparkline"] = sparkline
+                            except Exception as e_hist:
+                                logging.warning(f"Error extracting sparkline for {yf_symbol}: {e_hist}")
+
+
+
 
             except Exception as e_indices:
                 logging.error(f"Error fetching index quotes batch: {e_indices}")
