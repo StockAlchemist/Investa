@@ -6,7 +6,7 @@ import { fetchPortfolioAIReview } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { RefreshCw, ShieldCheck, TrendingUp, AlertTriangle, Lightbulb, Sparkles, PieChart } from 'lucide-react';
+import { RefreshCw, ShieldCheck, TrendingUp, AlertTriangle, Lightbulb, PieChart } from 'lucide-react';
 import { MetricCard } from '@/components/MetricCard';
 
 interface PortfolioAIReviewProps {
@@ -86,15 +86,14 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
             <div className="flex items-center justify-between">
-                <div>
-                    <h2 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                        <Sparkles className="w-6 h-6 text-purple-500" />
+                <header className="space-y-2">
+                    <h2 className="text-2xl font-bold leading-none tracking-tight bg-gradient-to-r from-purple-400 to-pink-600 bg-clip-text text-transparent w-fit">
                         Portfolio AI Review
                     </h2>
-                    <p className="text-sm text-muted-foreground mt-1">
+                    <p className="text-muted-foreground text-sm font-medium max-w-2xl leading-relaxed">
                         AI-driven insights and recommendations for your portfolio.
                     </p>
-                </div>
+                </header>
                 <Button
                     onClick={handleRefresh}
                     variant="outline"
