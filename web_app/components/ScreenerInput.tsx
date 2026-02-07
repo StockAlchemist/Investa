@@ -61,19 +61,19 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
 
                         {/* Universe Strategy */}
                         <div className="space-y-2">
-                            <label className="text-sm font-semibold text-muted-foreground whitespace-nowrap">Universe Strategy</label>
+                            <label className="text-sm font-semibold text-muted-foreground whitespace-nowrap">Universe</label>
                             <div className="relative">
                                 <select
                                     value={universeType}
                                     onChange={(e) => setUniverseType(e.target.value)}
                                     className="w-full h-10 px-3 bg-secondary border border-border rounded-md text-foreground font-medium appearance-none focus:outline-none focus:ring-1 focus:ring-cyan-500/50 cursor-pointer"
                                 >
-                                    <option value="watchlist" className="bg-card text-foreground">My Watchlist</option>
-                                    <option value="holdings" className="bg-card text-foreground">My Current Holdings</option>
-                                    <option value="sp500" className="bg-card text-foreground">S&P 500 Benchmarks</option>
+                                    <option value="watchlist" className="bg-card text-foreground">Watchlist</option>
+                                    <option value="holdings" className="bg-card text-foreground">Holdings</option>
+                                    <option value="sp500" className="bg-card text-foreground">S&P 500 (Large Cap)</option>
                                     <option value="sp400" className="bg-card text-foreground">S&P 400 (Mid Cap)</option>
                                     <option value="russell2000" className="bg-card text-foreground">Russell 2000 (Small Cap)</option>
-                                    <option value="manual" className="bg-card text-foreground">Custom Ticker List</option>
+                                    <option value="manual" className="bg-card text-foreground">Custom List</option>
                                 </select>
                                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                             </div>
