@@ -13,7 +13,8 @@ import {
     Settings as SettingsIcon,
     Menu,
     ScanSearch,
-    LogOut
+    LogOut,
+    Sparkles
 } from 'lucide-react';
 
 interface TabNavigationProps {
@@ -33,6 +34,7 @@ const TABS = [
     { id: 'asset_change', label: 'Asset Change', icon: TrendingUp },
     { id: 'capital_gains', label: 'Cap. Gains', icon: DollarSign },
     { id: 'dividend', label: 'Dividend', icon: Coins },
+    { id: 'ai_review', label: 'AI Review', icon: Sparkles },
 ];
 
 export default function TabNavigation({ activeTab, onTabChange, onLogout, side = 'bottom', align = 'right' }: TabNavigationProps) {

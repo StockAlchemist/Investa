@@ -54,6 +54,7 @@ const Settings = dynamic(() => import('@/components/Settings'));
 const CommandPalette = dynamic(() => import('@/components/CommandPalette'));
 const Watchlist = dynamic(() => import('@/components/Watchlist'));
 const ScreenerView = dynamic(() => import('@/components/ScreenerView'));
+const PortfolioAIReview = dynamic(() => import('@/components/PortfolioAIReview'));
 const MarketIndicesBox = dynamic(() => import('@/components/MarketIndicesBox'), { ssr: false });
 const IndexGraphModal = dynamic(() => import('@/components/IndexGraphModal'), { ssr: false });
 
@@ -494,7 +495,9 @@ export default function Home() {
       case 'watchlist':
         return <Watchlist currency={currency} />;
       case 'screener':
-        return null;
+        return null; // Screener is separate
+      case 'ai_review':
+        return <PortfolioAIReview currency={currency} accounts={selectedAccounts} />;
 
       case 'transactions':
         return <TransactionsTable transactions={transactions} isLoading={transactionsQuery.isPending && !transactionsQuery.data} />;

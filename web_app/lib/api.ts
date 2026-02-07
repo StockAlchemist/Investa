@@ -958,3 +958,20 @@ export async function fetchScreenerReview(symbol: string, force: boolean = false
     if (!res.ok) throw new Error(`Failed to fetch AI review for ${symbol}`);
     return res.json();
 }
+
+export async function fetchPortfolioAIReview(currency: string = 'USD', accounts?: string[], refresh: boolean = false, signal?: AbortSignal): Promise<any> {
+    const params = new URLSearchParams({ currency });
+    if (accounts) {
+        accounts.forEach(acc => params.append('accounts', acc));
+    }
+    if (refresh) {
+        params.append('refresh', 'true');
+    }
+    const res = await authFetch(`${API_BASE_URL}/portfolio/ai_review?${params.toString()}`, {
+        method: 'POST', // Use POST as defined in backend
+        signal,
+        cache: 'no-store'
+    });
+    if (!res.ok) throw new Error('Failed to fetch portfolio AI review');
+    return res.json();
+}

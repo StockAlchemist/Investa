@@ -748,15 +748,6 @@ async def get_portfolio_summary(
                 overall_summary_metrics["indices"] = indices_data
             except Exception as e_indices:
                 logging.warning(f"Failed to fetch market indices: {e_indices}")
-
-            # --- Fetch Market Indices ---
-            try:
-                mdp = get_mdp()
-                indices_data = mdp.get_index_quotes(config.INDICES_FOR_HEADER)
-                overall_summary_metrics["indices"] = indices_data
-            except Exception as e_indices:
-                logging.warning(f"Failed to fetch market indices: {e_indices}")
-
         
         # Serialize DataFrame and holdings_dict keys for JSON response
         summary_df_raw = summary_data.get("summary_df")
@@ -781,6 +772,160 @@ async def get_portfolio_summary(
         return clean_nans(response_data)
     except Exception as e:
         logging.error(f"Error calculating summary: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/portfolio/ai_review")
+async def get_portfolio_ai_review(
+    currency: str = "USD",
+    accounts: Optional[List[str]] = Query(None),
+    refresh: bool = False,
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generates or retrieves a cached AI review for the portfolio.
+    """
+    from server.portfolio_ai_analyzer import generate_portfolio_review
+    
+    (df, manual, user_map, excluded, acc_curr, path, mtime) = data
+    
+    if df.empty:
+        raise HTTPException(status_code=400, detail="Portfolio is empty.")
+        
+    try:
+        # 1. Get Summary
+        summary_data = await _calculate_portfolio_summary_internal(
+            currency=currency,
+            include_accounts=accounts,
+            data=data,
+            current_user=current_user
+        )
+        
+        # 2. Get Risk Metrics
+        # We need historical data for risk metrics
+        # Use existing cache helper for history
+        min_date = df["Date"].min().date()
+        daily_df, _, _, _ = await _get_historical_performance_cached(
+            df=df,
+            manual_overrides_dict=manual,
+            user_symbol_map=user_map,
+            user_excluded_symbols=excluded,
+            account_currency_map=acc_curr,
+            original_csv_file_path=path,
+            start_date=min_date, # Full history for better risk stats
+            end_date=date.today(),
+            interval="D",
+            benchmark_symbols_yf=["SPY"], # Benchmark against SPY for Beta
+            display_currency=currency,
+            include_accounts=accounts,
+            db_mtime=mtime
+        )
+        
+        
+        # Calculate risk metrics
+        # We need historical data for this. Using a default period of 1y for risk analysis
+        
+        risk_metrics = {}
+        try:
+            # Unpack data dependency
+            df, manual_overrides, user_symbol_map, user_excluded_symbols, account_currency_map, original_csv_path, mtime = data
+            
+            start_date = date.today() - timedelta(days=365)
+            end_date = date.today()
+            
+            daily_df, _, _, _ = await _get_historical_performance_cached(
+                df=df,
+                manual_overrides_dict=manual_overrides,
+                user_symbol_map=user_symbol_map,
+                user_excluded_symbols=user_excluded_symbols,
+                account_currency_map=account_currency_map,
+                original_csv_file_path=original_csv_path,
+                start_date=start_date,
+                end_date=end_date,
+                display_currency=currency,
+                include_accounts=accounts,
+                benchmark_symbols_yf=[], # No benchmarks needed for pure portfolio risk stats
+                interval="D",
+                db_mtime=mtime
+            )
+            
+            if daily_df is not None and "Portfolio Value" in daily_df.columns:
+                 portfolio_values = daily_df["Portfolio Value"]
+                 risk_metrics = clean_nans(calculate_all_risk_metrics(portfolio_values))
+            
+            # Fallback if empty - Just log it, don't use mock data for production
+            if not risk_metrics:
+                 # Initialize with N/A to ensure UI handles it gracefully without crashing
+                 risk_metrics = {
+                    'sharpe_ratio': 'N/A', 'sortino_ratio': 'N/A', 
+                    'volatility': 'N/A', 'max_drawdown': 'N/A', 'beta': 'N/A', 'alpha': 'N/A'
+                 }
+
+        except Exception as e:
+            logging.error(f"AI Review Risk Metrics Error: {e}", exc_info=True)
+
+        # Prepare holdings list from summary_df (which has rich data like Sector, Country)
+        holdings_list = []
+        if 'summary_df' in summary_data and isinstance(summary_data['summary_df'], pd.DataFrame):
+            sdf = summary_data['summary_df']
+            if not sdf.empty:
+                # Filter for active holdings only
+                if "Quantity" in sdf.columns:
+                    sdf = sdf[abs(sdf["Quantity"]) > 1e-6].copy()
+                
+                # Normalize keys for the analyzer
+                # The columns might be "Market Value (USD)", "Symbol", "Sector", etc.
+                # We rename them to standard keys
+                rename_map = {
+                    "Symbol": "symbol",
+                    "Sector": "sector", 
+                    "Country": "country",
+                    "quoteType": "asset_type",
+                    # Dynamic columns handled below
+                }
+                
+                # Handle dynamic currency columns
+                mv_col = [c for c in sdf.columns if c.startswith("Market Value (")]
+                if mv_col: rename_map[mv_col[0]] = "market_value"
+                
+                gain_col = [c for c in sdf.columns if c.startswith("Unrealized Gain (")]
+                if gain_col: rename_map[gain_col[0]] = "unrealized_gain"
+                
+                alloc_col = [c for c in sdf.columns if "% Portfolio" in c]
+                if alloc_col: rename_map[alloc_col[0]] = "allocation_percent"
+                
+                # Convert
+                records = sdf.to_dict(orient='records')
+                for r in records:
+                    new_r = {}
+                    for k, v in r.items():
+                        # Map known keys
+                        if k in rename_map:
+                            new_r[rename_map[k]] = v
+                        # Keep others as-is (lowercased)
+                        else:
+                            new_r[k.lower().replace(" ", "_")] = v
+                    holdings_list.append(new_r)
+        
+        # Fallback to holdings_dict if summary_df processing failed or was empty
+        if not holdings_list and 'holdings_dict' in summary_data:
+            print("DEBUG: AI Review - Fallback to holdings_dict (summary_df empty/missing)")
+            holdings_list = list(summary_data['holdings_dict'].values())
+        
+        # Inject holdings list into portfolio data for analyzer
+        summary_data['holdings'] = holdings_list
+
+        # Generate review
+        review = generate_portfolio_review(
+            portfolio_data=summary_data,
+            risk_metrics=risk_metrics,
+            force_refresh=refresh
+        )
+        
+        return review
+        
+    except Exception as e:
+        logging.error(f"Portfolio AI Review Error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/market_history")
