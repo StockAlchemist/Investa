@@ -524,8 +524,12 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
                                         <td className="px-4 py-3 whitespace-nowrap">
                                             <StockTicker symbol={tx.Symbol} currency={tx["Local Currency"]} />
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">{tx.Quantity}</td>
-                                        <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">{tx["Price/Share"]?.toFixed(2)}</td>
+                                        <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">
+                                            {tx.Type.toLowerCase() === 'dividend' && tx.Quantity === 0 ? '' : tx.Quantity}
+                                        </td>
+                                        <td className="px-4 py-3 text-sm text-right text-muted-foreground tabular-nums">
+                                            {tx.Type.toLowerCase() === 'dividend' && (tx["Price/Share"] === 0 || !tx["Price/Share"]) ? '' : tx["Price/Share"]?.toFixed(2)}
+                                        </td>
                                         <td className="px-4 py-3 text-sm text-right font-medium text-foreground tabular-nums">
                                             {tx["Total Amount"] ? Math.abs(tx["Total Amount"]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
                                         </td>
@@ -583,10 +587,14 @@ export default function TransactionsTable({ transactions, isLoading }: Transacti
 
                         <div className="grid grid-cols-2 gap-y-2 text-sm mt-3 pt-3 border-t border-black/5 dark:border-white/10">
                             <div className="text-muted-foreground">Quantity</div>
-                            <div className="text-right font-medium text-foreground">{tx.Quantity}</div>
+                            <div className="text-right font-medium text-foreground">
+                                {tx.Type.toLowerCase() === 'dividend' && tx.Quantity === 0 ? '' : tx.Quantity}
+                            </div>
 
                             <div className="text-muted-foreground">Price</div>
-                            <div className="text-right font-medium text-foreground">{tx["Price/Share"]?.toFixed(2)}</div>
+                            <div className="text-right font-medium text-foreground">
+                                {tx.Type.toLowerCase() === 'dividend' && (tx["Price/Share"] === 0 || !tx["Price/Share"]) ? '' : tx["Price/Share"]?.toFixed(2)}
+                            </div>
 
                             <div className="text-muted-foreground">Amount</div>
                             <div className="text-right font-bold text-foreground">
