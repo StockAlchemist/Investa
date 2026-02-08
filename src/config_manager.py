@@ -25,10 +25,27 @@ from utils import get_column_definitions, DEFAULT_GRAPH_START_DATE, DEFAULT_GRAP
 class ConfigManager:
     def __init__(self, app_data_path: str):
         self.app_data_path = app_data_path
-        global_config_dir = os.path.join(app_data_path, config.CONFIG_DIR)
-        os.makedirs(global_config_dir, exist_ok=True)
-        self.CONFIG_FILE = os.path.join(global_config_dir, "gui_config.json")
-        self.MANUAL_OVERRIDES_FILE = os.path.join(global_config_dir, config.MANUAL_OVERRIDES_FILENAME)
+        # Try to locate config files in root first, then config subdir
+        config_dir = os.path.join(app_data_path, config.CONFIG_DIR)
+        
+        # Paths to check for gui_config.json
+        root_config = os.path.join(app_data_path, "gui_config.json")
+        subdir_config = os.path.join(config_dir, "gui_config.json")
+        
+        if os.path.exists(root_config):
+            self.CONFIG_FILE = root_config
+        else:
+            os.makedirs(config_dir, exist_ok=True)
+            self.CONFIG_FILE = subdir_config
+
+        # Paths to check for manual_overrides.json
+        root_overrides = os.path.join(app_data_path, config.MANUAL_OVERRIDES_FILENAME)
+        subdir_overrides = os.path.join(config_dir, config.MANUAL_OVERRIDES_FILENAME)
+
+        if os.path.exists(root_overrides):
+            self.MANUAL_OVERRIDES_FILE = root_overrides
+        else:
+            self.MANUAL_OVERRIDES_FILE = subdir_overrides
         
         # Initialize defaults
         self.gui_config = self._get_default_gui_config()
