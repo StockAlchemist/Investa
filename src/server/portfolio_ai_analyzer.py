@@ -172,8 +172,10 @@ def generate_portfolio_review(portfolio_data: dict, risk_metrics: dict, force_re
     INSTRUCTIONS:
     1. Score the portfolio (1-10) on Diversification, Risk Profile, and Performance.
     2. Provide an Executive Summary.
-    3. Analyze Diversification, Risk, and Performance in detail.
+    3. Analyze Diversification, Risk, and Performance separately in detail. 
+       - For each category, explicitly explain WHY you assigned the specific score (e.g., "Score: 7/10 because..."). This explanation will be shown in a tooltip, so be clear and concise.
     4. Provide 3-5 concrete, actionable recommendations.
+       - CRITICAL: Include at least one rebalancing idea that maintains the current risk and return profile of the portfolio (e.g., swapping a high-beta stock for another high-growth stock in a different sector).
     
     OUTPUT FORMAT (JSON):
     {{
@@ -223,8 +225,9 @@ def generate_portfolio_review(portfolio_data: dict, risk_metrics: dict, force_re
     # For speed, I'll copy the robust loop structure.
     
     import random
-    time.sleep(random.random() * 2) # Jitter
-    
+    rate_limit_count = 0
+    other_error_count = 0
+            
     for model in FALLBACK_MODELS:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
         try:
@@ -267,12 +270,34 @@ def generate_portfolio_review(portfolio_data: dict, risk_metrics: dict, force_re
                 return result
             elif resp.status_code == 429:
                 logging.warning(f"Portfolio AI: Model {model} rate limited.")
+                rate_limit_count += 1
                 continue
             else:
+                other_error_count += 1
                 logging.warning(f"Portfolio AI: Model {model} error {resp.status_code}: {resp.text}")
                 
         except Exception as e:
             logging.error(f"Portfolio AI: Error with {model}: {e}")
+            other_error_count += 1
             continue
             
+    if rate_limit_count > 0 and other_error_count == 0:
+         # Try to fallback to cache if available
+         if os.path.exists(cache_path):
+             try:
+                 with open(cache_path, "r") as f:
+                     cached = json.load(f)
+                     cached["warning"] = "RateLimit"
+                     cached["message"] = "AI service is busy. Showing cached analysis from earlier."
+                     logging.info("AI Analysis: Rate limited, falling back to cache.")
+                     return cached
+             except Exception as e:
+                 logging.warning(f"Failed to read portfolio cache for fallback: {e}")
+
+         return {
+             "error": "RateLimit",
+             "message": "AI service usage limit reached. Please try again in a few minutes or check your quota."
+         }
+
     return {"error": "Failed to generate portfolio review."}
+

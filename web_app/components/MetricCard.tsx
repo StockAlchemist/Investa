@@ -39,14 +39,19 @@ export function MetricCard({
     currency = 'USD',
     isLoading = false,
     isRefreshing = false,
-    icon: Icon
-}: MetricCardProps) {
+    icon: Icon,
+    onClick
+}: MetricCardProps & { onClick?: () => void }) {
     return (
-        <Card className={cn(
-            "h-full transition-all duration-300 relative overflow-hidden group",
-            "hover:bg-accent/5 hover:shadow-md",
-            containerClassName
-        )}>
+        <Card
+            className={cn(
+                "h-full transition-all duration-300 relative overflow-hidden group",
+                "hover:bg-accent/5 hover:shadow-md",
+                onClick ? "cursor-pointer active:scale-[0.98]" : "",
+                containerClassName
+            )}
+            onClick={onClick}
+        >
             <CardContent className="h-full flex flex-col justify-between p-4 relative">
                 <div className="flex justify-between items-start z-10">
                     <div className="flex items-center gap-2">
