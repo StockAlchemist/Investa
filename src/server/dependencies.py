@@ -113,7 +113,13 @@ def get_transaction_data(current_user: User = Depends(get_current_user)) -> Tupl
     # We load gui_config.json from the user's directory
     global _GUI_CONFIG_CACHE, _GUI_CONFIG_LOADED_PATH, _GUI_CONFIG_MTIME
     
-    current_gui_config_path = os.path.join(user_data_dir, config.GUI_CONFIG_FILENAME)
+    # Detect config location (Root vs Config Subdir)
+    root_config_path = os.path.join(user_data_dir, config.GUI_CONFIG_FILENAME)
+    config_subdir_path = os.path.join(user_data_dir, config.CONFIG_DIR, config.GUI_CONFIG_FILENAME)
+    
+    current_gui_config_path = root_config_path
+    if not os.path.exists(root_config_path) and os.path.exists(config_subdir_path):
+        current_gui_config_path = config_subdir_path
     
     # Logic to load/reload config specific to this path (Using user_id to key cache?)
     # _GUI_CONFIG_CACHE is currently global. It needs to be per-user?
@@ -234,6 +240,7 @@ def get_transaction_data(current_user: User = Depends(get_current_user)) -> Tupl
                 
                 # Fallbacks (optional)
                 overrides_paths_to_try.append(os.path.join(user_data_dir, config.MANUAL_OVERRIDES_FILENAME))
+                overrides_paths_to_try.append(os.path.join(user_data_dir, config.CONFIG_DIR, config.MANUAL_OVERRIDES_FILENAME))
                 
                 current_overrides_path = None
                 for op in overrides_paths_to_try:
