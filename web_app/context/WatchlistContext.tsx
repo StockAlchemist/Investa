@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useMemo, ReactNode } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getWatchlists, fetchWatchlist, addToWatchlist, removeFromWatchlist } from '@/lib/api';
+import { getWatchlists, fetchWatchlist, addToWatchlist, removeFromWatchlist, WatchlistItem } from '@/lib/api';
 
 interface WatchlistContextType {
     watchlists: { id: number; name: string }[];
@@ -55,16 +55,66 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
 
     const addMutation = useMutation({
         mutationFn: ({ symbol, watchlistId }: { symbol: string, watchlistId: number }) => addToWatchlist(symbol, "", watchlistId),
-        onSuccess: (_, variables) => {
-            // Invalidate BOTH the common USD query and any potential localized queries
-            queryClient.invalidateQueries({ queryKey: ['watchlist'] });
+        onMutate: async ({ symbol, watchlistId }) => {
+            // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
+            await queryClient.cancelQueries({ queryKey: ['watchlist', 'USD', watchlistId] });
+
+            // Snapshot the previous value
+            const previousWatchlist = queryClient.getQueryData<WatchlistItem[]>(['watchlist', 'USD', watchlistId]);
+
+            // Optimistically update to the new value
+            queryClient.setQueryData<WatchlistItem[]>(['watchlist', 'USD', watchlistId], (old) => {
+                const newItem: WatchlistItem = {
+                    Symbol: symbol,
+                    Note: "",
+                    AddedOn: new Date().toISOString(),
+                    // Stub other fields as they will be fetched later
+                    Name: "",
+                    Price: 0,
+                    "Day Change": 0,
+                    "Day Change %": 0,
+                    Currency: "USD",
+                    Sparkline: [],
+                    "Market Cap": 0,
+                    "PE Ratio": 0,
+                    "Dividend Yield": 0
+                };
+                return old ? [newItem, ...old] : [newItem];
+            });
+
+            // Return a context object with the snapshotted value
+            return { previousWatchlist };
+        },
+        onError: (err, variables, context) => {
+            if (context?.previousWatchlist) {
+                queryClient.setQueryData(['watchlist', 'USD', variables.watchlistId], context.previousWatchlist);
+            }
+        },
+        onSettled: (_, __, variables) => {
+            // Include currency in invalidation to be safe, but usually we just want to refresh the list
+            queryClient.invalidateQueries({ queryKey: ['watchlist', 'USD', variables.watchlistId] });
         },
     });
 
     const removeMutation = useMutation({
         mutationFn: ({ symbol, watchlistId }: { symbol: string, watchlistId: number }) => removeFromWatchlist(symbol, watchlistId),
-        onSuccess: (_, variables) => {
-            queryClient.invalidateQueries({ queryKey: ['watchlist'] });
+        onMutate: async ({ symbol, watchlistId }) => {
+            await queryClient.cancelQueries({ queryKey: ['watchlist', 'USD', watchlistId] });
+            const previousWatchlist = queryClient.getQueryData<WatchlistItem[]>(['watchlist', 'USD', watchlistId]);
+
+            queryClient.setQueryData<WatchlistItem[]>(['watchlist', 'USD', watchlistId], (old) => {
+                return old ? old.filter(item => item.Symbol !== symbol) : [];
+            });
+
+            return { previousWatchlist };
+        },
+        onError: (err, variables, context) => {
+            if (context?.previousWatchlist) {
+                queryClient.setQueryData(['watchlist', 'USD', variables.watchlistId], context.previousWatchlist);
+            }
+        },
+        onSettled: (_, __, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['watchlist', 'USD', variables.watchlistId] });
         },
     });
 

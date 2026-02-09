@@ -34,20 +34,20 @@ interface MetricItemProps {
 const MetricItem = ({ label, value, icon: Icon, description, colorClass, onClick }: MetricItemProps) => (
     <div
         onClick={onClick}
-        className="flex flex-col p-3 bg-secondary/30 rounded-xl hover:bg-cyan-500/5 cursor-pointer transition-all duration-300 group/item h-full justify-between"
+        className="flex flex-col p-3 bg-secondary/30 rounded-xl hover:bg-cyan-500/5 cursor-pointer transition-all duration-300 group/item h-full"
     >
-        <div>
-            <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                <Icon className="w-3.5 h-3.5 group-hover/item:text-cyan-500 transition-colors" />
-                <span className="text-[10px] font-bold uppercase tracking-widest">{label}</span>
-            </div>
-            <div className={cn("text-xl font-bold font-mono tracking-tighter", colorClass || "text-foreground")}>
-                {value}
-            </div>
+        <div className="flex items-center justify-center gap-2 text-muted-foreground mb-2">
+            <Icon className="w-3.5 h-3.5 group-hover/item:text-cyan-500 transition-colors" />
+            <span className="text-[10px] font-bold uppercase tracking-widest">{label}</span>
         </div>
+
+        <div className={cn("flex-1 flex items-center justify-center text-3xl font-bold font-mono tracking-tighter", colorClass || "text-foreground")}>
+            {value}
+        </div>
+
         {description && (
-            <div className="flex items-center justify-between mt-1">
-                <p className="text-[9px] text-muted-foreground opacity-60 font-medium group-hover/item:opacity-80 transition-opacity truncate">
+            <div className="flex items-center justify-between mt-1 pt-2 border-t border-border/10">
+                <p className="text-[9px] text-muted-foreground opacity-60 font-medium group-hover/item:opacity-80 transition-opacity truncate w-full text-center">
                     {description}
                 </p>
             </div>

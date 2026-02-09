@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from starlette.concurrency import run_in_threadpool
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Set
 from collections import defaultdict
 import pandas as pd
 import logging
@@ -2412,6 +2412,200 @@ async def get_dividends(
     except Exception as e:
         logging.error(f"Error getting dividends: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+async def _generate_dividend_events(
+    holdings: Dict[str, float],
+    user_symbol_map: Dict,
+    user_excluded_symbols: Set,
+    current_user: User,
+    portfolio_summary_rows: List[dict]
+) -> List[dict]:
+    """
+    Shared logic to generate dividend events (confirmed + estimated) + cash interest
+    for the next 12 months.
+    """
+    from market_data import map_to_yf_symbol, _run_isolated_fetch
+    from finutils import is_cash_symbol
+    import concurrent.futures
+    import yfinance as yf
+    
+    provider = get_mdp()
+    yf_map = {} # Internal -> YF
+    
+    # Map symbols
+    for sym in holdings.keys():
+        if is_cash_symbol(sym):
+            continue
+        yf_sym = map_to_yf_symbol(sym, user_symbol_map, user_excluded_symbols)
+        if yf_sym:
+            yf_map[sym] = yf_sym
+
+    calendar_events = []
+    today = date.today()
+    end_date = today + timedelta(days=365) # 1 Year Projection
+    
+    def fetch_symbol_data(sym):
+        """Helper to fetch data for a single symbol independently."""
+        yf_sym = yf_map.get(sym)
+        if not yf_sym: return []
+        
+        local_events = []
+        qty = holdings.get(sym, 0)
+        
+        try:
+            # Use MarketDataProvider cache for fundamentals (lighter and cached)
+            info = provider.get_fundamental_data(yf_sym) or {}
+            
+            div_rate = info.get("trailingAnnualDividendRate", 0.0)
+            last_div_val = info.get("lastDividendValue")
+            if not div_rate: div_rate = info.get("dividendRate", 0.0)
+            
+            # 1. Confirmed Events (Need live ticker for calendar, but wrap carefully)
+            # Only check calendar if we have indication of dividends
+            if div_rate > 0 or last_div_val:
+                # Use isolated fetch for calendar data
+                cal = _run_isolated_fetch([yf_sym], task="calendar")
+                if cal and 'Dividend Date' in cal:
+                    div_date_raw = cal['Dividend Date']
+                    # Dates were stringified in the worker
+                    c_date = None
+                    if isinstance(div_date_raw, str):
+                        try:
+                            c_date = datetime.fromisoformat(div_date_raw).date()
+                        except ValueError:
+                            # Fallback if it's just 'YYYY-MM-DD'
+                            try:
+                                c_date = datetime.strptime(div_date_raw, "%Y-%m-%d").date()
+                            except ValueError:
+                                pass
+                    else:
+                        c_date = div_date_raw
+                        if isinstance(c_date, datetime): c_date = c_date.date()
+                    
+                    if c_date and c_date >= today:
+                        amt = last_div_val if last_div_val else (div_rate / 4 if div_rate else 0)
+                        local_events.append({
+                            "symbol": sym,
+                            "dividend_date": str(c_date),
+                            "ex_dividend_date": str(cal.get('Ex-Dividend Date', '')),
+                            "amount": amt * qty,
+                            "status": "confirmed"
+                        })
+            
+            # 2. Estimated Events
+            if div_rate and div_rate > 0:
+
+                freq_months = 3
+                if last_div_val and last_div_val > 0:
+                    ratio = div_rate / last_div_val
+                    if 10 <= ratio <= 14: freq_months = 1
+                    elif 3.5 <= ratio <= 5.5: freq_months = 3
+                    elif 1.5 <= ratio <= 2.5: freq_months = 6
+                    elif 0.8 <= ratio <= 1.2: freq_months = 12
+                
+                # Anchor
+                anchor = None
+                if local_events:
+                    try:
+                        anchor = datetime.strptime(local_events[-1]["dividend_date"], "%Y-%m-%d").date()
+                    except: pass
+                
+                if not anchor and info.get("lastDividendDate"):
+                    try:
+                        anchor = date.fromtimestamp(info.get("lastDividendDate"))
+                    except: pass
+                    
+                if not anchor and info.get("exDividendDate"):
+                    try:
+                        anchor = date.fromtimestamp(info.get("exDividendDate")) + timedelta(days=21)
+                    except: pass
+                    
+                if anchor:
+                    curr = anchor
+                    while curr < today:
+                        curr = (pd.Timestamp(curr) + pd.DateOffset(months=freq_months)).date()
+                    
+                    while curr <= end_date:
+                        is_dup = False
+                        for ce in local_events:
+                            if ce["status"] == "confirmed":
+                                ce_date = datetime.strptime(ce["dividend_date"], "%Y-%m-%d").date()
+                                if abs((ce_date - curr).days) < 20: 
+                                    is_dup = True
+                                    break
+                        
+                        if not is_dup and curr >= today:
+                            est_amt = (last_div_val if last_div_val else div_rate/4) * qty
+                            local_events.append({
+                                "symbol": sym,
+                                "dividend_date": str(curr),
+                                "ex_dividend_date": "",
+                                "amount": est_amt,
+                                "status": "estimated"
+                            })
+                        
+                        curr = (pd.Timestamp(curr) + pd.DateOffset(months=freq_months)).date()
+                        
+        except Exception as e:
+            logging.warning(f"Error fetching data for {sym}: {e}")
+            
+        return local_events
+
+    # Run in parallel
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_sym = {executor.submit(fetch_symbol_data, sym): sym for sym in holdings.keys()}
+        for future in concurrent.futures.as_completed(future_to_sym):
+            try:
+                events = future.result()
+                calendar_events.extend(events)
+            except Exception as exc:
+                logging.error(f"Symbol generated an exception: {exc}")
+
+    # Sort by date
+    calendar_events.sort(key=lambda x: x["dividend_date"])
+    
+    try:
+        # Load settings for cash interest using the GLOBAL config manager if possible, or create new?
+        # Creating new ConfigManager might be expensive or thread-unsafe if not careful.
+        # But we are in async context.
+        # Ideally passed in, but for now we look it up.
+        config_manager = get_config_manager(current_user)
+        config_manager.load_manual_overrides()
+        interest_rates = config_manager.manual_overrides.get("account_interest_rates", {})
+        thresholds = config_manager.manual_overrides.get("interest_free_thresholds", {})
+        
+        # Detect currency
+        display_currency = "USD"
+        if portfolio_summary_rows:
+            for k in portfolio_summary_rows[0].keys():
+                if k.startswith("Market Value ("):
+                        parts = k.split("(")
+                        if len(parts) > 1:
+                            display_currency = parts[1].split(")")[0]
+                        break
+
+        try:
+            cash_events = generate_cash_interest_events(
+                portfolio_summary_rows=portfolio_summary_rows,
+                interest_rates=interest_rates,
+                thresholds=thresholds,
+                start_date=today,
+                end_date=end_date,
+                display_currency=display_currency
+            )
+            
+            if cash_events:
+                 logging.info(f"Generated {len(cash_events)} cash interest events for {current_user.username}")
+                 calendar_events.extend(cash_events)
+                 
+        except Exception as e:
+             logging.error(f"Error generating cash interest events: {e}")
+
+    except Exception as e:
+        logging.error(f"Error processing cash interest/settings: {e}")
+        
+    return calendar_events
+
 @router.get("/projected_income")
 async def get_projected_income(
     currency: str = "USD",
@@ -2449,89 +2643,41 @@ async def get_projected_income(
         if not holdings:
             return []
 
-        # 3. Map to YF Symbols and Fetch Fundamentals
+        # 3. Use unified event generation logic
         df, _, user_symbol_map, user_excluded_symbols, _, _, _ = data
-        from finutils import is_cash_symbol
-        from market_data import MarketDataProvider, map_to_yf_symbol
         
-        yf_symbols = set()
-        sym_map = {} # Internal -> YF
+        # Calculate raw events using the robust logic (Calendar + Estimates + Cash Interest)
+        events = await _generate_dividend_events(
+            holdings=holdings,
+            user_symbol_map=user_symbol_map,
+            user_excluded_symbols=user_excluded_symbols,
+            current_user=current_user,
+            portfolio_summary_rows=rows
+        )
         
-        for sym in holdings.keys():
-            if is_cash_symbol(sym):
-                continue
-            yf_sym = map_to_yf_symbol(sym, user_symbol_map, user_excluded_symbols)
-            if yf_sym:
-                yf_symbols.add(yf_sym)
-                sym_map[sym] = yf_sym
-                
-        provider = get_mdp()
-        fundamentals = provider.get_fundamental_data_batch(yf_symbols)
-        
-        # 4. Project Income
+        # 4. Aggregate into Monthly Buckets
         # Structure: "YYYY-MM" -> {"total": float, "breakdown": {symbol: float}}
         projection = defaultdict(lambda: {"total": 0.0, "breakdown": defaultdict(float)})
         
         today = date.today()
-        end_projection = today + pd.DateOffset(months=12)
+        # We want to cover the next 12 months
         
-        from datetime import timedelta
-        
-        for sym, qty in holdings.items():
-            yf_sym = sym_map.get(sym)
-            if not yf_sym or yf_sym not in fundamentals:
-                continue
+        for event in events:
+            # Event has: symbol, dividend_date (str YYYY-MM-DD), amount, status
+            try:
+                evt_date = datetime.strptime(event["dividend_date"], "%Y-%m-%d").date()
+                key = evt_date.strftime("%Y-%m")
+                sym = event["symbol"]
+                amt = event["amount"]
                 
-            fund = fundamentals[yf_sym]
-            div_rate = fund.get("trailingAnnualDividendRate", 0.0)
-            last_div_val = fund.get("lastDividendValue", 0.0)
-            
-            ex_div_ts = fund.get("exDividendDate")
-            last_div_ts = fund.get("lastDividendDate")
-            
-            if not div_rate or div_rate <= 0:
-                continue
-                
-            # Infer Frequency
-            freq = 4 # Default to Quarterly
-            amount_per_payment = 0.0
-            
-            if last_div_val > 0:
-                ratio = div_rate / last_div_val
-                if 0.5 <= ratio <= 1.5: freq = 1 # Annual
-                elif 1.5 < ratio <= 2.5: freq = 2 # Semi
-                elif 3.5 <= ratio <= 4.5: freq = 4 # Quarterly
-                elif 11.0 <= ratio <= 13.0: freq = 12 # Monthly
-                amount_per_payment = last_div_val
-            else:
-                amount_per_payment = div_rate / 4.0 # Fallback
-                
-            # Determine Starting Point
-            start_dt = None
-            if ex_div_ts and isinstance(ex_div_ts, (int, float)):
-                 start_dt = date.fromtimestamp(ex_div_ts)
-            elif last_div_ts and isinstance(last_div_ts, (int, float)):
-                 start_dt = date.fromtimestamp(last_div_ts)
-            
-            if not start_dt:
-                start_dt = today + timedelta(days=30)
-            
-            interval_days = 365 / freq
-            current_dt = start_dt
-            
-            while current_dt < today:
-                current_dt += timedelta(days=interval_days)
-            
-            while current_dt < end_projection.date():
-                key = current_dt.strftime("%Y-%m")
-                total_payment = amount_per_payment * qty
-                
-                projection[key]["total"] += total_payment
-                projection[key]["breakdown"][sym] += total_payment
-                
-                current_dt += timedelta(days=interval_days)
+                # Only include if within 12 months (events list is already limited to ~1 year by generator, but double check)
+                if evt_date >= today and evt_date <= today + timedelta(days=365):
+                    projection[key]["total"] += amt
+                    projection[key]["breakdown"][sym] += amt
+            except Exception as e:
+                logging.warning(f"Error aggregating event {event}: {e}")
 
-        # 5. Format Result
+        # 5. Format Result for Graph
         results = []
         iter_date = today.replace(day=1)
         for _ in range(12):
@@ -2539,10 +2685,9 @@ async def get_projected_income(
             label = iter_date.strftime("%b %Y")
             data_point = projection.get(key, {"total": 0.0, "breakdown": {}})
             
-            # --- NEW: Add Cash Interest to Projection ---
-            # We must fetch recent data to apply the same logic as dividend calendar
+            # Ensure breakdown dict exists even if empty
             if not data_point.get("breakdown"):
-                data_point["breakdown"] = {}
+                 data_point["breakdown"] = {}
 
             results.append({
                 "month": label,
@@ -2552,64 +2697,11 @@ async def get_projected_income(
             })
             iter_date = (pd.Timestamp(iter_date) + pd.DateOffset(months=1)).date()
             
-        # --- NEW: Inject Cash Interest into Results ---
-        try:
-            # Re-fetch settings similarly to get_dividend_calendar to ensure freshness
-            # (data[1] might be stale if dependency cache invalidation lags)
-            config_manager = get_config_manager(current_user)
-            config_manager.load_manual_overrides()
-            interest_rates = config_manager.manual_overrides.get("account_interest_rates", {})
-            thresholds = config_manager.manual_overrides.get("interest_free_thresholds", {})
-
-            if interest_rates:
-                # Corrected Date Anchoring: Adjusted `iter_date` to start from the 1st of the current month instead of skipping to the next month.
-                # This ensures the current month's interest is included in the 12-month projection chart, aligning it with the summary box.
-                # Ensured 12-Month Coverage: Modified the loop to ensure that even if the 12th month's interest payment falls slightly beyond the 1-year window in days,
-                # it is still captured for the monthly bucketing logic.
-                # Robust Aggregation: Improved the logic in `api.py` to correctly track and log the total cash interest added to the projection chart for easier debugging.
-                logging.info(f"Adding cash interest to projection for {current_user.username}. Account rates: {list(interest_rates.keys())}")
-                
-                # Use summary rows which have correct aggregated balances in Display Currency
-                # 'rows' variable is already available and populated from summary_df earlier in the function
-                cash_events = generate_cash_interest_events(
-                    portfolio_summary_rows=rows,
-                    interest_rates=interest_rates,
-                    thresholds=thresholds,
-                    start_date=today,
-                    end_date=end_projection.date(),
-                    display_currency=currency
-                )
-                
-                total_cash_added = 0.0
-                # Aggregate events into the projection buckets
-                for event in cash_events:
-                    # event["dividend_date"] is 'YYYY-MM-DD'
-                    ev_date = datetime.strptime(event["dividend_date"], "%Y-%m-%d").date()
-                    key = ev_date.strftime("%Y-%m")
-                    amt = event["amount"]
-                    sym = event["symbol"] # $CASH
-                    
-                    found = False
-                    # Find matching result bucket
-                    for res in results:
-                        if res["year_month"] == key:
-                            current_val = res.get(sym, 0.0)
-                            res[sym] = current_val + amt
-                            res["value"] += amt # Update total
-                            total_cash_added += amt
-                            found = True
-                            break
-                
-                logging.info(f"ProjectedIncome: Added total {total_cash_added:.2f} in cash interest to 12M projection.")
-                            
-        except Exception as e_cash:
-             logging.error(f"Error adding cash interest to projection: {e_cash}")
-
-        return clean_nans(results)
+        return results
 
     except Exception as e:
-        logging.error(f"Error projecting income: {e}", exc_info=True)
-        return []
+        logging.error(f"Error getting projected income: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/stock-analysis/{symbol}")
 async def get_stock_analysis(
@@ -3135,12 +3227,8 @@ async def get_dividend_calendar(
     """
     Returns confirmed AND estimated dividend events for the next 12 months.
     """
-    df, _, user_symbol_map, user_excluded_symbols, _, _, _ = data
-    if df.empty:
-        return []
-
     try:
-        # Get current holdings symbols
+        # 1. Get Current Holdings
         summary_data = await _calculate_portfolio_summary_internal(
             include_accounts=accounts, 
             show_closed_positions=False, 
@@ -3149,250 +3237,37 @@ async def get_dividend_calendar(
         )
         summary_df = summary_data.get("summary_df")
         if summary_df is None or summary_df.empty:
-             return []
+                return []
         rows = summary_df.to_dict(orient="records")
         
-        # Map Symbol -> Quantity
+        # 2. Extract Holdings
         holdings = defaultdict(float)
         for r in rows:
             sym = r["Symbol"]
             if sym != "Total" and not r.get("is_total"):
-                 qty = r.get("Quantity", 0)
-                 if qty > 0:
-                     holdings[sym] += qty
+                    qty = r.get("Quantity", 0)
+                    if qty > 0:
+                        holdings[sym] += qty
         
         if not holdings:
             return []
 
-        # Use MarketDataProvider to get basic info efficiently
-        from market_data import MarketDataProvider, map_to_yf_symbol, _run_isolated_fetch
-        from finutils import is_cash_symbol
+        # 3. Use unified event generation logic
+        df, _, user_symbol_map, user_excluded_symbols, _, _, _ = data
         
-        provider = get_mdp()
-        yf_map = {} # Internal -> YF
-        yf_symbols = set()
+        events = await _generate_dividend_events(
+            holdings=holdings,
+            user_symbol_map=user_symbol_map,
+            user_excluded_symbols=user_excluded_symbols,
+            current_user=current_user,
+            portfolio_summary_rows=rows
+        )
         
-        for sym in holdings.keys():
-            if is_cash_symbol(sym):
-                continue
-            yf_sym = map_to_yf_symbol(sym, user_symbol_map, user_excluded_symbols)
-            if yf_sym:
-                yf_map[sym] = yf_sym
-                yf_symbols.add(yf_sym)
-
-        # Fetch Fundamentals & Calendar in Parallel using ThreadPoolExecutor
-        # This fixes the timeout issue of serial fetching while avoiding the data loss issue of batch fetching
-        import yfinance as yf
-        from datetime import timedelta
-        import pandas as pd
-        import concurrent.futures
-
-        calendar_events = []
-        today = date.today()
-        end_date = today + timedelta(days=365) # 1 Year Projection
-        
-        def fetch_symbol_data(sym):
-            """Helper to fetch data for a single symbol independently."""
-            yf_sym = yf_map.get(sym)
-            if not yf_sym: return []
-            
-            local_events = []
-            qty = holdings.get(sym, 0)
-            
-            try:
-                # Use MarketDataProvider cache for fundamentals (lighter and cached)
-                info = provider.get_fundamental_data(yf_sym) or {}
-                
-                div_rate = info.get("trailingAnnualDividendRate", 0.0)
-                last_div_val = info.get("lastDividendValue")
-                if not div_rate: div_rate = info.get("dividendRate", 0.0)
-                
-                # 1. Confirmed Events (Need live ticker for calendar, but wrap carefully)
-                # Only check calendar if we have indication of dividends
-                if div_rate > 0 or last_div_val:
-                    # Use isolated fetch for calendar data
-                    cal = _run_isolated_fetch([yf_sym], task="calendar")
-                    if cal and 'Dividend Date' in cal:
-                        div_date_raw = cal['Dividend Date']
-                        # Dates were stringified in the worker
-                        if isinstance(div_date_raw, str):
-                            try:
-                                c_date = datetime.fromisoformat(div_date_raw).date()
-                            except ValueError:
-                                # Fallback if it's just 'YYYY-MM-DD'
-                                try:
-                                    c_date = datetime.strptime(div_date_raw, "%Y-%m-%d").date()
-                                except ValueError:
-                                    c_date = None
-                        else:
-                            c_date = div_date_raw
-                            if isinstance(c_date, datetime): c_date = c_date.date()
-                        
-                        if c_date and c_date >= today:
-                            amt = last_div_val if last_div_val else (div_rate / 4 if div_rate else 0)
-                            local_events.append({
-                                "symbol": sym,
-                                "dividend_date": str(c_date),
-                                "ex_dividend_date": str(cal.get('Ex-Dividend Date', '')),
-                                "amount": amt * qty,
-                                "status": "confirmed"
-                            })
-                
-                # 2. Estimated Events
-                if div_rate and div_rate > 0:
-
-                    freq_months = 3
-                    if last_div_val and last_div_val > 0:
-                        ratio = div_rate / last_div_val
-                        if 10 <= ratio <= 14: freq_months = 1
-                        elif 3.5 <= ratio <= 5.5: freq_months = 3
-                        elif 1.5 <= ratio <= 2.5: freq_months = 6
-                        elif 0.8 <= ratio <= 1.2: freq_months = 12
-                    
-                    # Anchor
-                    anchor = None
-                    if local_events:
-                        try:
-                            anchor = datetime.strptime(local_events[-1]["dividend_date"], "%Y-%m-%d").date()
-                        except: pass
-                    
-                    if not anchor and info.get("lastDividendDate"):
-                        try:
-                            anchor = date.fromtimestamp(info.get("lastDividendDate"))
-                        except: pass
-                        
-                    if not anchor and info.get("exDividendDate"):
-                        try:
-                            anchor = date.fromtimestamp(info.get("exDividendDate")) + timedelta(days=21)
-                        except: pass
-                        
-                    if anchor:
-                        curr = anchor
-                        while curr < today:
-                            curr = (pd.Timestamp(curr) + pd.DateOffset(months=freq_months)).date()
-                        
-                        while curr <= end_date:
-                            is_dup = False
-                            for ce in local_events:
-                                if ce["status"] == "confirmed":
-                                    ce_date = datetime.strptime(ce["dividend_date"], "%Y-%m-%d").date()
-                                    if abs((ce_date - curr).days) < 20: 
-                                        is_dup = True
-                                        break
-                            
-                            if not is_dup and curr >= today:
-                                est_amt = (last_div_val if last_div_val else div_rate/4) * qty
-                                local_events.append({
-                                    "symbol": sym,
-                                    "dividend_date": str(curr),
-                                    "ex_dividend_date": "",
-                                    "amount": est_amt,
-                                    "status": "estimated"
-                                })
-                            
-                            curr = (pd.Timestamp(curr) + pd.DateOffset(months=freq_months)).date()
-                            
-            except Exception as e:
-                logging.warning(f"Error fetching data for {sym}: {e}")
-                
-            return local_events
-
-        # Run in parallel
-        # Run SEQUENTIALLY to absolutely prevent OOM/Thread exhaustion
-        # This endpoint is a background feature, it can be slow.
-        
-
-        
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future_to_sym = {executor.submit(fetch_symbol_data, sym): sym for sym in holdings.keys()}
-            for future in concurrent.futures.as_completed(future_to_sym):
-                try:
-                    events = future.result()
-                    calendar_events.extend(events)
-                except Exception as exc:
-                    logging.error(f"Symbol generated an exception: {exc}")
-
-        # Sort by date
-        calendar_events.sort(key=lambda x: x["dividend_date"])
-        
-        try:
-            # Load settings
-            config_manager.load_manual_overrides()
-            interest_rates = config_manager.manual_overrides.get("account_interest_rates", {})
-            thresholds = config_manager.manual_overrides.get("interest_free_thresholds", {})
-            
-            # --- ALWAYS TRY to generate cash events + Debug ---
-            # (Previously we skipped if no rates, but that hides why they are missing in UI)
-            
-            # Count cash rows before processing for diagnostics
-            cash_row_count = 0
-            if rows:
-                for r in rows:
-                    sym = r.get("Symbol", "")
-                    if sym == "$CASH" or sym.startswith("Cash ") or r.get("Name") == "Cash" or "Cash (" in sym:
-                         cash_row_count += 1
-
-            # Detect currency
-            display_currency = "USD"
-            if rows:
-                for k in rows[0].keys():
-                    if k.startswith("Market Value ("):
-                         parts = k.split("(")
-                         if len(parts) > 1:
-                              display_currency = parts[1].split(")")[0]
-                         break
-
-            try:
-                cash_events = generate_cash_interest_events(
-                    portfolio_summary_rows=rows,
-                    interest_rates=interest_rates,
-                    thresholds=thresholds,
-                    start_date=today,
-                    end_date=end_date,
-                    display_currency=display_currency
-                )
-                
-
-
-                calendar_events.extend(cash_events)
-                
-            except Exception as e_gen:
-                 # Catch internal generation errors
-                 calendar_events.append({
-                    "symbol": "$ERR_GEN",
-                    "dividend_date": str(today),
-                    "status": "error",
-                    "amount": 0.0,
-                    "name": f"GenError: {str(e_gen)[:50]}" 
-                 })
-                 logging.error(f"Cash Generation Failed: {e_gen}", exc_info=True)
-                 
-            # Re-sort after adding interest
-            calendar_events.sort(key=lambda x: x["dividend_date"])
-
-        except Exception as e_main:
-            logging.error(f"Error adding cash interest (Main): {e_main}")
-            calendar_events.append({
-                "symbol": "$ERR_MAIN",
-                 "dividend_date": str(date.today()),
-                 "status": "error",
-                 "amount": 0.0,
-                 "name": f"MainError: {str(e_main)[:50]}" 
-            })
-
-
-            # Re-sort after adding interest
-            calendar_events.sort(key=lambda x: x["dividend_date"])
-
-        return clean_nans(calendar_events)
-
-        return clean_nans(calendar_events)
-        
-
+        return clean_nans(events)
 
     except Exception as e:
-        logging.error(f"Error fetching dividend calendar: {e}", exc_info=True)
-        return {"error": str(e)}
+        logging.error(f"Error getting dividend calendar: {e}", exc_info=True)
+        return []
 
 # --- FUNDAMENTALS & FINANCIALS ENDPOINTS ---
 
