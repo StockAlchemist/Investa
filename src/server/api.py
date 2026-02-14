@@ -633,41 +633,57 @@ async def _calculate_portfolio_summary_internal(
     
     # --- Calculate Annualized TWR and include in metrics ---
     annualized_twr = None
+    cumulative_twr = None
     if not df.empty:
         try:
-            # Use cached helper for historical data
-            min_date = df["Date"].min().date()
-            max_date = date.today()
+            # Filter df by accounts to get correct baseline date for this selection
+            df_for_twr = df
+            if include_accounts:
+                df_for_twr = df[df["Account"].isin(include_accounts)]
             
-            daily_df, _, _, _ = await _get_historical_performance_cached(
-                df=df,
-                manual_overrides_dict=manual_overrides,
-                user_symbol_map=user_symbol_map,
-                user_excluded_symbols=user_excluded_symbols,
-                account_currency_map=account_currency_map,
-                original_csv_file_path=db_path, # In this context db_path is the source path
-                start_date=min_date,
-                end_date=max_date,
-                interval="D",
-                benchmark_symbols_yf=[],
-                display_currency=currency,
-                include_accounts=include_accounts,
-                db_mtime=db_mtime
-            )
-            
-            if daily_df is not None and not daily_df.empty:
-                twr_col = "Portfolio Accumulated Gain"
-                if twr_col in daily_df.columns:
-                    final_twr_factor = daily_df[twr_col].iloc[-1]
-                    days = (max_date - min_date).days
-                    if days > 0 and pd.notna(final_twr_factor) and final_twr_factor > 0:
-                        annualized_factor = final_twr_factor ** (365.25 / days)
-                        annualized_twr = (annualized_factor - 1) * 100.0
+            if not df_for_twr.empty:
+                min_date = df_for_twr["Date"].min().date()
+                max_date = date.today()
+                
+                daily_df, _, _, _ = await _get_historical_performance_cached(
+                    df=df,
+                    manual_overrides_dict=manual_overrides,
+                    user_symbol_map=user_symbol_map,
+                    user_excluded_symbols=user_excluded_symbols,
+                    account_currency_map=account_currency_map,
+                    original_csv_file_path=db_path,
+                    start_date=min_date,
+                    end_date=max_date,
+                    interval="D",
+                    benchmark_symbols_yf=[],
+                    display_currency=currency,
+                    include_accounts=include_accounts,
+                    db_mtime=db_mtime
+                )
+                
+                if daily_df is not None and not daily_df.empty:
+                    twr_col = "Portfolio Accumulated Gain"
+                    if twr_col in daily_df.columns:
+                        final_twr_factor = daily_df[twr_col].iloc[-1]
+                        
+                        # Use the actual start date from the calculated data for true accuracy
+                        actual_min_date = daily_df.index.min().date()
+                        days = (max_date - actual_min_date).days
+                        
+                        if pd.notna(final_twr_factor) and final_twr_factor > 0:
+                            # Cumulative TWR
+                            cumulative_twr = (final_twr_factor - 1) * 100.0
+                            
+                            # Annualized TWR
+                            if days > 0:
+                                annualized_factor = final_twr_factor ** (365.25 / days)
+                                annualized_twr = (annualized_factor - 1) * 100.0
         except Exception as e_twr:
-            logging.warning(f"Failed to calculate Annualized TWR in summary: {e_twr}")
+            logging.warning(f"Failed to calculate TWR in summary: {e_twr}")
 
     if overall_summary_metrics:
         overall_summary_metrics["annualized_twr"] = annualized_twr
+        overall_summary_metrics["cumulative_twr"] = cumulative_twr
         # Base calculator now correctly includes cash interest (due to fresh config load).
         # We verified 'est_annual_income_display' matches user expectations (~$5237).
         pass

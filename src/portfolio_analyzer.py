@@ -1959,10 +1959,25 @@ def _calculate_aggregate_metrics(
     if transactions_df is not None and not transactions_df.empty:
         # Filter transactions for the selected accounts (if any)
         # Note: If no accounts selected (empty list), we include all.
+        # Filter transactions for the selected accounts (if any)
+        # Note: If no accounts selected (empty list), we include all.
         tx_for_mwr = transactions_df
         if not is_all_accounts_selected:
             if "Account" in transactions_df.columns:
-               tx_for_mwr = transactions_df[transactions_df["Account"].isin(include_accounts)]
+                # FIX: Must include transactions where Account is in list OR To Account is in list (Transfer In)
+                # Case-insensitive matching is CRITICAL
+                
+                include_accounts_upper = [str(a).strip().upper() for a in include_accounts]
+                
+                # Check Account col
+                acc_series = transactions_df["Account"].astype(str).str.strip().str.upper()
+                mask = acc_series.isin(include_accounts_upper)
+                
+                if "To Account" in transactions_df.columns:
+                    to_acc_series = transactions_df["To Account"].astype(str).str.strip().str.upper()
+                    mask = mask | to_acc_series.isin(include_accounts_upper)
+                
+                tx_for_mwr = transactions_df[mask]
         
         # Calculate Cash Flows
         mwr_dates, mwr_flows = get_cash_flows_for_mwr(
@@ -1972,7 +1987,8 @@ def _calculate_aggregate_metrics(
             target_currency=display_currency,
             fx_rates=fx_rates,
             historical_fx_rates=historical_fx_rates, # ADDED: Historical FX Data
-            display_currency=display_currency
+            display_currency=display_currency,
+            include_accounts=(include_accounts if include_accounts else all_available_accounts) # PASS SCOPE for Transfer logic
         )
         
         if mwr_dates and mwr_flows:
@@ -1985,6 +2001,59 @@ def _calculate_aggregate_metrics(
              logging.debug(f"MWR Prep Failed (No flows). Market Val: {overall_market_value_display}, TX Count: {len(tx_for_mwr) if not tx_for_mwr.empty else 0}")
 
     # --- END ADDED ---
+
+    # --- ADDED: Account-Level MWR (IRR) Calculation ---
+    if transactions_df is not None and not transactions_df.empty and "Account" in transactions_df.columns:
+        # We need to calculate MWR for each account in account_level_metrics
+        # Note: account_level_metrics keys are account names.
+        for account in account_level_metrics:
+            try:
+                # Filter transactions for this specific account
+                # Match account name exactly (including transfers IN where this account is "To Account")
+                # Case-insensitive match
+                account_upper = str(account).strip().upper()
+                
+                acc_series_sub = transactions_df["Account"].astype(str).str.strip().str.upper()
+                to_acc_series_sub = pd.Series(False, index=transactions_df.index)
+                if "To Account" in transactions_df.columns:
+                    to_acc_series_sub = transactions_df["To Account"].astype(str).str.strip().str.upper() == account_upper
+
+                account_tx = transactions_df[
+                    (acc_series_sub == account_upper) | to_acc_series_sub
+                ]
+                
+                if account_tx.empty:
+                    continue
+                    
+                # Get current market value for this account from the metrics we just built
+                # account_level_metrics is a dict of dicts
+                account_mv = account_level_metrics[account].get("market_value", 0.0)
+                
+                # Calculate Cash Flows using the helper
+                mwr_dates, mwr_flows = get_cash_flows_for_mwr(
+                    account_transactions=account_tx,
+                    final_account_market_value=account_mv,
+                    end_date=report_date,
+                    target_currency=display_currency,
+                    fx_rates=fx_rates,
+                    historical_fx_rates=historical_fx_rates,
+                    display_currency=display_currency,
+                    include_accounts=[account] # PASS SINGLE ACCOUNT SCOPE
+                )
+                
+                if mwr_dates and mwr_flows:
+                    account_mwr = calculate_irr(mwr_dates, mwr_flows)
+                    if pd.notna(account_mwr):
+                        # Update the metric for this account
+                        # The dashboard expects 'portfolio_mwr' or 'mwr'
+                        account_level_metrics[account]["mwr"] = account_mwr * 100.0
+                        account_level_metrics[account]["portfolio_mwr"] = account_mwr * 100.0 # Map for safety
+                    else:
+                        # Calculation resulted in NaN (no solution or invalid data)
+                        pass
+            except Exception as e_acct_mwr:
+                logging.warning(f"Failed to calculate MWR for account '{account}': {e_acct_mwr}")
+    # --- END ACCOUNT MWR ---
     
 
 

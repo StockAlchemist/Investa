@@ -2213,20 +2213,28 @@ def _calculate_daily_net_cash_flow(
         
         for _, row in transfer_tx.iterrows():
             symbol = row["Symbol"]
-            if is_cash_symbol(symbol): # Skip cash transfers (handled by cash balance logic usually, or ignored if internal)
-                 continue
+            is_cash = is_cash_symbol(symbol)
+            # FIX: Do NOT skip cash transfers if we are in specific account view.
+            # Cash transfers betwen accounts ARE external flows for the specific account.
+            # if is_cash_symbol(symbol): # Skip cash transfers (handled by cash balance logic usually, or ignored if internal)
+            #      continue
                  
             account = row["Account"]
             to_account = row.get("To Account")
             qty = pd.to_numeric(row["Quantity"], errors="coerce")
-            price_local = pd.to_numeric(row.get("Price/Share"), errors="coerce")
+            
+            # Determine Price/Value of the transfer
+            price_local = 1.0 # Default for cash
+            if not is_cash:
+                price_local = pd.to_numeric(row.get("Price/Share"), errors="coerce")
+            
             local_currency = row["Local Currency"]
             
             if pd.isna(qty):
                 continue
 
-            # FIX: If price is missing or 0, try to look up market price
-            if pd.isna(price_local) or price_local <= 0:
+            # FIX: If price is missing or 0 (for non-cash), try to look up market price
+            if not is_cash and (pd.isna(price_local) or price_local <= 0):
                 if historical_prices_yf_unadjusted and internal_to_yf_map:
                     yf_ticker = internal_to_yf_map.get(symbol)
                     if yf_ticker and yf_ticker in historical_prices_yf_unadjusted:
@@ -2260,7 +2268,7 @@ def _calculate_daily_net_cash_flow(
                             except:
                                 pass
                                 
-            if pd.isna(price_local) or price_local <= 0:
+            if not is_cash and (pd.isna(price_local) or price_local <= 0):
                 continue
                 
             # Normalize account names from transaction
@@ -2271,12 +2279,21 @@ def _calculate_daily_net_cash_flow(
             is_to_included = to_account_norm in included_set if to_account_norm else False
             
             flow_val_local = 0.0
+            
+            # Determine Value of flow (Qty * Price)
+            # For cash, price is 1.0 (local currency)
+            transfer_value = abs(qty) * price_local
+            
             if is_from_included and not is_to_included:
-                # Transfer OUT (Withdrawal)
-                flow_val_local = -(abs(qty) * price_local)
+                # Transfer OUT (Withdrawal) onto the included set
+                # e.g. From "MyAcct" (Included) -> To "External" (Excluded)
+                flow_val_local = -transfer_value
             elif not is_from_included and is_to_included:
-                # Transfer IN (Deposit)
-                flow_val_local = abs(qty) * price_local
+                # Transfer IN (Deposit) onto the included set
+                # e.g. From "External" (Excluded) -> To "MyAcct" (Included)
+                flow_val_local = transfer_value
+            # Else: Internal Transfer (Included -> Included) or External (Excluded -> Excluded) -> Net Flow 0
+            # (Internal transfers cancel out for the group, so 0 net external flow)
             
             if abs(flow_val_local) > 1e-9:
                 flow_target = flow_val_local
@@ -3783,7 +3800,7 @@ def _prepare_historical_inputs(
     end_date: date,
     benchmark_symbols_yf: List[str],
     display_currency: str,
-    current_hist_version: str = "v10",
+    current_hist_version: str = "v14",
     raw_cache_prefix: str = HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
     daily_cache_prefix: str = DAILY_RESULTS_CACHE_PATH_PREFIX,
     # preloaded_transactions_df: Optional[pd.DataFrame] = None, # Already added above
@@ -4502,7 +4519,7 @@ def _load_or_calculate_daily_results(
     included_accounts_list: List[str],
     # --- Parameters with defaults follow ---
     num_processes: Optional[int] = None,
-    current_hist_version: str = "v13",
+    current_hist_version: str = "v14",
     filter_desc: str = "All Accounts",
     calc_method: str = HISTORICAL_CALC_METHOD,
 ) -> Tuple[pd.DataFrame, bool, str]:  # type: ignore

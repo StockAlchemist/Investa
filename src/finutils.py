@@ -207,14 +207,40 @@ def calculate_npv(rate: float, dates: List[date], cash_flows: List[float]) -> fl
                 )
                 return np.nan
 
-            denominator = base**time_delta_years
-            if not np.isfinite(denominator) or abs(denominator) < 1e-12:
-                logging.debug(
-                    f"NPV Calc Warning: Invalid denominator ({denominator}) at index {i}. Returning NaN."
-                )
-                return np.nan
+            # Safe Exponentiation to avoid OverflowWarning
+            # We want to calculate denominator = base**time_delta_years
+            # Overflow occurs if denominator > 1.8e308 (approx). ln(1.8e308) ~= 709.7
+            if base <= 0:
+                 # Should be caught by base <= 1e-9 check above, but for safety
+                 denominator = np.nan
+            else:
+                try:
+                    # Check magnitude
+                    log_val = math.log(base) * time_delta_years
+                    if log_val > 709.0: # Exceeds max float
+                        denominator = np.inf
+                    elif log_val < -709.0: # Underflows to 0
+                        denominator = 0.0
+                    else:
+                        denominator = base**time_delta_years
+                except ValueError: # math.log domain error
+                     denominator = np.nan
 
-            term_value = cash_flows[i] / denominator
+            if not np.isfinite(denominator) or abs(denominator) < 1e-12:
+                if denominator == np.inf:
+                     # If denominator is infinite, the term (flow/denom) is 0.
+                     # We handle this below.
+                     pass 
+                else:
+                    logging.debug(
+                        f"NPV Calc Warning: Invalid denominator ({denominator}) at index {i}. Returning NaN."
+                    )
+                    return np.nan
+
+            if np.isinf(denominator):
+                term_value = 0.0
+            else:
+                term_value = cash_flows[i] / denominator
             if not np.isfinite(term_value):
                 logging.debug(
                     f"NPV Calc Warning: Non-finite term value ({term_value}) at index {i}. Returning NaN."
@@ -366,7 +392,9 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
             # If Newton fails, fall back to the more robust Brent's method (brentq).
             # This method requires a bracket [a, b] where the NPV at a and b have opposite signs.
             try:
-                lower_bound, upper_bound = -0.9999, 50.0
+                # FIX: Increased upper bound from 50.0 to 100000.0 to handle high short-term returns.
+                # 20% in 9 days is > 5000% annualized, so 50.0 was too low.
+                lower_bound, upper_bound = -0.9999, 100000.0
                 npv_low = calculate_npv(lower_bound, dates, solver_flows)
                 npv_high = calculate_npv(upper_bound, dates, solver_flows)
                 logging.debug(
@@ -578,7 +606,8 @@ def get_cash_flows_for_mwr(
     target_currency: str,
     fx_rates: Optional[Dict[str, float]],  # Expects standard 'FROM/TO' -> rate format
     display_currency: str,  # Used for warning msg only (REMOVED - fx_rates needed)
-    historical_fx_rates: Optional[Dict[Tuple[date, str], float]] = None, # ADDED: Historical FX Data (Date, LocalCurr) -> Rate to Target
+    historical_fx_rates: Optional[Dict[Tuple[date, str], float]] = None, # ADDED: Historical FX Data
+    include_accounts: Optional[List[str]] = None, # ADDED: To determine transfer direction
 ) -> Tuple[List[date], List[float]]:
     """
     Calculates cash flows for Money-Weighted Return (MWR) for a specific account in the target currency.
@@ -662,10 +691,35 @@ def get_cash_flows_for_mwr(
             elif tx_type == "fees":
                 if pd.notna(commission_local):
                     cash_flow_local = -(abs(commission_local))  # OUT (-)
-            elif tx_type in ["split", "stock split"]:
-                cash_flow_local = 0.0
                 if pd.notna(commission_local) and commission_local != 0:
                     cash_flow_local = -abs(commission_local)  # OUT (-)
+            elif tx_type == "transfer":
+                # Handle Cash Transfers
+                # If symbol is NOT cash, it's an asset transfer (handled above if we added logic, but usually ignored for MWR if simple)
+                # Wait, this block is if symbol != CASH_SYMBOL_CSV.
+                # Asset transfers IN/OUT should also be flows?
+                # For MWR (Money Weighted Return), we focus on CASH in/out of the portfolio.
+                # If I transfer Stock In, it's a "contribution in kind" -> Deposit (Positive Value Flow)
+                # If I transfer Stock Out, it's a "withdrawal in kind" -> Withdrawal (Negative Value Flow)
+                
+                # Logic for Asset Transfer
+                if "To Account" in row:
+                    to_account = str(row.get("To Account", "")).strip()
+                    # We don't have 'account' passed into this function! 
+                    # Wait, we filter transactions *before* calling this.
+                    # But we don't know *which* account we are calculating for inside the loop if we don't check.
+                    # Actually, `account_transactions` is already filtered for the specific account.
+                    # BUT, a transfer row might have Account="Other" and To Account="ThisAcct".
+                    # We need to know if we are the Source or Destination.
+                    
+                    # Problem: We don't pass 'account_name' to this function.
+                    # We rely on the fact that `account_transactions` contains rows relevant to THIS account.
+                    # If we filtered properly upstream (Account == Name OR To Account == Name), then:
+                    # If Account == Name -> Outgoing.
+                    # If To Account == Name -> Incoming.
+                    # We need the 'account_name' to be passed in to be sure.
+                    pass
+
         elif symbol == CASH_SYMBOL_CSV:
             if tx_type == "deposit" or tx_type == "buy":
                 if pd.notna(qty):
@@ -682,9 +736,43 @@ def get_cash_flows_for_mwr(
                         (qty_abs * price_local) if qty_abs > 0 else price_local
                     )
                 cash_flow_local = dividend_amount_local_cf - commission_local  # IN (+)
-            elif tx_type == "fees":
                 if pd.notna(commission_local):
                     cash_flow_local = -abs(commission_local)  # OUT (-)
+            elif tx_type == "transfer":
+                 # Cash Transfer Logic (Case-Insensitive)
+                 # Determine direction based on `include_accounts` scope
+                 
+                 is_outbound = False
+                 is_inbound = False
+                 
+                 acct = str(row.get("Account", "")).strip().upper()
+                 to_acct = str(row.get("To Account", "")).strip().upper()
+                 
+                 # Normalize include_accounts to UPPER for comparison
+                 included_set = {str(a).strip().upper() for a in (include_accounts or [])}
+                 if not include_accounts:
+                     # If none provided, assume we are focusing on 'acct' (fallback behavior)
+                     included_set = {acct}
+
+                 if acct in included_set:
+                     is_outbound = True
+                 if to_acct and to_acct in included_set:
+                     is_inbound = True
+                     
+                 if is_outbound and is_inbound:
+                     # Internal Transfer within the analyzed scope -> Net Zero flow
+                     cash_flow_local = 0.0
+                 elif is_outbound:
+                     # Money leaving the scope -> Withdrawal -> Positive MWR Flow
+                     if pd.notna(qty):
+                         cash_flow_local = (abs(qty) + commission_local)
+                 elif is_inbound:
+                     # Money entering the scope -> Deposit -> Negative MWR Flow
+                     # Note: Inbound usually just receives Qty. Sender pays commission.
+                     if pd.notna(qty):
+                         cash_flow_local = -abs(qty)
+
+
 
         cash_flow_target = cash_flow_local
         if pd.notna(cash_flow_local) and abs(cash_flow_local) > 1e-9:

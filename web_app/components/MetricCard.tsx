@@ -9,7 +9,7 @@ import { LucideIcon, Loader2 } from 'lucide-react';
 export interface MetricCardProps {
     title: string;
     value: string | number | null;
-    subValue?: number | null;
+    subValue?: number | string | null;
     isCurrency?: boolean;
     colorClass?: string;
     valueClassName?: string;
@@ -84,8 +84,13 @@ export function MetricCard({
                     {isLoading ? (
                         <Skeleton className="h-5 w-12 rounded-full" />
                     ) : subValue !== undefined && subValue !== null && (
-                        <Badge variant={subValue >= 0 ? "success" : "destructive"} className={cn("text-[10px] sm:text-xs font-bold px-1.5 py-0.5", subValueClassName)}>
-                            {subValue > 0 ? '+' : ''}{subValue.toFixed(2)}%
+                        <Badge
+                            variant={(typeof subValue === 'number' ? subValue >= 0 : true) ? "success" : "destructive"}
+                            className={cn("text-[10px] sm:text-xs font-bold px-1.5 py-0.5", subValueClassName)}
+                        >
+                            {typeof subValue === 'number' ? (
+                                `${subValue > 0 ? '+' : ''}${subValue.toFixed(2)}%`
+                            ) : subValue}
                         </Badge>
                     )}
                 </div>
@@ -97,7 +102,7 @@ export function MetricCard({
                                 <Line
                                     type="monotone"
                                     dataKey="value"
-                                    stroke={subValue && subValue >= 0 ? "#10b981" : "#ef4444"}
+                                    stroke={(typeof subValue === 'number' ? subValue >= 0 : true) ? "#10b981" : "#ef4444"}
                                     strokeWidth={3}
                                     dot={false}
                                     isAnimationActive={false}
