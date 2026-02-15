@@ -131,7 +131,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
     */
 
     const [visibleColumns, setVisibleColumns] = useState<string[]>(DEFAULT_VISIBLE_COLUMNS);
-    const [showLots, setShowLots] = useState(false);
+    const [expandedLots, setExpandedLots] = useState<Set<string>>(new Set());
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'Mkt Val', direction: 'desc' });
     const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
     const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
@@ -215,10 +215,17 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
             }
         }
 
-        // Show Lots
-        const savedShowLots = localStorage.getItem('investa_holdings_show_lots');
-        if (savedShowLots) {
-            setShowLots(savedShowLots === 'true');
+        // Expanded Lots
+        const savedExpandedLots = localStorage.getItem('investa_holdings_expanded_lots');
+        if (savedExpandedLots) {
+            try {
+                const parsed = JSON.parse(savedExpandedLots);
+                if (Array.isArray(parsed)) {
+                    setExpandedLots(new Set(parsed));
+                }
+            } catch (e) {
+                console.error("Failed to parse saved expanded lots", e);
+            }
         }
 
         setIsInitialized(true);
@@ -236,11 +243,11 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
         localStorage.setItem('investa_holdings_sort', JSON.stringify(sortConfig));
     }, [sortConfig, isInitialized]);
 
-    // Persist showLots to localStorage on change
+    // Persist expandedLots to localStorage on change
     useEffect(() => {
         if (!isInitialized) return;
-        localStorage.setItem('investa_holdings_show_lots', String(showLots));
-    }, [showLots, isInitialized]);
+        localStorage.setItem('investa_holdings_expanded_lots', JSON.stringify(Array.from(expandedLots)));
+    }, [expandedLots, isInitialized]);
 
     // Close menus when clicking outside
     useEffect(() => {
@@ -600,6 +607,33 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
         );
     };
 
+    const getExpansionKey = (holding: Holding) => {
+        return visibleColumns.includes('Account') ? `${holding.Symbol}-${holding.Account}` : holding.Symbol;
+    };
+
+    const toggleLotExpansion = (key: string) => {
+        setExpandedLots(prev => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
+    };
+
+    const toggleAllLots = () => {
+        if (expandedLots.size > 0) {
+            setExpandedLots(new Set());
+        } else {
+            const allKeys = new Set<string>();
+            aggregatedHoldings.forEach(h => {
+                if (h.lots && h.lots.length > 0) {
+                    allKeys.add(getExpansionKey(h));
+                }
+            });
+            setExpandedLots(allKeys);
+        }
+    };
+
 
 
     const toggleAccount = (account: string) => {
@@ -854,15 +888,15 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                             <span className="hidden sm:inline">Closed</span>
                         </button>
 
-                        {/* Show/Hide Lots Toggle */}
+                        {/* Toggle All Lots Helper */}
                         <button
-                            onClick={() => setShowLots(!showLots)}
+                            onClick={toggleAllLots}
                             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 text-center transition-colors
-                            ${showLots
+                            ${expandedLots.size > 0
                                     ? 'bg-[#0097b2] text-white shadow-sm border-transparent'
                                     : 'text-foreground bg-secondary border-border hover:bg-accent/10'
                                 }`}
-                            title={showLots ? 'Hide Tax Lots' : 'Show Tax Lots'}
+                            title={expandedLots.size > 0 ? 'Collapse All Tax Lots' : 'Show All Tax Lots'}
                         >
                             <Layers className="w-3.5 h-3.5" />
                             <span className="hidden sm:inline">Lots</span>
@@ -988,149 +1022,187 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                         </tr>
                                         {/* Group Items */}
                                         {expandedGroups.has(group.key) && group.holdings.map((holding, idx) => (
-                                            <tr key={`${holding.Symbol}-${idx}`} className="hover:bg-accent/5 transition-colors">
-                                                {visibleColumns.map(header => {
-                                                    const val = getValue(holding, header);
-                                                    const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
-                                                    const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
+                                            <React.Fragment key={`${holding.Symbol}-${idx}`}>
+                                                <tr className="hover:bg-accent/5 transition-colors">
+                                                    {visibleColumns.map(header => {
+                                                        const val = getValue(holding, header);
+                                                        const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
+                                                        const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
 
-                                                    return (
-                                                        <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')}`}>
-                                                            {header === '7d Trend' ? (
-                                                                <div className="h-10 w-28 ml-auto">
-                                                                    {val && Array.isArray(val) && val.length > 1 ? (
-                                                                        <ResponsiveContainer width="100%" height="100%" minWidth={50} minHeight={30}>
-                                                                            <AreaChart data={val.map((v, i) => ({ value: v, index: i }))}>
-                                                                                <defs>
-                                                                                    {(() => {
-                                                                                        const baseline = val[0];
-                                                                                        const min = Math.min(...val);
-                                                                                        const max = Math.max(...val);
-                                                                                        const range = max - min;
-                                                                                        const off = range <= 0 ? 0 : (max - baseline) / range;
+                                                        return (
+                                                            <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')}`}>
+                                                                {header === '7d Trend' ? (
+                                                                    <div className="h-10 w-28 ml-auto">
+                                                                        {val && Array.isArray(val) && val.length > 1 ? (
+                                                                            <ResponsiveContainer width="100%" height="100%" minWidth={50} minHeight={30}>
+                                                                                <AreaChart data={val.map((v, i) => ({ value: v, index: i }))}>
+                                                                                    <defs>
+                                                                                        {(() => {
+                                                                                            const baseline = val[0];
+                                                                                            const min = Math.min(...val);
+                                                                                            const max = Math.max(...val);
+                                                                                            const range = max - min;
+                                                                                            const off = range <= 0 ? 0 : (max - baseline) / range;
 
-                                                                                        return (
-                                                                                            <>
-                                                                                                <linearGradient id={`splitFill-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
-                                                                                                    <stop offset={off} stopColor="#10b981" stopOpacity={0.15} />
-                                                                                                    <stop offset={off} stopColor="#ef4444" stopOpacity={0.15} />
-                                                                                                </linearGradient>
-                                                                                                <linearGradient id={`splitStroke-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
-                                                                                                    <stop offset={off} stopColor="#10b981" stopOpacity={1} />
-                                                                                                    <stop offset={off} stopColor="#ef4444" stopOpacity={1} />
-                                                                                                </linearGradient>
-                                                                                            </>
-                                                                                        );
-                                                                                    })()}
-                                                                                </defs>
-                                                                                <YAxis hide domain={['dataMin', 'dataMax']} />
-                                                                                <ReferenceLine y={val[0]} stroke="#71717a" strokeDasharray="2 2" strokeOpacity={0.3} />
-                                                                                <Area
-                                                                                    type="monotone"
-                                                                                    dataKey="value"
-                                                                                    baseValue={val[0]}
-                                                                                    stroke={`url(#splitStroke-${holding.Symbol})`}
-                                                                                    fill={`url(#splitFill-${holding.Symbol})`}
-                                                                                    strokeWidth={1.5}
-                                                                                    isAnimationActive={false}
-                                                                                    dot={(props: any) => {
-                                                                                        const { cx, cy, index } = props;
-                                                                                        if (index === val.length - 1) {
-                                                                                            const color = val[val.length - 1] >= val[0] ? "#10b981" : "#ef4444";
                                                                                             return (
-                                                                                                <circle key="dot" cx={cx} cy={cy} r={2} fill={color} stroke="none" />
+                                                                                                <>
+                                                                                                    <linearGradient id={`splitFill-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
+                                                                                                        <stop offset={off} stopColor="#10b981" stopOpacity={0.15} />
+                                                                                                        <stop offset={off} stopColor="#ef4444" stopOpacity={0.15} />
+                                                                                                    </linearGradient>
+                                                                                                    <linearGradient id={`splitStroke-${holding.Symbol}`} x1="0" y1="0" x2="0" y2="1">
+                                                                                                        <stop offset={off} stopColor="#10b981" stopOpacity={1} />
+                                                                                                        <stop offset={off} stopColor="#ef4444" stopOpacity={1} />
+                                                                                                    </linearGradient>
+                                                                                                </>
                                                                                             );
-                                                                                        }
-                                                                                        return null;
-                                                                                    }}
-                                                                                />
-                                                                            </AreaChart>
-                                                                        </ResponsiveContainer>
-                                                                    ) : (
-                                                                        <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground/50">
-                                                                            no data
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            ) : header === 'Symbol' ? (
-                                                                <div className="flex items-center gap-3">
-                                                                    {/* Watchlist Star */}
-                                                                    <WatchlistStar
-                                                                        symbol={holding.Symbol}
-                                                                        className="text-muted-foreground hover:text-amber-400"
-                                                                    />
-
-                                                                    {/* Logo */}
-
-
-                                                                    <div className="flex flex-col">
-                                                                        <span
-                                                                            className="font-bold text-foreground hover:text-cyan-500 cursor-pointer transition-colors"
-                                                                            onClick={() => openStockDetail(holding.Symbol)}
-                                                                        >
-                                                                            {holding.Symbol}
-                                                                        </span>
-                                                                        {showLots && holding.lots && holding.lots.length > 0 && (
-                                                                            <div className="flex items-center gap-1 mt-0.5" title={`${holding.lots.length} tax lots`}>
-                                                                                <Layers className="w-3 h-3 text-muted-foreground" />
-                                                                                <span className="text-[10px] text-muted-foreground">{holding.lots.length} Lots</span>
+                                                                                        })()}
+                                                                                    </defs>
+                                                                                    <YAxis hide domain={['dataMin', 'dataMax']} />
+                                                                                    <ReferenceLine y={val[0]} stroke="#71717a" strokeDasharray="2 2" strokeOpacity={0.3} />
+                                                                                    <Area
+                                                                                        type="monotone"
+                                                                                        dataKey="value"
+                                                                                        baseValue={val[0]}
+                                                                                        stroke={`url(#splitStroke-${holding.Symbol})`}
+                                                                                        fill={`url(#splitFill-${holding.Symbol})`}
+                                                                                        strokeWidth={1.5}
+                                                                                        isAnimationActive={false}
+                                                                                        dot={(props: any) => {
+                                                                                            const { cx, cy, index } = props;
+                                                                                            if (index === val.length - 1) {
+                                                                                                const color = val[val.length - 1] >= val[0] ? "#10b981" : "#ef4444";
+                                                                                                return (
+                                                                                                    <circle key="dot" cx={cx} cy={cy} r={2} fill={color} stroke="none" />
+                                                                                                );
+                                                                                            }
+                                                                                            return null;
+                                                                                        }}
+                                                                                    />
+                                                                                </AreaChart>
+                                                                            </ResponsiveContainer>
+                                                                        ) : (
+                                                                            <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground/50">
+                                                                                no data
                                                                             </div>
                                                                         )}
                                                                     </div>
-                                                                </div>
-                                                            ) : header === 'Tags' ? (
-                                                                <div className="group/tags flex items-center gap-2 justify-start min-w-[100px]">
-                                                                    {editingTags?.symbol === holding.Symbol && editingTags?.account === (holding.Account || 'All') ? (
-                                                                        <div className="flex items-center gap-1 animate-in fade-in zoom-in duration-200">
-                                                                            <input
-                                                                                type="text"
-                                                                                value={tagsInput}
-                                                                                onChange={(e) => setTagsInput(e.target.value)}
-                                                                                className="w-32 h-7 text-xs bg-background border border-cyan-500/50 rounded px-2 focus:outline-none focus:ring-1 focus:ring-cyan-500 shadow-sm"
-                                                                                placeholder="e.g. Dividend, Tech"
-                                                                                autoFocus
-                                                                                onKeyDown={(e) => {
-                                                                                    if (e.key === 'Enter') handleSaveTags();
-                                                                                    if (e.key === 'Escape') setEditingTags(null);
-                                                                                }}
-                                                                            />
-                                                                            <button onClick={handleSaveTags} className="p-1 hover:bg-emerald-500/10 text-emerald-600 rounded">
-                                                                                <Save className="w-3.5 h-3.5" />
-                                                                            </button>
-                                                                            <button onClick={() => setEditingTags(null)} className="p-1 hover:bg-red-500/10 text-red-600 rounded">
-                                                                                <X className="w-3.5 h-3.5" />
-                                                                            </button>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <>
-                                                                            {val && Array.isArray(val) && val.length > 0 ? (
-                                                                                <div className="flex flex-wrap gap-1">
-                                                                                    {val.map((tag: string, i: number) => (
-                                                                                        <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-500/20">
-                                                                                            {tag}
-                                                                                        </span>
-                                                                                    ))}
-                                                                                </div>
-                                                                            ) : (
-                                                                                <span className="text-muted-foreground/30 text-xs italic group-hover/tags:opacity-100 opacity-0 transition-opacity">Add tags...</span>
-                                                                            )}
+                                                                ) : header === 'Symbol' ? (
+                                                                    <div className="flex items-center gap-3">
+                                                                        {/* Watchlist Star */}
+                                                                        <WatchlistStar
+                                                                            symbol={holding.Symbol}
+                                                                            className="text-muted-foreground hover:text-amber-400"
+                                                                        />
 
-                                                                            <button
-                                                                                onClick={() => handleEditTags(holding.Symbol, holding.Account || 'All', Array.isArray(val) ? val as string[] : [])}
-                                                                                className="opacity-0 group-hover/tags:opacity-100 p-1 hover:bg-secondary rounded-full transition-all text-muted-foreground hover:text-foreground"
-                                                                            >
-                                                                                <PenLine className="w-3 h-3" />
-                                                                            </button>
-                                                                        </>
-                                                                    )}
-                                                                </div>
-                                                            ) : (
-                                                                formatValue(val, header)
-                                                            )}
-                                                        </td>
-                                                    );
-                                                })}
-                                            </tr>
+                                                                        {/* Logo */}
+
+
+                                                                        <div className="flex flex-col">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span
+                                                                                    className="font-bold text-foreground hover:text-cyan-500 cursor-pointer transition-colors"
+                                                                                    onClick={() => openStockDetail(holding.Symbol)}
+                                                                                >
+                                                                                    {holding.Symbol}
+                                                                                </span>
+                                                                                {holding.lots && holding.lots.length > 0 && (
+                                                                                    <button
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            toggleLotExpansion(getExpansionKey(holding));
+                                                                                        }}
+                                                                                        className="p-0.5 hover:bg-accent/20 rounded-md transition-colors"
+                                                                                        title={expandedLots.has(getExpansionKey(holding)) ? "Hide Lots" : "Show Lots"}
+                                                                                    >
+                                                                                        {expandedLots.has(getExpansionKey(holding)) ? (
+                                                                                            <ChevronDown className="w-3.5 h-3.5 text-cyan-500" />
+                                                                                        ) : (
+                                                                                            <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                                                                                        )}
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
+                                                                            {holding.lots && holding.lots.length > 0 && (
+                                                                                <div className="flex items-center gap-1 mt-0.5" title={`${holding.lots.length} tax lots`}>
+                                                                                    <Layers className="w-3 h-3 text-muted-foreground" />
+                                                                                    <span className="text-[10px] text-muted-foreground">{holding.lots.length} Lots</span>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                ) : header === 'Tags' ? (
+                                                                    <div className="group/tags flex items-center gap-2 justify-start min-w-[100px]">
+                                                                        {editingTags?.symbol === holding.Symbol && editingTags?.account === (holding.Account || 'All') ? (
+                                                                            <div className="flex items-center gap-1 animate-in fade-in zoom-in duration-200">
+                                                                                <input
+                                                                                    type="text"
+                                                                                    value={tagsInput}
+                                                                                    onChange={(e) => setTagsInput(e.target.value)}
+                                                                                    className="w-32 h-7 text-xs bg-background border border-cyan-500/50 rounded px-2 focus:outline-none focus:ring-1 focus:ring-cyan-500 shadow-sm"
+                                                                                    placeholder="e.g. Dividend, Tech"
+                                                                                    autoFocus
+                                                                                    onKeyDown={(e) => {
+                                                                                        if (e.key === 'Enter') handleSaveTags();
+                                                                                        if (e.key === 'Escape') setEditingTags(null);
+                                                                                    }}
+                                                                                />
+                                                                                <button onClick={handleSaveTags} className="p-1 hover:bg-emerald-500/10 text-emerald-600 rounded">
+                                                                                    <Save className="w-3.5 h-3.5" />
+                                                                                </button>
+                                                                                <button onClick={() => setEditingTags(null)} className="p-1 hover:bg-red-500/10 text-red-600 rounded">
+                                                                                    <X className="w-3.5 h-3.5" />
+                                                                                </button>
+                                                                            </div>
+                                                                        ) : (
+                                                                            <>
+                                                                                {val && Array.isArray(val) && val.length > 0 ? (
+                                                                                    <div className="flex flex-wrap gap-1">
+                                                                                        {val.map((tag: string, i: number) => (
+                                                                                            <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-500/20">
+                                                                                                {tag}
+                                                                                            </span>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <span className="text-muted-foreground/30 text-xs italic group-hover/tags:opacity-100 opacity-0 transition-opacity">Add tags...</span>
+                                                                                )}
+
+                                                                                <button
+                                                                                    onClick={() => handleEditTags(holding.Symbol, holding.Account || 'All', Array.isArray(val) ? val as string[] : [])}
+                                                                                    className="opacity-0 group-hover/tags:opacity-100 p-1 hover:bg-secondary rounded-full transition-all text-muted-foreground hover:text-foreground"
+                                                                                >
+                                                                                    <PenLine className="w-3 h-3" />
+                                                                                </button>
+                                                                            </>
+                                                                        )}
+                                                                    </div>
+                                                                ) : (
+                                                                    formatValue(val, header)
+                                                                )}
+                                                            </td>
+                                                        );
+                                                    })}
+                                                </tr>
+                                                {expandedLots.has(getExpansionKey(holding)) && holding.lots && holding.lots.length > 0 && (
+                                                    holding.lots.map((lot, lotIdx) => (
+                                                        <tr key={`${holding.Symbol}-lot-${lotIdx}`} className="bg-zinc-50/50 dark:bg-zinc-900/40">
+                                                            {visibleColumns.map(header => {
+                                                                const holdingPrice = getValue(holding, "Price") as number;
+                                                                const val = getLotValue(lot, header, holdingPrice);
+                                                                const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
+
+                                                                return (
+                                                                    <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-t border-dashed border-border/40 ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')}`}>
+                                                                        {header === 'Symbol' && <span className="text-[10px] opacity-50">↳</span>}
+                                                                        {formatValue(val, header)}
+                                                                    </td>
+                                                                );
+                                                            })}
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </React.Fragment>
                                         ))}
                                     </React.Fragment>
                                 ))
@@ -1207,12 +1279,30 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                         ) : header === 'Symbol' ? (
                                                             <div className="flex items-center justify-start gap-3">
                                                                 <WatchlistStar symbol={val as string} size="md" />
-                                                                <button
-                                                                    onClick={() => openStockDetail(val as string, currency)}
-                                                                    className="font-semibold text-foreground hover:text-cyan-500 transition-colors cursor-pointer"
-                                                                >
-                                                                    {formatValue(val, header)}
-                                                                </button>
+                                                                <div className="flex items-center gap-2">
+                                                                    <button
+                                                                        onClick={() => openStockDetail(val as string, currency)}
+                                                                        className="font-semibold text-foreground hover:text-cyan-500 transition-colors cursor-pointer"
+                                                                    >
+                                                                        {formatValue(val, header)}
+                                                                    </button>
+                                                                    {holding.lots && holding.lots.length > 0 && (
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                toggleLotExpansion(getExpansionKey(holding));
+                                                                            }}
+                                                                            className="p-0.5 hover:bg-accent/20 rounded-md transition-colors"
+                                                                            title={expandedLots.has(getExpansionKey(holding)) ? "Hide Lots" : "Show Lots"}
+                                                                        >
+                                                                            {expandedLots.has(getExpansionKey(holding)) ? (
+                                                                                <ChevronDown className="w-3.5 h-3.5 text-cyan-500" />
+                                                                            ) : (
+                                                                                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                                                                            )}
+                                                                        </button>
+                                                                    )}
+                                                                </div>
                                                             </div>
                                                         ) : header === 'Tags' ? (
                                                             <div className="flex items-center justify-end gap-2 group/tags min-w-[120px]">
@@ -1247,7 +1337,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                 );
                                             })}
                                         </tr>
-                                        {showLots && holding.lots && holding.lots.length > 0 && (
+                                        {expandedLots.has(getExpansionKey(holding)) && holding.lots && holding.lots.length > 0 && (
                                             holding.lots.map((lot, lotIdx) => (
                                                 <tr key={`${holding.Symbol}-lot-${lotIdx}`} className="bg-zinc-50/50 dark:bg-zinc-900/40">
                                                     {visibleColumns.map(header => {
@@ -1324,7 +1414,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                             </div>
 
                             {/* Mobile Lots View */}
-                            {showLots && holding.lots && holding.lots.length > 0 && (
+                            {expandedLots.has(getExpansionKey(holding)) && holding.lots && holding.lots.length > 0 && (
                                 <div className="mt-4 pt-3 border-t border-black/5 dark:border-white/10">
                                     <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Tax Lots</h4>
                                     <div className="space-y-2">
