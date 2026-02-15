@@ -1133,8 +1133,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
             <div className="absolute inset-0 bg-black/60" onClick={onClose} />
 
             <div
-                style={{ backgroundColor: 'var(--menu-solid)' }}
-                className="relative w-full max-w-5xl h-[94vh] sm:h-auto sm:max-h-[90vh] rounded-t-[2.5rem] sm:rounded-[2rem] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-300"
+                className="relative w-full max-w-5xl h-[94vh] sm:h-auto sm:max-h-[90vh] rounded-t-[2.5rem] sm:rounded-[2rem] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 bg-card"
             >
 
                 {/* Mobile Drag Handle */}

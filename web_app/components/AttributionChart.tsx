@@ -130,8 +130,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
             <div
-                style={{ backgroundColor: 'var(--menu-solid)' }}
-                className="relative w-full max-w-5xl h-[94vh] sm:h-auto sm:max-h-[90vh] rounded-t-[2.5rem] sm:rounded-[2rem] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 pointer-events-auto"
+                className="relative w-full max-w-5xl h-[94vh] sm:h-auto sm:max-h-[90vh] rounded-t-[2.5rem] sm:rounded-[2rem] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 pointer-events-auto bg-card"
             >
                 {/* Mobile Drag Handle */}
                 <div className="sm:hidden w-full flex justify-center pt-3 pb-1 flex-shrink-0">
@@ -179,7 +178,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto p-4 sm:p-8 custom-scrollbar bg-card/20">
+                <div className="flex-1 overflow-y-auto p-4 sm:p-8 custom-scrollbar bg-card/40">
                     {loading ? (
                         <div className="flex flex-col items-center justify-center py-24 gap-4">
                             <div className="relative">
@@ -222,7 +221,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                                                     </span>
                                                 ))}
                                                 {stock.value > 0 && (
-                                                    <span className="ml-1 px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 text-[9px] font-bold uppercase tracking-wider border border-emerald-500/20">
+                                                    <span className="ml-1 px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-500 text-[10px] font-bold uppercase tracking-wider border border-emerald-500/30 whitespace-nowrap">
                                                         Held
                                                     </span>
                                                 )}
@@ -328,7 +327,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
                                             </span>
                                         ))}
                                         {stock.value > 0 && (
-                                            <span className="ml-1 px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-500 text-[8px] font-bold uppercase tracking-wider border border-emerald-500/20 leading-none">
+                                            <span className="ml-1 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-500 text-[9px] font-bold uppercase tracking-wider border border-emerald-500/30 leading-none whitespace-nowrap">
                                                 Held
                                             </span>
                                         )}
