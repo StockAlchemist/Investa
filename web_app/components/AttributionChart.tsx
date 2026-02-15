@@ -209,16 +209,16 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                                         }
                                     }}
                                 >
-                                    <div className="flex items-center gap-4">
-                                        <div className="bg-background w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform shadow-sm border border-border/50 p-2">
+                                    <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 mr-2">
+                                        <div className="bg-background w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform shadow-sm border border-border/50 p-1.5 sm:p-2">
                                             <StockIcon symbol={stock.symbol.split(',')[0]} size="100%" />
                                         </div>
                                         <div className="flex flex-col min-w-0">
-                                            <div className="flex flex-wrap gap-1.5 items-center">
+                                            <div className="flex flex-wrap gap-1 items-center">
                                                 {stock.symbol.split(',').map(s => s.trim()).map((sym, i, arr) => (
                                                     <span
                                                         key={sym}
-                                                        className="text-base font-bold text-foreground hover:text-cyan-500 transition-colors z-10"
+                                                        className="text-sm sm:text-base font-bold text-foreground hover:text-cyan-500 transition-colors z-10"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             setSelectedSymbol(sym);
@@ -228,27 +228,29 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                                                     </span>
                                                 ))}
                                                 {stock.value > 0 && (
-                                                    <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase tracking-wider whitespace-nowrap leading-none">
+                                                    <span className="ml-1 px-1.5 py-0.5 rounded text-[8px] sm:text-[9px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase tracking-wider whitespace-nowrap leading-none">
                                                         Held
                                                     </span>
                                                 )}
                                             </div>
-                                            <span className="text-xs text-muted-foreground truncate max-w-[180px] font-medium">{stock.name}</span>
+                                            <span className="text-[10px] sm:text-xs text-muted-foreground truncate font-medium">{stock.name}</span>
                                         </div>
                                     </div>
-                                    <div className="text-right flex flex-col items-end gap-1">
-                                        <div className="flex items-center justify-end gap-2">
+                                    <div className="text-right flex flex-col items-end gap-0.5 min-w-0 flex-shrink-0">
+                                        <div className="flex items-center justify-end gap-1.5">
                                             {stock.gain >= 0 ?
-                                                <div className="bg-emerald-500/10 p-1 rounded-full"><TrendingUp className="w-3.5 h-3.5 text-emerald-500" /></div> :
-                                                <div className="bg-red-500/10 p-1 rounded-full"><TrendingDown className="w-3.5 h-3.5 text-red-500" /></div>
+                                                <div className="bg-emerald-500/10 p-0.5 rounded-full"><TrendingUp className="w-3 h-3 text-emerald-500" /></div> :
+                                                <div className="bg-red-500/10 p-0.5 rounded-full"><TrendingDown className="w-3 h-3 text-red-500" /></div>
                                             }
-                                            <span className={cn("text-base font-medium tracking-tight", stock.gain >= 0 ? 'text-emerald-500' : 'text-red-500')}>
+                                            <span className={cn("text-sm sm:text-base font-medium tracking-tight whitespace-nowrap", stock.gain >= 0 ? 'text-emerald-500' : 'text-red-500')}>
                                                 {stock.gain >= 0 ? '+' : ''}{formatCurrencyHelper(stock.gain, currency)}
-                                                <span className="text-xs ml-1 opacity-80">({formatPercentHelper(stock.contribution)})</span>
+                                                <span className="text-[10px] sm:text-xs ml-1 opacity-80">({formatPercentHelper(stock.contribution)})</span>
                                             </span>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-[10px] font-medium text-cyan-500 uppercase tracking-widest">{stock.sector}</span>
+                                        <div className="flex items-center gap-1 justify-end max-w-full">
+                                            <span className="text-[9px] sm:text-[10px] font-medium text-cyan-500 uppercase tracking-wider truncate">
+                                                {stock.sector}
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
