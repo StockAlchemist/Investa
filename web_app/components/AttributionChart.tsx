@@ -138,7 +138,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                 </div>
 
                 {/* Header */}
-                <div className="sticky top-0 z-50 bg-card/50 backdrop-blur-md border-b border-border flex-shrink-0 shadow-sm overflow-hidden">
+                <div className="sticky top-0 z-50 bg-card border-b border-border flex-shrink-0 shadow-sm overflow-hidden">
                     <div className="hidden sm:block absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-[100px] -mr-32 -mt-32" />
 
                     <div className="p-5 sm:p-8 pb-4 sm:pb-6 flex justify-between items-start relative z-10">
@@ -168,7 +168,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                             <input
                                 type="search"
                                 placeholder="Search symbols, names, or sectors..."
-                                className="w-full bg-background/50 border border-border rounded-xl sm:rounded-2xl px-5 py-3 sm:py-4 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 transition-all backdrop-blur-sm"
+                                className="w-full bg-secondary border border-border rounded-md px-5 py-3 sm:py-4 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 transition-all"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 autoFocus
@@ -178,7 +178,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto p-4 sm:p-8 custom-scrollbar bg-card/40">
+                <div className="flex-1 overflow-y-auto p-4 sm:p-8 custom-scrollbar bg-card">
                     {loading ? (
                         <div className="flex flex-col items-center justify-center py-24 gap-4">
                             <div className="relative">
@@ -194,7 +194,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                             {filteredData.map((stock, idx) => (
                                 <div
                                     key={`${stock.symbol}-${idx}`}
-                                    className="flex items-center justify-between p-4 bg-card/50 hover:bg-accent/10 rounded-2xl border border-border/50 hover:border-cyan-500/30 transition-all cursor-pointer group hover:scale-[1.01] active:scale-[0.99] duration-200"
+                                    className="flex items-center justify-between p-4 bg-card hover:bg-accent/5 rounded-2xl border border-border shadow-sm transition-all cursor-pointer group hover:scale-[1.01] active:scale-[0.99] duration-200"
                                     onClick={() => {
                                         const symbols = stock.symbol.split(',').map(s => s.trim());
                                         if (symbols.length === 1) {
@@ -221,7 +221,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                                                     </span>
                                                 ))}
                                                 {stock.value > 0 && (
-                                                    <span className="ml-1 px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-500 text-[10px] font-bold uppercase tracking-wider border border-emerald-500/30 whitespace-nowrap">
+                                                    <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase tracking-wider whitespace-nowrap leading-none">
                                                         Held
                                                     </span>
                                                 )}
@@ -327,7 +327,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
                                             </span>
                                         ))}
                                         {stock.value > 0 && (
-                                            <span className="ml-1 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-500 text-[9px] font-bold uppercase tracking-wider border border-emerald-500/30 leading-none whitespace-nowrap">
+                                            <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase tracking-wider whitespace-nowrap leading-none">
                                                 Held
                                             </span>
                                         )}
