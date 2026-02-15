@@ -166,6 +166,7 @@ export default function Dashboard({
                 return <MetricCard
                     title="IRR (MWR)"
                     value={m?.portfolio_mwr !== undefined && m?.portfolio_mwr !== null ? `${m.portfolio_mwr.toFixed(2)}%` : '-'}
+                    subValue="Ann."
                     isCurrency={false}
                     colorClass={m?.portfolio_mwr && m.portfolio_mwr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
                     isLoading={isLoading}

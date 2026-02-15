@@ -14,7 +14,7 @@ def test_database_integrity():
     Verifies the integrity of the local SQLite database.
     Checks for: file integrity, table existence, and basic data quality.
     """
-    db_path = os.path.join(config.get_app_data_dir(), "market_data.db")
+    db_path = os.path.join(config.get_app_data_dir(), config.DB_DIR, "market_data.db")
     
     if not os.path.exists(db_path):
         pytest.skip(f"Database file not found at {db_path}")
