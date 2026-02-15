@@ -151,7 +151,7 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                                 <LayoutDashboard className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
                             </div>
                             <div className="flex-1 min-w-0">
-                                <h2 className="text-lg sm:text-3xl font-bold tracking-tight text-foreground">All Contributors (DEBUG)</h2>
+                                <h2 className="text-lg sm:text-3xl font-bold tracking-tight text-foreground">All Contributors</h2>
                                 <p className="text-muted-foreground text-[10px] sm:text-sm font-medium mt-0.5 uppercase tracking-wider opacity-70">
                                     Impact of individual holdings on performance
                                 </p>
