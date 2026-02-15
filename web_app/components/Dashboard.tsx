@@ -126,7 +126,7 @@ export default function Dashboard({
                     subValue={dayGLPct}
                     colorClass={dayGLColor}
                     valueClassName="text-xl sm:text-2xl"
-                    subValueClassName={cn("", (dayGLPct ?? 0) >= 0 ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-red-500/10 text-red-600 dark:text-red-400")}
+                    subValueClassName={cn("", (dayGLPct ?? 0) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}
                     containerClassName="h-full"
                     isHero={true}
                     currency={currency}
@@ -142,7 +142,7 @@ export default function Dashboard({
                     subValue={m?.total_return_pct}
                     colorClass={totalReturnColor}
                     valueClassName="text-xl sm:text-2xl"
-                    subValueClassName={cn("", (m?.total_return_pct ?? 0) >= 0 ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-red-500/10 text-red-600 dark:text-red-400")}
+                    subValueClassName={cn("", (m?.total_return_pct ?? 0) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}
                     containerClassName="h-full"
                     isHero={true}
                     currency={currency}
@@ -159,7 +159,7 @@ export default function Dashboard({
                         `${m.annualized_twr > 0 ? '+' : ''}${m.annualized_twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% p.a.` : undefined}
                     isCurrency={false}
                     colorClass={m?.cumulative_twr && m.cumulative_twr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
-                    subValueClassName={cn("", (m?.annualized_twr ?? 0) >= 0 ? "text-emerald-600/80 dark:text-emerald-400/80" : "text-red-600/80 dark:text-red-400/80")}
+                    subValueClassName={cn("", (m?.annualized_twr ?? 0) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}
                     isLoading={isLoading}
                     isRefreshing={isRefreshing}
                     icon={Percent}
@@ -169,6 +169,7 @@ export default function Dashboard({
                     title="IRR (MWR)"
                     value={m?.portfolio_mwr !== undefined && m?.portfolio_mwr !== null ? `${m.portfolio_mwr.toFixed(2)}%` : '-'}
                     subValue="p.a."
+                    subValueClassName={cn("", (m?.portfolio_mwr ?? 0) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}
                     isCurrency={false}
                     colorClass={m?.portfolio_mwr && m.portfolio_mwr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
                     isLoading={isLoading}
