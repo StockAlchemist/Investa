@@ -156,7 +156,7 @@ export default function Dashboard({
                     value={m?.cumulative_twr !== undefined && m?.cumulative_twr !== null ?
                         `${m.cumulative_twr > 0 ? '+' : ''}${m.cumulative_twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : '-'}
                     subValue={m?.annualized_twr !== undefined && m?.annualized_twr !== null ?
-                        `${m.annualized_twr > 0 ? '+' : ''}${m.annualized_twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% Ann.` : undefined}
+                        `${m.annualized_twr > 0 ? '+' : ''}${m.annualized_twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% p.a.` : undefined}
                     isCurrency={false}
                     colorClass={m?.cumulative_twr && m.cumulative_twr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
                     subValueClassName={cn("", (m?.annualized_twr ?? 0) >= 0 ? "text-emerald-600/80 dark:text-emerald-400/80" : "text-red-600/80 dark:text-red-400/80")}
@@ -168,7 +168,7 @@ export default function Dashboard({
                 return <MetricCard
                     title="IRR (MWR)"
                     value={m?.portfolio_mwr !== undefined && m?.portfolio_mwr !== null ? `${m.portfolio_mwr.toFixed(2)}%` : '-'}
-                    subValue="Ann."
+                    subValue="p.a."
                     isCurrency={false}
                     colorClass={m?.portfolio_mwr && m.portfolio_mwr >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}
                     isLoading={isLoading}
