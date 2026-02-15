@@ -48,6 +48,14 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
         let sortableItems = [...filteredData];
         if (sortConfig !== null) {
             sortableItems.sort((a, b) => {
+                if (sortConfig.key === 'Realized Gain (Display)' && (sortConfig as any).isGainPct) {
+                    const aCostBasis = a['Total Cost Basis (Display)'] || 0;
+                    const bCostBasis = b['Total Cost Basis (Display)'] || 0;
+                    const aGainPct = aCostBasis !== 0 ? (a['Realized Gain (Display)'] || 0) / aCostBasis : 0;
+                    const bGainPct = bCostBasis !== 0 ? (b['Realized Gain (Display)'] || 0) / bCostBasis : 0;
+                    return sortConfig.direction === 'ascending' ? aGainPct - bGainPct : bGainPct - aGainPct;
+                }
+
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const aValue = a[sortConfig.key] as any;
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -80,12 +88,12 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
     const totalProceeds = filteredData.reduce((sum, item) => sum + (item['Total Proceeds (Display)'] || 0), 0);
     const totalCostBasis = filteredData.reduce((sum, item) => sum + (item['Total Cost Basis (Display)'] || 0), 0);
 
-    const requestSort = (key: keyof CapitalGain) => {
+    const requestSort = (key: keyof CapitalGain, isGainPct: boolean = false) => {
         let direction: 'ascending' | 'descending' = 'ascending';
-        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
+        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending' && (sortConfig as any).isGainPct === isGainPct) {
             direction = 'descending';
         }
-        setSortConfig({ key, direction });
+        setSortConfig({ key, direction, ...({ isGainPct } as any) });
     };
 
     const visibleData = sortedData.slice(0, visibleRows);
@@ -246,13 +254,26 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                                     <span className="text-foreground font-medium">{item.Quantity}</span>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Proceeds:</span>
+                                    <span className="text-muted-foreground">Gain %:</span>
+                                    {(() => {
+                                        const costBasis = item['Total Cost Basis (Display)'] || 0;
+                                        const gain = item['Realized Gain (Display)'] || 0;
+                                        const gainPct = costBasis !== 0 ? (gain / costBasis) * 100 : 0;
+                                        return (
+                                            <span className={`font-medium ${gainPct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}`}>
+                                                {gainPct.toFixed(2)}%
+                                            </span>
+                                        );
+                                    })()}
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Sold:</span>
                                     <span className="text-foreground font-medium whitespace-nowrap">
                                         {formatCurrency(item["Total Proceeds (Display)"] || 0, currency)}
                                     </span>
                                 </div>
-                                <div className="flex justify-between col-span-2">
-                                    <span className="text-muted-foreground">Cost Basis:</span>
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Cost:</span>
                                     <span className="text-foreground font-medium whitespace-nowrap">
                                         {formatCurrency(item["Total Cost Basis (Display)"] || 0, currency)}
                                     </span>
@@ -267,15 +288,21 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                     <table className="min-w-full divide-y divide-black/5 dark:divide-white/10">
                         <thead className="bg-secondary/50 font-semibold border-b border-border">
                             <tr>
-                                {['Date', 'Symbol', 'Account', 'Type', 'Quantity', 'Proceeds', 'Cost Basis', 'Realized Gain'].map((header) => (
+                                {['Date', 'Symbol', 'Account', 'Type', 'Quantity', 'Proceeds', 'Cost Basis', 'Realized Gain', 'Gain %'].map((header) => (
                                     <th
                                         key={header}
-                                        onClick={() => requestSort(
-                                            header === 'Realized Gain' ? 'Realized Gain (Display)' :
-                                                header === 'Proceeds' ? 'Total Proceeds (Display)' :
-                                                    header === 'Cost Basis' ? 'Total Cost Basis (Display)' :
-                                                        header as keyof CapitalGain
-                                        )}
+                                        onClick={() => {
+                                            if (header === 'Gain %') {
+                                                requestSort('Realized Gain (Display)', true);
+                                            } else {
+                                                requestSort(
+                                                    header === 'Realized Gain' ? 'Realized Gain (Display)' :
+                                                        header === 'Proceeds' ? 'Total Proceeds (Display)' :
+                                                            header === 'Cost Basis' ? 'Total Cost Basis (Display)' :
+                                                                header as keyof CapitalGain
+                                                )
+                                            }
+                                        }}
                                         className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground cursor-pointer hover:bg-accent/10 transition-colors"
                                     >
                                         {header}
@@ -315,6 +342,18 @@ export default function CapitalGains({ data, currency, isLoading }: CapitalGains
                                         <td className={`px-6 py-3 whitespace-nowrap text-sm text-right font-medium tabular-nums ${(item['Realized Gain (Display)'] || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'
                                             }`}>
                                             {formatCurrency(item['Realized Gain (Display)'] || 0, currency)}
+                                        </td>
+                                        <td className="px-6 py-3 whitespace-nowrap text-sm text-right font-medium tabular-nums">
+                                            {(() => {
+                                                const costBasis = item['Total Cost Basis (Display)'] || 0;
+                                                const gain = item['Realized Gain (Display)'] || 0;
+                                                const gainPct = costBasis !== 0 ? (gain / costBasis) * 100 : 0;
+                                                return (
+                                                    <span className={gainPct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-500'}>
+                                                        {gainPct.toFixed(2)}%
+                                                    </span>
+                                                );
+                                            })()}
                                         </td>
                                     </tr>
                                 ))
