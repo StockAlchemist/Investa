@@ -518,10 +518,13 @@ export interface AttributionData {
     total_gain: number;
 }
 
-export async function fetchAttribution(currency: string = 'USD', accounts?: string[], signal?: AbortSignal): Promise<AttributionData> {
+export async function fetchAttribution(currency: string = 'USD', accounts?: string[], showAll: boolean = false, signal?: AbortSignal): Promise<AttributionData> {
     const params = new URLSearchParams({ currency });
     if (accounts) {
         accounts.forEach(acc => params.append('accounts', acc));
+    }
+    if (showAll) {
+        params.append('show_all', 'true');
     }
     const res = await authFetch(`${API_BASE_URL}/attribution?${params.toString()}`, { signal, cache: 'no-store' });
     if (!res.ok) throw new Error('Failed to fetch attribution');

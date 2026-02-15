@@ -40,6 +40,7 @@ interface DashboardProps {
     attributionLoading?: boolean;
     holdings?: Holding[];
     visibleItems: string[];
+    accounts?: string[];
 }
 
 export default function Dashboard({
@@ -54,6 +55,7 @@ export default function Dashboard({
     attributionLoading = false,
     holdings = [],
     visibleItems,
+    accounts,
     isRefreshing = false
 }: DashboardProps) {
     const m = summary?.metrics;
@@ -252,7 +254,7 @@ export default function Dashboard({
             case 'sectorContribution':
                 return <SectorAttribution data={attributionData} isLoading={attributionLoading!} isRefreshing={isRefreshing} currency={currency} />;
             case 'topContributors':
-                return <TopContributors data={attributionData} isLoading={attributionLoading!} isRefreshing={isRefreshing} currency={currency} />;
+                return <TopContributors data={attributionData} isLoading={attributionLoading!} isRefreshing={isRefreshing} currency={currency} accounts={accounts} />;
             case 'portfolioDonut':
                 return (
                     <Card className="h-full hover:bg-accent/5 transition-all duration-300 hover:shadow-md relative overflow-hidden">

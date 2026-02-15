@@ -366,7 +366,7 @@ export default function Home() {
 
   const attributionQuery = useQuery({
     queryKey: ['attribution', user?.username, currency, selectedAccounts],
-    queryFn: ({ signal }) => fetchAttribution(currency, selectedAccounts, signal),
+    queryFn: ({ signal }) => fetchAttribution(currency, selectedAccounts, false, signal),
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,
     enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 1),
@@ -466,6 +466,7 @@ export default function Home() {
               attributionLoading={attributionQuery.isLoading && !attributionQuery.data}
               holdings={holdings}
               visibleItems={visibleItems}
+              accounts={selectedAccounts}
             />
             <PerformanceGraph
               currency={currency}

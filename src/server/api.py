@@ -3093,6 +3093,7 @@ async def get_risk_metrics(
 async def get_attribution(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),
+    show_all: bool = False,
     data: tuple = Depends(get_transaction_data),
     current_user: User = Depends(get_current_user)
 ):
@@ -3185,7 +3186,8 @@ async def get_attribution(
 
         # Sort by contribution
         sector_attribution.sort(key=lambda x: abs(x["contribution"]), reverse=True)
-        stock_data.sort(key=lambda x: abs(x["gain"]), reverse=True)
+        # Sort by gain descending (winners first)
+        stock_data.sort(key=lambda x: x.get("gain", 0), reverse=True)
         
         # Calculate contribution % for stocks
         for stock in stock_data:
@@ -3193,7 +3195,7 @@ async def get_attribution(
 
         return clean_nans({
             "sectors": sector_attribution,
-            "stocks": stock_data[:10], # Top 10 contributors/detractors
+            "stocks": stock_data if show_all else stock_data[:10], # Top 10 contributors/detractors by default
             "total_gain": total_gain
         })
     except Exception as e:
