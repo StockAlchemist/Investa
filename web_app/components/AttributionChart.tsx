@@ -60,7 +60,7 @@ export function SectorAttribution({ data, isLoading, isRefreshing = false, curre
                 )}
             </div>
             <div className="space-y-4">
-                {hasSectors ? data.sectors.map((s) => (
+                {hasSectors ? [...data.sectors].sort((a, b) => b.gain - a.gain).map((s) => (
                     <div key={s.sector}>
                         <div className="flex justify-between text-xs mb-1.5">
                             <span className="font-medium text-foreground">{s.sector}</span>

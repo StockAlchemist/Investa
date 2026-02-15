@@ -3184,8 +3184,8 @@ async def get_attribution(
                 "contribution": (d["gain"] / total_gain if total_gain != 0 else 0)
             })
 
-        # Sort by contribution
-        sector_attribution.sort(key=lambda x: abs(x["contribution"]), reverse=True)
+        # Sort by gain descending (winners first)
+        sector_attribution.sort(key=lambda x: x.get("gain", 0), reverse=True)
         # Sort by gain descending (winners first)
         stock_data.sort(key=lambda x: x.get("gain", 0), reverse=True)
         
