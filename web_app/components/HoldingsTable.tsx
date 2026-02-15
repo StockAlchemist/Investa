@@ -1279,28 +1279,36 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                         ) : header === 'Symbol' ? (
                                                             <div className="flex items-center justify-start gap-3">
                                                                 <WatchlistStar symbol={val as string} size="md" />
-                                                                <div className="flex items-center gap-2">
-                                                                    <button
-                                                                        onClick={() => openStockDetail(val as string, currency)}
-                                                                        className="font-semibold text-foreground hover:text-cyan-500 transition-colors cursor-pointer"
-                                                                    >
-                                                                        {formatValue(val, header)}
-                                                                    </button>
-                                                                    {holding.lots && holding.lots.length > 0 && (
+                                                                <div className="flex flex-col">
+                                                                    <div className="flex items-center gap-2">
                                                                         <button
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                toggleLotExpansion(getExpansionKey(holding));
-                                                                            }}
-                                                                            className="p-0.5 hover:bg-accent/20 rounded-md transition-colors"
-                                                                            title={expandedLots.has(getExpansionKey(holding)) ? "Hide Lots" : "Show Lots"}
+                                                                            onClick={() => openStockDetail(val as string, currency)}
+                                                                            className="font-semibold text-foreground hover:text-cyan-500 transition-colors cursor-pointer"
                                                                         >
-                                                                            {expandedLots.has(getExpansionKey(holding)) ? (
-                                                                                <ChevronDown className="w-3.5 h-3.5 text-cyan-500" />
-                                                                            ) : (
-                                                                                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-                                                                            )}
+                                                                            {formatValue(val, header)}
                                                                         </button>
+                                                                        {holding.lots && holding.lots.length > 0 && (
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    toggleLotExpansion(getExpansionKey(holding));
+                                                                                }}
+                                                                                className="p-0.5 hover:bg-accent/20 rounded-md transition-colors"
+                                                                                title={expandedLots.has(getExpansionKey(holding)) ? "Hide Lots" : "Show Lots"}
+                                                                            >
+                                                                                {expandedLots.has(getExpansionKey(holding)) ? (
+                                                                                    <ChevronDown className="w-3.5 h-3.5 text-cyan-500" />
+                                                                                ) : (
+                                                                                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                                                                                )}
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                    {holding.lots && holding.lots.length > 0 && (
+                                                                        <div className="flex items-center gap-1 mt-0.5" title={`${holding.lots.length} tax lots`}>
+                                                                            <Layers className="w-3 h-3 text-muted-foreground" />
+                                                                            <span className="text-[10px] text-muted-foreground">{holding.lots.length} Lots</span>
+                                                                        </div>
                                                                     )}
                                                                 </div>
                                                             </div>
@@ -1375,15 +1383,40 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                     <WatchlistStar symbol={holding.Symbol} size="md" />
                                     <div>
                                         <h3 className="text-lg font-bold text-foreground">{holding.Symbol}</h3>
-                                        <p className="text-xs text-muted-foreground">{holding.Account}</p>
+                                        <div className="flex items-center gap-2">
+                                            <p className="text-xs text-muted-foreground">{holding.Account}</p>
+                                            {holding.lots && holding.lots.length > 0 && (
+                                                <div className="flex items-center gap-1" title={`${holding.lots.length} tax lots`}>
+                                                    <Layers className="w-3 h-3 text-muted-foreground" />
+                                                    <span className="text-[10px] text-muted-foreground">{holding.lots.length} Lots</span>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="text-right">
                                     <div className="text-lg font-bold text-foreground">
                                         {formatValue(getValue(holding, "Mkt Val"), "Mkt Val")}
                                     </div>
-                                    <div className={`text-sm ${getCellClass(getValue(holding, "Day Chg %"), "Day Chg %")}`}>
-                                        {formatValue(getValue(holding, "Day Chg"), "Day Chg")} ({formatValue(getValue(holding, "Day Chg %"), "Day Chg %")})
+                                    <div className="flex items-center justify-end gap-2">
+                                        <div className={`text-sm ${getCellClass(getValue(holding, "Day Chg %"), "Day Chg %")}`}>
+                                            {formatValue(getValue(holding, "Day Chg"), "Day Chg")} ({formatValue(getValue(holding, "Day Chg %"), "Day Chg %")})
+                                        </div>
+                                        {holding.lots && holding.lots.length > 0 && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    toggleLotExpansion(getExpansionKey(holding));
+                                                }}
+                                                className="p-1 hover:bg-accent/20 rounded-md"
+                                            >
+                                                {expandedLots.has(getExpansionKey(holding)) ? (
+                                                    <ChevronDown className="w-4 h-4 text-cyan-500" />
+                                                ) : (
+                                                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                                                )}
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             </div>
