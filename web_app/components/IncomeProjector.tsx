@@ -42,7 +42,6 @@ export function IncomeProjector({ data, isLoading, currency }: IncomeProjectorPr
         return null;
     }
 
-    const totalProjected = data.reduce((sum, item) => sum + item.value, 0);
 
     return (
         <Card className="bg-card border border-border overflow-hidden mb-6 shadow-sm">
@@ -51,9 +50,6 @@ export function IncomeProjector({ data, isLoading, currency }: IncomeProjectorPr
                     <CardTitle className="text-lg font-semibold text-foreground">
                         Projected 12M Income
                     </CardTitle>
-                    <p className="text-sm text-muted-foreground mt-1">
-                        Est. Total: <span className="text-emerald-500 font-bold">{formatCurrency(totalProjected, currency)}</span>
-                    </p>
                 </div>
             </CardHeader>
             <CardContent className="h-[300px] w-full pl-0 pb-2">

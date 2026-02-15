@@ -73,6 +73,7 @@ try:
         get_currency_symbol_from_code,
         get_historical_rate_via_usd_bridge,  # Added for dividend history
         get_cash_flows_for_mwr, # Used for overall MWR
+        calculate_indicated_dividend, # NEW: Unified dividend logic
     )
 except ImportError:
     logging.critical(
@@ -984,29 +985,21 @@ def _build_summary_rows(
             has_errors = True
             fx_rate = np.nan
 
-        # --- Dividend Yield and Income Calculations (in local currency first) ---
-        trailing_annual_dividend_rate_local = stock_data.get(
-            "trailingAnnualDividendRate"
-        )  # This is per share
-        dividend_yield_on_current_direct = stock_data.get(
-            "dividendYield"
-        )  # This is a fraction e.g. 0.02 for 2%
+        # --- NEW: Unified Dividend Calculations (Forward-Looking) ---
+        # We now use Indicated Annual Dividend (IAD) instead of Trailing 12 Months (TTM).
+        # This aligns the dashboard summary metrics with the projected income charts.
+        indicated_annual_dividend_rate_local = calculate_indicated_dividend(stock_data)
+
+        dividend_yield_on_current_direct = stock_data.get("dividendYield")
 
         div_yield_on_cost_pct_local = np.nan
         div_yield_on_current_pct_local = np.nan
         est_annual_income_local = np.nan
 
-        if (
-            pd.notna(trailing_annual_dividend_rate_local)
-            and trailing_annual_dividend_rate_local > 0
-        ):
-            # Estimated Annual Income (Local)
-            if (
-                pd.notna(current_qty) and abs(current_qty) > 1e-9
-            ):  # Only for long positions
-                est_annual_income_local = (
-                    trailing_annual_dividend_rate_local * current_qty
-                )
+        if indicated_annual_dividend_rate_local > 0:
+            # Estimated Annual Income (Local) - Only for long positions
+            if pd.notna(current_qty) and current_qty > 1e-9:
+                est_annual_income_local = indicated_annual_dividend_rate_local * current_qty
 
             # Dividend Yield on Cost (Local)
             if (
@@ -1018,7 +1011,7 @@ def _build_summary_rows(
                 avg_cost_price_local = current_total_cost_local / current_qty
                 if avg_cost_price_local > 1e-9:
                     div_yield_on_cost_pct_local = (
-                        trailing_annual_dividend_rate_local / avg_cost_price_local
+                        indicated_annual_dividend_rate_local / avg_cost_price_local
                     ) * 100.0
 
             # Dividend Yield on Current Value (Local)
@@ -1026,13 +1019,17 @@ def _build_summary_rows(
                 pd.notna(dividend_yield_on_current_direct)
                 and dividend_yield_on_current_direct > 0
             ):
-                div_yield_on_current_pct_local = dividend_yield_on_current_direct
-            elif (
-                pd.notna(current_price_local) and current_price_local > 1e-9
-            ):  # Fallback calculation
                 div_yield_on_current_pct_local = (
-                    trailing_annual_dividend_rate_local / current_price_local
+                    dividend_yield_on_current_direct * 100.0 
+                    if dividend_yield_on_current_direct < 1.0 # Yahoo usually returns fraction
+                    else dividend_yield_on_current_direct
                 )
+            elif pd.notna(current_price_local) and current_price_local > 1e-9:
+                div_yield_on_current_pct_local = (
+                    indicated_annual_dividend_rate_local / current_price_local
+                ) * 100.0
+        # --- END Unified Dividend Calculations ---
+
 
         # Convert dividend metrics to display currency
         div_yield_on_cost_pct_display = div_yield_on_cost_pct_local  # Yields are percentages, not currency dependent directly once calculated
@@ -1043,8 +1040,9 @@ def _build_summary_rows(
             est_annual_income_display = est_annual_income_local * fx_rate
 
         logging.debug(
-            f"Symbol: {symbol}, Div Rate Local: {trailing_annual_dividend_rate_local}, Est Income Local: {est_annual_income_local}, Est Income Display: {est_annual_income_display}"
+            f"Symbol: {symbol}, Indicated Rate Local: {indicated_annual_dividend_rate_local}, Est Income Local: {est_annual_income_local}, Est Income Display: {est_annual_income_display}"
         )
+
         logging.debug(
             f"  Yield Cost Local: {div_yield_on_cost_pct_local}, Yield Current Local: {div_yield_on_current_pct_local}"
         )

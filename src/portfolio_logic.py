@@ -1535,6 +1535,9 @@ def calculate_portfolio_summary(
         overall_summary_metrics["exchange_rate_to_display"] = (
             rate_to_display if pd.notna(rate_to_display) else None
         )
+    
+    # Store full FX rates list for downstream conversions (e.g. projected income)
+    overall_summary_metrics["_fx_rates_vs_usd"] = current_fx_rates_vs_usd
 
     # --- 9. Determine Final Status ---
     end_time_summary = time.time()

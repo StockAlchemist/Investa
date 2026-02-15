@@ -2441,7 +2441,7 @@ async def _generate_dividend_events(
     for the next 12 months.
     """
     from market_data import map_to_yf_symbol, _run_isolated_fetch
-    from finutils import is_cash_symbol
+    from finutils import is_cash_symbol, get_dividend_details
     import concurrent.futures
     import yfinance as yf
     
@@ -2509,15 +2509,12 @@ async def _generate_dividend_events(
                         })
             
             # 2. Estimated Events
-            if div_rate and div_rate > 0:
+            details = get_dividend_details(info)
+            indicated_rate = details["indicated_annual_rate"]
+            freq_months = details["frequency_months"]
+            
+            if indicated_rate > 0:
 
-                freq_months = 3
-                if last_div_val and last_div_val > 0:
-                    ratio = div_rate / last_div_val
-                    if 10 <= ratio <= 14: freq_months = 1
-                    elif 3.5 <= ratio <= 5.5: freq_months = 3
-                    elif 1.5 <= ratio <= 2.5: freq_months = 6
-                    elif 0.8 <= ratio <= 1.2: freq_months = 12
                 
                 # Anchor
                 anchor = None
@@ -2551,7 +2548,7 @@ async def _generate_dividend_events(
                                     break
                         
                         if not is_dup and curr >= today:
-                            est_amt = (last_div_val if last_div_val else div_rate/4) * qty
+                            est_amt = (indicated_rate / (12 // freq_months)) * qty
                             local_events.append({
                                 "symbol": sym,
                                 "dividend_date": str(curr),
@@ -2671,7 +2668,22 @@ async def get_projected_income(
             portfolio_summary_rows=rows
         )
         
-        # 4. Aggregate into Monthly Buckets
+        # 4. Aggregate into Monthly Buckets (with Currency Conversion)
+        # We need to convert LOCAL currency dividend amounts to the DISPLAY currency.
+        # We use the FX rates fetched during the summary calculation.
+        from finutils import get_conversion_rate
+        fx_rates_vs_usd = summary_data["metrics"].get("_fx_rates_vs_usd", {})
+        
+        # Build a mapping of Symbol -> FX Rate (to display currency)
+        symbol_to_fx_rate = {}
+        for row in rows:
+            row_sym = row.get("Symbol")
+            local_curr = row.get("Local Currency")
+            if row_sym and local_curr:
+                rate = get_conversion_rate(local_curr, currency, fx_rates_vs_usd)
+                if pd.notna(rate):
+                    symbol_to_fx_rate[row_sym] = rate
+        
         # Structure: "YYYY-MM" -> {"total": float, "breakdown": {symbol: float}}
         projection = defaultdict(lambda: {"total": 0.0, "breakdown": defaultdict(float)})
         
@@ -2684,7 +2696,12 @@ async def get_projected_income(
                 evt_date = datetime.strptime(event["dividend_date"], "%Y-%m-%d").date()
                 key = evt_date.strftime("%Y-%m")
                 sym = event["symbol"]
-                amt = event["amount"]
+                amt = event["amount"] # This is usually LOCAL amount (except for Cash Interest)
+                
+                # Apply FX conversion if we have a rate for this symbol
+                # Only symbols in symbol_to_fx_rate need conversion (Cash Interest events use $CASH which isn't in map)
+                if sym in symbol_to_fx_rate:
+                    amt *= symbol_to_fx_rate[sym]
                 
                 # Only include if within 12 months (events list is already limited to ~1 year by generator, but double check)
                 if evt_date >= today and evt_date <= today + timedelta(days=365):

@@ -597,11 +597,12 @@ class MarketDataProvider:
                 try:
                     with open(path, "r") as f:
                         entry = json.load(f)
+                        data = entry.get("data") if "data" in entry else entry
                         ts_str = entry.get("timestamp")
                         if ts_str:
                             entry_ts = datetime.fromisoformat(ts_str)
                             if (now_ts - entry_ts).days < 1:
-                                results[sym] = entry
+                                results[sym] = data
                                 continue
                 except Exception:
                     pass
@@ -631,7 +632,8 @@ class MarketDataProvider:
                         div_yield = info.get("dividendYield", 0.0)
                         
                         entry = {
-                            "trailingAnnualDividendRate": div_rate if div_rate else 0.0,
+                            "dividendRate": div_rate if div_rate else 0.0,
+                            "trailingAnnualDividendRate": info.get("trailingAnnualDividendRate") or div_rate or 0.0,
                             "dividendYield": div_yield if div_yield else 0.0,
                             "exDividendDate": info.get("exDividendDate"),
                             "lastDividendValue": info.get("lastDividendValue", 0.0),
@@ -1002,7 +1004,6 @@ class MarketDataProvider:
                             if price is not None and currency:
                                 change = (price - prev_close) if (price and prev_close) else 0.0
                                 change_pct = ((change / prev_close) * 100.0) if (change and prev_close) else 0.0
-                                
                                 stock_data_yf[internal_sym] = {
                                     "price": price,
                                     "change": change,
@@ -1014,7 +1015,9 @@ class MarketDataProvider:
                                     "quoteType": meta.get("quoteType"),
                                     "source": "yf_batch_download_stale_safe" if not is_today else "yf_batch_download",
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    "dividendRate": fund.get("dividendRate", 0),
                                     "trailingAnnualDividendRate": fund.get("trailingAnnualDividendRate", 0),
+                                    "lastDividendValue": fund.get("lastDividendValue", 0),
                                     "dividendYield": fund.get("dividendYield", 0),
                                     "sparkline_7d": sparkline
                                 }

@@ -124,7 +124,50 @@ def get_currency_symbol_from_code(currency_code: str) -> str:
 # --- END ADDED ---
 
 
+# --- Indicated Dividend Helper ---
+def get_dividend_details(info: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Calculates dividend details: frequency_months and indicated_annual_rate.
+    Unifies logic between summary metrics and projected income charts.
+    """
+    if not info:
+        return {"frequency_months": 3, "indicated_annual_rate": 0.0}
+        
+    last_div_val = info.get("lastDividendValue", 0.0)
+    div_rate = info.get("dividendRate", 0.0)
+    trailing_rate = info.get("trailingAnnualDividendRate", 0.0)
+    
+    if last_div_val is None: last_div_val = 0.0
+    if div_rate is None or div_rate <= 0: div_rate = trailing_rate if trailing_rate else 0.0
+    if div_rate is None: div_rate = 0.0
+    
+    if last_div_val <= 0 and div_rate <= 0:
+        return {"frequency_months": 3, "indicated_annual_rate": 0.0}
+        
+    freq = 4 
+    if last_div_val > 0 and div_rate > 0:
+        ratio = div_rate / last_div_val
+        if 10.0 <= ratio <= 14.5: freq = 12
+        elif 3.4 <= ratio <= 5.8: freq = 4
+        elif 1.4 <= ratio <= 2.6: freq = 2
+        elif 0.7 <= ratio <= 1.3: freq = 1
+        
+    indicated_rate = float(last_div_val * freq) if last_div_val > 0 else float(div_rate)
+    freq_months = 12 // freq
+    
+    return {
+        "frequency_months": freq_months,
+        "indicated_annual_rate": indicated_rate,
+        "last_dividend_value": last_div_val
+    }
+
+def calculate_indicated_dividend(info: Dict[str, Any]) -> float:
+    """Convenience wrapper for backward compatibility."""
+    return get_dividend_details(info)["indicated_annual_rate"]
+
+
 # --- Cash Symbol Helpers ---
+
 def is_cash_symbol(symbol: str) -> bool:
     """Checks if a symbol is a cash symbol (e.g., '$CASH', 'Cash ($)')."""
     if not isinstance(symbol, str):
