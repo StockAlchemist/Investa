@@ -244,6 +244,7 @@ Once your data is loaded (from the database) and refreshed, the main dashboard c
   * `Fees`: Total fees paid.
   * `Cash Balance`: Total cash held across the selected accounts (derived from `$CASH` transactions).
   * `Total Ret %`: Your portfolio's total return percentage.
+  * `IRR (MWR)`: Internal Rate of Return (Money-Weighted Return). When displayed as an annualized figure, it is clearly indicated with an **"Ann."** sub-label for precision.
   * `Ann. TWR %`: Annualized Time-Weighted Return percentage, a key measure of investment performance.
 
 * **Controls (Toolbar and Buttons below Summary):**
@@ -798,6 +799,25 @@ Imported transactions are not added to your main database immediately. This "Sta
 *   **Pending Table:** View all newly fetched transactions.
 *   **Approve:** Select transactions and click **Approve** to move them into your main transaction history.
 *   **Reject:** If a transaction looks incorrect or redundant, select it and click **Reject** to remove it from the staging area without affecting your database.
+
+## Part 17: AI Portfolio Review
+
+Investa leverages advanced AI to provide deep insights into your portfolio's health and performance.
+
+### 🤖 AI-Powered Analysis
+The **AI Portfolio Review** analyzes your current holdings and historical performance to provide:
+*   **Personalized Insights:** Context-specific commentary on your portfolio's strengths and weaknesses.
+*   **Risk Assessment:** Identification of potential concentration risks (sector, asset type, or individual holding) and suggestions for mitigation.
+*   **Diversification Suggestions:** Guidance on how to better balance your portfolio across different dimensions.
+*   **Performance Context:** A narrative explanation of your returns, helping you understand the "why" behind the numbers.
+
+### Accessing the AI Review
+1.  Navigate to the **AI Review** tab in the sidebar of the Web Dashboard.
+2.  Click the **"Generate Analysis"** (or **"Refresh Analysis"**) button.
+3.  The system will process your portfolio data and present a comprehensive report.
+
+> [!TIP]
+> Use the AI Review periodically or after significant market moves to see how your portfolio's risk profile has evolved.
 
 Once approved, these transactions will be treated like any other entry, impacting your Holdings, Performance, and Total Return after a **Refresh All**.
 

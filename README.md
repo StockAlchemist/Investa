@@ -22,11 +22,13 @@ Investa is a comprehensive portfolio management solution offering both a feature
 * **Customizable Dashboard:** Toggle visibility of widgets and view "Sector Contribution" and "Top Contributors" analysis directly on the main dashboard.
 * **Fundamental Data:** Built-in viewer for company profiles, financials, and balance sheets.
 * **Intrinsic Value Analysis:** Automated **DCF (Income & Revenue-based)** and **Graham's Revised Formula** calculations **(with NAV support for ETFs)** with **Monte Carlo simulations** and **stability logic (Growth Capping & Linear Fading)** to estimate fair value ranges.
+* **AI Portfolio Review:** Intelligent AI-powered analysis of your portfolio holdings, providing personalized insights, risk assessments, and diversification suggestions.
 * **User Authentication:** Secure login and registration system with multi-user support.
 * **HTTPS Support:** Built-in Tailscale Serve configuration for secure, encrypted access on local networks and mobile devices.
 * **Valuation Overrides:** Fully customizable valuation parameters (growth rates, discount rates, etc.) for each stock via the Settings menu or individual detail views.
 * **Batch Recalculation:** Dedicated scripts for bulk updating valuations for large universes like the S&P 500.
 * **IBKR Integration:** Automated syncing of transactions from Interactive Brokers via Web Flex Service with a staging area for review and approval.
+* **Annualized Performance:** Key metrics like **IRR (MWR)** are clearly labeled as **"Ann."** when displayed as annualized returns for better clarity.
 
 ## Getting Started
 
