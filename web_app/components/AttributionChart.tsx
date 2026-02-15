@@ -244,12 +244,10 @@ function FullContributorsModal({ isOpen, onClose, initialData, currency, account
                                             }
                                             <span className={cn("text-base font-medium tracking-tight", stock.gain >= 0 ? 'text-emerald-500' : 'text-red-500')}>
                                                 {stock.gain >= 0 ? '+' : ''}{formatCurrencyHelper(stock.gain, currency)}
+                                                <span className="text-xs ml-1 opacity-80">({formatPercentHelper(stock.contribution)})</span>
                                             </span>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest bg-secondary/50 px-2 py-0.5 rounded-md">
-                                                {formatPercentHelper(stock.contribution)}
-                                            </span>
                                             <span className="text-[10px] font-medium text-cyan-500 uppercase tracking-widest">{stock.sector}</span>
                                         </div>
                                     </div>
