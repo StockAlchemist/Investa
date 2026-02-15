@@ -1378,29 +1378,39 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                             className="bg-card rounded-lg border border-border shadow-sm p-4 cursor-pointer hover:border-cyan-500/50 transition-all active:scale-[0.98]"
                             onClick={() => openStockDetail(holding.Symbol, currency)}
                         >
-                            <div className="flex justify-between items-start mb-2">
-                                <div className="flex items-center gap-3">
-                                    <WatchlistStar symbol={holding.Symbol} size="md" />
-                                    <div>
-                                        <h3 className="text-lg font-bold text-foreground">{holding.Symbol}</h3>
-                                        <div className="flex items-center gap-2">
-                                            <p className="text-xs text-muted-foreground">{holding.Account}</p>
-                                            {holding.lots && holding.lots.length > 0 && (
-                                                <div className="flex items-center gap-1" title={`${holding.lots.length} tax lots`}>
-                                                    <Layers className="w-3 h-3 text-muted-foreground" />
-                                                    <span className="text-[10px] text-muted-foreground">{holding.lots.length} Lots</span>
-                                                </div>
-                                            )}
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-start">
+                                    <div className="flex items-center gap-3">
+                                        <WatchlistStar symbol={holding.Symbol} size="md" />
+                                        <h3 className="text-xl font-bold text-foreground leading-none">{holding.Symbol}</h3>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-xl font-bold text-foreground leading-none">
+                                            {formatValue(getValue(holding, "Mkt Val"), "Mkt Val")}
                                         </div>
                                     </div>
                                 </div>
-                                <div className="text-right">
-                                    <div className="text-lg font-bold text-foreground">
-                                        {formatValue(getValue(holding, "Mkt Val"), "Mkt Val")}
+
+                                <div className="flex justify-between items-center bg-zinc-500/5 dark:bg-zinc-400/5 p-2 rounded-md">
+                                    <div className="flex flex-col gap-1">
+                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                            <span>{holding.Account}</span>
+                                        </div>
+                                        {holding.lots && holding.lots.length > 0 && (
+                                            <div className="flex items-center gap-1 text-[10px] bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 px-1.5 py-0.5 rounded-full w-fit">
+                                                <Layers className="w-2.5 h-2.5" />
+                                                <span className="font-medium">{holding.lots.length} Lots</span>
+                                            </div>
+                                        )}
                                     </div>
-                                    <div className="flex items-center justify-end gap-2">
-                                        <div className={`text-sm ${getCellClass(getValue(holding, "Day Chg %"), "Day Chg %")}`}>
-                                            {formatValue(getValue(holding, "Day Chg"), "Day Chg")} ({formatValue(getValue(holding, "Day Chg %"), "Day Chg %")})
+                                    <div className="flex items-center gap-3">
+                                        <div className="text-right">
+                                            <div className={`text-sm font-medium ${getCellClass(getValue(holding, "Day Chg"), "Day Chg")}`}>
+                                                {formatValue(getValue(holding, "Day Chg"), "Day Chg")}
+                                            </div>
+                                            <div className={`text-xs ${getCellClass(getValue(holding, "Day Chg %"), "Day Chg %")}`}>
+                                                {formatValue(getValue(holding, "Day Chg %"), "Day Chg %")}
+                                            </div>
                                         </div>
                                         {holding.lots && holding.lots.length > 0 && (
                                             <button
@@ -1408,7 +1418,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                     e.stopPropagation();
                                                     toggleLotExpansion(getExpansionKey(holding));
                                                 }}
-                                                className="p-1 hover:bg-accent/20 rounded-md"
+                                                className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors border border-border/40"
                                             >
                                                 {expandedLots.has(getExpansionKey(holding)) ? (
                                                     <ChevronDown className="w-4 h-4 text-cyan-500" />
@@ -1438,9 +1448,9 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                     <span className="text-muted-foreground">Div Yield:</span>
                                     <span className="text-foreground font-medium">{formatValue(getValue(holding, "Yield (Mkt) %"), "Yield (Mkt) %")}</span>
                                 </div>
-                                <div className="flex justify-between col-span-2 bg-secondary border border-border p-2 rounded">
-                                    <span className="text-muted-foreground">Total Return:</span>
-                                    <span className={`font-medium ${getCellClass(getValue(holding, "Total G/L"), "Total G/L")}`}>
+                                <div className="flex flex-col items-center justify-center col-span-2 bg-emerald-500/5 dark:bg-emerald-400/5 border border-emerald-500/20 p-3 rounded-lg shadow-inner">
+                                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Total Return</span>
+                                    <span className={`text-base font-bold ${getCellClass(getValue(holding, "Total G/L"), "Total G/L")}`}>
                                         {formatValue(getValue(holding, "Total G/L"), "Total G/L")} ({formatValue(getValue(holding, "Total Ret %"), "Total Ret %")})
                                     </span>
                                 </div>
