@@ -7,7 +7,7 @@ export const DEFAULT_ITEMS = [
     { id: 'totalReturn', title: 'Total Return', colSpan: 'col-span-2 md:col-span-1' },
     { id: 'unrealizedGL', title: 'Unrealized G/L', colSpan: 'col-span-2 md:col-span-1' },
     { id: 'realizedGain', title: 'Realized Gain', colSpan: 'col-span-2 md:col-span-1' },
-    { id: 'annualTWR', title: 'Annual TWR', colSpan: 'col-span-1' },
+    { id: 'annualTWR', title: 'Annual TWR', colSpan: 'col-span-2 lg:col-span-1' },
     { id: 'mwr', title: 'IRR (MWR)', colSpan: 'col-span-1' },
     { id: 'ytdDividends', title: 'Total Dividends', colSpan: 'col-span-1' },
     { id: 'cashBalance', title: 'Cash Balance', colSpan: 'col-span-1' },

@@ -41,7 +41,7 @@ const MetricItem = ({ label, value, icon: Icon, description, colorClass, onClick
             <span className="text-[10px] font-bold uppercase tracking-widest">{label}</span>
         </div>
 
-        <div className={cn("flex-1 flex items-center justify-center text-3xl font-bold font-mono tracking-tighter", colorClass || "text-foreground")}>
+        <div className={cn("flex-1 flex items-center justify-center text-3xl font-bold tracking-tight", colorClass || "text-foreground")}>
             {value}
         </div>
 
@@ -268,7 +268,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                             <span className="text-xs font-bold uppercase tracking-wider">Diversification</span>
                                         </div>
                                         <span className={cn(
-                                            "font-mono text-base font-bold",
+                                            "text-base font-bold",
                                             portfolioHealth.components.diversification.score >= 60 ? "text-emerald-500" : "text-yellow-500"
                                         )}>
                                             {portfolioHealth.components.diversification.score}
@@ -280,7 +280,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                             <span className="text-xs font-bold uppercase tracking-wider">Efficiency</span>
                                         </div>
                                         <span className={cn(
-                                            "font-mono text-base font-bold",
+                                            "text-base font-bold",
                                             portfolioHealth.components.efficiency.score >= 60 ? "text-emerald-500" : "text-yellow-500"
                                         )}>
                                             {portfolioHealth.components.efficiency.score}
@@ -292,7 +292,7 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                             <span className="text-xs font-bold uppercase tracking-wider">Stability</span>
                                         </div>
                                         <span className={cn(
-                                            "font-mono text-base font-bold",
+                                            "text-base font-bold",
                                             portfolioHealth.components.stability.score >= 60 ? "text-emerald-500" : "text-yellow-500"
                                         )}>
                                             {portfolioHealth.components.stability.score}
