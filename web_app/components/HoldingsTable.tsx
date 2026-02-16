@@ -926,7 +926,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                 {/* Desktop Table View (also visible on mobile if toggled) */}
                 <div className={`${mobileViewMode === 'table' ? 'block' : 'hidden'} md:block overflow-x-auto`}>
                     <table className="min-w-full divide-y divide-black/5 dark:divide-white/5">
-                        <thead className="bg-secondary/50 font-semibold border-b border-border">
+                        <thead className="bg-white dark:bg-zinc-900 font-semibold border-b border-border shadow-sm">
                             <tr>
                                 {visibleColumns.map(header => {
                                     const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
@@ -938,7 +938,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                             onDragStart={(e) => handleDragStart(e, header)}
                                             onDragOver={handleDragOver}
                                             onDrop={(e) => handleDrop(e, header)}
-                                            className={`px-6 py-3 text-xs font-semibold text-muted-foreground transition-colors select-none whitespace-nowrap group hover:bg-accent/10 cursor-pointer ${draggedColumn === header ? 'opacity-50 bg-secondary' : ''} ${isLeftAligned ? 'text-left' : 'text-right'}`}
+                                            className={`px-6 py-3 text-xs font-semibold text-muted-foreground transition-colors select-none whitespace-nowrap group hover:bg-accent/10 cursor-pointer ${draggedColumn === header ? 'opacity-50 bg-secondary' : ''} ${isLeftAligned ? 'text-left' : 'text-right'} ${header === 'Symbol' ? 'sticky left-0 z-40 bg-white dark:bg-zinc-900 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : 'bg-white dark:bg-zinc-900'}`}
                                             onClick={() => handleSort(header)}
                                         >
                                             <div className={`flex items-center gap-1 ${isLeftAligned ? 'justify-start' : 'justify-end'}`}>
@@ -1030,7 +1030,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                         const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
 
                                                         return (
-                                                            <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')}`}>
+                                                            <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-10 bg-white dark:bg-[#121212] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : ''}`}>
                                                                 {header === '7d Trend' ? (
                                                                     <div className="h-10 w-28 ml-auto">
                                                                         {val && Array.isArray(val) && val.length > 1 ? (
@@ -1193,7 +1193,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                                 const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
 
                                                                 return (
-                                                                    <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-t border-dashed border-border/40 ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')}`}>
+                                                                    <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-t border-dashed border-border/40 ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-10 bg-zinc-50 dark:bg-zinc-900 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : ''}`}>
                                                                         {header === 'Symbol' && <span className="text-[10px] opacity-50">↳</span>}
                                                                         {formatValue(val, header)}
                                                                     </td>
@@ -1218,7 +1218,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                 const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
 
                                                 return (
-                                                    <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')}`}>
+                                                    <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-10 bg-white dark:bg-[#121212] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : ''}`}>
                                                         {header === '7d Trend' ? (
                                                             <div className="h-10 w-28 ml-auto">
                                                                 {val && Array.isArray(val) && val.length > 1 ? (
@@ -1354,7 +1354,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
                                                         const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
 
                                                         return (
-                                                            <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-t border-dashed border-border/40 ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')}`}>
+                                                            <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-t border-dashed border-border/40 ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-10 bg-zinc-50 dark:bg-zinc-900 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : ''}`}>
                                                                 {header === 'Symbol' && <span className="text-[10px] opacity-50">↳</span>}
                                                                 {formatValue(val, header)}
                                                             </td>
