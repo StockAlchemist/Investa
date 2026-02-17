@@ -149,6 +149,7 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
                             <tr>
                                 <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Account</th>
                                 <th scope="col" className="px-6 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Cash Balance</th>
+                                <th scope="col" className="px-6 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Est. Annual Interest</th>
                                 <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Annual Rate (%)</th>
                                 <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Exempt Threshold</th>
                             </tr>
@@ -156,7 +157,7 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
                         <tbody className="divide-y divide-border bg-card">
                             {activeAccounts.length === 0 ? (
                                 <tr>
-                                    <td colSpan={4} className="px-6 py-8 text-center text-muted-foreground text-sm">
+                                    <td colSpan={5} className="px-6 py-8 text-center text-muted-foreground text-sm">
                                         No accounts with cash balances found.
                                     </td>
                                 </tr>
@@ -175,6 +176,14 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">{account}</td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-mono text-muted-foreground">
                                                 {accountCash.toLocaleString(undefined, { style: 'currency', currency: 'USD' })}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                                                {(() => {
+                                                    const rate = (localRates[account] || 0) / 100;
+                                                    const threshold = localThresholds[account] || 0;
+                                                    const interest = Math.max(0, accountCash - threshold) * rate;
+                                                    return interest.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+                                                })()}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="relative max-w-[150px]">
