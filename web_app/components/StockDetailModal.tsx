@@ -1133,7 +1133,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
             <div className="absolute inset-0 bg-black/60" onClick={onClose} />
 
             <div
-                className="relative w-full max-w-5xl h-[94vh] sm:h-auto sm:max-h-[90vh] rounded-t-[2.5rem] sm:rounded-[2rem] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 bg-card"
+                className="relative w-full max-w-5xl h-[94vh] sm:h-auto sm:max-h-[90vh] rounded-t-[2.5rem] sm:rounded-[2rem] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 bg-white dark:bg-zinc-950"
             >
 
                 {/* Mobile Drag Handle */}
@@ -1142,7 +1142,7 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                 </div>
 
                 {/* Sticky Header & Tabs Container */}
-                <div className="sticky top-0 z-50 bg-card border-b border-border flex-shrink-0 shadow-sm">
+                <div className="sticky top-0 z-50 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-b border-border flex-shrink-0 shadow-sm">
                     {/* Header */}
                     <div className="p-5 sm:p-8 pb-3 sm:pb-4 flex justify-between items-start relative">
                         <div className="hidden sm:block absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-[100px] -mr-32 -mt-32" />
@@ -1152,14 +1152,14 @@ export default function StockDetailModal({ symbol, isOpen, onClose, currency }: 
                                 <StockIcon symbol={symbol} size="100%" className="w-full h-full p-2 bg-white" domain={domain} />
                             </div>
                             <div className="flex-1 min-w-0 pr-4">
-                                <div className="flex items-center justify-between gap-2 mb-0.5 sm:mb-1">
-                                    <div className="flex items-center gap-2 sm:gap-3 truncate">
-                                        <h2 className="text-lg sm:text-3xl font-bold tracking-tight truncate max-w-[140px] sm:max-w-none">{fundamentals?.shortName || symbol}</h2>
-                                        <Badge className="bg-secondary text-secondary-foreground border-none font-mono text-[9px] sm:text-xs">{symbol}</Badge>
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1 sm:mb-2">
+                                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                                        <h2 className="text-lg sm:text-3xl font-black tracking-tight truncate shrink">{fundamentals?.shortName || symbol}</h2>
+                                        <Badge className="bg-secondary text-secondary-foreground border-none font-mono text-[9px] sm:text-xs shrink-0">{symbol}</Badge>
                                     </div>
                                     {fundamentals?.regularMarketPrice && (
                                         <div className="flex items-baseline gap-1 text-cyan-600 dark:text-cyan-400">
-                                            <span className="text-xl sm:text-4xl font-bold tracking-tight">
+                                            <span className="text-xl sm:text-3xl font-black tracking-tight tabular-nums">
                                                 {formatCurrency(fundamentals.regularMarketPrice)}
                                             </span>
                                         </div>
