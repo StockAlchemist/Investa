@@ -3,7 +3,7 @@
 import pytest
 import pandas as pd
 import numpy as np
-from datetime import date, datetime, timedelta
+from datetime import date
 import tempfile
 import os
 import hashlib

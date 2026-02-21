@@ -15,7 +15,7 @@ SPDX-License-Identifier: MIT
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Optional, Union
+from typing import Dict
 
 def calculate_drawdown_series(series: pd.Series) -> pd.Series:
     """

@@ -13,10 +13,7 @@ import os
 import json
 import logging
 import shutil
-import pandas as pd
-import numpy as np
-from datetime import date
-from typing import Dict, Any, Optional, List, Set
+from typing import Dict, Any, Optional
 from PySide6.QtCore import QStandardPaths
 
 import config

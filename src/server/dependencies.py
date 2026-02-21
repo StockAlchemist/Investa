@@ -8,12 +8,11 @@ import threading
 from typing import Optional, Tuple, Set, Dict, Any
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
-from server.auth import TokenData, User, decode_access_token
-from db_utils import get_database_path, load_all_transactions_from_db, DB_FILENAME, get_db_connection
+from server.auth import User, decode_access_token
+from db_utils import get_db_connection
 from data_loader import load_and_clean_transactions
 import config
-from config import GLOBAL_DB_FILENAME, PORTFOLIO_DB_FILENAME
+from config import GLOBAL_DB_FILENAME
 
 # Ensure src is in path (redundant if imported from main, but good for standalone testing)
 current_dir = os.path.dirname(os.path.abspath(__file__))

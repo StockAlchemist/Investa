@@ -6,7 +6,7 @@ Tests comparing the historical calculation methods (Python vs Numba).
 import pytest
 import pandas as pd
 import numpy as np
-from datetime import date, datetime
+from datetime import date
 import time
 import sys
 import os

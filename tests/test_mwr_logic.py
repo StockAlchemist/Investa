@@ -7,7 +7,7 @@ import os
 # Add src to path
 sys.path.append(os.path.join(os.getcwd(), 'src'))
 
-from finutils import get_cash_flows_for_mwr, calculate_irr
+from finutils import get_cash_flows_for_mwr
 
 def test_mwr_transfer_logic():
     # Setup Data

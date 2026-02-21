@@ -15,11 +15,10 @@ SPDX-License-Identifier: MIT
 
 import pandas as pd
 import numpy as np
-import numpy as np
 # import statsmodels.api as sm # Lazy loaded
 sm = None
 import logging
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Optional, Any
 
 from market_data import MarketDataProvider
 

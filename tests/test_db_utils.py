@@ -7,9 +7,8 @@ if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
 import pytest
-import sqlite3
 import pandas as pd
-from datetime import datetime, date
+from datetime import date
 from db_utils import (
     initialize_database,
     add_transaction_to_db,

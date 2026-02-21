@@ -6,17 +6,13 @@ import json
 import os
 import sys
 import threading # Added for _SHARED_MDP_LOCK
-from datetime import datetime, timedelta, date, UTC, timezone  # Added UTC
-from concurrent.futures import ThreadPoolExecutor # Added for batch fetching
+from datetime import datetime, timedelta, date, timezone  # Added UTC
 from utils_time import get_est_today, get_latest_trading_date, is_market_open, get_nyse_calendar # Added for holiday/timezone awareness
 from typing import List, Dict, Optional, Tuple, Set, Any
 import time
-import requests  # Keep for potential future use
 import traceback  # For detailed error logging
 from io import StringIO  # For historical cache loading
-import hashlib  # For cache key hashing
 import subprocess
-import sys
 import tempfile
 from market_db import MarketDatabase
 
@@ -33,7 +29,6 @@ except ImportError:
 
 
 # --- END ADDED ---
-from PySide6.QtCore import QStandardPaths  # For standard directory locations
 import config
 
 # --- Finance API Import ---
@@ -1136,7 +1131,7 @@ class MarketDataProvider:
                                     # Create partial entry
                                     pass
 
-                        except Exception as e_sym_rt:
+                        except Exception:
                             # logging.warning(f"Error extracting RT data for {internal_sym}: {e_sym_rt}")
                             pass
                             

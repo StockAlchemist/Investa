@@ -210,7 +210,7 @@ if __name__ == "__main__":
         test_input_file, index=False, quoting=csv.QUOTE_MINIMAL
     )
 
-    print(f"--- Testing CSV Header Standardization ---")
+    print("--- Testing CSV Header Standardization ---")
     print(f"Input file: {test_input_file}")
     print(f"Output file: {test_output_file}")
 

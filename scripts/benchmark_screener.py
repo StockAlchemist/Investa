@@ -7,7 +7,6 @@ import logging
 sys.path.append(os.path.join(os.getcwd(), "src"))
 
 from server.screener_service import screen_stocks
-from config import get_app_data_dir
 
 # Setup specific logging to see what's happening
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

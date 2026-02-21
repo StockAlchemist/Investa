@@ -1,29 +1,12 @@
 # Auto-generated from main_gui.py modularization
 import os
 import sys
-from typing import Dict, Any, Optional
 from datetime import date, timedelta
-import config
 
 from config import (
-    DEBOUNCE_INTERVAL_MS,
-    MANUAL_OVERRIDES_FILENAME,
-    DEFAULT_API_KEY,
-    CHART_MAX_SLICES,
-    PIE_CHART_FIG_SIZE,
-    PERF_CHART_FIG_SIZE,
-    CHART_DPI,
-    INDICES_FOR_HEADER,
-    CSV_DATE_FORMAT,
-    COMMON_CURRENCIES,
     DEFAULT_GRAPH_DAYS_AGO,  # Now defined before its use
-    DEFAULT_GRAPH_INTERVAL,
-    DEFAULT_GRAPH_BENCHMARKS,
-    BENCHMARK_MAPPING,
-    BENCHMARK_OPTIONS_DISPLAY,
     COLOR_BG_DARK,
     COLOR_BG_HEADER_LIGHT,
-    COLOR_BG_HEADER_ORIGINAL,
     COLOR_TEXT_DARK,
     COLOR_TEXT_SECONDARY,
     COLOR_ACCENT_TEAL,
@@ -31,11 +14,9 @@ from config import (
     COLOR_BORDER_DARK,
     COLOR_GAIN,
     COLOR_LOSS,
-    DEFAULT_CSV,
 )
 
 from PySide6.QtGui import QColor
-from config import COLOR_GAIN
 
 QCOLOR_GAIN = QColor(COLOR_GAIN)
 
@@ -135,7 +116,7 @@ def get_column_definitions(display_currency="USD"):
         "Sector": "Sector",
         "Industry": "Industry",
         "Quantity": "Quantity",
-        f"Day Chg": f"Day Change ({display_currency})",
+        "Day Chg": f"Day Change ({display_currency})",
         "Day Chg %": "Day Change %",
         "Avg Cost": f"Avg Cost ({display_currency})",
         "Price": f"Price ({display_currency})",
@@ -152,11 +133,11 @@ def get_column_definitions(display_currency="USD"):
         "IRR (%)": "IRR (%)",
         # Optional columns that might be added for debugging or other features:
         "Total Buy Cost": f"Total Buy Cost ({display_currency})",
-        "Yield (Cost) %": f"Div. Yield (Cost) %",
-        "Yield (Mkt) %": f"Div. Yield (Current) %",
+        "Yield (Cost) %": "Div. Yield (Cost) %",
+        "Yield (Mkt) %": "Div. Yield (Current) %",
         "FX G/L": f"FX Gain/Loss ({display_currency})",
         "FX G/L %": "FX Gain/Loss %",
-        f"Est. Income": f"Est. Ann. Income ({display_currency})",
+        "Est. Income": f"Est. Ann. Income ({display_currency})",
         # 'Cumulative Investment': f'Cumulative Investment ({display_currency})',
         # 'Price Source': 'Price Source',
     }
@@ -164,7 +145,7 @@ def get_column_definitions(display_currency="USD"):
 
 # --- Helper Classes for Background Processing ---
 
-from PySide6.QtWidgets import QStyledItemDelegate, QStyle
+from PySide6.QtWidgets import QStyledItemDelegate
 from PySide6.QtGui import QColor
 
 

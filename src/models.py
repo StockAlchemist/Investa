@@ -1,7 +1,6 @@
 # Auto-generated from main_gui.py modularization
-from PySide6.QtCore import QAbstractTableModel, Qt, QModelIndex
+from PySide6.QtCore import QAbstractTableModel, Qt
 from PySide6.QtGui import QColor, QFont
-from typing import Any, Optional
 import pandas as pd
 import numpy as np
 import re
@@ -11,14 +10,11 @@ import traceback
 
 from finutils import (
     format_currency_value,
-    format_percentage_value,
-    format_large_number_display,
     format_integer_with_commas,
-    format_float_with_commas,
     is_cash_symbol,
 )
 
-from config import CASH_SYMBOL_CSV, CSV_DATE_FORMAT, _AGGREGATE_CASH_ACCOUNT_NAME_
+from config import CASH_SYMBOL_CSV, CSV_DATE_FORMAT
 from datetime import datetime, date
 
 
@@ -187,7 +183,7 @@ class PandasModel(QAbstractTableModel):
                     )
                     if is_potentially_numeric_by_name:
                         alignment = int(Qt.AlignRight | Qt.AlignVCenter)
-            except (IndexError, AttributeError, KeyError) as e:
+            except (IndexError, AttributeError, KeyError):
                 pass
             return alignment
 
@@ -410,7 +406,7 @@ class PandasModel(QAbstractTableModel):
                 # If not a special column or not numeric, or numeric but zero in a special column
                 return None  # Let QSS handle color
 
-            except Exception as e:
+            except Exception:
                 # logging.info(f"Coloring Error (Row:{row}, Col:{col}, Name:'{self._data.columns[col]}'): {e}")
                 return None  # Fallback to QSS on any error
 
@@ -539,7 +535,7 @@ class PandasModel(QAbstractTableModel):
                             "IRR (%)",
                             "Yield (Cost) %",
                             "Yield (Mkt) %",
-                            f"Est. Income",
+                            "Est. Income",
                         ]:
                             return "-"
                 except (KeyError, IndexError):
@@ -965,7 +961,7 @@ class PandasModel(QAbstractTableModel):
                         non_cash_rows = main_data.copy()
                 else:
                     logging.warning(
-                        f"Warning: Could not find symbol column for cash separation in sort."
+                        "Warning: Could not find symbol column for cash separation in sort."
                     )
 
                 sorted_non_cash_rows = pd.DataFrame()

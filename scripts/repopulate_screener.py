@@ -10,7 +10,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src"
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src/server")))
 
 from screener_service import screen_stocks
-from db_utils import get_db_connection
 import config
 
 def repopulate_universe(universe_type, db_conn=None):

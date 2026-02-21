@@ -73,9 +73,7 @@ except ImportError:
 # --- END ADDED ---
 from zoneinfo import ZoneInfo
 
-from typing import Dict, Any, Optional, List, Tuple, Set  # Added Set
-import logging
-from collections import defaultdict
+from typing import Dict, Any, Optional, List, Set  # Added Set
 
 # --- Configure Logging Globally (as early as possible) ---
 # The LOGGING_LEVEL is imported from config.py and used here.
@@ -115,7 +113,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
     QMessageBox,
-    QPlainTextEdit,
     QSizePolicy,
     QListWidget,
     QStyle,
@@ -133,11 +130,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QAbstractItemView,
     QToolBar,
-    QScrollArea,
-    QButtonGroup,
     QSpinBox,
-    QCompleter,
-    QListWidgetItem,
     QInputDialog,
     QSpacerItem,
     QProgressBar,
@@ -147,17 +140,12 @@ import contextlib
 
 from PySide6.QtCore import (
     Qt,
-    QAbstractTableModel,
     QModelIndex,
     QThreadPool,
-    QRunnable,
-    Signal,
     Slot,
-    QObject,
     QDateTime,
     QDate,
     QPoint,
-    QStringListModel,
     QStandardPaths,
     QByteArray,
     QTimer,
@@ -172,10 +160,8 @@ from PySide6.QtGui import (
     QPalette,
     QFont,
     QIcon,
-    QPixmap,
     QAction,
     QActionGroup,
-    QValidator,
     QTextDocument,
     QPageSize,
     QPageLayout,
@@ -262,8 +248,6 @@ def _ensure_matplotlib():
 
 from config import (
     DEBOUNCE_INTERVAL_MS,
-    MANUAL_OVERRIDES_FILENAME,
-    DEFAULT_API_KEY,
     CHART_MAX_SLICES,
     PIE_CHART_FIG_SIZE,
     PERF_CHART_FIG_SIZE,
@@ -271,7 +255,6 @@ from config import (
     INDICES_FOR_HEADER,
     CSV_DATE_FORMAT,
     COMMON_CURRENCIES,
-    DEFAULT_GRAPH_DAYS_AGO,
     DEFAULT_GRAPH_INTERVAL,
     DEFAULT_GRAPH_BENCHMARKS,
     BENCHMARK_MAPPING,
@@ -279,7 +262,6 @@ from config import (
     EXCHANGE_TRADING_HOURS,
     COLOR_BG_DARK,
     COLOR_BG_HEADER_LIGHT,
-    COLOR_BG_HEADER_ORIGINAL,
     COLOR_TEXT_DARK,
     COLOR_TEXT_SECONDARY,
     COLOR_ACCENT_TEAL,
@@ -289,7 +271,6 @@ from config import (
     COLOR_LOSS,
     CURRENCY_SYMBOLS,
     DEFAULT_CSV,
-    SHORTABLE_SYMBOLS,
     BAR_CHART_MAX_PERIODS_ANNUAL,
     BAR_CHART_MAX_PERIODS_QUARTERLY,
     BAR_CHART_MAX_PERIODS_MONTHLY,
@@ -331,7 +312,7 @@ from portfolio_logic import (
     calculate_historical_performance,
 )
 from utils_time import get_est_today, get_latest_trading_date  # ADDED
-from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series, calculate_max_drawdown, calculate_volatility, calculate_sharpe_ratio, calculate_sortino_ratio
+from risk_metrics import calculate_all_risk_metrics, calculate_drawdown_series
 from factor_analyzer import run_factor_regression
 from market_data import MarketDataProvider
 from finutils import (
@@ -339,22 +320,16 @@ from finutils import (
     format_currency_value,
     format_percentage_value,
     is_cash_symbol,
-    format_large_number_display,
-    format_integer_with_commas,
     format_float_with_commas,
     calculate_irr,
-    get_historical_rate_via_usd_bridge,
 )
 
-from data_loader import load_and_clean_transactions
 from data_loader import COLUMN_MAPPING_CSV_TO_INTERNAL
 from csv_utils import DESIRED_CLEANED_COLUMN_ORDER
 
 from portfolio_analyzer import (
     calculate_periodic_returns,
     _AGGREGATE_CASH_ACCOUNT_NAME_,
-    extract_dividend_history,
-    extract_realized_capital_gains_history,
     calculate_rebalancing_trades,
 )
 
@@ -374,7 +349,6 @@ if not HISTORICAL_FN_SUPPORTS_EXCLUDE:
 # --- ADDED: db_utils import ---
 from db_utils import (
     DB_FILENAME,
-    get_database_path,
     initialize_database,
     add_transaction_to_db,
     update_transaction_in_db,
@@ -8448,7 +8422,7 @@ The CSV file should contain the following columns (header names must match exact
             ]
             historical_kwargs["exclude_accounts"] = accounts_to_exclude_hist
 
-        logging.info(f"Starting calculation & data fetch (DB source):")
+        logging.info("Starting calculation & data fetch (DB source):")
         logging.info(
             f"DB='{os.path.basename(self.DB_FILE_PATH)}', Currency='{display_currency}', ShowClosed={show_closed}, SelectedAccounts={selected_accounts_for_worker if selected_accounts_for_worker else 'All'}"
         )
@@ -12015,7 +11989,7 @@ The CSV file should contain the following columns (header names must match exact
             logging.error(
                 f"Migration Error: CSV file '{csv_path_to_migrate}' not found."
             )
-            self.set_status(f"Error: Migration CSV not found.")
+            self.set_status("Error: Migration CSV not found.")
             return
 
         logging.info(f"Starting automatic CSV migration from: {csv_path_to_migrate}")
@@ -13209,7 +13183,7 @@ The CSV file should contain the following columns (header names must match exact
                     rate_text = f"<b>FX:</b> 1 {base_currency} = {display_currency} {abs(rate_float):,.4f}"
                     show_rate = True
                 except (ValueError, TypeError):
-                    rate_text = f"<b>FX:</b> Invalid Rate"
+                    rate_text = "<b>FX:</b> Invalid Rate"
                     show_rate = True
             else:
                 rate_text = f"<b>FX:</b> ({base_currency}->{display_currency}) Unavailable"  # Indicate which rate is missing

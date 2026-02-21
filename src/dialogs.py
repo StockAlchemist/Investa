@@ -18,32 +18,20 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
     QMessageBox,
-    QSpinBox,
-    QListWidget,
-    QSplitter,
-    QListWidgetItem,
-    QSpacerItem,
     QSizePolicy,
-    QButtonGroup,
     QWidget,
     QScrollArea,
     QCompleter,
     QDateEdit,
 )
-from PySide6.QtCore import Qt, Signal, Slot, QStringListModel, QDate
-from PySide6.QtGui import QDoubleValidator, QFont, QIcon, QColor, QValidator
+from PySide6.QtCore import Qt, Slot, QStringListModel, QDate
+from PySide6.QtGui import QDoubleValidator, QFont, QColor, QValidator
 from typing import Dict, Any, Optional, List, Set, Tuple
 import pandas as pd
-import json
-import os
 import logging
-import traceback
-import re
 from datetime import date, datetime
-import sqlite3
 
 from models import PandasModel
-import config
 
 from finutils import (
     format_currency_value,
@@ -56,7 +44,6 @@ from finutils import (
 
 from config import (
     COMMON_CURRENCIES,
-    STANDARD_SECTORS,
     STANDARD_ASSET_TYPES,
     SECTOR_INDUSTRY_MAP,
 )
@@ -78,7 +65,6 @@ except ImportError:
 
 from config import CHART_DPI
 
-from PySide6.QtGui import QColor
 
 FALLBACK_QCOLOR_BG_DARK = QColor("#232629")
 FALLBACK_QCOLOR_TEXT_DARK = QColor("#222")
@@ -89,7 +75,7 @@ FALLBACK_QCOLOR_BORDER_DARK = QColor("#555")
 FALLBACK_QCOLOR_LOSS = QColor("#e74c3c")
 FALLBACK_QCOLOR_GAIN = QColor("#2ecc71")
 
-from config import CASH_SYMBOL_CSV, CSV_DATE_FORMAT
+from config import CSV_DATE_FORMAT
 
 
 class FundamentalDataDialog(QDialog):

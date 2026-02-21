@@ -17,29 +17,22 @@ SPDX-License-Identifier: MIT
 """
 
 # --- START OF MODIFIED portfolio_logic.py ---
-import sys
 import os
 import config # Added config import
-import math # Added math import
 from datetime import datetime, date, timedelta
-import pytz
 from utils_time import get_est_today, get_latest_trading_date
 import json
-from typing import List, Dict, Tuple, Optional, Set, Any, Union
+from typing import List, Dict, Tuple, Optional, Set, Any
 
 
 import pandas as pd
 import numpy as np
 import logging
 import traceback
-from collections import defaultdict  # Still needed for historical parts
 import time
-from io import StringIO
 import multiprocessing
 from functools import partial
-import calendar
 import hashlib
-import logging
 import numba  # <-- ADD
 
 # --- ADDED: Import line_profiler if available, otherwise create dummy decorator ---
@@ -250,7 +243,7 @@ def calculate_portfolio_summary(
     has_warnings = False
     status_parts = []
 
-    from utils_time import get_est_today, get_latest_trading_date # Import local helper
+    from utils_time import get_latest_trading_date # Import local helper
 
     # Use the passed-in ignored data from the initial load
     report_date = get_latest_trading_date()  # Defined early for use in default metrics
@@ -2628,7 +2621,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
             any_lookup_nan_on_date = True
             total_market_value_display_curr_agg = np.nan
             if DO_DETAILED_LOG:
-                logging.debug(f"      CRITICAL: FX lookup failed. Aborting.")
+                logging.debug("      CRITICAL: FX lookup failed. Aborting.")
             break
 
         current_price_local = np.nan
@@ -2741,7 +2734,7 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
             any_lookup_nan_on_date = True
             total_market_value_display_curr_agg = np.nan
             if DO_DETAILED_LOG:
-                logging.debug(f"      CRITICAL: MV Display is NaN. Aborting.")
+                logging.debug("      CRITICAL: MV Display is NaN. Aborting.")
             break
         else:
             total_market_value_display_curr_agg += market_value_display
@@ -5916,8 +5909,8 @@ def _calculate_accumulated_gains_and_resample(
             except Exception as e_final_filter:
                 logging.warning(f"Could not apply final date filter: {e_final_filter}")
         # --- END ADDED ---
-    except Exception as e_accum:
-        logging.exception(f"Hist CRITICAL: Accum gain/resample calc error")
+    except Exception:
+        logging.exception("Hist CRITICAL: Accum gain/resample calc error")
         status_update += " Accum gain/resample calc failed."
         return pd.DataFrame(), np.nan, status_update
 
@@ -6783,7 +6776,7 @@ if __name__ == "__main__":
                 f"Test 'All Accounts' Hist DF tail:\n{hist_df.tail().to_string()}"
             )
         else:
-            logging.info(f"Test 'All Accounts' Hist Result: Empty DataFrame")
+            logging.info("Test 'All Accounts' Hist Result: Empty DataFrame")
 
     logging.info("Finished portfolio_logic.py tests.")
 

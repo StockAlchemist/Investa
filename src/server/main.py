@@ -14,9 +14,7 @@ if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
 
-import portfolio_logic
 from server.api import router as api_router
-import config
 
 # Configure logging
 logging.basicConfig(
@@ -24,11 +22,10 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
-import portfolio_analyzer
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from db_utils import initialize_database, initialize_global_database, get_db_connection
+    from db_utils import initialize_database, initialize_global_database
     # Ensure DB is initialized
     initialize_database()
     initialize_global_database()

@@ -19,7 +19,6 @@ from financial_ratios import (
     calculate_key_ratios_timeseries,
     calculate_current_valuation_ratios,
 )
-import config
 from finutils import map_to_yf_symbol, is_cash_symbol
 
 

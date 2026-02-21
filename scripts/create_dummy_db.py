@@ -7,7 +7,6 @@ import sys
 sys.path.append(os.path.join(os.getcwd(), 'src'))
 
 import db_utils
-import config
 
 DB_FILE = 'investa_transactions.db'
 CSV_FILE = 'tests/sample_transactions.csv'

@@ -1,15 +1,12 @@
 import os
 import sys
-import json
 import logging
-import threading
 
 # Add src to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src", "server")))
 
 from screener_service import screen_stocks
-from db_utils import get_db_connection
 
 logging.basicConfig(level=logging.INFO)
 

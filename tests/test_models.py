@@ -8,7 +8,7 @@ if src_dir not in sys.path:
 
 import pytest
 import pandas as pd
-from PySide6.QtCore import Qt, QModelIndex, QObject
+from PySide6.QtCore import Qt, QObject
 from PySide6.QtGui import QColor
 from models import PandasModel
 

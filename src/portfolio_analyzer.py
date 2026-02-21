@@ -19,11 +19,9 @@ SPDX-License-Identifier: MIT
 import pandas as pd
 import numpy as np
 import logging
-import re
 from datetime import (
     date,
     datetime,
-    timedelta,
 )  # Used in _build_summary_rows, _process_transactions...
 from pandas.tseries.holiday import USFederalHolidayCalendar
 
@@ -39,9 +37,7 @@ except ImportError:
 # --- END ADDED ---
 from typing import List, Tuple, Dict, Optional, Any, Set
 from collections import defaultdict
-import numba
-from numba import jit, njit, prange, float64, int64, types
-from numba.typed import Dict as NumbaDict
+from numba import jit, int64
 
 # --- Import Configuration ---
 try:
@@ -613,7 +609,6 @@ def _process_transactions_to_holdings(
     
     # Numba List for shortable symbols (Set caused import issues)
     from numba.typed import List as NumbaList
-    from numba import int64
     # Initialize with dummy int64 to enforce type, then clear
     nb_shortable = NumbaList([int64(0)])
     nb_shortable.clear()
@@ -1337,7 +1332,7 @@ def _build_summary_rows(
                 "IRR (%)": irr_value_to_store,
                 "Local Currency": local_currency,
                 "Price Source": price_source,
-                f"Div. Yield (Current) %": div_yield_on_current_pct_display,
+                "Div. Yield (Current) %": div_yield_on_current_pct_display,
                 f"Est. Ann. Income ({display_currency})": est_annual_income_display,
                 f"FX Gain/Loss ({display_currency})": fx_gain_loss_display_holding,
                 "FX Gain/Loss %": fx_gain_loss_pct_holding,
@@ -1486,7 +1481,7 @@ def _build_summary_rows(
                 "IRR (%)": stock_irr,
                 "Local Currency": local_currency,
                 "Price Source": price_source,
-                f"Div. Yield (Current) %": np.nan, # Will be updated in post-processing
+                "Div. Yield (Current) %": np.nan, # Will be updated in post-processing
                 f"Est. Ann. Income ({display_currency})": 0.0, # Will be updated in post-processing
                 f"FX Gain/Loss ({display_currency})": fx_gain_loss_display_holding,
                 "FX Gain/Loss %": fx_gain_loss_pct_holding,
@@ -1530,7 +1525,7 @@ def _build_summary_rows(
                     
                     r[f"Est. Ann. Income ({display_currency})"] = allocated_income
                     if mv > 1e-9:
-                        r[f"Div. Yield (Current) %"] = (allocated_income / mv) * 100.0
+                        r["Div. Yield (Current) %"] = (allocated_income / mv) * 100.0
             elif total_income_display > 0:
                  # Edge case: Total MV is 0 or negative but somehow we have income? Unlikely with max(0, ...).
                  pass
@@ -1773,7 +1768,7 @@ def _calculate_aggregate_metrics(
                 elif abs(acc_total_day_change_display) < 1e-9:
                     metrics_entry["total_day_change_percent"] = 0.0
 
-        except Exception as e_acc_agg:
+        except Exception:
             logging.exception(f"Error aggregating metrics for account '{account}'")
             has_warnings = True
 

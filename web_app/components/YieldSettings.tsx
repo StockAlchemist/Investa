@@ -7,7 +7,7 @@ import { updateSettings } from '../lib/api';
 interface YieldSettingsProps {
     settings: SettingsType;
     availableAccounts: string[];
-    holdings: any[]; // Using any[] for now as we just need to filter/reduce
+    holdings: Record<string, any>[]; // Using Record<string, any>[] instead of any[] to satisfy linter
     onSettingsUpdated: () => void;
 }
 

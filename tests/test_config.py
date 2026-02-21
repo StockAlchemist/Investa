@@ -1,8 +1,6 @@
 # tests/test_config.py
 
 import pytest
-import logging
-from datetime import date
 import sys
 import os
 

@@ -10,7 +10,6 @@ import gc
 # Setup explicit logging
 # Setup explicit logging
 # Use temp path to force visibility
-import tempfile
 LOG_FILE = os.path.join(tempfile.gettempdir(), "worker_debug_investa.log")
 def log(msg):
     try:
@@ -27,7 +26,6 @@ def log(msg):
 def fetch_info(symbols, output_file, minimal=False):
     try:
         log(f"Starting info fetch for {len(symbols)} symbols. Sequential mode. Minimal={minimal}")
-        import yfinance as yf # Lazy import
         results = {}
         
         def get_single_info(sym):
@@ -111,7 +109,6 @@ def fetch_info(symbols, output_file, minimal=False):
 def fetch_statements_batch(symbols, period_type, output_file):
     try:
         import yfinance as yf # Lazy import
-        import pandas as pd  # Lazy import
         log(f"Starting consolidated statements fetch ({period_type}) for {len(symbols)} symbols.")
         results = {}
         

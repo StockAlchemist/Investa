@@ -13,8 +13,8 @@ export default function ChartSkeleton() {
                         key={i}
                         className="w-full rounded-t-sm"
                         style={{
-                            height: `${Math.random() * 60 + 20}%`,
-                            opacity: 0.5 + (Math.random() * 0.5)
+                            height: `${(i * 17) % 60 + 20}%`,
+                            opacity: 0.5 + ((i * 11) % 50 / 100)
                         }}
                     />
                 ))}

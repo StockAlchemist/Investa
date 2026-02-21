@@ -1,7 +1,6 @@
 import logging
 import json
 import os
-import time
 import hashlib
 from datetime import datetime
 import config
@@ -79,29 +78,7 @@ def generate_portfolio_review(portfolio_data: dict, risk_metrics: dict, force_re
     # Top Holdings Calculation
     holdings_raw = portfolio_data.get("holdings_dict", {})
     
-    # Aggregate by symbol (ignoring accounts)
-    agg_holdings = {}
-    total_value = metrics.get("market_value", 1.0)
-    
-    for (sym, acc), data in holdings_raw.items():
-        # Skip cash
-        if data.get("is_cash", False) or sym == "$CASH":
-            continue
-            
-        # Helper check from finutils is better but we don't have it imported here easily without cicular imports
-        # We'll rely on simple heuristics or passed data.
-        # Ideally calculate_portfolio_summary should flag cash.
-        
-        mkt_val = (data.get("qty", 0) * data.get("price", 0)) # Approximate if price missing
-        # Actually portfolio_data metrics usually have 'market_value' of the holding?
-        # Let's look at calculate_portfolio_summary output structure in portfolio_analyzer.py
-        # It has 'total_value_display' or similar?
-        # calculate_portfolio_summary returns holdings with 'total_cost_local', etc.
-        # It doesn't seem to explicitly store current market value in the holding dict?
-        # Wait, the summary row builder does. But here we have the holdings_dict.
-        # Let's use the 'metrics' which should have sector allocs if implemented.
-        # If not, we construct a simple text summary.
-        pass
+    # Removed unused holdings iteration that did not compute aggregated positions.
     
     # We will pass the TOP 10 positions by weight if possible.
     # Since we might not have prices easily here without reprocessing, 
@@ -224,7 +201,6 @@ def generate_portfolio_review(portfolio_data: dict, risk_metrics: dict, force_re
     # I'll implement a simplified version here or refactor. 
     # For speed, I'll copy the robust loop structure.
     
-    import random
     rate_limit_count = 0
     other_error_count = 0
             

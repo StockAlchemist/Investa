@@ -33,6 +33,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
             setIsLoading(false);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const fetchUser = async (authToken: string) => {

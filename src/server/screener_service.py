@@ -18,7 +18,6 @@ from db_utils import (
     get_cached_screener_results,
     get_screener_results_by_universe
 )
-from server.ai_analyzer import generate_stock_review
 import config
 
 # Cache for S&P 500 tickers
@@ -592,8 +591,7 @@ def process_screener_results(
                 valuation_details_json = json.dumps(iv_res, default=str)
                 
                 # AI Review Check
-                ai_cache_path = os.path.join(config.get_app_data_dir(), config.CACHE_DIR, "ai_analysis_cache", f"{sym.upper()}_analysis.json")
-                has_ai = os.path.exists(ai_cache_path)
+                has_ai = sym.upper() in existing_reviews
                 
                 ai_score = None
                 ai_moat = None

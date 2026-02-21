@@ -2,8 +2,8 @@ import sqlite3
 import pandas as pd
 import logging
 import os
-from datetime import datetime, date, timedelta
-from typing import List, Dict, Optional, Tuple, Any
+from datetime import datetime, date
+from typing import List, Dict, Optional, Tuple
 import threading
 import config
 

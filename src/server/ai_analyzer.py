@@ -3,10 +3,9 @@ import json
 import logging
 import os
 import time
-import re
 from datetime import datetime
 import config
-from db_utils import get_db_connection, update_ai_review_in_cache, get_cached_screener_results
+from db_utils import get_db_connection, get_cached_screener_results
 
 # --- Models and Fallback Configuration ---
 # Models identified from user provided rate limits (gemini-3-flash, gemma-3, etc)

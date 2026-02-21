@@ -19,9 +19,8 @@ from datetime import datetime, date
 import numpy as np
 import os
 import logging
-from typing import Optional, Dict, Any, Tuple, Union, List
+from typing import Optional, Dict, Any, Tuple, List
 import pandas as pd
-import traceback
 import threading
 import config
 

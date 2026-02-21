@@ -29,7 +29,7 @@ interface DashboardProps {
     history?: PerformanceData[];
     isLoading?: boolean;
     isRefreshing?: boolean;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     riskMetrics?: any;
     riskMetricsLoading?: boolean;
@@ -73,7 +73,7 @@ export default function Dashboard({
     }
 
     // Prepare data helpers
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     // Use the correctly aggregated cash balance from overall metrics
     const cashBalance = m?.cash_balance ?? null;
     const dayGL = m?.day_change_display ?? null;

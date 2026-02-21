@@ -54,8 +54,8 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
             if (mode === 'edit' && initialData) {
                 const formattedDate = initialData.Date ? initialData.Date.split('T')[0] : '';
 
-                let fromAcc = initialData.Account || '';
-                let toAcc = initialData["To Account"] || '';
+                const fromAcc = initialData.Account || '';
+                const toAcc = initialData["To Account"] || '';
 
                 // Normalize Type casing to match the select options (e.g. 'buy' -> 'Buy')
                 let initType = initialData.Type || 'Buy';
@@ -257,8 +257,8 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
         const fromAcc = formData['From Account'] ? formData['From Account'].trim() : '';
         const toAcc = formData['To Account'] ? formData['To Account'].trim() : '';
 
-        let qty = parseFloat(formData.Quantity);
-        let price = parseFloat(formData["Price/Share"]);
+        const qty = parseFloat(formData.Quantity);
+        const price = parseFloat(formData["Price/Share"]);
         let comm = parseFloat(formData.Commission);
         if (isNaN(comm)) comm = 0;
 
@@ -295,7 +295,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                 setError("Price/Unit must be positive."); setLoading(false); return;
             }
         } else if (txType === 'dividend') {
-            let total = parseFloat(formData['Total Amount']);
+            const total = parseFloat(formData['Total Amount']);
             if (!isNaN(total)) {
                 if (total < 0) { setError("Dividend Total Amount cannot be negative."); setLoading(false); return; }
             } else {

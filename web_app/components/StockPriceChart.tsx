@@ -92,7 +92,7 @@ export default function StockPriceChart({ symbol, currency }: StockPriceChartPro
     // Determine Fetch Parameters (Fetch more data than shown for SMA)
     const fetchParams = useMemo(() => {
         let fetchPeriod = period;
-        let fetchInterval = interval;
+        const fetchInterval = interval;
 
         // Map request to longer period for SMA buffer
         // Note: Backend supports: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max

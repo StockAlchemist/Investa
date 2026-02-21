@@ -2,9 +2,6 @@
 
 import pytest
 import pandas as pd
-import numpy as np
-from io import StringIO  # To simulate CSV files from strings
-import os
 
 # --- Import the function to test ---
 try:

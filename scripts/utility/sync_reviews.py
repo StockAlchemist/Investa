@@ -9,7 +9,7 @@ import time
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import config
-from db_utils import get_db_connection, upsert_screener_results
+from db_utils import get_db_connection
 from market_data import get_shared_mdp
 from ai_review_worker import save_review_to_screener
 

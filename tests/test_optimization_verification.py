@@ -1,9 +1,8 @@
 
 
-import pytest
 import pandas as pd
 import numpy as np
-from datetime import date, timedelta
+from datetime import date
 import time
 import os
 import sys
@@ -15,11 +14,8 @@ if project_root not in sys.path:
 
 from portfolio_logic import (
     _load_or_calculate_daily_results,
-    CASH_SYMBOL_CSV,
-    _prepare_historical_inputs,
-    _unadjust_prices
+    CASH_SYMBOL_CSV
 )
-from market_data import MarketDataProvider
 
 # --- Helpers (Inlined) ---
 def generate_mappings(transactions_df_effective):

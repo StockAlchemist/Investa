@@ -21,12 +21,10 @@ from portfolio_analyzer import (
     extract_dividend_history,
     generate_cash_interest_events
 )
-from market_data import MarketDataProvider, map_to_yf_symbol
+from market_data import map_to_yf_symbol
 from db_utils import (
     add_transaction_to_db,
-    update_transaction_in_db,
     delete_transaction_from_db,
-    get_database_path,
     get_db_connection,
     add_to_watchlist,
     remove_from_watchlist,
@@ -37,7 +35,6 @@ from db_utils import (
     rename_watchlist,
     delete_watchlist,
     update_intrinsic_value_in_cache,
-    upsert_screener_results,
     get_cached_screener_results
 )
 
@@ -71,7 +68,6 @@ from server.auth import (
 )
 from server.dependencies import get_current_user
 from datetime import timedelta
-from pydantic import BaseModel
 
 import logging
 
@@ -516,10 +512,8 @@ async def get_asset_change(
         logging.error(f"Error calculating asset change: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-import config
-from datetime import date, timedelta
+from datetime import date
 
-import math
 
 logging.info("API MODULE LOADED - VERSION 2")
 
@@ -1645,7 +1639,7 @@ async def _calculate_historical_performance_internal(
     # 2. For other views (1m, 1y, etc): Use get_est_today().
     #    This ensures "Today" is included as the last data point, capturing international markets (SET) 
     #    that may have already closed/traded, matching the Summary Card total.
-    from utils_time import get_est_today, get_latest_trading_date, is_tradable_day, get_nyse_calendar
+    from utils_time import is_tradable_day, get_nyse_calendar
     
     # UNIFIED: Use get_est_today() + 1 day as the exclusive end_date for all relative periods.
     # This ensures yfinance includes today's data (if available) and the graph isn't truncated.
@@ -2443,7 +2437,6 @@ async def _generate_dividend_events(
     from market_data import map_to_yf_symbol, _run_isolated_fetch
     from finutils import is_cash_symbol, get_dividend_details
     import concurrent.futures
-    import yfinance as yf
     
     provider = get_mdp()
     yf_map = {} # Internal -> YF
@@ -3487,7 +3480,7 @@ async def get_intrinsic_value_endpoint(
 
 # --- Phase 5: Settings & Webhook Endpoints ---
 
-from server.dependencies import get_config_manager, reload_data
+from server.dependencies import get_config_manager
 from config_manager import ConfigManager
 from pydantic import BaseModel
 

@@ -3,7 +3,6 @@ import requests
 import xml.etree.ElementTree as ET
 import time
 import logging
-import pandas as pd
 from typing import List, Dict, Any, Optional, Tuple
 from config import IBKR_TOKEN, IBKR_QUERY_ID
 from datetime import datetime

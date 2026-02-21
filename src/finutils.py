@@ -16,7 +16,7 @@ SPDX-License-Identifier: MIT
 
 import pandas as pd
 import numpy as np
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 import hashlib
 import os
 import config
@@ -105,7 +105,7 @@ def _get_file_hash(filepath: str) -> str:
     except IOError as e:
         logging.error(f"I/O error hashing file {filepath}: {e}")
         return HASH_ERROR_IO
-    except Exception as e:
+    except Exception:
         logging.exception(f"Unexpected error hashing file {filepath}")
         return HASH_ERROR_UNEXPECTED
 
@@ -300,7 +300,7 @@ def calculate_npv(rate: float, dates: List[date], cash_flows: List[float]) -> fl
                 f"NPV Calculation TypeError at index {i}: {e}. Returning NaN."
             )
             return np.nan
-        except Exception as e:
+        except Exception:
             logging.exception(f"Unexpected error in NPV calculation loop at index {i}")
             return np.nan  # Catch any other unexpected calculation errors
     return float(npv) if np.isfinite(npv) else np.nan
@@ -944,7 +944,7 @@ def get_conversion_rate(
         # Changed to debug as this might be expected in some initial states
         # or if no FX data was fetched at all.
         logging.debug(
-            f"Warning: get_conversion_rate received invalid fx_rates type. Returning NaN"
+            "Warning: get_conversion_rate received invalid fx_rates type. Returning NaN"
         )
         return np.nan  # Return NaN on invalid rates dict
 
@@ -1186,7 +1186,7 @@ def get_historical_rate_via_usd_bridge(
     if from_curr == to_curr:
         return 1.0
     if not isinstance(historical_fx_data, dict):
-        logging.warning(f"Hist FX Bridge: Invalid historical_fx_data type received.")
+        logging.warning("Hist FX Bridge: Invalid historical_fx_data type received.")
         return np.nan  # Return NaN on invalid input dict
 
     from_curr_upper = from_curr.upper()
