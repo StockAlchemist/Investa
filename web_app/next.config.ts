@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const isDesktop = process.env.APP_ENV === 'desktop';
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ["100.66.59.98", "localhost:3000", "muon.tail33e9df.ts.net"],
+  allowedDevOrigins: ["100.66.59.98", "localhost:3000", "muon.tail33e9df.ts.net", "muon", "*.ts.net"],
   devIndicators: false,
   output: isDesktop ? 'export' : undefined,
   assetPrefix: isDesktop ? './' : undefined, // Fix loading assets in Electron (file:// protocol)

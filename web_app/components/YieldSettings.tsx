@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Save, AlertCircle } from 'lucide-react';
 import { Settings as SettingsType } from '../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
@@ -89,21 +89,31 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
         await queryClient.invalidateQueries({ queryKey: ['dividends'] }); // Invalidate dividends too
     };
 
-    // Filter useful accounts (with cash)
-    const activeAccounts = availableAccounts.filter(account => {
-        const accountCash = holdings
-            .filter(h => h.Account === account && (h.Symbol === '$CASH' || h.Symbol === 'Cash' || h.Symbol.includes('Cash')))
-            .reduce((sum, h) => {
+    // Pre-calculate cash balances to avoid expensive loops on every keystroke
+    const accountCashBalances = useMemo(() => {
+        const balances: Record<string, number> = {};
+
+        for (const h of holdings) {
+            if (h.Account && (h.Symbol === '$CASH' || h.Symbol === 'Cash' || h.Symbol.includes('Cash'))) {
                 const mvKey = Object.keys(h).find(k => k.startsWith('Market Value'));
                 const val = mvKey ? (h[mvKey] as number) : 0;
-                return sum + (val || 0);
-            }, 0);
+                balances[h.Account] = (balances[h.Account] || 0) + (val || 0);
+            }
+        }
+        return balances;
+    }, [holdings]);
 
-        // Show account if it has cash OR has existing settings
-        return Math.abs(accountCash) > 0.01 ||
-            (settings.account_interest_rates && settings.account_interest_rates[account] > 0) ||
-            (settings.interest_free_thresholds && settings.interest_free_thresholds[account] > 0);
-    });
+    // Filter useful accounts (with cash or existing settings)
+    const activeAccounts = useMemo(() => {
+        return availableAccounts.filter(account => {
+            const accountCash = accountCashBalances[account] || 0;
+
+            // Show account if it has cash OR has existing settings
+            return Math.abs(accountCash) > 0.01 ||
+                (settings.account_interest_rates && settings.account_interest_rates[account] > 0) ||
+                (settings.interest_free_thresholds && settings.interest_free_thresholds[account] > 0);
+        });
+    }, [availableAccounts, accountCashBalances, settings]);
 
     const inputClassName = "w-full rounded-md border border-border bg-background text-foreground shadow-sm focus:border-cyan-500 focus:ring-cyan-500 px-3 py-2 text-sm outline-none focus:ring-1";
 
@@ -163,13 +173,7 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
                                 </tr>
                             ) : (
                                 activeAccounts.map(account => {
-                                    const accountCash = holdings
-                                        .filter(h => h.Account === account && (h.Symbol === '$CASH' || h.Symbol === 'Cash' || h.Symbol.includes('Cash')))
-                                        .reduce((sum, h) => {
-                                            const mvKey = Object.keys(h).find(k => k.startsWith('Market Value'));
-                                            const val = mvKey ? (h[mvKey] as number) : 0;
-                                            return sum + (val || 0);
-                                        }, 0);
+                                    const accountCash = accountCashBalances[account] || 0;
 
                                     return (
                                         <tr key={account} className="hover:bg-accent/5 transition-colors">

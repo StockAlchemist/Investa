@@ -247,14 +247,23 @@ export default function Home() {
       if (server.active_tab !== activeTab) updates.active_tab = activeTab;
       if (server.show_closed !== showClosed) updates.show_closed = showClosed;
 
-      // Deep compare arrays
-      if (JSON.stringify(server.selected_accounts) !== JSON.stringify(selectedAccounts)) {
+      // Fast array comparison for shallow arrays of strings
+      const arraysEqual = (a: string[] | undefined | null, b: string[]) => {
+        if (!a) return false;
+        if (a.length !== b.length) return false;
+        for (let i = 0; i < a.length; i++) {
+          if (a[i] !== b[i]) return false;
+        }
+        return true;
+      };
+
+      if (!arraysEqual(server.selected_accounts, selectedAccounts)) {
         updates.selected_accounts = selectedAccounts;
       }
-      if (JSON.stringify(server.visible_items) !== JSON.stringify(visibleItems) && visibleItems.length > 0) {
+      if (!arraysEqual(server.visible_items, visibleItems) && visibleItems.length > 0) {
         updates.visible_items = visibleItems;
       }
-      if (JSON.stringify(server.benchmarks) !== JSON.stringify(benchmarks) && benchmarks.length > 0) {
+      if (!arraysEqual(server.benchmarks, benchmarks) && benchmarks.length > 0) {
         updates.benchmarks = benchmarks;
       }
 

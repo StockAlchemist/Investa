@@ -269,6 +269,8 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
         };
     }, []);
 
+    const resolvedKeysRef = useRef<Record<string, string>>({});
+
     // Helper to get value from holding object handling currency suffix
     const getValue = useCallback((holding: Holding, header: string) => {
         const prefix = COLUMN_DEFINITIONS[header];
@@ -281,9 +283,17 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
         const keyWithCurrency = `${prefix} (${currency})`;
         if (holding[keyWithCurrency] !== undefined) return holding[keyWithCurrency];
 
+        // Try cached resolved key
+        const cachedKey = resolvedKeysRef.current[prefix];
+        if (cachedKey && holding[cachedKey] !== undefined) return holding[cachedKey];
+
         // Fallback: search for key starting with prefix
         const foundKey = Object.keys(holding).find(k => k.startsWith(prefix));
-        return foundKey ? holding[foundKey] : null;
+        if (foundKey) {
+            resolvedKeysRef.current[prefix] = foundKey; // Cache for next time
+            return holding[foundKey];
+        }
+        return null;
     }, [currency]);
 
     // In getLotValue
