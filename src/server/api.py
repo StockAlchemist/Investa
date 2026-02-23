@@ -70,8 +70,12 @@ from server.dependencies import get_current_user
 from datetime import timedelta
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 router = APIRouter()
+
+# Global thread pool for background metric pre-calculations
+_PRECALC_POOL = ThreadPoolExecutor(max_workers=2)
 
 
 current_file_path = os.path.abspath(__file__)
@@ -87,13 +91,141 @@ _MARKET_HISTORY_CACHE = {}
 _PORTFOLIO_HISTORY_CACHE = {} # Shared cache for historical calculations
 _HISTORY_CALC_FUTURES = {}    # Track in-flight historical calculations
 
-def reload_data_and_clear_cache():
+def reload_data_and_clear_cache(current_user: Optional[User] = None):
     """Helper to clear both transaction data cache, portfolio summary cache, and market history cache."""
     reload_data()
     _PORTFOLIO_SUMMARY_CACHE.clear()
     _MARKET_HISTORY_CACHE.clear()
     _PORTFOLIO_HISTORY_CACHE.clear()
     logging.info("Transaction, Summary, Market History, and Portfolio History caches cleared.")
+    if current_user:
+        trigger_background_precalculation(current_user)
+
+def trigger_background_precalculation(current_user: User):
+    """Triggers background task to calculate and store portfolio snapshots."""
+    def run_precalc():
+        try:
+            logging.info(f"Starting background metric pre-calculation for user {current_user.username}")
+            from server.dependencies import get_transaction_data
+            
+            # retrieve user transaction data manually
+            df, manual, user_map, excluded, acc_curr, path, mtime = get_transaction_data(current_user)
+            if df.empty:
+                logging.info("Skip precalc: dataframe is empty")
+                return
+
+            from portfolio_logic import calculate_portfolio_summary, calculate_historical_performance
+            from config import DEFAULT_CURRENCY
+            import config
+            import sqlite3
+            from datetime import date, datetime
+            import pandas as pd
+
+            today = date.today()
+            
+            # Call synchronous summary generator
+            overall_metrics, summary_df, account_metrics, _, _, status = calculate_portfolio_summary(
+                all_transactions_df_cleaned=df,
+                original_transactions_df_for_ignored=df,
+                ignored_indices_from_load=set(),
+                ignored_reasons_from_load={},
+                display_currency="USD",
+                account_currency_map=acc_curr,
+                default_currency=DEFAULT_CURRENCY,
+                include_accounts=None, # ALL accounts
+                manual_overrides_dict=manual,
+                user_symbol_map=user_map,
+                user_excluded_symbols=excluded
+            )
+
+            # Calculate TWR synchronously for ALL account
+            overall_twr = 0.0
+            min_date = df["Date"].min().date()
+            if not df.empty:
+                _, _, _, hist_status = calculate_historical_performance(
+                    all_transactions_df_cleaned=df,
+                    original_transactions_df_for_ignored=df,
+                    ignored_indices_from_load=set(),
+                    ignored_reasons_from_load={},
+                    start_date=min_date,
+                    end_date=today,
+                    interval="1d",
+                    benchmark_symbols_yf=[],
+                    display_currency="USD",
+                    account_currency_map=acc_curr,
+                    default_currency=DEFAULT_CURRENCY,
+                    use_raw_data_cache=True,
+                    use_daily_results_cache=True,
+                    num_processes=None,
+                    include_accounts=None,
+                    worker_signals=None,
+                    user_symbol_map=user_map,
+                    manual_overrides_dict=manual,
+                    user_excluded_symbols=excluded,
+                    original_csv_file_path=path,
+                    calc_method="STANDARD"
+                )
+                if "|||TWR_FACTOR:" in hist_status:
+                    try:
+                        twr_part = hist_status.split("|||TWR_FACTOR:")[1].strip()
+                        if twr_part != "NaN":
+                            # It is a factor like 1.25. Annualized or cumulative?
+                            # Backend history returns final_twr_factor.
+                            overall_twr = float(twr_part)
+                    except:
+                        pass
+            
+            # Note: For simplicity and performance, we only pre-calculate TWR for the overall portfolio right now.
+            # We can calculate for individual accounts if needed.
+
+            # Store in portfolio_snapshots table
+            user_data_dir = os.path.join(config.get_app_data_dir(), config.USERS_DIR, current_user.username)
+            db_path = os.path.join(user_data_dir, config.PORTFOLIO_DB_FILENAME)
+            
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('DELETE FROM portfolio_snapshots WHERE snapshot_date=?', (today.isoformat(),))
+            
+            if overall_metrics:
+                cursor.execute('''
+                    INSERT INTO portfolio_snapshots (snapshot_date, account, total_value, total_cost, total_gain, total_return_pct, twr, irr, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    today.isoformat(),
+                    'ALL',
+                    overall_metrics.get('market_value'),
+                    overall_metrics.get('total_buy_cost'),
+                    overall_metrics.get('total_gain'),
+                    overall_metrics.get('total_return_pct'),
+                    overall_twr,
+                    overall_metrics.get('portfolio_mwr'),
+                    datetime.now().isoformat()
+                ))
+
+            if account_metrics:
+                for acc, acc_data in account_metrics.items():
+                    cursor.execute('''
+                        INSERT INTO portfolio_snapshots (snapshot_date, account, total_value, total_cost, total_gain, total_return_pct, twr, irr, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        today.isoformat(),
+                        acc,
+                        acc_data.get('total_market_value_display'),
+                        acc_data.get('total_buy_cost_display'),
+                        acc_data.get('total_gain_display'),
+                        acc_data.get('total_return_pct'),
+                        acc_data.get('twr', 0.0),
+                        acc_data.get('mwr'),
+                        datetime.now().isoformat()
+                    ))
+            conn.commit()
+            conn.close()
+            logging.info(f"Finished background metric pre-calculation for user {current_user.username}")
+        except Exception as e:
+            logging.error(f"Error in background metric pre-calculation: {e}", exc_info=True)
+
+    _PRECALC_POOL.submit(run_precalc)
 
 
 async def _get_historical_performance_cached(
@@ -628,7 +760,42 @@ async def _calculate_portfolio_summary_internal(
     # --- Calculate Annualized TWR and include in metrics ---
     annualized_twr = None
     cumulative_twr = None
-    if not df.empty:
+    try:
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        target_account = "ALL" if not include_accounts or len(include_accounts) != 1 else include_accounts[0]
+        cursor.execute('''
+            SELECT twr FROM portfolio_snapshots 
+            WHERE account = ? 
+            ORDER BY snapshot_date DESC LIMIT 1
+        ''', (target_account,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row and row[0] is not None and row[0] > 0:
+            final_twr_factor = row[0]
+            df_for_twr = df
+            if include_accounts:
+                df_for_twr = df[df["Account"].isin(include_accounts)]
+            
+            if not df_for_twr.empty:
+                actual_min_date = df_for_twr["Date"].min().date()
+                days = (date.today() - actual_min_date).days
+                cumulative_twr = (final_twr_factor - 1) * 100.0
+                if days > 0:
+                    annualized_factor = final_twr_factor ** (365.25 / days)
+                    annualized_twr = (annualized_factor - 1) * 100.0
+            precalculated_twr_used = True
+        else:
+            precalculated_twr_used = False
+    except Exception as e_db:
+        logging.warning(f"Could not fetch pre-calculated TWR from portfolio_snapshots: {e_db}")
+        precalculated_twr_used = False
+
+    if not precalculated_twr_used and not df.empty:
         try:
             # Filter df by accounts to get correct baseline date for this selection
             df_for_twr = df
@@ -1270,7 +1437,7 @@ async def create_transaction(
         conn.close()
         
         if success:
-            reload_data_and_clear_cache() # Refresh transaction and summary caches
+            reload_data_and_clear_cache(current_user) # Refresh transaction and summary caches
             return {"status": "success", "id": new_id, "message": "Transaction added"}
         else:
             raise HTTPException(status_code=500, detail="Failed to add transaction to database")
@@ -1283,7 +1450,8 @@ async def create_transaction(
 async def update_transaction(
     transaction_id: int,
     transaction: TransactionInput,
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Updates an existing transaction.
@@ -1322,7 +1490,7 @@ async def update_transaction(
         conn.close()
         
         if success:
-            reload_data_and_clear_cache()
+            reload_data_and_clear_cache(current_user)
             return {"status": "success", "message": "Transaction updated"}
         else:
             raise HTTPException(status_code=404, detail="Transaction not found or update failed")
@@ -1334,7 +1502,8 @@ async def update_transaction(
 @router.delete("/transactions/{transaction_id}")
 async def delete_transaction(
     transaction_id: int,
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Deletes a transaction.
@@ -1356,7 +1525,7 @@ async def delete_transaction(
         conn.close()
         
         if success:
-            reload_data_and_clear_cache()
+            reload_data_and_clear_cache(current_user)
             return {"status": "success", "message": "Transaction deleted"}
         else:
             raise HTTPException(status_code=404, detail="Transaction not found or delete failed")
@@ -1376,7 +1545,8 @@ class HoldingTagUpdate(BaseModel):
 @router.post("/holdings/update_tags")
 async def update_holding_tags(
     update_data: HoldingTagUpdate,
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Updates tags for all transactions associated with a specific holding (Symbol + Account).
@@ -1401,7 +1571,7 @@ async def update_holding_tags(
         rows_affected = cursor.rowcount
         conn.close()
         
-        reload_data_and_clear_cache()
+        reload_data_and_clear_cache(current_user)
         return {"status": "success", "message": f"Updated tags for {rows_affected} transactions"}
 
     except Exception as e:
@@ -1565,7 +1735,7 @@ async def approve_ibkr(
         
         conn.commit()
         if approved_count > 0:
-            reload_data_and_clear_cache()
+            reload_data_and_clear_cache(current_user)
             
         return {"status": "success", "message": f"Successfully approved {approved_count} transactions.", "count": approved_count}
     except Exception as e:
@@ -1585,7 +1755,7 @@ async def reject_ibkr(
         deleted_count = cursor.rowcount
         conn.commit()
         if deleted_count > 0:
-            reload_data_and_clear_cache()
+            reload_data_and_clear_cache(current_user)
         return {"status": "success", "message": f"Discarded {deleted_count} transactions.", "count": deleted_count}
     except Exception as e:
         conn.rollback()
@@ -3032,7 +3202,7 @@ async def update_settings(
             # ---------------------------------------------------------
 
             # Reload data to apply changes (clear cache)
-            reload_data_and_clear_cache()
+            reload_data_and_clear_cache(current_user)
             return {"status": "success", "message": "Settings updated and data reloaded"}
         else:
              raise HTTPException(status_code=500, detail="Failed to save settings to file")
@@ -3557,7 +3727,7 @@ async def update_manual_override(
         # -------------------------------------------------------------------------------
 
         # Force reload of data so next request uses new override
-        reload_data_and_clear_cache()
+        reload_data_and_clear_cache(current_user)
         
         return {"status": "success", "message": f"Override for {symbol_upper} updated."}
 
@@ -4019,7 +4189,7 @@ async def clear_cache():
         
         # 3. Reload Data
         logging.info("Reloading data after cache clear...")
-        reload_data_and_clear_cache()
+        reload_data_and_clear_cache(current_user)
         
         return {"status": "success", "message": f"Cache cleared. {deleted_count} items removed."}
     except Exception as e:

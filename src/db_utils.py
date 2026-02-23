@@ -25,7 +25,7 @@ import threading
 import config
 
 DB_FILENAME = "investa_transactions.db"
-DB_SCHEMA_VERSION = 12
+DB_SCHEMA_VERSION = 13
 
 # --- Helper for JSON serialization with NaNs ---
 class NpEncoder(json.JSONEncoder):
@@ -506,6 +506,40 @@ def create_transactions_table(conn: sqlite3.Connection):
                 logging.info("Updated schema_version to 12.")
             except sqlite3.Error as e:
                 logging.error(f"Error during migration v12: {e}")
+                raise
+
+        if current_db_version < 13:
+            logging.info("Schema version is less than 13. Creating indexes and portfolio_snapshots table.")
+            try:
+                # Add indexes for transactions table
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_transactions_symbol ON transactions (Symbol);')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions (Date);')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions (Account);')
+                
+                # Create portfolio_snapshots table
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        snapshot_date TEXT NOT NULL,
+                        account TEXT NOT NULL,
+                        total_value REAL NOT NULL,
+                        total_cost REAL,
+                        total_gain REAL,
+                        total_return_pct REAL,
+                        twr REAL,
+                        irr REAL,
+                        created_at TEXT NOT NULL
+                    );
+                """)
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_date_account ON portfolio_snapshots (snapshot_date, account);')
+
+                cursor.execute(
+                    "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)",
+                    (13, datetime.now().isoformat()),
+                )
+                logging.info("Updated schema_version to 13.")
+            except sqlite3.Error as e:
+                logging.error(f"Error during migration v13: {e}")
                 raise
 
         conn.commit()
