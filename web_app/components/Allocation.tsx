@@ -1,5 +1,5 @@
-import React from 'react';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import React, { useState } from 'react';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, Sector } from 'recharts';
 import { Holding } from '../lib/api';
 import { formatCurrency } from '../lib/utils';
 
@@ -16,6 +16,96 @@ interface AggregatedData {
     name: string;
     value: number;
     [key: string]: unknown;
+}
+
+interface AllocationPieChartProps {
+    title: string;
+    data: AggregatedData[];
+    currency: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const renderActiveShape = (props: any) => {
+    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+    return (
+        <g>
+            <Sector
+                cx={cx}
+                cy={cy}
+                innerRadius={innerRadius}
+                outerRadius={outerRadius + 8}
+                startAngle={startAngle}
+                endAngle={endAngle}
+                fill={fill}
+            />
+        </g>
+    );
+};
+
+function AllocationPieChart({ title, data, currency }: AllocationPieChartProps) {
+    const [activeIndex, setActiveIndex] = useState<number | undefined>(undefined);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const onPieEnter = (_: any, index: number) => setActiveIndex(index);
+    const onPieLeave = () => setActiveIndex(undefined);
+
+    return (
+        <div className="bg-card p-4 rounded-xl shadow-sm flex flex-col h-[32rem]">
+            <h3 className="text-lg font-semibold text-foreground mb-4 text-center">{title}</h3>
+            <div className="flex-grow min-h-0 relative">
+                <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
+                    <PieChart>
+                        <Pie
+                            data={data}
+                            cx="50%"
+                            cy="35%"
+                            labelLine={false}
+                            outerRadius={110}
+                            fill="#8884d8"
+                            dataKey="value"
+                            stroke="var(--pie-stroke)"
+                            onMouseEnter={onPieEnter}
+                            onMouseLeave={onPieLeave}
+                            // @ts-ignore
+                            activeIndex={activeIndex}
+                            activeShape={renderActiveShape}
+                        >
+                            {data.map((entry, index) => (
+                                <Cell
+                                    key={`cell-${index}`}
+                                    fill={COLORS[index % COLORS.length]}
+                                    fillOpacity={activeIndex === undefined || activeIndex === index ? 1 : 0.3}
+                                    className="transition-all duration-300 outline-none"
+                                />
+                            ))}
+                        </Pie>
+                        <Tooltip
+                            contentStyle={{
+                                backgroundColor: 'var(--menu-solid)',
+                                border: '1px solid var(--border)',
+                                borderRadius: '0.75rem',
+                                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
+                            }}
+                            content={({ active, payload }) => {
+                                if (active && payload && payload.length) {
+                                    return (
+                                        <div className="border border-border p-3 rounded-lg shadow-xl" style={{ backgroundColor: 'var(--menu-solid)' }}>
+                                            <p className="font-medium text-foreground">{payload[0].name}</p>
+                                            <p className="text-sm text-muted-foreground">
+                                                {formatCurrency(payload[0].value as number, currency)}
+                                            </p>
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            }}
+                        />
+                        <Legend layout="horizontal" align="center" verticalAlign="bottom" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                    </PieChart>
+                </ResponsiveContainer>
+            </div>
+        </div>
+    );
 }
 
 export default function Allocation({ holdings, currency }: AllocationProps) {
@@ -51,60 +141,12 @@ export default function Allocation({ holdings, currency }: AllocationProps) {
     const industryData = aggregateData('Industry');
     const countryData = aggregateData('Country');
 
-    const renderPieChart = (title: string, data: AggregatedData[]) => (
-        <div className="bg-card p-4 rounded-xl shadow-sm flex flex-col h-[32rem]">
-            <h3 className="text-lg font-semibold text-foreground mb-4 text-center">{title}</h3>
-            <div className="flex-grow min-h-0 relative">
-                <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
-                    <PieChart>
-                        <Pie
-                            data={data}
-                            cx="50%"
-                            cy="35%"
-                            labelLine={false}
-                            outerRadius={110}
-                            fill="#8884d8"
-                            dataKey="value"
-                            stroke="var(--pie-stroke)"
-                        >
-                            {data.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                            ))}
-                        </Pie>
-                        <Tooltip
-                            contentStyle={{
-                                backgroundColor: 'var(--menu-solid)',
-                                border: '1px solid var(--border)',
-                                borderRadius: '0.75rem',
-                                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
-                            }}
-                            content={({ active, payload }) => {
-                                if (active && payload && payload.length) {
-                                    return (
-                                        <div className="border border-border p-3 rounded-lg shadow-xl" style={{ backgroundColor: 'var(--menu-solid)' }}>
-                                            <p className="font-medium text-foreground">{payload[0].name}</p>
-                                            <p className="text-sm text-muted-foreground">
-                                                {formatCurrency(payload[0].value as number, currency)}
-                                            </p>
-                                        </div>
-                                    );
-                                }
-                                return null;
-                            }}
-                        />
-                        <Legend layout="horizontal" align="center" verticalAlign="bottom" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                    </PieChart>
-                </ResponsiveContainer>
-            </div>
-        </div>
-    );
-
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4">
-            {renderPieChart("Allocation by Asset Type", assetTypeData)}
-            {renderPieChart("Allocation by Sector", sectorData)}
-            {renderPieChart("Allocation by Industry", industryData)}
-            {renderPieChart("Allocation by Country", countryData)}
+            <AllocationPieChart title="Allocation by Asset Type" data={assetTypeData} currency={currency} />
+            <AllocationPieChart title="Allocation by Sector" data={sectorData} currency={currency} />
+            <AllocationPieChart title="Allocation by Industry" data={industryData} currency={currency} />
+            <AllocationPieChart title="Allocation by Country" data={countryData} currency={currency} />
         </div>
     );
 }
