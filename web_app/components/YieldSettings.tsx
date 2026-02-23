@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Save, AlertCircle } from 'lucide-react';
-import { Settings as SettingsType } from '../lib/api';
+import { Settings as SettingsType, Holding } from '../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { updateSettings } from '../lib/api';
 
 interface YieldSettingsProps {
     settings: SettingsType;
     availableAccounts: string[];
-    holdings: Record<string, any>[]; // Using Record<string, any>[] instead of any[] to satisfy linter
+    holdings: Holding[];
     onSettingsUpdated: () => void;
 }
 

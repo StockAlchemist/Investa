@@ -443,7 +443,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
         const groups = new Map<string, {
             key: string;
             holdings: Holding[];
-            aggregates: any;
+            aggregates: Record<string, any>;
         }>();
 
         aggregatedHoldings.forEach(h => {
@@ -451,18 +451,18 @@ export default function HoldingsTable({ holdings, currency, isLoading = false, s
             let groupKey = 'Other';
             if (groupBy === 'Market') {
                 // Use 'fullExchangeName' or 'exchange' if available, then fallback to 'Market' or 'Unknown'
-                const rawExchange = (h as any)['fullExchangeName'] || (h as any)['exchange'] || (h as any)['Market'] || 'Unknown';
+                const rawExchange = (h as Record<string, any>)['fullExchangeName'] || (h as Record<string, any>)['exchange'] || (h as Record<string, any>)['Market'] || 'Unknown';
                 const exchange = normalizeMarketName(rawExchange);
                 if (h.Symbol === 'AAPL') console.log(`DEBUG_MARKET: AAPL -> Raw: ${rawExchange}, Norm: ${exchange}`, h);
                 groupKey = exchange;
             } else if (groupBy === 'quoteType') {
-                const rawType = (h as any)['quoteType'] || 'Other';
+                const rawType = (h as Record<string, any>)['quoteType'] || 'Other';
                 groupKey = INVESTMENT_TYPE_MAP[rawType] || rawType;
             } else if (groupBy === 'Country') {
                 // Prioritize 'geography' over 'Country'
-                groupKey = (h as any)['geography'] || (h as any)['Country'] || 'Unknown';
+                groupKey = (h as Record<string, any>)['geography'] || (h as Record<string, any>)['Country'] || 'Unknown';
             } else if (groupBy === 'Currency') {
-                const rawCurrency = (h as any)['Local Currency'] || 'Unknown';
+                const rawCurrency = (h as Record<string, any>)['Local Currency'] || 'Unknown';
                 groupKey = CURRENCY_MAP[rawCurrency] || rawCurrency;
             } else {
                 const val = getValue(h, groupBy);
