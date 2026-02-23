@@ -9,7 +9,6 @@ import gc
 
 # Setup explicit logging
 # Setup explicit logging
-# Use temp path to force visibility
 LOG_FILE = os.path.join(tempfile.gettempdir(), "worker_debug_investa.log")
 def log(msg):
     try:
@@ -20,6 +19,13 @@ def log(msg):
             f.write(f"{datetime.now()} - {msg}\n")
     except:
         pass
+
+try:
+    from market_fallback import fetch_data_fallback, fetch_info_fallback
+except ImportError:
+    log("market_fallback not found or failed to import. Redundancy disabled.")
+    fetch_data_fallback = None
+    fetch_info_fallback = None
 
 # Removed ThreadPoolExecutor to save memory
 
@@ -86,7 +92,12 @@ def fetch_info(symbols, output_file, minimal=False):
                 
                 return sym, info
             except Exception as e:
-                log(f"CRITICAL Error fetching {sym}: {e}")
+                log(f"CRITICAL Error fetching {sym} via yf: {e}")
+                if fetch_info_fallback:
+                    log(f"Attempting fallback for {sym}...")
+                    fb_info = fetch_info_fallback(sym)
+                    if fb_info:
+                        return sym, fb_info
                 return sym, None
 
         # SEQUENTIAL: Removed ThreadPoolExecutor to minimize peak memory (prevent OOM)
@@ -340,8 +351,18 @@ def fetch_data(symbols, start_date, end_date, interval, output_file, period=None
         log(f"Fetch completed. Data shape: {data.shape}")
         
         if data.empty:
-            log("Data is empty.")
-            return {"status": "success", "data": None}
+            log(f"Data is empty from yfinance. Attempting fallback for {symbols[0] if symbols else 'None'}.")
+            fallback_success = False
+            if fetch_data_fallback and len(symbols) == 1:
+                # Basic fallback implementation handles single symbols best
+                fb_data = fetch_data_fallback(symbols, start_date, end_date, interval)
+                if fb_data is not None and not fb_data.empty:
+                    data = fb_data
+                    fallback_success = True
+                    log(f"Fallback SUCCESS for {symbols[0]}. Shape: {data.shape}")
+                    
+            if not fallback_success:
+                return {"status": "success", "data": None}
 
         # Save to temp file using parquet or json to avoid massive string in memory
         # Parquet is efficient but requires pyarrow/fastparquet. JSON is safer for compat.

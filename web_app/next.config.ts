@@ -1,4 +1,10 @@
 import type { NextConfig } from "next";
+import withPWAInit from "@ducanh2912/next-pwa";
+
+const withPWA = withPWAInit({
+  dest: "public",
+  disable: process.env.NODE_ENV === "development" || process.env.APP_ENV === 'desktop',
+});
 
 const isDesktop = process.env.APP_ENV === 'desktop';
 
@@ -7,6 +13,7 @@ const nextConfig: NextConfig = {
   devIndicators: false,
   output: isDesktop ? 'export' : undefined,
   assetPrefix: isDesktop ? './' : undefined, // Fix loading assets in Electron (file:// protocol)
+  turbopack: {}, // Required to prevent error when using next-pwa in Next 16
   images: {
     unoptimized: isDesktop,
   },
@@ -31,4 +38,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withPWA(nextConfig);

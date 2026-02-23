@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import Providers from "@/components/Providers";
@@ -7,10 +7,17 @@ import { AuthProvider } from "@/context/AuthContext";
 
 const inter = Inter({ subsets: ["latin"] });
 
+export const viewport: Viewport = {
+  themeColor: "#06b6d4",
+};
+
 export const metadata: Metadata = {
   title: "Investa",
   description: "Personal Investment Portfolio Tracker",
+  manifest: "/manifest.json",
   appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
     title: "Investa",
   },
 };
