@@ -737,31 +737,35 @@ def get_cash_flows_for_mwr(
                 if pd.notna(commission_local) and commission_local != 0:
                     cash_flow_local = -abs(commission_local)  # OUT (-)
             elif tx_type == "transfer":
-                # Handle Cash Transfers
-                # If symbol is NOT cash, it's an asset transfer (handled above if we added logic, but usually ignored for MWR if simple)
-                # Wait, this block is if symbol != CASH_SYMBOL_CSV.
-                # Asset transfers IN/OUT should also be flows?
-                # For MWR (Money Weighted Return), we focus on CASH in/out of the portfolio.
-                # If I transfer Stock In, it's a "contribution in kind" -> Deposit (Positive Value Flow)
-                # If I transfer Stock Out, it's a "withdrawal in kind" -> Withdrawal (Negative Value Flow)
+                # Asset Transfer: treated as a contribution/withdrawal in kind
+                is_outbound = False
+                is_inbound = False
                 
-                # Logic for Asset Transfer
-                if "To Account" in row:
-                    to_account = str(row.get("To Account", "")).strip()
-                    # We don't have 'account' passed into this function! 
-                    # Wait, we filter transactions *before* calling this.
-                    # But we don't know *which* account we are calculating for inside the loop if we don't check.
-                    # Actually, `account_transactions` is already filtered for the specific account.
-                    # BUT, a transfer row might have Account="Other" and To Account="ThisAcct".
-                    # We need to know if we are the Source or Destination.
-                    
-                    # Problem: We don't pass 'account_name' to this function.
-                    # We rely on the fact that `account_transactions` contains rows relevant to THIS account.
-                    # If we filtered properly upstream (Account == Name OR To Account == Name), then:
-                    # If Account == Name -> Outgoing.
-                    # If To Account == Name -> Incoming.
-                    # We need the 'account_name' to be passed in to be sure.
-                    pass
+                acct = str(row.get("Account", "")).strip().upper()
+                to_acct = str(row.get("To Account", "")).strip().upper()
+                
+                if include_accounts is None:
+                    # Assuming ALL accounts scope if none provided
+                    is_outbound = True
+                    is_inbound = True
+                else:
+                    included_set = {str(a).strip().upper() for a in include_accounts}
+                    if acct in included_set:
+                        is_outbound = True
+                    if to_acct and to_acct in included_set:
+                        is_inbound = True
+
+                if is_outbound and is_inbound:
+                    # Internal Asset Transfer -> Net Zero Flow
+                    cash_flow_local = 0.0
+                elif is_outbound:
+                    # Asset leaving scope -> Withdrawal -> Positive MWR Flow
+                    if pd.notna(qty) and pd.notna(price_local):
+                        cash_flow_local = (abs(qty) * price_local) + commission_local
+                elif is_inbound:
+                    # Asset entering scope -> Deposit -> Negative MWR Flow
+                    if pd.notna(qty) and pd.notna(price_local):
+                        cash_flow_local = -(abs(qty) * price_local)
 
         elif symbol == CASH_SYMBOL_CSV:
             if tx_type == "deposit" or tx_type == "buy":

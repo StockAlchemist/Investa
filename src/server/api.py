@@ -773,32 +773,33 @@ async def _calculate_portfolio_summary_internal(
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
-        target_account = "ALL" if not include_accounts or len(include_accounts) != 1 else include_accounts[0]
-        cursor.execute('''
-            SELECT twr FROM portfolio_snapshots 
-            WHERE account = ? 
-            ORDER BY snapshot_date DESC LIMIT 1
-        ''', (target_account,))
-        
-        row = cursor.fetchone()
-        conn.close()
-        
-        if row and row[0] is not None and row[0] > 0:
-            final_twr_factor = row[0]
-            df_for_twr = df
-            if include_accounts:
-                df_for_twr = df[df["Account"].isin(include_accounts)]
+        precalculated_twr_used = False
+        if not include_accounts or len(include_accounts) == 1:
+            target_account = "ALL" if not include_accounts else include_accounts[0]
+            cursor.execute('''
+                SELECT twr FROM portfolio_snapshots 
+                WHERE account = ? 
+                ORDER BY snapshot_date DESC LIMIT 1
+            ''', (target_account,))
             
-            if not df_for_twr.empty:
-                actual_min_date = df_for_twr["Date"].min().date()
-                days = (date.today() - actual_min_date).days
-                cumulative_twr = (final_twr_factor - 1) * 100.0
-                if days > 0:
-                    annualized_factor = final_twr_factor ** (365.25 / days)
-                    annualized_twr = (annualized_factor - 1) * 100.0
-            precalculated_twr_used = True
-        else:
-            precalculated_twr_used = False
+            row = cursor.fetchone()
+            
+            if row and row[0] is not None and row[0] > 0:
+                final_twr_factor = row[0]
+                df_for_twr = df
+                if include_accounts:
+                    df_for_twr = df[df["Account"].isin(include_accounts)]
+                
+                if not df_for_twr.empty:
+                    actual_min_date = df_for_twr["Date"].min().date()
+                    days = (date.today() - actual_min_date).days
+                    cumulative_twr = (final_twr_factor - 1) * 100.0
+                    if days > 0:
+                        annualized_factor = final_twr_factor ** (365.25 / days)
+                        annualized_twr = (annualized_factor - 1) * 100.0
+                precalculated_twr_used = True
+                
+        conn.close()
     except Exception as e_db:
         logging.warning(f"Could not fetch pre-calculated TWR from portfolio_snapshots: {e_db}")
         precalculated_twr_used = False
@@ -811,8 +812,10 @@ async def _calculate_portfolio_summary_internal(
                 df_for_twr = df[df["Account"].isin(include_accounts)]
             
             if not df_for_twr.empty:
-                min_date = df_for_twr["Date"].min().date()
-                max_date = date.today()
+                from datetime import timedelta
+                # Use global min date and proper end date to ensure exact alignment and cache hit with graph endpoint
+                min_date = df["Date"].min().date() 
+                max_date = get_est_today() + timedelta(days=1)
                 
                 daily_df, _, _, _ = await _get_historical_performance_cached(
                     df=df,
@@ -821,7 +824,7 @@ async def _calculate_portfolio_summary_internal(
                     user_excluded_symbols=user_excluded_symbols,
                     account_currency_map=account_currency_map,
                     original_csv_file_path=db_path,
-                    start_date=min_date,
+                    start_date=min_date, # Align with graph logic
                     end_date=max_date,
                     interval="D",
                     benchmark_symbols_yf=[],
@@ -833,11 +836,26 @@ async def _calculate_portfolio_summary_internal(
                 if daily_df is not None and not daily_df.empty:
                     twr_col = "Portfolio Accumulated Gain"
                     if twr_col in daily_df.columns:
-                        final_twr_factor = daily_df[twr_col].iloc[-1]
+                        # Find the actual baseline date for the selected accounts
+                        display_start_date = df_for_twr["Date"].min().date()
+                        ds_ts = pd.Timestamp(display_start_date)
+                        if daily_df.index.tz is not None:
+                            ds_ts = ds_ts.tz_localize(daily_df.index.tz)
                         
-                        # Use the actual start date from the calculated data for true accuracy
-                        actual_min_date = daily_df.index.min().date()
-                        days = (max_date - actual_min_date).days
+                        df_before = daily_df[daily_df.index < ds_ts]
+                        # Normalize base to display_start_date just like the graph does!
+                        baseline_val = 1.0
+                        if not df_before.empty:
+                            baseline_val = df_before.iloc[-1][twr_col]
+                            if pd.isna(baseline_val) or baseline_val == 0:
+                                baseline_val = 1.0
+                                
+                        final_twr_raw = daily_df[twr_col].dropna().iloc[-1]
+                        final_twr_factor = final_twr_raw / baseline_val
+                        
+                        # Use the actual start date for the SELECTED accounts to compute annualized days
+                        actual_min_date = display_start_date
+                        days = (date.today() - actual_min_date).days
                         
                         if pd.notna(final_twr_factor) and final_twr_factor > 0:
                             # Cumulative TWR
@@ -1405,7 +1423,8 @@ class TransactionInput(BaseModel):
 @router.post("/transactions")
 async def create_transaction(
     transaction: TransactionInput,
-    data: tuple = Depends(get_transaction_data)
+    data: tuple = Depends(get_transaction_data),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Creates a new transaction.
